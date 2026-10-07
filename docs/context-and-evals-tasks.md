@@ -138,8 +138,25 @@ CLI diff capture exceeded its buffer.
 The cumulative guard charge is USD 1.326404885, leaving USD 3.673595115 under the
 same authorized USD 5 cap. The pagination correction makes coverage query-specific
 and carries the original query and filters in ready-to-call continuation arguments.
-It requires offline verification and another full unchanged qualification before
-merge. Historical reports and failed trials remain unchanged.
+Offline verification passes: 29 fresh serialized PostgreSQL suites / 182 tests,
+168 focused date and retrieval checks, 104 model-limit checks, 41 accounting and
+fingerprint checks, three web settings E2E cases, three Docker replay cases, package
+and mobile type checks, and lint. Main-branch reconciliation preserves current
+mobile behavior.
+
+The first pagination requalification was stopped gracefully after an audit found
+that reconciliation had moved memory ahead of stable instructions. Its partial
+report, `docs/evals/history-pr-pagination-qualification.json`, preserves eleven
+passing workflows and 43 not run, charged USD 0.01331646 across 31 calls, and zero
+background/cleanup failures or reservations. The cumulative charge is now
+USD 1.339721345, leaving USD 3.660278655; no allowance was reset.
+
+The original cache ordering is restored. An actual Pi provider regression now
+assembles instructions through the executor helper rather than hand-writing the
+expected order: changing group, messaging, memory, and scratchpad context preserves
+the complete stable instruction prefix and tool schemas. All 109 focused checks
+pass. Final qualification and CI remain merge gates. Historical reports and failed
+trials remain unchanged.
 
 The user has authorized live evaluation within the cumulative USD 5 cap. Before a
 live run, resolve pricing and credentials through the existing generic connection;

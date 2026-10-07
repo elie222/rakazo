@@ -463,3 +463,17 @@ a metadata-only correction made afterward does not relabel the observed run.
 The latest-base qualification gate remains failed pending a source correction
 and separately authorized verification. Earlier passing and failing reports remain
 unchanged.
+
+The subsequent pagination-source run was stopped for a source-audit finding,
+not an observed evaluation failure: the integrated executor had lost the
+original volatile-memory ordering correction. A graceful signal finished its
+in-flight workflow, then stopped new scheduling. Eleven workflows passed and
+43 remain explicitly not run; this partial matrix makes no qualification claim.
+The loaded committed revision and clean source fingerprint are retained in
+`history-pr-pagination-qualification.json`.
+
+Its31 provider-priced calls cost USD0.013316460. All step partitions reconciled,
+cleanup/background failures were zero, reservations cleared and the owned
+synthetic database was removed. Conservative cumulative spend is now
+USD1.339721345 of5, leaving USD3.660278655. The prior53/54 failure remains failed;
+a corrected-source full matrix is still required.

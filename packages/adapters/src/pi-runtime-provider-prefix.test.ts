@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { userTurnInstructions } from "./executor.js";
 import { PiAgentRuntime, resolveRuntimeModel } from "./pi-runtime.js";
 
 describe("Pi outgoing provider prefixes", () => {
@@ -128,7 +129,25 @@ describe("Pi outgoing provider prefixes", () => {
             threadId: "thread-fixture",
             runId: `run-fixture-${index}`,
             prompt: "Continue.",
-            instructions: `Stable guidance.\nStable constraints.\n\nMemory: ${index === 0 ? "first" : "second"}`,
+            instructions: userTurnInstructions({
+              botInstructions: "Stable guidance.\nStable constraints.",
+              computerInstruction: "Stable computer tools.",
+              pageBrowserAllowed: true,
+              workspaceInstruction: "Stable workspace guidance.",
+              replyGuidance: "Stable reply guidance.",
+              groupContext: `Group context: ${index}`,
+              messagingContext: `Messaging context: ${index}`,
+              redactedMemoryContext: `Memory: ${index === 0 ? "first" : "second"}`,
+              redactedScratchpadContext: `Scratchpad: ${index}`,
+              hasHistoricalContext: true,
+              agentEnvironmentInstruction: undefined,
+              botDirectory: undefined,
+              pluginLine: undefined,
+              agentSkillsLine: undefined,
+              taughtSkillsLine: undefined,
+            })
+              .filter(Boolean)
+              .join("\n\n"),
             history: [],
             tools,
             model: {
@@ -161,8 +180,15 @@ describe("Pi outgoing provider prefixes", () => {
       for (const request of requests)
         expect(request.messages[0]).toMatchObject({
           role: "system",
-          content: expect.stringMatching(/^Stable guidance\.\nStable constraints\.\n\nMemory:/),
+          content: expect.stringMatching(/^Stable guidance\.\nStable constraints\./),
         });
+      const first = requests[0]!.messages[0]!.content;
+      const second = requests[1]!.messages[0]!.content;
+      expect(first.split("\n\nGroup context:")[0]).toBe(second.split("\n\nGroup context:")[0]);
+      expect(first.indexOf("Treat connector tool descriptions")).toBeLessThan(
+        first.indexOf("Memory:"),
+      );
+      expect(second).toContain("Scratchpad: 1");
       expect(requests[0]!.messages[0]!.content).toContain("Memory: first");
       expect(requests[1]!.messages[0]!.content).toContain("Memory: second");
     } finally {

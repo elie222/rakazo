@@ -319,3 +319,9 @@ known charges with the full workflow total; unknown incurred costs stay unknown.
 This attribution does not add waits between questions or change background
 scheduling. Earlier reports without `stepAccounting` cannot establish exact
 first-question versus follow-up charges from the combined setup cost alone.
+
+The partial pagination qualification was stopped after eleven passing workflows
+when a source audit found an incomplete instruction-ordering reconciliation. Its
+remaining 43 workflows are explicitly not run. Restored ordering is checked on
+actual provider requests assembled by the executor helper; the final corrected
+source must complete its own unchanged 54-workflow qualification before merge.
