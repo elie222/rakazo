@@ -133,7 +133,8 @@ export default function VoiceSettings() {
 
   // The device voice and a hosted provider are one choice: picking a provider turns the device voice off.
   async function chooseProvider(nextProvider: string) {
-    if (pending !== null) return;
+    // Until the saved device-voice choice is known, a tap could not tell whether to turn it off.
+    if (pending !== null || !deviceVoiceReady) return;
     const wasDeviceVoice = deviceVoice;
     if (wasDeviceVoice && !(deviceVoiceReady && (await saveDeviceVoice(false)))) return;
     const previousProvider = provider;
@@ -294,12 +295,12 @@ export default function VoiceSettings() {
           return (
             <Pressable
               key={entry.id}
-              disabled={pending !== null}
+              disabled={pending !== null || !deviceVoiceReady}
               onPress={() => void chooseProvider(entry.id)}
               style={[
                 styles.card,
                 !deviceVoice && provider === entry.id && styles.cardActive,
-                pending !== null && styles.disabled,
+                (pending !== null || !deviceVoiceReady) && styles.disabled,
               ]}
             >
               <Text style={styles.cardTitle}>{entry.name}</Text>
