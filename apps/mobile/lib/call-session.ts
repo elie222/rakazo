@@ -121,6 +121,8 @@ let botEndedCall = false;
 let hangUpTimer: ReturnType<typeof setTimeout> | null = null;
 let spokenMessageId: string | null = null;
 let failures = 0;
+/** Counts the caller's turns, so a closing cue that ends late starts no waiting sound for a newer turn. */
+let turnSeq = 0;
 /** Whether the provider can transcribe, so the fallback path is worth trying at all. */
 let canTranscribe = true;
 /** Whether this device does its own speech recognition; unknown until the first turn. */
@@ -384,11 +386,13 @@ async function handleTranscript(raw: string): Promise<void> {
     exchanges: [...state.exchanges, { role: "user", text }],
   });
   // The waiting sound follows the closing cue, and only if the bot has not answered yet.
+  const cueTurn = ++turnSeq;
   void deps
     .cue("end")
     .catch(() => undefined)
     .then(() => {
-      if (state?.phase === "thinking" && callId === turnCallId) deps.waitSound("start");
+      if (state?.phase !== "thinking" || callId !== turnCallId || turnSeq !== cueTurn) return;
+      deps.waitSound("start");
     });
   if (isFarewell(text)) {
     hangUpAfterReply = true;
@@ -503,10 +507,21 @@ async function switchCall(target: CallSwitch, heard: string): Promise<void> {
     heard: "",
     exchanges: [...state.exchanges, { role: "user", text: heard }, { role: "bot", text: notice }],
   });
+  // The caller can hang up during either await: then nothing more is said and nobody rings.
+  const stillOn = () => state !== null && callId === switchingCallId;
   await deps.cue("end").catch(() => undefined);
-  if (callId !== switchingCallId) return;
-  await deps.speak(botId, notice).catch(() => undefined);
-  if (callId !== switchingCallId) return;
+  if (!stillOn()) return;
+  try {
+    await deps.speak(botId, notice);
+  } catch (error) {
+    if (!stillOn()) return;
+    // A refused voice disclosure stays refused: mute here rather than ring a bot that would ask again.
+    if (error instanceof AiConsentBlocked) {
+      blockForConsent(error);
+      return;
+    }
+  }
+  if (!stillOn()) return;
   endCall();
   target.ring();
 }

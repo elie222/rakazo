@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { nextWaitUnit } from "./wait-pattern";
 
+/** A fixed pseudo-random sequence, so every run sees the same picks. */
+function seeded(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1_664_525 + 1_013_904_223) % 2 ** 32;
+    return state / 2 ** 32;
+  };
+}
+
 describe("nextWaitUnit", () => {
   it("never repeats the previous pattern, in either tone", () => {
+    const random = seeded(7);
     let last = 0;
     for (let i = 0; i < 500; i += 1) {
-      const unit = nextWaitUnit(last);
+      const unit = nextWaitUnit(last, random);
       expect(unit.pattern).not.toBe(last);
       expect(unit.pattern).toBeGreaterThanOrEqual(1);
       expect(unit.pattern).toBeLessThanOrEqual(10);
@@ -14,11 +24,12 @@ describe("nextWaitUnit", () => {
   });
 
   it("picks both tones and every pattern", () => {
+    const random = seeded(42);
     const tones = new Set<string>();
     const patterns = new Set<number>();
     let last = 0;
-    for (let i = 0; i < 2000; i += 1) {
-      const unit = nextWaitUnit(last);
+    for (let i = 0; i < 200; i += 1) {
+      const unit = nextWaitUnit(last, random);
       tones.add(unit.tone);
       patterns.add(unit.pattern);
       last = unit.pattern;

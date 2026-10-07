@@ -60,6 +60,9 @@ export default function VoiceSettings() {
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
+  // Bumped by every sound-switch tap, so a load that started earlier never overwrites it.
+  const soundPrefsRevision = useRef(0);
+  const soundPrefSaving = useRef(false);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
@@ -107,12 +110,15 @@ export default function VoiceSettings() {
           setDeviceVoiceReady(true);
           setError(err instanceof Error ? err.message : t("Could not load voice settings"));
         });
-      void loadCallSoundsEnabled()
-        .then(setCallSounds)
-        .catch(() => setCallSounds(true));
-      void loadWaitSoundEnabled()
-        .then(setWaitSound)
-        .catch(() => setWaitSound(true));
+      const soundRevision = soundPrefsRevision.current;
+      void Promise.all([
+        loadCallSoundsEnabled().catch(() => true),
+        loadWaitSoundEnabled().catch(() => true),
+      ]).then(([calls, waiting]) => {
+        if (soundPrefsRevision.current !== soundRevision) return;
+        setCallSounds(calls);
+        setWaitSound(waiting);
+      });
       void load()
         .catch((err: unknown) =>
           setError(err instanceof Error ? err.message : t("Could not load voice settings")),
@@ -121,29 +127,39 @@ export default function VoiceSettings() {
     }, [load, t]),
   );
 
+  /** One sound-switch save at a time; a failed save rolls back only that switch. */
+  async function saveSoundPref(
+    next: boolean,
+    show: (value: boolean) => void,
+    save: (value: boolean) => Promise<void>,
+  ): Promise<boolean> {
+    if (soundPrefSaving.current) return false;
+    soundPrefSaving.current = true;
+    soundPrefsRevision.current += 1;
+    show(next);
+    try {
+      await save(next);
+      return true;
+    } catch {
+      show(!next);
+      setError(t("Could not save that preference"));
+      return false;
+    } finally {
+      soundPrefSaving.current = false;
+    }
+  }
+
   async function toggleWaitSound() {
     if (waitSound === null) return;
-    const next = !waitSound;
-    setWaitSound(next);
-    try {
-      await saveWaitSoundEnabled(next);
-    } catch {
-      setWaitSound(!next);
-      setError(t("Could not save that preference"));
-    }
+    await saveSoundPref(!waitSound, setWaitSound, saveWaitSoundEnabled);
   }
 
   async function toggleCallSounds() {
     if (callSounds === null) return;
     const next = !callSounds;
-    setCallSounds(next);
-    try {
-      await saveCallSoundsEnabled(next);
-      if (next) await playCallCue("start");
-    } catch {
-      setCallSounds(!next);
-      setError(t("Could not save that preference"));
-    }
+    const saved = await saveSoundPref(next, setCallSounds, saveCallSoundsEnabled);
+    // The preview is a courtesy: if it cannot play, the saved choice still stands.
+    if (saved && next) await playCallCue("start").catch(() => undefined);
   }
 
   async function toggleDeviceVoice() {

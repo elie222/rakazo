@@ -246,6 +246,38 @@ describe("mobile call session", () => {
     expect(fake.waits).toEqual(["preload", "start", "stop", "release"]);
   });
 
+  it("does not ring the other bot when the caller hangs up during the hand-over", async () => {
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      fake.deps,
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    endCall();
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(ring).not.toHaveBeenCalled();
+  });
+
+  it("mutes instead of ringing when the hand-over line is refused for consent", async () => {
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      fake.deps,
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    fake.speeches[0]?.reject(new AiConsentBlocked("consent denied"));
+    await flush();
+    expect(ring).not.toHaveBeenCalled();
+    expect(getSnapshot()).toMatchObject({ muted: true, caption: "consent denied" });
+  });
+
   it("plays the closing cue once the caller's turn is heard", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);

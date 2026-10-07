@@ -21,10 +21,16 @@ export function findSwitchTarget<T extends { id: string; name: string }>(
 ): T | undefined {
   const asked = SWITCH_REQUEST.exec(text.trim())?.[1];
   if (!asked) return undefined;
-  const wanted = normalized(asked).replace(/^the\s+/, "");
-  if (!wanted) return undefined;
-  const exact = bots.filter((bot) => normalized(bot.name) === wanted);
-  if (exact.length === 1) return exact[0];
-  const byFirstName = bots.filter((bot) => normalized(bot.name).split(" ")[0] === wanted);
+  const spoken = normalized(asked);
+  // A full name wins, so "The Planner" reaches its own bot before "the" is treated as
+  // an article; only then is "the travel bot" read as "travel bot".
+  for (const wanted of [spoken, spoken.replace(/^the\s+/, "")]) {
+    if (!wanted) continue;
+    const exact = bots.filter((bot) => normalized(bot.name) === wanted);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) return undefined;
+  }
+  const firstName = spoken.replace(/^the\s+/, "");
+  const byFirstName = bots.filter((bot) => normalized(bot.name).split(" ")[0] === firstName);
   return byFirstName.length === 1 ? byFirstName[0] : undefined;
 }

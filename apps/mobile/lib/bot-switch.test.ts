@@ -27,6 +27,15 @@ describe("findSwitchTarget", () => {
     expect(findSwitchTarget("switch to Sam Ortiz", bots)?.id).toBe("bot-5");
   });
 
+  it("matches a full name that starts with 'the' before reading 'the' as an article", () => {
+    const named = [
+      { id: "bot-a", name: "The Planner" },
+      { id: "bot-b", name: "Planner" },
+    ];
+    expect(findSwitchTarget("switch to The Planner", named)?.id).toBe("bot-a");
+    expect(findSwitchTarget("switch to Planner", named)?.id).toBe("bot-b");
+  });
+
   it("leaves an ambiguous first name, an unknown bot, or a normal message alone", () => {
     expect(findSwitchTarget("switch to Sam", bots)).toBeUndefined();
     expect(findSwitchTarget("switch to Zelda", bots)).toBeUndefined();
