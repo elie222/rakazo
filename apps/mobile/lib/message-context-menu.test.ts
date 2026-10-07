@@ -35,6 +35,15 @@ describe("message context menu", () => {
     expect(ids(menu)).not.toContain("cancel");
   });
 
+  it("keeps read-only history copyable without reply, quote, or reaction actions", () => {
+    const menu = buildMessageContextMenu({
+      labels,
+      reactions,
+      include: { reply: false, quote: false, react: false, speak: true, select: true },
+    });
+    expect(ids(menu)).toEqual(["copy", "secondary", "speak", "select"]);
+  });
+
   it("omits actions the message cannot perform", () => {
     const menu = buildMessageContextMenu({
       labels,

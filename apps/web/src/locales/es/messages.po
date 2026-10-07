@@ -3230,6 +3230,10 @@ msgstr "Grabando: {0}"
 msgid "Recover computer"
 msgstr "Recuperar computadora"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recover computer?"
+msgstr "¿Recuperar el ordenador?"
+
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
@@ -3251,9 +3255,14 @@ msgstr ""
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
-msgstr ""
+msgstr "La recuperación restaura el último espacio de trabajo guardado. El trabajo no guardado puede perderse."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recreate a computer that is not working."
+msgstr "Recrear un ordenador que no funciona."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
@@ -3426,6 +3435,10 @@ msgid "Restore"
 msgstr "Restaurar"
 
 #: src/components/ComputerMaintenanceActions.tsx
+msgid "Restore the last saved workspace."
+msgstr "Restaurar el último espacio de trabajo guardado."
+
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Restaura el último espacio de trabajo guardado. Se pierde el trabajo sin guardar en la computadora."
 
@@ -3535,6 +3548,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Save the workspace and install current software."
+msgstr "Guardar el espacio de trabajo e instalar el software actual."
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx

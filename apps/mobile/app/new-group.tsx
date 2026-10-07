@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { NativeActionButton } from "../components/native-action-button";
-import { type MobileBot, rpc } from "../lib/api";
+import type { MobileBot } from "../lib/api";
+import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -55,6 +56,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen options={{ title: t("New group") }} />
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
       >

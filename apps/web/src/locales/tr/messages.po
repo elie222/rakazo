@@ -3230,6 +3230,10 @@ msgstr "Kayıt: {0}"
 msgid "Recover computer"
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recover computer?"
+msgstr "Bilgisayar kurtarılsın mı?"
+
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
@@ -3251,9 +3255,14 @@ msgstr ""
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
-msgstr ""
+msgstr "Kurtarma, son kaydedilen çalışma alanını geri yükler. Kaydedilmemiş çalışmalar kaybolabilir."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recreate a computer that is not working."
+msgstr "Çalışmayan bir bilgisayarı yeniden oluşturun."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
@@ -3426,6 +3435,10 @@ msgid "Restore"
 msgstr "Geri yükle"
 
 #: src/components/ComputerMaintenanceActions.tsx
+msgid "Restore the last saved workspace."
+msgstr "Son kaydedilen çalışma alanını geri yükleyin."
+
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr ""
 
@@ -3535,6 +3548,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Save the workspace and install current software."
+msgstr "Çalışma alanını kaydedin ve güncel yazılımı yükleyin."
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx

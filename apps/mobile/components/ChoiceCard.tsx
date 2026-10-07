@@ -10,6 +10,7 @@ import {
   threadCardWidth,
 } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
+import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
@@ -60,6 +61,7 @@ export function ChoiceCard({
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
+  const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const { width: windowWidth } = useWindowDimensions();
   const [busy, setBusy] = useState(false);
@@ -72,7 +74,7 @@ export function ChoiceCard({
 
   // Dismissing records the server's dismissed answer id, so both outcomes share this path.
   async function submit(optionId: string) {
-    if (pending.current || answerId) return;
+    if (readOnly || pending.current || answerId) return;
     pending.current = true;
     setBusy(true);
     try {
@@ -118,7 +120,7 @@ export function ChoiceCard({
             </Text>
           ) : null}
         </View>
-        {!answerId ? (
+        {!readOnly && !answerId ? (
           <Pressable
             testID="choice-card-dismiss"
             accessibilityRole="button"
@@ -141,8 +143,8 @@ export function ChoiceCard({
               key={option.id}
               accessibilityRole="button"
               accessibilityLabel={option.label}
-              accessibilityState={{ disabled: busy || chosen, selected: chosen }}
-              disabled={busy || chosen}
+              accessibilityState={{ disabled: readOnly || busy || chosen, selected: chosen }}
+              disabled={readOnly || busy || chosen}
               onPress={() => void submit(option.id)}
               style={({ pressed }) => [
                 styles.option,

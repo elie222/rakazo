@@ -20,7 +20,7 @@ export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: (
     ),
     [
       { text: t("Cancel"), style: "cancel" },
-      { text: t("Keep memories"), onPress: () => void remove(false) },
+      { text: t("Keep memories"), style: "destructive", onPress: () => void remove(false) },
       {
         text: t("Delete memories too"),
         style: "destructive",
@@ -28,4 +28,8 @@ export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: (
       },
     ],
   );
+}
+
+export async function restoreArchivedBot(botId: string): Promise<void> {
+  await rpc("bots/restore", { botId });
 }

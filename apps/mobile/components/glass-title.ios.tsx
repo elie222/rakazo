@@ -31,15 +31,17 @@ export function GlassTitle({ title }: { title: string }) {
   );
 }
 
-/** Stack options that float the back button and title over content scrolling under the bar. */
-export function glassHeaderOptions(title: string) {
-  if (!iosAtLeast(26)) return { title };
+export function floatingHeaderOptions() {
+  if (!iosAtLeast(26)) return {};
   return {
-    title,
     headerTransparent: true,
     headerStyle: { backgroundColor: "transparent" },
-    headerTitle: () => <GlassTitle title={title} />,
+    headerTitle: ({ children }: { children: string }) => <GlassTitle title={children} />,
   };
+}
+
+export function glassHeaderOptions(title: string) {
+  return { ...floatingHeaderOptions(), title };
 }
 
 const styles = StyleSheet.create({

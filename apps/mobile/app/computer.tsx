@@ -1,8 +1,8 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import {
   initialWindowMetrics,
   SafeAreaProvider,
@@ -14,10 +14,10 @@ import { ComputerModePicker } from "../components/computer-mode-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
 import { currentApiBase, rpc } from "../lib/api";
+import type { ComputerStatus } from "../lib/computer";
 import {
   COMPUTER_HEARTBEAT_MS,
   COMPUTER_LIFECYCLE_TIMEOUT_MS,
-  type ComputerStatus,
   computerLabel,
   controlLabel,
   embeddableScreenUrl,
@@ -76,6 +76,9 @@ export default function Computer() {
     [botId],
   );
   const refresh = refreshController.refresh;
+  const refreshAfterMaintenance = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
 
   useEffect(() => {
     setComputer(null);
@@ -222,13 +225,17 @@ export default function Computer() {
     screenError ?? previewPlaceholder(computer?.state, booting, name, computer?.mode);
 
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.background, padding: 24 }}>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: tokens.background }}
+      contentContainerStyle={{ padding: 24 }}
+      contentInsetAdjustmentBehavior="automatic"
+    >
       {error ? (
         <Text style={{ color: tokens.mutedForeground, marginBottom: 12 }}>{error}</Text>
       ) : null}
       <View
         style={{
-          flex: 1,
+          height: 360,
           minHeight: 220,
           borderRadius: 14,
           overflow: "hidden",
@@ -293,9 +300,7 @@ export default function Computer() {
         <ComputerMaintenanceActions
           botId={botId ?? ""}
           computer={computer}
-          onChanged={async () => {
-            await refresh();
-          }}
+          onChanged={refreshAfterMaintenance}
         />
       ) : null}
       <ComputerModePicker
@@ -460,7 +465,7 @@ export default function Computer() {
           )}
         </SafeAreaProvider>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 

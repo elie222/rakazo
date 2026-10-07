@@ -1,4 +1,11 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "No archived bots": "Нет архивированных ботов",
+  "Recover computer?": "Восстановить компьютер?",
+  "Recreate a computer that is not working.": "Пересоздать неработающий компьютер.",
+  "Restore the last saved workspace.": "Восстановить последнее сохранённое рабочее пространство.",
+  "Save the workspace and install current software.":
+    "Сохранить рабочее пространство и установить актуальное ПО.",
+  "More computer actions": "Другие действия с компьютером",
   "Update your server to use AI data sharing in this mobile version.":
     "Обновите сервер, чтобы использовать обмен данными с ИИ в этой версии мобильного приложения.",
   "Ask the server owner to configure this provider.":

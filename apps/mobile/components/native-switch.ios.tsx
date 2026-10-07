@@ -21,7 +21,7 @@ export function NativeSwitch({
 }: NativeSwitchProps) {
   const scheme = useResolvedAppearance();
   return (
-    <Host colorScheme={scheme} matchContents>
+    <Host colorScheme={scheme} ignoreSafeArea="container" matchContents>
       <Toggle
         isOn={value}
         label={accessibilityLabel}

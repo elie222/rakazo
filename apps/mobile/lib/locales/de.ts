@@ -1,4 +1,12 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "No archived bots": "Keine archivierten Bots",
+  "Recover computer?": "Computer wiederherstellen?",
+  "Recreate a computer that is not working.":
+    "Einen nicht funktionierenden Computer neu erstellen.",
+  "Restore the last saved workspace.": "Den zuletzt gespeicherten Arbeitsbereich wiederherstellen.",
+  "Save the workspace and install current software.":
+    "Den Arbeitsbereich speichern und aktuelle Software installieren.",
+  "More computer actions": "Weitere Computeraktionen",
   // shared/const
   "Chat Settings": "Chat-Einstellungen",
   "Configure a plugin catalog on the server to connect apps.":

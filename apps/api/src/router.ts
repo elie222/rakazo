@@ -1887,11 +1887,15 @@ export function createRouter(deps: RouterDeps) {
         return threadHead(deps.prisma, target);
       }),
       get: authed.threads.get.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
+          includeArchived: true,
+        });
         return threadSnapshot(deps, target);
       }),
       messages: authed.threads.messages.handler(async ({ context, input }) => {
-        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input, {
+          includeArchived: true,
+        });
         return loadMessagePage(
           deps.prisma,
           target.threadId,

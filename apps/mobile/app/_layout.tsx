@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { CallCard } from "../components/CallCard";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
-import { glassHeaderOptions } from "../components/glass-title";
+import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
   currentApiBase,
@@ -122,6 +122,7 @@ export default function Layout() {
                   <Stack
                     screenOptions={{
                       headerStyle: { backgroundColor: navigationTheme.colors.background },
+                      ...floatingHeaderOptions(),
                       headerTintColor: navigationTheme.colors.text,
                       headerShadowVisible: false,
                       headerBackButtonDisplayMode: "minimal",
@@ -146,9 +147,6 @@ export default function Layout() {
                         presentation: "formSheet",
                         sheetAllowedDetents: [0.6, 1],
                         sheetGrabberVisible: true,
-                        // Expo Router makes formSheet headers transparent on Liquid Glass, which
-                        // puts the first field under the bar; keep it opaque so the form starts below.
-                        headerTransparent: false,
                       }}
                     />
                     <Stack.Screen
@@ -158,9 +156,9 @@ export default function Layout() {
                         presentation: "formSheet",
                         sheetAllowedDetents: [0.6, 1],
                         sheetGrabberVisible: true,
-                        headerTransparent: false,
                       }}
                     />
+                    <Stack.Screen name="archived-bots" options={{ title: t("Archived bots") }} />
                     <Stack.Screen name="models" options={glassHeaderOptions(t("Models"))} />
                     <Stack.Screen name="voice" options={glassHeaderOptions(t("Voice"))} />
                     <Stack.Screen

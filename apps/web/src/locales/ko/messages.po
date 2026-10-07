@@ -3230,6 +3230,10 @@ msgstr "녹화 중: {0}"
 msgid "Recover computer"
 msgstr "컴퓨터 복구"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recover computer?"
+msgstr "컴퓨터를 복구할까요?"
+
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
@@ -3251,9 +3255,14 @@ msgstr ""
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
-msgstr ""
+msgstr "복구하면 마지막으로 저장된 작업 공간이 복원됩니다. 저장하지 않은 작업은 손실될 수 있습니다."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recreate a computer that is not working."
+msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
@@ -3426,6 +3435,10 @@ msgid "Restore"
 msgstr "복원"
 
 #: src/components/ComputerMaintenanceActions.tsx
+msgid "Restore the last saved workspace."
+msgstr "마지막으로 저장한 작업 공간을 복원합니다."
+
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "마지막으로 저장된 작업 공간을 복원합니다. 컴퓨터에서 저장하지 않은 작업은 사라집니다."
 
@@ -3535,6 +3548,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Save the workspace and install current software."
+msgstr "작업 공간을 저장하고 최신 소프트웨어를 설치합니다."
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx

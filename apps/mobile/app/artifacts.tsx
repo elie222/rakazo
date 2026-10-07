@@ -201,30 +201,31 @@ export default function ArtifactsScreen() {
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
-      <ScrollView
-        horizontal
-        contentInsetAdjustmentBehavior="automatic"
-        showsHorizontalScrollIndicator={false}
-        style={styles.chipsScroll}
-        contentContainerStyle={styles.chipsRow}
-      >
-        <Chip
-          label={t("All bots")}
-          active={activeBotId === null}
-          onPress={() => setActiveBotId(null)}
-        />
-        {bots.map((bot) => (
-          <Chip
-            key={bot.id}
-            label={bot.name}
-            active={activeBotId === bot.id}
-            onPress={() => setActiveBotId(bot.id)}
-            avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
-          />
-        ))}
-      </ScrollView>
-
       <FlatList<MobileArtifactSummary>
+        ListHeaderComponent={
+          <ScrollView
+            horizontal
+            contentInsetAdjustmentBehavior="never"
+            showsHorizontalScrollIndicator={false}
+            style={styles.chipsScroll}
+            contentContainerStyle={styles.chipsRow}
+          >
+            <Chip
+              label={t("All bots")}
+              active={activeBotId === null}
+              onPress={() => setActiveBotId(null)}
+            />
+            {bots.map((bot) => (
+              <Chip
+                key={bot.id}
+                label={bot.name}
+                active={activeBotId === bot.id}
+                onPress={() => setActiveBotId(bot.id)}
+                avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
+              />
+            ))}
+          </ScrollView>
+        }
         style={styles.listView}
         contentInsetAdjustmentBehavior="automatic"
         data={filtered ?? []}

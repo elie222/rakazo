@@ -72,13 +72,4 @@ describe("Account delete", () => {
     expect(scroll).toContain('maxHeight: "100%"');
     expect(scroll).toContain("flexShrink: 1");
   });
-
-  it("keeps the archived actions' 44 pt hit slop inside a 44 pt container", () => {
-    expect(screen).toContain("const ARCHIVED_ACTION_HIT_SLOP = { top: 12, bottom: 12 };");
-    expect(screen.match(/hitSlop=\{ARCHIVED_ACTION_HIT_SLOP\}/g)).toHaveLength(2);
-    const actions = sliceBetween(screen, "archivedActions: {", "},");
-    expect(actions).toContain("minHeight: 44,");
-    const action = sliceBetween(screen, "archivedAction: {", "},");
-    expect(action).not.toContain("minHeight");
-  });
 });

@@ -27,7 +27,7 @@ export function buildMessageContextMenu({
 }: {
   labels: Record<MessageMenuSymbol, string>;
   reactions: readonly string[];
-  include: { quote: boolean; react: boolean; speak: boolean; select: boolean };
+  include: { reply?: boolean; quote: boolean; react: boolean; speak: boolean; select: boolean };
 }): MessageMenuEntry[] {
   const secondary: MessageMenuEntry[] = [
     ...(include.quote ? [entry("quote", labels.quote)] : []),
@@ -35,7 +35,7 @@ export function buildMessageContextMenu({
     ...(include.select ? [entry("select", labels.select)] : []),
   ];
   return [
-    entry("reply", labels.reply),
+    ...(include.reply !== false ? [entry("reply", labels.reply)] : []),
     entry("copy", labels.copy),
     ...(include.react
       ? [

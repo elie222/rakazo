@@ -42,7 +42,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
 import { Checkmark, Chevron } from "../components/row-accessories";
-import { type MobileMe, type MobileModel, type MobileModelCredential, rpc } from "../lib/api";
+import type { MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
+import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
@@ -1416,6 +1417,7 @@ function createModelsStyles() {
       justifyContent: "center",
     },
     content: {
+      width: "100%",
       padding: 20,
       gap: 12,
       paddingBottom: 40,

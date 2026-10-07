@@ -1,4 +1,10 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "No archived bots": "没有已归档的机器人",
+  "Recover computer?": "恢复电脑？",
+  "Recreate a computer that is not working.": "重建无法正常工作的电脑。",
+  "Restore the last saved workspace.": "恢复上次保存的工作区。",
+  "Save the workspace and install current software.": "保存工作区并安装最新软件。",
+  "More computer actions": "更多电脑操作",
   "Update your server to use AI data sharing in this mobile version.":
     "请更新服务器，以便在此移动版本中使用 AI 数据共享功能。",
   "Release computer": "释放电脑",

@@ -1,9 +1,8 @@
 import type { AvatarStyle } from "@rakazo/contracts";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -44,7 +43,6 @@ import {
   setAppearancePreference,
 } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
-import { confirmDeleteBot } from "../lib/bot-lifecycle";
 import { promptAccountDeletion } from "../lib/delete-account-prompt";
 import { setUiLocale, useI18n } from "../lib/i18n";
 import type { LiveNotificationSettings } from "../lib/live-notifications";
@@ -72,11 +70,6 @@ import {
 import type { AccountUiLocale } from "../lib/ui-locale";
 import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../lib/ui-locale";
 import { errorText } from "../lib/user-error";
-
-// Restore/Delete reach 44 pt through hit slop, not height, so the bot name stays first in
-// VoiceOver's top-to-bottom order. Their container is 44 pt tall because touches outside a
-// parent's frame never reach its children's hit slop.
-const ARCHIVED_ACTION_HIT_SLOP = { top: 12, bottom: 12 };
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
@@ -131,9 +124,6 @@ export default function Account() {
     void rpc<MobileMe>("me")
       .then(setMe)
       .catch(() => undefined);
-    void rpc<MobileBot[]>("bots/listArchived")
-      .then(setArchivedBots)
-      .catch(() => undefined);
     void rpc<{
       runs: number;
       inputTokens: number | null;
@@ -165,14 +155,19 @@ export default function Account() {
     />
   );
 
-  async function restoreBot(botId: string) {
-    try {
-      await rpc("bots/restore", { botId });
-      setArchivedBots((bots) => bots.filter((bot) => bot.id !== botId));
-    } catch (restoreError) {
-      Alert.alert(t("Could not restore bot"), errorText(restoreError, t("Try again.")));
-    }
-  }
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc<MobileBot[]>("bots/listArchived")
+        .then((bots) => {
+          if (active) setArchivedBots(bots);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
 
   async function selectAvatarStyle(next: AvatarStyle) {
     if (next === avatarStyle) return;
@@ -519,40 +514,17 @@ export default function Account() {
           </SettingsGroup>
         </View>
 
-        <SettingsGroup label={t("Archived bots")}>
-          {archivedBots.map((bot) => (
+        {archivedBots.length > 0 ? (
+          <SettingsGroup>
             <SettingsRow
-              key={bot.id}
-              title={bot.name}
-              trailing={
-                <View
-                  style={[styles.archivedActions, stackOptions && styles.archivedActionsStacked]}
-                >
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => void restoreBot(bot.id)}
-                    hitSlop={ARCHIVED_ACTION_HIT_SLOP}
-                    style={styles.archivedAction}
-                  >
-                    <Text style={styles.restoreLabel}>{t("Restore")}</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() =>
-                      confirmDeleteBot(bot, () =>
-                        setArchivedBots((bots) => bots.filter((item) => item.id !== bot.id)),
-                      )
-                    }
-                    hitSlop={ARCHIVED_ACTION_HIT_SLOP}
-                    style={styles.archivedAction}
-                  >
-                    <Text style={styles.archivedDeleteLabel}>{t("Delete")}</Text>
-                  </Pressable>
-                </View>
-              }
+              accessibilityRole="button"
+              chevron="right"
+              onPress={() => router.push("/archived-bots")}
+              title={t("Archived bots")}
+              value={String(archivedBots.length)}
             />
-          ))}
-        </SettingsGroup>
+          </SettingsGroup>
+        ) : null}
 
         <View style={styles.about}>
           <AppMark />
@@ -714,31 +686,6 @@ function createAccountStyles() {
       fontSize: 15,
       fontWeight: "600",
       textAlign: "center",
-    },
-    archivedActions: {
-      flexDirection: "row",
-      alignItems: "center",
-      minHeight: 44,
-      // The row's 12 pt padding absorbs the extra height, so the row keeps its 52 pt.
-      marginVertical: -8,
-    },
-    archivedActionsStacked: {
-      flexWrap: "wrap",
-      marginStart: -8,
-      // Under the title there is no row padding to absorb it.
-      marginVertical: 0,
-    },
-    archivedAction: {
-      paddingHorizontal: 8,
-    },
-    restoreLabel: {
-      color: native.label,
-      fontSize: 15,
-      fontWeight: "600",
-    },
-    archivedDeleteLabel: {
-      color: tokens.destructive,
-      fontSize: 15,
     },
     about: {
       alignItems: "center",

@@ -5,6 +5,7 @@ import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { useThreadReadOnly } from "../lib/thread-read-only";
 import { NativeActionButton } from "./native-action-button";
 
 const styles = StyleSheet.create({
@@ -31,6 +32,7 @@ export function ComputerCard({
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
+  const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const colorScheme = useResolvedAppearance();
   const { width: windowWidth } = useWindowDimensions();
@@ -68,7 +70,7 @@ export function ComputerCard({
           {block.text}
         </ChatMarkdown>
       ) : null}
-      {onOpen ? (
+      {onOpen && !readOnly ? (
         <View testID="computer-card-open">
           <NativeActionButton label={t("Open computer")} fill={false} onPress={onOpen} />
         </View>

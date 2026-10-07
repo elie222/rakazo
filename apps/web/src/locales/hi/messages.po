@@ -3230,6 +3230,10 @@ msgstr "रिकॉर्डिंग: {0}"
 msgid "Recover computer"
 msgstr "कंप्यूटर रिकवर करें"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recover computer?"
+msgstr "कंप्यूटर पुनर्प्राप्त करें?"
+
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
@@ -3251,9 +3255,14 @@ msgstr ""
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
-msgstr ""
+msgstr "रिकवरी आखिरी सहेजे गए कार्यक्षेत्र को बहाल करती है। बिना सहेजा गया काम खो सकता है।"
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recreate a computer that is not working."
+msgstr "काम न कर रहे कंप्यूटर को फिर से बनाएँ।"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
@@ -3426,6 +3435,10 @@ msgid "Restore"
 msgstr "बहाल करें"
 
 #: src/components/ComputerMaintenanceActions.tsx
+msgid "Restore the last saved workspace."
+msgstr "अंतिम सहेजे गए कार्यक्षेत्र को पुनर्स्थापित करें।"
+
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "अंतिम सहेजे गए वर्कस्पेस को बहाल करें। कंप्यूटर पर बिना सहेजा काम खो जाएगा।"
 
@@ -3535,6 +3548,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Save the workspace and install current software."
+msgstr "कार्यक्षेत्र सहेजें और नवीनतम सॉफ़्टवेयर इंस्टॉल करें।"
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx

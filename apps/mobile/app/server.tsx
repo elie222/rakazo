@@ -105,6 +105,7 @@ export default function ServerScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >

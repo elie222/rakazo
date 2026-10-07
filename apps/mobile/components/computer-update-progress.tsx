@@ -1,4 +1,5 @@
-import { COMPUTER_UPDATE_STAGES, type ComputerUpdate } from "@rakazo/contracts";
+import type { ComputerUpdate } from "@rakazo/contracts";
+import { COMPUTER_UPDATE_STAGES } from "@rakazo/contracts";
 import { computerUpdateNeedsAttention, computerUpdateStages } from "@rakazo/core";
 import { usePathname } from "expo-router";
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -140,6 +141,7 @@ export function ComputerUpdateProgress() {
                       { text: t("Cancel"), style: "cancel" },
                       {
                         text: t("Nothing is still running"),
+                        style: "destructive",
                         onPress: () => {
                           setBusy(true);
                           setError(false);

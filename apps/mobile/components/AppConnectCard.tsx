@@ -7,6 +7,7 @@ import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
@@ -22,6 +23,7 @@ export function AppConnectCard({
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
+  const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const [busy, setBusy] = useState(false);
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
@@ -33,6 +35,7 @@ export function AppConnectCard({
   useEffect(() => () => connectionAttempt.current?.abort(), []);
 
   async function authorize() {
+    if (readOnly) return;
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
@@ -122,7 +125,7 @@ export function AppConnectCard({
             {view.description}
           </Text>
         </View>
-        {view.showAuthorize ? (
+        {view.showAuthorize && !readOnly ? (
           <NativeActionButton
             label={view.actionLabel}
             accessibilityLabel={t("Authorize {name}", { name: block.name })}
@@ -131,11 +134,11 @@ export function AppConnectCard({
             style={{ alignSelf: "center" }}
             onPress={() => void authorize()}
           />
-        ) : (
+        ) : !view.showAuthorize ? (
           <Text style={{ color: tokens.success, fontSize: 13.5, fontWeight: "600" }}>
             {view.actionLabel}
           </Text>
-        )}
+        ) : null}
       </View>
       {error ? <Text style={{ color: tokens.destructive, fontSize: 13 }}>{error}</Text> : null}
     </View>

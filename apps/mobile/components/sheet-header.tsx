@@ -92,6 +92,7 @@ export function trailingHeaderOptions(label: string, onPress: () => void, disabl
               type: "button" as const,
               label,
               variant: "done" as const,
+              tintColor: native.label,
               disabled,
               onPress,
             },

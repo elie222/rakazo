@@ -74,7 +74,11 @@ export default function ChangePassword() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.screen}
       >
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+        <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.content}
+        >
           {[
             {
               label: t("Current password"),

@@ -1,0 +1,22 @@
+appId: com.rakazo.app
+name: Inbox
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- extendedWaitUntil:
+    visible: ".*Researcher.*"
+    timeout: 20000
+- takeScreenshot: 01-inbox
+- tapOn: "Activity"
+- extendedWaitUntil:
+    visible: ".*Recent.*"
+    timeout: 15000
+- takeScreenshot: 02-activity
+- tapOn: "Activity"
+- openLink: "rakazo:///artifacts"
+- extendedWaitUntil:
+    visible: ".*launch-notes.txt.*|.*No artifacts yet.*|.*Artifacts.*"
+    timeout: 15000
+- takeScreenshot: 03-artifacts
