@@ -477,3 +477,19 @@ cleanup/background failures were zero, reservations cleared and the owned
 synthetic database was removed. Conservative cumulative spend is now
 USD1.339721345 of5, leaving USD3.660278655. The prior53/54 failure remains failed;
 a corrected-source full matrix is still required.
+
+The restored-prefix source completed all 54 unchanged workflows: 53 passed
+and one strict diagnostic-chain sample failed. All twelve distant samples and all
+27 repeated answers passed. The failed 1,000-message loop read segments 1–6,
+8–11, then 12; it skipped segment seven by substituting an unreturned cursor and
+also made an invalid guessed cursor request. Twelve calls therefore contained
+only eleven successful segment reads. The final component and pending approval
+status were correct, with no effects, but the twelve-read criterion remains failed.
+
+The report records the actual clean committed source, `23bb627d`. This run cost
+USD 0.093003835 across 248 provider-priced calls, with workflow median/p95 latency
+9.544/36.399 seconds. Step and background ledger charges, counts and known tokens
+reconciled. Cleanup and background failures and reservations were zero; the owned
+database was removed. Conservative cumulative spend is USD 1.43272518 of USD 5,
+leaving USD 3.56727482. No criterion or earlier result was regraded; cursor guidance
+requires a separate source revision and qualification.

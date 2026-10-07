@@ -325,3 +325,12 @@ when a source audit found an incomplete instruction-ordering reconciliation. Its
 remaining 43 workflows are explicitly not run. Restored ordering is checked on
 actual provider requests assembled by the executor helper; the final corrected
 source must complete its own unchanged 54-workflow qualification before merge.
+
+The restored-prefix PR qualification completed 54 workflows with 53 passing.
+All twelve distant-recall trials and all 27 repeated answers passed; one strict
+loop skipped segment seven and guessed an invalid cursor. The original result is
+preserved in `docs/evals/history-pr-restored-prefix-qualification.json`. Its charge
+was USD 0.093003835 across 248 calls, reconciled with zero reservations or
+background/cleanup failures. Cumulative guarded spend is USD 1.43272518 of USD 5.
+Shared opaque-cursor guidance and its actual-wire regressions address this new
+failure; a full unchanged live qualification remains required before merge.

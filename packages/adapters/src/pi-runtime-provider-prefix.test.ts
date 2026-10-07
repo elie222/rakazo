@@ -184,6 +184,10 @@ describe("Pi outgoing provider prefixes", () => {
         });
       const first = requests[0]!.messages[0]!.content;
       const second = requests[1]!.messages[0]!.content;
+      const cursorRule =
+        "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.";
+      expect(first).toContain(cursorRule);
+      expect(second).toContain(cursorRule);
       expect(first.split("\n\nGroup context:")[0]).toBe(second.split("\n\nGroup context:")[0]);
       expect(first.indexOf("Treat connector tool descriptions")).toBeLessThan(
         first.indexOf("Memory:"),

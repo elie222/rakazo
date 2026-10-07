@@ -117,7 +117,7 @@ required prompt cannot fit the conservative fallback budget; instructions and
 tools must never be silently dropped to fit it.
 
 The PostgreSQL integration harness now includes all new history and usage suites;
-all 28 serialized suites pass.
+all 29 serialized suites pass.
 Usage migrations extend existing cache columns rather than adding duplicates.
 Production builds, all 19 package type checks, mobile TypeScript, lint, and 44
 context/transcript regressions pass. The broad current-base unit run passes 527
@@ -155,8 +155,21 @@ The original cache ordering is restored. An actual Pi provider regression now
 assembles instructions through the executor helper rather than hand-writing the
 expected order: changing group, messaging, memory, and scratchpad context preserves
 the complete stable instruction prefix and tool schemas. All 109 focused checks
-pass. Final qualification and CI remain merge gates. Historical reports and failed
-trials remain unchanged.
+pass. The restored-prefix full run completed all 54 workflows: 53 passed. All twelve
+distant recall trials and all 27 repeated answers passed, but one strict tool loop
+skipped a segment by inventing a cursor rather than copying the returned value.
+The unchanged grader correctly rejected eleven successful reads plus one invalid
+request. Its report, `docs/evals/history-pr-restored-prefix-qualification.json`,
+preserves the failure and reconciles USD 0.093003835 across 248 model calls, with
+zero background/cleanup failures and reservations. The cumulative guard charge
+is USD 1.43272518, leaving USD 3.56727482 under the original USD 5 cap.
+
+A provider-neutral instruction now requires copying opaque pagination cursors
+exactly and rechecking the last successful result after a rejected cursor. This
+stable guidance precedes changing context. Existing actual Pi and twelve-page
+product regressions cover the outgoing instructions and preserved continuation
+values. A full unchanged qualification of this correction and final CI remain
+merge gates. Historical reports and failed trials remain unchanged.
 
 The user has authorized live evaluation within the cumulative USD 5 cap. Before a
 live run, resolve pricing and credentials through the existing generic connection;

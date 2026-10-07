@@ -104,6 +104,9 @@ describe.skipIf(!enabled)("product history diagnostic loop", () => {
             expect(JSON.stringify(request.messages)).toContain(
               "If multiple projects match and none is selected, ask which project before giving candidate facts.",
             );
+            expect(JSON.stringify(request.messages)).toContain(
+              "Treat pagination cursors as opaque: copy the returned continuation value exactly, never calculate or guess it. When the tool reports no next page, stop; if a cursor is rejected, recheck the last successful result before retrying.",
+            );
             expect(
               request.tools?.some((tool) => tool.function.name === "CRM_READ_DIAGNOSTIC"),
             ).toBe(true);
