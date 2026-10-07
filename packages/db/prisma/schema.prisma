@@ -1041,11 +1041,25 @@ model UsageRecord {
   run              Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   provider         String
   model            String
-  inputTokens      Int
-  outputTokens     Int
-  cacheReadTokens  Int      @default(0)
-  cacheWriteTokens Int      @default(0)
-  createdAt        DateTime @default(now())
+  /// Uncached input; cache buckets are additional, reasoning is a subset of output.
+  inputTokens       Int?
+  outputTokens      Int?
+  cacheReadTokens   Int?
+  cacheWriteTokens  Int?
+  cacheWrite1hTokens Int?
+  reasoningTokens   Int?
+  totalTokens       Int?
+  costUsd           Float?
+  costSource        String?
+  pricingVersion    String?
+  usageSource       String?
+  callId            String? @unique
+  operationId       String?
+  operationKind     String  @default("answer")
+  /// Durable attribution, deliberately without lifecycle foreign keys.
+  parentRunId       String?
+  agentId           String?
+  createdAt         DateTime @default(now())
 
   @@index([spaceId, userId, createdAt])
   @@map("usage_records")

@@ -95,6 +95,27 @@ async function beginControlledOAuth(control: ControlledOAuthLogins, actor: TestA
 }
 
 describe("model secrets", () => {
+  it("round-trips generic limits without changing legacy API-key storage or redaction", () => {
+    expect(serializeModelSecret({ kind: "api_key", key: "fake-api-key" })).toBe("fake-api-key");
+    const secret = {
+      kind: "api_key" as const,
+      key: "fake-api-key",
+      contextWindow: 1000000,
+      maxTokens: 4096,
+    };
+    const decoded = parseModelSecret(serializeModelSecret(secret));
+    expect(decoded).toEqual(secret);
+    expect(secretValuesToRedact(decoded)).toEqual(["fake-api-key"]);
+  });
+  it("round-trips compatible model limits", () => {
+    const secret = {
+      kind: "openai_compatible" as const,
+      baseUrl: "http://127.0.0.1:8000/v1",
+      contextWindow: 8192,
+      maxTokens: 1024,
+    };
+    expect(parseModelSecret(serializeModelSecret(secret))).toEqual(secret);
+  });
   it("treats plaintext as an API key", () => {
     expect(parseModelSecret("sk-or-v1-abc")).toEqual({ kind: "api_key", key: "sk-or-v1-abc" });
   });

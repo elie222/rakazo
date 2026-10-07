@@ -62,7 +62,12 @@ export function SettingsOverlay({
 }: {
   email?: string | null;
   name: string;
-  usage?: { runs: number; inputTokens: number; outputTokens: number } | null;
+  usage?: {
+    runs: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens?: number | null;
+  } | null;
   initialSection?: SettingsSection;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;

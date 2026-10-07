@@ -23,6 +23,7 @@ vi.mock("./auto-review.js", async (importOriginal) => ({
 
 type Effect = {
   id: string;
+  spaceId: string;
   runId?: string;
   kind: string;
   idempotencyKey: string;
@@ -69,11 +70,12 @@ function fixture(runId = "run-1") {
       async ({
         where,
       }: {
-        where?: { id?: string; runId?: string; status?: string; kind?: string };
+        where?: { id?: string; spaceId?: string; runId?: string; status?: string; kind?: string };
       } = {}) =>
         effects.filter((effect) => {
           if (where?.status && effect.status !== where.status) return false;
           if (where?.kind && effect.kind !== where.kind) return false;
+          if (where?.spaceId && effect.spaceId !== where.spaceId) return false;
           if (where?.runId && effect.runId && effect.runId !== where.runId) return false;
           if (where?.id && effect.id !== where.id) return false;
           return true;
@@ -398,6 +400,7 @@ describe("mutating tool effect idempotency keys", () => {
     const f = fixture("run-legacy");
     f.effects.push({
       id: "legacy-1",
+      spaceId: "space-1",
       runId: "run-legacy",
       kind: "remember",
       idempotencyKey: "call_0",
@@ -425,6 +428,7 @@ describe("mutating tool effect idempotency keys", () => {
     const f = fixture("run-legacy-scoped");
     f.effects.push({
       id: "legacy-scoped-1",
+      spaceId: "space-1",
       runId: "run-legacy-scoped",
       kind: "remember",
       idempotencyKey: legacyScopedToolEffectIdempotencyKey(
@@ -456,6 +460,7 @@ describe("mutating tool effect idempotency keys", () => {
     const f = fixture("run-legacy-mismatch");
     f.effects.push({
       id: "legacy-open",
+      spaceId: "space-1",
       runId: "run-legacy-mismatch",
       kind: "remember",
       idempotencyKey: "call_0",
@@ -509,6 +514,7 @@ describe("mutating tool effect idempotency keys", () => {
     const f = fixture("run-legacy-new-id");
     f.effects.push({
       id: "legacy-scoped-old-id",
+      spaceId: "space-1",
       runId: "run-legacy-new-id",
       kind: "remember",
       idempotencyKey: legacyScopedToolEffectIdempotencyKey(

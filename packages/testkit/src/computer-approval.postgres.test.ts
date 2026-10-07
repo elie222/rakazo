@@ -129,6 +129,8 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           modelId: model.model.id,
           baseUrl: model.baseUrl,
           apiKey: fixtureKey,
+          contextWindow: 160_000,
+          maxTokens: 4096,
         });
         const bot = await rpc<{ id: string }>(handles.app, cookie, "bots/create", {
           name: "Computer fixture",

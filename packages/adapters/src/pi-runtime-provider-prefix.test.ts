@@ -1,0 +1,99 @@
+import { once } from "node:events";
+import { createServer } from "node:http";
+import type { ConnectorTool } from "@rakazo/adapter-kit";
+import { describe, expect, it } from "vitest";
+import { PiAgentRuntime } from "./pi-runtime.js";
+
+describe("Pi outgoing provider prefixes", () => {
+  it("keeps tool names, nested schemas and stable instructions unchanged across registration order and memory updates", async () => {
+    const requests: Array<{ tools: unknown; messages: Array<{ role: string; content: string }> }> =
+      [];
+    const server = createServer((request, response) => {
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(
+          `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "Done" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+        );
+      })().catch(() => response.destroy());
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
+    const tool = (name: string, reversed: boolean): ConnectorTool => ({
+      name,
+      description: `Fixture ${name}`,
+      inputSchema: {
+        type: "object",
+        properties: reversed
+          ? {
+              z: { type: "string" },
+              a: { type: "object", properties: { y: { type: "number" }, x: { type: "boolean" } } },
+            }
+          : {
+              a: { properties: { x: { type: "boolean" }, y: { type: "number" } }, type: "object" },
+              z: { type: "string" },
+            },
+        required: ["a"],
+      },
+    });
+    const runtime = new PiAgentRuntime();
+    try {
+      for (const index of [0, 1]) {
+        const tools = ["fixture read", "fixture.read", "fixture_read"].map((name) =>
+          tool(name, index === 1),
+        );
+        if (index === 1) tools.reverse();
+        for await (const _event of runtime.run(
+          {
+            botId: "bot-fixture",
+            threadId: "thread-fixture",
+            runId: `run-fixture-${index}`,
+            prompt: "Continue.",
+            instructions: `Stable guidance.\nStable constraints.\n\nMemory: ${index === 0 ? "first" : "second"}`,
+            history: [],
+            tools,
+            model: {
+              provider: "openai-compatible",
+              id: "fixture",
+              baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            },
+          },
+          { signal: AbortSignal.timeout(15000) },
+        )) {
+        }
+      }
+      expect(requests).toHaveLength(2);
+      expect(JSON.stringify(requests[0]!.tools)).toBe(JSON.stringify(requests[1]!.tools));
+      expect(requests[0]!.tools).toEqual([
+        expect.objectContaining({
+          function: expect.objectContaining({
+            name: expect.stringMatching(/^fixture_read_[a-z0-9]+$/),
+          }),
+        }),
+        expect.objectContaining({
+          function: expect.objectContaining({
+            name: expect.stringMatching(/^fixture_read_[a-z0-9]+$/),
+          }),
+        }),
+        expect.objectContaining({
+          function: expect.objectContaining({ name: "fixture_read" }),
+        }),
+      ]);
+      for (const request of requests)
+        expect(request.messages[0]).toMatchObject({
+          role: "system",
+          content: expect.stringMatching(/^Stable guidance\.\nStable constraints\.\n\nMemory:/),
+        });
+      expect(requests[0]!.messages[0]!.content).toContain("Memory: first");
+      expect(requests[1]!.messages[0]!.content).toContain("Memory: second");
+    } finally {
+      server.close();
+      server.closeAllConnections();
+      await once(server, "close");
+    }
+  }, 30000);
+});

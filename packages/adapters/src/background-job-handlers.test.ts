@@ -71,7 +71,9 @@ describe("createBackgroundJobHandlers", () => {
     const memoryProviders = { resolve: vi.fn(async () => null) };
     const resolveModel = vi.fn();
     const handlers = createBackgroundJobHandlers({
-      executor: { resolveModel } as unknown as ReturnType<typeof createRunExecutor>,
+      executor: { resolveModel, contextStrategy: "current" } as unknown as ReturnType<
+        typeof createRunExecutor
+      >,
       prisma,
       sandbox: {} as unknown as SandboxProvider,
       home: {} as unknown as AgentHomeStore,
@@ -98,6 +100,36 @@ describe("createBackgroundJobHandlers", () => {
       "thread-1",
     );
   });
+
+  it.each([undefined, "retrieval", "snapshots", "cache-aware"] as const)(
+    "does not spend on a queued legacy compaction after switching to %s",
+    async (contextStrategy) => {
+      vi.mocked(compactHistory).mockClear();
+      const runtime = { run: vi.fn() } as unknown as AgentRuntime;
+      const handlers = createBackgroundJobHandlers({
+        executor:
+          contextStrategy === undefined
+            ? createRunExecutor({ prisma: {} as PrismaClient } as Parameters<
+                typeof createRunExecutor
+              >[0])
+            : ({ contextStrategy } as ReturnType<typeof createRunExecutor>),
+        prisma: {} as unknown as PrismaClient,
+        sandbox: {} as unknown as SandboxProvider,
+        home: {} as unknown as AgentHomeStore,
+        jobs: {} as unknown as JobPublisher,
+        events: {} as unknown as ThreadEvents,
+        workerId: "worker-fixture",
+        runtime,
+        secretStore: {} as unknown as EncryptedSecretStore,
+        memoryProviders: { resolve: vi.fn(async () => null) },
+      });
+
+      await handlers["history.compact"]({ threadId: "thread-fixture" });
+
+      expect(compactHistory).not.toHaveBeenCalled();
+      expect(runtime.run).not.toHaveBeenCalled();
+    },
+  );
 
   it("resolves the deployment model when no user credential is configured", async () => {
     const prisma = {

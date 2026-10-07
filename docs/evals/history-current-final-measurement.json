@@ -1,0 +1,1538 @@
+{
+  "version": 2,
+  "kind": "real-model-product-eval",
+  "startedAt": "2026-10-07T18:24:25.322Z",
+  "model": "openai/gpt-6-luna",
+  "provider": "openrouter",
+  "modelLimits": {
+    "contextWindow": 1050000,
+    "maxOutputTokens": 4096
+  },
+  "controls": {
+    "trials": 3,
+    "timeoutMs": 180000,
+    "maxToolCalls": 30
+  },
+  "strategy": "current",
+  "strategies": ["current"],
+  "executionOrder": "Rotate strategy order deterministically within each seeded case and trial; provider cache state is not controlled.",
+  "historyPreparation": "Short chats use originals. Larger ordinary cases use a synthetic prepared summary retaining common facts and omitting rare identifiers; backlog, failed-summary and oversized cases retain raw compaction stress.",
+  "fixtureVersion": "history-v1-seed-73",
+  "caseFixtureVersions": {
+    "history-1000-balanced-clarification-v3": "history-balanced-clarification-v3-seed-73",
+    "history-100-repeated-recall-v2": "history-repeated-all-turns-v2-seed-73"
+  },
+  "codeRevision": "84c8689f92f267d5d846d7b193b382631372d315",
+  "workingDiffHash": "5e4b5c5798e967cf1cbf47e2978fd2a9751b0f6b00f4ecd67764cf88f48d45a4",
+  "promptOrder": "stable guidance before changing context",
+  "pricing": {
+    "source": "OpenRouter public model catalog",
+    "version": "2026-10-07",
+    "input": 0.1,
+    "output": 0.5,
+    "cacheRead": 0.01,
+    "cacheWrite": 0.125,
+    "longContext": {
+      "thresholdTokens": 272000,
+      "input": 0.2,
+      "output": 0.75,
+      "cacheRead": 0.02,
+      "cacheWrite": 0.25
+    }
+  },
+  "spendCapUsd": 0.180433005,
+  "workflowTotals": {
+    "modelCalls": 18,
+    "costUsd": 0.005980755
+  },
+  "guardAccounting": {
+    "settledUpperBoundUsd": 0.005980755,
+    "reservedUsd": 0
+  },
+  "costSource": "Per-call provider reported charge when available, otherwise explicit pricing estimate; unavailable remains null",
+  "firstResponseDefinition": "First persisted streamed text event after run creation, or final bot message if no text streamed; excludes activity/tool-only events. Polling does not define the timestamp.",
+  "fixtures": "synthetic services, messaging and fake sandbox",
+  "assistedRetries": false,
+  "limitations": [
+    "Does not evaluate browser perception, native recording perception, or real external services.",
+    "Release routine grades a scheduled new-release read; unchanged-release notification deduplication is not covered.",
+    "Deterministic fact checks are deliberately narrow; they do not grade overall writing quality.",
+    "Cost uses provider-reported charges where available and explicit pricing estimates otherwise. Spend reservations are a guard, not a billing guarantee.",
+    "Tool trace contains names and statuses only; raw requests and responses are omitted."
+  ],
+  "trials": [
+    {
+      "caseId": "history-1000-balanced-clarification-v3",
+      "trial": 1,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "asks-for-disambiguation",
+          "pass": false
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4982,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 104,
+      "costUsd": 0.000696675,
+      "costSources": ["provider-reported"],
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5155,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 63,
+      "totalTokens": 5262,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3947,
+      "operationCosts": {
+        "answer": 0.000696675,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine that from the context provided. It says Aurora and Borealis had different calibration labels, but omits the labels\u2014and neither project was selected for this request.",
+        "memory-snapshot": "# Assistant\n\n"
+      },
+      "historyPreparationState": {
+        "beforeCursor": 949,
+        "afterCursor": 949,
+        "remainingMessages": 52,
+        "summaryPresent": true,
+        "generation": 0
+      },
+      "backgroundFailures": {},
+      "stepAccounting": {
+        "attribution": "final-ledger-run-attribution",
+        "steps": [
+          {
+            "step": 1,
+            "inputTokens": 3,
+            "outputTokens": 104,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 5155,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 63,
+            "totalTokens": 5262,
+            "costUsd": 0.000696675,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0,
+            "operationCosts": {
+              "answer": 0.000696675,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        ],
+        "background": {
+          "compaction": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          "unattributed": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        },
+        "reconciliation": {
+          "modelCalls": 1,
+          "workflowModelCalls": 1,
+          "allCallsAccounted": true,
+          "partitionCostUsd": 0.000696675,
+          "workflowCostUsd": 0.000696675,
+          "tokenMatches": {
+            "inputTokens": true,
+            "outputTokens": true,
+            "cacheReadTokens": true,
+            "cacheWriteTokens": true,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": true,
+            "totalTokens": true
+          },
+          "costMatches": true
+        }
+      },
+      "cacheDecisions": [
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 29775,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000696675,
+          "cacheReadTokens": 0
+        }
+      ],
+      "historyDiagnostics": [],
+      "toolLoopDiagnostics": [],
+      "strategy": "current"
+    },
+    {
+      "caseId": "history-1000-balanced-clarification-v3",
+      "trial": 2,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "asks-for-disambiguation",
+          "pass": false
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4540,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 115,
+      "costUsd": 0.0007023,
+      "costSources": ["provider-reported"],
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5156,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 74,
+      "totalTokens": 5274,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3669,
+      "operationCosts": {
+        "answer": 0.0007023,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine that from the available context. It says Aurora and Borealis had different calibration labels, but the labels are omitted\u2014and neither project was selected for this request.",
+        "memory-snapshot": "# Assistant\n\n"
+      },
+      "historyPreparationState": {
+        "beforeCursor": 949,
+        "afterCursor": 949,
+        "remainingMessages": 52,
+        "summaryPresent": true,
+        "generation": 0
+      },
+      "backgroundFailures": {},
+      "stepAccounting": {
+        "attribution": "final-ledger-run-attribution",
+        "steps": [
+          {
+            "step": 1,
+            "inputTokens": 3,
+            "outputTokens": 115,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 5156,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 74,
+            "totalTokens": 5274,
+            "costUsd": 0.0007023,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0,
+            "operationCosts": {
+              "answer": 0.0007023,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        ],
+        "background": {
+          "compaction": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          "unattributed": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        },
+        "reconciliation": {
+          "modelCalls": 1,
+          "workflowModelCalls": 1,
+          "allCallsAccounted": true,
+          "partitionCostUsd": 0.0007023,
+          "workflowCostUsd": 0.0007023,
+          "tokenMatches": {
+            "inputTokens": true,
+            "outputTokens": true,
+            "cacheReadTokens": true,
+            "cacheWriteTokens": true,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": true,
+            "totalTokens": true
+          },
+          "costMatches": true
+        }
+      },
+      "cacheDecisions": [
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 29775,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.0007023,
+          "cacheReadTokens": 0
+        }
+      ],
+      "historyDiagnostics": [],
+      "toolLoopDiagnostics": [],
+      "strategy": "current"
+    },
+    {
+      "caseId": "history-1000-balanced-clarification-v3",
+      "trial": 3,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "asks-for-disambiguation",
+          "pass": false
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4505,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 214,
+      "costUsd": 0.000751675,
+      "costSources": ["provider-reported"],
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5155,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 164,
+      "totalTokens": 5372,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3397,
+      "operationCosts": {
+        "answer": 0.000751675,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Neither project was selected for this request, and the calibration labels aren\u2019t included in the context I can see. I can\u2019t determine which label you chose\u2014please specify Aurora or Borealis, or share the original note.",
+        "memory-snapshot": "# Assistant\n\n"
+      },
+      "historyPreparationState": {
+        "beforeCursor": 949,
+        "afterCursor": 949,
+        "remainingMessages": 52,
+        "summaryPresent": true,
+        "generation": 0
+      },
+      "backgroundFailures": {},
+      "stepAccounting": {
+        "attribution": "final-ledger-run-attribution",
+        "steps": [
+          {
+            "step": 1,
+            "inputTokens": 3,
+            "outputTokens": 214,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 5155,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 164,
+            "totalTokens": 5372,
+            "costUsd": 0.000751675,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0,
+            "operationCosts": {
+              "answer": 0.000751675,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        ],
+        "background": {
+          "compaction": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          "unattributed": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        },
+        "reconciliation": {
+          "modelCalls": 1,
+          "workflowModelCalls": 1,
+          "allCallsAccounted": true,
+          "partitionCostUsd": 0.000751675,
+          "workflowCostUsd": 0.000751675,
+          "tokenMatches": {
+            "inputTokens": true,
+            "outputTokens": true,
+            "cacheReadTokens": true,
+            "cacheWriteTokens": true,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": true,
+            "totalTokens": true
+          },
+          "costMatches": true
+        }
+      },
+      "cacheDecisions": [
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 29775,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000751675,
+          "cacheReadTokens": 0
+        }
+      ],
+      "historyDiagnostics": [],
+      "toolLoopDiagnostics": [],
+      "strategy": "current"
+    },
+    {
+      "caseId": "history-100-repeated-recall-v2",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "three-replies",
+          "pass": true
+        },
+        {
+          "id": "turn-1-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-1-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-1-no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "turn-2-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-2-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-2-no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "turn-3-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-3-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-3-no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 11896,
+      "toolCalls": 0,
+      "inputTokens": 1739,
+      "outputTokens": 611,
+      "costUsd": 0.0012866050000000001,
+      "costSources": ["provider-reported"],
+      "cacheReadTokens": 11058,
+      "cacheWriteTokens": 5573,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 262,
+      "totalTokens": 18981,
+      "modelCalls": 5,
+      "cacheHitRate": null,
+      "firstResponseMs": 3165,
+      "operationCosts": {
+        "answer": 6.9365e-5,
+        "setup": 0.00078674,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0004305
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        },
+        {
+          "step": 2,
+          "status": "completed",
+          "tools": []
+        },
+        {
+          "step": 3,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "ORBIT-731",
+        "turn-1-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "turn-2-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "turn-3-response": "ORBIT-731",
+        "memory-snapshot": "# Assistant\n\n"
+      },
+      "historyPreparationState": {
+        "beforeCursor": null,
+        "afterCursor": 49,
+        "remainingMessages": 56,
+        "summaryPresent": true,
+        "generation": 0
+      },
+      "backgroundFailures": {},
+      "stepAccounting": {
+        "attribution": "final-ledger-run-attribution",
+        "steps": [
+          {
+            "step": 1,
+            "inputTokens": 3,
+            "outputTokens": 39,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 5514,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 20,
+            "totalTokens": 5556,
+            "costUsd": 0.00070905,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0.00070905,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          {
+            "step": 2,
+            "inputTokens": 3,
+            "outputTokens": 37,
+            "cacheReadTokens": 5514,
+            "cacheWriteTokens": 30,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 18,
+            "totalTokens": 5584,
+            "costUsd": 7.769e-5,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0.9940508382909681,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 7.769e-5,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          {
+            "step": 3,
+            "inputTokens": 3,
+            "outputTokens": 20,
+            "cacheReadTokens": 5544,
+            "cacheWriteTokens": 29,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 10,
+            "totalTokens": 5596,
+            "costUsd": 6.9365e-5,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0.994261119081779,
+            "operationCosts": {
+              "answer": 6.9365e-5,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        ],
+        "background": {
+          "compaction": {
+            "inputTokens": 1730,
+            "outputTokens": 515,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 214,
+            "totalTokens": 2245,
+            "costUsd": 0.0004305,
+            "costSources": ["provider-reported"],
+            "modelCalls": 2,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0.0004305
+            }
+          },
+          "unattributed": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        },
+        "reconciliation": {
+          "modelCalls": 5,
+          "workflowModelCalls": 5,
+          "allCallsAccounted": true,
+          "partitionCostUsd": 0.0012866050000000001,
+          "workflowCostUsd": 0.0012866050000000001,
+          "tokenMatches": {
+            "inputTokens": true,
+            "outputTokens": true,
+            "cacheReadTokens": true,
+            "cacheWriteTokens": true,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": true,
+            "totalTokens": true
+          },
+          "costMatches": true
+        }
+      },
+      "cacheDecisions": [
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 30397,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.00070905,
+          "cacheReadTokens": 0
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": true,
+          "estimatedInputTokens": 30557,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 7.769e-5,
+          "cacheReadTokens": 5514
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 3673,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.0002245,
+          "cacheReadTokens": 0
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": true,
+          "estimatedInputTokens": 30713,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 6.9365e-5,
+          "cacheReadTokens": 5544
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 3673,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000206,
+          "cacheReadTokens": 0
+        }
+      ],
+      "historyDiagnostics": [],
+      "toolLoopDiagnostics": [],
+      "strategy": "current"
+    },
+    {
+      "caseId": "history-100-repeated-recall-v2",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "three-replies",
+          "pass": true
+        },
+        {
+          "id": "turn-1-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-1-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-1-no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "turn-2-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-2-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-2-no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "turn-3-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-3-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-3-no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 9188,
+      "toolCalls": 0,
+      "inputTokens": 1739,
+      "outputTokens": 544,
+      "costUsd": 0.00125354,
+      "costSources": ["provider-reported"],
+      "cacheReadTokens": 11064,
+      "cacheWriteTokens": 5576,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 202,
+      "totalTokens": 18923,
+      "modelCalls": 5,
+      "cacheHitRate": null,
+      "firstResponseMs": 3223,
+      "operationCosts": {
+        "answer": 7.4395e-5,
+        "setup": 0.000791145,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000388
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        },
+        {
+          "step": 2,
+          "status": "completed",
+          "tools": []
+        },
+        {
+          "step": 3,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "ORBIT-731",
+        "turn-1-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "turn-2-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "turn-3-response": "ORBIT-731",
+        "memory-snapshot": "# Assistant\n\n"
+      },
+      "historyPreparationState": {
+        "beforeCursor": null,
+        "afterCursor": 49,
+        "remainingMessages": 56,
+        "summaryPresent": true,
+        "generation": 0
+      },
+      "backgroundFailures": {},
+      "stepAccounting": {
+        "attribution": "final-ledger-run-attribution",
+        "steps": [
+          {
+            "step": 1,
+            "inputTokens": 3,
+            "outputTokens": 45,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 5517,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 26,
+            "totalTokens": 5565,
+            "costUsd": 0.000712425,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0.000712425,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          {
+            "step": 2,
+            "inputTokens": 3,
+            "outputTokens": 39,
+            "cacheReadTokens": 5517,
+            "cacheWriteTokens": 30,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 20,
+            "totalTokens": 5589,
+            "costUsd": 7.872e-5,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0.994054054054054,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 7.872e-5,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          {
+            "step": 3,
+            "inputTokens": 3,
+            "outputTokens": 30,
+            "cacheReadTokens": 5547,
+            "cacheWriteTokens": 29,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 20,
+            "totalTokens": 5609,
+            "costUsd": 7.4395e-5,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0.9942642050546693,
+            "operationCosts": {
+              "answer": 7.4395e-5,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        ],
+        "background": {
+          "compaction": {
+            "inputTokens": 1730,
+            "outputTokens": 430,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 136,
+            "totalTokens": 2160,
+            "costUsd": 0.000388,
+            "costSources": ["provider-reported"],
+            "modelCalls": 2,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0.000388
+            }
+          },
+          "unattributed": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        },
+        "reconciliation": {
+          "modelCalls": 5,
+          "workflowModelCalls": 5,
+          "allCallsAccounted": true,
+          "partitionCostUsd": 0.00125354,
+          "workflowCostUsd": 0.00125354,
+          "tokenMatches": {
+            "inputTokens": true,
+            "outputTokens": true,
+            "cacheReadTokens": true,
+            "cacheWriteTokens": true,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": true,
+            "totalTokens": true
+          },
+          "costMatches": true
+        }
+      },
+      "cacheDecisions": [
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 30397,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000712425,
+          "cacheReadTokens": 0
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": true,
+          "estimatedInputTokens": 30557,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 7.872e-5,
+          "cacheReadTokens": 5517
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 3673,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.0001915,
+          "cacheReadTokens": 0
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": true,
+          "estimatedInputTokens": 30713,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 7.4395e-5,
+          "cacheReadTokens": 5547
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 3673,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.0001965,
+          "cacheReadTokens": 0
+        }
+      ],
+      "historyDiagnostics": [],
+      "toolLoopDiagnostics": [],
+      "strategy": "current"
+    },
+    {
+      "caseId": "history-100-repeated-recall-v2",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "three-replies",
+          "pass": true
+        },
+        {
+          "id": "turn-1-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-1-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-1-no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "turn-2-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-2-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-2-no-external-writes",
+          "pass": true
+        },
+        {
+          "id": "turn-3-fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "turn-3-exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "turn-3-no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 8387,
+      "toolCalls": 0,
+      "inputTokens": 1739,
+      "outputTokens": 618,
+      "costUsd": 0.00128996,
+      "costSources": ["provider-reported"],
+      "cacheReadTokens": 11056,
+      "cacheWriteTokens": 5572,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 240,
+      "totalTokens": 18985,
+      "modelCalls": 5,
+      "cacheHitRate": null,
+      "firstResponseMs": 2642,
+      "operationCosts": {
+        "answer": 7.2855e-5,
+        "setup": 0.000786105,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.00043099999999999996
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        },
+        {
+          "step": 2,
+          "status": "completed",
+          "tools": []
+        },
+        {
+          "step": 3,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "ORBIT-731",
+        "turn-1-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "turn-2-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "turn-3-response": "ORBIT-731",
+        "memory-snapshot": "# Assistant\n\n"
+      },
+      "historyPreparationState": {
+        "beforeCursor": null,
+        "afterCursor": 49,
+        "remainingMessages": 56,
+        "summaryPresent": true,
+        "generation": 0
+      },
+      "backgroundFailures": {},
+      "stepAccounting": {
+        "attribution": "final-ledger-run-attribution",
+        "steps": [
+          {
+            "step": 1,
+            "inputTokens": 3,
+            "outputTokens": 38,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 5513,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 19,
+            "totalTokens": 5554,
+            "costUsd": 0.000708425,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0.000708425,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          {
+            "step": 2,
+            "inputTokens": 3,
+            "outputTokens": 37,
+            "cacheReadTokens": 5513,
+            "cacheWriteTokens": 30,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 18,
+            "totalTokens": 5583,
+            "costUsd": 7.768e-5,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0.9940497655968266,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 7.768e-5,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          },
+          {
+            "step": 3,
+            "inputTokens": 3,
+            "outputTokens": 27,
+            "cacheReadTokens": 5543,
+            "cacheWriteTokens": 29,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 17,
+            "totalTokens": 5602,
+            "costUsd": 7.2855e-5,
+            "costSources": ["provider-reported"],
+            "modelCalls": 1,
+            "cacheHitRate": 0.9942600896860987,
+            "operationCosts": {
+              "answer": 7.2855e-5,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        ],
+        "background": {
+          "compaction": {
+            "inputTokens": 1730,
+            "outputTokens": 516,
+            "cacheReadTokens": 0,
+            "cacheWriteTokens": 0,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": 186,
+            "totalTokens": 2246,
+            "costUsd": 0.00043099999999999996,
+            "costSources": ["provider-reported"],
+            "modelCalls": 2,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0.00043099999999999996
+            }
+          },
+          "unattributed": {
+            "inputTokens": null,
+            "outputTokens": null,
+            "cacheReadTokens": null,
+            "cacheWriteTokens": null,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": null,
+            "totalTokens": null,
+            "costUsd": null,
+            "costSources": [],
+            "modelCalls": 0,
+            "cacheHitRate": null,
+            "operationCosts": {
+              "answer": 0,
+              "setup": 0,
+              "retrieval": 0,
+              "subagent": 0,
+              "compaction": 0
+            }
+          }
+        },
+        "reconciliation": {
+          "modelCalls": 5,
+          "workflowModelCalls": 5,
+          "allCallsAccounted": true,
+          "partitionCostUsd": 0.0012899600000000002,
+          "workflowCostUsd": 0.00128996,
+          "tokenMatches": {
+            "inputTokens": true,
+            "outputTokens": true,
+            "cacheReadTokens": true,
+            "cacheWriteTokens": true,
+            "cacheWrite1hTokens": null,
+            "reasoningTokens": true,
+            "totalTokens": true
+          },
+          "costMatches": true
+        }
+      },
+      "cacheDecisions": [
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 30397,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000708425,
+          "cacheReadTokens": 0
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": true,
+          "estimatedInputTokens": 30557,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 7.768e-5,
+          "cacheReadTokens": 5513
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 3673,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000217,
+          "cacheReadTokens": 0
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": true,
+          "estimatedInputTokens": 30713,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 7.2855e-5,
+          "cacheReadTokens": 5543
+        },
+        {
+          "predictedCache": "unknown",
+          "observedReuse": false,
+          "estimatedInputTokens": 3673,
+          "droppedMessages": 0,
+          "truncatedToolResults": 0,
+          "costUsd": 0.000214,
+          "cacheReadTokens": 0
+        }
+      ],
+      "historyDiagnostics": [],
+      "toolLoopDiagnostics": [],
+      "strategy": "current"
+    }
+  ],
+  "summary": [
+    {
+      "caseId": "history-1000-balanced-clarification-v3",
+      "strategy": "current",
+      "cacheTelemetry": {
+        "measuredCalls": 3,
+        "untrackedModelCalls": 0,
+        "observedHits": 0,
+        "observedMisses": 3,
+        "unavailableObservations": 0,
+        "predictionAccuracy": null,
+        "droppedMessages": 0,
+        "truncatedToolResults": 0,
+        "byPrediction": {
+          "likely-warm": {
+            "calls": 0,
+            "costUsd": null,
+            "cacheReadTokens": null
+          },
+          "likely-cold": {
+            "calls": 0,
+            "costUsd": null,
+            "cacheReadTokens": null
+          },
+          "unknown": {
+            "calls": 3,
+            "costUsd": 0.00215065,
+            "cacheReadTokens": 0
+          }
+        }
+      },
+      "modelCalls": 3,
+      "costSources": ["provider-reported"],
+      "costUsd": 0.00215065,
+      "inputTokens": 9,
+      "outputTokens": 433,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 15466,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 301,
+      "totalTokens": 15908,
+      "meanFirstResponseMs": 3671,
+      "latencyP50Ms": 4540,
+      "latencyP95Ms": 4982,
+      "operationCosts": {
+        "answer": 0.00215065,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 0,
+      "failed": 3,
+      "notRun": 0,
+      "firstAttemptPassed": false,
+      "autonomousSuccessRate": 0,
+      "meanLatencyMs": 4676
+    },
+    {
+      "caseId": "history-100-repeated-recall-v2",
+      "strategy": "current",
+      "cacheTelemetry": {
+        "measuredCalls": 15,
+        "untrackedModelCalls": 0,
+        "observedHits": 6,
+        "observedMisses": 9,
+        "unavailableObservations": 0,
+        "predictionAccuracy": null,
+        "droppedMessages": 0,
+        "truncatedToolResults": 0,
+        "byPrediction": {
+          "likely-warm": {
+            "calls": 0,
+            "costUsd": null,
+            "cacheReadTokens": null
+          },
+          "likely-cold": {
+            "calls": 0,
+            "costUsd": null,
+            "cacheReadTokens": null
+          },
+          "unknown": {
+            "calls": 15,
+            "costUsd": 0.0038301050000000003,
+            "cacheReadTokens": 33178
+          }
+        }
+      },
+      "modelCalls": 15,
+      "costSources": ["provider-reported"],
+      "costUsd": 0.0038301050000000003,
+      "inputTokens": 5217,
+      "outputTokens": 1773,
+      "cacheReadTokens": 33178,
+      "cacheWriteTokens": 16721,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": 704,
+      "totalTokens": 56889,
+      "meanFirstResponseMs": 3010,
+      "latencyP50Ms": 9188,
+      "latencyP95Ms": 11896,
+      "operationCosts": {
+        "answer": 0.000216615,
+        "setup": 0.00236399,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0012495
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 9824
+    }
+  ],
+  "cacheCapabilities": null,
+  "continuationBudget": {
+    "originalCapUsd": 1,
+    "accountedBeforeUsd": 0.819566995,
+    "accountedAfterUsd": 0.82554775,
+    "remainingUsd": 0.17445225
+  },
+  "measurementInterpretation": {
+    "stepAttribution": "Final durable usage associates calls with numbered foreground steps; background compaction is charged separately at workflow level. No waits added between questions.",
+    "preparation": "Each measured 100-message workflow incurred two compaction calls; total preparation charges shown in background.compaction include both, never described as one call.",
+    "unknownBuckets": "Unavailable one-hour cache-write counts remain null. Empty background buckets have zero model calls and null cost; no unmeasured incurred call is treated as free."
+  }
+}

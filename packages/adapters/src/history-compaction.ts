@@ -3,6 +3,7 @@ import { historyCompactJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { blocksToAgentHistoryText } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
+import { recordUsage } from "@rakazo/db";
 import { getLogger, unwrapJobPayload } from "@rakazo/logging";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -45,6 +46,7 @@ export const MAX_RECALLED_MEMORIES = 5;
 
 export type CompactedHistoryMessage = {
   id?: string;
+  createdAt?: string;
   seq: number;
   role: "user" | "assistant" | "system";
   content: string;
@@ -362,6 +364,16 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       botId: thread.botId,
       threadId,
       runId: `compact:${threadId}:${fromSeqExclusive}`,
+      usageOperationKind: "compaction",
+      onUsage: async (event) => {
+        await recordUsage(deps.prisma, event, {
+          spaceId: thread.spaceId,
+          userId: thread.userId,
+          botId: thread.botId!,
+          operationId: `compact:${threadId}:${fromSeqExclusive}`,
+          operationKind: "compaction",
+        });
+      },
       prompt,
       instructions: [
         formatCurrentTimeInstruction(),
@@ -382,6 +394,15 @@ export async function compactHistory(deps: CompactHistoryDeps, threadId: string)
       signal: AbortSignal.timeout(summarizeTimeoutMs(prompt.length)),
     },
   )) {
+    if (event.type === "usage" && !event.accounted) {
+      await recordUsage(deps.prisma, event, {
+        spaceId: thread.spaceId,
+        userId: thread.userId,
+        botId: thread.botId,
+        operationId: `compact:${threadId}:${fromSeqExclusive}`,
+        operationKind: "compaction",
+      });
+    }
     if (event.type === "text" && /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())) {
       runtimeReportedFailure = true;
     }

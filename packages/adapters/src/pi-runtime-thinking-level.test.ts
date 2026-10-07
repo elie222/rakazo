@@ -1,5 +1,6 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 
 const fakeAgentState = vi.hoisted(() => ({
   thinkingLevels: [] as string[],
@@ -122,6 +123,7 @@ async function runWithModel(
     thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
   }>,
   maxImagesPerPrompt?: number,
+  limits?: { contextWindow?: number; maxTokens?: number },
 ) {
   const runtime = new PiAgentRuntime();
   for await (const _event of runtime.run(
@@ -132,8 +134,14 @@ async function runWithModel(
       prompt: "hello",
       instructions: "",
       history: [],
-      tools: [],
-      model: { provider, id: modelId, thinkingLevel, maxImagesPerPrompt },
+      tools: builtinAgentTools,
+      model: {
+        provider,
+        id: modelId,
+        thinkingLevel,
+        maxImagesPerPrompt,
+        ...limits,
+      },
       executeTool: vi.fn(async () => ({ ok: true })),
       resolveModel,
     },
@@ -151,6 +159,22 @@ async function runWithModel(
 }
 
 describe("Pi agent thinking level", () => {
+  it("uses saved generic limits for a configured newer model without environment selection", async () => {
+    await runWithModel(
+      "fixture/newer-model",
+      "openrouter",
+      new AbortController().signal,
+      undefined,
+      undefined,
+      undefined,
+      { contextWindow: 1000000, maxTokens: 8192 },
+    );
+    expect(fakeAgentState.models[0]).toMatchObject({
+      id: "fixture/newer-model",
+      contextWindow: 1000000,
+      maxTokens: 8192,
+    });
+  });
   beforeEach(() => {
     fakeAgentState.thinkingLevels = [];
     fakeAgentState.transforms = [];
@@ -230,7 +254,11 @@ describe("Pi agent thinking level", () => {
         "test",
         new AbortController().signal,
         null,
-        async () => ({ provider: "test", id: "plain-model", maxImagesPerPrompt: childLimit }),
+        async () => ({
+          provider: "test",
+          id: "plain-model",
+          maxImagesPerPrompt: childLimit,
+        }),
         parentLimit,
       );
       const screenshots: AgentMessage[] = [0, 1].map((index) => ({
@@ -270,7 +298,9 @@ describe("Pi agent thinking level", () => {
 
     expect(resolveModel).not.toHaveBeenCalled();
     expect(fakeAgentState.lastSubagentResult).toMatchObject({
-      details: { result: "Subagent failed: model_provider and model_id must both be set" },
+      details: {
+        result: "Subagent failed: model_provider and model_id must both be set",
+      },
     });
   });
 

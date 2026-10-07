@@ -29,11 +29,19 @@ export function buildModelConnectPlaintext(
   previousPlaintext?: string,
   options?: BuildModelConnectOptions,
 ): string {
+  const previous = tryParseModelSecret(previousPlaintext);
+  const inherited = previous?.kind === "api_key" ? previous : undefined;
+  const cacheCapabilities = input.cacheCapabilities ?? inherited?.cacheCapabilities;
+  const contextWindow = input.contextWindow ?? inherited?.contextWindow;
+  const limits = {
+    ...(cacheCapabilities !== undefined ? { cacheCapabilities } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+  };
   if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
     const prepared = prepareOpenAiCompatibleConnect(input);
-    const previous = tryParseModelSecret(previousPlaintext);
     const sameEndpoint =
       previous?.kind === "openai_compatible" && previous.baseUrl === prepared.baseUrl;
+    const compatiblePrevious = sameEndpoint ? previous : undefined;
     if (input.apiKey === undefined && sameEndpoint) {
       // Revalidate the inherited key too: public endpoints must still use HTTPS.
       prepared.apiKey = prepareOpenAiCompatibleConnect({
@@ -70,9 +78,14 @@ export function buildModelConnectPlaintext(
     const includeVisionModelIds =
       !options?.omitVisionModelIds &&
       (input.supportsImages !== undefined || previousVisionModelIds !== undefined);
+    const compatibleCacheCapabilities =
+      input.cacheCapabilities ?? compatiblePrevious?.cacheCapabilities;
     const secret: StoredModelSecret = {
       kind: "openai_compatible",
       baseUrl: prepared.baseUrl,
+      ...(compatibleCacheCapabilities !== undefined
+        ? { cacheCapabilities: compatibleCacheCapabilities }
+        : {}),
       ...(input.reasoning !== undefined ? { reasoning: input.reasoning } : {}),
       ...(thinkingLevel !== undefined ? { thinkingLevel } : {}),
       ...(maxTokens !== undefined ? { maxTokens } : {}),
@@ -91,7 +104,6 @@ export function buildModelConnectPlaintext(
   if (input.provider === CHATGPT_OAUTH_PROVIDER && apiKey) {
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
-  const previous = tryParseModelSecret(previousPlaintext);
   const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
   const routing = cloudflareRoutingForConnect(input, previous);
   if (apiKey) {
@@ -100,6 +112,7 @@ export function buildModelConnectPlaintext(
       kind: "api_key",
       key: apiKey,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...limits,
       ...routing,
     });
   }
@@ -111,6 +124,7 @@ export function buildModelConnectPlaintext(
       kind: "api_key",
       key: previous.key,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...limits,
       ...routing,
     });
   }
@@ -218,6 +232,12 @@ export function modelCredentialDto(
     return {
       ...credential,
       ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
+      ...(parsed.kind !== "oauth"
+        ? {
+            cacheCapabilities: parsed.cacheCapabilities,
+            contextWindow: parsed.contextWindow,
+          }
+        : {}),
       ...(parsed.kind === "api_key" && parsed.accountId ? { accountId: parsed.accountId } : {}),
       ...(parsed.kind === "api_key" && parsed.gatewayId ? { gatewayId: parsed.gatewayId } : {}),
     };
@@ -242,6 +262,7 @@ export function modelCredentialDto(
       : {}),
     ...(parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {}),
     ...(parsed.contextWindow !== undefined ? { contextWindow: parsed.contextWindow } : {}),
+    cacheCapabilities: parsed.cacheCapabilities,
     ...(parsed.maxImagesPerPrompt !== undefined
       ? { maxImagesPerPrompt: parsed.maxImagesPerPrompt }
       : {}),

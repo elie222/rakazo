@@ -1,6 +1,6 @@
 import type { AdapterContext, ConnectorCall } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { EVAL_CASES, type Evidence } from "./cases.js";
+import { EVAL_CASES, type Evidence, HISTORY_EVAL_CASES } from "./cases.js";
 import { emptyTrial, redact, summarize, validateControls } from "./report.js";
 import { runTrial } from "./runner.js";
 import { EvalServices } from "./services.js";
@@ -349,9 +349,22 @@ describe("eval run controls and reporting", () => {
   it("keeps not-run trials separate from failures and first attempt from later success", () => {
     const a = { ...emptyTrial("one", 1), status: "failed" as const, latencyMs: 100 };
     const b = { ...emptyTrial("one", 2), status: "passed" as const, latencyMs: 300 };
-    expect(summarize([a, b, emptyTrial("one", 3), emptyTrial("two", 1)])).toEqual([
+    expect(summarize([a, b, emptyTrial("one", 3), emptyTrial("two", 1)])).toMatchObject([
       {
         caseId: "one",
+        latencyP50Ms: 100,
+        latencyP95Ms: 300,
+        operationCosts: {
+          answer: null,
+          setup: null,
+          retrieval: null,
+          subagent: null,
+          compaction: null,
+        },
+        modelCalls: 0,
+        costUsd: null,
+        inputTokens: null,
+        outputTokens: null,
         planned: 3,
         attempted: 2,
         passed: 1,
@@ -360,9 +373,27 @@ describe("eval run controls and reporting", () => {
         firstAttemptPassed: false,
         autonomousSuccessRate: 0.5,
         meanLatencyMs: 200,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        meanFirstResponseMs: null,
       },
       {
         caseId: "two",
+        latencyP50Ms: null,
+        latencyP95Ms: null,
+        operationCosts: {
+          answer: null,
+          setup: null,
+          retrieval: null,
+          subagent: null,
+          compaction: null,
+        },
+        modelCalls: 0,
+        costUsd: null,
+        inputTokens: null,
+        outputTokens: null,
         planned: 1,
         attempted: 0,
         passed: 0,
@@ -371,6 +402,11 @@ describe("eval run controls and reporting", () => {
         firstAttemptPassed: false,
         autonomousSuccessRate: null,
         meanLatencyMs: null,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        meanFirstResponseMs: null,
       },
     ]);
   });
@@ -422,4 +458,86 @@ describe("eval run controls and reporting", () => {
       ),
     ).toBe("[redacted] [url] [email] [local-path] [redacted] token=x");
   });
+});
+
+it("requires following rich diagnostic result cursors before the verified result", async () => {
+  const services = new EvalServices();
+  services.enableDiagnosticChain();
+  let cursor: string | null = "start";
+  let count = 0;
+  while (cursor) {
+    const events = await execute(services, "CRM_READ_DIAGNOSTIC", { cursor });
+    const result = events.find((e) => e.type === "result")!;
+    expect(result.type).toBe("result");
+    if (result.type !== "result") throw new Error("Missing fixture result");
+    const body = result.data as { nextCursor: string | null; diagnostic: string };
+    count++;
+    if (body.nextCursor) expect(body.diagnostic).not.toContain("ledger-indexer");
+    else expect(body.diagnostic).toContain("ledger-indexer");
+    cursor = body.nextCursor;
+  }
+  expect(count).toBe(12);
+  expect(services.calls.every((c) => c.outcome === "read")).toBe(true);
+});
+
+it("history isolation fixtures perform actual clear and workspace transitions", () => {
+  for (const size of [100, 1000, 10000]) {
+    expect(HISTORY_EVAL_CASES.find((c) => c.id === `history-${size}-cleared`)!.steps[0]).toEqual({
+      clear: true,
+    });
+    expect(HISTORY_EVAL_CASES.find((c) => c.id === `history-${size}-isolation`)!.steps[0]).toEqual({
+      newWorkspace: true,
+    });
+    expect(
+      HISTORY_EVAL_CASES.find((c) => c.id === `history-${size}-injection`)!.connections,
+    ).toEqual(["CRM"]);
+  }
+});
+
+it("balanced ambiguity qualification requires clarification without choosing either original label", () => {
+  const scenario = HISTORY_EVAL_CASES.find((c) => c.id === "history-1000-balanced-ambiguity-v2")!;
+  expect(scenario.history!.version).toBe("history-balanced-ambiguity-v2-seed-73");
+  expect(scenario.history!.summary!.text).not.toMatch(/ORBIT-731|COMET-219/);
+  const e = evidence();
+  e.text = "Which project do you mean, Aurora or Borealis?";
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(true);
+  e.text = "ORBIT-731";
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(false);
+  e.text = "I cannot answer.";
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(false);
+});
+
+it("repeated recall qualification checks each turn rather than only the final reply", () => {
+  expect(
+    HISTORY_EVAL_CASES.find((c) => c.id === "history-100-repeated-recall-v2")!.history!.summary,
+  ).toBeUndefined();
+  const scenario = HISTORY_EVAL_CASES.find((c) => c.id === "history-1000-repeated-recall-v2")!;
+  const e = evidence();
+  e.text = "ORBIT-731";
+  e.replies = ["I don't remember", "ORBIT-731", "ORBIT-731"];
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(false);
+  e.replies = ["ORBIT-731", "ORBIT-731", "ORBIT-731"];
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(true);
+});
+
+it("clarification v3 requires an actual question or pending choice without changing v2", () => {
+  const scenario = HISTORY_EVAL_CASES.find(
+    (c) => c.id === "history-1000-balanced-clarification-v3",
+  )!;
+  const e = evidence();
+  e.text = "The Aurora and Borealis projects have different labels.";
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(false);
+  e.text = "Which project do you mean?";
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(true);
+  e.text = "Choose a project\nAurora\nBorealis";
+  e.clarificationPending = true;
+  expect(scenario.grade(e).every((criterion) => criterion.pass)).toBe(true);
+  e.text += "\nORBIT-731";
+  expect(scenario.grade(e).find((criterion) => criterion.id === "exclude-ORBIT-731")!.pass).toBe(
+    false,
+  );
+  expect(
+    HISTORY_EVAL_CASES.find((c) => c.id === "history-1000-balanced-ambiguity-v2")!
+      .expectedClarification,
+  ).toBeUndefined();
 });

@@ -755,8 +755,22 @@ export const UsageRecordSchema = z.object({
   runId: Id.nullable(),
   provider: z.string(),
   model: z.string(),
-  inputTokens: z.number().int(),
-  outputTokens: z.number().int(),
+  inputTokens: z.number().int().nullable(),
+  outputTokens: z.number().int().nullable(),
+  cacheReadTokens: z.number().int().nullable().optional(),
+  cacheWriteTokens: z.number().int().nullable().optional(),
+  cacheWrite1hTokens: z.number().int().nullable().optional(),
+  reasoningTokens: z.number().int().nullable().optional(),
+  totalTokens: z.number().int().nullable().optional(),
+  costUsd: z.number().nonnegative().nullable().optional(),
+  costSource: z.string().nullable().optional(),
+  pricingVersion: z.string().nullable().optional(),
+  usageSource: z.string().nullable().optional(),
+  callId: z.string().nullable().optional(),
+  operationId: z.string().nullable().optional(),
+  operationKind: z.enum(["answer", "setup", "retrieval", "subagent", "compaction"]).optional(),
+  parentRunId: z.string().nullable().optional(),
+  agentId: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 
@@ -907,7 +921,7 @@ export const MAX_MODEL_MAX_TOKENS = 131_072;
 export const DEFAULT_MODEL_CONTEXT_WINDOW = 32_768;
 
 /** Largest context window exposed by model settings. */
-export const MAX_MODEL_CONTEXT_WINDOW = 1_048_576;
+export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
 /** Parse the optional per-connection image limit entered in model settings. */
 export function parseModelMaxImagesPerPrompt(
   value: string,
@@ -945,7 +959,26 @@ export function usableModelId(value: string | null | undefined): string | null {
   return trimmed;
 }
 
+/** Connection-declared capabilities; omission means unknown, not a provider default. */
+export const CacheCapabilitiesSchema = z.object({
+  retentionMs: z.number().int().positive().max(2147483647).optional(),
+  minimumTokens: z.number().int().nonnegative().max(2147483647).optional(),
+  scope: z.enum(["account", "connection"]),
+  retentionMode: z.enum(["none", "short", "long"]).optional(),
+  inputCostPerMillion: z.number().nonnegative().optional(),
+  readCostPerMillion: z.number().nonnegative().optional(),
+  writeCostPerMillion: z.number().nonnegative().optional(),
+});
+export type CacheCapabilities = z.infer<typeof CacheCapabilitiesSchema>;
+
+export const ModelContextLimitsSchema = z.object({
+  cacheCapabilities: CacheCapabilitiesSchema.optional(),
+  contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
+});
+export type ModelContextLimits = z.infer<typeof ModelContextLimitsSchema>;
+
 export const ModelCredentialSchema = z.object({
+  ...ModelContextLimitsSchema.shape,
   id: Id,
   provider: z.string(),
   label: z.string(),
@@ -958,7 +991,6 @@ export const ModelCredentialSchema = z.object({
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
   maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).optional(),
-  contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
   supportsImages: z.boolean().optional(),
   maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
@@ -969,6 +1001,7 @@ export const OPENAI_COMPATIBLE_PROVIDER_ID = "openai-compatible";
 
 export const ModelConnectInputSchema = z
   .object({
+    ...ModelContextLimitsSchema.shape,
     provider: z.string(),
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
@@ -979,7 +1012,6 @@ export const ModelConnectInputSchema = z
     reasoning: z.boolean().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
-    contextWindow: z.number().int().min(1).max(MAX_MODEL_CONTEXT_WINDOW).optional(),
     supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
   })
@@ -987,11 +1019,11 @@ export const ModelConnectInputSchema = z
     if (
       typeof value.maxTokens === "number" &&
       value.contextWindow !== undefined &&
-      value.maxTokens > value.contextWindow
+      value.maxTokens >= value.contextWindow
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Maximum output tokens cannot exceed the context limit",
+        message: "Maximum output tokens must leave room for input",
         path: ["maxTokens"],
       });
     }

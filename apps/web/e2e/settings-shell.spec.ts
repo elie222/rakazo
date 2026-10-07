@@ -1,6 +1,30 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openUserSettings, signup } from "./helpers";
 
+for (const totalTokens of [201, null]) {
+  test(`usage shows ${totalTokens === null ? "unknown" : "complete"} token totals`, async ({
+    page,
+  }, testInfo) => {
+    await page.route("**/rpc/usage/summary", (route) =>
+      route.fulfill({
+        json: { json: { runs: 2, inputTokens: 10, outputTokens: 1, totalTokens } },
+      }),
+    );
+    const stamp = Date.now();
+    await signup(page, `usage-total-${stamp}@rakazo.test`, "password12", "Usage totals");
+    await completeOnboarding(page);
+    await openUserSettings(page, "usage");
+    await expect(page.getByTestId("usage-settings")).toContainText(
+      `2 runs · ${totalTokens ?? "—"} tokens`,
+    );
+    await captureScreenshot(
+      page,
+      testInfo,
+      totalTokens === null ? "usage-unknown-total" : "usage-complete-total",
+    );
+  });
+}
+
 test("settings shell is two-pane and deep-links Models Memory Voice Usage", async ({
   page,
 }, testInfo) => {

@@ -202,6 +202,7 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
   private readonly scheduled = new Map<ReturnType<typeof setTimeout>, QueuedJob>();
   private readonly keyed = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly active = new Set<Promise<void>>();
+  private readonly failures = new Map<BackgroundJob["name"], number>();
   private readonly closingJobs: QueuedJob[] = [];
   private draining: Promise<void> | undefined;
   private closed = false;
@@ -263,6 +264,31 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     await this.drain();
   }
 
+  /** Wait for due work and its immediate descendants without closing the queue. */
+  async awaitIdle(): Promise<void> {
+    for (;;) {
+      const handlers = this.handlers;
+      if (!handlers) return;
+      for (const [timer, job] of this.scheduled) {
+        if (job.availableAt && job.availableAt.getTime() > Date.now()) continue;
+        clearTimeout(timer);
+        this.timers.delete(timer);
+        this.scheduled.delete(timer);
+        if (job.replaceKey && this.keyed.get(job.replaceKey) === timer) {
+          this.keyed.delete(job.replaceKey);
+        }
+        void this.dispatch(handlers, job);
+      }
+      if (this.active.size === 0) return;
+      await Promise.all([...this.active]);
+    }
+  }
+
+  /** Payloads and error text remain private; verification can inspect failed job kinds. */
+  failureCounts(): Array<{ name: BackgroundJob["name"]; count: number }> {
+    return [...this.failures].map(([name, count]) => ({ name, count }));
+  }
+
   private dispatch(handlers: BackgroundJobHandlers, job: QueuedJob): Promise<void> {
     const unpacked = unwrapJobPayload(job.payload);
     const active = runCorrelatedJob({
@@ -270,7 +296,9 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
       payload: unpacked.payload,
       correlation: unpacked.correlation,
       run: () => dispatchBackgroundJob(handlers, job.name, unpacked.payload),
-    }).catch(() => undefined);
+    }).catch(() => {
+      this.failures.set(job.name, (this.failures.get(job.name) ?? 0) + 1);
+    });
     this.active.add(active);
     void active.finally(() => this.active.delete(active));
     return active;

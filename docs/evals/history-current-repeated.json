@@ -1,0 +1,1851 @@
+{
+  "version": 2,
+  "kind": "real-model-product-eval",
+  "startedAt": "2026-10-07T15:32:21.305Z",
+  "model": "openai/gpt-6-luna",
+  "provider": "openrouter",
+  "controls": {
+    "trials": 3,
+    "timeoutMs": 180000,
+    "maxToolCalls": 30
+  },
+  "strategy": "current",
+  "historyPreparation": "Short chats use originals. Larger ordinary cases use a synthetic prepared summary retaining common facts and omitting rare identifiers; backlog, failed-summary and oversized cases retain raw compaction stress.",
+  "fixtureVersion": "history-v1-seed-73",
+  "codeRevision": "84c8689f92f267d5d846d7b193b382631372d315",
+  "workingDiffHash": "2e93b6aa4cf4eb69bd9006ad89f2b77927bfc5c4ff17af90ee6096f6904dae32",
+  "promptOrder": "stable guidance before changing context",
+  "pricing": {
+    "source": "OpenRouter public model catalog",
+    "version": "2026-10-07",
+    "input": 0.1,
+    "output": 0.5,
+    "cacheRead": 0.01,
+    "cacheWrite": 0.125,
+    "longContext": {
+      "thresholdTokens": 272000,
+      "input": 0.2,
+      "output": 0.75,
+      "cacheRead": 0.02,
+      "cacheWrite": 0.25
+    }
+  },
+  "spendCapUsd": 5,
+  "costSource": "Per-call provider reported charge when available, otherwise explicit pricing estimate; unavailable remains null",
+  "firstResponseDefinition": "First persisted streamed text event after run creation, or final bot message if no text streamed; excludes activity/tool-only events. Polling does not define the timestamp.",
+  "fixtures": "synthetic services, messaging and fake sandbox",
+  "assistedRetries": false,
+  "limitations": [
+    "Does not evaluate browser perception, native recording perception, or real external services.",
+    "Release routine grades a scheduled new-release read; unchanged-release notification deduplication is not covered.",
+    "Deterministic fact checks are deliberately narrow; they do not grade overall writing quality.",
+    "Cost uses explicit per-token pricing estimates, not provider billing. Spend reservations are a guard, not a billing guarantee.",
+    "Tool trace contains names and statuses only; raw requests and responses are omitted.",
+    "These earlier runs precede runtime context telemetry; unavailable selection and cache predictions are not reconstructed."
+  ],
+  "trials": [
+    {
+      "caseId": "history-100-exact",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 6957,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 240,
+      "costUsd": 0.000896425,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5517,
+      "reasoningTokens": 72,
+      "totalTokens": 6625,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3194,
+      "operationCosts": {
+        "answer": 0.000710925,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0001855
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-exact",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 6838,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 324,
+      "costUsd": 0.0009383,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5516,
+      "reasoningTokens": 161,
+      "totalTokens": 6708,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3468,
+      "operationCosts": {
+        "answer": 0.0007088,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0002295
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-exact",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 7412,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 337,
+      "costUsd": 0.0009448,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5516,
+      "reasoningTokens": 168,
+      "totalTokens": 6721,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3802,
+      "operationCosts": {
+        "answer": 0.0007128,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000232
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Aurora\u2019s calibration label is **ORBIT-731**.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-changed",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 6276,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 356,
+      "costUsd": 0.0009553000000000001,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5524,
+      "reasoningTokens": 170,
+      "totalTokens": 6748,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 1784,
+      "operationCosts": {
+        "answer": 0.0007043,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000251
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday, using the graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-changed",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 7411,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 362,
+      "costUsd": 0.000958175,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5523,
+      "reasoningTokens": 198,
+      "totalTokens": 6753,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3362,
+      "operationCosts": {
+        "answer": 0.000705675,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0002525
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday, graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-changed",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 5157,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 265,
+      "costUsd": 0.0009095500000000001,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5522,
+      "reasoningTokens": 108,
+      "totalTokens": 6655,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 1846,
+      "operationCosts": {
+        "answer": 0.00070255,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000207
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday, graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-absent",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 6095,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 264,
+      "costUsd": 0.000909425,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5525,
+      "reasoningTokens": 112,
+      "totalTokens": 6657,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2486,
+      "operationCosts": {
+        "answer": 0.000711925,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0001975
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed an Aurora password.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-absent",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 7534,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 266,
+      "costUsd": 0.0009103000000000001,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5524,
+      "reasoningTokens": 105,
+      "totalTokens": 6658,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3176,
+      "operationCosts": {
+        "answer": 0.0007133,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000197
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed Aurora\u2019s password.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-100-absent",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 6470,
+      "toolCalls": 0,
+      "inputTokens": 868,
+      "outputTokens": 274,
+      "costUsd": 0.0009148,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 5528,
+      "reasoningTokens": 120,
+      "totalTokens": 6670,
+      "modelCalls": 2,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2783,
+      "operationCosts": {
+        "answer": 0.0007103,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0002045
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed an Aurora password.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-exact",
+      "trial": 1,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": false
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3817,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 79,
+      "costUsd": 0.000628425,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4709,
+      "reasoningTokens": 53,
+      "totalTokens": 4791,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2849,
+      "operationCosts": {
+        "answer": 0.000628425,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine it from the context I have\u2014the calibration label values were omitted from the summary.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-exact",
+      "trial": 2,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": false
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3526,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 101,
+      "costUsd": 0.00064005,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4714,
+      "reasoningTokens": 71,
+      "totalTokens": 4818,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2985,
+      "operationCosts": {
+        "answer": 0.00064005,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine it from the available context\u2014the summary says calibration labels were discussed, but omits the exact label.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-exact",
+      "trial": 3,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": false
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 2663,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 69,
+      "costUsd": 0.00062405,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4714,
+      "reasoningTokens": 34,
+      "totalTokens": 4786,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 1881,
+      "operationCosts": {
+        "answer": 0.00062405,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine that from the context I have\u2014the calibration label values weren\u2019t retained in the summary. The archive notes don\u2019t include it.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-changed",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3059,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 35,
+      "costUsd": 0.0006073,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4716,
+      "reasoningTokens": 23,
+      "totalTokens": 4754,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2590,
+      "operationCosts": {
+        "answer": 0.0006073,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday with the graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-changed",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3898,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 59,
+      "costUsd": 0.00061955,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4718,
+      "reasoningTokens": 48,
+      "totalTokens": 4780,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3250,
+      "operationCosts": {
+        "answer": 0.00061955,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday, graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-changed",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3518,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 38,
+      "costUsd": 0.000609175,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4719,
+      "reasoningTokens": 27,
+      "totalTokens": 4760,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2836,
+      "operationCosts": {
+        "answer": 0.000609175,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday, graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-absent",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 2481,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 50,
+      "costUsd": 0.000615425,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4721,
+      "reasoningTokens": 36,
+      "totalTokens": 4774,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 1972,
+      "operationCosts": {
+        "answer": 0.000615425,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed a password for Aurora.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-absent",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3115,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 107,
+      "costUsd": 0.00064405,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4722,
+      "reasoningTokens": 91,
+      "totalTokens": 4832,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2549,
+      "operationCosts": {
+        "answer": 0.00064405,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed it in the available conversation context.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-1000-absent",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 2891,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 53,
+      "costUsd": 0.0006168,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4720,
+      "reasoningTokens": 40,
+      "totalTokens": 4776,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2271,
+      "operationCosts": {
+        "answer": 0.0006168,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed Aurora\u2019s password.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-exact",
+      "trial": 1,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": false
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4212,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 78,
+      "costUsd": 0.0006348,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4764,
+      "reasoningTokens": 47,
+      "totalTokens": 4845,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2806,
+      "operationCosts": {
+        "answer": 0.0006348,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "The compacted context doesn\u2019t include the calibration label\u2019s value, so I can\u2019t determine which one was chosen for Aurora.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-exact",
+      "trial": 2,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": false
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4354,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 64,
+      "costUsd": 0.000627675,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4763,
+      "reasoningTokens": 37,
+      "totalTokens": 4830,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2608,
+      "operationCosts": {
+        "answer": 0.000627675,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine the chosen calibration label from the available context; it says the exact values were omitted.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-exact",
+      "trial": 3,
+      "status": "failed",
+      "category": "agent",
+      "reason": "Outcome criteria failed",
+      "criteria": [
+        {
+          "id": "fact-ORBIT-731",
+          "pass": false
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3277,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 63,
+      "costUsd": 0.000626925,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4761,
+      "reasoningTokens": 31,
+      "totalTokens": 4827,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 1628,
+      "operationCosts": {
+        "answer": 0.000626925,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "I can\u2019t determine the chosen calibration label from the available context\u2014the summary says the labels were discussed, but omits their values.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-changed",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4187,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 34,
+      "costUsd": 0.000613675,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4771,
+      "reasoningTokens": 22,
+      "totalTokens": 4808,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3049,
+      "operationCosts": {
+        "answer": 0.000613675,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday launch; graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-changed",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4554,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 39,
+      "costUsd": 0.00061605,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4770,
+      "reasoningTokens": 28,
+      "totalTokens": 4812,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3083,
+      "operationCosts": {
+        "answer": 0.00061605,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday, graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-changed",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-Tuesday",
+          "pass": true
+        },
+        {
+          "id": "fact-graphite",
+          "pass": true
+        },
+        {
+          "id": "exclude-Friday",
+          "pass": true
+        },
+        {
+          "id": "exclude-cobalt",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3906,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 58,
+      "costUsd": 0.0006258,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4772,
+      "reasoningTokens": 46,
+      "totalTokens": 4833,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2550,
+      "operationCosts": {
+        "answer": 0.0006258,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "Tuesday with the graphite theme.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-absent",
+      "trial": 1,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3198,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 39,
+      "costUsd": 0.00061655,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4774,
+      "reasoningTokens": 25,
+      "totalTokens": 4816,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 1948,
+      "operationCosts": {
+        "answer": 0.00061655,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed the password for Aurora.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-absent",
+      "trial": 2,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 4984,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 104,
+      "costUsd": 0.00064905,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4774,
+      "reasoningTokens": 85,
+      "totalTokens": 4881,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 3557,
+      "operationCosts": {
+        "answer": 0.00064905,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed Aurora\u2019s password in the context available to me.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    },
+    {
+      "caseId": "history-10000-absent",
+      "trial": 3,
+      "status": "passed",
+      "category": null,
+      "reason": null,
+      "criteria": [
+        {
+          "id": "fact-never",
+          "pass": true
+        },
+        {
+          "id": "exclude-ORBIT-731",
+          "pass": true
+        },
+        {
+          "id": "exclude-COMET-219",
+          "pass": true
+        },
+        {
+          "id": "no-external-writes",
+          "pass": true
+        }
+      ],
+      "assisted": false,
+      "cleanupFailed": false,
+      "latencyMs": 3474,
+      "toolCalls": 0,
+      "inputTokens": 3,
+      "outputTokens": 46,
+      "costUsd": 0.0006198,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 4772,
+      "reasoningTokens": 35,
+      "totalTokens": 4821,
+      "modelCalls": 1,
+      "cacheHitRate": 0,
+      "firstResponseMs": 2045,
+      "operationCosts": {
+        "answer": 0.0006198,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "trace": [
+        {
+          "step": 1,
+          "status": "completed",
+          "tools": []
+        }
+      ],
+      "artifacts": {
+        "final-response": "We never discussed it.",
+        "memory-snapshot": "# Assistant\n\n"
+      }
+    }
+  ],
+  "summary": [
+    {
+      "caseId": "history-100-exact",
+      "modelCalls": 6,
+      "costUsd": 0.0027795249999999997,
+      "inputTokens": 2604,
+      "outputTokens": 901,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 16549,
+      "reasoningTokens": 401,
+      "totalTokens": 20054,
+      "meanFirstResponseMs": 3488,
+      "latencyP50Ms": 6957,
+      "latencyP95Ms": 7412,
+      "operationCosts": {
+        "answer": 0.0021325249999999997,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000647
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 7069
+    },
+    {
+      "caseId": "history-100-changed",
+      "modelCalls": 6,
+      "costUsd": 0.002823025,
+      "inputTokens": 2604,
+      "outputTokens": 983,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 16569,
+      "reasoningTokens": 476,
+      "totalTokens": 20156,
+      "meanFirstResponseMs": 2330.6666666666665,
+      "latencyP50Ms": 6276,
+      "latencyP95Ms": 7411,
+      "operationCosts": {
+        "answer": 0.002112525,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.0007105
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 6281
+    },
+    {
+      "caseId": "history-100-absent",
+      "modelCalls": 6,
+      "costUsd": 0.002734525,
+      "inputTokens": 2604,
+      "outputTokens": 804,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 16577,
+      "reasoningTokens": 337,
+      "totalTokens": 19985,
+      "meanFirstResponseMs": 2815,
+      "latencyP50Ms": 6470,
+      "latencyP95Ms": 7534,
+      "operationCosts": {
+        "answer": 0.002135525,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0.000599
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 6700
+    },
+    {
+      "caseId": "history-1000-exact",
+      "modelCalls": 3,
+      "costUsd": 0.001892525,
+      "inputTokens": 9,
+      "outputTokens": 249,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 14137,
+      "reasoningTokens": 158,
+      "totalTokens": 14395,
+      "meanFirstResponseMs": 2571.6666666666665,
+      "latencyP50Ms": 3526,
+      "latencyP95Ms": 3817,
+      "operationCosts": {
+        "answer": 0.001892525,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 0,
+      "failed": 3,
+      "notRun": 0,
+      "firstAttemptPassed": false,
+      "autonomousSuccessRate": 0,
+      "meanLatencyMs": 3335
+    },
+    {
+      "caseId": "history-1000-changed",
+      "modelCalls": 3,
+      "costUsd": 0.0018360249999999998,
+      "inputTokens": 9,
+      "outputTokens": 132,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 14153,
+      "reasoningTokens": 98,
+      "totalTokens": 14294,
+      "meanFirstResponseMs": 2892,
+      "latencyP50Ms": 3518,
+      "latencyP95Ms": 3898,
+      "operationCosts": {
+        "answer": 0.0018360249999999998,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 3492
+    },
+    {
+      "caseId": "history-1000-absent",
+      "modelCalls": 3,
+      "costUsd": 0.001876275,
+      "inputTokens": 9,
+      "outputTokens": 210,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 14163,
+      "reasoningTokens": 167,
+      "totalTokens": 14382,
+      "meanFirstResponseMs": 2264,
+      "latencyP50Ms": 2891,
+      "latencyP95Ms": 3115,
+      "operationCosts": {
+        "answer": 0.001876275,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 2829
+    },
+    {
+      "caseId": "history-10000-exact",
+      "modelCalls": 3,
+      "costUsd": 0.0018893999999999998,
+      "inputTokens": 9,
+      "outputTokens": 205,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 14288,
+      "reasoningTokens": 115,
+      "totalTokens": 14502,
+      "meanFirstResponseMs": 2347.3333333333335,
+      "latencyP50Ms": 4212,
+      "latencyP95Ms": 4354,
+      "operationCosts": {
+        "answer": 0.0018893999999999998,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 0,
+      "failed": 3,
+      "notRun": 0,
+      "firstAttemptPassed": false,
+      "autonomousSuccessRate": 0,
+      "meanLatencyMs": 3948
+    },
+    {
+      "caseId": "history-10000-changed",
+      "modelCalls": 3,
+      "costUsd": 0.0018555250000000002,
+      "inputTokens": 9,
+      "outputTokens": 131,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 14313,
+      "reasoningTokens": 96,
+      "totalTokens": 14453,
+      "meanFirstResponseMs": 2894,
+      "latencyP50Ms": 4187,
+      "latencyP95Ms": 4554,
+      "operationCosts": {
+        "answer": 0.0018555250000000002,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 4216
+    },
+    {
+      "caseId": "history-10000-absent",
+      "modelCalls": 3,
+      "costUsd": 0.0018854,
+      "inputTokens": 9,
+      "outputTokens": 189,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 14320,
+      "reasoningTokens": 145,
+      "totalTokens": 14518,
+      "meanFirstResponseMs": 2516.6666666666665,
+      "latencyP50Ms": 3474,
+      "latencyP95Ms": 4984,
+      "operationCosts": {
+        "answer": 0.0018854,
+        "setup": 0,
+        "retrieval": 0,
+        "subagent": 0,
+        "compaction": 0
+      },
+      "planned": 3,
+      "attempted": 3,
+      "passed": 3,
+      "failed": 0,
+      "notRun": 0,
+      "firstAttemptPassed": true,
+      "autonomousSuccessRate": 1,
+      "meanLatencyMs": 3885
+    }
+  ],
+  "evidenceAudit": "Retained completed original-strategy trials. Exact recall and changed/absent fact grades use synthetic originals; full recorded workflow includes compaction."
+}

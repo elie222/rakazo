@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { ORPCError, onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type {
+  AgentContextStrategy,
   AgentRuntime,
   BillingProvider,
   JobPublisher,
@@ -145,6 +146,8 @@ export interface AppHandles {
   email?: TransactionalEmailProvider;
   executor: ReturnType<typeof createRunExecutor>;
   runtime: AgentRuntime;
+  awaitIdle?: () => Promise<void>;
+  backgroundFailures?: () => Array<{ name: string; count: number }>;
   stop: () => Promise<void>;
 }
 
@@ -160,6 +163,8 @@ export async function createApp(
     billing?: BillingProvider;
     remoteConnectors?: RemoteConnectorDependencies;
     logger?: Logger;
+    runtime?: AgentRuntime;
+    contextStrategy?: AgentContextStrategy;
   } = {},
 ): Promise<AppHandles> {
   const {
@@ -173,6 +178,8 @@ export async function createApp(
     billing: billingOverride,
     remoteConnectors,
     logger: loggerOverride,
+    runtime: runtimeOverride,
+    contextStrategy,
     ...envOverrides
   } = overrides;
   const env = { ...loadEnv(process.env), ...envOverrides };
@@ -359,11 +366,12 @@ export async function createApp(
   await connector.start();
   integrationSettings.warmDirectories();
   const runtime =
-    env.agentRuntime === "scripted"
+    runtimeOverride ??
+    (env.agentRuntime === "scripted"
       ? new ScriptedAgentRuntime()
       : new PiAgentRuntime({
           sessionRoot: env.piSessionRecording ? piSessionsRoot(env.dataDir) : undefined,
-        });
+        }));
   const notifications = new ExpoPushProvider(env.dataDir, (sessionId) =>
     pushSessionExpiresAt(prisma, sessionId),
   );
@@ -428,6 +436,7 @@ export async function createApp(
   // resolution alike, so a list call warms the run path in this process.
   const codexCatalog = new CodexCatalogCache();
   const executor = createRunExecutor({
+    contextStrategy,
     prisma,
     runtime,
     codexCatalog,
@@ -929,6 +938,8 @@ export async function createApp(
     email,
     executor,
     runtime,
+    awaitIdle: inMemoryJobs ? () => inMemoryJobs.awaitIdle() : undefined,
+    backgroundFailures: inMemoryJobs ? () => inMemoryJobs.failureCounts() : undefined,
     stop: async () => {
       // Abort in-flight continueRun boot waits before draining jobs so stop() cannot sit
       // on waitForComputerReady for the full boot-wait window during shared Postgres journeys.

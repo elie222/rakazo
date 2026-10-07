@@ -8,6 +8,8 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "browser_act",
   "list_files",
   "read_file",
+  "read_history",
+  "search_history",
   "write_file",
   "shell",
   "open_path",

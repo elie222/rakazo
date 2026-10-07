@@ -8,6 +8,7 @@ import type {
   JobPublisher,
   MemoryStore,
   SandboxProvider,
+  UsageOperationKind,
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
@@ -5374,19 +5375,45 @@ export function createRouter(deps: RouterDeps) {
           model: row.model,
           inputTokens: row.inputTokens,
           outputTokens: row.outputTokens,
+          cacheReadTokens: row.cacheReadTokens,
+          cacheWriteTokens: row.cacheWriteTokens,
+          cacheWrite1hTokens: row.cacheWrite1hTokens,
+          reasoningTokens: row.reasoningTokens,
+          totalTokens: row.totalTokens,
+          costUsd: row.costUsd,
+          costSource: row.costSource,
+          pricingVersion: row.pricingVersion,
+          usageSource: row.usageSource,
+          callId: row.callId,
+          operationId: row.operationId,
+          operationKind: row.operationKind as UsageOperationKind,
+          parentRunId: row.parentRunId,
+          agentId: row.agentId,
           createdAt: row.createdAt.toISOString(),
         }));
       }),
       summary: authed.usage.summary.handler(async ({ context }) => {
-        const result = await deps.prisma.usageRecord.aggregate({
-          where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
-          _sum: { inputTokens: true, outputTokens: true },
-          _count: { _all: true },
-        });
+        const [result, runGroups] = await Promise.all([
+          deps.prisma.usageRecord.aggregate({
+            where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+            _sum: { inputTokens: true, outputTokens: true, totalTokens: true },
+            _count: { _all: true, inputTokens: true, outputTokens: true, totalTokens: true },
+          }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["runId", "parentRunId"],
+            where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+          }),
+        ]);
+        const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
+          .size;
+        const completeSum = (field: "inputTokens" | "outputTokens" | "totalTokens") =>
+          result._count[field] === result._count._all ? (result._sum[field] ?? 0) : null;
         return {
-          inputTokens: result._sum.inputTokens ?? 0,
-          outputTokens: result._sum.outputTokens ?? 0,
-          runs: result._count._all,
+          inputTokens: completeSum("inputTokens"),
+          outputTokens: completeSum("outputTokens"),
+          totalTokens: completeSum("totalTokens"),
+          modelCalls: result._count._all,
+          runs,
         };
       }),
     },

@@ -22,6 +22,8 @@ export type ModelEmulatorResponse =
       id: string;
       name: string;
       arguments: Record<string, unknown>;
+      /** Synthetic assistant prose emitted alongside a tool call; never real model traces. */
+      assistantText?: string;
       /** Concatenation must equal the JSON arguments. Each fragment is a separate SSE delta. */
       argumentChunks?: string[];
     }
@@ -30,6 +32,15 @@ export type ModelEmulatorResponse =
   | { type: "hold"; text?: string; onOpen?: () => void; onClose?: () => void };
 
 export interface ModelEmulatorStep {
+  /** Synthetic endpoint usage, including explicit zero and omitted breakdown fields. */
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
+    cost?: number;
+  };
   /** Assertions run before the response; failures also make assertComplete fail. */
   expect: (request: ModelEmulatorRequest) => void | Promise<void>;
   response: ModelEmulatorResponse | ((request: ModelEmulatorRequest) => ModelEmulatorResponse);
@@ -92,8 +103,15 @@ export async function startModelEmulator(options: {
           })}\n\n`,
         );
       };
+      const emitUsage = () => {
+        if (step.usage)
+          response.write(
+            `data: ${JSON.stringify({ id: `fixture-${stepIndex}`, choices: [], usage: step.usage })}\n\n`,
+          );
+      };
       emit({ role: "assistant" });
       if (reply.type === "tool") {
+        if (reply.assistantText) emit({ content: reply.assistantText });
         emit({
           tool_calls: [
             {
@@ -111,11 +129,13 @@ export async function startModelEmulator(options: {
       } else {
         if (reply.text) emit({ content: reply.text });
         if (reply.type === "hold") {
+          emitUsage();
           response.once("close", () => reply.onClose?.());
           reply.onOpen?.();
           return;
         }
         if (reply.type === "disconnect") {
+          emitUsage();
           // Flush the partial SSE stream, then close without a terminal chunk.
           await new Promise<void>((resolve) => response.write(": disconnect\n\n", () => resolve()));
           response.destroy();
@@ -123,6 +143,7 @@ export async function startModelEmulator(options: {
         }
         emit({}, "stop");
       }
+      emitUsage();
       response.end("data: [DONE]\n\n");
     })().catch((error: unknown) => {
       failures.push(error instanceof Error ? error : new Error(String(error)));

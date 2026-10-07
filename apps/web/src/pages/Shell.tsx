@@ -718,8 +718,9 @@ export function ShellPage() {
     };
   }, [session.data?.user]);
   const [usage, setUsage] = useState<{
-    inputTokens: number;
-    outputTokens: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens?: number | null;
     runs: number;
   } | null>(null);
   const autoBooted = useRef<string | null>(null);

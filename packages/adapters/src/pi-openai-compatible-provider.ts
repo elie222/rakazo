@@ -171,7 +171,9 @@ export function createOpenAiCompatibleFetch(
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const dispatcher =
       isIP(hostname) === 0
-        ? new Agent({ connect: { lookup: createOpenAiCompatibleLookup(url, resolve) } })
+        ? new Agent({
+            connect: { lookup: createOpenAiCompatibleLookup(url, resolve) },
+          })
         : undefined;
     // Node's fetch rejects this package Agent. Pair them only when the
     // dispatcher is attached; a caller-supplied fetch stays in charge.
@@ -199,7 +201,12 @@ async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Pro
   const request = new Request(input, init);
   const body =
     request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
-  return { method: request.method, headers: request.headers, body, signal: request.signal };
+  return {
+    method: request.method,
+    headers: request.headers,
+    body,
+    signal: request.signal,
+  };
 }
 
 async function closeDispatcherWithResponse(

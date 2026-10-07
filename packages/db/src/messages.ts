@@ -33,6 +33,7 @@ export function loadRunHistoryMessages(
       role: true,
       runId: true,
       blocks: true,
+      createdAt: true,
       replyToMessageId: true,
       replyQuote: true,
       replyTo: { select: { id: true, threadId: true, role: true, blocks: true } },
