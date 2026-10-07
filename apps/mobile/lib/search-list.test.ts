@@ -54,6 +54,7 @@ describe("searchHitPreview", () => {
     expect(searchHitPreview("look data:image/png;base64,iVBORw0KGgo here")).toBe("look here");
     expect(searchHitPreview("note data:;base64,SGVsbG8= next")).toBe("note next");
     expect(searchHitPreview("note data:,hello next")).toBe("note next");
+    expect(searchHitPreview("see data:image/png next")).toBe("see data:image/png next");
     expect(searchHitPreview("keep metadata: label")).toBe("keep metadata: label");
   });
 
