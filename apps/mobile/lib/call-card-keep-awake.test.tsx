@@ -42,10 +42,16 @@ vi.mock("react-native", () => {
       Value: class {
         setValue = vi.fn();
       },
+      loop: () => ({ start: vi.fn(), stop: vi.fn() }),
+      sequence: vi.fn(),
+      timing: vi.fn(),
+      delay: vi.fn(),
     },
+    Platform: { OS: "ios", Version: 18 },
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
   };
 });
+vi.mock("../components/glass-icon-button", () => ({ GlassIconButton: () => null }));
 vi.mock("./api", () => ({
   rpc: vi.fn().mockResolvedValue({ name: "Test" }),
   applyMobileThreadEvent: vi.fn(),
