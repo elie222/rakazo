@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { HistoryReadInput, HistorySearchInput, MessageBlock } from "@rakazo/contracts";
-import { Prisma, type PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 
 /** Only the executor supplies scope; tool arguments cannot widen it. */
 export interface HistoryScope {
@@ -173,10 +174,26 @@ export async function searchHistory(
     ORDER BY m.seq DESC LIMIT ${limit + 1}
   `);
   const page = rows.slice(0, limit);
+  const nextBeforeSeq = rows.length > limit ? page.at(-1)!.seq : null;
   return bounded({
     untrusted: true as const,
+    query,
+    coverage: {
+      scope: "requested_query_and_range" as const,
+      status: nextBeforeSeq === null ? ("exhausted" as const) : ("partial" as const),
+    },
     messages: page.map((row) => reference(row, query)),
-    nextBeforeSeq: rows.length > limit ? page.at(-1)!.seq : null,
+    nextBeforeSeq,
+    nextSearch:
+      nextBeforeSeq === null
+        ? null
+        : {
+            query,
+            beforeSeq: nextBeforeSeq,
+            limit,
+            ...(input.after !== undefined ? { after: input.after } : {}),
+            ...(input.before !== undefined ? { before: input.before } : {}),
+          },
   });
 }
 

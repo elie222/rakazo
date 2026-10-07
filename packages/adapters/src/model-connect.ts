@@ -5,6 +5,7 @@ import {
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
   cloudflareGatewayRouting,
   isCloudflareAiGatewayProvider,
+  modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
 import {
@@ -70,6 +71,9 @@ export function buildModelConnectPlaintext(
         : sameEndpoint
           ? previous.contextWindow
           : undefined;
+    if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
+      throw new Error("Maximum output tokens must leave room for input");
+    }
     const visionModelIds = updateModelImageCapabilities(
       previousVisionModelIds,
       prepared.modelId,
@@ -105,6 +109,9 @@ export function buildModelConnectPlaintext(
     throw new Error(CHATGPT_SUBSCRIPTION_REQUIRED_MESSAGE);
   }
   const maxTokens = connectMaxTokens(input.maxTokens, previous?.maxTokens);
+  if (!modelOutputLeavesInputRoom(maxTokens, contextWindow)) {
+    throw new Error("Maximum output tokens must leave room for input");
+  }
   const routing = cloudflareRoutingForConnect(input, previous);
   if (apiKey) {
     if (apiKey.length < 8) throw new Error("API key must contain at least 8 characters");

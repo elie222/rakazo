@@ -46,6 +46,7 @@ export function SettingsOverlay({
   email,
   name,
   usage,
+  onUsageOpen,
   initialSection = "general",
   avatarStyle,
   onAvatarStyleChange,
@@ -68,6 +69,7 @@ export function SettingsOverlay({
     outputTokens: number | null;
     totalTokens?: number | null;
   } | null;
+  onUsageOpen: () => void;
   initialSection?: SettingsSection;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
@@ -126,9 +128,10 @@ export function SettingsOverlay({
 
   useEffect(() => {
     if (section === "usage") {
+      onUsageOpen();
       usageRef.current?.focus();
     }
-  }, [section]);
+  }, [section, onUsageOpen]);
 
   const navItems: NavItem[] = [
     { id: "general", label: t`General`, icon: Settings },

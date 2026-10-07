@@ -1,7 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
+import { HistorySearchInputSchema } from "@rakazo/contracts";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { type Prisma, PrismaClient } from "./client.js";
+import type { Prisma } from "./client.js";
+import { PrismaClient } from "./client.js";
 import { readHistory, searchHistory } from "./history-retrieval.js";
 
 // Temporary synthetic tables shadow product tables. Never inspect existing chat content.
@@ -71,6 +73,67 @@ postgres("history retrieval (PostgreSQL)", () => {
       })}\n`,
     );
   });
+  it("keeps query-specific continuation available after a narrower empty query in the 10k corpus", async () => {
+    await pool.query(`INSERT INTO messages SELECT 'continuation-' || n, 'synthetic-thread', n, 'user', NULL, NULL,
+      '2026-01-01T00:00:00Z'::timestamptz,
+      jsonb_build_array(jsonb_build_object('kind','text','text',CASE WHEN n = 13001
+        THEN 'continuation original ORBIT-731' ELSE 'continuation broad topic' END))
+      FROM generate_series(13001,13008) n`);
+    const historicalScope = { ...scope, searchBeforeSeq: 13008 };
+    const broad = await searchHistory(prisma, historicalScope, {
+      query: " continuation ",
+      beforeSeq: 999999,
+      limit: 20,
+      after: "2026-01-01T00:00:00Z",
+      before: "2026-01-02T00:00:00Z",
+    });
+    expect(broad.messages.map((message) => message.seq)).toEqual([
+      13007, 13006, 13005, 13004, 13003,
+    ]);
+    expect(broad.coverage.status).toBe("partial");
+    expect(broad.nextSearch).toEqual({
+      query: "continuation",
+      beforeSeq: 13003,
+      limit: 5,
+      after: "2026-01-01T00:00:00Z",
+      before: "2026-01-02T00:00:00Z",
+    });
+    const narrow = await searchHistory(prisma, historicalScope, {
+      query: "continuation identifier",
+    });
+    expect(narrow).toMatchObject({
+      query: "continuation identifier",
+      messages: [],
+      coverage: {
+        scope: "requested_query_and_range",
+        status: "exhausted",
+      },
+      nextSearch: null,
+    });
+    const older = await searchHistory(prisma, historicalScope, broad.nextSearch!);
+    expect(older.messages.map((message) => message.seq)).toEqual([13002, 13001]);
+    expect(older.messages[1]!.text).toContain("ORBIT-731");
+    expect(older.coverage.status).toBe("exhausted");
+    expect(
+      (
+        await readHistory(prisma, historicalScope, {
+          messageId: older.messages[1]!.messageId,
+          limit: 1,
+        })
+      ).messages[0]!.text,
+    ).toContain("ORBIT-731");
+    expect(
+      (
+        await searchHistory(
+          prisma,
+          { ...historicalScope, userId: "foreign-user" },
+          broad.nextSearch!,
+        )
+      ).messages,
+    ).toEqual([]);
+    for (const page of [broad, narrow, older])
+      expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(10000);
+  });
   it("enforces the server search boundary, preserves old pagination and keeps explicit reads available", async () => {
     const historicalScope = { ...scope, searchBeforeSeq: 10 };
     const page = await searchHistory(prisma, historicalScope, {
@@ -107,6 +170,35 @@ postgres("history retrieval (PostgreSQL)", () => {
       (await readHistory(prisma, historicalScope, { messageId: "m-10", limit: 1 })).messages[0]!
         .messageId,
     ).toBe("m-10");
+  });
+  it("uses UTC day boundaries and preserves offset instants with inclusive after and exclusive before", async () => {
+    const day = await searchHistory(
+      prisma,
+      scope,
+      HistorySearchInputSchema.parse({
+        query: "filler exchange",
+        after: "2026-01-01",
+        before: "2026-01-02",
+        limit: 3,
+      }),
+    );
+    expect(day.messages.map((message) => message.seq)).toEqual([1439, 1438, 1437]);
+    expect(day.nextSearch).toMatchObject({
+      after: "2026-01-01T00:00:00.000Z",
+      before: "2026-01-02T00:00:00.000Z",
+    });
+    const offset = await searchHistory(
+      prisma,
+      scope,
+      HistorySearchInputSchema.parse({
+        query: "filler exchange",
+        after: "2026-01-02T02:00:00+02:00",
+        before: "2026-01-02T02:03:00+02:00",
+        limit: 5,
+      }),
+    );
+    expect(offset.messages.map((message) => message.seq)).toEqual([1442, 1441, 1440]);
+    expect(offset.nextSearch).toBeNull();
   });
   it("does not index credential prompts or tool metadata", async () => {
     await pool.query(`INSERT INTO messages VALUES

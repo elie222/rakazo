@@ -1,9 +1,5 @@
-import {
-  balancedAmbiguityFixture,
-  gradeHistory,
-  type HistoryScenario,
-  historyFixture,
-} from "./history-fixtures.js";
+import type { HistoryScenario } from "./history-fixtures.js";
+import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 import type { EvalServices, ServiceCall } from "./services.js";
 

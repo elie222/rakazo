@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { type AgentRuntime, type JobPublisher, runJobKey } from "@rakazo/adapter-kit";
+import type { AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
+import { runJobKey } from "@rakazo/adapter-kit";
 import { MessagingTeamChatEmulator } from "@rakazo/adapters";
 import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
@@ -7,12 +8,16 @@ import type { createDb } from "@rakazo/db";
 import { discardBotIntroRun } from "../discard-bot-intro.js";
 import { sessionCookieHeader } from "../index.js";
 import type { EvalCase, Evidence } from "./cases.js";
-import { type ClarificationBlock, expectedClarificationText } from "./clarification.js";
+import type { ClarificationBlock } from "./clarification.js";
+import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
-import { type CacheDecisionMeasurement, type EvalPricing, measureCalls } from "./measurement.js";
-import { emptyTrial, type FailureCategory, redact, type TrialResult } from "./report.js";
+import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
+import { measureCalls } from "./measurement.js";
+import type { FailureCategory, TrialResult } from "./report.js";
+import { emptyTrial, redact } from "./report.js";
 import { EvalServices } from "./services.js";
-import { type LedgerCall, measureWorkflowSteps } from "./step-accounting.js";
+import type { LedgerCall } from "./step-accounting.js";
+import { measureWorkflowSteps } from "./step-accounting.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> | Response };
 export type EvalApp = {
@@ -27,7 +32,7 @@ export type EvalApp = {
   cacheDecisions?: readonly CacheDecisionMeasurement[];
   historyDiagnostics?: readonly HistoryDiagnostic[];
   toolLoopDiagnostics?: readonly DiagnosticToolObservation[];
-  backgroundFailures?: () => Record<string, number>;
+  backgroundFailures?: () => Array<{ name: string; count: number }>;
   stop: () => Promise<void>;
 };
 export type EvalActor = {
@@ -648,7 +653,9 @@ export async function runTrial(
               generation: state.historyCompactionGeneration,
             };
         }
-        result.backgroundFailures = handles.backgroundFailures?.() ?? {};
+        result.backgroundFailures = Object.fromEntries(
+          (handles.backgroundFailures?.() ?? []).map(({ name, count }) => [name, count]),
+        );
       } catch {
         result.cleanupFailed = true;
       }

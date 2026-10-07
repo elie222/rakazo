@@ -69,7 +69,8 @@ import {
   type PiSessionRecorder,
 } from "./pi-session.js";
 import { observedPiStream } from "./pi-usage.js";
-import { createRuntimeContextPolicy, type RuntimeContextDecision } from "./runtime-context.js";
+import type { RuntimeContextDecision } from "./runtime-context.js";
+import { createRuntimeContextPolicy } from "./runtime-context.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
@@ -613,15 +614,16 @@ function toPiImages(images: AgentRunRequest["currentTurnImages"]) {
   }));
 }
 
-function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
+function configuredOpenRouterModel(
+  id: string,
+  contextWindow = 16_384,
+): Model<"openai-completions"> {
   // A configured model can intentionally be newer than Pi's static catalog. Keep
   // pricing conservative, but enable reasoning: unknown OpenRouter endpoints
   // (e.g. gemini-3.7-flash before the snapshot catches up) often mandate it, and
   // thinkingLevel "off" becomes effort "none" which those endpoints reject.
-  // The output ceiling follows from that reasoning flag: a 4k placeholder would
-  // clamp the reasoning budget back to a size the thinking alone can consume.
-  // It cannot outgrow the conservative window this placeholder also assumes.
-  const contextWindow = 16_384;
+  // Reserve half the conservative fallback window for input. A model card's
+  // configured limits override this placeholder below.
   return {
     id,
     name: id,
@@ -632,7 +634,7 @@ function configuredOpenRouterModel(id: string): Model<"openai-completions"> {
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow,
-    maxTokens: Math.min(REASONING_MODEL_MAX_TOKENS, contextWindow),
+    maxTokens: Math.min(REASONING_MODEL_MAX_TOKENS, Math.max(1, Math.floor(contextWindow / 2))),
   };
 }
 
@@ -664,7 +666,7 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
     ((envDefaultProvider === "openrouter" && modelId === envDefaultModel) ||
       modelConfig.contextWindow !== undefined)
   ) {
-    model = configuredOpenRouterModel(modelId);
+    model = configuredOpenRouterModel(modelId, modelConfig.contextWindow);
   }
   if (model && (modelConfig.contextWindow !== undefined || modelConfig.maxTokens !== undefined)) {
     model = {

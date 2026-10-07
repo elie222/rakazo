@@ -266,7 +266,12 @@ runtimes without usable history tools preserve loaded originals within the model
 input budget instead of advertising unavailable retrieval. The final default and
 fallback source passed all 54 unchanged workflows and all 27 repeated answers,
 costing USD 0.06519195 across 227 calls. Details, limitations, and preserved failed
-runs appear in `docs/evals/history-findings.md` and the task checklist.
+runs appear in `docs/evals/history-findings.md` and the task checklist. That initial
+qualification predates integration with Pi 0.87.1. The first current-base report,
+`docs/evals/history-pr-final-qualification.json`, passed 53/54 and preserves its
+pagination recall failure; it does not replace the required passing final-source
+gate. Current integration checks also verify system transcript instructions and
+tools reach the provider after history selection.
 
 ```sh
 pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --strategy retrieval --strategy snapshots --strategy cache-aware --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 2 --spend-cap-usd 1

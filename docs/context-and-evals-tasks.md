@@ -124,8 +124,22 @@ context/transcript regressions pass. The broad current-base unit run passes 527
 suites / 6,410 tests, with three failures in unchanged Linux launcher mock tests
 on macOS and 224 opt-in tests skipped. A narrow rerun against unchanged base
 files reproduces the supervisor launcher failure; Linux CI remains a merge gate.
-The final current-base qualification and CI evidence are recorded after they
-complete. Historical reports and failed trials remain unchanged.
+The first current-base qualification completed 54 workflows with unchanged
+three-trial graders: 53 passed. A paraphrase recall trial stopped after empty
+narrower searches while the original broader search still had unread pages.
+All 27 repeated answers and all six strict twelve-read loops passed. Charge was
+USD 0.09115927 across 242 model calls, with median/p95 latency 9.971/35.225 seconds.
+Accounting reconciled; background and cleanup failures and reservations were zero.
+The failed qualification is preserved in
+`docs/evals/history-pr-final-qualification.json`; it does not satisfy the final
+gate. Its source fingerprint is separately method-labelled because the original
+CLI diff capture exceeded its buffer.
+
+The cumulative guard charge is USD 1.326404885, leaving USD 3.673595115 under the
+same authorized USD 5 cap. The pagination correction makes coverage query-specific
+and carries the original query and filters in ready-to-call continuation arguments.
+It requires offline verification and another full unchanged qualification before
+merge. Historical reports and failed trials remain unchanged.
 
 The user has authorized live evaluation within the cumulative USD 5 cap. Before a
 live run, resolve pricing and credentials through the existing generic connection;

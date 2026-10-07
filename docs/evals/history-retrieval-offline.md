@@ -69,6 +69,14 @@ stops at the server-captured boundary before the active question: neither curren
 question text, steering, nor newer outputs can masquerade as an earlier discussion.
 A model-supplied cursor cannot widen this boundary. Explicit authorized reads and
 live linked outcomes remain available, and older search pages remain reachable.
+Search results echo the normalized query, report coverage only for the requested
+query and range, and provide ready-to-call `nextSearch` arguments alongside the
+legacy cursor. A narrower empty result cannot describe a broader query as exhausted.
+An actual product/Pi regression inspects the broad Aurora page, performs an empty
+narrower lookup, follows the original continuation with its date filters, and reads
+the older source fact. The earlier partial response remains available on the wire.
+This scripted endpoint proves payload and continuation availability; whether a
+live model chooses to continue is qualified separately.
 An actual Pi request in a 4,096-token configured window follows a shortened text
 cursor and reads the next original slice. A second regression runs twelve dependent
 large JSON diagnostics under all three candidate policies: cursors stay intact,

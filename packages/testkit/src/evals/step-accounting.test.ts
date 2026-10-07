@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { type LedgerCall, measureWorkflowSteps } from "./step-accounting.js";
+import type { LedgerCall } from "./step-accounting.js";
+import { measureWorkflowSteps } from "./step-accounting.js";
 
 const call = (id: string, fields: Partial<LedgerCall> = {}): LedgerCall => ({
   id,

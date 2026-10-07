@@ -55,6 +55,35 @@ describe("built-in provider output limits", () => {
     });
   });
 
+  it("validates an output-only update against the saved context window", () => {
+    const previous = buildModelConnectPlaintext({
+      provider: "openrouter",
+      apiKey: "fake-api-key",
+      contextWindow: 16_384,
+      maxTokens: 4096,
+    });
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openrouter", maxTokens: 20_000 }, previous),
+    ).toThrow("Maximum output tokens must leave room for input");
+    expect(
+      parseModelSecret(
+        buildModelConnectPlaintext({ provider: "openrouter", maxTokens: 12_288 }, previous),
+      ),
+    ).toMatchObject({ contextWindow: 16_384, maxTokens: 12_288 });
+  });
+
+  it("validates a context-only update against the saved output limit", () => {
+    const previous = buildModelConnectPlaintext({
+      provider: "openrouter",
+      apiKey: "fake-api-key",
+      contextWindow: 32_768,
+      maxTokens: 8192,
+    });
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openrouter", contextWindow: 4096 }, previous),
+    ).toThrow("Maximum output tokens must leave room for input");
+  });
+
   it("clears the limit without replacing the key", () => {
     const previous = buildModelConnectPlaintext({
       provider: "anthropic",

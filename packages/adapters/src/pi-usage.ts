@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import {
-  type Api,
-  type AssistantMessage,
-  type Context,
-  createAssistantMessageEventStream,
-  type Model,
-  type Models,
-  type SimpleStreamOptions,
-  type Usage,
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  Models,
+  SimpleStreamOptions,
+  Usage,
 } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import type {
   AgentRuntimeEvent,
   AgentUsage,

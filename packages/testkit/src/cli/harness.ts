@@ -93,6 +93,7 @@ async function main() {
         "packages/testkit/src/history-retrieval.postgres.test.ts",
         "packages/testkit/src/history-short-product.postgres.test.ts",
         "packages/testkit/src/history-followup-product.postgres.test.ts",
+        "packages/testkit/src/history-search-continuation.postgres.test.ts",
         "packages/testkit/src/history-product-loop.postgres.test.ts",
         "packages/testkit/src/history-clarification.postgres.test.ts",
         "packages/testkit/src/computer-approval.postgres.test.ts",

@@ -977,6 +977,14 @@ export const ModelContextLimitsSchema = z.object({
 });
 export type ModelContextLimits = z.infer<typeof ModelContextLimitsSchema>;
 
+/** A completion limit must leave capacity for at least one input token. */
+export function modelOutputLeavesInputRoom(
+  maxTokens: number | null | undefined,
+  contextWindow: number | undefined,
+): boolean {
+  return typeof maxTokens !== "number" || contextWindow === undefined || maxTokens < contextWindow;
+}
+
 export const ModelCredentialSchema = z.object({
   ...ModelContextLimitsSchema.shape,
   id: Id,
@@ -1016,11 +1024,7 @@ export const ModelConnectInputSchema = z
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
   })
   .superRefine((value, ctx) => {
-    if (
-      typeof value.maxTokens === "number" &&
-      value.contextWindow !== undefined &&
-      value.maxTokens >= value.contextWindow
-    ) {
+    if (!modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow)) {
       ctx.addIssue({
         code: "custom",
         message: "Maximum output tokens must leave room for input",

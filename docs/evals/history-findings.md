@@ -440,3 +440,26 @@ history-v1 label must also be distinguished by source fingerprint and documented
 fixture chronology. Final default selection proceeded from same-source full
 retrieval/snapshots comparison, shared retrieval wiring and fallback verification,
 then this changed-final-source complete matrix with unchanged graders.
+
+The PR integration moved onto a newer main base and Pi0.87.1, with the generic
+connection output limit expressed through canonical `maxTokens`. The unchanged
+54-workflow qualification at that frozen source passed53 and failed one
+paraphrase1k sample. All27 repeated answers and six strict12-read loops passed.
+The failed sample searched Aurora (five matches, older cursor8), then extraction,
+Aurora identifier, Aurora data and identifier (each zero matches). It declined to
+verify the fact without consuming the unfinished Aurora page. Coverage of that
+query's older originals remains unverified; the failure is retained without waiver.
+
+The run charged USD0.091159270 across242 provider-priced calls, with workflow
+p50/p95 9.971/35.225seconds. All foreground/background charges, call counts and
+known tokens reconciled. Cleanup and background failures were zero, reservations
+cleared, and the owned disposable database was removed. Conservative cumulative
+spend is USD1.326404885 of5, leaving USD3.673595115.
+
+The report retains the actual loaded base revision and a separately labelled
+frozen source-only fingerprint. Its original CLI workingDiffHash is null because
+the default child-process buffer overflowed on the large tracked report diff;
+a metadata-only correction made afterward does not relabel the observed run.
+The latest-base qualification gate remains failed pending a source correction
+and separately authorized verification. Earlier passing and failing reports remain
+unchanged.

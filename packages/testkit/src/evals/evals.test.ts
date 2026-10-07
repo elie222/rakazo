@@ -1,7 +1,9 @@
 import type { AdapterContext, ConnectorCall } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { EVAL_CASES, type Evidence, HISTORY_EVAL_CASES } from "./cases.js";
+import type { Evidence } from "./cases.js";
+import { EVAL_CASES, HISTORY_EVAL_CASES } from "./cases.js";
 import { emptyTrial, redact, summarize, validateControls } from "./report.js";
+import type { EvalApp } from "./runner.js";
 import { runTrial } from "./runner.js";
 import { EvalServices } from "./services.js";
 
@@ -438,6 +440,55 @@ describe("eval run controls and reporting", () => {
     });
     expect(JSON.stringify(result)).not.toContain("synthetic-key-123");
     expect(JSON.stringify(result)).not.toContain("private.example.test");
+  });
+  it("retains app-compatible background failure counters and incurred preparation charges on cleanup", async () => {
+    const result = await runTrial(EVAL_CASES[0]!, 1, {
+      connection: { provider: "fixture", modelId: "fixture" },
+      timeoutMs: 1000,
+      maxToolCalls: 5,
+      createApp: async () =>
+        ({
+          app: { request: async () => new Response("synthetic unavailable", { status: 503 }) },
+          prisma: {
+            usageRecord: {
+              findMany: async () => [
+                {
+                  id: "synthetic-call",
+                  operationKind: "compaction",
+                  runId: null,
+                  parentRunId: null,
+                  inputTokens: 2,
+                  outputTokens: 1,
+                  cacheReadTokens: 0,
+                  cacheWriteTokens: 0,
+                  cacheWrite1hTokens: null,
+                  reasoningTokens: null,
+                  totalTokens: 3,
+                  costUsd: 0.00012,
+                  costSource: "provider-reported",
+                },
+              ],
+            },
+          },
+          jobs: {},
+          runtime: {},
+          backgroundFailures: () => [{ name: "history.compact", count: 2 }],
+          stop: async () => {},
+        }) as unknown as EvalApp,
+    });
+    expect(result).toMatchObject({
+      status: "failed",
+      category: "harness",
+      cleanupFailed: false,
+      backgroundFailures: { "history.compact": 2 },
+      costUsd: 0.00012,
+      modelCalls: 1,
+      operationCosts: { compaction: 0.00012 },
+      stepAccounting: {
+        background: { compaction: { costUsd: 0.00012, modelCalls: 1 } },
+        reconciliation: { allCallsAccounted: true, costMatches: true },
+      },
+    });
   });
   it.each([
     'api_key="synthetic-credential"',

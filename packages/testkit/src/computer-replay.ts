@@ -123,7 +123,9 @@ export async function runComputerReplay(
           "Complete the requested task using your computer. Inspect current state before acting.",
         history: [],
         tools: builtinAgentTools.filter((definition) => names.has(definition.name)),
-        model: emulator.model,
+        // The offline model has no provider card. Declare room for a real PNG
+        // so the conservative byte-bound context guard can retain the observe result.
+        model: { ...emulator.model, contextWindow: 2_000_000 },
         executeTool: async (name, args) => {
           usedTools.push(name);
           if (name === "browser_navigate")

@@ -5,12 +5,8 @@ import type {
   AgentRunRequest,
   AgentRuntime,
 } from "@rakazo/adapter-kit";
-import {
-  type CacheDecisionMeasurement,
-  type EvalPricing,
-  type MeasuredCall,
-  measureCalls,
-} from "./measurement.js";
+import type { CacheDecisionMeasurement, EvalPricing, MeasuredCall } from "./measurement.js";
+import { measureCalls } from "./measurement.js";
 
 /** Controlled prefix replay, not a retention-time test. No keepalive requests are issued. */
 export async function runCachePrefixProbe(

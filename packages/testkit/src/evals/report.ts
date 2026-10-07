@@ -1,11 +1,7 @@
 import type { Criterion } from "./cases.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
-import {
-  type CacheDecisionMeasurement,
-  OPERATION_KINDS,
-  type Operation,
-  summarizeCacheDecisions,
-} from "./measurement.js";
+import type { CacheDecisionMeasurement, Operation } from "./measurement.js";
+import { OPERATION_KINDS, summarizeCacheDecisions } from "./measurement.js";
 import type { measureWorkflowSteps } from "./step-accounting.js";
 
 export type FailureCategory = "agent" | "product" | "provider" | "harness" | "incomplete";

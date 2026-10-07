@@ -7,10 +7,10 @@ import type {
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import type { ModelContextLimits } from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  type ModelContextLimits,
   ModelContextLimitsSchema,
   type ModelOAuthBegin,
   type ModelOAuthSignInMode,

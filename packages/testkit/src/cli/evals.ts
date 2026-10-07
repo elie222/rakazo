@@ -6,21 +6,14 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { ModelConnectInputSchema } from "@rakazo/contracts";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import type { StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import { EVAL_CASES, HISTORY_EVAL_CASES } from "../evals/cases.js";
 import { HISTORY_FIXTURE_VERSION } from "../evals/history-fixtures.js";
-import {
-  type DiagnosticToolObservation,
-  type HistoryDiagnostic,
-  observeSyntheticHistory,
-} from "../evals/history-observer.js";
-import {
-  type CacheDecisionMeasurement,
-  type EvalPricing,
-  measureCalls,
-  SpendBudget,
-  validatePricing,
-} from "../evals/measurement.js";
+import type { DiagnosticToolObservation, HistoryDiagnostic } from "../evals/history-observer.js";
+import { observeSyntheticHistory } from "../evals/history-observer.js";
+import type { CacheDecisionMeasurement, EvalPricing } from "../evals/measurement.js";
+import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement.js";
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
 
 async function main() {
@@ -245,7 +238,12 @@ async function main() {
     });
     const probe = await runCachePrefixProbe(
       runtime,
-      { ...connection, id: connection.modelId! },
+      {
+        ...connection,
+        id: connection.modelId!,
+        maxImagesPerPrompt: connection.maxImagesPerPrompt ?? undefined,
+        maxTokens: connection.maxTokens ?? undefined,
+      },
       pricing,
       decisions,
     );
@@ -445,10 +443,6 @@ async function main() {
               cacheDecisions,
               historyDiagnostics,
               toolLoopDiagnostics,
-              backgroundFailures: () =>
-                Object.fromEntries(
-                  (handles.backgroundFailures?.() ?? []).map(({ name, count }) => [name, count]),
-                ),
               finalizeBackground: async () => {
                 acceptingCalls = false;
                 await handles.jobs.close();
@@ -502,18 +496,24 @@ async function main() {
 
 function workingDiffHash(): string | null {
   try {
-    const hash = createHash("sha256").update(
-      execFileSync("git", ["diff", "HEAD"], { stdio: ["ignore", "pipe", "ignore"] }),
-    );
-    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const options = {
+      cwd: root,
+      stdio: ["ignore", "pipe", "ignore"] as ["ignore", "pipe", "ignore"],
+      maxBuffer: 64 * 1024 * 1024,
+    };
+    const hash = createHash("sha256").update(execFileSync("git", ["diff", "HEAD"], options));
+    const added = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
+      ...options,
+      encoding: "utf8",
     })
-      .trim()
-      .split("\n")
+      .split("\0")
       .filter((p) => /\.(?:ts|tsx|json)$/.test(p) && /^(?:packages|apps)\//.test(p))
       .sort();
-    for (const file of added) hash.update(file).update(readFileSync(file));
+    for (const file of added) hash.update(file).update(readFileSync(path.join(root, file)));
     return hash.digest("hex");
   } catch {
     return null;

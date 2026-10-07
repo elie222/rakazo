@@ -621,13 +621,19 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "search_history",
     description:
-      "Search literal keywords in earlier messages in this chat; every query word must match the same message. For paraphrased recollection, start with one distinctive project or topic keyword. Returns at most five matches, newest first. Follow nextBeforeSeq by passing it as beforeSeq until you find the requested source fact or the cursor is null. Use read_history to check surrounding messages and corrections.",
+      "Search literal keywords in earlier messages in this chat; every query word must match the same message. For paraphrased recollection, start with one distinctive project or topic keyword. Returns at most five matches, newest first. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", minLength: 1, maxLength: 500 },
-        before: { type: "string", description: "Exclusive ISO date upper bound." },
-        after: { type: "string", description: "Inclusive ISO date lower bound." },
+        before: {
+          type: "string",
+          description: "Exclusive ISO date upper bound; date-only values mean UTC midnight.",
+        },
+        after: {
+          type: "string",
+          description: "Inclusive ISO date lower bound; date-only values mean UTC midnight.",
+        },
         beforeSeq: {
           type: "integer",
           minimum: 0,
