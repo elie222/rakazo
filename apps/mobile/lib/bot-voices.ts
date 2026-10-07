@@ -25,37 +25,63 @@ function saveAssignments(assignments: Record<string, string>): void {
   file.write(JSON.stringify(assignments));
 }
 
-/** The engine's offline voices in the app's language, falling back to whatever it has. */
+/**
+ * Every read-change-write of the assignments runs after the previous one, so two bots
+ * speaking at once never both take the same free voice or drop each other's entry.
+ */
+let assignmentQueue: Promise<unknown> = Promise.resolve();
+function serialized<T>(work: () => Promise<T>): Promise<T> {
+  const run = assignmentQueue.then(work, work);
+  assignmentQueue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * The engine's offline voices, in the app's language when it has some. Network voices
+ * upload the text they speak, so they are never offered, even when nothing else is left.
+ */
 export async function deviceVoices(): Promise<Voice[]> {
   const Speech = await import("expo-speech");
-  const all = await Speech.getAvailableVoicesAsync();
+  const offline = (await Speech.getAvailableVoicesAsync()).filter(
+    (voice) => !/network/i.test(voice.identifier),
+  );
   const language = getActiveUiLocale().split("-")[0]?.toLowerCase() ?? "en";
-  const sameLanguage = all.filter((voice) => voice.language?.toLowerCase().startsWith(language));
-  const pool = sameLanguage.length > 0 ? sameLanguage : all;
-  // Network voices stream from the engine's servers; on-device voice should stay on device.
-  const offline = pool.filter((voice) => !/network/i.test(voice.identifier));
-  return (offline.length > 0 ? offline : pool).sort((a, b) =>
+  const sameLanguage = offline.filter((voice) =>
+    voice.language?.toLowerCase().startsWith(language),
+  );
+  return (sameLanguage.length > 0 ? sameLanguage : offline).sort((a, b) =>
     a.identifier.localeCompare(b.identifier),
   );
 }
 
-/** The voice a bot speaks with, handing it one no other bot has yet if it has none. */
-export async function voiceForBot(botId: string): Promise<string | undefined> {
-  const voices = (await deviceVoices()).map((voice) => voice.identifier);
-  if (voices.length === 0) return undefined;
-  const assignments = await loadAssignments();
-  const current = assignments[botId];
-  if (current && voices.includes(current)) return current;
-  const taken = new Set(
-    Object.entries(assignments)
-      .filter(([id]) => id !== botId)
-      .map(([, voice]) => voice),
-  );
-  const picked = pickUnusedVoice(voices, taken, botId);
-  saveAssignments({ ...assignments, [botId]: picked });
-  return picked;
+/** "en-us-x-iol-local" reads as "en-US · iol": the engine's names are ids, not labels. */
+export function voiceLabel(voice: Voice): string {
+  const code = voice.identifier.match(/-x-([a-z0-9]+)-/i)?.[1];
+  const name = code ?? (voice.name !== voice.identifier ? voice.name : voice.identifier);
+  return voice.language ? `${voice.language} · ${name}` : name;
 }
 
-export async function setVoiceForBot(botId: string, voiceId: string): Promise<void> {
-  saveAssignments({ ...(await loadAssignments()), [botId]: voiceId });
+/** The voice a bot speaks with, handing it one no other bot has yet if it has none. */
+export function voiceForBot(botId: string): Promise<string | undefined> {
+  return serialized(async () => {
+    const voices = (await deviceVoices()).map((voice) => voice.identifier);
+    if (voices.length === 0) return undefined;
+    const assignments = await loadAssignments();
+    const current = assignments[botId];
+    if (current && voices.includes(current)) return current;
+    const taken = new Set(
+      Object.entries(assignments)
+        .filter(([id]) => id !== botId)
+        .map(([, voice]) => voice),
+    );
+    const picked = pickUnusedVoice(voices, taken, botId);
+    saveAssignments({ ...assignments, [botId]: picked });
+    return picked;
+  });
+}
+
+export function setVoiceForBot(botId: string, voiceId: string): Promise<void> {
+  return serialized(async () => {
+    saveAssignments({ ...(await loadAssignments()), [botId]: voiceId });
+  });
 }

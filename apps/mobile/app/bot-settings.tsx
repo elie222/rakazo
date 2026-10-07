@@ -14,6 +14,7 @@ import {
   resolveSelectableModelId,
 } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import type { Voice } from "expo-speech";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
@@ -25,10 +26,12 @@ import {
   type MobileModelCredential,
   rpc,
 } from "../lib/api";
+import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { stopVoicePlayback } from "../lib/voice";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
@@ -61,6 +64,8 @@ export default function BotSettingsScreen() {
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voiceId, setVoiceId] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -175,6 +180,59 @@ export default function BotSettingsScreen() {
     if (key === selectedModelKey) return;
     setModelKey(key);
     setThinkingLevel("");
+  }
+
+  useEffect(() => {
+    if (!botId) return;
+    let current = true;
+    void Promise.all([deviceVoices(), voiceForBot(botId)])
+      .then(([available, assigned]) => {
+        if (!current) return;
+        setVoices(available);
+        setVoiceId(assigned);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [botId]);
+
+  async function chooseVoice(voice: Voice) {
+    if (!botId) return;
+    const previous = voiceId;
+    setVoiceId(voice.identifier);
+    setError(null);
+    try {
+      await setVoiceForBot(botId, voice.identifier);
+    } catch {
+      setVoiceId(previous);
+      setError(t("Could not save that voice"));
+      return;
+    }
+    // A sample, not a reply: stop whatever this app is reading first so the two never overlap.
+    stopVoicePlayback();
+    const Speech = await import("expo-speech");
+    await Speech.stop();
+    const sampleName = name.trim();
+    Speech.speak(
+      sampleName ? t("Hi, I'm {name}.", { name: sampleName }) : t("Hi, this is how I'll sound."),
+      { voice: voice.identifier },
+    );
+  }
+
+  const currentVoice = voices.find((voice) => voice.identifier === voiceId) ?? voices[0];
+
+  function openVoicePicker() {
+    presentMessageActionSheet({
+      title: t("Device voice"),
+      actions: voices.map((voice) => ({
+        text: voiceLabel(voice),
+        onPress: () => void chooseVoice(voice),
+      })),
+      colorScheme,
+      cancel: t("Cancel"),
+      more: t("More"),
+    });
   }
 
   function openModelPicker() {
@@ -376,21 +434,25 @@ export default function BotSettingsScreen() {
             onValueChange={setAutoSpeak}
           />
         </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() =>
-            router.push({ pathname: "/bot-voice", params: { botId, name: name.trim() } })
-          }
-          style={{
-            minHeight: 44,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
-          <Text style={{ color: tokens.mutedForeground, fontSize: 18 }}>›</Text>
-        </Pressable>
+        {voices.length > 1 ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("Device voice")}
+            onPress={openVoicePicker}
+            style={{
+              minHeight: 44,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
+            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
+            <Text style={{ color: tokens.foreground, fontSize: 14 }}>
+              {currentVoice ? voiceLabel(currentVoice) : ""}
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("Advanced")}
