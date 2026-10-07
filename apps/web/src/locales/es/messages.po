@@ -4646,7 +4646,6 @@ msgstr ""
 #: src/pages/Auth.tsx
 #: src/pages/model-settings/connection-controls.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign in"
 msgstr "Iniciar sesión"
 
@@ -4674,7 +4673,6 @@ msgid "Sign in with the subscription, or test the API key instead."
 msgstr "Inicia sesión con la suscripción o prueba la clave de API."
 
 #: src/pages/Auth.tsx
-#: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Registrarse"
 
@@ -5561,10 +5559,6 @@ msgstr "Tu OpenRouter"
 #: src/components/ModelCredits.tsx
 msgid "Your subscription or API key"
 msgstr ""
-
-#: src/pages/Welcome.tsx
-msgid "Your team of always-on agents<0/>that you can give real work to."
-msgstr "Tu equipo de agentes siempre activos<0/>a los que puedes dar trabajo real."
 
 #: src/lib/user-error.ts
 msgid "Your voice provider is out of credit."

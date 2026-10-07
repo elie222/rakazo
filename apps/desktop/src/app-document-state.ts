@@ -1,7 +1,7 @@
 /**
  * Empty `#root` shells and session-pending skeletons count as loaded HTML but are
  * not a usable app. After session resolves, wait for a bootstrapped shell
- * (`data-ready` / shell-ready mark) or an auth/welcome/onboarding surface so a
+ * (`data-ready` / shell-ready mark) or an entry/onboarding surface so a
  * bare Suspense fallback or pre-bootstrap ShellPage cannot pass. Plain e2e
  * fixtures omit the Rakazo app-state marker. Runs in the renderer.
  */
@@ -18,8 +18,8 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
     (shell && shell.getAttribute("data-ready") === "true") ||
       performance.getEntriesByName("rk:renderer:shell-ready").length > 0,
   );
-  const authOrWelcomeSurface = Boolean(
-    document.querySelector('[data-rakazo-surface="welcome"]') ||
+  const entrySurface = Boolean(
+    document.querySelector("[data-rakazo-surface]") ||
       document.querySelector(
         'form input[type="email"], form input[name="email"], form input#email',
       ) ||
@@ -30,7 +30,7 @@ export const APP_DOCUMENT_STATE_SCRIPT = `(() => {
         '[aria-label="Model"], [aria-label="Model id"], [aria-label="Models from server"]',
       ),
   );
-  const surfaceReady = shellBootstrapped || authOrWelcomeSurface;
+  const surfaceReady = shellBootstrapped || entrySurface;
   const sessionReady =
     appState === "ready" ||
     performance.getEntriesByName("rk:renderer:session-committed").length > 0;

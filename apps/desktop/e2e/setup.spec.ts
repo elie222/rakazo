@@ -359,12 +359,12 @@ for (const { name, surface } of [
     surface: '<div data-testid="shell-root" data-ready="true">Workspace</div>',
   },
   {
-    name: "logged-out welcome",
-    surface: '<div data-rakazo-surface="welcome"><button>Sign up</button></div>',
+    name: "logged-out sign-in",
+    surface: '<div data-rakazo-surface="entry"><button>Sign up</button></div>',
   },
   {
-    name: "translated logged-out welcome",
-    surface: '<div data-rakazo-surface="welcome"><button>Créer un compte</button></div>',
+    name: "translated logged-out sign-in",
+    surface: '<div data-rakazo-surface="entry"><button>Créer un compte</button></div>',
   },
 ]) {
   test(`a post-session ${name} mount is accepted`, async () => {

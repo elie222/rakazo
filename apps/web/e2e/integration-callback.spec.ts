@@ -2,14 +2,15 @@ import { expect, test } from "@playwright/test";
 import { captureScreenshot } from "./helpers";
 
 test("integration authorization closes its popup without loading the app", async ({ page }) => {
-  await page.goto("/");
+  // A signed-out "/" goes to sign-in; the opener has to stay where it is.
+  await page.goto("/sign-in");
   const popupOpened = page.waitForEvent("popup");
   await page.evaluate(() => {
     window.open("/integrations/callback?status=success", "rakazo-app-connect", "popup");
   });
   const popup = await popupOpened;
   await expect.poll(() => popup.isClosed()).toBe(true);
-  expect(new URL(page.url()).pathname).toBe("/");
+  expect(new URL(page.url()).pathname).toBe("/sign-in");
 });
 
 test("a callback that cannot close shows only the close-window fallback", async ({
