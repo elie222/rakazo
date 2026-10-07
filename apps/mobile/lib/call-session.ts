@@ -3,7 +3,10 @@ import {
   AiConsentBlocked,
   abortableDelay,
   callClientNonce,
+  INTERIM_BARGE_IN_MS,
+  isCallBargeIn,
   isFarewell,
+  isInterimCallBargeIn,
   latestSpokenCallReply,
   spokenMemory,
 } from "@rakazo/core";
@@ -74,16 +77,6 @@ const FAREWELL_TIMEOUT_MS = 20_000;
 /** A call that cannot reach the microphone or the server this many turns in a row hangs up. */
 const MAX_TURN_FAILURES = 3;
 
-/** While audio plays, most of what the mic hears is the speaker: match on fewer words. */
-const PLAYBACK_ECHO_RATIO = 0.4;
-/** The only one-word turns worth cutting a reply short for. */
-const INTERRUPT_WORDS = new Set(["stop", "wait", "hold on", "pause", "no"]);
-/**
- * How long a phrase must stand mid-playback before it cuts the reply off. The silence
- * window that ends an utterance is far longer than a reply, so waiting for the finished
- * transcript lands the barge-in after the bot already stopped talking.
- */
-export const INTERIM_BARGE_IN_MS = 300;
 /** A dropped live feed is reconnected from the last seq it saw, backing off as it retries. */
 const FEED_RETRY_MIN_MS = 250;
 const FEED_RETRY_MAX_MS = 5_000;
@@ -316,7 +309,7 @@ async function handleTranscript(raw: string): Promise<void> {
     return;
   }
   if (state.phase === "speaking") {
-    if (!isBargeIn(text)) {
+    if (!isCallBargeIn(text)) {
       // The microphone caught the reply, not the caller: reopen so a real interruption
       // still lands, and let the reply play out.
       set({ heard: "" });
@@ -414,7 +407,7 @@ function heardInterim(text: string): void {
     set({ heard: text });
     return;
   }
-  if (!isInterimBargeIn(text)) {
+  if (!isInterimCallBargeIn(text)) {
     clearInterim();
     return;
   }
@@ -431,29 +424,6 @@ function heardInterim(text: string): void {
 function clearInterim(): void {
   if (interimTimer) clearTimeout(interimTimer);
   interimTimer = null;
-}
-
-/**
- * True when a transcript heard during playback is the caller cutting in rather than the
- * reply leaking back into the mic: a real sentence, or a short interruption word.
- */
-function isBargeIn(text: string): boolean {
-  if (spokenMemory.isEcho(text, PLAYBACK_ECHO_RATIO)) return false;
-  const cleaned = cleanWords(text);
-  return cleaned.includes(" ") || INTERRUPT_WORDS.has(cleaned);
-}
-
-/** An interim is revised word by word, so a single stray word is never enough. */
-function isInterimBargeIn(text: string): boolean {
-  return cleanWords(text).includes(" ") && !spokenMemory.isEcho(text, PLAYBACK_ECHO_RATIO);
-}
-
-function cleanWords(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ");
 }
 
 function onReply(messageId: string, text: string, runId?: string): void {

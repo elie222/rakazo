@@ -1,5 +1,6 @@
 /// <reference path="./linkify-it.d.ts" />
 import LinkifyIt from "linkify-it";
+import { createContext } from "react";
 
 export type ChatMarkdownProps = {
   children: string;
@@ -110,6 +111,64 @@ export function sanitizeMarkdownUrl(url: string, allowRelative = false): string 
     return value;
   }
   return undefined;
+}
+
+const imageLinkProtocols = new Set(["http", "https"]);
+
+export function sanitizeMarkdownImageUrl(url: string): string | undefined {
+  const href = sanitizeMarkdownUrl(url);
+  if (!href) return undefined;
+  const protocol = href.match(protocolPattern)?.[1]?.toLowerCase();
+  return protocol && imageLinkProtocols.has(protocol) ? href : undefined;
+}
+
+const inlineImagePattern = /^data:image\/(?:png|gif|jpe?g|webp);base64,[a-z\d+/=]+$/i;
+const MAX_INLINE_IMAGE_URL_LENGTH = 1024 * 1024;
+
+/**
+ * Markdown images in bot output never fetch on their own: an image URL can carry conversation
+ * data to any host the moment a reply renders. Only embedded raster data renders at once; a
+ * remote image waits for the reader's tap unless they turned on loading web images.
+ */
+export function inlineMarkdownImageSrc(url: string): string | undefined {
+  const value = url.trim();
+  return value.length <= MAX_INLINE_IMAGE_URL_LENGTH && inlineImagePattern.test(value)
+    ? value
+    : undefined;
+}
+
+/** A markdown image that may load on request, with the host its placeholder names. */
+export function remoteMarkdownImage(url: string): { href: string; host: string } | undefined {
+  const href = sanitizeMarkdownImageUrl(url);
+  if (!href) return undefined;
+  try {
+    return { href, host: new URL(href).host };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether remote markdown images load without a tap. Apps provide the reader's device setting. */
+export const RemoteImagesContext = createContext(false);
+
+// Images the reader chose to load stay loaded for the session, even after a bubble remounts.
+const loadedRemoteImages = new Set<string>();
+
+export function remoteImageLoaded(href: string): boolean {
+  return loadedRemoteImages.has(href);
+}
+
+/** The current URL only. A link that cannot open stays text, so its image is not requested. */
+export function remoteImageRenders(
+  href: string,
+  loadRemote: boolean,
+  rejectedLink: boolean,
+): boolean {
+  return !rejectedLink && (loadRemote || remoteImageLoaded(href));
+}
+
+export function markRemoteImageLoaded(href: string): void {
+  loadedRemoteImages.add(href);
 }
 
 export function closeUnterminatedFence(markdown: string): string {

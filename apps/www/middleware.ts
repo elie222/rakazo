@@ -4,31 +4,44 @@ import {
   getMarkdownDocument,
   markdownResponse,
   negotiateRepresentation,
-  NOT_FOUND_MARKDOWN,
 } from "./src/agent-content.js";
 
 const VARY_HEADER = "Accept, Accept-Encoding";
+const APEX_ORIGIN = "https://rakazo.com";
+const WWW_HOST = "www.rakazo.com";
 
 export const config = {
-  matcher: ["/((?!api|_astro|.*\\..*).*)"],
+  matcher: ["/((?!api|_astro|.*\\..*).*)", "/sitemap.xml"],
 };
 
+function permanentRedirect(location: string): Response {
+  return new Response(null, {
+    status: 301,
+    headers: { Location: location },
+  });
+}
+
 export default function middleware(request: Request): Response {
+  const url = new URL(request.url);
+
+  if (url.hostname.toLowerCase() === WWW_HOST) {
+    const destination = new URL(`${url.pathname}${url.search}`, APEX_ORIGIN);
+    return permanentRedirect(destination.toString());
+  }
+
+  if (url.pathname === "/sitemap.xml") {
+    const destination = new URL(`/sitemap-index.xml${url.search}`, APEX_ORIGIN);
+    return permanentRedirect(destination.toString());
+  }
+
   if (request.method !== "GET" && request.method !== "HEAD") return next();
 
-  const { pathname } = new URL(request.url);
   const acceptHeader = request.headers.get("accept");
   const representation = negotiateRepresentation(acceptHeader);
-  const markdown = getMarkdownDocument(pathname);
-  const genericAgentNotFound =
-    !markdown && (!acceptHeader?.trim() || acceptHeader.trim() === "*/*");
+  const markdown = getMarkdownDocument(url.pathname);
 
-  if (representation === "markdown" || genericAgentNotFound) {
-    return markdownResponse(
-      markdown ?? NOT_FOUND_MARKDOWN,
-      request.method,
-      markdown ? 200 : 404,
-    );
+  if (representation === "markdown" && markdown) {
+    return markdownResponse(markdown, request.method);
   }
 
   if (representation === "not-acceptable") {
@@ -46,7 +59,7 @@ export default function middleware(request: Request): Response {
     );
   }
 
-  const markdownAlternate = getMarkdownAlternate(pathname);
+  const markdownAlternate = getMarkdownAlternate(url.pathname);
   return next({
     headers: {
       ...(markdownAlternate

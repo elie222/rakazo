@@ -523,6 +523,7 @@ describe("thread message pages", () => {
 
     expect(page.messages.map((message) => message.seq)).toEqual([3, 4, 5]);
     expect(page.olderCursor).toBe(3);
+    expect(page.coveredThroughSeq).toBe(7);
     expect(findMany).toHaveBeenCalledWith({
       where: { threadId: "thread-1", seq: { gte: 3, lte: 7 } },
       orderBy: { seq: "asc" },

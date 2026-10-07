@@ -18,17 +18,66 @@ export type MessagePresentationSegment = {
   blocks: MessageBlock[];
 };
 
+/** Blocks the thread draws as their own native card instead of inside the text bubble. */
+function isCardBlock(block: MessageBlock): boolean {
+  return block.kind === "app_connect" || block.kind === "choice" || block.kind === "computer";
+}
+
 export function messagePresentationSegments(
   blocks: readonly MessageBlock[],
 ): MessagePresentationSegment[] {
-  const content = blocks.filter(
-    (block) => block.kind !== "app_connect" && !isToolActivityBlock(block),
-  );
+  const content = blocks.filter((block) => !isCardBlock(block) && !isToolActivityBlock(block));
   return content.length > 0 ? [{ kind: "content", blocks: content }] : [];
 }
 
 export function hasVisibleMessagePresentation(blocks: readonly MessageBlock[]): boolean {
-  return blocks.some((block) => !isToolActivityBlock(block));
+  return blocks.some((block) => !isToolActivityBlock(block) && !isDismissedChoice(block));
+}
+
+type ChoiceBlock = Extract<MessageBlock, { kind: "choice" }>;
+
+/** The answer id the server stores when the focus card is dismissed without a choice. */
+export const DISMISSED_CHOICE_ANSWER_ID = "_dismissed";
+
+function isDismissedChoice(block: MessageBlock): boolean {
+  return block.kind === "choice" && block.answerId === DISMISSED_CHOICE_ANSWER_ID;
+}
+
+/**
+ * Mark choices the reader just dismissed, before the thread snapshot stores that answer.
+ * A message that was only that card then drops out of the thread instead of leaving an empty row.
+ */
+export function applyLocalChoiceDismissals(
+  blocks: readonly MessageBlock[],
+  dismissedQuestions: ReadonlySet<string>,
+): readonly MessageBlock[] {
+  if (dismissedQuestions.size === 0) return blocks;
+  let changed = false;
+  const next = blocks.map((block) => {
+    if (block.kind === "choice" && !block.answerId && dismissedQuestions.has(block.question)) {
+      changed = true;
+      return { ...block, answerId: DISMISSED_CHOICE_ANSWER_ID };
+    }
+    return block;
+  });
+  return changed ? next : blocks;
+}
+
+/** Options a choice card lists: all of them until answered, then only the picked one. */
+export function choiceCardOptions(block: ChoiceBlock): ChoiceBlock["options"] {
+  return block.answerId
+    ? block.options.filter((option) => option.id === block.answerId)
+    : block.options;
+}
+
+const THREAD_HORIZONTAL_PADDING = 20;
+const MESSAGE_COLUMN_RATIO = 0.9;
+const CARD_MAX_WIDTH = 340;
+
+/** Width of a card in a normal bot row: thread padding, then the 90% column cap. */
+export function threadCardWidth(windowWidth: number): number {
+  const contentWidth = Math.max(0, windowWidth - THREAD_HORIZONTAL_PADDING * 2);
+  return Math.min(CARD_MAX_WIDTH, Math.floor(contentWidth * MESSAGE_COLUMN_RATIO));
 }
 
 // Row chrome calls this per render; the same blocks array then hits the cache.

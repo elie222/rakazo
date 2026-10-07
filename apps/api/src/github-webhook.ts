@@ -7,6 +7,7 @@ import {
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
   type WebhookDeps,
+  type WebhookSecretCache,
 } from "./webhook-inbound.js";
 
 export function hasValidGithubSignature(
@@ -166,7 +167,11 @@ export function githubWebhookPath(botId: string): string {
 }
 
 /** Mount the signed GitHub delivery route onto the shared webhook deps. */
-export function mountGithubWebhookRoute(app: Hono, deps: WebhookDeps) {
+export function mountGithubWebhookRoute(
+  app: Hono,
+  deps: WebhookDeps,
+  secretCache: WebhookSecretCache,
+) {
   app.post("/api/v1/bots/:botId/github", async (c) => {
     const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
 
@@ -176,7 +181,7 @@ export function mountGithubWebhookRoute(app: Hono, deps: WebhookDeps) {
       return c.json({ error: "Payload too large" }, 413);
     }
 
-    const target = await loadWebhookTarget(deps, c.req.param("botId"));
+    const target = await loadWebhookTarget(deps, secretCache, c.req.param("botId"));
     if (!target) return unauthorized();
     if (!hasValidGithubSignature(c.req.header("x-hub-signature-256"), target.expected, raw)) {
       return unauthorized();

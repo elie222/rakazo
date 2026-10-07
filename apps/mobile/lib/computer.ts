@@ -9,7 +9,10 @@ export const COMPUTER_HEARTBEAT_MS = 60_000;
 export const COMPUTER_LIFECYCLE_TIMEOUT_MS = 120_000;
 export const SCREEN_URL_OPEN_ATTEMPTS = 5;
 export const SCREEN_URL_RETRY_DELAY_MS = 400;
-/** Re-read `computer/screenUrl` this long after the last successful seal. */
+/**
+ * Re-read an unsealed screen this long after the read. A sealed capability renews this long
+ * after it was issued, which is before its own expiry even when a later client received it.
+ */
 export const SCREEN_URL_RENEW_MS = 50 * 60_000;
 
 export type ComputerStatus = ContractComputerStatus;
@@ -85,8 +88,9 @@ export function screenStreamKey(url: string): string {
 
 /**
  * Remaining life at which a same-stream capability is replaced.
- * Sealed URLs live one hour; the refresher re-reads at `SCREEN_URL_RENEW_MS`.
- * Slack covers clock and timer skew so that fetch is applied before expiry.
+ * Sealed URLs live one hour. The refresher re-reads `SCREEN_URL_RENEW_MS` after the seal
+ * was issued, so a reused seal is refreshed before its original expiry. Slack covers clock
+ * and timer skew so that fetch is applied before expiry.
  */
 const SCREEN_CAPABILITY_TTL_MS = 60 * 60_000;
 const SCREEN_SOURCE_RENEW_REMAINING_MS =
@@ -101,6 +105,17 @@ function screenCapabilityExpiresAt(url: string): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Time the screen-URL renew interval is measured from.
+ * A sealed capability keeps the expiry it was issued with, so a later reader renews before
+ * that expiry. URLs without one renew from the read itself.
+ */
+export function screenRenewReadAt(url: string | null, readAt: number): number {
+  const expiresAt = url ? screenCapabilityExpiresAt(url) : null;
+  if (expiresAt == null) return readAt;
+  return expiresAt - SCREEN_CAPABILITY_TTL_MS;
 }
 
 /**

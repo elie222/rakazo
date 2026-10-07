@@ -1,0 +1,218 @@
+---
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import { fetchGithubStars, formatStarCount } from "../github";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { GITHUB_URL } from "../site";
+
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+---
+
+<BaseLayout
+  title="Terms · Rakazo"
+  description="The terms for using Rakazo, including paid plans, cancellation, and refunds."
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="privacy-copy">
+      <h1>Terms of Service</h1>
+      <p><strong>Last updated: October 7, 2026</strong></p>
+      <p>
+        These terms are an agreement between you and Inbox Zero Inc. (“Inbox Zero,” “we,” or “us”) for
+        your use of the Rakazo service that we host, the Rakazo web, desktop, and mobile apps, and
+        rakazo.com (together, the “Service”). By using the Service, you agree to these terms. If you
+        use the Service on behalf of an organization, you confirm that you can bind that organization
+        to these terms, and “you” includes it.
+      </p>
+
+      <h2>Open-source software</h2>
+      <p>
+        The Rakazo source code is available under the{" "}
+        <a href={`${GITHUB_URL}/blob/main/LICENSE`}>Apache License 2.0</a>. That license, not these
+        terms, governs your use of the code. It does not grant rights to the Rakazo name or logo; do
+        not use them in a way that suggests we operate or endorse something we do not. A third party
+        that operates a self-hosted Rakazo deployment is responsible for that deployment and its own
+        terms.
+      </p>
+
+      <h2>Your account</h2>
+      <p>
+        You must be at least 13 years old, and old enough to form a binding contract where you live,
+        to use the Service. You may not use the Service if you are barred from doing so under US
+        sanctions or export laws. Keep your sign-in details and connected credentials secure. You are
+        responsible for activity in your account.
+      </p>
+
+      <h2>Bots and AI output</h2>
+      <p>
+        Bots act with the instructions, permissions, and connected accounts you give them, including
+        when you are not watching, such as in scheduled routines. Actions your bots take, such as
+        sending messages, changing data, making purchases, or running commands, are taken on your
+        behalf and are your responsibility. Give bots only the access they need, and require approval
+        for actions that are hard to undo.
+      </p>
+      <p>
+        AI output can be inaccurate or incomplete. Review it before you rely on it. Do not use the
+        Service where an error could cause death, injury, or serious harm, or to make decisions with
+        legal, medical, or financial consequences for others without qualified human review.
+      </p>
+
+      <h2>Acceptable use</h2>
+      <p>You may not use the Service, or direct a bot, to:</p>
+      <ul>
+        <li>Break the law or infringe the rights of others.</li>
+        <li>Send spam, distribute malware, or commit fraud.</li>
+        <li>Access systems, accounts, or data you are not authorized to access.</li>
+        <li>
+          Interfere with the Service, circumvent its limits, or use its computers for cryptocurrency
+          mining or attacks on other systems.
+        </li>
+        <li>Violate the terms of the model providers or connected apps you use through the Service.</li>
+        <li>
+          Create accounts by automated means or to evade limits, or resell or provide the hosted Service
+          to others without our written permission.
+        </li>
+      </ul>
+
+      <h2>Your content</h2>
+      <p>
+        You keep ownership of the content you provide and the output your bots produce, and you are
+        responsible for having the rights to provide it. You give us permission to host, process, and
+        transmit that content only as needed to provide the Service, as described in our{" "}
+        <a href="/privacy/">privacy policy</a>. We may use aggregated or de-identified
+        usage data to operate and improve the Service. If you send us feedback, we may use it without
+        obligation to you. Keep your own copies of content that matters to you.
+      </p>
+
+      <h2>Third-party services</h2>
+      <p>
+        The Service can connect to model providers, voice and memory services, computer providers,
+        and other apps you choose. Those services are governed by their own terms, and we are not
+        responsible for them. You are responsible for fees they charge you, including usage your bots
+        incur on your own API keys.
+      </p>
+
+      <h2>Paid plans and billing</h2>
+      <p>
+        Some features require a paid plan. Prices are shown before you subscribe. Subscriptions renew
+        automatically at the end of each billing period until you cancel, and we charge the payment
+        method on file, which is processed by Stripe. Prices exclude taxes unless stated otherwise.
+        If your plan starts with a free trial, we collect a payment method at signup and charge it
+        when the trial ends unless you cancel before then. Cancelling during the trial ends it, and you
+        are not charged.
+        Plans may include usage limits, and we may slow or pause usage that exceeds them or places an
+        unreasonable load on the Service. If a payment fails, we may pause paid features until it
+        succeeds. If you dispute a charge with your bank instead of contacting us, we may suspend the
+        account while the dispute is open. We will notify you before a
+        price change takes effect on your next renewal, and you can cancel before it does.
+      </p>
+
+      <h2>Cancellation and refunds</h2>
+      <p>
+        You can cancel at any time from your account’s billing settings or by emailing{" "}
+        <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>. Cancellation stops future renewals;
+        you keep access until the end of the period you paid for. Payments are non-refundable and
+        partial periods are not prorated, except where required by law. If you were charged in error,
+        email us within 30 days and we will refund the charge.
+      </p>
+      <p>
+        If you are a consumer in the European Union or the United Kingdom, you can withdraw from a new
+        subscription within 14 days of buying it by telling us, for example by email. Because you ask
+        the Service to start immediately, we will refund your payment less an amount proportionate to
+        the Service provided before you withdrew.
+      </p>
+
+      <h2>Changes to the Service</h2>
+      <p>
+        We may add, change, or remove features. Features marked as beta or preview may be incomplete
+        or change without notice, and we do not promise the Service will be uninterrupted or
+        error-free. If we materially reduce a paid feature during your billing period, we will tell
+        you in advance, and you can cancel and receive a refund for the unused period.
+      </p>
+
+      <h2>Termination</h2>
+      <p>
+        You can stop using the Service and delete your account at any time. We may suspend or
+        terminate your access if you violate these terms, do not pay, or put the Service or others at
+        risk, or if the law requires it. Where reasonable, we will tell you first. If we terminate
+        your account or stop offering the Service for reasons other than a violation of these terms,
+        we will give you reasonable notice and refund any prepaid fees for the unused period.
+      </p>
+      <p>
+        When an account is deleted, its bots and routines stop and we delete its content as described
+        in our privacy policy, so save anything you want to keep first. Terms that by their nature
+        should survive termination, such as fees owed, disclaimers, limits of liability, and
+        indemnity, continue to apply.
+      </p>
+
+      <h2>Disclaimers</h2>
+      <p>
+        TO THE EXTENT PERMITTED BY LAW, THE SERVICE IS PROVIDED “AS IS” AND “AS AVAILABLE” WITHOUT
+        WARRANTIES OF ANY KIND, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+        PURPOSE, AND NON-INFRINGEMENT.
+      </p>
+
+      <h2>Limitation of liability</h2>
+      <p>
+        TO THE EXTENT PERMITTED BY LAW, WE ARE NOT LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL,
+        CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS OR DATA. OUR TOTAL LIABILITY FOR ANY
+        CLAIM RELATED TO THE SERVICE IS LIMITED TO THE GREATER OF THE AMOUNT YOU PAID US IN THE 12
+        MONTHS BEFORE THE CLAIM OR US$100.
+      </p>
+      <p>
+        Nothing in these terms limits liability that cannot be limited by law, such as for fraud,
+        gross negligence, or death or personal injury caused by negligence, or rights you have as a
+        consumer that cannot be waived.
+      </p>
+
+      <h2>Indemnity</h2>
+      <p>
+        To the extent permitted by law, you will compensate us for third-party claims, and reasonable
+        related costs, arising from your content, your bots’ actions, or your violation of these terms
+        or the law.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        We may update these terms. For material changes, we will notify you before they take effect.
+        If you do not agree, you can cancel before then. Continuing to use the Service after that means
+        you accept the updated terms.
+      </p>
+
+      <h2>App stores</h2>
+      <p>
+        If you download a Rakazo app from an app store, that store’s terms also apply to the app. For
+        the iOS app, Apple’s Standard EULA applies. Apple is not a party to these terms and is not
+        responsible for the Service or its support.
+      </p>
+
+      <h2>Governing law</h2>
+      <p>
+        These terms are governed by the laws of the State of Delaware, without regard to its conflict
+        of law rules. Disputes will be resolved in the state or federal courts located in Delaware,
+        except where your local law gives you the right to bring a claim where you live. To the extent
+        permitted by law, you and we each waive any right to a jury trial.
+      </p>
+
+      <h2>General</h2>
+      <p>
+        These terms, together with any terms shown when you buy a plan, are the entire agreement
+        between you and us about the Service. If any part is unenforceable, the rest stays in effect.
+        Not enforcing a term is not a waiver. You may not transfer these terms without our consent; we
+        may transfer them in connection with a merger, acquisition, or sale of assets. Neither of us is
+        responsible for delays caused by events beyond reasonable control. We may send you notices by
+        email or in the Service, and you can send notices to us at the address below.
+      </p>
+
+      <h2>Contact us</h2>
+      <p>
+        Inbox Zero Inc.<br />
+        131 Continental Dr, Suite 305<br />
+        Newark, Delaware 19713, United States<br />
+        <a href="mailto:hello@rakazo.com">hello@rakazo.com</a>
+      </p>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

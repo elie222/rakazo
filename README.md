@@ -5,11 +5,32 @@
 
 ![Rakazo — AI teammates you actually own](./docs/readme-hero.png)
 
-Rakazo is an open-source platform for running persistent AI teammates. It is available on the web,
-as an Electron desktop app, and through an Expo mobile app. Bring your own model and computer
-provider, or run the complete stack locally.
+Rakazo is an open source AI agent for persistent teammates, and a self-hosted AI assistant you
+can run on your own machine. It is available on the web, as an Electron desktop app, and through
+an Expo mobile app. Bring your own model and computer provider, or run the complete stack locally.
+
+It is an open source, self-hosted alternative to Grok Bot, Meta Muse, OpenAI Dots, Instinct,
+OpenClaw, Hermes Agent, and Hark Pro.
 
 Rakazo is in beta. Learn more at [rakazo.com](https://rakazo.com).
+
+## How Rakazo compares
+
+Once Rakazo is running, it is just chat, like Grok Bot: you set up a bot and manage it from that
+chat. Muse, Dots, Instinct, and Hark Pro are hosted assistants. OpenClaw
+and Hermes Agent are also open source agents you can run yourself. Their docs describe installers,
+config files, and a gateway. Hermes Desktop can reach a first chat without the CLI; a messaging
+gateway is a separate process.
+
+- [Grok Bot](https://rakazo.com/grok-bot-alternative/)
+- [Muse](https://rakazo.com/muse-alternative/)
+- [Dots](https://rakazo.com/dots-alternative/)
+- [Instinct](https://rakazo.com/instinct-alternative/), the personal assistant you text or call
+- [OpenClaw](https://rakazo.com/openclaw-alternative/)
+- [Hermes Agent](https://rakazo.com/hermes-alternative/), Nous Research's open source agent
+- [Hark Pro](https://rakazo.com/hark-alternative/), the personal agent at hark.com
+- [All comparisons](https://rakazo.com/alternatives/)
+- [Self-hosting guide](https://rakazo.com/self-hosted-ai-agent/)
 
 ## Features
 

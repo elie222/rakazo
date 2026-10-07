@@ -242,7 +242,7 @@ export function isRetiredModelCredentialError(error: unknown): boolean {
 }
 
 export type StoredModelSecret =
-  | { kind: "api_key"; key: string; maxTokens?: number }
+  | { kind: "api_key"; key: string; maxTokens?: number; accountId?: string; gatewayId?: string }
   | { kind: "oauth"; credential: OAuthCredential; maxTokens?: number }
   | {
       kind: "openai_compatible";
@@ -329,6 +329,12 @@ function readOAuthCredential(value: unknown): OAuthCredential | undefined {
   return undefined;
 }
 
+function parsedRoutingId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 function parsedMaxTokens(value: unknown): number | undefined {
   return typeof value === "number" &&
     Number.isInteger(value) &&
@@ -392,10 +398,14 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
     }
     const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    const accountId = parsedRoutingId(parsed.accountId);
+    const gatewayId = parsedRoutingId(parsed.gatewayId);
     return {
       kind: "api_key",
       key: parsed.key,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...(accountId ? { accountId } : {}),
+      ...(gatewayId ? { gatewayId } : {}),
     };
   }
   if (parsed.kind === "oauth") {
@@ -441,11 +451,19 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
         : {}),
     });
   }
-  if (secret.maxTokens === undefined) return secret.key;
+  if (
+    secret.maxTokens === undefined &&
+    secret.accountId === undefined &&
+    secret.gatewayId === undefined
+  ) {
+    return secret.key;
+  }
   return JSON.stringify({
     kind: "api_key",
     key: secret.key,
-    maxTokens: secret.maxTokens,
+    ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
+    ...(secret.accountId ? { accountId: secret.accountId } : {}),
+    ...(secret.gatewayId ? { gatewayId: secret.gatewayId } : {}),
   });
 }
 

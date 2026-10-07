@@ -18,6 +18,7 @@ import {
   MAX_MOBILE_AUTH_RESPONSE_BYTES,
   MAX_MOBILE_RPC_RESPONSE_BYTES,
   mergeMobileSnapshot,
+  mobileThreadRefreshResult,
   passwordResetCapabilities,
   prependMobileMessagePage,
   requestPasswordReset,
@@ -31,6 +32,7 @@ import {
   signIn,
   signOut,
   signUp,
+  subscribeSessionRejected,
   subscribeThread,
 } from "./api.js";
 import {
@@ -551,9 +553,7 @@ describe("mobile API authentication", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ json: { ok: true } }))
-      .mockResolvedValueOnce(
-        jsonResponse({ error: { message: "Bot does not exist" } }, { status: 404 }),
-      );
+      .mockResolvedValueOnce(rpcErrorResponse(404, "NOT_FOUND", "Bot does not exist"));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(rpc<{ ok: boolean }>("bots/get", { botId: "bot-1" })).resolves.toEqual({
@@ -568,6 +568,54 @@ describe("mobile API authentication", () => {
       }),
     );
     await expect(rpc("bots/get", { botId: "missing" })).rejects.toThrow("Bot does not exist");
+  });
+
+  it("shows the server's message instead of the procedure name", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => rpcErrorResponse(400, "BAD_REQUEST", "Connect a model to start a run.")),
+    );
+
+    await expect(rpc("bots/create", { name: "Ada" })).rejects.toThrow(
+      new Error("Connect a model to start a run."),
+    );
+  });
+
+  it.each([
+    ["an empty", new Response(null, { status: 404 })],
+    [
+      "an HTML",
+      new Response("<html>Bad Gateway</html>", {
+        status: 502,
+        headers: { "content-type": "text/html" },
+      }),
+    ],
+  ])("reports a failure with %s body without a parser error", async (_body, response) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => response),
+    );
+
+    await expect(rpc("bots/create", { name: "Ada" })).rejects.toThrow(
+      new Error("rpc bots/create failed"),
+    );
+  });
+
+  it("keeps the Space when a non-401 failure mentions unauthorized", async () => {
+    const store = new Map<string, string>();
+    mockSecureStore(store);
+    await selectSpace("space-support");
+    const fetchMock = vi.fn(async () =>
+      rpcErrorResponse(400, "BAD_REQUEST", "Model server returned 401 Unauthorized"),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(rpc("models/probeOpenAiCompatible", {})).rejects.toThrow(
+      "Model server returned 401 Unauthorized",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(selectedSpaceId()).toBe("space-support");
+    expect(store.get("rakazo.space_id")).toBe("space-support");
   });
 
   it("blocks mobile message and attachment submission when AI sharing is declined", async () => {
@@ -599,7 +647,7 @@ describe("mobile API authentication", () => {
   it.each([true, false])("explains the mobile upgrade requirement with JSON=%s", async (json) => {
     const fetchMock = vi.fn(async () =>
       json
-        ? jsonResponse({ error: { message: "Not found" } }, { status: 404 })
+        ? rpcErrorResponse(404, "NOT_FOUND", "Not found")
         : new Response("404 Not Found", { status: 404 }),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -1198,7 +1246,7 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
       .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1304,8 +1352,8 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(rpc("spaces/list")).rejects.toThrow("Unauthorized");
@@ -1330,7 +1378,7 @@ describe("mobile API authentication", () => {
     let resolveRetry!: (value: Response) => void;
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
       .mockImplementationOnce(
         () =>
           new Promise<Response>((resolve) => {
@@ -1363,7 +1411,7 @@ describe("mobile API authentication", () => {
     let resolveRetry!: (value: Response) => void;
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
       .mockImplementationOnce(
         () =>
           new Promise<Response>((resolve) => {
@@ -1375,7 +1423,7 @@ describe("mobile API authentication", () => {
     const pending = rpc("spaces/list");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await expect(selectSpace("space-new")).resolves.toBe(true);
-    resolveRetry(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+    resolveRetry(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     await expect(pending).rejects.toThrow("Unauthorized");
     expect(selectedSpaceId()).toBe("space-new");
@@ -1407,7 +1455,7 @@ describe("mobile API authentication", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
     await expect(selectSpace("space-b")).resolves.toBe(true);
-    resolveStale(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+    resolveStale(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     // The stale request fails without probing or touching the new selection;
     // Space B's own requests run recovery if B is itself inaccessible.
@@ -1443,7 +1491,7 @@ describe("mobile API authentication", () => {
     expect(fetchMock.mock.calls[0]![1].headers["x-rakazo-space-id"]).toBe("space-a");
     await expect(selectSpace("space-b")).resolves.toBe(true);
     await expect(selectSpace("space-a")).resolves.toBe(true);
-    resolveStale(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+    resolveStale(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
 
     // ID-only matching would treat this obsolete Space A response as current
     // after A → B → A; the selection epoch must keep recovery from clearing
@@ -1452,6 +1500,157 @@ describe("mobile API authentication", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(selectedSpaceId()).toBe("space-a");
     expect(storage.get("rakazo.space_id")).toBe("space-a");
+  });
+
+  it("clears a session the server rejects and reports it once", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "revoked-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      // Home polls several reads at once; every one of them comes back 401.
+      await Promise.all([
+        expect(rpc("me")).rejects.toThrow("Unauthorized"),
+        expect(rpc("bots/list")).rejects.toThrow("Unauthorized"),
+      ]);
+      expect(rejected).toHaveBeenCalledOnce();
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(
+        vi
+          .mocked(SecureStore.deleteItemAsync)
+          .mock.calls.filter(([key]) => key === "rakazo.session_token"),
+      ).toHaveLength(1);
+
+      // Later requests carry no session and cannot reject it again.
+      await expect(rpc("me")).rejects.toThrow("Unauthorized");
+      expect(fetchMock.mock.calls[2]![1].headers.authorization).toBeUndefined();
+      expect(rejected).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("checks Space access before treating a 401 as a rejected session", async () => {
+    const store = new Map<string, string>([
+      ["rakazo.session_token", "session-token"],
+      ["rakazo.space_id", "space-removed"],
+    ]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
+      .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await expect(rpc("spaces/list")).resolves.toEqual({ spaces: [] });
+      expect(rejected).not.toHaveBeenCalled();
+      expect(store.get("rakazo.session_token")).toBe("session-token");
+      expect(selectedSpaceId()).toBeNull();
+
+      // When the probe without a Space is refused too, the session itself is
+      // gone. The selection is left alone until sign-in resets it.
+      await selectSpace("space-support");
+      fetchMock
+        .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
+        .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+      await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+      expect(fetchMock.mock.calls[3]![1].headers["x-rakazo-space-id"]).toBeUndefined();
+      expect(rejected).toHaveBeenCalledOnce();
+      expect(store.has("rakazo.session_token")).toBe(false);
+      expect(selectedSpaceId()).toBe("space-support");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it.each([
+    ["a network error", () => Promise.reject(new TypeError("Network request failed"))],
+    ["a server error", async () => rpcErrorResponse(503, "INTERNAL_SERVER_ERROR", "Unavailable")],
+    ["a forbidden request", async () => rpcErrorResponse(403, "FORBIDDEN", "Forbidden")],
+    [
+      "a non-401 failure that mentions unauthorized",
+      async () => rpcErrorResponse(400, "BAD_REQUEST", "Model server returned 401 Unauthorized"),
+    ],
+  ])("keeps the session after %s", async (_failure, respond) => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    vi.stubGlobal("fetch", vi.fn(respond));
+
+    try {
+      await expect(rpc("bots/list")).rejects.toThrow();
+      expect(rejected).not.toHaveBeenCalled();
+      expect(store.get("rakazo.session_token")).toBe("session-token");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("keeps the session a password change on this device is replacing", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "session-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    let resolveChange!: (response: Response) => void;
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith("/api/auth/change-password")) {
+        return new Promise<Response>((resolve) => {
+          resolveChange = resolve;
+        });
+      }
+      return rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const pending = changePassword("old-password", "new-password");
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+      // The server already revoked the old token; a poll lands before the new one arrives.
+      await expect(rpc("bots/list")).rejects.toThrow("Unauthorized");
+      resolveChange(jsonResponse({ token: "rotated-token", user: { id: "user-1" } }));
+      await pending;
+
+      expect(rejected).not.toHaveBeenCalled();
+      expect(store.get("rakazo.session_token")).toBe("rotated-token");
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("keeps a newer session when a request from the old one is refused", async () => {
+    const store = new Map<string, string>([["rakazo.session_token", "old-token"]]);
+    mockSecureStore(store);
+    await loadApiBase();
+    const rejected = vi.fn();
+    const unsubscribe = subscribeSessionRejected(rejected);
+    const { fetchMock, fetchStarted, resolveFetch } = deferredFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const stale = rpc("bots/list");
+      await fetchStarted;
+      await saveSessionToken("new-token");
+      resolveFetch(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
+
+      await expect(stale).rejects.toThrow("Unauthorized");
+      expect(rejected).not.toHaveBeenCalled();
+      expect(store.get("rakazo.session_token")).toBe("new-token");
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("heals durable divergence when persisting a new Space fails", async () => {
@@ -1502,6 +1701,38 @@ describe("mobile API authentication", () => {
     await expect(pendingA).resolves.toBe(false);
     expect(selectedSpaceId()).toBe("space-b");
     expect(storage.get("rakazo.space_id")).toBe("space-b");
+  });
+
+  it("does not commit a selection superseded during rollback cleanup", async () => {
+    const storage = new Map<string, string>([["rakazo.space_id", "space-current"]]);
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => storage.get(key) ?? null);
+    let releaseOlderCleanup!: () => void;
+    let heldOlderCleanup = false;
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.space_rollback" && !heldOlderCleanup) {
+        heldOlderCleanup = true;
+        await new Promise<void>((resolve) => {
+          releaseOlderCleanup = resolve;
+        });
+      }
+      storage.delete(key);
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      storage.set(key, value);
+    });
+    await loadApiBase();
+    expect(selectedSpaceId()).toBe("space-current");
+
+    const pendingOlder = selectSpace("space-older");
+    await vi.waitFor(() => expect(heldOlderCleanup).toBe(true));
+    await expect(selectSpace("space-newer")).resolves.toBe(true);
+    expect(selectedSpaceId()).toBe("space-newer");
+    expect(storage.get("rakazo.space_id")).toBe("space-newer");
+
+    releaseOlderCleanup();
+    await expect(pendingOlder).resolves.toBe(false);
+    expect(selectedSpaceId()).toBe("space-newer");
+    expect(storage.get("rakazo.space_id")).toBe("space-newer");
   });
 
   it("converges durable state to the latest overlapping selection", async () => {
@@ -1595,7 +1826,7 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
       .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1628,7 +1859,7 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
       .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1651,7 +1882,7 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
       .mockResolvedValueOnce(jsonResponse({ json: { spaces: [] } }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -1681,8 +1912,8 @@ describe("mobile API authentication", () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }))
-      .mockResolvedValueOnce(jsonResponse({ error: { message: "Unauthorized" } }, { status: 401 }));
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"))
+      .mockResolvedValueOnce(rpcErrorResponse(401, "UNAUTHORIZED", "Unauthorized"));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(rpc("bots/create", { name: "Should not land" })).rejects.toThrow("Unauthorized");
@@ -1940,6 +2171,80 @@ describe("mobile thread refresh targeting", () => {
     await refresh;
 
     expect(applied).toBeNull();
+  });
+});
+
+describe("discarded mobile thread refresh cursor", () => {
+  const onScreen = {
+    ...snapshot([mobileMessage("shown", [{ kind: "text", text: "shown" }], 2)]),
+    cursor: 2,
+  };
+  const fetched = {
+    ...snapshot([
+      mobileMessage("shown", [{ kind: "text", text: "shown" }], 2),
+      mobileMessage("missed", [{ kind: "text", text: "from the discarded snapshot" }], 4),
+      mobileMessage("also-missed", [{ kind: "text", text: "also only in that snapshot" }], 5),
+    ]),
+    cursor: 5,
+  };
+  const gate = {
+    fetched,
+    onScreen,
+    requestEpoch: 1,
+    currentEpoch: 1,
+    requestGeneration: 1,
+    currentGeneration: 1,
+    targetBotId: "bot-1",
+    targetGroupId: undefined,
+    activeBotId: "bot-1",
+    activeGroupId: undefined,
+  };
+
+  // The server replays events with seq greater than the subscription cursor.
+  function shownAfter(cursor: number) {
+    const events = [
+      {
+        type: "thread.message.created",
+        seq: 4,
+        payload: {
+          messageId: "missed",
+          role: "bot",
+          blocks: [{ kind: "text", text: "from the discarded snapshot" }],
+        },
+      },
+      {
+        type: "thread.message.created",
+        seq: 5,
+        payload: {
+          messageId: "also-missed",
+          role: "bot",
+          blocks: [{ kind: "text", text: "also only in that snapshot" }],
+        },
+      },
+    ];
+    return events.reduce<MobileSnapshot>(
+      (view, event) => (event.seq > cursor ? (applyMobileThreadEvent(view, event) ?? view) : view),
+      onScreen,
+    );
+  }
+
+  it("shows events only a discarded refresh had seen when a newer refresh fails", () => {
+    for (const discard of [{ currentGeneration: 2 }, { currentEpoch: 2 }]) {
+      const result = mobileThreadRefreshResult({ ...gate, ...discard });
+      const shown = shownAfter(result.snapshot?.cursor ?? -1);
+      expect(result.commit).toBe(false);
+      expect(shown.messages.map((message) => message.id)).toEqual([
+        "shown",
+        "missed",
+        "also-missed",
+      ]);
+    }
+  });
+
+  it("starts the subscription at a snapshot the refresh committed", () => {
+    const result = mobileThreadRefreshResult(gate);
+    expect(result.commit).toBe(true);
+    expect(result.snapshot?.cursor).toBe(fetched.cursor);
   });
 });
 
@@ -2591,6 +2896,11 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
+/** A failed procedure as the oRPC server sends it. */
+function rpcErrorResponse(status: number, code: string, message: string) {
+  return jsonResponse({ json: { defined: false, code, status, message } }, { status });
+}
+
 function snapshot(
   messages: MobileMessage[] = [],
   olderCursor: number | null = null,
@@ -2638,5 +2948,16 @@ describe("mobile clipboard text", () => {
         ],
       }),
     ).toBe("Hello\nSMS · Sender: Reply");
+  });
+
+  it("keeps leading whitespace for selection while copying trims it", async () => {
+    const { copyableMobileMessageText, selectableMobileMessageText } = await import("./api");
+    const message: MobileMessage = {
+      id: "message",
+      role: "user",
+      blocks: [{ kind: "text", text: "    indented\nnext  " }],
+    };
+    expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
+    expect(copyableMobileMessageText(message)).toBe("indented\nnext");
   });
 });

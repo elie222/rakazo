@@ -1,11 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
+import { ComposioEmulator, ExpoPushProvider, loadPushToken } from "@rakazo/adapters";
 import type { appContract, Space, SpaceNavigation } from "@rakazo/contracts";
 import {
   claimEmptySpaceDeletionForMember,
   deleteEmptySpaceForMember,
+  pushSessionExpiresAt,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
 } from "@rakazo/db";
@@ -470,6 +471,105 @@ describeWithDatabase("API authorization and resource isolation", () => {
       deleteMemories: true,
     });
     expect(await handles.prisma.bot.findUnique({ where: { id: ownerBot.id } })).not.toBeNull();
+  });
+
+  it("hands a device's push token to the account that registers it last", async () => {
+    const first = await signup(app, `push-first-${stamp}@rakazo.test`, "Push First");
+    const second = await signup(app, `push-second-${stamp}@rakazo.test`, "Push Second");
+    const firstUser = (await rpc<Actor>(app, first, "me")).userId;
+    const secondUser = (await rpc<Actor>(app, second, "me")).userId;
+    const device = "ExponentPushToken[shared-device]";
+
+    await rpc(app, first, "notifications/registerPush", { token: device });
+    // Another device, or unregistering, only ever touches the caller's own token.
+    await rpc(app, second, "notifications/registerPush", { token: "ExponentPushToken[other]" });
+    await rpc(app, second, "notifications/unregisterPush");
+    await expect(loadPushToken(dataDir, firstUser)).resolves.toBe(device);
+
+    await rpc(app, second, "notifications/registerPush", { token: device });
+    await expect(loadPushToken(dataDir, secondUser)).resolves.toBe(device);
+    await expect(loadPushToken(dataDir, firstUser)).resolves.toBeUndefined();
+    const multiline = await raw(app, first, "notifications/registerPush", {
+      token: `${device}\nsession`,
+    });
+    expect(multiline.status).toBe(400);
+  });
+
+  it("drops a push token when the session that registered it is revoked", async () => {
+    const email = `push-sessions-${stamp}@rakazo.test`;
+    const phone = await signup(app, email, "Push Sessions");
+    const userId = (await rpc<Actor>(app, phone, "me")).userId;
+    const token = "ExponentPushToken[phone]";
+    await rpc(app, phone, "notifications/registerPush", { token });
+
+    // Signing out or revoking other sessions elsewhere keeps the phone's token.
+    await authPost(app, await signin(app, email), "/sign-out");
+    await authPost(app, phone, "/revoke-other-sessions");
+    await expect(loadPushToken(dataDir, userId)).resolves.toBe(token);
+
+    await authPost(app, await signin(app, email), "/revoke-other-sessions");
+    await expect(loadPushToken(dataDir, userId)).resolves.toBeUndefined();
+
+    const relogged = await signin(app, email);
+    await rpc(app, relogged, "notifications/registerPush", { token });
+    await authPost(app, await signin(app, email), "/change-password", {
+      currentPassword: "password12",
+      newPassword: "password34",
+      revokeOtherSessions: true,
+    });
+    await expect(loadPushToken(dataDir, userId)).resolves.toBeUndefined();
+
+    // Changing the password on the phone itself replaces its session; the token follows it.
+    const samePhone = await signin(app, email, "password34");
+    await rpc(app, samePhone, "notifications/registerPush", { token });
+    await authPost(app, samePhone, "/change-password", {
+      currentPassword: "password34",
+      newPassword: "password56",
+      revokeOtherSessions: true,
+    });
+    await expect(loadPushToken(dataDir, userId)).resolves.toBe(token);
+    await authPost(app, await signin(app, email, "password56"), "/revoke-other-sessions");
+    await expect(loadPushToken(dataDir, userId)).resolves.toBeUndefined();
+
+    const signedIn = await signin(app, email, "password56");
+    await rpc(app, signedIn, "notifications/registerPush", { token });
+    await authPost(app, signedIn, "/revoke-sessions");
+    await expect(loadPushToken(dataDir, userId)).resolves.toBeUndefined();
+  });
+
+  it("does not deliver a push token after its session expires without a request", async () => {
+    const email = `push-expired-${stamp}@rakazo.test`;
+    const phone = await signup(app, email, "Push Expired");
+    const userId = (await rpc<Actor>(app, phone, "me")).userId;
+    const token = "ExponentPushToken[expired-session]";
+    await rpc(app, phone, "notifications/registerPush", { token });
+    await handles.prisma.session.updateMany({
+      where: { userId },
+      data: { expiresAt: new Date(Date.now() - 60_000) },
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const push = new ExpoPushProvider(dataDir, (sessionId) =>
+        pushSessionExpiresAt(handles.prisma, sessionId),
+      );
+      await expect(
+        push.deliver(
+          { kind: "completion", title: "done", body: "secret", botId: "b", threadId: "t" },
+          {
+            operationId: "n",
+            traceId: "n",
+            spaceId: "w",
+            userId,
+            signal: new AbortController().signal,
+          },
+        ),
+      ).resolves.toBe("undeliverable");
+      expect(fetchMock).not.toHaveBeenCalled();
+      await expect(loadPushToken(dataDir, userId)).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("keeps approval rules private to each user in a shared Space", async () => {
@@ -1528,6 +1628,26 @@ async function signup(app: App, email: string, name: string) {
     throw new Error(`signup failed ${response.status}: ${await response.text()}`);
   }
   return sessionCookieHeader(response);
+}
+
+async function signin(app: App, email: string, password = "password12") {
+  return sessionCookieHeader(await authPost(app, "", "/sign-in/email", { email, password }));
+}
+
+async function authPost(app: App, cookie: string, path: string, body: unknown = {}) {
+  const response = await app.request(`/api/auth${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(cookie ? { cookie } : {}),
+      origin: "http://127.0.0.1:5173",
+    },
+    body: JSON.stringify(body),
+  });
+  if (response.status >= 400) {
+    throw new Error(`${path} failed ${response.status}: ${await response.text()}`);
+  }
+  return response;
 }
 
 async function raw(

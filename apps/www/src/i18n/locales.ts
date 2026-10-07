@@ -25,6 +25,14 @@ export const LOCALE_HTML_LANG: Record<Locale, string> = {
   zh: "zh-CN",
 };
 
+/** BCP 47 tags shared by page hreflang links and the sitemap. */
+export const LOCALE_HREFLANG: Record<Locale, string> = {
+  en: "en-US",
+  de: "de-DE",
+  ko: "ko-KR",
+  zh: "zh-CN",
+};
+
 export function isLocale(value: string | undefined): value is Locale {
   return value !== undefined && (LOCALES as readonly string[]).includes(value);
 }

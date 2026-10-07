@@ -8,7 +8,9 @@ import {
   CompositeConnector,
   collectLogIds,
   collectPages,
+  composioResultError,
   executeSessionKey,
+  expandComposioMultiExecute,
   filterCatalog,
   isComposioEnabled,
   isNoAuthToolkitError,
@@ -24,6 +26,9 @@ const composioSdkState = vi.hoisted(() => ({
   created: [] as Array<{ userId: string; config: Record<string, unknown> }>,
   directoryFails: false,
   executions: [] as Array<{ tool: string; args: Record<string, unknown> }>,
+  executeResult: null as null | { data: Record<string, unknown>; error: string | null },
+  failTools: null as null | string[],
+  logIds: null as null | string[],
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
     waitForConnection: async (id: string, _timeout?: number) => ({ id: `resolved-${id}` }),
@@ -50,7 +55,7 @@ const composioSdkState = vi.hoisted(() => ({
         args: Record<string, unknown>,
       ) => Promise<{
         data: Record<string, unknown>;
-        error: null;
+        error: string | null;
         logId: string;
       }>;
     }
@@ -118,7 +123,13 @@ vi.mock("@composio/core", () => ({
             : [],
         execute: async (tool: string, args: Record<string, unknown>) => {
           composioSdkState.executions.push({ tool, args });
-          return { data: { ok: true }, error: null, logId: "log-github" };
+          const failed = composioSdkState.failTools?.includes(tool) ?? false;
+          return {
+            ...(failed
+              ? { data: { ok: false }, error: "listing failed" }
+              : (composioSdkState.executeResult ?? { data: { ok: true }, error: null })),
+            logId: composioSdkState.logIds?.shift() ?? "log-github",
+          };
         },
       };
       composioSdkState.sessions.set(session.sessionId, session);
@@ -218,6 +229,71 @@ describe("composio tool mapping", () => {
     expect(sanitizeComposioError("COMPOSIO_API_KEY=ak_shouldnotleak")).not.toContain(
       "ak_shouldnotleak",
     );
+    expect(sanitizeComposioError('COMPOSIO_API_KEY="alpha beta"')).toBe(
+      'COMPOSIO_API_KEY="[redacted]"',
+    );
+    expect(sanitizeComposioError("COMPOSIO_API_KEY plain-secret-value")).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
+    expect(sanitizeComposioError('COMPOSIO_API_KEY "alpha beta"')).toBe(
+      "COMPOSIO_API_KEY=[redacted]",
+    );
+    expect(sanitizeComposioError("denied password=p@ss;word")).toBe('denied password="[redacted]"');
+    expect(sanitizeComposioError("denied password=bad;status=failed")).toBe(
+      'denied password="[redacted]";status=failed',
+    );
+    expect(sanitizeComposioError('denied password="p\\"secret"')).toBe(
+      'denied password="[redacted]"',
+    );
+  });
+
+  it("keeps each tool's error when a multi-execute batch fails", () => {
+    const data = {
+      results: [
+        { tool_slug: "TOOL_OK", response: { successful: true, data: {} } },
+        {
+          tool_slug: "TOOL_MISSING",
+          error: "The requested message was not found.",
+          response: { successful: false, data: { status_code: 404 } },
+        },
+        {
+          tool_slug: "TOOL_NESTED",
+          error: "",
+          response: { successful: false, error: "Query failed." },
+        },
+        null,
+        "not-an-object",
+      ],
+    };
+    expect(composioResultError("2 out of 3 tools failed", data)).toBe(
+      "2 out of 3 tools failed: TOOL_MISSING: The requested message was not found.; TOOL_NESTED: Query failed.",
+    );
+    const longSecret = `${"p".repeat(470)} password="alpha beta-secret-tail" done ${"q".repeat(80)}`;
+    const longMessage = composioResultError("1 out of 1 tools failed", {
+      results: [{ tool_slug: "TOOL", error: longSecret }],
+    });
+    expect(longMessage).toContain("[redacted]");
+    expect(longMessage).not.toContain("beta-secret");
+    expect(composioResultError("1 out of 1 tools failed", { results: [] })).toBe(
+      "1 out of 1 tools failed",
+    );
+    expect(composioResultError("Session expired", null)).toBe("Session expired");
+    const long = composioResultError("2 out of 2 tools failed", {
+      results: [
+        { tool_slug: "TOOL_LONG", error: "x".repeat(800) },
+        { tool_slug: "TOOL_LATER", error: "Still reported." },
+      ],
+    });
+    expect(long).toContain(`TOOL_LONG: ${"x".repeat(500)}…`);
+    expect(long).toContain("TOOL_LATER: Still reported.");
+    const many = composioResultError("7 out of 7 tools failed", {
+      results: Array.from({ length: 7 }, (_, index) => ({
+        tool_slug: `TOOL_${index}`,
+        error: "Failed.",
+      })),
+    });
+    expect(many).toContain("TOOL_4: Failed.; +2 more");
+    expect(many).not.toContain("TOOL_5");
   });
 
   it("paginates until the cursor ends", async () => {
@@ -555,6 +631,356 @@ describe("composio tool mapping", () => {
     ]);
     await expect(connector.connectionReady(context, "github")).resolves.toBe(true);
     await expect(connector.connectedAccountId("user-1", "github")).resolves.toBe("ca-github");
+  });
+
+  it.each([
+    {
+      label: "nested arguments",
+      item: {
+        tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER",
+        arguments: { path: "/Invoices", recursive: false },
+      },
+      expected: { path: "/Invoices", recursive: false },
+    },
+    {
+      label: "path beside an empty arguments object",
+      item: {
+        tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER",
+        path: "/Invoices",
+        arguments: {},
+      },
+      expected: { path: "/Invoices" },
+    },
+    {
+      label: "arguments encoded as a JSON string",
+      item: {
+        tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER",
+        arguments: JSON.stringify({ path: "/Invoices" }),
+      },
+      expected: { path: "/Invoices" },
+    },
+  ])(
+    "forwards a non-root Dropbox folder path through multi-execute ($label)",
+    async ({ item, expected }) => {
+      composioSdkState.created.length = 0;
+      composioSdkState.executions.length = 0;
+      composioSdkState.sessions.clear();
+      composioToolkitDirectory.invalidate();
+
+      const connector = new ComposioConnector();
+      const context: AdapterContext = {
+        operationId: "composio-dropbox-list",
+        traceId: "composio-dropbox-list",
+        spaceId: "workspace",
+        userId: "user-1",
+        signal: new AbortController().signal,
+        connectedConnections: [
+          {
+            id: "connection-dropbox",
+            connectorId: "composio",
+            externalId: "dropbox",
+            displayName: "Dropbox",
+          },
+        ],
+      };
+      const events: ConnectorEvent[] = [];
+      for await (const event of connector.execute(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: {
+            tools: [item],
+          },
+          executionId: "composio-dropbox-list",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+
+      expect(events).toContainEqual(expect.objectContaining({ type: "result" }));
+      expect(composioSdkState.executions).toEqual([
+        { tool: "DROPBOX_LIST_FILES_IN_FOLDER", args: expected },
+      ]);
+    },
+  );
+
+  it("keeps mixed multi-execute calls in their original order", () => {
+    const createFolder = { tool_slug: "DROPBOX_CREATE_FOLDER", arguments: { path: "/Invoices" } };
+    const listFolder = {
+      tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER",
+      arguments: { path: "/Invoices" },
+    };
+    const listRepos = { tool_slug: "GITHUB_GET_REPOS", arguments: { owner: "composio" } };
+
+    expect(
+      expandComposioMultiExecute("COMPOSIO_MULTI_EXECUTE_TOOL", {
+        thought: "check the new folder",
+        tools: [createFolder, listFolder, listRepos],
+      }),
+    ).toEqual([
+      {
+        tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        args: { thought: "check the new folder", tools: [createFolder] },
+      },
+      { tool: "DROPBOX_LIST_FILES_IN_FOLDER", args: { path: "/Invoices" } },
+      {
+        tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+        args: { thought: "check the new folder", tools: [listRepos] },
+      },
+    ]);
+  });
+
+  it("rejects malformed Dropbox listing arguments instead of listing the root", () => {
+    expect(() =>
+      expandComposioMultiExecute("COMPOSIO_MULTI_EXECUTE_TOOL", {
+        tools: [{ tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER", arguments: "{not-json" }],
+      }),
+    ).toThrow("Dropbox folder listing arguments must be a JSON object.");
+    expect(
+      expandComposioMultiExecute("COMPOSIO_MULTI_EXECUTE_TOOL", {
+        tools: [{ tool_slug: "DROPBOX_LIST_FOLDERS", arguments: "" }],
+      }),
+    ).toEqual([{ tool: "DROPBOX_LIST_FOLDERS", args: {} }]);
+  });
+
+  it("keeps every execution log id when a batch is split", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioSdkState.logIds = ["log-create", "log-list"];
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = { data: { ok: true }, error: null };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-dropbox-logs",
+      traceId: "composio-dropbox-logs",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-dropbox",
+          connectorId: "composio",
+          externalId: "dropbox",
+          displayName: "Dropbox",
+        },
+      ],
+    };
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: {
+            tools: [
+              { tool_slug: "DROPBOX_CREATE_FOLDER", arguments: { path: "/Invoices" } },
+              { tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER", arguments: { path: "/Invoices" } },
+            ],
+          },
+          executionId: "composio-dropbox-logs",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+      composioSdkState.logIds = null;
+    }
+
+    const result = events.find((event) => event.type === "result");
+    expect(result && result.type === "result" ? collectLogIds(result.data) : []).toEqual([
+      "log-create",
+      "log-list",
+    ]);
+    expect(composioSdkState.executions.map((execution) => execution.tool)).toEqual([
+      "COMPOSIO_MULTI_EXECUTE_TOOL",
+      "DROPBOX_LIST_FILES_IN_FOLDER",
+    ]);
+  });
+
+  it("keeps earlier log ids when a later split call fails", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioSdkState.logIds = ["log-create", "log-list"];
+    composioSdkState.failTools = ["DROPBOX_LIST_FILES_IN_FOLDER"];
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = { data: { ok: true }, error: null };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-dropbox-partial",
+      traceId: "composio-dropbox-partial",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-dropbox",
+          connectorId: "composio",
+          externalId: "dropbox",
+          displayName: "Dropbox",
+        },
+      ],
+    };
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: {
+            tools: [
+              { tool_slug: "DROPBOX_CREATE_FOLDER", arguments: { path: "/Invoices" } },
+              { tool_slug: "DROPBOX_LIST_FILES_IN_FOLDER", arguments: { path: "/Invoices" } },
+            ],
+          },
+          executionId: "composio-dropbox-partial",
+        },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+      composioSdkState.logIds = null;
+      composioSdkState.failTools = null;
+    }
+
+    expect(events).toEqual([{ type: "error", message: "listing failed", logIds: ["log-create"] }]);
+  });
+
+  it("emits each failed tool's error from a failed batch", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = {
+      data: {
+        results: [
+          {
+            tool_slug: "GITHUB_GET_REPOS",
+            error:
+              'Repository not found. access_token="opaque-access-value" client_secret: "opaque-client-secret" api_key=opaque-api-key password=opaque-password',
+            response: { successful: false },
+          },
+        ],
+      },
+      error: "1 out of 1 tools failed",
+    };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-batch-failure",
+      traceId: "composio-batch-failure",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        { tool: "COMPOSIO_MULTI_EXECUTE_TOOL", args: {}, executionId: "composio-batch-failure" },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+    expect(events).toEqual([
+      {
+        type: "error",
+        message:
+          '1 out of 1 tools failed: GITHUB_GET_REPOS: Repository not found. access_token="[redacted]" client_secret: "[redacted]" api_key="[redacted]" password="[redacted]"',
+      },
+    ]);
+  });
+
+  it("redacts credential values in successful tool results without dropping the payload", async () => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+    composioSdkState.executeResult = {
+      data: {
+        body: "Reset your password: hunter2 today",
+        quoted: 'cfg password="x"',
+        secret: { a: 1 },
+        has_password: true,
+        flag: "has_password: true",
+        joined: "password=p@ss;word",
+        escaped: 'note password="p\\"secret" tail',
+        meta: { name: "ada", api_key: "live-key-value" },
+        lookup_ak_ABC123: "first",
+        lookup_ak_DEF456: "second",
+        COMPOSIO_API_KEY: "plain-secret-value",
+        id: 1,
+      },
+      error: null,
+    };
+
+    const connector = new ComposioConnector();
+    const context: AdapterContext = {
+      operationId: "composio-payload-redaction",
+      traceId: "composio-payload-redaction",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections: [
+        {
+          id: "connection-github",
+          connectorId: "composio",
+          externalId: "github",
+          displayName: "GitHub",
+        },
+      ],
+    };
+
+    const events: ConnectorEvent[] = [];
+    try {
+      for await (const event of connector.execute(
+        { tool: "GITHUB_GET_REPOS", args: {}, executionId: "composio-payload-redaction" },
+        context,
+      )) {
+        events.push(event);
+      }
+    } finally {
+      composioSdkState.executeResult = null;
+    }
+
+    expect(events).toEqual([
+      {
+        type: "result",
+        data: {
+          data: {
+            body: 'Reset your password: "[redacted]" today',
+            quoted: 'cfg password="[redacted]"',
+            secret: "[redacted]",
+            has_password: true,
+            flag: "has_password: true",
+            joined: 'password="[redacted]"',
+            escaped: 'note password="[redacted]" tail',
+            meta: { name: "ada", api_key: "[redacted]" },
+            "lookup_[redacted]": "first",
+            "lookup_[redacted]~2": "second",
+            COMPOSIO_API_KEY: "[redacted]",
+            id: 1,
+          },
+          logId: "log-github",
+        },
+      },
+    ]);
   });
 
   it("resolves connection-request ids to connected-account ids and skips sibling refs", async () => {

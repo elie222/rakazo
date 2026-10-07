@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="archTitle archDesc">
+  <title id="archTitle">Rakazo deployment</title>
+  <desc id="archDesc">Web, desktop, and mobile clients talk to an API. A worker and Postgres sit beside it. The computer defaults to Docker. Prompts go to the model provider you configure.</desc>
+  <rect width="1200" height="720" fill="#fdfdfd"/>
+  <text x="48" y="64" fill="#242424" font-family="Geist, ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="600">A Rakazo deployment</text>
+  <text x="48" y="98" fill="#6d6e70" font-family="Geist, ui-sans-serif, system-ui, sans-serif" font-size="16">Postgres, bot files, and the audit log stay on the machine you run.</text>
+  <g font-family="Geist, ui-sans-serif, system-ui, sans-serif" font-size="16" fill="#242424">
+    <rect x="48" y="150" width="210" height="72" rx="12" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="153" y="192" text-anchor="middle">Web</text>
+    <rect x="278" y="150" width="210" height="72" rx="12" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="383" y="192" text-anchor="middle">Desktop</text>
+    <rect x="508" y="150" width="210" height="72" rx="12" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="613" y="192" text-anchor="middle">Mobile</text>
+    <path d="M383 222 V268" stroke="#242424" stroke-width="1.5" fill="none"/>
+    <rect x="248" y="268" width="480" height="88" rx="14" fill="#242424"/>
+    <text x="488" y="308" text-anchor="middle" fill="#fdfdfd" font-size="18" font-weight="600">API</text>
+    <text x="488" y="332" text-anchor="middle" fill="#c8c8c8" font-size="14">Long-running server</text>
+    <rect x="48" y="420" width="300" height="110" rx="14" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="198" y="462" text-anchor="middle" font-weight="600">Graphile Worker</text>
+    <text x="198" y="488" text-anchor="middle" fill="#6d6e70" font-size="14">Scheduled and background work</text>
+    <rect x="380" y="420" width="300" height="110" rx="14" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="530" y="462" text-anchor="middle" font-weight="600">Postgres</text>
+    <text x="530" y="488" text-anchor="middle" fill="#6d6e70" font-size="14">On the host you operate</text>
+    <rect x="712" y="420" width="440" height="110" rx="14" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="932" y="458" text-anchor="middle" font-weight="600">Computer</text>
+    <text x="932" y="484" text-anchor="middle" fill="#6d6e70" font-size="14">Docker by default</text>
+    <text x="932" y="506" text-anchor="middle" fill="#6d6e70" font-size="14">E2B, Daytona, CreateOS, or Box optional</text>
+    <path d="M198 420 V356 H488" stroke="#242424" stroke-width="1.5" fill="none"/>
+    <path d="M530 420 V356" stroke="#242424" stroke-width="1.5" fill="none"/>
+    <path d="M848 420 V356 H728" stroke="#242424" stroke-width="1.5" fill="none"/>
+    <rect x="248" y="580" width="704" height="88" rx="14" fill="#ffffff" stroke="#2965ec"/>
+    <text x="600" y="618" text-anchor="middle" font-weight="600">Model provider you configure</text>
+    <text x="600" y="644" text-anchor="middle" fill="#6d6e70" font-size="14">Prompts leave the machine. Keys stay on the deployment.</text>
+    <path d="M488 356 V580" stroke="#2965ec" stroke-width="1.5" fill="none"/>
+  </g>
+</svg>

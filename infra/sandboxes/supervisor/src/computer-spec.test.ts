@@ -244,6 +244,20 @@ describe("graphical computer spec", () => {
     expect(dockerfile).toMatch(/gh --version/);
   });
 
+  it("ships document text extractors", () => {
+    const root = path.resolve(import.meta.dirname, "../../computer");
+    const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
+    expect(dockerfile).toMatch(/--no-install-recommends/);
+    expect(dockerfile).toMatch(/\bpoppler-utils\b/);
+    expect(dockerfile).toMatch(/\bpandoc\b/);
+    expect(dockerfile).toMatch(/\bpython3-openpyxl\b/);
+    expect(dockerfile).not.toMatch(/libreoffice/i);
+    expect(dockerfile).toMatch(/pdftotext -v/);
+    expect(dockerfile).toMatch(/pdfinfo -v/);
+    expect(dockerfile).toMatch(/pandoc --version/);
+    expect(dockerfile).toMatch(/import openpyxl/);
+  });
+
   it.skipIf(process.platform === "win32")(
     "delivers desktop menu exec arguments intact through /bin/sh",
     () => {

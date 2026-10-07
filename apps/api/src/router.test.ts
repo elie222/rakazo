@@ -1,3 +1,4 @@
+import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -5,13 +6,14 @@ import {
   ComputerScreenUnavailableError,
   screenLeaseIdForRun,
 } from "@rakazo/adapters";
-import type { Actor, Bot } from "@rakazo/contracts";
+import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { openScreenCapability } from "@rakazo/core/node/screen-capability";
 import type { PrismaClient } from "@rakazo/db";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRouter, enqueueBotIntroRun, type RouterDeps } from "./router.js";
+import type { RouterDeps } from "./router.js";
+import { createRouter, enqueueBotIntroRun, HEARTBEAT_MS, SESSION_RECHECK_MS } from "./router.js";
 
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string) {
@@ -126,6 +128,58 @@ describe("account preferences", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       json: expect.objectContaining({ avatarStyle: "robot" }),
+    });
+  });
+});
+
+describe("billing", () => {
+  function billingDeps(isDeploymentOwner: boolean, billing?: RouterDeps["billing"]) {
+    const prisma = {
+      user: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          email: "user@rakazo.test",
+          name: "Test User",
+          avatarStyle: "robot",
+        }),
+      },
+      spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      billing,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner,
+    } satisfies Actor;
+    return createRouterClient(createRouter(deps), { context: { actor } });
+  }
+
+  it("is not found when the deployment does not bill", async () => {
+    const client = billingDeps(false);
+    await expect(client.billing.status()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.billing.checkout()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(client.me()).resolves.toMatchObject({ billingEnabled: false });
+  });
+
+  it("enables billing on me for everyone but the deployment owner", async () => {
+    const billing = { status: vi.fn() } as unknown as RouterDeps["billing"];
+    await expect(billingDeps(false, billing).me()).resolves.toMatchObject({
+      billingEnabled: true,
+    });
+    await expect(billingDeps(true, billing).me()).resolves.toMatchObject({
+      billingEnabled: false,
     });
   });
 });
@@ -350,6 +404,137 @@ describe("thread answer delivery", () => {
     expect(enqueue).toHaveBeenCalledOnce();
     expect(sink.events.some((event) => event.message === "thread answer enqueue")).toBe(true);
     installLogger(createLogger({ service: "rakazo-api", level: "off", sinks: [] }));
+  });
+});
+
+describe("thread stream authorization", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function threadStream() {
+    vi.useFakeTimers();
+    const queued: ProductEvent[] = [];
+    let waiting: ((result: IteratorResult<ProductEvent>) => void) | undefined;
+    const follow = {
+      next: () =>
+        queued.length > 0
+          ? Promise.resolve({ done: false as const, value: queued.shift()! })
+          : new Promise<IteratorResult<ProductEvent>>((resolve) => {
+              waiting = resolve;
+            }),
+      return: vi.fn(async () => ({ done: true as const, value: undefined })),
+    };
+    const emit = (seq: number, text: string, extra?: Partial<ProductEvent>) => {
+      const event: ProductEvent = {
+        id: `event-${seq}`,
+        spaceId: "workspace-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        seq,
+        type: "thread.message.created",
+        createdAt: new Date().toISOString(),
+        payload: { text },
+        ...extra,
+      };
+      if (waiting) {
+        waiting({ done: false, value: event });
+        waiting = undefined;
+      } else {
+        queued.push(event);
+      }
+    };
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          thread: { id: "thread-1" },
+          computer: null,
+        }),
+      },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({ trigger: "bot_message" }),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      events: { follow: vi.fn(() => follow) },
+      env: { webOrigin: "http://127.0.0.1:5173", screenProxySecret: "fake-test-secret" },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const stillAuthorized = vi.fn().mockResolvedValue(true);
+    const client = createRouterClient(createRouter(deps), {
+      context: { actor, stillAuthorized },
+    });
+    return { client, emit, follow, stillAuthorized };
+  }
+
+  it("stops delivering a busy thread once the session is revoked", async () => {
+    const { client, emit, follow, stillAuthorized } = threadStream();
+    const stream = await client.threads.subscribe({ botId: "bot-1", cursor: -1 });
+
+    emit(1, "before");
+    await expect(stream.next()).resolves.toMatchObject({ value: { seq: 1 } });
+    expect(stillAuthorized).not.toHaveBeenCalled();
+
+    vi.setSystemTime(Date.now() + SESSION_RECHECK_MS);
+    emit(2, "still signed in");
+    await expect(stream.next()).resolves.toMatchObject({ value: { seq: 2 } });
+    expect(stillAuthorized).toHaveBeenCalledTimes(1);
+
+    stillAuthorized.mockResolvedValue(false);
+    vi.setSystemTime(Date.now() + SESSION_RECHECK_MS);
+    emit(3, "after revocation");
+    await expect(stream.next()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(follow.return).toHaveBeenCalled();
+  });
+
+  it("ends an idle stream at its next heartbeat once the session is revoked", async () => {
+    const { client, follow, stillAuthorized } = threadStream();
+    const stream = await client.threads.subscribe({ botId: "bot-1", cursor: -1 });
+
+    stillAuthorized.mockResolvedValue(false);
+    const ended = expect(stream.next()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_MS);
+    await ended;
+    expect(follow.return).toHaveBeenCalled();
+  });
+
+  it("re-checks authorization before skipping filtered peer events", async () => {
+    const { client, emit, follow, stillAuthorized } = threadStream();
+    const stream = await client.threads.subscribe({ botId: "bot-1", cursor: -1 });
+
+    emit(1, "before");
+    await expect(stream.next()).resolves.toMatchObject({ value: { seq: 1 } });
+    expect(stillAuthorized).not.toHaveBeenCalled();
+
+    vi.setSystemTime(Date.now() + SESSION_RECHECK_MS);
+    stillAuthorized.mockResolvedValue(false);
+    emit(2, "hidden", { type: "thread.progress", runId: "run-peer", payload: {} });
+    const pending = stream.next();
+    const outcome = await Promise.race([
+      pending.then(
+        () => "yielded" as const,
+        () => "rejected" as const,
+      ),
+      (async () => {
+        for (let step = 0; step < 30; step++) {
+          await Promise.resolve();
+          await vi.advanceTimersByTimeAsync(0);
+        }
+        return "still-open" as const;
+      })(),
+    ]);
+    expect(outcome).toBe("rejected");
+    await expect(pending).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(stillAuthorized).toHaveBeenCalledTimes(1);
+    expect(follow.return).toHaveBeenCalled();
   });
 });
 

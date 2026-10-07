@@ -4,6 +4,8 @@ import {
   completionMessageSegments,
   completionNotificationBody,
   completionNotificationPreview,
+  DELEGATED_EMPTY_NOTICE,
+  emptyDelegatedToolTurnShouldFail,
   isExactNoResponse,
   LONG_WORK_PROGRESS_GUIDANCE,
   mayOpenModelStream,
@@ -68,6 +70,22 @@ describe("completionMessageSegments", () => {
     expect(completionMessageSegments([], { emptyResponseText: "   " })).toEqual([
       { kind: "text", text: "done." },
     ]);
+  });
+
+  it("fails a tool turn whose only completion text is the empty delegated notice", () => {
+    const steps = [{ kind: "steps" as const, steps: [{ label: "Read file", count: 1 }] }];
+    const blocks = completionMessageSegments(steps, { emptyResponseText: DELEGATED_EMPTY_NOTICE });
+    expect(blocks).toEqual([...steps, { kind: "text", text: DELEGATED_EMPTY_NOTICE }]);
+    expect(emptyDelegatedToolTurnShouldFail(blocks)).toBe(true);
+    expect(emptyDelegatedToolTurnShouldFail(steps)).toBe(false);
+    expect(emptyDelegatedToolTurnShouldFail([{ kind: "text", text: DELEGATED_EMPTY_NOTICE }])).toBe(
+      false,
+    );
+    expect(
+      emptyDelegatedToolTurnShouldFail(
+        completionMessageSegments(steps, { emptyResponseText: "Update from Researcher: 42" }),
+      ),
+    ).toBe(false);
   });
 });
 

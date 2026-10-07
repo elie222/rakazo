@@ -4,6 +4,7 @@ import { getMarkdownAlternate } from "../agent-content";
 import {
   DEFAULT_LOCALE,
   LOCALES,
+  LOCALE_HREFLANG,
   LOCALE_HTML_LANG,
   LOCALE_OG,
   isLocale,
@@ -19,7 +20,13 @@ type Props = {
   locale?: Locale;
   skipLabel?: string;
   homeAlternates?: boolean;
+  localeAlternates?: boolean;
   ogImageAlt?: string;
+  /** Path or absolute URL. Defaults to the shared homepage image. */
+  ogImage?: string;
+  ogType?: string;
+  /** False on the not-found page: noindex, and no canonical URL. */
+  index?: boolean;
 };
 
 const {
@@ -28,15 +35,20 @@ const {
   structuredData,
   skipLabel = "Skip to content",
   homeAlternates = false,
+  localeAlternates = true,
   ogImageAlt = "Rakazo. AI teammates you actually own. Your keys, your model, your machine.",
+  ogImage = "/og-image.png",
+  ogType = "website",
+  index = true,
 } = Astro.props;
 
 const locale: Locale = isLocale(Astro.currentLocale)
   ? Astro.currentLocale
   : (Astro.props.locale ?? DEFAULT_LOCALE);
 
-const canonical = new URL(Astro.url.pathname, SITE_URL).toString();
-const socialImage = new URL("/og-image.png", SITE_URL).toString();
+const canonical = index ? new URL(Astro.url.pathname, SITE_URL).toString() : undefined;
+const robots = index ? "index, follow, max-image-preview:large" : "noindex";
+const socialImage = new URL(ogImage, SITE_URL).toString();
 const structuredDataJson = structuredData
   ? JSON.stringify(structuredData).replaceAll("<", "\\u003c")
   : null;
@@ -54,17 +66,20 @@ const homeUrls = Object.fromEntries(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="robots" content={robots} />
     <meta name="theme-color" content="#FDFDFD" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content={canonical} />
-    <meta property="og:type" content="website" />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta property="og:type" content={ogType} />
     <meta property="og:site_name" content={SITE_NAME} />
     <meta property="og:locale" content={ogLocale} />
-    {LOCALES.filter((l) => l !== locale).map((l) => (
-      <meta property="og:locale:alternate" content={LOCALE_OG[l]} />
-    ))}
+    {
+      localeAlternates &&
+        LOCALES.filter((l) => l !== locale).map((l) => (
+          <meta property="og:locale:alternate" content={LOCALE_OG[l]} />
+        ))
+    }
     <meta property="og:image" content={socialImage} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -75,12 +90,12 @@ const homeUrls = Object.fromEntries(
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={socialImage} />
     <meta name="twitter:image:alt" content={ogImageAlt} />
-    <link rel="canonical" href={canonical} />
+    {canonical && <link rel="canonical" href={canonical} />}
     {
       homeAlternates && (
         <>
           {LOCALES.map((l) => (
-            <link rel="alternate" hreflang={LOCALE_HTML_LANG[l]} href={homeUrls[l]} />
+            <link rel="alternate" hreflang={LOCALE_HREFLANG[l]} href={homeUrls[l]} />
           ))}
           <link rel="alternate" hreflang="x-default" href={homeUrls.en} />
         </>
@@ -89,6 +104,7 @@ const homeUrls = Object.fromEntries(
     {markdownAlternate && (
       <link rel="alternate" type="text/markdown" href={markdownAlternate} />
     )}
+    <link rel="alternate" type="application/rss+xml" title="Rakazo blog" href="/blog/rss.xml" />
     <link rel="sitemap" href="/sitemap-index.xml" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />

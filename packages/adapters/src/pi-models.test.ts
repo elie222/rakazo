@@ -41,6 +41,22 @@ describe("Pi model catalog", () => {
     expect(scriptedCatalogEntry.provider).toBe("scripted");
   });
 
+  it("lists DeepSeek API model ids instead of display labels", () => {
+    const deepseek = listPiCatalog().filter((entry) => entry.provider === "deepseek");
+    const ids = deepseek.map((entry) => entry.id);
+    expect(ids).toContain("deepseek-flash");
+    expect(ids).toContain("deepseek-v4-pro");
+    expect(ids).not.toContain("DeepSeek-V4.1-Flash");
+    expect(ids).not.toContain("DeepSeek V4.1 Flash");
+    for (const entry of deepseek) {
+      expect(entry.id).not.toBe(entry.label);
+      expect(entry.label.length).toBeGreaterThan(0);
+    }
+    expect(deepseek.find((entry) => entry.id === "deepseek-flash")?.label).toBe(
+      "DeepSeek V4.1 Flash",
+    );
+  });
+
   it("lists current xAI and OpenCode Go models from the Pi catalog", () => {
     const catalog = listPiCatalog();
     const ids = (provider: string) =>

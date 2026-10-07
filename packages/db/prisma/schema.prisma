@@ -119,9 +119,31 @@ model Organization {
   members     Member[]
   invitations Invitation[]
   spaces      Space[]
+  billing     BillingAccount?
 
   @@unique([slug])
   @@map("organization")
+}
+
+model BillingAccount {
+  organizationId      String       @id
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId          String       @unique
+  subscriptionId      String?
+  subscriptionItemId  String?
+  priceId             String?
+  status              String?
+  seats               Int?
+  trialEndsAt         DateTime?
+  currentPeriodEndsAt DateTime?
+  cancelAtPeriodEnd   Boolean      @default(false)
+  endedAt             DateTime?
+  subscribedAt        DateTime?
+  syncedAt            DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("billing_accounts")
 }
 
 model ActionApprovalRule {

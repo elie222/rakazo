@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
 import {
   classifySerenityEndpointTrust,
+  createSerenityPrivateLanFetch,
   MAX_SERENITY_FACT_BYTES,
   normalizeSerenityEndpoint,
   parseSerenityEndpoint,
@@ -284,6 +287,48 @@ describe("serenity SSRF fetch path", () => {
     expect(fetchMock).toHaveBeenCalled();
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/private-lan-fetch-reached/);
+  });
+
+  it("drives the private-hostname dispatcher with a fetch from the same undici", async () => {
+    // A mismatched fetch throws invalid onRequestStart before the socket opens.
+    // A completed response on the pinned ephemeral port proves the package fetch
+    // accepted the Agent. Omit, builtin, and a captured builtin all pair.
+    expect(undiciFetch).not.toBe(globalThis.fetch);
+    let hits = 0;
+    const server = createServer((_request, response) => {
+      hits += 1;
+      response.writeHead(204);
+      response.end();
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const address = server.address();
+    if (address == null || typeof address === "string") {
+      throw new Error("Missing test server address");
+    }
+    const captured = globalThis.fetch;
+    try {
+      for (const injected of [undefined, globalThis.fetch, captured] as const) {
+        const safeFetch = createSerenityPrivateLanFetch(injected, async () => [
+          { address: "127.0.0.1", family: 4 as const },
+        ]);
+        try {
+          const response = await safeFetch(`http://serenity.example.test:${address.port}/mcp`, {
+            signal: AbortSignal.timeout(2_000),
+          });
+          expect(response.status).toBe(204);
+        } finally {
+          await safeFetch.close();
+        }
+      }
+      expect(hits).toBe(3);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 });
 

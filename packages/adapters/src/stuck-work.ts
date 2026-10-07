@@ -32,12 +32,20 @@ type StuckCandidate = {
 };
 
 /**
+ * How long a pending reminder claim counts as in flight. Longer than the Expo
+ * push timeout so a live send is not treated as abandoned, and short enough
+ * that a worker which stops before Expo accepts the push is retried.
+ */
+export const STUCK_NOTICE_CLAIM_TTL_MS = 2 * 60 * 1000;
+
+/**
  * Remind, then cancel, queued runs and human waits that have been sitting still.
  * Lives on the job reconciler so a second scheduler is not required. The notice
  * stamp is a thread.meta event keyed to this episode's updatedAt, so answering
- * or reclaiming the run (which bumps updatedAt) can remind again later. It is
- * claimed before the push and removed when that push is not delivered, so a
- * failed push can retry and a successful one is not sent again.
+ * or reclaiming the run (which bumps updatedAt) can remind again later. A pending
+ * claim reserves the send and is not a delivery. It becomes delivered only after
+ * the push is accepted, and it is removed when the push fails or no token can
+ * receive it, so a crash or a dropped token can still remind.
  */
 export async function reconcileStuckWork(deps: {
   prisma: PrismaClient;
@@ -95,7 +103,7 @@ export async function reconcileStuckWork(deps: {
 
   for (const run of due) {
     const alreadyNotified = notices.some(
-      (notice) => notice.runId === run.id && noticeMatchesEpisode(notice.payload, run.updatedAt),
+      (notice) => notice.runId === run.id && noticeIsDelivered(notice.payload, run.updatedAt),
     );
     const action = stuckWorkAction({
       ageMs: stuckWorkAgeMs(run.updatedAt, deps.now),
@@ -141,16 +149,51 @@ function noticesEnabled(run: StuckCandidate): boolean {
   return Boolean(run.thread.groupId || run.bot.notifyOnFinish);
 }
 
-function noticeMatchesEpisode(payload: unknown, updatedAt: Date): boolean {
-  if (!payload || typeof payload !== "object") return false;
-  const record = payload as { notice?: unknown; updatedAt?: unknown };
-  return record.notice === STUCK_WORK_NOTICE && record.updatedAt === updatedAt.toISOString();
+type StuckNoticePayload = {
+  notice?: unknown;
+  updatedAt?: unknown;
+  state?: unknown;
+  claimedAt?: unknown;
+};
+
+function stuckNoticePayload(payload: unknown): StuckNoticePayload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as StuckNoticePayload;
+  if (record.notice !== STUCK_WORK_NOTICE || typeof record.updatedAt !== "string") return null;
+  return record;
+}
+
+/** A stamp counts as delivered once the push was accepted. Pending claims do not. */
+function noticeIsDelivered(payload: unknown, updatedAt: Date): boolean {
+  const record = stuckNoticePayload(payload);
+  if (!record || record.updatedAt !== updatedAt.toISOString()) return false;
+  return record.state !== "pending";
+}
+
+function pendingClaimFresh(payload: unknown, updatedAt: Date, now: Date): boolean {
+  const record = stuckNoticePayload(payload);
+  if (!record) return false;
+  if (record.state !== "pending" || record.updatedAt !== updatedAt.toISOString()) return false;
+  if (typeof record.claimedAt !== "string") return false;
+  const claimedAt = Date.parse(record.claimedAt);
+  if (!Number.isFinite(claimedAt)) return false;
+  const age = now.getTime() - claimedAt;
+  return age >= 0 && age < STUCK_NOTICE_CLAIM_TTL_MS;
+}
+
+function deliveredNotice(run: StuckCandidate): Prisma.InputJsonValue {
+  return {
+    notice: STUCK_WORK_NOTICE,
+    updatedAt: run.updatedAt.toISOString(),
+    state: "delivered",
+  };
 }
 
 async function remindStuckRun(
   deps: {
     prisma: PrismaClient;
     notifications?: NotificationProvider;
+    now: Date;
   },
   run: StuckCandidate,
 ) {
@@ -158,31 +201,25 @@ async function remindStuckRun(
   // so a later sweep can still remind during this same wait.
   if (!deps.notifications || !noticesEnabled(run)) return;
   if (!(await pushCanDeliver(deps.notifications, run.userId))) return;
-  const claimed = await withTransactionRetry(() =>
-    deps.prisma.$transaction(async (tx) => {
-      if (!(await stuckEpisodeOpen(tx, run))) return false;
-      await appendEventInTransaction(tx, {
-        spaceId: run.spaceId,
-        threadId: run.threadId,
-        botId: run.botId,
-        type: "thread.meta",
-        runId: run.id,
-        payload: { notice: STUCK_WORK_NOTICE, updatedAt: run.updatedAt.toISOString() },
-      });
-      return true;
-    }),
+  const claimId = await withTransactionRetry(() =>
+    deps.prisma.$transaction((tx) => claimStuckReminder(tx, run, deps.now)),
   );
-  if (!claimed) return;
+  if (!claimId) return;
   const reminder = stuckWorkReminder(run.status, run.bot.name);
-  const sent = await sendStuckNotice(deps.notifications, run, {
+  const delivery = await sendStuckNotice(deps.notifications, run, {
     kind: reminder.kind,
     title: reminder.title,
     body: reminder.body,
     botId: run.botId,
     threadId: run.threadId,
   });
-  if (sent) return;
-  await withTransactionRetry(() => deps.prisma.$transaction((tx) => clearStuckNotice(tx, run)));
+  if (delivery === "delivered") {
+    await withTransactionRetry(() =>
+      deps.prisma.$transaction((tx) => markStuckNoticeDelivered(tx, claimId, run)),
+    );
+    return;
+  }
+  await withTransactionRetry(() => deps.prisma.$transaction((tx) => clearStuckNotice(tx, claimId)));
 }
 
 async function pushCanDeliver(
@@ -193,24 +230,11 @@ async function pushCanDeliver(
   return notifications.hasPushRecipient(userId);
 }
 
-async function clearStuckNotice(tx: Prisma.TransactionClient, run: StuckCandidate) {
-  await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
-  await tx.event.deleteMany({
-    where: {
-      runId: run.id,
-      type: "thread.meta",
-      AND: [
-        { payload: { path: ["notice"], equals: STUCK_WORK_NOTICE } },
-        { payload: { path: ["updatedAt"], equals: run.updatedAt.toISOString() } },
-      ],
-    },
-  });
-}
-
-async function stuckEpisodeOpen(
+async function claimStuckReminder(
   tx: Prisma.TransactionClient,
   run: StuckCandidate,
-): Promise<boolean> {
+  now: Date,
+): Promise<string | null> {
   await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
   const current = await tx.run.findUnique({
     where: { id: run.id },
@@ -221,18 +245,61 @@ async function stuckEpisodeOpen(
     current.status !== run.status ||
     current.updatedAt.getTime() !== run.updatedAt.getTime()
   ) {
-    return false;
+    return null;
   }
-  const existing = await tx.event.findFirst({
+  const existing = await tx.event.findMany({
     where: {
       runId: run.id,
       type: "thread.meta",
       payload: { path: ["notice"], equals: STUCK_WORK_NOTICE },
     },
-    orderBy: { seq: "desc" },
     select: { payload: true },
   });
-  return !noticeMatchesEpisode(existing?.payload, current.updatedAt);
+  if (existing.some((notice) => noticeIsDelivered(notice.payload, current.updatedAt))) return null;
+  if (existing.some((notice) => pendingClaimFresh(notice.payload, current.updatedAt, now))) {
+    return null;
+  }
+  await tx.event.deleteMany({
+    where: {
+      runId: run.id,
+      type: "thread.meta",
+      AND: [
+        { payload: { path: ["notice"], equals: STUCK_WORK_NOTICE } },
+        { payload: { path: ["updatedAt"], equals: current.updatedAt.toISOString() } },
+        { payload: { path: ["state"], equals: "pending" } },
+      ],
+    },
+  });
+  const claimed = await appendEventInTransaction(tx, {
+    spaceId: run.spaceId,
+    threadId: run.threadId,
+    botId: run.botId,
+    type: "thread.meta",
+    runId: run.id,
+    payload: {
+      notice: STUCK_WORK_NOTICE,
+      updatedAt: current.updatedAt.toISOString(),
+      state: "pending",
+      claimedAt: now.toISOString(),
+    },
+  });
+  return claimed.id;
+}
+
+async function markStuckNoticeDelivered(
+  tx: Prisma.TransactionClient,
+  eventId: string,
+  run: StuckCandidate,
+) {
+  await tx.$queryRaw`SELECT id FROM threads WHERE id = ${run.threadId} FOR UPDATE`;
+  await tx.event.update({
+    where: { id: eventId },
+    data: { payload: deliveredNotice(run) },
+  });
+}
+
+async function clearStuckNotice(tx: Prisma.TransactionClient, eventId: string) {
+  await tx.event.deleteMany({ where: { id: eventId } });
 }
 
 async function expireOne(
@@ -276,23 +343,30 @@ async function expireOne(
   });
 }
 
+type StuckNoticeDelivery = "delivered" | "undeliverable" | "failed";
+
 async function sendStuckNotice(
   notifications: NotificationProvider,
   run: StuckCandidate,
   message: NotificationMessage,
-): Promise<boolean> {
+): Promise<StuckNoticeDelivery> {
+  const context = {
+    operationId: "notify",
+    traceId: run.botId,
+    spaceId: run.spaceId,
+    userId: run.userId,
+    botId: run.botId,
+    signal: new AbortController().signal,
+  };
+  const notice = run.thread.groupId ? { ...message, groupId: run.thread.groupId } : message;
   try {
-    await notifications.send(message, {
-      operationId: "notify",
-      traceId: run.botId,
-      spaceId: run.spaceId,
-      userId: run.userId,
-      botId: run.botId,
-      signal: new AbortController().signal,
-    });
-    return true;
+    if (notifications instanceof ExpoPushProvider) {
+      return await notifications.deliver(notice, context);
+    }
+    await notifications.send(notice, context);
+    return "delivered";
   } catch (error) {
     getLogger().error("stuck work notification", error);
-    return false;
+    return "failed";
   }
 }

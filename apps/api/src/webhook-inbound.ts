@@ -97,9 +97,76 @@ export function parseWebhookPayload(
   return { text: trimmed };
 }
 
+const WEBHOOK_SECRET_CACHE_MAX = 1_000;
+
+type WebhookSecretCacheEntry = {
+  secretId: string;
+  ciphertext: string;
+  plaintext: Promise<string | null>;
+};
+
+/** Webhook secrets by bot id; the decrypt promise is shared so concurrent misses decrypt once. */
+export type WebhookSecretCache = Map<string, WebhookSecretCacheEntry>;
+
+function isPermanentDecryptFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return (
+    message.includes("unable to authenticate") || message.includes("Encrypted secret is malformed")
+  );
+}
+
+function touchWebhookSecret(
+  cache: WebhookSecretCache,
+  botId: string,
+  entry: WebhookSecretCacheEntry,
+) {
+  // Re-insert so the least recently delivered bot is evicted first.
+  cache.delete(botId);
+  cache.set(botId, entry);
+  if (cache.size <= WEBHOOK_SECRET_CACHE_MAX) return;
+  const oldest = cache.keys().next().value;
+  if (oldest !== undefined) cache.delete(oldest);
+}
+
+function decryptWebhookSecret(
+  secrets: WebhookDeps["secrets"],
+  cache: WebhookSecretCache,
+  botId: string,
+  secret: { id: string; ciphertext: string },
+): WebhookSecretCacheEntry {
+  const entry: WebhookSecretCacheEntry = {
+    secretId: secret.id,
+    ciphertext: secret.ciphertext,
+    plaintext: Promise.resolve(null),
+  };
+  entry.plaintext = secrets.loadAsync(secret.ciphertext, secret.id).catch((error: unknown) => {
+    // Auth and malformed ciphertext stay unusable. Anything else can clear, so retry it.
+    if (!isPermanentDecryptFailure(error) && cache.get(botId) === entry) cache.delete(botId);
+    return null;
+  });
+  return entry;
+}
+
+// One decrypt per bot; v2 scrypt runs off the event loop.
+function loadWebhookSecret(
+  secrets: WebhookDeps["secrets"],
+  cache: WebhookSecretCache,
+  botId: string,
+  secret: { id: string; ciphertext: string },
+): Promise<string | null> {
+  const cached = cache.get(botId);
+  const entry =
+    cached?.secretId === secret.id && cached.ciphertext === secret.ciphertext
+      ? cached
+      : decryptWebhookSecret(secrets, cache, botId, secret);
+  touchWebhookSecret(cache, botId, entry);
+  return entry.plaintext;
+}
+
 /** Load the bot webhook secret target, or null when the bot/secret is missing or invalid. */
 export async function loadWebhookTarget(
   deps: Pick<WebhookDeps, "prisma" | "secrets">,
+  cache: WebhookSecretCache,
   botId: string,
 ): Promise<WebhookTarget | null> {
   const bot = await deps.prisma.bot.findUnique({
@@ -113,21 +180,39 @@ export async function loadWebhookTarget(
     },
   });
 
-  if (!bot?.thread || !bot.webhookSecretId) return null;
+  if (!bot?.thread || !bot.webhookSecretId) {
+    cache.delete(botId);
+    return null;
+  }
 
   const secret = await deps.prisma.secret.findUnique({
     where: { id: bot.webhookSecretId },
     select: { id: true, ciphertext: true, kind: true, userId: true, spaceId: true },
   });
-  if (!secret || secret.kind !== WEBHOOK_SECRET_KIND) return null;
-  if (secret.userId !== bot.userId || secret.spaceId !== bot.spaceId) return null;
-
-  let expected: string;
-  try {
-    expected = deps.secrets.load(secret.ciphertext, secret.id);
-  } catch {
+  if (
+    !secret ||
+    secret.kind !== WEBHOOK_SECRET_KIND ||
+    secret.userId !== bot.userId ||
+    secret.spaceId !== bot.spaceId
+  ) {
+    cache.delete(botId);
     return null;
   }
+
+  const expected = await loadWebhookSecret(deps.secrets, cache, botId, secret);
+  if (expected === null) return null;
+
+  const current = await deps.prisma.bot.findUnique({
+    where: { id: botId, archivedAt: null },
+    select: { webhookSecretId: true },
+  });
+  // Rotation can commit during decrypt; the row read above may already be revoked.
+  if (current?.webhookSecretId !== secret.id) {
+    const cached = cache.get(botId);
+    if (cached?.secretId === secret.id) cache.delete(botId);
+    return null;
+  }
+
   return {
     bot: {
       id: bot.id,

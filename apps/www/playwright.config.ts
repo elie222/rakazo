@@ -3,6 +3,11 @@ import { resolveWwwPort } from "./www-port.mjs";
 
 const port = resolveWwwPort();
 const baseURL = process.env.PLAYWRIGHT_WWW_BASE_URL ?? `http://127.0.0.1:${port}`;
+const webServerEnv: Record<string, string> = { RAKAZO_GITHUB_STARS: "offline" };
+for (const [key, value] of Object.entries(process.env)) {
+  if (value !== undefined) webServerEnv[key] = value;
+}
+webServerEnv.RAKAZO_GITHUB_STARS = "offline";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -28,5 +33,6 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    env: webServerEnv,
   },
 });

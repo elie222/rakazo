@@ -48,7 +48,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Space default": "Пространство по умолчанию",
   "Stop all workers and confirm that provider operations have stopped before releasing this computer.":
     "Остановите всех воркеров и убедитесь, что операции провайдера остановлены, прежде чем освобождать этот компьютер.",
-  "Stored securely. Never shown here.": "Хранится безопасно. Здесь не отображается.",
   Thinking: "Рассуждение",
   "Update failed": "Обновление не выполнено",
   "Updating Team Computer": "Обновление компьютера команды",
@@ -77,6 +76,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "{style} avatars": "Аватары: {style}",
   "@{name}": "@{name}",
   "API key": "API-ключ",
+  "Account ID": "ID аккаунта",
+  "Gateway ID": "ID шлюза",
   Account: "Аккаунт",
   Activity: "Активность",
   "Active model": "Активная модель",
@@ -170,8 +171,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Connect Executor": "Подключить Executor",
   "Connect MCP server {name}": "Подключение MCP-сервера {name}",
   "Connect Treg": "Подключить Treg",
-  "Connect this provider to use it as your personal model.":
-    "Подключите этого провайдера, чтобы использовать его в качестве своей личной модели.",
   Connected: "Подключено",
   "Connected · {label}": "Подключено · {label}",
   "Connected. Its tools are available from your next message.":
@@ -218,6 +217,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not open computer": "Не удалось открыть компьютер",
   "Could not open file": "Не удалось открыть файл",
   "Could not open image": "Не удалось открыть изображение",
+  "Close image": "Закрыть изображение",
+  "Could not load image": "Не удалось загрузить изображение",
+  "Could not share image": "Не удалось поделиться изображением",
+  "Loading image…": "Загрузка изображения…",
+  "Open image {name}": "Открыть изображение {name}",
+  "Tap to open": "Нажмите, чтобы открыть",
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
   "Could not play that clip.": "Не удалось воспроизвести этот клип.",
@@ -430,6 +435,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Resetting…": "Сброс…",
   Restore: "Восстановить",
   "Stream replies": "Потоковые ответы",
+  "Load web images automatically": "Автоматически загружать изображения из интернета",
   "Restore the last saved workspace. Unsaved work on the computer is lost.":
     "Восстановить последнее сохранённое рабочее пространство. Несохранённые данные на компьютере будут потеряны.",
   "Resume notifications": "Возобновить уведомления",
@@ -478,6 +484,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Read replies aloud": "Читать ответы вслух",
   "Speak + transcribe": "Озвучить и расшифровать",
   "Speak message": "Озвучить сообщение",
+  Play: "Воспроизвести",
+  Pause: "Пауза",
+  "Select text": "Выделить текст",
   Speak: "Озвучить",
   "Speak only": "Только озвучить",
   "Speech model": "Речевая модель",
@@ -658,4 +667,27 @@ export const RU_MESSAGES: Record<string, string> = {
   "Voice chat": "Голосовой чат",
   "Show transcript": "Показать расшифровку",
   "Hide transcript": "Скрыть расшифровку",
+
+  Artifact: "Артефакт",
+  Artifacts: "Артефакты",
+  "All bots": "Все боты",
+  "Search artifacts…": "Поиск артефактов…",
+  "No artifacts yet": "Пока нет артефактов",
+  "No matching artifacts": "Нет подходящих артефактов",
+  "Long press to delete": "Нажмите и удерживайте, чтобы удалить",
+  "Could not load artifacts.": "Не удалось загрузить артефакты.",
+  "Could not load this artifact.": "Не удалось загрузить этот артефакт.",
+  "Could not delete this artifact": "Не удалось удалить этот артефакт",
+  "Could not share this artifact": "Не удалось поделиться этим артефактом",
+  'Delete "{name}"?': "Удалить «{name}»?",
+  "This can't be undone.": "Это действие нельзя отменить.",
+  "This deletes all {count} versions of this artifact. This can't be undone.":
+    "Будут удалены все версии этого артефакта ({count}). Это действие нельзя отменить.",
+  Versions: "Версии",
+  "No preview for this file type.": "Для этого типа файла нет предпросмотра.",
+
+  "Your phone's built-in voice — free, no account needed":
+    "Встроенный голос телефона — бесплатно, без аккаунта",
+  "Speaks with your phone's own text-to-speech instead of a connected provider.":
+    "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
 };

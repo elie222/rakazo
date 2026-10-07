@@ -10,6 +10,19 @@ describe("mobileSearchDestination", () => {
     snippet: "match",
   } as const;
 
+  it("opens a conversation on the thread itself, at the newest message", () => {
+    const hit: SearchHit = {
+      ...base,
+      kind: "conversation",
+      messageId: "older-reply",
+      seq: 2,
+    };
+    expect(mobileSearchDestination(hit)).toEqual({
+      pathname: "/thread",
+      params: { botId: "bot-1", name: "Scout" },
+    });
+  });
+
   it("opens message matches in their thread", () => {
     const hit: SearchHit = { ...base, kind: "message", messageId: "message-1", seq: 4 };
     expect(mobileSearchDestination(hit)).toEqual({
@@ -23,6 +36,21 @@ describe("mobileSearchDestination", () => {
     expect(mobileSearchDestination(hit)).toEqual({
       pathname: "/routine",
       params: { botId: "bot-1", botName: "Scout", routineId: "routine-1" },
+    });
+  });
+
+  it("opens a group conversation on the newest messages", () => {
+    const hit: SearchHit = {
+      kind: "conversation",
+      groupId: "group-1",
+      groupName: "Squad",
+      title: "Squad",
+      snippet: "Squad",
+      messageId: "older-reply",
+    };
+    expect(mobileSearchDestination(hit)).toEqual({
+      pathname: "/group-thread",
+      params: { groupId: "group-1", name: "Squad" },
     });
   });
 

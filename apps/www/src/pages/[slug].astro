@@ -1,0 +1,20 @@
+---
+import type { Alternative } from "../alternatives";
+import AlternativeCompare from "../components/AlternativeCompare.astro";
+import { ALTERNATIVES } from "../alternatives";
+
+interface Props {
+  page: Alternative;
+}
+
+export function getStaticPaths() {
+  return ALTERNATIVES.map((page) => ({
+    params: { slug: page.slug },
+    props: { page },
+  }));
+}
+
+const { page } = Astro.props;
+---
+
+<AlternativeCompare page={page} />

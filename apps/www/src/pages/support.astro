@@ -3,7 +3,7 @@ import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { DOCS_URL, GITHUB_URL } from "../site";
+import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
@@ -22,7 +22,7 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
       </p>
       <h2>Self-hosted Rakazo</h2>
       <p>
-        Start with the <a href={DOCS_URL}>self-hosting guide</a>. For reproducible bugs or feature requests,
+        Start with the <a href={SELF_HOST_GUIDE_PATH}>self-hosting guide</a>. For reproducible bugs or feature requests,
         open an issue in the <a href={`${GITHUB_URL}/issues`}>Rakazo GitHub repository</a>.
       </p>
       <h2>Account deletion</h2>

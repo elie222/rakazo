@@ -26,7 +26,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
-import { dispatcherFetch } from "./undici-fetch.js";
+import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
 
@@ -173,8 +173,11 @@ export function createOpenAiCompatibleFetch(
       isIP(hostname) === 0
         ? new Agent({ connect: { lookup: createOpenAiCompatibleLookup(url, resolve) } })
         : undefined;
+    // Node's fetch rejects this package Agent. Pair them only when the
+    // dispatcher is attached; a caller-supplied fetch stays in charge.
+    const transport = dispatcher ? fetchPairedWithDispatcher(baseFetch) : baseFetch;
     try {
-      const response = await baseFetch(url, {
+      const response = await transport(url, {
         ...(await requestInitFor(input, init)),
         redirect: "error",
         ...(dispatcher ? { dispatcher } : {}),

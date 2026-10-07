@@ -23,7 +23,13 @@ export interface AuthEnv {
   email?: TransactionalEmailProvider;
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
+  /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
+  afterDeleteSession?: (session: AuthSession) => Promise<void>;
+  /** Runs when a password change replaces the caller's own session instead of ending it. */
+  afterReplaceSession?: (previous: AuthSession, session: AuthSession) => Promise<void>;
 }
+
+type AuthSession = { id: string; userId: string };
 
 export async function resolveSignupPolicy(
   prisma: Pick<PrismaClient, "deploymentSettings">,
@@ -415,6 +421,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
               await bootstrapUserSpace(prisma, user, env);
             }
           },
+          after: async (session, ctx) => {
+            const previous = replacedSession(ctx);
+            if (previous) await env.afterReplaceSession?.(previous, session);
+          },
+        },
+        delete: {
+          after: async (session, ctx) => {
+            if (replacedSession(ctx)?.id !== session.id) await env.afterDeleteSession?.(session);
+          },
         },
       },
       user: {
@@ -477,6 +492,16 @@ function escapeHtml(value: string): string {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/**
+ * Changing the password with revokeOtherSessions deletes every session, then signs the
+ * caller in again, so the caller's device stays signed in under a new session.
+ */
+function replacedSession(
+  ctx: { path?: string; context: { session?: { session: AuthSession } | null } } | null,
+): AuthSession | undefined {
+  return ctx?.path === "/change-password" ? ctx.context.session?.session : undefined;
+}
 
 /**
  * A session token is a bearer credential. Session reads describe sessions

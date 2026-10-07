@@ -49,10 +49,10 @@ test.describe("marketing homepage", () => {
     await page.goto("/zh/");
     await page.waitForLoadState("load");
 
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("真正属于你的 AI 队友");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("真正属于你的开源 Grok Bot 替代品");
     const selfHost = page.locator("#selfhost");
     await expect(selfHost).toBeVisible();
-    await expect(selfHost.getByRole("heading", { level: 2 })).toHaveText("电脑归你所有");
+    await expect(selfHost.getByRole("heading", { level: 2 })).toHaveText("自托管。电脑归你所有。");
     await expect(selfHost.getByRole("button", { name: "开始使用" })).toBeVisible();
     await expect(selfHost.getByRole("link", { name: "在 GitHub 上查看" })).toBeVisible();
     await expect(selfHost.getByRole("link", { name: "阅读文档" })).toBeVisible();
@@ -76,5 +76,31 @@ test.describe("marketing homepage", () => {
       /openssl|docker-compose\.images|POSTGRES_PASSWORD|BETTER_AUTH_SECRET|mkdir rakazo/i,
     );
     await captureScreenshot(page, testInfo, "04-marketing-zh-get-started");
+  });
+
+  test("footer links to the terms with billing and refunds", async ({ page }, testInfo) => {
+    await page.goto("/");
+    await page.getByRole("contentinfo").getByRole("link", { name: "Terms" }).click();
+    await expect(page).toHaveURL(/\/terms\/$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Terms of Service" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cancellation and refunds" })).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toContainText("Inbox Zero Inc.");
+    await captureScreenshot(page, testInfo, "05-marketing-terms");
+  });
+});
+
+test.describe("marketing not-found page", () => {
+  test("is noindex with no canonical or og:url", async ({ page }) => {
+    const response = await page.goto("/this-page-does-not-exist/");
+    await page.waitForLoadState("load");
+
+    expect(response?.status()).toBe(404);
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex");
+    await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+    await expect(page.locator('meta[property="og:url"]')).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Home", exact: true })).toHaveCSS(
+      "color",
+      "rgb(255, 255, 255)",
+    );
   });
 });

@@ -57,6 +57,10 @@ export interface AppEnv {
   sendbluePhoneNumber: string | undefined;
   smtpUrl: string | undefined;
   emailFrom: string | undefined;
+  /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
+  stripeSecretKey: string | undefined;
+  stripeWebhookSecret: string | undefined;
+  stripePriceId: string | undefined;
   emailEmulator: boolean;
   slackBotToken: string | undefined;
   slackSigningSecret: string | undefined;
@@ -148,6 +152,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     smtpUrl: optional(source.SMTP_URL),
     emailFrom: optional(source.EMAIL_FROM),
+    stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
+    stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
+    stripePriceId: optional(source.STRIPE_PRICE_ID),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
     slackBotToken: optional(source.SLACK_BOT_TOKEN),
     slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),

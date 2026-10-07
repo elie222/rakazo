@@ -1,0 +1,11 @@
+---
+import CaptionedImage from "./CaptionedImage.astro";
+---
+
+<CaptionedImage
+  src="/graphics/architecture.svg"
+  width={1200}
+  height={720}
+  alt="Diagram of a Rakazo deployment. Web, desktop, and mobile clients talk to an API. A worker and Postgres sit beside it. The computer defaults to Docker, with E2B, Daytona, CreateOS, or Box optional. Model prompts go to the provider you configure."
+  caption="A Rakazo deployment. Postgres, bot files, and the audit log stay on the machine you run. Prompts still go to the model provider you choose."
+/>

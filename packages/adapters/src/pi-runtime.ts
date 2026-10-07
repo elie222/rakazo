@@ -33,7 +33,9 @@ import type {
 import { usableModelId } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
+import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { builtinAgentTools, DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
+import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import {
   normalizeOpenAiToolParameters,
@@ -95,8 +97,11 @@ const SILENT_TOOL_CONTINUATION_PROMPT =
   "Continue the original task from the latest tool result. Do not stop after a tool call; use any remaining tools needed, then give the user the final answer.";
 const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT =
   "Continue the original task from the latest tool result. If you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply. Otherwise use any remaining tools needed, then give the user the final answer.";
-const TOOL_FINAL_RESPONSE_FALLBACK =
-  "I completed the tool step but could not produce a final response. Please ask me to continue.";
+// Shown as a failed-run error, not an assistant message. Asking the user to
+// continue stores that sentence as the reply, and the next "continue" runs
+// tools and misses a final answer again.
+export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
+  "The tools finished, but the model did not write a final answer. Rephrase the request and try again.";
 const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
 // Reasoning-capable models must not start at "off": for OpenRouter, pi-ai maps
 // that to reasoning.effort "none", which 400s on endpoints that mandate
@@ -278,7 +283,7 @@ export class PiAgentRuntime implements AgentRuntime {
               models,
               m,
               ctx,
-              options,
+              withCloudflareGatewayAuth(request.model, options),
               request.model.maxTokens,
               () => selectedModel.credentials?.accessToken ?? apiKey,
             ),
@@ -334,10 +339,14 @@ export class PiAgentRuntime implements AgentRuntime {
         signal.addEventListener("abort", onAbort);
 
         let streamed = "";
+        let currentMessageStreamed = "";
         let toolCalls = 0;
         let toolActivityShowing = false;
         let silentToolContinuations = 0;
         let toolWorkPendingFinal = false;
+        // Text streamed before this point is tool-turn narration. Only text after
+        // it counts as the final reply, including when the completed message omits it.
+        let streamedBeforePendingFinal = 0;
         agent.subscribe(async (event) => {
           if (event.type === "message_end") {
             await piSession?.appendMessage(event.message);
@@ -354,6 +363,9 @@ export class PiAgentRuntime implements AgentRuntime {
               activity: true,
             });
           }
+          if (event.type === "message_start" && event.message.role === "assistant") {
+            currentMessageStreamed = "";
+          }
           if (
             event.type === "message_update" &&
             event.assistantMessageEvent.type === "text_delta"
@@ -366,15 +378,14 @@ export class PiAgentRuntime implements AgentRuntime {
                 queue.push({ type: "progress", text: "", activity: true });
               }
               streamed += delta;
+              currentMessageStreamed += delta;
               queue.push({ type: "text", text: delta });
             }
           }
           if (event.type === "turn_end") {
             const messageText =
               event.message.role === "assistant" ? assistantText(event.message) : "";
-            const hasToolCalls =
-              event.message.role === "assistant" &&
-              event.message.content.some((part) => part.type === "toolCall");
+            const hasToolCalls = messageHasToolCall(event.message);
             const hasToolResults = event.toolResults.length > 0;
 
             // Text in a turn that also contains a tool call is narration, not a final
@@ -382,11 +393,22 @@ export class PiAgentRuntime implements AgentRuntime {
             if (hasToolCalls && hasToolResults && !host.pausePending) {
               toolWorkPendingFinal = true;
               silentToolContinuations = 0;
+              streamedBeforePendingFinal = streamed.length;
             } else if (toolWorkPendingFinal && !hasToolCalls && !hasToolResults) {
-              if (messageText.trim()) {
+              const streamedFinal = streamed.slice(streamedBeforePendingFinal).trim();
+              if (messageText.trim() || streamedFinal) {
                 toolWorkPendingFinal = false;
                 silentToolContinuations = 0;
+                // A provider can put the answer only on the completed message after
+                // narration already filled `streamed`, so message_end will not emit it.
+                if (messageText.trim() && !streamedFinal) {
+                  streamed += messageText;
+                  queue.push({ type: "text", text: messageText });
+                }
               } else if (
+                // A provider failure is not an empty success. Do not schedule
+                // another model turn that would hide the error.
+                !providerFailureText(event.message) &&
                 !host.pausePending &&
                 silentToolContinuations < MAX_SILENT_TOOL_CONTINUATIONS
               ) {
@@ -403,7 +425,19 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_end" && event.message.role === "assistant") {
             const text = assistantText(event.message);
-            if (text && !streamed) {
+            const streamedThisMessage = currentMessageStreamed;
+            currentMessageStreamed = "";
+            const continued =
+              streamedThisMessage.length > 0 && text.startsWith(streamedThisMessage);
+            const textToEmit = continued ? text.slice(streamedThisMessage.length) : text;
+            const sincePendingFinal = streamed.slice(streamedBeforePendingFinal);
+            const alreadyEmitted =
+              !continued &&
+              (streamedThisMessage.includes(text) || sincePendingFinal.endsWith(text));
+            if (textToEmit && !messageHasToolCall(event.message) && !alreadyEmitted) {
+              streamed += textToEmit;
+              queue.push({ type: "text", text: textToEmit });
+            } else if (text && !streamed) {
               streamed = text;
               queue.push({ type: "text", text });
             }
@@ -445,9 +479,31 @@ export class PiAgentRuntime implements AgentRuntime {
         // errorMessage set. Treat that as a soft stop so the turn still ends
         // with a durable assistant message instead of a failed run.
         const budgetExceeded = host.toolCallBudget.exceeded;
-        const error = agent.state.errorMessage;
+        const terminalMessage = agent.state.messages.at(-1);
+        // pi-agent-core records ordinary provider failures as an empty assistant
+        // message (stopReason "error" / "length") and still resolves the run.
+        // state.errorMessage covers the error stop; the message itself covers a
+        // length stop and any failure that never landed on state.
+        const providerFailure =
+          !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
+        const error = agent.state.errorMessage || providerFailure;
         if (error && !budgetExceeded) {
           throw new Error(sanitizeProviderError(model.provider, error));
+        }
+        if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
+          const terminalText = assistantText(terminalMessage);
+          const sincePendingFinal = streamed.slice(streamedBeforePendingFinal);
+          if (terminalText.trim() && !sincePendingFinal.includes(terminalText)) {
+            const missing =
+              sincePendingFinal && terminalText.startsWith(sincePendingFinal)
+                ? terminalText.slice(sincePendingFinal.length)
+                : terminalText;
+            if (missing) {
+              queue.push({ type: "text", text: missing });
+              streamed += missing;
+              toolWorkPendingFinal = false;
+            }
+          }
         }
         if (budgetExceeded) {
           const budgetMessage = toolCallBudgetExceededMessage(host.toolCallBudget.limit);
@@ -464,10 +520,7 @@ export class PiAgentRuntime implements AgentRuntime {
             // Scheduled/FYI runs may finish after tools with no user-visible text.
             streamed = "";
           } else {
-            // Discard cumulative pre-tool narration from the terminal payload and make the
-            // missing final response visible to the user instead of silently completing.
-            streamed = TOOL_FINAL_RESPONSE_FALLBACK;
-            queue.push({ type: "text", text: streamed });
+            throw new Error(MISSING_TOOL_FINAL_RESPONSE_ERROR);
           }
         } else if (!streamed.trim() && !host.pausePending) {
           streamed = "";
@@ -477,9 +530,7 @@ export class PiAgentRuntime implements AgentRuntime {
             queue.push({ type: "text", text: fallback });
             streamed = fallback;
           } else if (toolWorkPendingFinal && !request.allowSilentEmpty) {
-            // A tool-bearing run must never finish with only a progress/narration message.
-            streamed = TOOL_FINAL_RESPONSE_FALLBACK;
-            queue.push({ type: "text", text: streamed });
+            throw new Error(MISSING_TOOL_FINAL_RESPONSE_ERROR);
           } else if (toolCalls === 0 && !request.allowSilentEmpty) {
             streamed = request.emptyResponseText?.trim() || "No response. Try again.";
             queue.push({ type: "text", text: streamed });
@@ -807,7 +858,9 @@ function withoutSteeringMessages(
  * value only when `credential` is present, and it validates the destination
  * shape itself. An earlier version of this function listed only
  * label/purpose/connectionId, so every credential the model supplied was
- * dropped here and the saved value had nowhere to go.
+ * dropped here and the saved value had nowhere to go. Top-level destination
+ * fields and a JSON string credential are folded into `credential` so they
+ * are not dropped the same way.
  */
 export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
   const label = raw.label == null ? "" : String(raw.label);
@@ -819,11 +872,13 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
       })`,
     );
   }
+  const credential = credentialArgument(raw);
+  const connectionId = connectionIdArgument(raw.connectionId);
   return {
     label,
     purpose,
-    ...(raw.connectionId ? { connectionId: String(raw.connectionId) } : {}),
-    ...(raw.credential ? { credential: raw.credential } : {}),
+    ...(connectionId ? { connectionId } : {}),
+    ...(credential !== undefined ? { credential } : {}),
     ...(raw.replace === true ? { replace: true } : {}),
   };
 }
@@ -1143,7 +1198,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         selectedModel.models,
         m,
         ctx,
-        options,
+        withCloudflareGatewayAuth(requestModel, options),
         requestModel.maxTokens,
         () => selectedModel.credentials?.accessToken ?? selectedModel.apiKey,
       ),
@@ -1253,7 +1308,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     // Shared-budget abort leaves errorMessage on the nested agent; surface it as a
     // completed stop rather than a failed subagent chip.
     const budgetExceeded = host.toolCallBudget.exceeded;
-    const error = nested.state.errorMessage;
+    const error = nested.state.errorMessage || providerFailureText(nested.state.messages.at(-1));
     if (error && !budgetExceeded) {
       const message = sanitizeProviderError(subagentModel.provider, error);
       host.queue.push({ type: "subagent", agentId, name, task, status: "failed", result: message });
@@ -1724,6 +1779,43 @@ function assistantText(message: unknown): string {
         : "",
     )
     .join("");
+}
+
+function messageHasToolCall(message: unknown): boolean {
+  if (!message || typeof message !== "object" || !("content" in message)) return false;
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return false;
+  return content.some(
+    (part) => !!part && typeof part === "object" && "type" in part && part.type === "toolCall",
+  );
+}
+
+/** Provider failure. Aborts stay on the existing cancel path. */
+export function providerFailureText(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  if (!("role" in message) || message.role !== "assistant") return undefined;
+  const stopReason =
+    "stopReason" in message && typeof message.stopReason === "string"
+      ? message.stopReason
+      : undefined;
+  if (stopReason === "aborted") return undefined;
+  const errorMessage =
+    "errorMessage" in message &&
+    typeof message.errorMessage === "string" &&
+    message.errorMessage.trim()
+      ? message.errorMessage.trim()
+      : undefined;
+  const text = assistantText(message).trim();
+  if (stopReason === "error") {
+    if (errorMessage) return errorMessage;
+    if (text) return "The model failed after writing a response.";
+    return "The model failed before writing a response.";
+  }
+  if (stopReason === "length" && !text) {
+    return errorMessage || "The model hit its output limit before writing a response.";
+  }
+  if (errorMessage && !text) return errorMessage;
+  return undefined;
 }
 
 function sanitizeSensitiveText(message: string) {

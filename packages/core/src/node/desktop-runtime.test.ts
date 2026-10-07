@@ -218,6 +218,7 @@ describe("shared Linux desktop lifecycle", () => {
     const command = ensureScreenCommand(0, "bot", "token");
     expect(command).toContain("*libnss_wrapper.so");
     expect(command).toContain("unset LD_PRELOAD");
+    expect(command).toContain('[ "$(cat /tmp/rakazo/desktop-targets/view-1)" != "$desired" ]');
     expect(command).toContain(
       "browser=$(command -v rakazo-browser || command -v google-chrome || command -v google-chrome-stable || command -v chromium || command -v chromium-browser)",
     );

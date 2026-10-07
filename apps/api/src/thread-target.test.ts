@@ -241,6 +241,10 @@ describe("threadSnapshot", () => {
         ],
       }),
     ]);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 15_000,
+      maxWait: 5_000,
+    });
   });
 
   it("returns the latest failed run so the client can show its error", async () => {
@@ -485,7 +489,8 @@ describe("threadSnapshot", () => {
       createdAt: new Date("2026-08-23T00:00:00.000Z"),
     };
     const findManyRuns = groupRunFindMany({ terminals: [run] });
-    const snapshot = await threadSnapshot({ prisma: groupPrisma(findManyRuns) }, groupTarget());
+    const prisma = groupPrisma(findManyRuns);
+    const snapshot = await threadSnapshot({ prisma }, groupTarget());
 
     expect(findManyRuns).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -514,6 +519,10 @@ describe("threadSnapshot", () => {
       expect.objectContaining({ id: "run-failed", status: "failed", error: "member exploded" }),
     );
     expect(snapshot.activeRuns).toEqual([]);
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 15_000,
+      maxWait: 5_000,
+    });
   });
 
   it("omits peer bot_message runs from group activeRuns and displayed terminal run", async () => {

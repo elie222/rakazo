@@ -73,6 +73,7 @@ import {
   modelCredentialAuthKindsForSpace,
   modelCredentialDto,
   normalizeSecretDestination,
+  PushSessionEndedError,
   parseModelSecret,
   pickReusableConnection,
   planLiveConnectionSync,
@@ -173,6 +174,7 @@ import {
   newestVoiceCredentialOrder,
   Prisma,
   parseComputerMode,
+  pushSessionExpiresAt,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
   restoreBotUnderComputerQuota,
@@ -199,6 +201,7 @@ import {
   listArtifactVersions,
   listSpaceArtifacts,
 } from "./artifacts.js";
+import type { BillingService } from "./billing.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,
@@ -272,6 +275,8 @@ const COMPUTER_COMMAND_HISTORY_EVENTS = 200;
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 /** Silence longer than this on a thread stream is indistinguishable from a dead socket. */
 export const HEARTBEAT_MS = 20_000;
+/** A thread stream re-checks its session at least this often while it delivers. */
+export const SESSION_RECHECK_MS = 10_000;
 const EXPORT_MESSAGE_PAGE_SIZE = 500;
 
 async function reconcilePendingConnections(
@@ -542,6 +547,8 @@ export interface RouterDeps {
   dataDir: string;
   /** Present when the external messaging surface is enabled. */
   messaging?: { enabled: boolean; providers: string[]; openSignup: boolean };
+  /** Present only when the deployment bills; self-hosted installs leave it unset. */
+  billing?: BillingService;
   env: {
     agentRuntime: string;
     teamChatJudgeProvider?: string;
@@ -697,7 +704,14 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
 }
 
 export function createRouter(deps: RouterDeps) {
-  const os = implement(appContract).$context<{ actor: Actor | null; signal?: AbortSignal }>();
+  const os = implement(appContract).$context<{
+    actor: Actor | null;
+    /** The signed-in session, so a push token ends with the session that registered it. */
+    sessionId?: string;
+    signal?: AbortSignal;
+    /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
+    stillAuthorized?: () => Promise<boolean>;
+  }>();
   const repos = createRepos(deps.prisma);
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
@@ -743,6 +757,17 @@ export function createRouter(deps: RouterDeps) {
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
     me: authed.me.handler(async ({ context }): Promise<Me> => meDto(deps, context.actor)),
+    billing: {
+      status: authed.billing.status.handler(async ({ context }) =>
+        requireBilling(deps).status(context.actor),
+      ),
+      checkout: authed.billing.checkout.handler(async ({ context }) =>
+        requireBilling(deps).checkout(context.actor),
+      ),
+      portal: authed.billing.portal.handler(async ({ context }) =>
+        requireBilling(deps).portal(context.actor),
+      ),
+    },
     preferences: {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         await deps.prisma.user.update({
@@ -1886,6 +1911,14 @@ export function createRouter(deps: RouterDeps) {
         // A half-open stream looks identical to an idle one, so punctuate silence:
         // the client treats any frame as liveness and reconnects once they stop.
         let pending: Promise<IteratorResult<ProductEvent>> | undefined;
+        // Auth ran once when the stream opened. Re-check before delivering more, so a signed-out
+        // or revoked session stops within SESSION_RECHECK_MS, or at the next heartbeat when idle.
+        let authorizedAt = Date.now();
+        const assertStillAuthorized = async () => {
+          if (!context.stillAuthorized || Date.now() - authorizedAt < SESSION_RECHECK_MS) return;
+          if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
+          authorizedAt = Date.now();
+        };
         try {
           while (!context.signal?.aborted) {
             pending ??= follow.next();
@@ -1897,6 +1930,7 @@ export function createRouter(deps: RouterDeps) {
               }),
             ]).finally(() => clearTimeout(timer));
             if (next === "silent") {
+              await assertStillAuthorized();
               // Keep `pending` so the in-flight read stays the next event in order.
               yield {
                 id: "heartbeat",
@@ -1914,6 +1948,8 @@ export function createRouter(deps: RouterDeps) {
             pending = undefined;
             if (next.done) return;
             const event = next.value;
+            // Filtered peer events also restart the heartbeat, so check before skipping them.
+            await assertStillAuthorized();
             if (await isPeerRun(deps.prisma, event.runId, peerRunCache)) {
               if (!shouldForwardPeerThreadEvent(event)) continue;
             }
@@ -5437,7 +5473,19 @@ export function createRouter(deps: RouterDeps) {
     },
     notifications: {
       registerPush: authed.notifications.registerPush.handler(async ({ context, input }) => {
-        await savePushToken(deps.dataDir, context.actor.userId, input.token);
+        const sessionId = context.sessionId;
+        if (!sessionId) throw new ORPCError("UNAUTHORIZED");
+        try {
+          await savePushToken(deps.dataDir, context.actor.userId, input.token, sessionId, {
+            sessionActive: async () => {
+              const expiresAt = await pushSessionExpiresAt(deps.prisma, sessionId);
+              return expiresAt !== null && expiresAt.getTime() > Date.now();
+            },
+          });
+        } catch (error) {
+          if (error instanceof PushSessionEndedError) throw new ORPCError("UNAUTHORIZED");
+          throw error;
+        }
         return { ok: true as const };
       }),
       unregisterPush: authed.notifications.unregisterPush.handler(async ({ context }) => {
@@ -5757,7 +5805,13 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
     avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
+    billingEnabled: Boolean(deps.billing) && !actor.isDeploymentOwner,
   };
+}
+
+function requireBilling(deps: RouterDeps): BillingService {
+  if (!deps.billing) throw new ORPCError("NOT_FOUND", { message: "Billing is not enabled" });
+  return deps.billing;
 }
 
 async function modelSetup(deps: RouterDeps, actor: Actor) {

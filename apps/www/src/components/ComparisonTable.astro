@@ -1,0 +1,39 @@
+---
+type Row = {
+  topic: string;
+  cells: readonly string[];
+};
+
+type Props = {
+  caption: string;
+  columns: readonly string[];
+  rows: readonly Row[];
+};
+
+const { caption, columns, rows } = Astro.props;
+const headers = columns.slice(1);
+---
+
+<div class="alt-table-wrap">
+  <table class="alt-table">
+    <caption>{caption}</caption>
+    <thead>
+      <tr>
+        <th scope="col">{columns[0]}</th>
+        {headers.map((column) => <th scope="col">{column}</th>)}
+      </tr>
+    </thead>
+    <tbody>
+      {
+        rows.map((row) => (
+          <tr>
+            <th scope="row">{row.topic}</th>
+            {row.cells.map((cell) => (
+              <td>{cell}</td>
+            ))}
+          </tr>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

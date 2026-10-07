@@ -31,6 +31,8 @@ export async function loadMessagePage(
         orderBy: { seq: "asc" },
         take: pageSize,
       });
+      const truncated = rows.length >= pageSize;
+      const coveredThroughSeq = truncated ? (rows[rows.length - 1]?.seq ?? maxSeq) : maxSeq;
       const first = rows[0];
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
@@ -43,6 +45,7 @@ export async function loadMessagePage(
         threadId,
         messages: messages.map(toThreadMessage),
         olderCursor: hasOlder ? (first?.seq ?? null) : null,
+        coveredThroughSeq,
       };
     }
   }

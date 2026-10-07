@@ -78,6 +78,7 @@ vi.mock("../lib/ui-appearance", () => ({
 }));
 vi.mock("react-router-dom", () => ({ Link: ({ children }: { children?: ReactNode }) => children }));
 
+import { getRemoteImagesEnabled } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
 
@@ -120,6 +121,47 @@ it("flips the stored tool activity preference from the settings toggle", async (
 
     expect(localStorage.getItem(TOOL_ACTIVITY_STORAGE_KEY)).toBe("off");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("turns loading web images on and off from the settings toggle", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <GeneralSettingsPanels
+          name="Jamie"
+          avatarStyle="robot"
+          onAvatarStyleChange={async () => undefined}
+        />,
+      );
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="remote-images-toggle"]',
+    );
+    if (!toggle) throw new Error("Missing remote images toggle");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(getRemoteImagesEnabled()).toBe(false);
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(getRemoteImagesEnabled()).toBe(true);
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(getRemoteImagesEnabled()).toBe(false);
   } finally {
     await act(async () => root.unmount());
     container.remove();

@@ -4,6 +4,8 @@ import {
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
+  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   CreateBotInput,
   CreateGroupInput,
   CreateRoutineInput,
@@ -89,6 +91,65 @@ describe("contracts", () => {
       contextWindow: 32768,
     });
     expect(valid.success).toBe(true);
+  });
+
+  it("validates each Cloudflare routing id and allows an update to send only one", () => {
+    const provider = CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider,
+        apiKey: "cf-test-key-value",
+      }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider,
+        maxTokens: 1024,
+        accountId: "acct9999",
+      }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider,
+        maxTokens: 1024,
+        gatewayId: "gateway-2",
+      }).success,
+    ).toBe(true);
+    const unsafeAccount = ModelConnectInputSchema.safeParse({
+      provider,
+      apiKey: "cf-test-key-value",
+      accountId: "../account",
+      gatewayId: "gateway-1",
+    });
+    expect(unsafeAccount.success).toBe(false);
+    if (!unsafeAccount.success) {
+      expect(unsafeAccount.error.issues.some((issue) => issue.path[0] === "accountId")).toBe(true);
+      expect(
+        unsafeAccount.error.issues.some(
+          (issue) => issue.message === CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+        ),
+      ).toBe(true);
+    }
+    const unsafeGateway = ModelConnectInputSchema.safeParse({
+      provider,
+      maxTokens: 1024,
+      gatewayId: "gateway/1",
+    });
+    expect(unsafeGateway.success).toBe(false);
+    if (!unsafeGateway.success) {
+      expect(unsafeGateway.error.issues.some((issue) => issue.path[0] === "gatewayId")).toBe(true);
+    }
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider,
+        apiKey: "cf-test-key-value",
+        accountId: "acct1234",
+        gatewayId: "gateway-1",
+      }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ provider: "openai", apiKey: "sk-test-key-123" }).success,
+    ).toBe(true);
   });
 
   it("lets a built-in connection update maxTokens without a new API key", () => {

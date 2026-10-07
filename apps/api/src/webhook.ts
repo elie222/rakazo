@@ -9,6 +9,7 @@ import {
   parseWebhookPayload,
   WEBHOOK_MAX_BODY_BYTES,
   type WebhookDeps,
+  type WebhookSecretCache,
 } from "./webhook-inbound.js";
 
 export {
@@ -32,6 +33,8 @@ export function webhookPath(botId: string): string {
 }
 
 export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
+  const secretCache: WebhookSecretCache = new Map();
+
   app.post("/api/v1/bots/:botId/webhook", async (c) => {
     const unauthorized = () => c.json({ error: "Unauthorized" }, 401);
 
@@ -41,7 +44,7 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
       return c.json({ error: "Payload too large" }, 413);
     }
 
-    const target = await loadWebhookTarget(deps, c.req.param("botId"));
+    const target = await loadWebhookTarget(deps, secretCache, c.req.param("botId"));
 
     // Same 401 for missing bot, missing secret, and bad bearer so bot ids are not enumerable.
     if (!target || !hasValidBearerToken(c.req.header("authorization"), target.expected)) {
@@ -87,5 +90,5 @@ export function mountWebhookHttpRoutes(app: Hono, deps: WebhookDeps) {
     );
   });
 
-  mountGithubWebhookRoute(app, deps);
+  mountGithubWebhookRoute(app, deps, secretCache);
 }

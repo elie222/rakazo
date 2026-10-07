@@ -1,0 +1,21 @@
+{
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": { "eq": "www.rakazo.com" } }],
+      "destination": "https://rakazo.com/",
+      "statusCode": 301
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": { "eq": "www.rakazo.com" } }],
+      "destination": "https://rakazo.com/:path*",
+      "statusCode": 301
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/sitemap-index.xml",
+      "statusCode": 301
+    }
+  ]
+}

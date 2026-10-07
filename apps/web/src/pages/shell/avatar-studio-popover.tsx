@@ -9,6 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  defaultBotAvatarValue,
   GROK_BOT_COLORS,
   GrokShapePreview,
   parseBotAvatar,
@@ -40,18 +41,23 @@ export function AvatarStudioPopover({
 
   const parsed = parseBotAvatar(value, identity);
   const currentColor = parsed.color || DEFAULT_GROK_BOT_COLOR;
-  const currentShape = parsed.shapeIndex ?? 0;
+  const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
 
   function selectShape(shapeIndex: number) {
     onChange(`${currentColor}::shape_${shapeIndex}`);
   }
 
   function selectColor(color: string) {
-    onChange(`${color}::shape_${currentShape}`);
+    if (parsed.shapeIndex === undefined) {
+      onChange(color);
+      return;
+    }
+    onChange(`${color}::shape_${parsed.shapeIndex}`);
   }
 
-  function resetAvatar() {
-    onChange(`${DEFAULT_GROK_BOT_COLOR}::shape_0`);
+  function restoreDefaultAvatar() {
+    const next = defaultBotAvatarValue(value);
+    if (next !== value) onChange(next);
   }
 
   function processImageFile(file: File) {
@@ -180,7 +186,7 @@ export function AvatarStudioPopover({
 
             <button
               type="button"
-              onClick={resetAvatar}
+              onClick={restoreDefaultAvatar}
               className="px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
               <Trans>Reset</Trans>
@@ -190,8 +196,23 @@ export function AvatarStudioPopover({
           {activeTab === "bot" ? (
             <div className="space-y-4 pt-1" data-testid="avatar-studio-bot-tab">
               <div>
-                <div className="mb-2 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
-                  <Trans>Shape</Trans>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+                    <Trans>Shape</Trans>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="avatar-studio-default"
+                    aria-pressed={isDefaultLook}
+                    onClick={restoreDefaultAvatar}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                      isDefaultLook
+                        ? "bg-secondary text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Trans>Default</Trans>
+                  </button>
                 </div>
                 <div className="grid grid-cols-4 place-items-center gap-2">
                   {[0, 1, 2, 3, 4, 5, 6, 7].map((shapeIndex) => (
@@ -199,7 +220,7 @@ export function AvatarStudioPopover({
                       key={shapeIndex}
                       shapeIndex={shapeIndex}
                       color={currentColor}
-                      selected={!parsed.isImage && currentShape === shapeIndex}
+                      selected={!parsed.isImage && parsed.shapeIndex === shapeIndex}
                       onClick={() => selectShape(shapeIndex)}
                     />
                   ))}

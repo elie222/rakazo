@@ -379,6 +379,29 @@ describe("remote MCP URL policy", () => {
     }
   });
 
+  it("pairs a replaced global fetch with the package Agent", async () => {
+    const previous = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(null, { status: 204 })) as typeof globalThis.fetch;
+    let resolutions = 0;
+    const resolve = async () => {
+      resolutions += 1;
+      if (resolutions > 1) throw new Error("lookup reached");
+      return [{ address: "203.0.113.10", family: 4 as const }];
+    };
+    try {
+      const safeFetch = createSafeRemoteFetch(globalThis.fetch, resolve);
+      try {
+        await expect(safeFetch("https://connectors.example.test/mcp")).rejects.toThrow(
+          "Could not reach connectors.example.test: lookup reached",
+        );
+      } finally {
+        await safeFetch.close();
+      }
+    } finally {
+      globalThis.fetch = previous;
+    }
+  });
+
   it("still pins lookup for a captured Node fetch after globalThis.fetch changes", async () => {
     const captured = globalThis.fetch;
     const previous = globalThis.fetch;
@@ -578,6 +601,24 @@ describe("createPrivateNetworkFetch", () => {
       "non-private address",
     );
     expect(baseFetch).not.toHaveBeenCalled();
+  });
+
+  it("drives the guarded dispatcher with a fetch from the same undici", async () => {
+    expect(undiciFetch).not.toBe(globalThis.fetch);
+    const captured = globalThis.fetch;
+    for (const injected of [undefined, globalThis.fetch, captured] as const) {
+      let resolutions = 0;
+      const safeFetch = createPrivateNetworkFetch(injected, async () => {
+        resolutions += 1;
+        if (resolutions > 1) throw new Error("lookup reached");
+        return [{ address: "192.168.2.10", family: 4 as const }];
+      });
+      try {
+        await expect(safeFetch("http://nas.local:8080/v1")).rejects.toThrow(/lookup reached/);
+      } finally {
+        await safeFetch.close();
+      }
+    }
   });
 
   it("rejects redirect responses instead of returning them", async () => {

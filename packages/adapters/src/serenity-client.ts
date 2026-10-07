@@ -16,7 +16,7 @@ import {
   type RemoteTransportDependencies,
   type SafeRemoteFetch,
 } from "./remote-mcp.js";
-import { dispatcherFetch } from "./undici-fetch.js";
+import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 import { isBlockedHostname } from "./web-ssrf.js";
 
 const SERENITY_TIMEOUT_MS = 15_000;
@@ -251,10 +251,11 @@ function assertPrivateLanAddresses(addresses: ResolvedAddress[]): void {
  * Resolve once, then reuse those addresses in the dispatcher lookup so a second DNS
  * answer cannot redirect the bearer token to a different internal host.
  */
-function createSerenityPrivateLanFetch(
-  baseFetch: typeof globalThis.fetch = dispatcherFetch,
+export function createSerenityPrivateLanFetch(
+  baseFetch?: typeof globalThis.fetch,
   resolve: ResolveHostname = defaultResolveHostname(),
 ): SafeRemoteFetch {
+  const transport = fetchPairedWithDispatcher(baseFetch);
   const privateFetch = async (input: string | URL | Request, init?: RequestInit) => {
     if (typeof input !== "string" && !(input instanceof URL)) {
       throw new Error("Serenity fetch requires a URL, not a Request");
@@ -268,7 +269,7 @@ function createSerenityPrivateLanFetch(
       },
     });
     try {
-      const response = await baseFetch(url, {
+      const response = await transport(url, {
         ...init,
         redirect: "manual",
         dispatcher,

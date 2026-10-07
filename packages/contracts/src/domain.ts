@@ -1,5 +1,10 @@
 import * as z from "zod";
 import { BotAvatarValueSchema } from "./bot-avatar.js";
+import {
+  CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+  cloudflareGatewayRoutingId,
+  isCloudflareAiGatewayProvider,
+} from "./cloudflare-ai-gateway.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
@@ -912,6 +917,7 @@ export const ThreadMessagePageSchema = z.object({
   threadId: Id,
   messages: z.array(ThreadMessageSchema),
   olderCursor: z.number().int().nonnegative().nullable(),
+  coveredThroughSeq: z.number().int().nonnegative().optional(),
 });
 export type ThreadMessagePage = z.infer<typeof ThreadMessagePageSchema>;
 
@@ -985,6 +991,8 @@ export const ModelCredentialSchema = z.object({
   hasKey: z.boolean(),
   isDefault: z.boolean(),
   baseUrl: z.string().optional(),
+  accountId: z.string().optional(),
+  gatewayId: z.string().optional(),
   modelId: z.string().optional(),
   reasoning: z.boolean().optional(),
   thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -1002,6 +1010,8 @@ export const ModelConnectInputSchema = z
   .object({
     provider: z.string(),
     apiKey: z.string().optional(),
+    accountId: z.string().optional(),
+    gatewayId: z.string().optional(),
     baseUrl: z.string().optional(),
     label: z.string().optional(),
     modelId: z.string().optional(),
@@ -1023,6 +1033,22 @@ export const ModelConnectInputSchema = z
         message: "Maximum output tokens cannot exceed the context limit",
         path: ["maxTokens"],
       });
+    }
+    if (isCloudflareAiGatewayProvider(value.provider)) {
+      if (value.accountId !== undefined && !cloudflareGatewayRoutingId(value.accountId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+          path: ["accountId"],
+        });
+      }
+      if (value.gatewayId !== undefined && !cloudflareGatewayRoutingId(value.gatewayId)) {
+        ctx.addIssue({
+          code: "custom",
+          message: CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
+          path: ["gatewayId"],
+        });
+      }
     }
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       if (!value.baseUrl?.trim()) {
@@ -1269,8 +1295,33 @@ export const MeSchema = z.object({
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
   avatarStyle: AvatarStyleSchema,
+  /** True when this deployment bills and the user is not the deployment owner. */
+  billingEnabled: z.boolean(),
 });
 export type Me = z.infer<typeof MeSchema>;
+
+export const BillingStatusSchema = z.object({
+  access: z.boolean(),
+  /** Only organization owners start checkout or open the billing portal. */
+  canManage: z.boolean(),
+  trialAvailable: z.boolean(),
+  trialDays: z.number().int().nonnegative(),
+  state: z.enum(["none", "trialing", "active", "past_due", "incomplete", "canceled"]),
+  price: z
+    .object({
+      amount: z.number().int().nonnegative(),
+      currency: z.string(),
+      interval: z.enum(["day", "week", "month", "year"]),
+      intervalCount: z.number().int().positive(),
+    })
+    .nullable(),
+  seats: z.number().int().nonnegative(),
+  trialEndsAt: z.string().nullable(),
+  currentPeriodEndsAt: z.string().nullable(),
+  cancelAtPeriodEnd: z.boolean(),
+  hasCustomer: z.boolean(),
+});
+export type BillingStatus = z.infer<typeof BillingStatusSchema>;
 
 export const AppBootstrapSchema = z.object({
   me: MeSchema,
