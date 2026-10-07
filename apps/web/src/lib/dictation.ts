@@ -1,5 +1,6 @@
 import { readBoundedResponseBytes } from "@rakazo/core";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
+import { errorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
 
@@ -326,7 +327,7 @@ export class Dictation {
         audio: { echoCancellation: true, noiseSuppression: true },
       });
     } catch (error) {
-      this.failListening(mine, error instanceof Error ? error.message : "Microphone failed");
+      this.failListening(mine, errorText(error, "Microphone failed"));
       return;
     }
     if (this.token !== mine) {
@@ -364,7 +365,7 @@ export class Dictation {
       if (this.media === media) this.media = null;
       if (this.token !== mine) return;
       this.stopVad();
-      this.failListening(mine, error instanceof Error ? error.message : "Dictation failed.");
+      this.failListening(mine, errorText(error, "Dictation failed."));
     }
   }
 
@@ -484,10 +485,7 @@ export class Dictation {
         this.failListening(mine, "Transcription request timed out.");
         return;
       }
-      this.failListening(
-        mine,
-        error instanceof Error ? error.message : "Could not transcribe that recording.",
-      );
+      this.failListening(mine, errorText(error, "Could not transcribe that recording."));
     } finally {
       clearTimeout(timer);
       if (this.transcribeAbort === abort) this.transcribeAbort = null;

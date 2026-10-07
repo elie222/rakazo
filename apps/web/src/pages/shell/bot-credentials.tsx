@@ -4,15 +4,12 @@ import { BotSecretName, encodeLoginSecret } from "@rakazo/contracts";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { rpc } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 
 type ReadableCredentialAuth = NonNullable<BotSecretMetadata["auth"]>;
 type CredentialAuthType = ReadableCredentialAuth["type"];
 
 const fieldLabelClass = "mt-3 block text-[13px] text-muted-foreground";
-
-function readError(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
 
 /** The stored value: a website login is saved as one encoded username and password pair. */
 function credentialPlaintext(type: CredentialAuthType, username: string, value: string) {
@@ -112,7 +109,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
       }
       return true;
     } catch (err) {
-      setError(readError(err, t`Could not save the credential`));
+      setError(errorText(err, t`Could not save the credential`));
       return false;
     } finally {
       setBusy(false);
@@ -149,7 +146,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
         setError(t`Could not load credentials.`);
       }
     } catch (err) {
-      setError(readError(err, t`Could not remove the credential`));
+      setError(errorText(err, t`Could not remove the credential`));
     } finally {
       setBusy(false);
     }

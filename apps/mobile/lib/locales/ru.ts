@@ -226,6 +226,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
   "Could not play that clip.": "Не удалось воспроизвести этот клип.",
+  "Could not reach the server": "Не удалось связаться с сервером",
+  "Enter a password": "Введите пароль",
+  "Enter a valid email": "Введите корректный адрес электронной почты",
+  "Something went wrong. Try again.": "Что-то пошло не так. Попробуйте ещё раз.",
   "Could not reach that server": "Не удалось связаться с этим сервером",
   "Could not reach this model server": "Не удалось связаться с сервером этой модели.",
   "Could not remove source": "Не удалось удалить источник",
@@ -690,4 +694,14 @@ export const RU_MESSAGES: Record<string, string> = {
     "Встроенный голос телефона — бесплатно, без аккаунта",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
+  // ai-data-sharing
+  "AI data sharing": "Передача данных ИИ",
+  "Allow {name} on mobile": "Разрешить {name} на телефоне",
+  "Could not load permissions.": "Не удалось загрузить разрешения.",
+  "No AI services configured.": "Сервисы ИИ не настроены.",
+  "Privacy policy": "Политика конфиденциальности",
+  "Provider privacy policy": "Политика конфиденциальности провайдера",
+  "Withdraw all mobile permissions": "Отозвать все мобильные разрешения",
+  "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
+    "Отзыв применяется к новым действиям с телефона. Остановите текущие запуски и отключите рутины отдельно.",
 };

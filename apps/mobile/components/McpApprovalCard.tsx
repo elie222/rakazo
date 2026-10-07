@@ -1,23 +1,18 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { useEffect, useState } from "react";
 import type { ViewProps } from "react-native";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "./native-action-button";
 
 const styles = StyleSheet.create({
   actions: { flexDirection: "row", gap: 8 },
   badge: { alignItems: "center", borderRadius: 8, height: 28, justifyContent: "center", width: 28 },
   badgeText: { fontSize: 12, fontWeight: "600" },
-  button: {
-    alignItems: "center",
-    borderRadius: 999,
-    justifyContent: "center",
-    minHeight: 36,
-    paddingHorizontal: 14,
-  },
-  card: { borderRadius: 18, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 14, gap: 8 },
+  card: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, gap: 8 },
   description: { fontSize: 13.5, opacity: 0.75 },
   header: { alignItems: "center", flexDirection: "row", gap: 12 },
   headline: { flex: 1, gap: 2 },
@@ -64,7 +59,7 @@ export function McpApprovalCard({
     } catch (reason) {
       Alert.alert(
         action === "approve" ? t("Could not approve this server") : t("Could not complete action"),
-        reason instanceof Error ? reason.message : t("Please try again."),
+        errorText(reason, t("Please try again.")),
       );
     } finally {
       setPendingAction(null);
@@ -74,10 +69,10 @@ export function McpApprovalCard({
   return (
     <View
       accessibilityLabel={t("Connect MCP server {name}", { name: block.name })}
-      style={[styles.card, { borderColor: tokens.border, backgroundColor: tokens.card }]}
+      style={[styles.card, { backgroundColor: native.fill }]}
     >
       <View style={styles.header}>
-        <View style={[styles.badge, { backgroundColor: tokens.muted }]}>
+        <View style={[styles.badge, { backgroundColor: native.fillPressed }]}>
           <Text style={[styles.badgeText, { color: tokens.foreground }]}>M</Text>
         </View>
         <View style={styles.headline}>
@@ -113,36 +108,19 @@ export function McpApprovalCard({
           </Text>
           <View style={styles.actions}>
             {!block.needsOAuth ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={t("Approve")}
+              <NativeActionButton
+                label={t("Approve")}
+                fill={false}
                 disabled={pendingAction !== null}
                 onPress={() => void submit("approve")}
-                style={[
-                  styles.button,
-                  {
-                    backgroundColor: native.fillPressed,
-                    opacity: pendingAction !== null ? 0.6 : 1,
-                  },
-                ]}
-              >
-                <Text style={{ color: native.label, fontSize: 14, fontWeight: "600" }}>
-                  {t("Approve")}
-                </Text>
-              </Pressable>
+              />
             ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Not now")}
+            <NativeActionButton
+              label={t("Not now")}
+              prominence="secondary"
               disabled={pendingAction !== null}
               onPress={() => void submit("dismiss")}
-              style={[
-                styles.button,
-                { borderColor: tokens.border, opacity: pendingAction !== null ? 0.6 : 1 },
-              ]}
-            >
-              <Text style={{ color: tokens.foreground, fontSize: 14 }}>{t("Not now")}</Text>
-            </Pressable>
+            />
           </View>
         </>
       )}

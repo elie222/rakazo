@@ -15,6 +15,12 @@ export default defineConfig({
           ),
         ),
       },
+      {
+        find: /^@lingui\/core\/macro$/,
+        replacement: fileURLToPath(
+          new URL("./packages/testkit/src/lingui-core-macro.ts", import.meta.url),
+        ),
+      },
       // Native-only transitive deps of the renderer contain uncompiled Flow
       // source; stub them out in tests (they never render anyway).
       ...["react-native-fit-image", "@react-native-vector-icons/material-design-icons"].map(

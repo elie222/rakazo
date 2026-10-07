@@ -11,11 +11,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../components/native-action-button";
+import { Checkmark } from "../components/row-accessories";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { errorText } from "../lib/user-error";
 import { speakText } from "../lib/voice";
 
 type VoiceCatalogEntry = {
@@ -97,12 +99,10 @@ export default function VoiceSettings() {
           if (deviceVoiceSaveInFlight.current) return;
           if (deviceVoiceRevision.current !== revision) return;
           setDeviceVoiceReady(true);
-          setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+          setError(errorText(err, t("Could not load voice settings")));
         });
       void load()
-        .catch((err: unknown) =>
-          setError(err instanceof Error ? err.message : t("Could not load voice settings")),
-        )
+        .catch((err: unknown) => setError(errorText(err, t("Could not load voice settings"))))
         .finally(() => setLoading(false));
     }, [load, t]),
   );
@@ -145,7 +145,7 @@ export default function VoiceSettings() {
       await load(selected.id);
       setNotice(t("Connected {name}.", { name: selected.name }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not connect"));
+      setError(errorText(err, t("Could not connect")));
     } finally {
       setPending(null);
     }
@@ -161,7 +161,7 @@ export default function VoiceSettings() {
       setApiKey("");
       await load(credential.provider);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not disconnect"));
+      setError(errorText(err, t("Could not disconnect")));
     } finally {
       setPending(null);
     }
@@ -185,7 +185,7 @@ export default function VoiceSettings() {
         current.map((entry) => (entry.id === saved.id ? { ...entry, ...saved } : entry)),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not save that speech model"));
+      setError(errorText(err, t("Could not save that speech model")));
     } finally {
       speechModelSave.current = null;
       setPending(null);
@@ -199,7 +199,7 @@ export default function VoiceSettings() {
       await rpc("voice/setVoice", { voiceId: nextVoiceId, provider: selected?.id });
       await load(selected?.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not save that voice"));
+      setError(errorText(err, t("Could not save that voice")));
     } finally {
       setPending(null);
     }
@@ -214,7 +214,7 @@ export default function VoiceSettings() {
         throw new Error(t("Connect a voice provider first."));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not play a sample"));
+      setError(errorText(err, t("Could not play a sample")));
     } finally {
       setPending(null);
     }
@@ -222,60 +222,75 @@ export default function VoiceSettings() {
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-        <Pressable
-          disabled={pending !== null || !deviceVoiceReady}
-          onPress={() => void toggleDeviceVoice()}
-          style={[
-            styles.card,
-            deviceVoice && styles.cardActive,
-            (pending !== null || !deviceVoiceReady) && styles.disabled,
-          ]}
-        >
-          <Text style={styles.cardTitle}>{t("This device")}</Text>
-          <Text style={styles.cardMeta}>
-            {deviceVoice
-              ? t("On · Free, works offline")
-              : t("Your phone's built-in voice. Free, no account needed")}
-          </Text>
-        </Pressable>
-        {catalog.map((entry) => {
-          const connected = credentials.some((cred) => cred.provider === entry.id);
-          return (
-            <Pressable
-              key={entry.id}
-              disabled={pending !== null}
-              onPress={() => {
-                setProvider(entry.id);
-                setPending("voice");
-                void load(entry.id)
-                  .catch((err: unknown) =>
-                    setError(
-                      err instanceof Error ? err.message : t("Could not load voice settings"),
-                    ),
-                  )
-                  .finally(() => setPending(null));
-              }}
-              style={[
-                styles.card,
-                provider === entry.id && styles.cardActive,
-                pending !== null && styles.disabled,
-              ]}
-            >
-              <Text style={styles.cardTitle}>{entry.name}</Text>
+        <View style={styles.group}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: deviceVoice }}
+            disabled={pending !== null || !deviceVoiceReady}
+            onPress={() => void toggleDeviceVoice()}
+            style={({ pressed }) => [
+              styles.groupRow,
+              (pending !== null || !deviceVoiceReady) && styles.disabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.rowCopy}>
+              <Text style={styles.cardTitle}>{t("This device")}</Text>
               <Text style={styles.cardMeta}>
-                {connected
-                  ? t("Connected")
-                  : entry.transcribe
-                    ? t("Speak + transcribe")
-                    : t("Speak only")}
+                {deviceVoice
+                  ? t("On · Free, works offline")
+                  : t("Your phone's built-in voice. Free, no account needed")}
               </Text>
-            </Pressable>
-          );
-        })}
+            </View>
+            {deviceVoice ? <Checkmark /> : null}
+          </Pressable>
+        </View>
+        {catalog.length ? (
+          <View style={styles.group}>
+            {catalog.map((entry, index) => {
+              const connected = credentials.some((cred) => cred.provider === entry.id);
+              return (
+                <Pressable
+                  key={entry.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: provider === entry.id }}
+                  disabled={pending !== null}
+                  onPress={() => {
+                    setProvider(entry.id);
+                    setPending("voice");
+                    void load(entry.id)
+                      .catch((err: unknown) =>
+                        setError(errorText(err, t("Could not load voice settings"))),
+                      )
+                      .finally(() => setPending(null));
+                  }}
+                  style={({ pressed }) => [
+                    styles.groupRow,
+                    index > 0 && styles.groupDivider,
+                    pending !== null && styles.disabled,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.rowCopy}>
+                    <Text style={styles.cardTitle}>{entry.name}</Text>
+                    <Text style={styles.cardMeta}>
+                      {connected
+                        ? t("Connected")
+                        : entry.transcribe
+                          ? t("Speak + transcribe")
+                          : t("Speak only")}
+                    </Text>
+                  </View>
+                  {provider === entry.id ? <Checkmark /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
         {selected ? (
           <>
             <TextInput
@@ -324,16 +339,23 @@ export default function VoiceSettings() {
               </>
             ) : null}
             {voices.length ? (
-              <View style={styles.voices}>
-                {voices.map((voice) => (
+              <View style={[styles.group, styles.voices]}>
+                {voices.map((voice, index) => (
                   <Pressable
                     key={voice.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: voiceId === voice.id }}
                     disabled={pending !== null}
                     onPress={() => void chooseVoice(voice.id)}
-                    style={[styles.voiceRow, pending !== null && styles.disabled]}
+                    style={({ pressed }) => [
+                      styles.groupRow,
+                      index > 0 && styles.groupDivider,
+                      pending !== null && styles.disabled,
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <Text style={styles.voiceLabel}>{voice.label}</Text>
-                    {voiceId === voice.id ? <Text style={styles.check}>✓</Text> : null}
+                    {voiceId === voice.id ? <Checkmark /> : null}
                   </Pressable>
                 ))}
               </View>
@@ -361,38 +383,35 @@ function createVoiceStyles() {
     content: { padding: 20, gap: 10 },
     error: { color: tokens.destructive, marginBottom: 8 },
     notice: { color: tokens.success, marginBottom: 8 },
-    card: {
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: tokens.border,
-      padding: 14,
-      backgroundColor: tokens.card,
+    group: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
+    groupRow: {
+      minHeight: 52,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
     },
-    cardActive: { borderColor: tokens.ring, backgroundColor: tokens.muted },
+    groupDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: native.separator,
+    },
+    rowCopy: { flex: 1 },
     cardTitle: { color: native.label, fontSize: 16 },
     cardMeta: { color: native.tertiaryLabel, marginTop: 4, fontSize: 12 },
     fieldLabel: { color: native.label, marginTop: 16 },
     input: {
       marginTop: 8,
       borderRadius: 12,
-      borderWidth: 1,
-      borderColor: tokens.border,
+      backgroundColor: native.fill,
       color: native.label,
       paddingHorizontal: 14,
       paddingVertical: 12,
     },
     disabled: { opacity: 0.4 },
-    voices: { marginTop: 12, borderRadius: 12, borderWidth: 1, borderColor: tokens.border },
-    voiceRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      borderBottomWidth: 1,
-      borderBottomColor: tokens.border,
-    },
-    voiceLabel: { color: native.label },
-    check: { color: tokens.success },
+    pressed: { opacity: 0.7 },
+    voices: { marginTop: 12 },
+    voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
     secondary: { marginTop: 16, alignItems: "center" },
     secondaryLabel: { color: native.secondaryLabel, fontSize: 15 },
   });

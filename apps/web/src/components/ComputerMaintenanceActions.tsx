@@ -19,6 +19,7 @@ import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { computerUpdates } from "../lib/computer-updates";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 
 type Action = "recover" | "reset" | "update";
 
@@ -61,7 +62,7 @@ export function ComputerMaintenanceActions({
       setMenuOpen(false);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not update computer`);
+      setError(errorText(err, t`Could not update computer`));
     } finally {
       setPending(null);
     }

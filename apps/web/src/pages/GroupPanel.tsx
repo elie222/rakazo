@@ -3,6 +3,7 @@ import { type Bot, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, type Group } from "@rakaz
 import { BotAvatar, Button, Input } from "@rakazo/ui-web";
 import { Check, X } from "lucide-react";
 import { useId, useMemo, useState } from "react";
+import { errorText } from "../lib/user-error";
 
 function validSelection(name: string, selected: readonly string[]) {
   return (
@@ -88,7 +89,7 @@ export function CreateGroupForm({
     try {
       await onCreate({ name: name.trim(), botIds: selected });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t`Could not create group`);
+      setError(errorText(cause, t`Could not create group`));
     } finally {
       setSubmitting(false);
     }
@@ -173,11 +174,7 @@ export function GroupSettings({
       await action();
     } catch (cause) {
       setError(
-        cause instanceof Error
-          ? cause.message
-          : kind === "save"
-            ? t`Could not save group`
-            : t`Could not remove group`,
+        errorText(cause, kind === "save" ? t`Could not save group` : t`Could not remove group`),
       );
     } finally {
       setPending(null);

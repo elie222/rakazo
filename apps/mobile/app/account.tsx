@@ -4,7 +4,6 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Button,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -21,6 +20,8 @@ import { BotAvatar } from "../components/bot-avatar";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { NativeSwitch } from "../components/native-switch";
+import { NativeSymbol } from "../components/native-symbol";
+import { Chevron } from "../components/row-accessories";
 import type { MobileBot, MobileMe } from "../lib/api";
 import {
   currentApiBase,
@@ -64,6 +65,7 @@ import {
 } from "../lib/response-streaming";
 import type { AccountUiLocale } from "../lib/ui-locale";
 import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../lib/ui-locale";
+import { errorText } from "../lib/user-error";
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
@@ -149,10 +151,7 @@ export default function Account() {
       await rpc("bots/restore", { botId });
       setArchivedBots((bots) => bots.filter((bot) => bot.id !== botId));
     } catch (restoreError) {
-      Alert.alert(
-        t("Could not restore bot"),
-        restoreError instanceof Error ? restoreError.message : t("Try again."),
-      );
+      Alert.alert(t("Could not restore bot"), errorText(restoreError, t("Try again.")));
     }
   }
 
@@ -177,7 +176,7 @@ export default function Account() {
       router.dismissAll();
       router.replace(explicitSignInRoute);
     } catch (err) {
-      setSignOutError(err instanceof Error ? err.message : t("Could not sign out"));
+      setSignOutError(errorText(err, t("Could not sign out")));
       setPending(false);
     }
   }
@@ -200,9 +199,7 @@ export default function Account() {
       await registerPushToken();
     } catch (cause) {
       setNotifications(previous);
-      setNotificationError(
-        cause instanceof Error ? cause.message : t("Could not update notifications"),
-      );
+      setNotificationError(errorText(cause, t("Could not update notifications")));
     } finally {
       setNotificationPending(false);
     }
@@ -267,7 +264,7 @@ export default function Account() {
       router.dismissAll();
       router.replace("/sign-in");
     } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : t("Could not delete account"));
+      setDeleteError(errorText(err, t("Could not delete account")));
     } finally {
       setPending(false);
     }
@@ -275,12 +272,7 @@ export default function Account() {
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Button
-          color={mobileTokens().primary}
-          title="AI data sharing"
-          onPress={() => router.push("/ai-data-sharing")}
-        />
+      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
         {focus === "usage" ? usageBlock : null}
         <View style={styles.profile}>
           <Text style={styles.name}>{me?.name || t("Your account")}</Text>
@@ -294,7 +286,7 @@ export default function Account() {
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
           <Text style={styles.settingsTitle}>{t("Change password")}</Text>
-          <Text style={styles.chevron}>›</Text>
+          <Chevron />
         </Pressable>
 
         <View accessibilityLabel={t("Appearance")} style={styles.avatarSection}>
@@ -325,11 +317,7 @@ export default function Account() {
                   accessibilityState={{ selected, disabled: avatarPending }}
                   disabled={avatarPending}
                   onPress={() => void selectAvatarStyle(style)}
-                  style={({ pressed }) => [
-                    styles.avatarOption,
-                    selected && styles.avatarOptionSelected,
-                    pressed && styles.pressed,
-                  ]}
+                  style={({ pressed }) => [styles.avatarOption, pressed && styles.pressed]}
                 >
                   <BotAvatar
                     color={style === "robot" ? "#8B5CF6" : "#D62F8B"}
@@ -338,6 +326,12 @@ export default function Account() {
                     variant={style}
                   />
                   <Text style={styles.avatarLabel}>{styleLabel}</Text>
+                  <NativeSymbol
+                    android={selected ? "checkmark-circle" : "ellipse-outline"}
+                    color={selected ? native.label : native.tertiaryLabel}
+                    ios={selected ? "checkmark.circle.fill" : "circle"}
+                    size={22}
+                  />
                 </Pressable>
               );
             })}
@@ -361,7 +355,7 @@ export default function Account() {
           <Text style={styles.settingsTitle}>{t("Language")}</Text>
           <View style={styles.settingsTrailing}>
             <Text style={styles.settingsValue}>{UI_LOCALE_LABELS[locale]}</Text>
-            <Text style={styles.chevron}>›</Text>
+            <Chevron />
           </View>
         </Pressable>
         {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
@@ -423,45 +417,74 @@ export default function Account() {
           </View>
         ) : null}
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => router.push("/models")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Models")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => router.push("/voice")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Voice")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => router.push("/integrations")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        {me?.isDeploymentOwner ? (
+        <View style={styles.group}>
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.push("/integration-setup")}
-            style={styles.settingsButton}
+            disabled={pending}
+            onPress={() => router.push("/models")}
+            style={({ pressed }) => [styles.groupRow, pressed && styles.pressed]}
           >
-            <Text style={styles.settingsTitle}>{t("Server integrations")}</Text>
+            <Text style={styles.settingsTitle}>{t("Models")}</Text>
+            <Chevron />
           </Pressable>
-        ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={pending}
+            onPress={() => router.push("/voice")}
+            style={({ pressed }) => [
+              styles.groupRow,
+              styles.groupDivider,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.settingsTitle}>{t("Voice")}</Text>
+            <Chevron />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={pending}
+            onPress={() => router.push("/integrations")}
+            style={({ pressed }) => [
+              styles.groupRow,
+              styles.groupDivider,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
+            <Chevron />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={pending}
+            onPress={() => router.push("/ai-data-sharing")}
+            style={({ pressed }) => [
+              styles.groupRow,
+              styles.groupDivider,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.settingsTitle}>{t("AI data sharing")}</Text>
+            <Chevron />
+          </Pressable>
+
+          {me?.isDeploymentOwner ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push("/integration-setup")}
+              style={({ pressed }) => [
+                styles.groupRow,
+                styles.groupDivider,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.settingsTitle}>{t("Server integrations")}</Text>
+              <Chevron />
+            </Pressable>
+          ) : null}
+        </View>
 
         <Pressable
           accessibilityRole="button"
@@ -471,7 +494,7 @@ export default function Account() {
           style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
         >
           <Text style={styles.settingsTitle}>{t("Advanced")}</Text>
-          <Text style={styles.chevron}>{advancedOpen ? "⌃" : "›"}</Text>
+          <Chevron expanded={advancedOpen} />
         </Pressable>
         {advancedOpen ? (
           <View style={styles.avatarSection}>
@@ -749,6 +772,22 @@ function createAccountStyles() {
       alignItems: "center",
       justifyContent: "space-between",
     },
+    group: {
+      borderRadius: 14,
+      backgroundColor: native.fill,
+      overflow: "hidden",
+    },
+    groupRow: {
+      minHeight: 52,
+      paddingHorizontal: 16,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    groupDivider: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: native.separator,
+    },
     avatarSection: {
       borderRadius: 16,
       backgroundColor: native.fill,
@@ -761,17 +800,10 @@ function createAccountStyles() {
     },
     avatarOption: {
       flex: 1,
-      minHeight: 86,
-      borderRadius: 14,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.tertiaryLabel,
+      paddingVertical: 4,
       alignItems: "center",
       justifyContent: "center",
       gap: 8,
-    },
-    avatarOptionSelected: {
-      borderColor: native.label,
-      backgroundColor: native.fillPressed,
     },
     avatarLabel: {
       color: native.label,
@@ -803,11 +835,6 @@ function createAccountStyles() {
     settingsValue: {
       color: native.secondaryLabel,
       fontSize: 15,
-    },
-    chevron: {
-      color: native.secondaryLabel,
-      fontSize: 28,
-      fontWeight: "300",
     },
     versionFooter: {
       marginTop: 4,

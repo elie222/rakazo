@@ -648,6 +648,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "Use an http or https URL": "Verwende eine http- oder https-URL",
   // lib/live-notifications.ts
   "Android blocked notifications.": "Android hat Benachrichtigungen blockiert.",
+  // lib/user-error.ts
+  "Could not reach the server": "Server konnte nicht erreicht werden",
+  "Enter a password": "Gib ein Passwort ein",
+  "Enter a valid email": "Gib eine gültige E-Mail-Adresse ein",
+  "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
   // app/models.tsx
@@ -684,4 +689,14 @@ export const DE_MESSAGES: Record<string, string> = {
   Transcript: "Transkript",
   Unmute: "Stummschaltung aufheben",
   "Voice chat": "Sprachchat",
+  // ai-data-sharing
+  "AI data sharing": "KI-Datenfreigabe",
+  "Allow {name} on mobile": "{name} auf dem Handy erlauben",
+  "Could not load permissions.": "Berechtigungen konnten nicht geladen werden.",
+  "No AI services configured.": "Keine KI-Dienste eingerichtet.",
+  "Privacy policy": "Datenschutzerklärung",
+  "Provider privacy policy": "Datenschutzerklärung des Anbieters",
+  "Withdraw all mobile permissions": "Alle mobilen Berechtigungen widerrufen",
+  "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
+    "Der Widerruf gilt für neue mobile Aktionen. Beende laufende Ausführungen und deaktiviere Routinen separat.",
 };

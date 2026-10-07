@@ -12,7 +12,9 @@ import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/ca
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
-import { NativeSymbol } from "./native-symbol";
+import { GlassIconButton } from "./glass-icon-button";
+import { GlassSurface } from "./glass-surface";
+import type { NativeSymbol } from "./native-symbol";
 
 const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
@@ -50,11 +52,12 @@ export function CallCard() {
 
   if (!call) return null;
   return (
-    <View
-      style={[
-        styles.card,
+    <GlassSurface
+      shape="roundedRectangle"
+      style={[styles.card, { top: insets.top + 52 }]}
+      fallbackStyle={[
+        styles.cardFallback,
         {
-          top: insets.top + 52,
           backgroundColor: tokens.card,
           borderColor: tokens.border,
           shadowColor: tokens.foreground,
@@ -138,7 +141,7 @@ export function CallCard() {
           ) : null}
         </View>
       ) : null}
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -162,15 +165,20 @@ function RoundButton({
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      accessibilityRole="button"
+    <GlassIconButton
       accessibilityLabel={label}
-      accessibilityState={selected === undefined ? undefined : { selected }}
+      ios={ios}
+      android={android}
+      size={44}
+      color={color}
+      tint={background}
+      selected={selected}
       onPress={onPress}
-      style={[styles.button, { borderColor: border, backgroundColor: background ?? "transparent" }]}
-    >
-      <NativeSymbol ios={ios} android={android} size={17} color={color} />
-    </Pressable>
+      fallbackStyle={[
+        styles.buttonFallback,
+        { borderColor: border, backgroundColor: background ?? "transparent" },
+      ]}
+    />
   );
 }
 
@@ -224,14 +232,16 @@ const styles = StyleSheet.create({
     position: "absolute",
     alignSelf: "center",
     width: 320,
+    padding: 12,
+    zIndex: 50,
+  },
+  cardFallback: {
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
-    padding: 12,
     shadowOpacity: 0.18,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
-    zIndex: 50,
   },
   row: { flexDirection: "row", alignItems: "center", gap: 10 },
   name: { fontSize: 15, fontWeight: "500", maxWidth: 110, writingDirection: "auto" },
@@ -251,14 +261,7 @@ const styles = StyleSheet.create({
   },
   initialText: { fontSize: 13, fontWeight: "600" },
   actions: { flexDirection: "row", justifyContent: "center", gap: 12, marginTop: 12 },
-  button: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  buttonFallback: { borderWidth: StyleSheet.hairlineWidth },
   transcript: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, gap: 5 },
   line: { fontSize: 13, writingDirection: "auto" },
 });

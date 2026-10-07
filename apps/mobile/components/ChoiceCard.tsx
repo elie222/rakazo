@@ -10,12 +10,12 @@ import {
   threadCardWidth,
 } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
 const styles = StyleSheet.create({
   card: {
     borderRadius: 18,
-    borderWidth: 1,
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -84,10 +84,7 @@ export function ChoiceCard({
       setLocalAnswerId(optionId);
       if (optionId === DISMISSED_CHOICE_ANSWER_ID) onDismissed?.();
     } catch (reason) {
-      Alert.alert(
-        t("Could not complete action"),
-        reason instanceof Error ? reason.message : t("Please try again."),
-      );
+      Alert.alert(t("Could not complete action"), errorText(reason, t("Please try again.")));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -101,8 +98,7 @@ export function ChoiceCard({
         styles.card,
         {
           width: threadCardWidth(windowWidth),
-          borderColor: tokens.border,
-          backgroundColor: tokens.card,
+          backgroundColor: native.fill,
         },
       ]}
     >
@@ -151,12 +147,12 @@ export function ChoiceCard({
               style={({ pressed }) => [
                 styles.option,
                 {
-                  backgroundColor: pressed || chosen ? native.fillPressed : native.fill,
+                  backgroundColor: pressed || chosen ? native.fillPressed : native.page,
                   opacity: busy ? 0.6 : 1,
                 },
               ]}
             >
-              <View style={[styles.letter, { backgroundColor: tokens.background }]}>
+              <View style={[styles.letter, { backgroundColor: native.fill }]}>
                 <Text style={[styles.letterText, { color: tokens.mutedForeground }]}>
                   {option.letter}
                 </Text>

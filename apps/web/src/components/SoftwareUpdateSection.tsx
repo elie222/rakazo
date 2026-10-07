@@ -8,6 +8,7 @@ import {
   isLikelyUpdaterRecreateDisconnect,
   recreateWaitTimeoutError,
 } from "../lib/updater-recreate";
+import { errorText } from "../lib/user-error";
 import { SuccessPop } from "./ai/primitives";
 
 const RECREATE_POLL_MS = 2_000;
@@ -114,7 +115,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : t`Could not load update status`);
+          setError(errorText(err, t`Could not load update status`));
         }
       })
       .finally(() => {
@@ -154,7 +155,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
     try {
       setCheck(await rpc.updater.check({}));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Check failed`);
+      setError(errorText(err, t`Check failed`));
     } finally {
       setBusy(null);
     }
@@ -182,7 +183,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
       }
     } catch (err) {
       if (!isLikelyUpdaterRecreateDisconnect(err)) {
-        setError(err instanceof Error ? err.message : t`Update failed`);
+        setError(errorText(err, t`Update failed`));
         return;
       }
       setDone(t`Waiting for the API to come back…`);
@@ -206,11 +207,7 @@ export function SoftwareUpdateSection({ isDeploymentOwner }: { isDeploymentOwner
         }
       } catch (waitError) {
         setDone(null);
-        setError(
-          waitError instanceof Error
-            ? waitError.message
-            : t`The API did not come back. Refresh this page.`,
-        );
+        setError(errorText(waitError, t`The API did not come back. Refresh this page.`));
       }
     }
   }

@@ -36,6 +36,7 @@ import {
   setUiAppearance,
 } from "../lib/ui-appearance";
 import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
+import { authErrorText } from "../lib/user-error";
 
 export type SettingsGeneralProps = {
   email?: string | null;
@@ -351,7 +352,7 @@ function ChangePasswordSection({ email }: { email?: string | null }) {
         revokeOtherSessions: true,
       });
       if (result.error) {
-        setError(result.error.message ?? t`Could not change password`);
+        setError(authErrorText(result.error, t`Could not change password`));
         return;
       }
       setCurrentPassword("");

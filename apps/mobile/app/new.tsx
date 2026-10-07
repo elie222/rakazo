@@ -14,7 +14,8 @@ import { cancelHeaderOptions } from "../components/sheet-header";
 import { type MobileBot, rpc } from "../lib/api";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 export default function NewBot() {
   const { t } = useI18n();
@@ -62,7 +63,7 @@ export default function NewBot() {
         scheduleFocusPrompt(bot.id, isFirstBot);
       })();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not create bot"));
+      setError(errorText(err, t("Could not create bot")));
     } finally {
       setPending(false);
     }
@@ -86,7 +87,7 @@ export default function NewBot() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -103,7 +104,7 @@ export default function NewBot() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -121,7 +122,7 @@ export default function NewBot() {
           multiline
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,

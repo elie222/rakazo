@@ -16,6 +16,7 @@ import { changePassword } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 export default function ChangePassword() {
   const router = useRouter();
@@ -59,7 +60,7 @@ export default function ChangePassword() {
       close();
       Alert.alert(t("Password updated"));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("Could not change password"));
+      setError(errorText(cause, t("Could not change password")));
     } finally {
       submitting.current = false;
       setPending(false);

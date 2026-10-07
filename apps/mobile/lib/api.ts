@@ -46,6 +46,7 @@ import {
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session";
+import { authErrorText, errorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -69,10 +70,9 @@ function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
 }
 
-function responseErrorMessage(body: unknown, fallback: string): string {
-  return typeof body === "object" && body && "message" in body
-    ? String((body as { message?: string }).message ?? fallback)
-    : fallback;
+/** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
+function requestError(error: unknown, signal: AbortSignal): unknown {
+  return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error));
 }
 
 export function currentApiBase() {
@@ -447,7 +447,7 @@ async function authenticateWithEmail(
     {},
   );
   if (!response.ok) {
-    throw new Error(responseErrorMessage(body, `Could not ${action.replace("-", " ")}`));
+    throw new Error(authErrorText(body, t("Could not continue")));
   }
   const token = tokenFromAuthResponse(response, body);
   if (action === "sign-up" && signupRequiresEmailVerification(body))
@@ -495,7 +495,7 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     },
     {},
   );
-  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not send reset email")));
+  if (!response.ok) throw new Error(authErrorText(body, t("Could not send reset email")));
 }
 
 /** Revoking other sessions also refuses this one until the replacement is saved. */
@@ -527,7 +527,7 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
     },
     {},
   );
-  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not change password")));
+  if (!response.ok) throw new Error(authErrorText(body, t("Could not change password")));
   // Revoking other sessions also revokes this one; keep the replacement the server issued.
   const token = tokenFromAuthResponse(response, body);
   if (!token) return;
@@ -561,7 +561,9 @@ async function fetchMobileJson<T>(
     const response = await withAbort(
       fetch(input, { ...init, signal: controller.signal }),
       controller.signal,
-    );
+    ).catch((error: unknown) => {
+      throw requestError(error, controller.signal);
+    });
     try {
       const body = await readBoundedJsonResponse<T>(
         response,
@@ -573,7 +575,7 @@ async function fetchMobileJson<T>(
       if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
         return { response, body: invalidJsonFallback };
       }
-      throw error;
+      throw requestError(error, controller.signal);
     }
   } finally {
     clearTimeout(timer);
@@ -636,7 +638,7 @@ export async function deleteAccount(password: string) {
     {},
   );
   if (!response.ok) {
-    throw new Error(responseErrorMessage(body, t("Could not delete account")));
+    throw new Error(authErrorText(body, t("Could not delete account")));
   }
   await clearSessionToken();
   await clearSpace();
@@ -697,8 +699,6 @@ export async function rpc<T>(
           () => controller.abort(new Error("Request timed out")),
           options.timeoutMs ?? RPC_TIMEOUT_MS,
         );
-  const abortReason = (error: unknown) =>
-    controller.signal.aborted ? (controller.signal.reason ?? error) : error;
   // Bind recovery to the Space + selection epoch this request was sent with:
   // a 401 arriving after the user switched Spaces — including A → B → A —
   // belongs to a stale request and must not touch the current selection.
@@ -719,8 +719,9 @@ export async function rpc<T>(
       });
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
-      // ("FetchRequestCanceledException"); say what happened instead.
-      throw abortReason(error);
+      // ("FetchRequestCanceledException") and an unreachable server with a native stack
+      // location; say what happened instead.
+      throw requestError(error, controller.signal);
     }
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
@@ -733,14 +734,13 @@ export async function rpc<T>(
     ).catch((error: unknown) => {
       // A proxy, or a server without this procedure, can fail with a body that is not JSON.
       if (!res.ok && error instanceof SyntaxError) return {};
-      throw abortReason(error);
+      throw requestError(error, controller.signal);
     });
     if (!res.ok) {
       // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
       // server's user-facing copy.
       const error = parsed.json as { message?: unknown } | undefined;
-      const message =
-        typeof error?.message === "string" && error.message ? error.message : `rpc ${proc} failed`;
+      const message = errorText(typeof error?.message === "string" ? error.message : "");
       const unauthorized = res.status === 401;
       // Without a Space header a 401 means the server no longer accepts the
       // session itself; Space recovery below probes the same way. Clearing it

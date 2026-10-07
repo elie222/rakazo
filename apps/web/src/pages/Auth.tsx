@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { signupRequiresEmailVerification } from "@rakazo/core";
+import { credentialIssue, signupRequiresEmailVerification } from "@rakazo/core";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearSpaceSelection } from "../lib/rpc";
+import { authErrorText, credentialIssueText } from "../lib/user-error";
 
 type AuthMode = "in" | "up" | "forgot";
 
@@ -58,6 +59,11 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const issue = credentialIssue({ email, password: mode === "forgot" ? undefined : password });
+    if (issue) {
+      setError(credentialIssueText(issue));
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -71,22 +77,23 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           redirectTo: reset.resetUrl,
         });
         if (result.error) {
-          setError(result.error.message ?? t`Could not send reset email`);
+          setError(authErrorText(result.error, t`Could not send reset email`));
           return;
         }
         setResetSent(true);
         return;
       }
+      const trimmedEmail = email.trim();
       const result =
         mode === "up"
           ? await authClient.signUp.email({
-              email,
+              email: trimmedEmail,
               password,
-              name: name || email.split("@")[0] || "User",
+              name: name || trimmedEmail.split("@")[0] || "User",
             })
-          : await authClient.signIn.email({ email, password });
+          : await authClient.signIn.email({ email: trimmedEmail, password });
       if (result.error) {
-        setError(result.error.message ?? t`Could not continue`);
+        setError(authErrorText(result.error, t`Could not continue`));
         return;
       }
       if (mode === "up" && signupRequiresEmailVerification(result.data)) {
@@ -256,7 +263,7 @@ export function PasswordResetPage() {
     try {
       const result = await authClient.resetPassword({ newPassword: password, token });
       if (result.error) {
-        setError(result.error.message ?? t`Could not reset password`);
+        setError(authErrorText(result.error, t`Could not reset password`));
         return;
       }
       setComplete(true);

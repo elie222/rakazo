@@ -41,6 +41,7 @@ import type { ModelCatalogEntry } from "../lib/model-auth";
 import { thinkingLevelLabel } from "../lib/model-catalog";
 import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
+import { errorText } from "../lib/user-error";
 
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 const DEFAULT_THINKING_LEVEL_OPTION = "__rakazo_default_thinking__";
@@ -324,8 +325,7 @@ export function OnboardingPage() {
         });
         setNotice(openAiCompatibleProbeSuccessMessage(models.length));
       },
-      onError: (err) =>
-        setError(err instanceof Error ? err.message : t`Could not reach this model server`),
+      onError: (err) => setError(errorText(err, t`Could not reach this model server`)),
     });
   }
 
@@ -399,7 +399,7 @@ export function OnboardingPage() {
       }
       setStep(nextStepAfterModel(needsIntegrationSetup));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save model`);
+      setError(errorText(err, t`Could not save model`));
     }
   }
 
@@ -437,7 +437,7 @@ export function OnboardingPage() {
       navigate(`/app/${bot.id}`);
     } catch (err) {
       createStartedRef.current = false;
-      setError(err instanceof Error ? err.message : t`Could not create your bot`);
+      setError(errorText(err, t`Could not create your bot`));
     }
   }
 

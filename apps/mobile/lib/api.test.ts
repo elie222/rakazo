@@ -362,9 +362,43 @@ describe("mobile API authentication", () => {
     );
 
     await expect(signIn("ada@example.com", "correct horse")).rejects.toThrow(
-      `exceeds ${MAX_MOBILE_AUTH_RESPONSE_BYTES} bytes`,
+      new Error("Something went wrong. Try again."),
     );
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("maps a sign-up validation dump to field copy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            code: "VALIDATION_ERROR",
+            message:
+              "[body.email] Invalid email address; [body.password] Too small: expected string to have >=1 characters",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    await expect(signUp("ada", "", "Ada")).rejects.toThrow(new Error("Enter a valid email"));
+  });
+
+  it("says the server is unreachable instead of the native fetch failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError(
+          "fetch failed: UnexpectedException: Could not connect to the server. (at ExpoModulesCore/Promise.swift:56)",
+        );
+      }),
+    );
+
+    await expect(signIn("ada@example.com", "correct horse")).rejects.toThrow(
+      new Error("Could not reach the server"),
+    );
+    await expect(rpc("bots/list")).rejects.toThrow(new Error("Could not reach the server"));
   });
 
   it("times out and cancels a stalled sign-in response body", async () => {
@@ -597,7 +631,7 @@ describe("mobile API authentication", () => {
     );
 
     await expect(rpc("bots/create", { name: "Ada" })).rejects.toThrow(
-      new Error("rpc bots/create failed"),
+      new Error("Something went wrong. Try again."),
     );
   });
 
@@ -792,7 +826,7 @@ describe("mobile API authentication", () => {
       ),
     );
 
-    await expect(rpc("bots/get")).rejects.toThrow(`exceeds ${MAX_MOBILE_RPC_RESPONSE_BYTES} bytes`);
+    await expect(rpc("bots/get")).rejects.toThrow(new Error("Something went wrong. Try again."));
   });
 
   it("shares the selected space with direct API requests", async () => {

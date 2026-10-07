@@ -1,4 +1,5 @@
 import type { IntegrationSetupState } from "@rakazo/contracts";
+import { credentialIssue } from "@rakazo/core";
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -30,6 +31,7 @@ import {
 import { type AuthMode, initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { credentialIssueText, errorText } from "../lib/user-error";
 
 export default function SignIn() {
   const { t } = useI18n();
@@ -96,6 +98,11 @@ export default function SignIn() {
 
   async function submit() {
     if (pending) return;
+    const issue = credentialIssue({ email, password: mode === "forgot" ? undefined : password });
+    if (issue) {
+      setError(credentialIssueText(issue));
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -127,7 +134,7 @@ export default function SignIn() {
           : null;
       router.replace(setup?.needsSetup ? "/integration-setup" : "/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not continue"));
+      setError(errorText(err, t("Could not continue")));
     } finally {
       setPending(false);
     }

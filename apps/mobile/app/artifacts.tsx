@@ -10,7 +10,6 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +28,7 @@ import {
 } from "../lib/artifacts";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 const PAGE_SIZE = 30;
 
@@ -36,7 +36,6 @@ export default function ArtifactsScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const { t } = useI18n();
-  const tokens = mobileTokens();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
 
@@ -47,7 +46,6 @@ export default function ArtifactsScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [searchPageFailed, setSearchPageFailed] = useState(false);
   const loadingMoreRef = useRef(false);
@@ -59,23 +57,15 @@ export default function ArtifactsScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: t("Artifacts"),
-      headerRight: () => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("Search")}
-          hitSlop={8}
-          onPress={() =>
-            setSearching((open) => {
-              if (open) setQuery("");
-              return !open;
-            })
-          }
-          style={{ padding: 8 }}
-        >
-          <NativeSymbol ios="magnifyingglass" android="search" size={19} />
-        </Pressable>
-      ),
+      headerSearchBarOptions: {
+        placeholder: t("Search artifacts…"),
+        hideWhenScrolling: false,
+        autoCapitalize: "none",
+        onChangeText: (event: { nativeEvent: { text: string } }) =>
+          setQuery(event.nativeEvent.text),
+        onCancelButtonPress: () => setQuery(""),
+        onClose: () => setQuery(""),
+      },
     });
   }, [navigation, t]);
 
@@ -107,7 +97,7 @@ export default function ArtifactsScreen() {
       } catch (error) {
         if (generation !== generationRef.current) return;
         if (mode === "replace") {
-          setLoadError(error instanceof Error ? error.message : t("Could not load artifacts."));
+          setLoadError(errorText(error, t("Could not load artifacts.")));
         }
       }
     },
@@ -177,17 +167,14 @@ export default function ArtifactsScreen() {
                 setItems((current) => current?.filter((row) => row.id !== item.id) ?? current),
               )
               .catch((error: unknown) =>
-                Alert.alert(
-                  t("Could not delete this artifact"),
-                  error instanceof Error ? error.message : t("Try again."),
-                ),
+                Alert.alert(t("Could not delete this artifact"), errorText(error, t("Try again."))),
               ),
         },
       ],
     );
   }
 
-  const queryActive = searching && query.trim().length > 0;
+  const queryActive = query.trim().length > 0;
   const filtered = useMemo(() => {
     if (!items) return null;
     if (!queryActive) return items;
@@ -214,22 +201,9 @@ export default function ArtifactsScreen() {
 
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
-      {searching ? (
-        <TextInput
-          autoFocus
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t("Search artifacts…")}
-          placeholderTextColor={tokens.mutedForeground}
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-          style={styles.searchField}
-        />
-      ) : null}
-
       <ScrollView
         horizontal
+        contentInsetAdjustmentBehavior="automatic"
         showsHorizontalScrollIndicator={false}
         style={styles.chipsScroll}
         contentContainerStyle={styles.chipsRow}
@@ -252,6 +226,7 @@ export default function ArtifactsScreen() {
 
       <FlatList<MobileArtifactSummary>
         style={styles.listView}
+        contentInsetAdjustmentBehavior="automatic"
         data={filtered ?? []}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
@@ -410,17 +385,6 @@ function createStyles() {
   return StyleSheet.create({
     screen: { flex: 1, backgroundColor: native.page },
     centered: { alignItems: "center", justifyContent: "center", paddingTop: 40 },
-    searchField: {
-      marginHorizontal: 16,
-      marginTop: 8,
-      marginBottom: 4,
-      minHeight: 40,
-      paddingHorizontal: 12,
-      borderRadius: 10,
-      backgroundColor: native.fill,
-      color: native.label,
-      fontSize: 16,
-    },
     chipsScroll: { flexGrow: 0, flexShrink: 0 },
     chipsRow: {
       flexDirection: "row",

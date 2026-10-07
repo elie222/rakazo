@@ -6,7 +6,8 @@ import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
 import { rpc, selectSpace } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 export default function NewSpace() {
   const { t } = useI18n();
@@ -32,7 +33,7 @@ export default function NewSpace() {
       router.dismissAll();
       router.replace("/");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("Could not create space"));
+      setError(errorText(reason, t("Could not create space")));
       setPending(false);
     }
   }
@@ -57,7 +58,7 @@ export default function NewSpace() {
           returnKeyType="done"
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 14,
             color: tokens.foreground,

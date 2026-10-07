@@ -3,10 +3,12 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
+import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
 import { type MobileBot, type MobileGroup, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 export default function GroupSettingsScreen() {
   const { t } = useI18n();
@@ -35,7 +37,7 @@ export default function GroupSettingsScreen() {
         setSelected(nextGroup.members.map((member) => member.botId));
         setBots(nextBots.filter((bot) => !bot.archivedAt));
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("Could not load group")));
+      .catch((err) => setError(errorText(err, t("Could not load group"))));
   }, [groupId]);
 
   async function save() {
@@ -50,7 +52,7 @@ export default function GroupSettingsScreen() {
       if (input.name || input.botIds) await rpc("groups/update", input);
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not save group"));
+      setError(errorText(err, t("Could not save group")));
     } finally {
       setPending(false);
     }
@@ -67,10 +69,7 @@ export default function GroupSettingsScreen() {
           void rpc("groups/remove", { groupId })
             .then(() => router.replace("/"))
             .catch((err) =>
-              Alert.alert(
-                t("Could not delete group"),
-                err instanceof Error ? err.message : t("Try again."),
-              ),
+              Alert.alert(t("Could not delete group"), errorText(err, t("Try again."))),
             ),
       },
     ]);
@@ -78,10 +77,11 @@ export default function GroupSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: t("Group settings") }} />
+      <Stack.Screen options={glassHeaderOptions(t("Group settings"))} />
       <ScrollView
         style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
+        contentInsetAdjustmentBehavior="automatic"
       >
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
@@ -91,7 +91,7 @@ export default function GroupSettingsScreen() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 14,
             color: tokens.foreground,

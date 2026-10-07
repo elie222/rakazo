@@ -6,7 +6,8 @@ import { BotMemberPicker } from "../components/bot-member-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { type MobileBot, rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
   const { t } = useI18n();
@@ -44,7 +45,7 @@ export default function NewGroup() {
         params: { groupId: group.id, name: group.name },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not create group"));
+      setError(errorText(err, t("Could not create group")));
     } finally {
       setPending(false);
     }
@@ -65,7 +66,7 @@ export default function NewGroup() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 14,
             color: tokens.foreground,

@@ -20,6 +20,7 @@ import {
 } from "@rakazo/ui-web";
 import { Lock, Users } from "lucide-react";
 import { useId, useState } from "react";
+import { errorText } from "../../lib/user-error";
 
 /** Each dialog is mounted only while open, so `open` is always true and the
  * parent unmounts it from `onCancel`. Escape and backdrop presses are ignored
@@ -49,7 +50,7 @@ export function NewSpaceDialog({
     setSaving(true);
     setError(null);
     void onConfirm(trimmed).catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : t`Could not create space`);
+      setError(errorText(reason, t`Could not create space`));
       setSaving(false);
     });
   };
@@ -170,7 +171,7 @@ export function NewBotSectionDialog({
             setSaving(true);
             setError(null);
             void onConfirm(trimmed).catch((err: unknown) => {
-              setError(err instanceof Error ? err.message : t`Could not create section`);
+              setError(errorText(err, t`Could not create section`));
               setSaving(false);
             });
           }}
@@ -236,7 +237,7 @@ export function RenameBotSectionDialog({
             setSaving(true);
             setError(null);
             void onConfirm(trimmed).catch((err: unknown) => {
-              setError(err instanceof Error ? err.message : t`Could not rename section`);
+              setError(errorText(err, t`Could not rename section`));
               setSaving(false);
             });
           }}
@@ -311,7 +312,7 @@ export function ClearConversationDialog({
               setClearing(true);
               setError(null);
               void onConfirm().catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not clear conversation`);
+                setError(errorText(err, t`Could not clear conversation`));
                 setClearing(false);
               });
             }}
@@ -401,7 +402,7 @@ export function DeleteBotDialog({
               setDeleting(true);
               setError(null);
               void onConfirm(deleteMemories).catch((err: unknown) => {
-                setError(err instanceof Error ? err.message : t`Could not delete bot`);
+                setError(errorText(err, t`Could not delete bot`));
                 setDeleting(false);
               });
             }}
@@ -455,13 +456,14 @@ export function DeleteItemDialog({
               setError(null);
               void onConfirm().catch((err: unknown) => {
                 setError(
-                  err instanceof Error
-                    ? err.message
-                    : noun === "group"
+                  errorText(
+                    err,
+                    noun === "group"
                       ? t`Could not delete group`
                       : noun === "space"
                         ? t`Could not delete space`
                         : t`Could not delete routine`,
+                  ),
                 );
                 setDeleting(false);
               });

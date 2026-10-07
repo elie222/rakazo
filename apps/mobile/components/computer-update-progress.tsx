@@ -7,6 +7,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { computerUpdates } from "../lib/computer-updates";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
+import { GlassSurface } from "./glass-surface";
+import { NativeActionButton } from "./native-action-button";
+import { NativeSymbol } from "./native-symbol";
 
 export function ComputerUpdateProgress() {
   const { t } = useI18n();
@@ -53,17 +56,24 @@ export function ComputerUpdateProgress() {
               setError(false);
               computerUpdates.open(update.id);
             }}
-            style={[styles.pill, { backgroundColor: tokens.card, borderColor: tokens.border }]}
           >
-            {!computerUpdateNeedsAttention(update) ? (
-              <ActivityIndicator color={tokens.foreground} />
-            ) : null}
-            <View>
-              <Text style={{ color: tokens.foreground }}>{title(update)}</Text>
-              <Text style={[styles.secondary, { color: tokens.mutedForeground }]}>
-                {labels[COMPUTER_UPDATE_STAGES.indexOf(update.stage)]}
-              </Text>
-            </View>
+            <GlassSurface
+              style={styles.pill}
+              fallbackStyle={[
+                styles.pillFallback,
+                { backgroundColor: tokens.card, borderColor: tokens.border },
+              ]}
+            >
+              {!computerUpdateNeedsAttention(update) ? (
+                <ActivityIndicator color={tokens.foreground} />
+              ) : null}
+              <View>
+                <Text style={{ color: tokens.foreground }}>{title(update)}</Text>
+                <Text style={[styles.secondary, { color: tokens.mutedForeground }]}>
+                  {labels[COMPUTER_UPDATE_STAGES.indexOf(update.stage)]}
+                </Text>
+              </View>
+            </GlassSurface>
           </Pressable>
         ))}
       </View>
@@ -92,9 +102,12 @@ export function ComputerUpdateProgress() {
                     {index === current ? (
                       <ActivityIndicator color={tokens.foreground} />
                     ) : (
-                      <Text style={{ color: tokens.mutedForeground }}>
-                        {index < current ? "✓" : "○"}
-                      </Text>
+                      <NativeSymbol
+                        ios={index < current ? "checkmark.circle.fill" : "circle"}
+                        android={index < current ? "checkmark-circle" : "ellipse-outline"}
+                        size={20}
+                        color={tokens.mutedForeground}
+                      />
                     )}
                     <Text
                       accessibilityLiveRegion={index === current ? "polite" : "none"}
@@ -114,10 +127,11 @@ export function ComputerUpdateProgress() {
               </Text>
             ) : null}
             {selected.status === "interrupted" && selected.canReleaseReservation ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                style={styles.button}
+              <NativeActionButton
+                label={t("Release computer")}
+                prominence="secondary"
+                fill
+                busy={busy}
                 onPress={() =>
                   Alert.alert(
                     t("Release interrupted computer?"),
@@ -138,14 +152,12 @@ export function ComputerUpdateProgress() {
                     ],
                   )
                 }
-              >
-                <Text style={{ color: tokens.foreground }}>{t("Release computer")}</Text>
-              </Pressable>
+              />
             ) : null}
             {selected.status === "failed" ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
+              <NativeActionButton
+                label={t("Recover computer")}
+                busy={busy}
                 onPress={() => {
                   setBusy(true);
                   setError(false);
@@ -154,24 +166,18 @@ export function ComputerUpdateProgress() {
                     .catch(() => setError(true))
                     .finally(() => setBusy(false));
                 }}
-                style={styles.button}
-              >
-                <Text style={{ color: tokens.foreground }}>{t("Recover computer")}</Text>
-              </Pressable>
+              />
             ) : null}
-            <Pressable
-              accessibilityRole="button"
-              style={styles.button}
+            <NativeActionButton
+              label={selected.status === "failed" ? t("Dismiss") : t("Continue in Background")}
+              prominence="secondary"
+              fill
               onPress={() => {
                 if (selected.status === "failed")
                   void computerUpdates.dismiss(selected.id).catch(() => setError(true));
                 else computerUpdates.open(null);
               }}
-            >
-              <Text style={{ color: tokens.foreground }}>
-                {selected.status === "failed" ? t("Dismiss") : t("Continue in Background")}
-              </Text>
-            </Pressable>
+            />
           </View>
         ) : null}
       </Modal>
@@ -184,13 +190,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
   },
+  pillFallback: { borderWidth: 1, borderRadius: 14, paddingHorizontal: 12 },
   secondary: { fontSize: 12, textAlign: "center", marginTop: 3 },
   sheet: { flex: 1, padding: 24, gap: 24 },
   title: { fontSize: 22, fontWeight: "600" },
   step: { flexDirection: "row", alignItems: "center", gap: 16 },
-  button: { minHeight: 44, justifyContent: "center", alignItems: "center" },
 });

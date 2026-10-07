@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,7 +9,9 @@ import { imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
 import type { ImageSize } from "../lib/inline-image";
 import { fitImageSize } from "../lib/inline-image";
-import { NativeSymbol } from "./native-symbol";
+import { iosAtLeast } from "../lib/native-controls";
+import { errorText } from "../lib/user-error";
+import { GlassIconButton } from "./glass-icon-button";
 
 export type ImageArtifactPreviewTarget = {
   artifactId: string;
@@ -167,7 +169,7 @@ export function ImageArtifactViewer({
   const fail = (error: unknown) =>
     setState({
       status: "error",
-      message: error instanceof Error ? error.message : t("Could not load image"),
+      message: errorText(error, t("Could not load image")),
     });
 
   useEffect(() => {
@@ -199,12 +201,7 @@ export function ImageArtifactViewer({
   const share = () =>
     void imageArtifactUri(requestTarget(), target.artifactId, target.mimeType)
       .then((uri) => shareLocalFile(uri, target.mimeType, target.name))
-      .catch((error) =>
-        Alert.alert(
-          t("Could not share image"),
-          error instanceof Error ? error.message : t("Try again."),
-        ),
-      );
+      .catch((error) => Alert.alert(t("Could not share image"), errorText(error, t("Try again."))));
 
   return (
     // Insets come from the SafeAreaProvider mounted by app/image.tsx, seeded with the window
@@ -219,31 +216,34 @@ export function ImageArtifactViewer({
         },
       ]}
     >
-      <View style={[styles.header, { borderBottomColor: tokens.border }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: tokens.border,
+            borderBottomWidth: iosAtLeast(26) ? 0 : StyleSheet.hairlineWidth,
+          },
+        ]}
+      >
         <Text numberOfLines={1} style={[styles.title, { color: tokens.foreground }]}>
           {target.name}
         </Text>
-        <Pressable
-          accessibilityLabel={t("Share {name}", { name: target.name })}
-          hitSlop={8}
-          onPress={share}
-          style={styles.headerButton}
-        >
-          <NativeSymbol
+        <View style={styles.headerActions}>
+          <GlassIconButton
+            accessibilityLabel={t("Share {name}", { name: target.name })}
             ios="square.and.arrow.up"
             android="share-social-outline"
-            size={20}
-            color={tokens.mutedForeground}
+            iconSize={18}
+            onPress={share}
           />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={t("Close image")}
-          hitSlop={8}
-          onPress={onClose}
-          style={styles.headerButton}
-        >
-          <NativeSymbol ios="xmark" android="close" size={20} color={tokens.mutedForeground} />
-        </Pressable>
+          <GlassIconButton
+            accessibilityLabel={t("Close image")}
+            ios="xmark"
+            android="close"
+            iconSize={18}
+            onPress={onClose}
+          />
+        </View>
       </View>
       <View
         style={styles.stage}
@@ -279,11 +279,10 @@ const styles = StyleSheet.create({
     height: HEADER_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
-    borderBottomWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 12,
   },
   title: { flex: 1, fontSize: 15, fontWeight: "500" },
-  headerButton: { padding: 10 },
+  headerActions: { flexDirection: "row", gap: 8 },
   stage: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   message: { fontSize: 15, textAlign: "center", padding: 24 },
 });

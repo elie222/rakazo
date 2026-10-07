@@ -29,6 +29,8 @@ import {
 import { t, useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { iosAtLeast } from "../lib/native-controls";
+import { errorText } from "../lib/user-error";
 
 type PreviewContent =
   | { kind: "html"; html: string }
@@ -93,7 +95,7 @@ export default function ArtifactDetailScreen() {
         if (!cancelled) {
           setContent({
             status: "error",
-            message: error instanceof Error ? error.message : t("Could not load this artifact."),
+            message: errorText(error, t("Could not load this artifact.")),
           });
         }
       });
@@ -122,10 +124,7 @@ export default function ArtifactDetailScreen() {
             void removeArtifact(artifactId)
               .then(() => router.back())
               .catch((error: unknown) =>
-                Alert.alert(
-                  t("Could not delete this artifact"),
-                  error instanceof Error ? error.message : t("Try again."),
-                ),
+                Alert.alert(t("Could not delete this artifact"), errorText(error, t("Try again."))),
               ),
         },
       ],
@@ -167,10 +166,7 @@ export default function ArtifactDetailScreen() {
     try {
       await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
     } catch (error) {
-      Alert.alert(
-        t("Could not share this artifact"),
-        error instanceof Error ? error.message : t("Try again."),
-      );
+      Alert.alert(t("Could not share this artifact"), errorText(error, t("Try again.")));
     }
   }, [content, t]);
 
@@ -203,6 +199,28 @@ export default function ArtifactDetailScreen() {
             </Pressable>
           </View>
         ) : null,
+      ...(iosAtLeast(26)
+        ? {
+            unstable_headerRightItems: () =>
+              content.status === "ready"
+                ? [
+                    {
+                      type: "button" as const,
+                      label: t("Share"),
+                      icon: { type: "sfSymbol" as const, name: "square.and.arrow.up" },
+                      onPress: () => void share(),
+                    },
+                    {
+                      type: "button" as const,
+                      label: t("Delete"),
+                      icon: { type: "sfSymbol" as const, name: "trash" },
+                      tintColor: mobileTokens().destructive,
+                      onPress: confirmDelete,
+                    },
+                  ]
+                : [],
+          }
+        : {}),
     });
   }, [confirmDelete, content, navigation, share, styles, t]);
 

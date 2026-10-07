@@ -28,6 +28,10 @@ export const native = {
   get fillPressed() {
     return systemColor("secondarySystemFill", mobileTokens().accent);
   },
+  get separator() {
+    // The page color reads as a gap between rows on a fill in either palette.
+    return systemColor("separator", mobileTokens().background);
+  },
   get label() {
     return systemColor("label", mobileTokens().foreground);
   },
