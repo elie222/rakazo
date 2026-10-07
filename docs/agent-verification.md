@@ -334,3 +334,16 @@ was USD 0.093003835 across 248 calls, reconciled with zero reservations or
 background/cleanup failures. Cumulative guarded spend is USD 1.43272518 of USD 5.
 Shared opaque-cursor guidance and its actual-wire regressions address this new
 failure; a full unchanged live qualification remains required before merge.
+
+The separate opaque-cursor qualification on clean committed source `3dd01cea`
+completed all 54 workflows: 53 passed. All twelve distant-recall trials and all
+27 repeated answers passed; five of six strict loops passed. One loop stopped
+after five reads, claiming missing continuation metadata. The raw JSON contained
+its cursor, but the failed live outgoing payload was not captured; the claim does
+not establish a serialization defect. The actual-wire offline loop passes without
+waiving the live failure. The preserved report is
+`docs/evals/history-pr-opaque-cursor-qualification.json`. Its charge was
+USD 0.09108541 across 238 calls, fully reconciled with zero reservations or
+background/cleanup failures. Cumulative guarded spend is USD 1.52381059 of USD 5.
+The live qualification gate remains failed, so this PR must not merge merely
+because CI passes. No further paid run is active.

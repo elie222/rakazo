@@ -168,8 +168,22 @@ A provider-neutral instruction now requires copying opaque pagination cursors
 exactly and rechecking the last successful result after a rejected cursor. This
 stable guidance precedes changing context. Existing actual Pi and twelve-page
 product regressions cover the outgoing instructions and preserved continuation
-values. A full unchanged qualification of this correction and final CI remain
-merge gates. Historical reports and failed trials remain unchanged.
+values. The full unchanged qualification of this correction completed 54 workflows: 53
+passed. All twelve distant-recall trials, all 27 repeated answers, and five of six
+strict loops passed. One 1,000-message loop stopped after five reads, claiming its
+shortened result lacked a continuation cursor. The raw result was valid JSON with
+a cursor; the failed live outgoing payload was not captured, so this explanation
+does not establish a serialization defect. Deterministic actual-wire regressions
+preserve every cursor, but they do not waive the live failure.
+
+`docs/evals/history-pr-opaque-cursor-qualification.json` preserves this result on
+clean committed source `3dd01cea`. Its USD 0.09108541 charge across 238 model calls
+reconciles, with no cleanup/background failures or outstanding reservations. The
+cumulative guard charge is USD 1.52381059, leaving USD 3.47618941 under the same
+USD 5 cap. No additional paid run is active. Final live qualification remains
+failed and merge is held even if CI passes; further investigation needs evidence
+from the failed model-facing payload before changing serialization or guidance.
+Historical reports and failed trials remain unchanged.
 
 The user has authorized live evaluation within the cumulative USD 5 cap. Before a
 live run, resolve pricing and credentials through the existing generic connection;

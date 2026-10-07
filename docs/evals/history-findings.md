@@ -493,3 +493,23 @@ reconciled. Cleanup and background failures and reservations were zero; the owne
 database was removed. Conservative cumulative spend is USD 1.43272518 of USD 5,
 leaving USD 3.56727482. No criterion or earlier result was regraded; cursor guidance
 requires a separate source revision and qualification.
+
+Generic opaque-continuation guidance was added to the stable instructions:
+copy returned values exactly and stop at the terminal marker. Its complete
+54-workflow qualification passed 53 and failed one 1,000-message loop that stopped
+after segment five, claiming its nextCursor was unavailable because of truncation.
+The pre-Pi observer recorded valid raw JSON with nextCursor; context telemetry
+recorded five shortened tool results and no budget failure. Exact outgoing
+response bodies were not retained. Neither raw presence nor the model's claim
+proves wire loss; deterministic runtime tests preserve controls, and this live
+failure's cause remains unproven. It remains a strict failure without waiver.
+The other five loops, all twelve distant samples and all 27 repeated answers passed.
+
+This run loaded clean committed source `3dd01cea` and cost USD 0.09108541 across
+238 provider-priced calls, with workflow median/p95 latency 10.124/30.259 seconds.
+Charges, counts and known tokens reconciled. Cleanup and background failures and
+reservations were zero, the owned database was removed, and the run finished before
+its observation deadline. Conservative cumulative spend is USD 1.52381059 of USD 5,
+leaving USD 3.47618941. Latest-source live qualification remains failed. No further
+paid run is active; investigation needs evidence from the failed model-facing
+payload before changing serialization or guidance.
