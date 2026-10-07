@@ -1,3 +1,4 @@
+import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -17,6 +18,16 @@ const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
 
 let cachedInitial: string | null = null;
+
+/**
+ * A call lives in the foreground: once the screen locks, Android pauses the app and the
+ * microphone, recognition, and reply feed stop until it is unlocked. Mounted only while a
+ * call is up, so the screen sleeps normally the rest of the time.
+ */
+function KeepScreenOnDuringCall() {
+  useKeepAwake("rakazo-call");
+  return null;
+}
 
 export function CallCard() {
   const call = useCallSession();
@@ -50,6 +61,7 @@ export function CallCard() {
         },
       ]}
     >
+      <KeepScreenOnDuringCall />
       <View style={styles.row}>
         <BotAvatar color={call.botColor} identity={call.botId} size={28} />
         <Pressable
