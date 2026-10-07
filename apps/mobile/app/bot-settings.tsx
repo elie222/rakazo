@@ -66,6 +66,7 @@ export default function BotSettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
+  const [voicesFailed, setVoicesFailed] = useState(false);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -182,19 +183,22 @@ export default function BotSettingsScreen() {
     setThinkingLevel("");
   }
 
+  async function loadVoices(): Promise<Voice[] | null> {
+    if (!botId) return null;
+    try {
+      const [available, assigned] = await Promise.all([deviceVoices(), voiceForBot(botId)]);
+      setVoices(available);
+      setVoiceId(assigned);
+      setVoicesFailed(false);
+      return available;
+    } catch {
+      setVoicesFailed(true);
+      return null;
+    }
+  }
+
   useEffect(() => {
-    if (!botId) return;
-    let current = true;
-    void Promise.all([deviceVoices(), voiceForBot(botId)])
-      .then(([available, assigned]) => {
-        if (!current) return;
-        setVoices(available);
-        setVoiceId(assigned);
-      })
-      .catch(() => undefined);
-    return () => {
-      current = false;
-    };
+    void loadVoices();
   }, [botId]);
 
   async function chooseVoice(voice: Voice) {
@@ -222,10 +226,13 @@ export default function BotSettingsScreen() {
 
   const currentVoice = voices.find((voice) => voice.identifier === voiceId) ?? voices[0];
 
-  function openVoicePicker() {
+  async function openVoicePicker() {
+    // After a failed load, tapping the row is the retry.
+    const choices = voicesFailed ? await loadVoices() : voices;
+    if (!choices || choices.length < 2) return;
     presentMessageActionSheet({
       title: t("Device voice"),
-      actions: voices.map((voice) => ({
+      actions: choices.map((voice) => ({
         text: voiceLabel(voice),
         onPress: () => void chooseVoice(voice),
       })),
@@ -434,11 +441,11 @@ export default function BotSettingsScreen() {
             onValueChange={setAutoSpeak}
           />
         </View>
-        {voices.length > 1 ? (
+        {voices.length > 1 || voicesFailed ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("Device voice")}
-            onPress={openVoicePicker}
+            onPress={() => void openVoicePicker()}
             style={{
               minHeight: 44,
               flexDirection: "row",
@@ -448,8 +455,14 @@ export default function BotSettingsScreen() {
             }}
           >
             <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
-            <Text style={{ color: tokens.foreground, fontSize: 14 }}>
-              {currentVoice ? voiceLabel(currentVoice) : ""}
+            <Text
+              style={{ color: voicesFailed ? tokens.destructive : tokens.foreground, fontSize: 14 }}
+            >
+              {voicesFailed
+                ? t("Could not load voices")
+                : currentVoice
+                  ? voiceLabel(currentVoice)
+                  : ""}
             </Text>
           </Pressable>
         ) : null}

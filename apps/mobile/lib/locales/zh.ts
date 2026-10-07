@@ -675,4 +675,5 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Device voice": "设备语音",
   "Hi, I'm {name}.": "你好，我是 {name}。",
   "Hi, this is how I'll sound.": "你好，这是我的声音。",
+  "Could not load voices": "无法加载语音",
 };

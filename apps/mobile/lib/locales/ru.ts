@@ -696,4 +696,5 @@ export const RU_MESSAGES: Record<string, string> = {
   "Device voice": "Голос устройства",
   "Hi, I'm {name}.": "Привет, я {name}.",
   "Hi, this is how I'll sound.": "Привет, вот так я звучу.",
+  "Could not load voices": "Не удалось загрузить голоса",
 };
