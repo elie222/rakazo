@@ -687,4 +687,13 @@ export const DE_MESSAGES: Record<string, string> = {
   Transcript: "Transkript",
   Unmute: "Stummschaltung aufheben",
   "Voice chat": "Sprachchat",
+  "Call sounds": "Anruftöne",
+  On: "An",
+  Off: "Aus",
+  "Hello {name}, {bot} here.": "Hallo {name}, hier ist {bot}.",
+  "Hello, {bot} here.": "Hallo, hier ist {bot}.",
+  "OK, switching to {name}.": "OK, ich verbinde dich mit {name}.",
+  "{bot} here. Hi {name}.": "Hier ist {bot}. Hallo {name}.",
+  "{bot} here.": "Hier ist {bot}.",
+  "Waiting sound": "Wartegeräusch",
 };

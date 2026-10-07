@@ -12,6 +12,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import {
+  loadCallSoundsEnabled,
+  loadWaitSoundEnabled,
+  playCallCue,
+  saveCallSoundsEnabled,
+  saveWaitSoundEnabled,
+} from "../lib/call-sounds";
 import { loadDeviceVoiceEnabled, saveDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
@@ -51,6 +58,8 @@ export default function VoiceSettings() {
   const speechModelSave = useRef<string | null>(null);
   const [deviceVoice, setDeviceVoice] = useState(false);
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
+  const [callSounds, setCallSounds] = useState<boolean | null>(null);
+  const [waitSound, setWaitSound] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
@@ -98,6 +107,12 @@ export default function VoiceSettings() {
           setDeviceVoiceReady(true);
           setError(err instanceof Error ? err.message : t("Could not load voice settings"));
         });
+      void loadCallSoundsEnabled()
+        .then(setCallSounds)
+        .catch(() => setCallSounds(true));
+      void loadWaitSoundEnabled()
+        .then(setWaitSound)
+        .catch(() => setWaitSound(true));
       void load()
         .catch((err: unknown) =>
           setError(err instanceof Error ? err.message : t("Could not load voice settings")),
@@ -105,6 +120,31 @@ export default function VoiceSettings() {
         .finally(() => setLoading(false));
     }, [load, t]),
   );
+
+  async function toggleWaitSound() {
+    if (waitSound === null) return;
+    const next = !waitSound;
+    setWaitSound(next);
+    try {
+      await saveWaitSoundEnabled(next);
+    } catch {
+      setWaitSound(!next);
+      setError(t("Could not save that preference"));
+    }
+  }
+
+  async function toggleCallSounds() {
+    if (callSounds === null) return;
+    const next = !callSounds;
+    setCallSounds(next);
+    try {
+      await saveCallSoundsEnabled(next);
+      if (next) await playCallCue("start");
+    } catch {
+      setCallSounds(!next);
+      setError(t("Could not save that preference"));
+    }
+  }
 
   async function toggleDeviceVoice() {
     if (pending !== null || !deviceVoiceReady) return;
@@ -356,6 +396,26 @@ export default function VoiceSettings() {
             <Text style={styles.secondaryLabel}>{t("Hear a sample")}</Text>
           </Pressable>
         ) : null}
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: callSounds === true }}
+          disabled={callSounds === null}
+          onPress={() => void toggleCallSounds()}
+          style={[styles.card, callSounds === true && styles.cardActive]}
+        >
+          <Text style={styles.cardTitle}>{t("Call sounds")}</Text>
+          <Text style={styles.cardMeta}>{callSounds === false ? t("Off") : t("On")}</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: waitSound === true }}
+          disabled={waitSound === null}
+          onPress={() => void toggleWaitSound()}
+          style={[styles.card, waitSound === true && styles.cardActive]}
+        >
+          <Text style={styles.cardTitle}>{t("Waiting sound")}</Text>
+          <Text style={styles.cardMeta}>{waitSound === false ? t("Off") : t("On")}</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );

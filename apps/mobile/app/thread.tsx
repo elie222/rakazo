@@ -110,6 +110,7 @@ import {
   loadSessionToken,
   type MobileBot,
   type MobileGroup,
+  type MobileMe,
   type MobileMessage,
   type MobileMessagePage,
   type MobileSnapshot,
@@ -127,6 +128,7 @@ import { mobileTokens } from "../lib/appearance";
 import { type MobileArtifactTarget, openMobileArtifact } from "../lib/artifact-open";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import { findSwitchTarget } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
 import { transparentColor } from "../lib/color";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
@@ -363,12 +365,21 @@ function Thread() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const keyboardVisible = useKeyboardState((state) => state.isVisible);
-  const { botId, groupId, name, messageId, threadId } = useLocalSearchParams<{
+  const {
+    botId,
+    groupId,
+    name,
+    messageId,
+    threadId,
+    call: callParam,
+  } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
     name?: string;
     messageId?: string;
     threadId?: string;
+    /** "1" when the caller switched here from another bot's call: ring this bot at once. */
+    call?: string;
   }>();
   const requestedThreadId = typeof threadId === "string" && threadId ? threadId : undefined;
   const inGroup = Boolean(groupId);
@@ -450,6 +461,9 @@ function Thread() {
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
   const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
+  // The call outlives renders, so its switch check reads the newest bot list from here.
+  const mentionBotsRef = useRef<MobileBot[]>([]);
+  mentionBotsRef.current = mentionBots;
   const [mentionGroups, setMentionGroups] = useState<MobileGroup[]>([]);
   const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
   const [mentionConnectors, setMentionConnectors] = useState<
@@ -1384,6 +1398,15 @@ function Thread() {
       hasAttachments: attachments.length > 0,
     });
     if (plan.isNoOp) return;
+    const typedSwitch =
+      initialBotTarget && attachments.length === 0
+        ? findSwitchTarget(plan.trimmed, mentionBotsRef.current)
+        : undefined;
+    if (typedSwitch && typedSwitch.id !== initialBotTarget) {
+      setDraft("");
+      openBotChat(typedSwitch, false);
+      return;
+    }
     const reroutedToGroup = Boolean(
       plan.rerouteGroupId && plan.rerouteGroupId !== initialGroupTarget,
     );
@@ -1597,17 +1620,33 @@ function Thread() {
     [botId, displayName, mentionBots, snap?.members, visibleMessages],
   );
 
-  async function startVoiceCall() {
+  /** A bot the caller was put through to answers ("Max here. Hi Riley."); a fresh call opens with hello. */
+  function callGreeting(botName: string, callerName: string | undefined, switchedHere: boolean) {
+    if (switchedHere) {
+      return callerName
+        ? t("{bot} here. Hi {name}.", { bot: botName, name: callerName })
+        : t("{bot} here.", { bot: botName });
+    }
+    return callerName
+      ? t("Hello {name}, {bot} here.", { name: callerName, bot: botName })
+      : t("Hello, {bot} here.", { bot: botName });
+  }
+
+  /** `switchedHere`: the caller asked another bot to put them through, so this bot answers. */
+  async function startVoiceCall(switchedHere = false) {
     const targetBotId = botId;
     if (!targetBotId || voiceCallStarting.current) return;
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
     try {
-      const plan = await resolveVoiceCallPlan({
-        loadDeviceVoiceEnabled,
-        dictationAvailable,
-        loadVoiceStatus,
-      });
+      const [plan, me] = await Promise.all([
+        resolveVoiceCallPlan({
+          loadDeviceVoiceEnabled,
+          dictationAvailable,
+          loadVoiceStatus,
+        }),
+        rpc<MobileMe>("me").catch(() => null),
+      ]);
       if (activeBotId.current !== targetBotId) return;
       if (plan.kind === "settings") {
         router.push("/voice");
@@ -1624,11 +1663,19 @@ function Thread() {
         );
         return;
       }
+      const botName = displayName ?? t("Bot");
+      const callerName = me?.name?.trim().split(/\s+/)[0];
       const startedCallId = startCall({
         botId: targetBotId,
-        botName: displayName ?? t("Bot"),
+        botName,
         botColor: mentionBots.find((bot) => bot.id === targetBotId)?.color,
         transcribe: plan.transcribe,
+        greeting: callGreeting(botName, callerName, switchedHere),
+        switchBot: (text) => {
+          const target = findSwitchTarget(text, mentionBotsRef.current);
+          if (!target || target.id === targetBotId) return undefined;
+          return { name: target.name, ring: () => openBotChat(target, true) };
+        },
       });
       if (plan.kind === "device") {
         void probeProviderTranscribe(loadVoiceStatus)
@@ -1643,6 +1690,20 @@ function Thread() {
       voiceCallStarting.current = false;
     }
   }
+
+  /** Opens another bot's chat in place of this one, ringing it when the switch came from a call. */
+  function openBotChat(target: MobileBot, ring: boolean): void {
+    router.replace({
+      pathname: "/thread",
+      params: { botId: target.id, name: target.name, ...(ring ? { call: "1" } : {}) },
+    });
+  }
+
+  useEffect(() => {
+    if (callParam !== "1" || !botId) return;
+    router.setParams({ call: undefined });
+    void startVoiceCall(true);
+  }, [callParam, botId]);
 
   function showAttachMenu() {
     Alert.alert(t("Attach"), undefined, [

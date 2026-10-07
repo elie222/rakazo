@@ -12,6 +12,7 @@ import {
 
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
+vi.mock("./call-sounds", () => ({ playCallCue: vi.fn() }));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   blockText: vi.fn(),
@@ -55,7 +56,15 @@ function fakes(opts: { onDevice?: boolean } = {}) {
   const stopSpeaking = vi.fn(() => {
     speeches[speeches.length - 1]?.resolve();
   });
+  const cues: string[] = [];
+  const waits: string[] = [];
   const deps: CallDeps = {
+    cue: async (cue) => {
+      cues.push(cue);
+    },
+    waitSound: (action) => {
+      waits.push(action);
+    },
     dictate: async (next, signal) => {
       signals.push(signal);
       if (!opts.onDevice) return false;
@@ -87,6 +96,8 @@ function fakes(opts: { onDevice?: boolean } = {}) {
   };
   return {
     deps,
+    cues,
+    waits,
     stopSpeaking,
     interim: (text: string) => handlers?.onInterim(text),
     hear: (text: string) => handlers?.onFinal(text),
@@ -182,6 +193,68 @@ describe("mobile call session", () => {
     await flush();
     expect(getSnapshot()?.phase).toBe("listening");
     expect(fake.recordings).toHaveLength(2);
+  });
+
+  it("plays the opening cue, speaks the greeting, then listens", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada", greeting: "Hello Riley, Ada here." }, fake.deps);
+    await flush();
+    expect(fake.cues).toEqual(["start"]);
+    expect(fake.spoken).toEqual(["Hello Riley, Ada here."]);
+    expect(getSnapshot()?.phase).toBe("speaking");
+    expect(fake.recordings).toHaveLength(0);
+
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(getSnapshot()?.phase).toBe("listening");
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("says it is switching, hangs up, then rings the bot the caller asked for", async () => {
+    const fake = fakes();
+    const ring = vi.fn();
+    const switchBot = vi.fn((text: string) =>
+      text === "switch to Max" ? { name: "Max", ring } : undefined,
+    );
+    startCall({ botId: "bot-1", botName: "Ada", switchBot }, fake.deps);
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    expect(switchBot).toHaveBeenCalledWith("switch to Max");
+    expect(fake.send).not.toHaveBeenCalled();
+    expect(fake.cues).toEqual(["start", "end"]);
+    expect(fake.spoken).toEqual(["OK, switching to Max."]);
+    expect(ring).not.toHaveBeenCalled();
+
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(ring).toHaveBeenCalledOnce();
+    expect(getSnapshot()).toBeNull();
+  });
+
+  it("plays the waiting sound after the closing cue, until the reply starts", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(fake.waits).toEqual(["preload"]);
+    fake.say("status please");
+    await flush();
+    expect(fake.waits).toEqual(["preload", "start"]);
+    fake.replyWith("message-1", "It is green.");
+    expect(fake.waits).toEqual(["preload", "start", "stop"]);
+    endCall();
+    expect(fake.waits).toEqual(["preload", "start", "stop", "release"]);
+  });
+
+  it("plays the closing cue once the caller's turn is heard", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(fake.cues).toEqual(["start"]);
+    fake.say("status please");
+    await flush();
+    expect(fake.cues).toEqual(["start", "end"]);
+    expect(fake.send).toHaveBeenCalledOnce();
   });
 
   it("mutes after a speech-provider consent refusal without recording another turn", async () => {
