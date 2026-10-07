@@ -97,8 +97,9 @@ export function isNoveltyVoice(voice: { identifier: string; name?: string }): bo
 }
 
 /**
- * The engine's offline voices, in the app's language when it has some. Network voices
- * are removed before that choice, and nothing puts them back.
+ * The engine's offline voices in the app's language. Network voices are removed first and
+ * nothing puts them back; with no offline voice in that language the list is empty, so the
+ * engine default speaks rather than a voice for another language.
  */
 export async function deviceVoices(): Promise<Voice[]> {
   const Speech = await loadSpeech();
@@ -109,9 +110,7 @@ export async function deviceVoices(): Promise<Voice[]> {
   const sameLanguage = offline.filter((voice) =>
     voice.language?.toLowerCase().startsWith(language),
   );
-  return (sameLanguage.length > 0 ? sameLanguage : offline).sort((a, b) =>
-    a.identifier.localeCompare(b.identifier),
-  );
+  return sameLanguage.sort((a, b) => a.identifier.localeCompare(b.identifier));
 }
 
 /** "en-us-x-iol-local" reads as "en-US · iol": the engine's names are ids, not labels. */

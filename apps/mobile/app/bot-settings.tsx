@@ -13,7 +13,7 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
@@ -47,6 +47,7 @@ export default function BotSettingsScreen() {
   const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const router = useRouter();
+  const navigation = useNavigation();
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const [bot, setBot] = useState<BotSettingsRecord | null>(null);
   const [name, setName] = useState("");
@@ -238,7 +239,9 @@ export default function BotSettingsScreen() {
     }
   }
 
-  const currentVoice = voices.find((voice) => voice.identifier === voiceId) ?? voices[0];
+  // No assignment means the engine default speaks, so say that rather than naming a voice.
+  const currentVoice = voices.find((voice) => voice.identifier === voiceId);
+  const currentVoiceLabel = currentVoice ? voiceLabel(currentVoice) : t("Default");
 
   function openVoicePicker(available: Voice[]) {
     presentMessageActionSheet({
@@ -263,7 +266,8 @@ export default function BotSettingsScreen() {
     try {
       const [available, assigned] = await Promise.all([deviceVoices(), voiceForBot(botId)]);
       applyVoices(available, assigned);
-      if (available.length > 1) openVoicePicker(available);
+      // The retry can finish after the caller has left; the sheet belongs to this screen only.
+      if (available.length > 1 && navigation.isFocused()) openVoicePicker(available);
     } catch {
       failVoices();
     }
@@ -482,7 +486,7 @@ export default function BotSettingsScreen() {
             <Text
               style={{ color: tokens.foreground, fontSize: 14, flexShrink: 1, textAlign: "right" }}
             >
-              {currentVoice ? voiceLabel(currentVoice) : ""}
+              {currentVoiceLabel}
             </Text>
           </View>
         ) : voices.length > 1 || voiceError ? (
@@ -507,7 +511,7 @@ export default function BotSettingsScreen() {
                 textAlign: "right",
               }}
             >
-              {voiceError ?? (currentVoice ? voiceLabel(currentVoice) : "")}
+              {voiceError ?? currentVoiceLabel}
             </Text>
           </Pressable>
         ) : null}

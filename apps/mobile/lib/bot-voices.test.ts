@@ -48,12 +48,12 @@ beforeEach(() => {
 });
 
 describe("deviceVoices", () => {
-  it("never offers a network voice, even when the app language has nothing else", async () => {
+  it("offers neither a network voice nor a voice for another language", async () => {
     voices.list = [
       { identifier: "en-us-x-iob-network", language: "en-US" },
       { identifier: "de-de-x-deb-local", language: "de-DE" },
     ];
-    expect((await deviceVoices()).map((voice) => voice.identifier)).toEqual(["de-de-x-deb-local"]);
+    expect(await deviceVoices()).toEqual([]);
   });
 
   it("offers nothing when every voice is a network voice", async () => {
