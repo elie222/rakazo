@@ -140,11 +140,14 @@ test("a routine runs on the bot's model until another is picked", async ({ page 
   await page.locator("label:has-text('Instruction') textarea").fill("Check the inbox");
   await addScheduleTrigger(page, "Every day");
 
-  const modelSelect = page.locator("label:has-text('Model') select");
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  const modelSelect = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(modelSelect).toHaveValue("");
   await expect(modelSelect).toContainText("Bot's model");
   await captureScreenshot(page, testInfo, "routine-model-picker");
 
+  await page.keyboard.press("Escape");
   await saveAndReturn(page, "routines/create");
   const [routine] = await rpc<Routine[]>(page, "routines/list", { botId });
   expect(routine).toMatchObject({
@@ -153,6 +156,22 @@ test("a routine runs on the bot's model until another is picked", async ({ page 
     modelId: null,
     thinkingLevel: null,
   });
+  await rpc(page, "models/connect", {
+    provider: "openai-compatible",
+    apiKey: "fake-routine-model-key",
+    modelId: "llama-3.3-70b",
+    baseUrl: "http://127.0.0.1:8090/v1",
+    thinkingLevel: "low",
+    reasoning: true,
+  });
+  await page.reload();
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: /Model check/ }).click();
+  await page.getByRole("button", { name: "Advanced", exact: true }).click();
+  await modelSelect.selectOption("openai-compatible::llama-3.3-70b");
+  await page.keyboard.press("Escape");
+  await saveAndReturn(page, "routines/update");
+  await expect(page.getByRole("button", { name: /Model check/ })).toContainText(" · llama-3.3-70b");
 });
 
 test("invalid advanced cron is rejected without creating a routine", async ({ page }, testInfo) => {
