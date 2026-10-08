@@ -37,6 +37,7 @@ describe.skipIf(!enabled)("unfinished broad history search", () => {
         steps: [
           {
             expect(request) {
+              expect(request).toMatchObject({ max_completion_tokens: 4096 });
               expect(JSON.stringify(request.messages)).toContain(
                 "call search_history with those arguments",
               );
@@ -168,7 +169,7 @@ describe.skipIf(!enabled)("unfinished broad history search", () => {
               baseUrl: model.baseUrl,
               apiKey: key,
               contextWindow: 1000000,
-              maxOutputTokens: 4096,
+              maxTokens: 4096,
             },
             timeoutMs: 30000,
             maxToolCalls: 5,

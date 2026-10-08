@@ -124,10 +124,13 @@ no inference call. An oversized mandatory request or image that exceeds the
 configured estimate fails before provider invocation. Pi uses bounded header
 inspection and a dimension-based planning estimate for static PNG, JPEG, and
 WebP images in both parent and delegated calls, including pre-call reservations.
-Animated, malformed, and unknown images retain the encoded-byte fallback. This
+GIF and animated WebP parsing count full canvas tiles for every frame within the
+shared attachment size limit; APNG uses declared animation frames and includes
+the default image when it is separate. Malformed and unknown metadata retain the
+encoded-byte fallback. This
 planning heuristic is separate from provider-reported billing and is not a
 universal vision-token upper bound. Offline HTTP and delegated screenshot tests
-exercise a valid image larger than 1 MB within a 128k model window; computer
+exercise valid PNG and GIF images larger than 1 MB within a 128k model window; computer
 replay also uses that normal window rather than an oversized workaround.
 
 The history CLI's optional `--wire-diagnostics` flag records allowlisted cursor
