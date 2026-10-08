@@ -8,7 +8,6 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
 import { errorText } from "./user-error";
-import { configureVoiceAudio } from "./voice-audio-mode";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
@@ -506,8 +505,12 @@ async function playWithHtmlAudio(
 
 async function playWithNativeAudio(bytes: Uint8Array, session?: HostedSession): Promise<void> {
   if (session?.isStopped) return;
-  const { createAudioPlayer } = await import("expo-audio");
-  await configureVoiceAudio();
+  const { createAudioPlayer, setAudioModeAsync } = await import("expo-audio");
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    interruptionMode: "mixWithOthers",
+    shouldPlayInBackground: false,
+  });
   const file = new File(Paths.cache, `rakazo-voice-${Date.now()}.mp3`);
   file.create({ overwrite: true });
   file.write(bytesToBase64(bytes), { encoding: "base64" });

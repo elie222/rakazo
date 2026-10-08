@@ -1,4 +1,4 @@
-import { createAudioPlayer } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
 import * as Speech from "expo-speech";
 import { Platform } from "react-native";
@@ -584,6 +584,11 @@ describe("hosted voice playback controls", () => {
       await waitFor(() => NativePlayer.instances.length === 1);
       const player = NativePlayer.instances[0]!;
       await waitFor(() => player.playing);
+      expect(setAudioModeAsync).toHaveBeenCalledWith({
+        playsInSilentMode: true,
+        interruptionMode: "mixWithOthers",
+        shouldPlayInBackground: false,
+      });
 
       pauseVoicePlayback();
       expect(getVoicePlaybackState()).toEqual({

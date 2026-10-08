@@ -1,6 +1,5 @@
 import type { AudioPlayer } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
-import { configureVoiceAudio } from "./voice-audio-mode";
 import type { WaitTone, WaitUnit } from "./wait-pattern";
 import { nextWaitUnit, WAIT_PATTERNS } from "./wait-pattern";
 
@@ -67,7 +66,6 @@ export async function saveWaitSoundEnabled(on: boolean): Promise<void> {
 export async function playCallCue(cue: CallCue): Promise<void> {
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
   const { createAudioPlayer } = await import("expo-audio");
-  await configureVoiceAudio();
   const player = createAudioPlayer(CUE_ASSETS[cue]);
   try {
     await new Promise<void>((resolve) => {
@@ -123,7 +121,6 @@ export async function startWaitSound(): Promise<void> {
   const generation = ++waitGeneration;
   const epoch = waitCallEpoch;
   if (!(await loadWaitSoundEnabled().catch(() => true))) return;
-  await configureVoiceAudio();
   if (generation !== waitGeneration || epoch !== waitCallEpoch) return;
   let unit = nextWaitUnit(lastWaitPattern);
   let next = await waitPlayer(unit, epoch);
