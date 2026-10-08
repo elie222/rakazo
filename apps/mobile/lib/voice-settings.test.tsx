@@ -16,6 +16,13 @@ vi.mock("./device-voice", () => ({
   loadDeviceVoiceEnabled: state.load,
   saveDeviceVoiceEnabled: state.save,
 }));
+vi.mock("./call-sounds", () => ({
+  loadCallSoundsEnabled: async () => true,
+  loadWaitSoundEnabled: async () => true,
+  saveCallSoundsEnabled: vi.fn(),
+  saveWaitSoundEnabled: vi.fn(),
+  playCallCue: vi.fn(),
+}));
 vi.mock("./voice", () => ({ speakText: vi.fn() }));
 vi.mock("./appearance", () => ({ mobileTokens: () => ({}) }));
 vi.mock("./native", () => ({ native: {}, useThemedStyles: (factory: () => unknown) => factory() }));
@@ -23,6 +30,7 @@ vi.mock("./i18n", () => ({ t: (text: string) => text, useI18n: () => ({ t }) }))
 vi.mock("../components/row-accessories", () => ({
   Checkmark: () => <span data-testid="checkmark" />,
 }));
+vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
