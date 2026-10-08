@@ -47,6 +47,14 @@ vi.mock("react-native", () => {
   };
 });
 
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardAvoidingView: ({ children }: { children: ReactNode }) =>
+    createElement(Fragment, null, children),
+}));
+vi.mock("../components/computer-keyboard-bar", () => ({
+  ComputerKeyboardBar: () => createElement("div", { "data-keyboard-bar": true }),
+}));
+
 vi.mock("react-native-webview", () => {
   return {
     WebView: (props: {
@@ -220,6 +228,7 @@ describe("computer screen", () => {
     const fullWindow = view.querySelector("section");
     expect(fullWindow?.querySelector('[aria-label="Close computer"]')).not.toBeNull();
     expect(calls("computer/takeover")).toEqual([]);
+    expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
     const screens = view.querySelectorAll("iframe");
     expect(screens).toHaveLength(1);
     expect(fullWindow?.contains(screens[0] ?? null)).toBe(true);
@@ -238,6 +247,7 @@ describe("computer screen", () => {
     expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-elements-hidden")).toBe("false");
     expect(fullWindow?.querySelector("iframe")?.getAttribute("data-important")).toBe("auto");
+    expect(fullWindow?.querySelector("[data-keyboard-bar]")).not.toBeNull();
   });
 
   it("wakes a sleeping computer from the preview without taking control", async () => {
@@ -250,6 +260,7 @@ describe("computer screen", () => {
 
     expect(calls("computer/boot")).toHaveLength(1);
     expect(calls("computer/takeover")).toEqual([]);
+    expect(view.querySelector("[data-keyboard-bar]")).toBeNull();
   });
 
   it("takes control only from the Take control button", async () => {

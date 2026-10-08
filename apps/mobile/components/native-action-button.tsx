@@ -2,7 +2,8 @@ import { ActivityIndicator, Pressable, Text } from "react-native";
 import type { mobileTokens } from "../lib/appearance";
 import { native, useMobileTokens } from "../lib/native";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
-import { actionFills } from "../lib/native-controls";
+import { actionAccessibilityState, actionFills, actionProminence } from "../lib/native-controls";
+import { NativeSymbol } from "./native-symbol";
 
 /** Android (and non-iOS) form buttons. iOS uses the SwiftUI button in the platform file. */
 export function NativeActionButton({
@@ -14,29 +15,36 @@ export function NativeActionButton({
   prominence = "primary",
   fill,
   style,
+  size = "default",
+  icon,
+  selected,
 }: NativeActionButtonProps) {
   const tokens = useMobileTokens();
   const inactive = disabled || busy;
   const stretches = actionFills(prominence, fill);
+  const small = size === "compact";
+  const effectiveProminence = actionProminence(prominence, selected);
   const compact = prominence === "plain" || prominence === "quiet";
-  const colors = buttonColors(prominence, stretches, tokens);
+  const colors = buttonColors(effectiveProminence, stretches, tokens);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
-      accessibilityState={inactive ? { disabled: true } : undefined}
+      accessibilityState={actionAccessibilityState(inactive, selected)}
       disabled={inactive}
       hitSlop={compact ? 8 : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         {
-          minHeight: compact ? undefined : 48,
+          flexDirection: "row",
+          gap: icon && label ? 6 : undefined,
+          minHeight: small || compact ? undefined : 48,
           borderRadius: 12,
           alignItems: "center",
           justifyContent: "center",
           alignSelf: stretches ? "stretch" : "flex-start",
-          paddingHorizontal: compact ? 0 : 16,
-          paddingVertical: compact ? 8 : 12,
+          paddingHorizontal: small ? 6 : compact ? 0 : 16,
+          paddingVertical: small ? 6 : compact ? 8 : 12,
           backgroundColor: colors.background,
           borderWidth: colors.border ? 1 : 0,
           borderColor: colors.border,
@@ -48,15 +56,28 @@ export function NativeActionButton({
       {busy ? (
         <ActivityIndicator color={colors.label} />
       ) : (
-        <Text
-          style={{
-            color: colors.label,
-            fontSize: prominence === "quiet" ? 15 : prominence === "plain" ? 17 : 16,
-            fontWeight: compact ? "400" : "600",
-          }}
-        >
-          {label}
-        </Text>
+        <>
+          {icon ? (
+            <NativeSymbol {...icon} size={icon.size ?? (small ? 16 : 18)} color={colors.label} />
+          ) : null}
+          {label ? (
+            <Text
+              style={{
+                color: colors.label,
+                fontSize: small
+                  ? 13
+                  : prominence === "quiet"
+                    ? 15
+                    : prominence === "plain"
+                      ? 17
+                      : 16,
+                fontWeight: compact ? "400" : "600",
+              }}
+            >
+              {label}
+            </Text>
+          ) : null}
+        </>
       )}
     </Pressable>
   );

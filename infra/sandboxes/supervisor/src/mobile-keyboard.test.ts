@@ -101,11 +101,48 @@ function preventableEvent(target: unknown) {
   };
 }
 
-function keyboardFixture(overrides: { pasteText?: (text: string) => boolean } = {}) {
+function keyButton(name: string) {
+  const attributes = new Map<string, string>([
+    ["data-key", name],
+    ["aria-pressed", "false"],
+  ]);
+  const classes = new Set<string>();
+  return {
+    getAttribute: (attr: string) => attributes.get(attr) ?? null,
+    setAttribute: (attr: string, value: string) => attributes.set(attr, value),
+    classList: {
+      toggle: (className: string, on: boolean) => {
+        if (on) classes.add(className);
+        else classes.delete(className);
+      },
+    },
+    classes,
+  };
+}
+
+function keyboardFixture(
+  overrides: { pasteText?: (text: string) => boolean; nativeKeys?: boolean; keyBar?: boolean } = {},
+) {
   const inputListeners = new Map<string, (event: object) => void>();
   const rootListeners = new Map<string, (event: ReturnType<typeof preventableEvent>) => void>();
-  const keys: Array<[number, string?]> = [];
+  const keyBarListeners = new Map<string, (event: object) => void>();
+  const keys: Array<[number, string?, boolean?]> = [];
   const pasteButton = {};
+  const buttons = overrides.keyBar
+    ? ["Escape", "Tab", "Control", "ArrowLeft", "ArrowDown", "ArrowUp", "ArrowRight"].map(keyButton)
+    : [];
+  const keyBar = overrides.keyBar
+    ? {
+        hidden: true,
+        contains: (target: unknown) => buttons.includes(target as (typeof buttons)[number]),
+        addEventListener: (type: string, listener: (event: object) => void) =>
+          keyBarListeners.set(type, listener),
+        removeEventListener: () => {},
+        querySelector: (selector: string) =>
+          buttons.find((button) => selector.includes(`"${button.getAttribute("data-key")}"`)) ??
+          null,
+      }
+    : undefined;
   const button = {
     hidden: true,
     parentElement: { contains: (target: unknown) => target === pasteButton },
@@ -143,7 +180,7 @@ function keyboardFixture(overrides: { pasteText?: (text: string) => boolean } = 
   const rfb = {
     viewOnly: false,
     focusOnClick: true,
-    sendKey: (keysym: number, code?: string) => keys.push([keysym, code]),
+    sendKey: (keysym: number, code?: string, down?: boolean) => keys.push([keysym, code, down]),
   };
   class Keyboard {
     onkeyevent = null;
@@ -151,16 +188,44 @@ function keyboardFixture(overrides: { pasteText?: (text: string) => boolean } = 
     ungrab() {}
   }
   const pasteText = overrides.pasteText;
-  attachMobileKeyboard(rfb, {
+  const windowTarget: {
+    __rakazoNativeKeys: boolean;
+    rakazoComputerKeyboard?: {
+      run: (command: {
+        type: string;
+        name?: string;
+        text?: string;
+        control?: boolean;
+        count?: number;
+      }) => void;
+    };
+  } = { __rakazoNativeKeys: overrides.nativeKeys === true };
+  const detach = attachMobileKeyboard(rfb, {
     button,
     input,
+    keyBar,
     Keyboard,
     backspaceKeysym: 0xff08,
     lookupKeysym: (codePoint: number) => codePoint,
     documentTarget,
+    windowTarget,
     pasteText,
   });
-  return { input, inputListeners, keys, pasteText, rootListeners, pasteButton, documentTarget };
+  return {
+    input,
+    inputListeners,
+    keys,
+    pasteText,
+    rootListeners,
+    pasteButton,
+    documentTarget,
+    button,
+    keyBar,
+    keyBarListeners,
+    buttons,
+    windowTarget,
+    detach,
+  };
 }
 
 describe("mobile computer keyboard", () => {
@@ -235,7 +300,13 @@ describe("mobile computer keyboard", () => {
     expect(embed).toMatch(/attachMobileTrackpad/);
     expect(embed).toMatch(/mobile-trackpad/);
     expect(embed).toMatch(/mobile-keyboard-open #screen/);
+    expect(embed).toMatch(/mobile-key-bar/);
+    expect(embed).toMatch(/data-key="Escape"/);
+    expect(embed).toMatch(/__rakazoNativeKeys/);
     expect(embed).toMatch(/--mobile-visual-height/);
+    const keyboard = readFileSync(path.join(root, "mobile-keyboard.js"), "utf8");
+    expect(keyboard).toMatch(/rakazoComputerKeyboard/);
+    expect(keyboard).toMatch(/__rakazoNativeKeys/);
     expect(start).toMatch(/mobile-keyboard\.js/);
     expect(supervisor).toMatch(/"mobile-keyboard\.js"/);
   });
@@ -262,6 +333,70 @@ describe("mobile computer keyboard", () => {
     expect(pasteText).toHaveBeenCalledWith("from-phone");
     expect(keys).toEqual([]);
     expect(input.value).toBe(seed);
+  });
+
+  it("forwards typed text, Enter, and special keys through the native bridge", () => {
+    const { input, inputListeners, keys, windowTarget, detach } = keyboardFixture();
+    const seed = input.value;
+    input.value = `${seed}a\n`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([
+      [97, undefined, undefined],
+      [0xff0d, "Enter", undefined],
+    ]);
+    windowTarget.rakazoComputerKeyboard?.run({ type: "key", name: "Escape" });
+    windowTarget.rakazoComputerKeyboard?.run({ type: "key", name: "Tab" });
+    windowTarget.rakazoComputerKeyboard?.run({ type: "key", name: "ArrowUp" });
+    windowTarget.rakazoComputerKeyboard?.run({ type: "char", text: "c", control: true });
+    expect(keys.slice(2)).toEqual([
+      [0xff1b, "Escape", undefined],
+      [0xff09, "Tab", undefined],
+      [0xff52, "ArrowUp", undefined],
+      [0xffe3, "ControlLeft", true],
+      [99, undefined, true],
+      [99, undefined, false],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    detach();
+    expect(windowTarget.rakazoComputerKeyboard).toBeUndefined();
+  });
+
+  it("keeps the in-page keyboard hidden when the native app supplies keys", () => {
+    const { button, keyBar, keys, windowTarget } = keyboardFixture({
+      nativeKeys: true,
+      keyBar: true,
+    });
+    expect(button.hidden).toBe(true);
+    expect(keyBar?.hidden).toBe(true);
+    windowTarget.rakazoComputerKeyboard?.run({ type: "key", name: "ArrowLeft" });
+    expect(keys).toEqual([[0xff51, "ArrowLeft", undefined]]);
+  });
+
+  it("latches Ctrl on the key bar until the next key", () => {
+    const { keys, keyBarListeners, buttons, input, inputListeners } = keyboardFixture({
+      keyBar: true,
+    });
+    const control = buttons.find((item) => item.getAttribute("data-key") === "Control");
+    keyBarListeners.get("click")?.({
+      target: control,
+      preventDefault() {},
+    });
+    expect(control?.getAttribute("aria-pressed")).toBe("true");
+    const seed = input.value;
+    input.value = `${seed}c`;
+    inputListeners.get("input")?.({ target: input, inputType: "insertText" });
+    expect(keys).toEqual([
+      [0xffe3, "ControlLeft", true],
+      [99, undefined, true],
+      [99, undefined, false],
+      [0xffe3, "ControlLeft", false],
+    ]);
+    expect(control?.getAttribute("aria-pressed")).toBe("false");
+    keyBarListeners.get("click")?.({
+      target: buttons.find((item) => item.getAttribute("data-key") === "Escape"),
+      preventDefault() {},
+    });
+    expect(keys.at(-1)).toEqual([0xff1b, "Escape", undefined]);
   });
 
   it("lets sibling chrome controls receive taps while the keyboard is open", () => {

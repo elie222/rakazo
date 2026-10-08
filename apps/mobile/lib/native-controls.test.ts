@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { actionFills, iosAtLeast } from "./native-controls";
+import {
+  actionAccessibilityState,
+  actionFills,
+  actionProminence,
+  iosAtLeast,
+} from "./native-controls";
 
 const platform = vi.hoisted(() => ({
   OS: "ios",
@@ -78,5 +83,16 @@ describe("actionFills", () => {
     expect(actionFills("quiet", undefined)).toBe(false);
     expect(actionFills("primary", false)).toBe(false);
     expect(actionFills("secondary", true)).toBe(true);
+  });
+});
+
+describe("action selection", () => {
+  it("preserves defaults and presents both latch states", () => {
+    expect(actionProminence("quiet", undefined)).toBe("quiet");
+    expect(actionProminence("secondary", true)).toBe("primary");
+    expect(actionProminence("primary", false)).toBe("secondary");
+    expect(actionAccessibilityState(false, undefined)).toBeUndefined();
+    expect(actionAccessibilityState(false, false)).toEqual({ selected: false });
+    expect(actionAccessibilityState(true, true)).toEqual({ disabled: true, selected: true });
   });
 });
