@@ -746,7 +746,7 @@ msgstr "要关联的 Bot"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
-msgstr ""
+msgstr "Bot 的模型"
 
 #: src/pages/Artifacts.tsx
 msgid "Bots"

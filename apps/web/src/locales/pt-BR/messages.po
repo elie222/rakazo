@@ -746,7 +746,7 @@ msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
-msgstr ""
+msgstr "Modelo do bot"
 
 #: src/pages/Artifacts.tsx
 msgid "Bots"

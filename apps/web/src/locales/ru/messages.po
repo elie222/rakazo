@@ -746,7 +746,7 @@ msgstr "Бот для ссылки"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
-msgstr ""
+msgstr "Модель бота"
 
 #: src/pages/Artifacts.tsx
 msgid "Bots"

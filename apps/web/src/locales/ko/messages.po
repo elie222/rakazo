@@ -746,7 +746,7 @@ msgstr "연결할 Bot"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Bot's model"
-msgstr ""
+msgstr "봇의 모델"
 
 #: src/pages/Artifacts.tsx
 msgid "Bots"
