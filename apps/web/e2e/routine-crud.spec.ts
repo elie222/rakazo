@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import type { Bot, Routine } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
@@ -13,9 +14,10 @@ async function saveAndReturn(page: Page, procedure: "routines/create" | "routine
     (response) => response.url().includes(`/rpc/${procedure}`) && response.ok(),
   );
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await saved;
+  const response = await saved;
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Back" }).click();
+  return response.request().postDataJSON().json;
 }
 
 test("routine active switch keeps its thumb inside the track", async ({ page }, testInfo) => {
@@ -86,7 +88,9 @@ test("routine editing updates in place, preserves timezone, and deletion persist
   await page.locator("label:has-text('Name') input").fill("Weekday check-in");
   await page.locator("label:has-text('Instruction') textarea").fill("Send the revised update");
   await page.getByLabel("How often").selectOption("Weekdays");
-  await saveAndReturn(page, "routines/update");
+  const patch = await saveAndReturn(page, "routines/update");
+  for (const column of ["modelProvider", "modelId", "thinkingLevel"])
+    expect(patch).not.toHaveProperty(column);
 
   const updatedButton = page.getByRole("button", { name: /Weekday check-in/ });
   await expect(updatedButton).toHaveCount(1);
@@ -148,7 +152,11 @@ test("a routine runs on the bot's model until another is picked", async ({ page 
   await captureScreenshot(page, testInfo, "routine-model-picker");
 
   await page.keyboard.press("Escape");
-  await saveAndReturn(page, "routines/create");
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+  });
   const [routine] = await rpc<Routine[]>(page, "routines/list", { botId });
   expect(routine).toMatchObject({
     name: "Model check",
@@ -168,8 +176,18 @@ test("a routine runs on the bot's model until another is picked", async ({ page 
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
   await modelSelect.selectOption("openai-compatible::llama-3.3-70b");
   await page.keyboard.press("Escape");
-  await saveAndReturn(page, "routines/update");
+  expect(await saveAndReturn(page, "routines/update")).toMatchObject({
+    modelProvider: "openai-compatible",
+    modelId: "llama-3.3-70b",
+    thinkingLevel: null,
+  });
   await expect(page.getByRole("button", { name: /Model check/ })).toContainText(" · llama-3.3-70b");
+
+  await page.getByRole("button", { name: /Model check/ }).click();
+  await page.locator("label:has-text('Name') input").fill("Renamed model check");
+  const patch = await saveAndReturn(page, "routines/update");
+  for (const column of ["modelProvider", "modelId", "thinkingLevel"])
+    expect(patch).not.toHaveProperty(column);
 });
 
 test("invalid advanced cron is rejected without creating a routine", async ({ page }, testInfo) => {

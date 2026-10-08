@@ -3997,7 +3997,11 @@ export function ShellPage() {
                         webhookEnabled: routineDraft.webhookEnabled,
                         githubEnabled: routineDraft.githubEnabled,
                         messageProvider: routineDraft.messageProvider,
-                        ...routineModel,
+                        ...(routineModel.modelProvider !== targetRoutine.modelProvider ||
+                        routineModel.modelId !== targetRoutine.modelId ||
+                        routineModel.thinkingLevel !== targetRoutine.thinkingLevel
+                          ? routineModel
+                          : {}),
                         ...(runAt ? { runAt } : {}),
                       });
                     } else {
