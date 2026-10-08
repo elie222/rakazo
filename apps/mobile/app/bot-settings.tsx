@@ -12,7 +12,7 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
-import { Stack, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -20,9 +20,10 @@ import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import type { MenuPickerChoice } from "../components/menu-picker";
-import { MenuPicker } from "../components/menu-picker";
+import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
+import { NativeSymbol } from "../components/native-symbol";
 import { Chevron } from "../components/row-accessories";
 import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { rpc } from "../lib/api";
@@ -30,8 +31,7 @@ import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bo
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
-import { presentMessageActionSheet } from "../lib/message-action-sheet";
-import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
 import { stopVoicePlayback } from "../lib/voice";
 
@@ -41,10 +41,8 @@ type BotSettingsRecord = MobileBot & {
 
 export default function BotSettingsScreen() {
   const tokens = useMobileTokens();
-  const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const router = useRouter();
-  const navigation = useNavigation();
   const { botId } = useLocalSearchParams<{ botId: string }>();
   const [bot, setBot] = useState<BotSettingsRecord | null>(null);
   const [name, setName] = useState("");
@@ -251,31 +249,11 @@ export default function BotSettingsScreen() {
   const currentVoice = voices.find((voice) => voice.identifier === voiceId);
   const currentVoiceLabel = currentVoice ? voiceLabel(currentVoice) : t("Default");
 
-  function openVoicePicker(available: Voice[]) {
-    presentMessageActionSheet({
-      title: t("Device voice"),
-      actions: available.map((voice) => ({
-        text: voiceLabel(voice),
-        onPress: () => void chooseVoice(voice),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
-  }
-
-  async function openDeviceVoice() {
+  async function retryDeviceVoices() {
     if (!botId) return;
-    if (!voiceError && voices.length > 1) {
-      openVoicePicker(voices);
-      return;
-    }
-    if (!voiceError) return;
     try {
       const [available, assigned] = await Promise.all([deviceVoices(), voiceForBot(botId)]);
       applyVoices(available, assigned);
-      // The retry can finish after the caller has left; the sheet belongs to this screen only.
-      if (available.length > 1 && navigation.isFocused()) openVoicePicker(available);
     } catch {
       failVoices();
     }
@@ -340,6 +318,32 @@ export default function BotSettingsScreen() {
       setPending(false);
     }
   }
+
+  const voiceRow = (
+    <View
+      accessibilityLabel={t("Device voice")}
+      accessibilityRole={!voiceError && voices.length > 1 ? "button" : undefined}
+      accessibilityValue={{ text: voiceError ?? currentVoiceLabel }}
+      accessible={!voiceError}
+      style={styles.row}
+    >
+      <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>{t("Device voice")}</Text>
+      <Text
+        numberOfLines={1}
+        style={[styles.rowValue, { color: voiceError ? tokens.destructive : tokens.foreground }]}
+      >
+        {voiceError ?? currentVoiceLabel}
+      </Text>
+      {!voiceError && voices.length > 1 ? (
+        <NativeSymbol
+          android="chevron-expand"
+          color={native.tertiaryLabel}
+          ios="chevron.up.chevron.down"
+          size={13}
+        />
+      ) : null}
+    </View>
+  );
 
   return (
     <>
@@ -447,25 +451,33 @@ export default function BotSettingsScreen() {
           />
         </View>
         {deviceVoiceEnabled ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("Device voice")}
-            disabled={!voiceError && voices.length <= 1}
-            onPress={() => void openDeviceVoice()}
-            style={styles.row}
-          >
-            <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
-              {t("Device voice")}
-            </Text>
-            <Text
-              style={[
-                styles.rowValue,
-                { color: voiceError ? tokens.destructive : tokens.foreground },
-              ]}
+          voiceError ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Device voice")}
+              accessibilityValue={{ text: voiceError }}
+              onPress={() => void retryDeviceVoices()}
             >
-              {voiceError ?? currentVoiceLabel}
-            </Text>
-          </Pressable>
+              {voiceRow}
+            </Pressable>
+          ) : voices.length > 1 ? (
+            <MenuPickerMenu
+              choices={voices.map((voice) => ({
+                key: voice.identifier,
+                label: voiceLabel(voice),
+              }))}
+              label={t("Device voice")}
+              onChange={(key) => {
+                const voice = voices.find((candidate) => candidate.identifier === key);
+                if (voice) void chooseVoice(voice);
+              }}
+              value={voiceId ?? ""}
+            >
+              {voiceRow}
+            </MenuPickerMenu>
+          ) : (
+            voiceRow
+          )
         ) : null}
         <Pressable
           accessibilityRole="button"
