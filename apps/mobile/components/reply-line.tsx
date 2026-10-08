@@ -1,4 +1,5 @@
 import type { ReplyPreview } from "@rakazo/contracts";
+import { replyLineText } from "@rakazo/core";
 import { Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { t } from "../lib/i18n";
@@ -20,9 +21,7 @@ export function ReplyLine({
 }) {
   if (!targetId && quote == null) return null;
   const unavailable = preview === null || !targetId;
-  const text = quote
-    ? quote.replace(/\s+/gu, " ")
-    : (preview?.text || fallbackText || "").split(/\r?\n/u)[0] || "";
+  const text = replyLineText(quote, preview?.text, fallbackText);
   return (
     <Text
       numberOfLines={1}

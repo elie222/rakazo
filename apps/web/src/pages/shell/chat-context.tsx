@@ -1,6 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { formatTimeSeparator } from "@rakazo/core";
+import { formatTimeSeparator, replyLineText } from "@rakazo/core";
 import { X } from "lucide-react";
 import { useEffect } from "react";
 
@@ -76,9 +76,7 @@ export function ReplyLine({
         className="mb-1 truncate text-xs text-muted-foreground"
       >{t`Original message unavailable`}</div>
     );
-  const text = message.replyQuote
-    ? message.replyQuote.replace(/\s+/gu, " ")
-    : (message.replyPreview?.text || fallbackText || "").split(/\r?\n/u)[0] || "";
+  const text = replyLineText(message.replyQuote, message.replyPreview?.text, fallbackText);
   const excerpt = text.replace(/\s+/gu, " ").slice(0, 120);
   return (
     <button

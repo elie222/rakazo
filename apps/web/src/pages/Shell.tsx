@@ -5082,7 +5082,7 @@ const Transcript = memo(function Transcript({
                       }
                       memberName={memberName}
                       peerBot={peerBot}
-                      replyPreview={
+                      replyParent={
                         message.replyToMessageId
                           ? messageById.get(message.replyToMessageId)
                           : undefined
@@ -6383,7 +6383,7 @@ const MessageView = memo(function MessageView({
   speakerName,
   memberName,
   peerBot,
-  replyPreview,
+  replyParent,
   onJumpToMessage,
   onRefresh,
   onBotChanged,
@@ -6403,7 +6403,7 @@ const MessageView = memo(function MessageView({
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
-  replyPreview?: ThreadMessage;
+  replyParent?: ThreadMessage;
   onJumpToMessage?: (messageId: string) => void;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
@@ -6425,7 +6425,7 @@ const MessageView = memo(function MessageView({
   const quoteMessageId = message.id.includes(":") ? undefined : message.id;
   const visibleNarrationBlocks = renderableMessageBlocks(message.blocks, showToolActivity);
 
-  const replyBotId = message.replyPreview?.botId ?? replyPreview?.botId;
+  const replyBotId = message.replyPreview?.botId ?? replyParent?.botId;
   const speakerBot = message.botId ? peerBot?.(message.botId) : undefined;
   const speakerColorDef = useMemo(
     () => resolvePersonaColorDef(message.botId ?? "bot", speakerBot?.color),
@@ -6449,9 +6449,9 @@ const MessageView = memo(function MessageView({
       ) : null}
       <ReplyLine
         message={message}
-        fallbackText={replyPreview ? previewMessageText(replyPreview) : undefined}
+        fallbackText={replyParent ? previewMessageText(replyParent) : undefined}
         author={
-          (message.replyPreview?.role ?? replyPreview?.role) === "user"
+          (message.replyPreview?.role ?? replyParent?.role) === "user"
             ? t`You`
             : ((replyBotId ? peerBot(replyBotId)?.name : undefined) ??
               memberName?.(replyBotId) ??

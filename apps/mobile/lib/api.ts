@@ -19,7 +19,6 @@ import {
   authCapabilitiesSchema,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
-  ReplyPreviewSchema,
 } from "@rakazo/contracts";
 import type { ThreadHistory } from "@rakazo/core";
 import {
@@ -33,6 +32,7 @@ import {
   progressMessageId,
   readBoundedJsonResponse,
   reduceLiveMessageBlocks,
+  replyMetadata,
   runFailureError,
   signupRequiresEmailVerification,
   takeLiveMessage,
@@ -1297,7 +1297,6 @@ export function applyMobileThreadEvent(
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
     const known = prev.messages.find((message) => message.id === id);
-    const preview = ReplyPreviewSchema.nullable().safeParse(event.payload?.replyPreview);
     const next: MobileMessage = {
       id,
       createdAt: known?.createdAt ?? event.createdAt,
@@ -1305,20 +1304,10 @@ export function applyMobileThreadEvent(
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
       // An update can leave the call id out — the `end_call` marker does — so keep the one
       // the message already carries instead of dropping it out of its call.
-      callId:
-        typeof event.payload?.callId === "string"
-          ? event.payload.callId
-          : prev.messages.find((message) => message.id === id)?.callId,
+      callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
-      replyToMessageId: event.payload?.replyToMessageId
-        ? String(event.payload.replyToMessageId)
-        : known?.replyToMessageId,
-      replyQuote:
-        typeof event.payload?.replyQuote === "string"
-          ? event.payload.replyQuote
-          : known?.replyQuote,
-      replyPreview: preview.success ? preview.data : known?.replyPreview,
+      ...replyMetadata(event.payload ?? {}, known),
     };
     return {
       ...prev,
