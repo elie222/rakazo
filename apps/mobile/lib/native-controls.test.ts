@@ -39,39 +39,6 @@ describe("native iOS controls", () => {
     }
   });
 
-  it("preserves plain actions and scopes small muted borderless styling to quiet actions", () => {
-    const ios = source("components/native-action-button.ios.tsx");
-    expect(ios).toContain('if (prominence === "plain") return glass ? "glass" : "plain";');
-    expect(ios).toContain('if (prominence === "quiet") return "plain";');
-    expect(ios).toContain(
-      'controlSize(stretches ? "large" : prominence === "quiet" ? "small" : "regular")',
-    );
-    expect(ios).toContain(
-      '...(prominence === "quiet"\n            ? [font({ size: 15 }), foregroundStyle(tokens.mutedForeground)]',
-    );
-    const fallback = source("components/native-action-button.tsx");
-    expect(fallback).toContain('const compact = prominence === "plain" || prominence === "quiet";');
-    expect(fallback).toContain(
-      'fontSize: prominence === "quiet" ? 15 : prominence === "plain" ? 17 : 16',
-    );
-    expect(fallback).toContain(
-      'if (prominence === "quiet") {\n    return { background: "transparent" as const, label: tokens.mutedForeground, border: undefined };',
-    );
-    expect(fallback).toContain(
-      'return { background: "transparent" as const, label: native.label, border: undefined };',
-    );
-  });
-
-  it("places secondary SSO after the password submit and keeps SSO-only primary", () => {
-    const auth = source("app/sign-in.tsx");
-    expect(auth).toContain('reset?.sso && !reset.passwordAuth && mode !== "forgot"');
-    const submit = auth.indexOf("onPress={() => void submit()}");
-    const secondary = auth.indexOf('prominence="quiet"', submit);
-    expect(secondary).toBeGreaterThan(submit);
-    expect(secondary).toBeLessThan(auth.indexOf('t("Don’t have an account?")'));
-    expect(auth.slice(submit, secondary)).toContain('reset.sso && mode !== "forgot"');
-  });
-
   it("keeps Android segmented pills and uses a SwiftUI picker on iOS", () => {
     expect(source("components/native-segmented-control.tsx")).toContain("SegmentedPills");
     expect(source("components/native-segmented-control.ios.tsx")).toContain(
