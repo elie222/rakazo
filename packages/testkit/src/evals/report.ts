@@ -3,6 +3,7 @@ import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-obs
 import type { CacheDecisionMeasurement, Operation } from "./measurement.js";
 import { OPERATION_KINDS, summarizeCacheDecisions } from "./measurement.js";
 import type { measureWorkflowSteps } from "./step-accounting.js";
+import type { DiagnosticWireObservation } from "./wire-observer.js";
 
 export type FailureCategory = "agent" | "product" | "provider" | "harness" | "incomplete";
 export type TrialResult = {
@@ -13,6 +14,7 @@ export type TrialResult = {
   cacheDecisions?: CacheDecisionMeasurement[];
   historyDiagnostics?: HistoryDiagnostic[];
   toolLoopDiagnostics?: DiagnosticToolObservation[];
+  wireDiagnostics?: DiagnosticWireObservation[];
   backgroundFailures?: Record<string, number>;
   historyPreparationState?: {
     beforeCursor: number | null;

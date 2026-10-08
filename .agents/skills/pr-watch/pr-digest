@@ -12,7 +12,7 @@
 set -uo pipefail
 
 POLL=${PR_DIGEST_POLL:-30}
-DEADLINE=${PR_DIGEST_DEADLINE:-3600}
+DEADLINE=${PR_DIGEST_DEADLINE:-7200}
 BODY_CHARS=${PR_DIGEST_BODY_CHARS:-600}
 SEEN_DIR=${PR_DIGEST_SEEN_DIR:-$HOME/.cache/pr-digest}
 # How many empty polls to allow before accepting that a PR has no check runs.

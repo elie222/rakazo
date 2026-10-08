@@ -121,9 +121,21 @@ verifies the second summary includes the first and advances coverage correctly.
 Candidate policies skip queued and newly scheduled message-count compaction;
 legacy `current` remains available to reproduce the baseline. Expiry itself makes
 no inference call. An oversized mandatory request or image that exceeds the
-configured estimate fails before provider invocation. Unknown image estimates
-use encoded bytes, so this is not a universal provider vision-token bound; an
-adapter-specific estimate is needed for that guarantee.
+configured estimate fails before provider invocation. Pi uses bounded header
+inspection and a dimension-based planning estimate for static PNG, JPEG, and
+WebP images in both parent and delegated calls, including pre-call reservations.
+Animated, malformed, and unknown images retain the encoded-byte fallback. This
+planning heuristic is separate from provider-reported billing and is not a
+universal vision-token upper bound. Offline HTTP and delegated screenshot tests
+exercise a valid image larger than 1 MB within a 128k model window; computer
+replay also uses that normal window rather than an oversized workaround.
+
+The history CLI's optional `--wire-diagnostics` flag records allowlisted cursor
+controls for the synthetic long-tool-loop cases after SDK serialization. It
+retains neither prompts nor request identifiers, credentials, or URLs. An offline
+Pi HTTP test verifies all twelve dependent tool results, including the terminal
+null cursor, survive serialization and context selection. This makes future live
+failures diagnosable; it does not establish the cause of an earlier failed run.
 
 Reproduce the ordinary offline checks with:
 

@@ -18,8 +18,8 @@ export interface ContextBudget {
   tools: unknown;
   /** Additional instructions, snapshots, retrieved passages or task state outside messages. */
   extraContext?: string;
-  /** Adapter-specific image upper estimate. Unknown images use serialized bytes. */
-  imageTokens?: number;
+  /** Adapter-specific image planning estimate. Unknown images use serialized bytes. */
+  imageTokens?: number | ((image: object) => number | undefined);
 }
 export interface ContextSelectionOptions {
   budget: ContextBudget;
@@ -75,20 +75,36 @@ function imageBlocks(value: unknown): object[] {
 /** Conservative byte bound plus framing, not a tokenizer. Only actual user/tool
  * image blocks receive an adapter estimate; image-shaped tool arguments remain text.
  */
-export function estimateContextTokens(value: unknown, imageTokens?: number): number {
-  const images = imageTokens === undefined ? [] : imageBlocks(value);
-  const imageSet = new Set(images);
+export function estimateContextTokens(
+  value: unknown,
+  imageTokens?: ContextBudget["imageTokens"],
+): number {
+  const images = new Set<object>();
+  let imageTotal = 0;
+  if (imageTokens !== undefined) {
+    for (const image of imageBlocks(value)) {
+      const estimate = typeof imageTokens === "number" ? imageTokens : imageTokens(image);
+      if (estimate !== undefined && Number.isFinite(estimate) && estimate > 0) {
+        images.add(image);
+        imageTotal += estimate;
+      }
+    }
+  }
   const serialized =
     JSON.stringify(value, (_key, item: unknown) =>
-      item && typeof item === "object" && imageSet.has(item) ? { type: "image" } : item,
+      item && typeof item === "object" && images.has(item) ? { type: "image" } : item,
     ) ?? "";
-  return Buffer.byteLength(serialized, "utf8") + images.length * (imageTokens ?? 0) + 16;
+  return Buffer.byteLength(serialized, "utf8") + imageTotal + 16;
 }
 function fixedTokens(budget: ContextBudget): number {
-  for (const value of [budget.contextWindow, budget.outputReserve, budget.imageTokens ?? 0]) {
+  for (const value of [
+    budget.contextWindow,
+    budget.outputReserve,
+    typeof budget.imageTokens === "number" ? budget.imageTokens : 0,
+  ]) {
     if (!Number.isFinite(value) || value < 0) throw new Error("Invalid context budget");
   }
-  if (budget.imageTokens !== undefined && budget.imageTokens < 1)
+  if (typeof budget.imageTokens === "number" && budget.imageTokens < 1)
     throw new Error("Invalid image token bound");
   return (
     estimateContextTokens(budget.systemPrompt) +
@@ -232,7 +248,10 @@ interface Group {
   tokens: number;
 }
 /** A tool request and all results form an indivisible group. User exchanges may contain several groups. */
-function messageGroups(messages: readonly ContextMessage[], imageTokens?: number): Group[] {
+function messageGroups(
+  messages: readonly ContextMessage[],
+  imageTokens?: ContextBudget["imageTokens"],
+): Group[] {
   const groups: Group[] = [];
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index]!;

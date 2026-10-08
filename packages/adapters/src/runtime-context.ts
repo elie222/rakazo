@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AdapterContext, AgentRunRequest, AgentUsage } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
-import type { CacheRequest } from "./context-selection.js";
+import type { CacheRequest, ContextBudget } from "./context-selection.js";
 import {
   ContextCacheTracker,
   estimateContextTokens,
@@ -54,7 +54,7 @@ export function createRuntimeContextPolicy(
   context?: Partial<AdapterContext>,
   options: {
     cacheTracker?: ContextCacheTracker;
-    imageTokens?: number;
+    imageTokens?: ContextBudget["imageTokens"];
     credentialScope?: string;
   } = {},
 ) {

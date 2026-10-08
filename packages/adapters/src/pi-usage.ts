@@ -15,6 +15,7 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
+import type { ContextBudget } from "./context-selection.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
 
@@ -211,12 +212,11 @@ export function observedPiStream(
   },
   hooks?: {
     prepareContext?: (context: Context, model: Model<Api>) => Context;
+    imageTokens?: ContextBudget["imageTokens"];
     onUsage?: (usage: AgentUsage) => void;
     recordUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
   },
 ) {
-  // UTF-8 bytes are a conservative upper estimate for text; image allowance is deliberately large.
-
   const stream = createAssistantMessageEventStream();
   const reported: ReportedUsageFields = new Set();
   const callId = randomUUID();
@@ -254,7 +254,7 @@ export function observedPiStream(
         ? await observer.beforeCall({
             provider: model.provider,
             modelId: model.id,
-            inputTokensEstimate: estimateModelContextTokens(preparedContext),
+            inputTokensEstimate: estimateModelContextTokens(preparedContext, hooks?.imageTokens),
             maxOutputTokens: options?.maxTokens ?? model.maxTokens,
             cacheWriteRetention: requestedPiCacheWriteRetention(model, cacheRetention),
           })

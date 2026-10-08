@@ -1,11 +1,90 @@
 import { once } from "node:events";
 import { createServer } from "node:http";
 import type { ConnectorTool } from "@rakazo/adapter-kit";
+import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import { userTurnInstructions } from "./executor.js";
 import { PiAgentRuntime, resolveRuntimeModel } from "./pi-runtime.js";
 
 describe("Pi outgoing provider prefixes", () => {
+  it("sends a large valid image through a 128k context without treating base64 as text", async () => {
+    const pixels = Buffer.alloc(1024 * 1024);
+    let seed = 1;
+    for (let index = 0; index < pixels.length; index++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      pixels[index] = seed & 255;
+    }
+    const image = await sharp(pixels, { raw: { width: 1024, height: 1024, channels: 1 } })
+      .png()
+      .toBuffer();
+    expect(image.length).toBeGreaterThan(1_000_000);
+    let requestCount = 0;
+    let imageSent = false;
+    const server = createServer((request, response) => {
+      void (async () => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        const body = Buffer.concat(chunks).toString("utf8");
+        requestCount++;
+        imageSent = body.includes(
+          `data:image/png;base64,${image.toString("base64").slice(0, 128)}`,
+        );
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end(
+          `data: ${JSON.stringify({ id: "fixture", choices: [{ index: 0, delta: { role: "assistant", content: "Visible" }, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`,
+        );
+      })().catch(() => response.destroy());
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
+    try {
+      const beforeCall = vi.fn(async (call: { inputTokensEstimate: number }) => {
+        expect(call.inputTokensEstimate).toBeGreaterThan(16_384);
+        expect(call.inputTokensEstimate).toBeLessThan(128_000 - 4096);
+        return "image-reservation";
+      });
+      const events = [];
+      for await (const event of new PiAgentRuntime({
+        modelCallObserver: { beforeCall, afterCall: vi.fn() },
+      }).run(
+        {
+          botId: "bot-fixture",
+          threadId: "thread-fixture",
+          runId: "run-large-image",
+          prompt: "Inspect this image.",
+          instructions: "Answer briefly.",
+          history: [],
+          tools: [],
+          contextStrategy: "retrieval",
+          currentTurnImages: [{ name: "synthetic.png", mimeType: "image/png", data: image }],
+          model: {
+            provider: "openai-compatible",
+            id: "fixture",
+            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            acceptsImages: true,
+            contextWindow: 128_000,
+            maxTokens: 4096,
+          },
+        },
+        { signal: AbortSignal.timeout(15_000) },
+      )) {
+        events.push(event);
+      }
+      expect(events).toContainEqual(expect.objectContaining({ type: "done", text: "Visible" }));
+      expect(requestCount).toBe(1);
+      expect(imageSent).toBe(true);
+      expect(beforeCall).toHaveBeenCalledTimes(1);
+    } finally {
+      server.close();
+      server.closeAllConnections();
+      await once(server, "close");
+    }
+  }, 30_000);
+
   it("reserves input room in an unknown OpenRouter model's actual completion request", async () => {
     const requests: Array<{ max_completion_tokens?: number; messages?: unknown[] }> = [];
     const server = createServer((request, response) => {

@@ -105,7 +105,6 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { PiAgentRuntime } from "./pi-runtime.js";
-import { REASONING_MODEL_MAX_TOKENS } from "./pi-runtime-limits.js";
 
 async function runWithModel(
   modelId: string,
@@ -340,9 +339,9 @@ describe("Pi agent thinking level", () => {
       provider: "openrouter",
       reasoning: true,
       contextWindow: 16_384,
-      // Marked as a reasoning model, so the ceiling has to cover thinking plus a
-      // reply, and it can never outgrow the window this placeholder assumes.
-      maxTokens: Math.min(REASONING_MODEL_MAX_TOKENS, 16_384),
+      // The unknown-model fallback reserves half the window for input, while
+      // the output allowance covers both reasoning and the reply.
+      maxTokens: 8192,
     });
     // Unknown OpenRouter PI_DEFAULT_MODEL must not force thinking off (#114).
     expect(levels).toEqual(["medium", "medium"]);

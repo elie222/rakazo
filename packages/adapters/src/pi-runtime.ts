@@ -47,6 +47,7 @@ import {
 } from "./openai-tool-parameters.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
 import { supplementPiModels } from "./pi-current-models.js";
+import { estimatePiImageTokens } from "./pi-image-context.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
 import { codexComputeResidency } from "./pi-oauth.js";
 import {
@@ -303,6 +304,7 @@ export class PiAgentRuntime implements AgentRuntime {
 
         const contextPolicy = createRuntimeContextPolicy(request, context, {
           credentialScope: apiKey,
+          imageTokens: estimatePiImageTokens,
         });
         let agent: Agent;
         agent = new Agent({
@@ -327,6 +329,7 @@ export class PiAgentRuntime implements AgentRuntime {
                   { operationKind: request.usageOperationKind ?? "answer" },
                   {
                     prepareContext: contextPolicy.prepareContext,
+                    imageTokens: estimatePiImageTokens,
                     recordUsage: request.onUsage,
                     onUsage: (usage) => {
                       contextPolicy.onUsage(usage);
@@ -1318,7 +1321,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       sourceMessageId: undefined,
     },
     host.context,
-    { credentialScope: selectedModel.apiKey },
+    { credentialScope: selectedModel.apiKey, imageTokens: estimatePiImageTokens },
   );
   let nested!: Agent;
   nested = new Agent({
@@ -1356,6 +1359,7 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
             { operationKind: "subagent", agentId },
             {
               prepareContext: contextPolicy.prepareContext,
+              imageTokens: estimatePiImageTokens,
               recordUsage: host.request.onUsage,
               onUsage: (usage) => {
                 contextPolicy.onUsage(usage);
