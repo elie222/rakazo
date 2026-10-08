@@ -2447,12 +2447,12 @@ describe("sendThreadMessage", () => {
       },
     );
 
-    // The send lands as a plain reply — no dangling target or quote is kept.
+    // The send lands with an unavailable marker and no dangling target.
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         replyToMessageId: undefined,
-        replyQuote: undefined,
+        replyQuote: "",
       }),
     });
     expect(tx.event.create).toHaveBeenCalledWith({

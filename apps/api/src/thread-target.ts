@@ -629,15 +629,18 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
-      let replyPreview: ReplyPreview | undefined;
+      let replyPreview: ReplyPreview | null | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
           select: { id: true, blocks: true, role: true, botId: true },
         });
-        // A deleted or paged-out parent must not lose the send: drop to a
-        // plain reply, same as quote verification failing below.
-        if (reply) {
+        // A missing target must not lose the send or retain an unverified id.
+        // The empty server-owned quote preserves the unavailable state after reload.
+        if (!reply) {
+          replyQuote = "";
+          replyPreview = null;
+        } else {
           replyToMessageId = input.replyToMessageId;
           const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
           if (parsed.success) {

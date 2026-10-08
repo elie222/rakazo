@@ -194,7 +194,8 @@ describeAttachments("chat attachments", () => {
     });
     const foreignReply = otherThread.messages.find((message) => message.role === "user")!;
     expect(foreignReply.replyToMessageId).toBeUndefined();
-    expect(foreignReply.replyPreview).toBeUndefined();
+    expect(foreignReply.replyPreview).toBeNull();
+    expect(foreignReply.replyQuote).toBe("");
 
     await botIntroHarness!.prisma.message.delete({ where: { id: parent.id } });
     snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
@@ -204,11 +205,11 @@ describeAttachments("chat attachments", () => {
     expect(deletedReply.replyQuote).toBe("Parent first line");
     await sendAndWait(app, cookie, bot.id, { text: "Deleted target", replyToMessageId: parent.id });
     snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
-    expect(
-      snapshot.messages.find((message) =>
-        message.blocks.some((block) => block.kind === "text" && block.text === "Deleted target"),
-      )?.replyToMessageId,
-    ).toBeUndefined();
+    const missingReply = snapshot.messages.find((message) =>
+      message.blocks.some((block) => block.kind === "text" && block.text === "Deleted target"),
+    );
+    expect(missingReply?.replyToMessageId).toBeUndefined();
+    expect(missingReply?.replyPreview).toBeNull();
   });
 });
 
