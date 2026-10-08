@@ -1,6 +1,38 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+for (const mode of ["sign-in", "sign-up", "sso-only"] as const) {
+  test(`SSO is ${mode === "sso-only" ? "primary" : "secondary"} on ${mode}`, async ({
+    page,
+  }, testInfo) => {
+    await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+    await page.route("**/api/auth/capabilities", (route) =>
+      route.fulfill({
+        json: {
+          passwordAuth: mode !== "sso-only",
+          sso: { name: "Example", availability: "available" },
+          passwordReset: false,
+          resetUrl: null,
+        },
+      }),
+    );
+    await page.goto(mode === "sign-up" ? "/sign-up" : "/sign-in");
+    const sso = page.getByRole("button", { name: "Continue with Example" });
+    await expect(sso).toBeVisible();
+    if (mode === "sso-only") {
+      await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
+      await expect(sso).toHaveClass(/w-full/);
+    } else {
+      const submit = page.locator('button[type="submit"]');
+      const primaryBounds = await submit.boundingBox();
+      const ssoBounds = await sso.boundingBox();
+      expect(ssoBounds!.y).toBeGreaterThan(primaryBounds!.y + primaryBounds!.height);
+      await expect(sso).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    }
+    await captureScreenshot(page, testInfo, `auth-${mode}-sso`);
+  });
+}
+
 test("restricted signup waits for mailbox verification", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/capabilities", (route) =>

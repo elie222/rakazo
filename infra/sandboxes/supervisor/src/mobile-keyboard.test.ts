@@ -115,8 +115,12 @@ function keyboardFixture(overrides: { pasteText?: (text: string) => boolean } = 
     classList: { toggle: () => {} },
     contains: () => false,
   };
+  const inputAttributes = new Map([["aria-hidden", "true"]]);
   const input = {
     value: "",
+    attributes: inputAttributes,
+    setAttribute: (name: string, value: string) => inputAttributes.set(name, value),
+    removeAttribute: (name: string) => inputAttributes.delete(name),
     addEventListener: (type: string, listener: (event: object) => void) =>
       inputListeners.set(type, listener),
     removeEventListener: () => {},
@@ -225,6 +229,7 @@ describe("mobile computer keyboard", () => {
     expect(dockerfile).toMatch(/mobile-keyboard\.js/);
     expect(embed).toMatch(/attachMobileKeyboard/);
     expect(embed).toMatch(/mobile-keyboard-input/);
+    expect(embed).toMatch(/aria-label="Remote computer keyboard input"\s+aria-hidden="true"/);
     expect(embed).toMatch(/attachMobilePaste/);
     expect(embed).toMatch(/mobile-paste/);
     expect(embed).toMatch(/attachMobileTrackpad/);
@@ -233,6 +238,15 @@ describe("mobile computer keyboard", () => {
     expect(embed).toMatch(/--mobile-visual-height/);
     expect(start).toMatch(/mobile-keyboard\.js/);
     expect(supervisor).toMatch(/"mobile-keyboard\.js"/);
+  });
+
+  it("exposes the hidden keyboard field to screen readers only while it is open", () => {
+    const { input, inputListeners } = keyboardFixture();
+    expect(input.attributes.get("aria-hidden")).toBe("true");
+    inputListeners.get("focus")?.({});
+    expect(input.attributes.has("aria-hidden")).toBe(false);
+    inputListeners.get("blur")?.({});
+    expect(input.attributes.get("aria-hidden")).toBe("true");
   });
 
   it("pastes host clipboard text instead of typing an insertFromPaste", () => {

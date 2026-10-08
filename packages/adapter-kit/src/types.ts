@@ -1,4 +1,8 @@
-import type { ConnectionCatalogItem, SandboxKind } from "@rakazo/contracts";
+import type {
+  CacheCapabilities as ConnectionCacheCapabilities,
+  ConnectionCatalogItem,
+  SandboxKind,
+} from "@rakazo/contracts";
 
 export interface AdapterContext {
   operationId: string;
@@ -79,12 +83,16 @@ export interface ComputerRef {
   providerRef: string;
   /** True when the provider created an empty replacement rather than reconnecting existing state. */
   fresh?: boolean;
+  /** True when this call started a stopped computer. Providers that cannot tell leave it unset. */
+  started?: boolean;
 }
 
 export interface CommandRequest {
   argv: string[];
   cwd?: string;
   env?: Record<string, string>;
+  /** Remove these variables after all environment overlays, including inherited values. */
+  unsetEnv?: string[];
   pty?: boolean;
   /** Maximum wall-clock runtime before the command and its descendants are terminated. */
   timeoutMs?: number;
@@ -392,7 +400,11 @@ export interface AgentSteeringMessage {
   images?: AgentInputImage[];
 }
 
+/** Adapter-supplied cache policy metadata; absent fields mean unknown. */
+export type CacheCapabilities = ConnectionCacheCapabilities;
+
 export interface AgentRunModel {
+  cacheCapabilities?: CacheCapabilities;
   provider: string;
   id: string;
   apiKey?: string;
@@ -409,7 +421,7 @@ export interface AgentRunModel {
   maxImagesPerPrompt?: number;
   /** Maximum completion tokens sent to the model endpoint. */
   maxTokens?: number;
-  /** Context-window limit used when sizing prompts and completions. */
+  /** Generic connection context window, overriding catalog limits when configured. */
   contextWindow?: number;
   /** Preferred thinking effort for reasoning models; clamped to the model’s supported set. */
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
@@ -426,7 +438,15 @@ export interface AgentRunModel {
   };
 }
 
+export type AgentContextStrategy = "current" | "retrieval" | "snapshots" | "cache-aware";
+export const DEFAULT_CONTEXT_STRATEGY: AgentContextStrategy = "retrieval";
+
 export interface AgentRunRequest {
+  /** Awaited producer-side accounting, independent of event-consumer cancellation. */
+  onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => void | Promise<void>;
+  contextStrategy?: AgentContextStrategy;
+  /** Exclusive workflow cost bucket; retrieval tool turns are detected for answer calls. */
+  usageOperationKind?: UsageOperationKind;
   botId: string;
   threadId: string;
   runId: string;
@@ -435,6 +455,7 @@ export interface AgentRunRequest {
   instructions: string;
   history: Array<{
     id?: string;
+    createdAt?: string;
     role: "user" | "assistant" | "system";
     content: string;
     /** Images attached to this message, hydrated only for recent user turns. */
@@ -443,6 +464,12 @@ export interface AgentRunRequest {
   currentTurnImages?: AgentInputImage[];
   tools: ConnectorTool[];
   model: AgentRunModel;
+  /** Ordered, user-selected models eligible after provider unavailability. */
+  fallbackModels?: Array<Pick<AgentRunModel, "provider" | "id">>;
+  /** Resolve one configured backup lazily so healthy primary turns do no extra auth work. */
+  resolveFallbackModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
+  /** Persist the selected backup against the active run lease before requesting it. */
+  onModelChange?: (provider: string, modelId: string) => Promise<void>;
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
@@ -477,6 +504,37 @@ export interface ScriptedTurn {
   complete?: boolean;
 }
 
+/** Provider-neutral per-call measurements. Null means unavailable, never free/zero.
+ * Input excludes cache buckets. Reasoning is already included in output.
+ */
+export interface AgentUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens?: number | null;
+  cacheWriteTokens?: number | null;
+  cacheWrite1hTokens?: number | null;
+  reasoningTokens?: number | null;
+  totalTokens?: number | null;
+  costUsd?: number | null;
+  costSource?: string | null;
+  pricingVersion?: string | null;
+  usageSource?: string | null;
+}
+
+export type UsageOperationKind = "answer" | "setup" | "retrieval" | "subagent" | "compaction";
+
+export interface ModelCallObserver {
+  beforeCall(call: {
+    provider: string;
+    modelId: string;
+    inputTokensEstimate: number;
+    maxOutputTokens: number;
+    /** Explicit adapter-known write bucket required by this request, not a billing prediction. */
+    cacheWriteRetention?: "1h";
+  }): string | Promise<string>;
+  afterCall(reservationId: string, usage: AgentUsage | null): void | Promise<void>;
+}
+
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
   | {
@@ -493,16 +551,16 @@ export type AgentRuntimeEvent =
       actions?: Array<{ id: string; label: string }>;
     }
   | { type: "takeover"; reason: string }
-  | {
+  | ({
       type: "usage";
-      inputTokens: number;
-      outputTokens: number;
-      /** Cache hits and writes folded into inputTokens, kept apart so cost views can split them. */
-      cacheReadTokens: number;
-      cacheWriteTokens: number;
+      /** Producer-side onUsage completed; consumers must not account it again. */
+      accounted?: boolean;
       provider: string;
       model: string;
-    }
+      callId?: string;
+      operationKind?: UsageOperationKind;
+      agentId?: string;
+    } & AgentUsage)
   | { type: "checkpoint"; blob: string }
   | {
       type: "subagent";

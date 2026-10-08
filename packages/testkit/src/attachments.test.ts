@@ -140,6 +140,77 @@ describeAttachments("chat attachments", () => {
       "write notes/result.txt and attach it to the thread",
     );
   });
+  it("persists server-owned reply previews, isolates threads, and handles deletion", async () => {
+    const cookie = await signup(app, `replies-${stamp}@rakazo.test`, "Reply User");
+    const otherCookie = await signup(app, `replies-other-${stamp}@rakazo.test`, "Other User");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Helper",
+      title: "Helper",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(app, cookie, bot.id, { text: "Parent first line\nSecond line" });
+    let snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
+    const parent = snapshot.messages.find((message) => message.role === "user")!;
+    await sendAndWait(app, cookie, bot.id, { text: "A reply", replyToMessageId: parent.id });
+    snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
+    const reply = snapshot.messages.find((message) =>
+      message.blocks.some((block) => block.kind === "text" && block.text === "A reply"),
+    )!;
+    expect(reply.replyToMessageId).toBe(parent.id);
+    expect(reply.replyQuote).toBe("Parent first line");
+    expect(reply.replyPreview).toEqual({ role: "user", text: "Parent first line" });
+    const event = await botIntroHarness!.prisma.event.findFirst({
+      where: {
+        threadId: snapshot.threadId,
+        type: "thread.message.created",
+        payload: { path: ["messageId"], equals: reply.id },
+      },
+    });
+    expect(event?.payload).toMatchObject({
+      replyPreview: { role: "user", text: "Parent first line" },
+    });
+
+    const denied = await raw(app, otherCookie, "threads/send", {
+      botId: bot.id,
+      text: "Unauthorized",
+      replyToMessageId: parent.id,
+    });
+    expect(denied.status).toBeGreaterThanOrEqual(400);
+    const otherBot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Other",
+      title: "Other",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(app, cookie, otherBot.id, {
+      text: "Foreign target",
+      replyToMessageId: parent.id,
+    });
+    const otherThread = await rpc<ThreadSnapshot>(app, cookie, "threads/get", {
+      botId: otherBot.id,
+    });
+    const foreignReply = otherThread.messages.find((message) => message.role === "user")!;
+    expect(foreignReply.replyToMessageId).toBeUndefined();
+    expect(foreignReply.replyPreview).toBeNull();
+    expect(foreignReply.replyQuote).toBe("");
+
+    await botIntroHarness!.prisma.message.delete({ where: { id: parent.id } });
+    snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
+    const deletedReply = snapshot.messages.find((message) => message.id === reply.id)!;
+    expect(deletedReply.replyToMessageId).toBeUndefined();
+    expect(deletedReply.replyPreview).toBeNull();
+    expect(deletedReply.replyQuote).toBe("Parent first line");
+    await sendAndWait(app, cookie, bot.id, { text: "Deleted target", replyToMessageId: parent.id });
+    snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
+    const missingReply = snapshot.messages.find((message) =>
+      message.blocks.some((block) => block.kind === "text" && block.text === "Deleted target"),
+    );
+    expect(missingReply?.replyToMessageId).toBeUndefined();
+    expect(missingReply?.replyPreview).toBeNull();
+  });
 });
 
 async function signup(app: App, email: string, name: string) {
@@ -178,7 +249,7 @@ async function sendAndWait(
   app: App,
   cookie: string,
   botId: string,
-  input: { text?: string; artifactIds?: string[] },
+  input: { text?: string; artifactIds?: string[]; replyToMessageId?: string },
 ) {
   await rpc(app, cookie, "threads/send", { botId, ...input });
   await waitFor(

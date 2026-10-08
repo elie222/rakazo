@@ -70,6 +70,8 @@ describe("local settings authority", () => {
     for (const procedure of [
       "models/connect",
       "models/setDefault",
+      "models/backups",
+      "models/setBackups",
       "integrationSetup/get",
       "integrationSetup/save",
     ]) {

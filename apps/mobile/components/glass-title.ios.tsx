@@ -10,6 +10,7 @@ import { iosAtLeast } from "../lib/native-controls";
  */
 export function GlassTitle({ title }: { title: string }) {
   const scheme = useResolvedAppearance();
+  if (!title.trim()) return null;
   return (
     <View accessibilityLabel={title} accessibilityRole="header" accessible style={styles.frame}>
       <RNText numberOfLines={1} style={styles.sizer}>

@@ -27,6 +27,7 @@ import { toComputerRef } from "./computer-support.js";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
+  removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
 import { isSandboxGoneError } from "./e2b-sandbox.js";
@@ -313,6 +314,13 @@ export async function provisionComputer(
       context.botId,
       context,
     );
+    // Bots deleted while this computer was not running could not remove their folders then.
+    // Skip only plain reconnects; a provider may start or replace the computer during one.
+    if (existing.scope === "team" && (!reconnecting || replacement || ref.started === true)) {
+      await removeDeletedBotWorkspaces(deps, ref, existing.spaceId, context).catch((error) => {
+        getLogger().error("team bot folder cleanup", error);
+      });
+    }
     const activeControl = hasActiveComputerControl(existing);
     const activated = await deps.prisma.computer.updateMany({
       where: {

@@ -161,9 +161,10 @@ export default function Computer() {
     return () => clearInterval(timer);
   }, [botId, computer?.state]);
 
-  async function openComputer() {
+  /** Open the full window. Only an explicit Take control asks for the lease. */
+  async function openComputer({ takeControl }: { takeControl: boolean }) {
     if (!botId) return;
-    const needsTakeover = !(computer?.controlHolder === "user" && computer.controlBotId === botId);
+    const needsTakeover = takeControl && !hasControl;
     try {
       const opened = await bootComputer({
         takeControl: needsTakeover,
@@ -265,8 +266,9 @@ export default function Computer() {
           </View>
         )}
         <Pressable
+          accessibilityRole="button"
           accessibilityLabel={t("Open computer")}
-          onPress={() => void openComputer()}
+          onPress={() => void openComputer({ takeControl: false })}
           style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0 }}
         />
       </View>
@@ -292,7 +294,7 @@ export default function Computer() {
             label={t("Take control")}
             prominence="secondary"
             style={{ alignSelf: "center" }}
-            onPress={() => void openComputer()}
+            onPress={() => void openComputer({ takeControl: true })}
           />
         )}
       </View>
@@ -420,6 +422,7 @@ export default function Computer() {
                   ) : (
                     <NativeActionButton
                       label={t("Take control")}
+                      prominence="secondary"
                       fill={false}
                       style={{ alignSelf: "center" }}
                       onPress={() =>
@@ -518,6 +521,10 @@ function ScreenWebView({
       source={{ uri: sourceUrl.current }}
       style={{ flex: 1, backgroundColor: tokens.background }}
       pointerEvents={interactive ? "auto" : "none"}
+      // A view-only screen is a picture: keep its page, including the hidden keyboard field,
+      // out of VoiceOver and TalkBack.
+      accessibilityElementsHidden={!interactive}
+      importantForAccessibility={interactive ? "auto" : "no-hide-descendants"}
       javaScriptEnabled
       domStorageEnabled
       keyboardDisplayRequiresUserAction={false}

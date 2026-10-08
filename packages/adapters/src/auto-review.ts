@@ -3,10 +3,12 @@ import type {
   AdapterDescriptor,
   AgentRunModel,
   AgentRuntime,
+  AgentRuntimeEvent,
   AutoReviewCapabilities,
   AutoReviewProvider,
   AutoReviewRequest,
   AutoReviewResult,
+  CacheCapabilities,
 } from "@rakazo/adapter-kit";
 import type { AutoReviewJudgeDecision } from "@rakazo/core";
 import { redactSecrets } from "@rakazo/core";
@@ -144,7 +146,7 @@ export function isAutoReviewCheckerConfigured(input: {
   if (checker.provider === LOCAL_PROVIDER_ID) return localModelIds(env).length > 0;
 
   const deployment = resolveDeploymentModel(env);
-  if (checker.provider === deployment.provider && deployment.key) return true;
+  if (checker.provider === deployment.provider && deployment.configured) return true;
   if (env.OPENROUTER_API_KEY?.trim() && checker.provider === "openrouter") return true;
   if (env.ANTHROPIC_API_KEY?.trim() && checker.provider === "anthropic") return true;
   return Boolean(input.hasUserCredentialForProvider?.(checker.provider));
@@ -264,12 +266,16 @@ export function buildAutoReviewPrompt(input: AutoReviewRequest): string {
 }
 
 export async function runAutoReviewJudge(input: {
+  onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => Promise<unknown>;
   runtime: AgentRuntime;
   checker: AutoReviewChecker;
   apiKey?: string;
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  cacheCapabilities?: CacheCapabilities;
+  contextWindow?: number;
+  maxTokens?: number;
   reasoning?: boolean;
   oauth?: AgentRunModel["oauth"];
   prompt: string;
@@ -294,6 +300,10 @@ export async function runAutoReviewJudge(input: {
         botId: input.botId,
         threadId: input.threadId,
         runId: `${input.runId}:auto-review`,
+        usageOperationKind: "setup",
+        onUsage: async (event) => {
+          await input.onUsage?.(event);
+        },
         prompt: input.prompt,
         instructions: [
           formatCurrentTimeInstruction(),
@@ -308,6 +318,9 @@ export async function runAutoReviewJudge(input: {
           accountId: input.accountId,
           gatewayId: input.gatewayId,
           baseUrl: input.baseUrl,
+          cacheCapabilities: input.cacheCapabilities,
+          contextWindow: input.contextWindow,
+          maxTokens: input.maxTokens,
           reasoning: input.reasoning,
           oauth: input.oauth,
         },
@@ -320,6 +333,7 @@ export async function runAutoReviewJudge(input: {
         signal,
       },
     )) {
+      if (event.type === "usage" && !event.accounted) await input.onUsage?.(event);
       if (
         event.type === "text" &&
         /^(?:I hit a problem:|Unknown model )/i.test(event.text.trim())
@@ -348,12 +362,16 @@ export async function runAutoReviewJudge(input: {
 }
 
 export type LlmAutoReviewOptions = {
+  onUsage?: (event: Extract<AgentRuntimeEvent, { type: "usage" }>) => Promise<unknown>;
   runtime: AgentRuntime;
   checker: AutoReviewChecker;
   apiKey?: string;
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  cacheCapabilities?: CacheCapabilities;
+  contextWindow?: number;
+  maxTokens?: number;
   reasoning?: boolean;
   oauth?: AgentRunModel["oauth"];
   runId: string;

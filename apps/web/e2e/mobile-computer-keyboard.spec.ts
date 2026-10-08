@@ -90,9 +90,11 @@ test("touch users can open and dismiss the remote computer keyboard", async ({
   const trackpadButton = page.getByRole("button", { name: "Use trackpad" });
   const pasteButton = page.getByRole("button", { name: "Paste" });
   const keyboardInput = page.getByRole("textbox", { name: "Remote computer keyboard input" });
+  const keyboardField = page.locator("#mobile-keyboard-input");
   await expect(keyboardButton).toBeVisible();
   await expect(trackpadButton).toBeVisible();
   await expect(pasteButton).toBeVisible();
+  await expect(keyboardInput).toHaveCount(0);
 
   await trackpadButton.click();
   await expect(page.getByRole("button", { name: "Use direct touch" })).toBeVisible();
@@ -121,7 +123,8 @@ test("touch users can open and dismiss the remote computer keyboard", async ({
 
   await page.getByRole("button", { name: "Hide keyboard" }).click();
   await expect(keyboardButton).toBeVisible();
-  await expect(keyboardInput).not.toBeFocused();
+  await expect(keyboardField).not.toBeFocused();
+  await expect(keyboardField).toHaveAttribute("aria-hidden", "true");
   await expect(page.locator("html")).not.toHaveClass(/mobile-keyboard-open/);
   await expect
     .poll(() =>
@@ -143,9 +146,7 @@ test("touch users can paste clipboard text without a keyboard chord", async ({
   await expect
     .poll(() => page.evaluate(() => Reflect.get(globalThis, "__rfbClipboard")))
     .toEqual(["from-phone"]);
-  await expect(
-    page.getByRole("textbox", { name: "Remote computer keyboard input" }),
-  ).not.toBeFocused();
+  await expect(page.locator("#mobile-keyboard-input")).not.toBeFocused();
 });
 
 test("Paste focuses the keyboard when the clipboard API is denied", async ({ page }) => {

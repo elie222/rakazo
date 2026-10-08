@@ -18,6 +18,7 @@ export function NativeActionButton({
   const tokens = useMobileTokens();
   const inactive = disabled || busy;
   const stretches = actionFills(prominence, fill);
+  const compact = prominence === "plain" || prominence === "quiet";
   const colors = buttonColors(prominence, stretches, tokens);
   return (
     <Pressable
@@ -25,17 +26,17 @@ export function NativeActionButton({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={inactive ? { disabled: true } : undefined}
       disabled={inactive}
-      hitSlop={prominence === "plain" ? 8 : undefined}
+      hitSlop={compact ? 8 : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         {
-          minHeight: prominence === "plain" ? undefined : 48,
+          minHeight: compact ? undefined : 48,
           borderRadius: 12,
           alignItems: "center",
           justifyContent: "center",
           alignSelf: stretches ? "stretch" : "flex-start",
-          paddingHorizontal: prominence === "plain" ? 0 : 16,
-          paddingVertical: prominence === "plain" ? 8 : 12,
+          paddingHorizontal: compact ? 0 : 16,
+          paddingVertical: compact ? 8 : 12,
           backgroundColor: colors.background,
           borderWidth: colors.border ? 1 : 0,
           borderColor: colors.border,
@@ -50,8 +51,8 @@ export function NativeActionButton({
         <Text
           style={{
             color: colors.label,
-            fontSize: prominence === "plain" ? 17 : 16,
-            fontWeight: prominence === "plain" ? "400" : "600",
+            fontSize: prominence === "quiet" ? 15 : prominence === "plain" ? 17 : 16,
+            fontWeight: compact ? "400" : "600",
           }}
         >
           {label}
@@ -81,6 +82,9 @@ function buttonColors(
   }
   if (prominence === "secondary") {
     return { background: "transparent" as const, label: native.label, border: tokens.border };
+  }
+  if (prominence === "quiet") {
+    return { background: "transparent" as const, label: tokens.mutedForeground, border: undefined };
   }
   return { background: "transparent" as const, label: native.label, border: undefined };
 }

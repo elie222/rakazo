@@ -9,6 +9,7 @@ import type {
   MemoryStore,
   SandboxProvider,
   SecretStore,
+  UsageOperationKind,
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
@@ -25,6 +26,7 @@ import type {
   ComposioProvider,
   ComputerExecutionLease,
   ConnectorRegistry,
+  FaviconResolver,
   getBotSecretMetadata,
   IntegrationProviderSettings,
   MemoryProviderResolver,
@@ -50,6 +52,7 @@ import {
   computerSupportsTerminal,
   computerSupportsUpdate,
   computerUpdateView,
+  createFaviconResolver,
   createVoiceProvider,
   defaultCatalogModelId,
   deletePushToken,
@@ -60,6 +63,7 @@ import {
   expireComputerControl,
   forgetBotSecret,
   hasActiveComputerControl,
+  hostCredentialSource,
   isAutoReviewCheckerConfigured,
   isComputerScreenUnavailable,
   isSandboxGoneError,
@@ -83,6 +87,7 @@ import {
   prepareGraphqlInstall,
   prepareManagedConnectorForTransaction,
   prepareStoredModelAuth,
+  probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   provisionComputer,
   queueComputerUpdate,
@@ -106,6 +111,7 @@ import {
   toComputerRef,
   touchRunningComputer,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
+  validateConnectedModelChoice,
   validateModelAuthAvailability,
   validateStoredModelAuth,
   verifyMcpInstall,
@@ -151,6 +157,7 @@ import {
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
+  CannotRenameSpaceAsNonOwnerError,
   ComputerLimitError,
   claimEmptySpaceDeletionForMember,
   createExternalConversationRepos,
@@ -169,6 +176,7 @@ import {
   InvalidSpaceNameError,
   IsolationError,
   issueMessagingLinkCode,
+  listSpaceBackupModels,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -176,7 +184,9 @@ import {
   parseComputerMode,
   pushSessionExpiresAt,
   releaseSpaceDeletionClaim,
+  renameSpaceForMember,
   renewSpaceDeletionClaim,
+  replaceSpaceBackupModels,
   restoreBotUnderComputerQuota,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
@@ -527,6 +537,8 @@ export interface RouterDeps {
   oauthLogins: PiOAuthLogins;
   /** Live Codex catalog seam; defaults to the shared per-process cache. */
   codexCatalog?: CodexLiveCatalog;
+  /** Site icons for links; defaults to the per-process cache that fetches them. */
+  favicons?: FaviconResolver;
   /**
    * Detached refresh for a stored credential whose bearer expired — the live
    * catalog path calls it instead of refreshing inline. Defaults to the
@@ -555,7 +567,8 @@ export interface RouterDeps {
     teamChatJudgeModel?: string;
     defaultProvider: string;
     defaultModel: string;
-    deploymentModelKey?: string;
+    deploymentModelConfigured?: boolean;
+    deploymentModelHostCredentials?: boolean;
     webOrigin: string;
     privacyPolicyUrl?: string;
     screenProxySecret: string;
@@ -716,6 +729,7 @@ export function createRouter(deps: RouterDeps) {
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
+  const favicons = deps.favicons ?? createFaviconResolver();
   const refreshExpiredCredential =
     deps.refreshExpiredModelCredential ??
     ((scope: { userId: string; spaceId: string }, secretId: string, provider: string) =>
@@ -800,12 +814,37 @@ export function createRouter(deps: RouterDeps) {
           name: space.name,
           isDefault: false,
           hasContent: false,
+          canRename: true,
           canDelete: true,
           bots: [],
           groups: [],
           externalConversations: [],
           botSections: [],
         };
+      }),
+      rename: authed.spaces.rename.handler(async ({ context, input }) => {
+        try {
+          return await renameSpaceForMember(deps.prisma, {
+            currentSpaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            spaceId: input.spaceId,
+            name: input.name,
+          });
+        } catch (error) {
+          if (error instanceof SpaceNotFoundError) {
+            throw new ORPCError("NOT_FOUND", { message: error.message });
+          }
+          if (error instanceof CannotRenameSpaceAsNonOwnerError) {
+            throw new ORPCError("FORBIDDEN", { message: error.message });
+          }
+          if (error instanceof InvalidSpaceNameError) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          if (error instanceof SpaceDeletionInProgressError) {
+            throw new ORPCError("CONFLICT", { message: error.message });
+          }
+          throw error;
+        }
       }),
       remove: authed.spaces.remove.handler(async ({ context, input }) => {
         let claimId: string | null = null;
@@ -1090,6 +1129,63 @@ export function createRouter(deps: RouterDeps) {
           }),
         );
       }),
+      backups: authed.models.backups.handler(async ({ context }) =>
+        listSpaceBackupModels(deps.prisma, context.actor),
+      ),
+      setBackups: authed.models.setBackups.handler(async ({ context, input }) => {
+        if (input.length > 0) {
+          const auth = await modelCredentialAuthKindsForSpace(
+            deps.prisma,
+            deps.secrets,
+            context.actor,
+          );
+          const available = listAvailablePiCatalog(auth.byProvider, auth.byModel);
+          const live = await codexLiveCatalogsForSpace(
+            deps.prisma,
+            deps.secrets,
+            context.actor,
+            auth,
+            codexCatalog,
+            {
+              onExpiredToken: (secretId) =>
+                refreshExpiredCredential(context.actor, secretId, CHATGPT_OAUTH_PROVIDER),
+            },
+          );
+          const catalog = live.size > 0 ? applyCodexLiveCatalog(available, auth, live) : available;
+          for (const choice of input) {
+            const credential = await findModelCredential(
+              deps.prisma,
+              context.actor,
+              choice.provider,
+              choice.modelId,
+            );
+            if (!credential) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: "Connect that model provider first",
+              });
+            }
+            if (
+              catalog.some(
+                (entry) => entry.provider === choice.provider && entry.id === choice.modelId,
+              )
+            )
+              continue;
+            const error = await validateConnectedModelChoice(
+              deps.prisma,
+              context.actor,
+              choice.provider,
+              choice.modelId,
+            );
+            if (error || choice.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+              throw new ORPCError("BAD_REQUEST", {
+                message: error ?? "That model is not available for this connection",
+              });
+            }
+          }
+        }
+        await replaceSpaceBackupModels(deps.prisma, context.actor, input);
+        return { ok: true as const };
+      }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
         let plaintext: string;
         try {
@@ -1155,6 +1251,20 @@ export function createRouter(deps: RouterDeps) {
           }
         },
       ),
+      probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
+        try {
+          const models = await probeCatalogProviderModels(
+            { provider: input.provider, apiKey: input.apiKey },
+            undefined,
+            context.signal,
+          );
+          return { models };
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: error instanceof Error ? error.message : "Could not list models",
+          });
+        }
+      }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
         return deps.oauthLogins.begin({
           userId: context.actor.userId,
@@ -1379,6 +1489,9 @@ export function createRouter(deps: RouterDeps) {
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
+              await tx.spaceBackupModel.deleteMany({
+                where: { userId: context.actor.userId, provider: input.provider },
+              });
               const existing = await tx.userModelCredential.findMany({
                 where: { userId: context.actor.userId, provider: input.provider },
               });
@@ -1443,6 +1556,7 @@ export function createRouter(deps: RouterDeps) {
             modelProvider: source.modelProvider,
             modelId: source.modelId,
             thinkingLevel: source.thinkingLevel,
+            disabledBuiltinTools: source.disabledBuiltinTools,
           })
           .catch((error: unknown) => {
             throw mapSpaceLifecycleError(error);
@@ -1603,6 +1717,9 @@ export function createRouter(deps: RouterDeps) {
               ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
               : {}),
             ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
+            ...(input.disabledBuiltinTools !== undefined
+              ? { disabledBuiltinTools: input.disabledBuiltinTools }
+              : {}),
           },
         });
         const bots = await repos.listBots(context.actor);
@@ -5487,19 +5604,45 @@ export function createRouter(deps: RouterDeps) {
           model: row.model,
           inputTokens: row.inputTokens,
           outputTokens: row.outputTokens,
+          cacheReadTokens: row.cacheReadTokens,
+          cacheWriteTokens: row.cacheWriteTokens,
+          cacheWrite1hTokens: row.cacheWrite1hTokens,
+          reasoningTokens: row.reasoningTokens,
+          totalTokens: row.totalTokens,
+          costUsd: row.costUsd,
+          costSource: row.costSource,
+          pricingVersion: row.pricingVersion,
+          usageSource: row.usageSource,
+          callId: row.callId,
+          operationId: row.operationId,
+          operationKind: row.operationKind as UsageOperationKind,
+          parentRunId: row.parentRunId,
+          agentId: row.agentId,
           createdAt: row.createdAt.toISOString(),
         }));
       }),
       summary: authed.usage.summary.handler(async ({ context }) => {
-        const result = await deps.prisma.usageRecord.aggregate({
-          where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
-          _sum: { inputTokens: true, outputTokens: true },
-          _count: { _all: true },
-        });
+        const [result, runGroups] = await Promise.all([
+          deps.prisma.usageRecord.aggregate({
+            where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+            _sum: { inputTokens: true, outputTokens: true, totalTokens: true },
+            _count: { _all: true, inputTokens: true, outputTokens: true, totalTokens: true },
+          }),
+          deps.prisma.usageRecord.groupBy({
+            by: ["runId", "parentRunId"],
+            where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+          }),
+        ]);
+        const runs = new Set(runGroups.map((row) => row.parentRunId ?? row.runId).filter(Boolean))
+          .size;
+        const completeSum = (field: "inputTokens" | "outputTokens" | "totalTokens") =>
+          result._count[field] === result._count._all ? (result._sum[field] ?? 0) : null;
         return {
-          inputTokens: result._sum.inputTokens ?? 0,
-          outputTokens: result._sum.outputTokens ?? 0,
-          runs: result._count._all,
+          inputTokens: completeSum("inputTokens"),
+          outputTokens: completeSum("outputTokens"),
+          totalTokens: completeSum("totalTokens"),
+          modelCalls: result._count._all,
+          runs,
         };
       }),
     },
@@ -5581,6 +5724,9 @@ export function createRouter(deps: RouterDeps) {
       query: authed.search.query.handler(async ({ context, input }) => ({
         hits: await querySpaceSearch(deps.prisma, context.actor, input.q),
       })),
+    },
+    links: {
+      favicon: authed.links.favicon.handler(async ({ input }) => favicons.favicon(input.origin)),
     },
     runs: {
       list: authed.runs.list.handler(async ({ context, input }) => ({
@@ -5790,6 +5936,7 @@ async function spaceNavigationDto(
         name: membership.space.name,
         isDefault: membership.space.isDefault,
         hasContent: spacesWithContent.has(membership.spaceId),
+        canRename: membership.role === "owner" && membership.space.deletingAt === null,
         canDelete:
           membership.role === "owner" &&
           !membership.space.isDefault &&
@@ -5867,6 +6014,12 @@ async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
   return { enabled, checkerAvailable };
 }
 
+function hostCredentials(active: boolean, provider: string) {
+  return active
+    ? { hostCredentialProvider: provider, hostCredentialSource: hostCredentialSource(provider) }
+    : { hostCredentialProvider: null, hostCredentialSource: null };
+}
+
 async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   const [user, setup] = await Promise.all([
     deps.prisma.user.findUniqueOrThrow({ where: { id: actor.userId } }),
@@ -5885,6 +6038,13 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
       deps.env.defaultProvider,
     defaultModel:
       setup.credential?.defaultModel ?? setup.settings?.defaultModelId ?? deps.env.defaultModel,
+    // Set only while the active default is the deployment's own, running on host credentials.
+    ...hostCredentials(
+      !setup.credential &&
+        !setup.settings?.defaultModelProvider &&
+        Boolean(deps.env.deploymentModelHostCredentials),
+      deps.env.defaultProvider,
+    ),
     computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
@@ -5903,7 +6063,7 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
     findDefaultModelCredential(deps.prisma, actor),
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
   ]);
-  const hasDeployment = Boolean(deps.env.deploymentModelKey);
+  const hasDeployment = Boolean(deps.env.deploymentModelConfigured);
   return {
     credential,
     settings,

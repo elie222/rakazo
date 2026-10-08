@@ -204,16 +204,16 @@ export function isMessagingEnabled(platforms: MessagingPlatform[]): boolean {
 
 /**
  * Linked users run on their own credentials, so linking-only deployments
- * need no deployment key. Open signup provisions users with no credential
- * of their own, so that mode requires the deployment model key — without
+ * need no deployment model. Open signup provisions users with no credential
+ * of their own, so that mode requires a configured deployment model — without
  * it their runs cannot execute.
  */
 export function isMessagingSurfaceEnabled(
   platforms: MessagingPlatform[],
-  options: { deploymentModelKey: string | undefined; openSignup: boolean },
+  options: { deploymentModelConfigured: boolean; openSignup: boolean },
 ): boolean {
   if (!isMessagingEnabled(platforms)) return false;
-  return options.openSignup ? Boolean(options.deploymentModelKey) : true;
+  return options.openSignup ? options.deploymentModelConfigured : true;
 }
 
 /** Sendblue reports outbound delivery as webhooks the Chat SDK ignores. */

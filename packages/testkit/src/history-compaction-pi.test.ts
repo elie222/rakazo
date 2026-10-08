@@ -13,12 +13,18 @@ describe("history compaction with real Pi", () => {
   it.each(["", "   "])("preserves history and retries an empty summary (%j)", async (text) => {
     const summary = "Earlier decisions and the new conversation facts.";
     const server = await startModelEmulator({
-      steps: [text, summary].map((response) => ({
+      steps: [text, summary].map((response, index) => ({
         expect(request) {
           expect(JSON.stringify(request.messages)).toContain("Earlier decisions.");
           expect(JSON.stringify(request.messages)).toContain("New conversation facts.");
         },
         response: { type: "text", text: response },
+        usage: {
+          prompt_tokens: 100 + index,
+          completion_tokens: 10,
+          total_tokens: 110 + index,
+          prompt_tokens_details: { cached_tokens: 20 },
+        },
       })),
     });
     cleanups.push(() => server.close());
@@ -40,6 +46,8 @@ describe("history compaction with real Pi", () => {
         return { count: 1 };
       },
     );
+    const createMany = vi.fn(async () => ({ count: 1 }));
+    const create = vi.fn();
     const prisma = {
       thread: { findUniqueOrThrow: vi.fn(async () => thread), updateMany },
       message: {
@@ -51,6 +59,7 @@ describe("history compaction with real Pi", () => {
           },
         ]),
       },
+      usageRecord: { createMany, create },
     };
     const memoryProviders = { resolve: vi.fn(async () => null) };
     const jobs = { enqueue: vi.fn(async () => undefined) };
@@ -68,6 +77,23 @@ describe("history compaction with real Pi", () => {
     expect(thread.historyCompactionSummary).toBe("Earlier decisions.");
     expect(memoryProviders.resolve).not.toHaveBeenCalled();
     expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(createMany).toHaveBeenCalledOnce();
+    expect(createMany.mock.calls[0]?.[0]).toMatchObject({
+      skipDuplicates: true,
+      data: [
+        {
+          spaceId: thread.spaceId,
+          userId: thread.userId,
+          botId: thread.botId,
+          operationKind: "compaction",
+          inputTokens: 80,
+          outputTokens: 10,
+          cacheReadTokens: 20,
+          totalTokens: 110,
+          callId: expect.any(String),
+        },
+      ],
+    });
 
     await compactHistory(deps, thread.id);
     server.assertComplete();
@@ -81,5 +107,20 @@ describe("history compaction with real Pi", () => {
     });
     expect(memoryProviders.resolve).toHaveBeenCalledOnce();
     expect(jobs.enqueue).not.toHaveBeenCalled();
+    expect(createMany).toHaveBeenCalledTimes(2);
+    expect(createMany.mock.calls[1]?.[0]).toMatchObject({
+      skipDuplicates: true,
+      data: [
+        {
+          operationKind: "compaction",
+          inputTokens: 81,
+          outputTokens: 10,
+          cacheReadTokens: 20,
+          totalTokens: 111,
+          callId: expect.any(String),
+        },
+      ],
+    });
+    expect(create).not.toHaveBeenCalled();
   });
 });

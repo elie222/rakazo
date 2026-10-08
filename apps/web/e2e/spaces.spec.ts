@@ -11,6 +11,14 @@ test("spaces stay invisible by default and chat creation requires approval", asy
   const sidebar = page.locator("aside").first();
   await expect(sidebar.getByText("Personal", { exact: true })).toHaveCount(0);
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
+  await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
+  await expect(page.getByRole("menuitem", { name: "Rename space" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Rename space" }).click();
+  const singleSpaceRename = page.getByRole("dialog", { name: "Rename space" });
+  await expect(singleSpaceRename.getByLabel("Name")).toHaveValue("Personal");
+  await captureScreenshot(page, testInfo, "rename-only-space");
+  await singleSpaceRename.getByRole("button", { name: "Cancel" }).click();
+  await expect(singleSpaceRename).toHaveCount(0);
   await captureScreenshot(page, testInfo, "single-space-sidebar");
 
   await openNewSpace(page);
@@ -122,6 +130,45 @@ test("a new space auto-completes onboarding and can be deleted from its menu", a
   await page.waitForURL(/\/app/);
   await expect(page).not.toHaveURL(/\/onboarding/);
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
+});
+
+test("an occupied space can be renamed from its menu", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `spaces-rename-${stamp}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+
+  const sidebar = page.locator("aside").first();
+  await openNewSpace(page);
+  const createDialog = page.getByRole("dialog", { name: "New space" });
+  await createDialog.getByLabel("Name").fill("Typo space");
+  await createDialog.getByRole("button", { name: "Create space", exact: true }).click();
+  await completeOnboarding(page);
+
+  const occupied = sidebar
+    .locator('[data-sidebar-group^="space:"]')
+    .filter({ hasText: "Typo space" });
+  await expect(occupied.getByRole("button", { name: /^Chief/ })).toBeVisible();
+  await sidebar.getByRole("button", { name: "Actions for Typo space" }).click();
+  await expect(page.getByRole("menuitem", { name: "Rename space" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete space" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Rename space" }).click();
+
+  const renameDialog = page.getByRole("dialog", { name: "Rename space" });
+  await expect(renameDialog.getByLabel("Name")).toHaveValue("Typo space");
+  await renameDialog.getByLabel("Name").fill("Customer support");
+  await captureScreenshot(page, testInfo, "rename-space-dialog");
+  await renameDialog.getByRole("button", { name: "Save" }).click();
+
+  await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("Typo space", { exact: true })).toHaveCount(0);
+  await expect(
+    sidebar
+      .locator('[data-sidebar-group^="space:"]')
+      .filter({ hasText: "Customer support" })
+      .getByRole("button", { name: /^Chief/ }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(sidebar.getByText("Customer support", { exact: true })).toBeVisible();
 });
 
 test("deleting the last bot in a space stays in the app after first use", async ({ page }) => {

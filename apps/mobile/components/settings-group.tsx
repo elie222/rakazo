@@ -22,13 +22,21 @@ export function SettingsLabel({ children }: { children: string }) {
   );
 }
 
+export function SettingsFooter({ children }: { children: string }) {
+  const styles = useThemedStyles(createSettingsStyles);
+  const stacked = useStackedSettings();
+  return <Text style={[styles.footer, stacked && styles.compactLabel]}>{children}</Text>;
+}
+
 export function SettingsGroup({
   label,
   accessibilityLabel,
+  footer,
   children,
 }: {
   label?: string;
   accessibilityLabel?: string;
+  footer?: string;
   children: ReactNode;
 }) {
   const styles = useThemedStyles(createSettingsStyles);
@@ -48,6 +56,7 @@ export function SettingsGroup({
           </Fragment>
         ))}
       </View>
+      {footer ? <SettingsFooter>{footer}</SettingsFooter> : null}
     </View>
   );
 }
@@ -128,12 +137,14 @@ export function SettingsRow({
 
 export function SettingsSwitch({
   label,
+  accessibilityLabel,
   detail,
   value,
   disabled,
   onChange,
 }: {
   label: string;
+  accessibilityLabel?: string;
   detail?: string;
   value: boolean;
   disabled?: boolean;
@@ -145,7 +156,7 @@ export function SettingsSwitch({
     <View style={stacked ? styles.stackedSwitch : undefined}>
       <NativeSwitch
         accessibilityHint={detail}
-        accessibilityLabel={label}
+        accessibilityLabel={accessibilityLabel ?? label}
         disabled={disabled}
         onValueChange={onChange}
         value={value}
@@ -172,6 +183,11 @@ function createSettingsStyles() {
       color: native.secondaryLabel,
       fontSize: 13,
       paddingStart: 16,
+    },
+    footer: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      paddingHorizontal: 16,
     },
     card: {
       borderRadius: 16,

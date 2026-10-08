@@ -5,9 +5,11 @@ import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
+  loadVerifiedIntegrationsScope,
   restoreSessionToken,
   saveAvatarStyleIfCurrent,
   saveSessionToken,
+  saveVerifiedIntegrationsScope,
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session.js";
@@ -116,7 +118,9 @@ describe("mobile session storage", () => {
   });
 
   it("overwrites the token when SecureStore delete fails", async () => {
-    vi.mocked(SecureStore.deleteItemAsync).mockRejectedValueOnce(new Error("device locked"));
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      if (key === "rakazo.session_token") throw new Error("device locked");
+    });
     await expect(clearSessionToken()).resolves.toBe(true);
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "");
   });
@@ -205,5 +209,70 @@ describe("auth response token parsing", () => {
     expect(tokenFromAuthResponse(unrelated, { token: 123 })).toBe("");
     expect(tokenFromAuthResponse(unrelated, null)).toBe("");
     expect(tokenFromAuthResponse(malformed, {})).toBe("");
+  });
+});
+
+describe("verified integration session scope", () => {
+  const scope = {
+    apiBase: "https://api.example.test",
+    userId: "user-a",
+    spaceId: "space-a",
+    selectionId: "space-a",
+  };
+  let disk: Map<string, string>;
+  beforeEach(async () => {
+    disk = new Map();
+    vi.mocked(SecureStore.getItemAsync).mockImplementation(async (key) => disk.get(key) ?? null);
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      disk.set(key, value);
+    });
+    vi.mocked(SecureStore.deleteItemAsync).mockImplementation(async (key) => {
+      disk.delete(key);
+    });
+    await restoreSessionToken("");
+    await saveSessionToken("fake-session-a");
+  });
+  it("loads the scope only for the exact stored session", async () => {
+    await saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    expect(await loadVerifiedIntegrationsScope()).toEqual(scope);
+    disk.set("rakazo.session_token", "fake-session-b");
+    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+  });
+  it.each(["sign-out", "replacement", "restore"])("invalidates the scope on %s", async (change) => {
+    await saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    if (change === "sign-out") await clearSessionToken();
+    if (change === "replacement") await saveSessionToken("fake-session-a");
+    if (change === "restore") await restoreSessionToken("fake-session-a");
+    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+    expect(disk.has("rakazo.integrations-scope")).toBe(false);
+  });
+  it("rejects a late verification after session replacement", async () => {
+    const generation = currentSessionGeneration();
+    await saveSessionToken("fake-session-b");
+    await saveVerifiedIntegrationsScope(generation, scope);
+    expect(disk.has("rakazo.integrations-scope")).toBe(false);
+  });
+  it("serializes an in-flight scope write before sign-out deletes it", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(SecureStore.setItemAsync).mockImplementation(async (key, value) => {
+      if (key === "rakazo.integrations-scope") await pending;
+      disk.set(key, value);
+    });
+    const saving = saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    await Promise.resolve();
+    await Promise.resolve();
+    const clearing = clearSessionToken();
+    release();
+    await Promise.all([saving, clearing]);
+    expect(disk.has("rakazo.integrations-scope")).toBe(false);
+    expect(await loadVerifiedIntegrationsScope()).toBeNull();
+  });
+  it("treats malformed stored scopes as misses", async () => {
+    await saveVerifiedIntegrationsScope(currentSessionGeneration(), scope);
+    disk.set("rakazo.integrations-scope", "{");
+    expect(await loadVerifiedIntegrationsScope()).toBeNull();
   });
 });

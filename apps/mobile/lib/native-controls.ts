@@ -9,7 +9,7 @@ export function iosAtLeast(major: number) {
   return Number.isFinite(parsed) && parsed >= major;
 }
 
-export type ActionProminence = "primary" | "secondary" | "plain" | "destructive";
+export type ActionProminence = "primary" | "secondary" | "plain" | "quiet" | "destructive";
 
 export type NativeActionButtonProps = {
   label: string;

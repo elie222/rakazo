@@ -33,7 +33,7 @@ describe("ChatMarkdown", () => {
     expect(html).not.toContain('href=""');
     expect(html).toContain("<span>x</span>");
     expect(html).toContain("<span>d</span>");
-    expect(html).toContain('<a href="https://example.test" target="_blank"');
+    expect(html).toMatch(/<a[^>]*href="https:\/\/example.test"[^>]*target="_blank"/);
   });
 
   it("shows remote images as load buttons and relative ones as text, without loading them", () => {

@@ -284,6 +284,23 @@ describe("resolveRequestSecretDestination", () => {
   };
   const plantedSecret = "not-a-real-secret-value";
 
+  it("keeps command destinations metadata-only with an omitted or empty origin", () => {
+    for (const origin of [undefined, ""]) {
+      const resolved = resolveRequestSecretDestination({
+        credential: {
+          name: "cli-token",
+          origin,
+          auth: { type: "command", value: plantedSecret },
+          value: plantedSecret,
+        },
+      });
+      expect(resolved).toEqual({
+        destination: { name: "cli-token", origin: "", auth: { type: "command" } },
+      });
+      expect(JSON.stringify(resolved)).not.toContain(plantedSecret);
+    }
+  });
+
   it("accepts the documented credential shape", () => {
     expect(resolveRequestSecretDestination(documented)).toEqual({ destination });
   });

@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ComputerRef, ProcessEvent, SandboxProvider } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BoxSandboxEmulator } from "./box-emulator.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
@@ -115,6 +115,70 @@ describe("sandbox conformance", () => {
       });
       await provider.destroy(computer, ctx);
     }
+  });
+
+  it("explicit unsets win over inherited and request variables across providers", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-unset-env-"));
+    const providers: SandboxProvider[] = [
+      new FakeSandboxProvider(),
+      new ManagedSandboxEmulator(),
+      new DaytonaSandboxEmulator(),
+      new BoxSandboxEmulator(),
+      new DesktopSandboxProvider({ root }),
+    ];
+    vi.stubEnv("RAKAZO_COMMAND_UNSET_TEST", "fake-host-value");
+    try {
+      for (const [index, provider] of providers.entries()) {
+        const computer = await provider.provision(
+          { botId: `unset-${index}`, homePath: "/unused" },
+          ctx,
+        );
+        const events = [];
+        for await (const event of provider.execute(
+          computer,
+          {
+            argv: ["printenv", "RAKAZO_COMMAND_UNSET_TEST"],
+            env: { RAKAZO_COMMAND_UNSET_TEST: "fake-request-value" },
+            unsetEnv: ["RAKAZO_COMMAND_UNSET_TEST"],
+          },
+          ctx,
+        ))
+          events.push(event);
+        expect(events).toEqual([{ type: "exit", code: 1 }]);
+        await provider.destroy(computer, ctx);
+      }
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("desktop executor passes request env to the command", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-env-"));
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "env", homePath: "/unused" }, ctx);
+    const sentinel = "rakazo-desktop-request-env-sentinel";
+    let stdout = "";
+    let code = 1;
+    for await (const event of desktop.execute(
+      computer,
+      {
+        argv: [
+          process.execPath,
+          "-e",
+          "process.stdout.write(process.env.RAKAZO_DESKTOP_ENV_SENTINEL ?? '')",
+        ],
+        env: { RAKAZO_DESKTOP_ENV_SENTINEL: sentinel },
+      },
+      ctx,
+    )) {
+      if (event.type === "stdout") stdout += event.data;
+      if (event.type === "exit") code = event.code;
+    }
+    expect(code).toBe(0);
+    expect(stdout).toContain(sentinel);
+    await desktop.destroy(computer, ctx);
+    rmSync(root, { recursive: true, force: true });
   });
 
   it("desktop executor refuses paths outside the computer home", async () => {

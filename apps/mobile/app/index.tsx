@@ -467,17 +467,15 @@ export default function Home() {
       headerTransparent: true,
       headerStyle: { backgroundColor: "transparent" },
       title: "",
-      headerLeft: () => (
-        <Pressable
-          accessibilityLabel={t("Account")}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.push("/account")}
-          style={styles.headerAccount}
-        >
-          <Text style={styles.profileInitials}>{initials}</Text>
-        </Pressable>
-      ),
+      unstable_headerLeftItems: () => [
+        {
+          type: "button" as const,
+          label: initials,
+          labelStyle: { fontSize: 15, fontWeight: "600" },
+          accessibilityLabel: t("Account"),
+          onPress: () => router.push("/account"),
+        },
+      ],
       unstable_headerRightItems: () => [
         {
           type: "button" as const,
@@ -543,7 +541,6 @@ export default function Home() {
     toggleActivityMode,
     runCreateAction,
     router,
-    styles,
     t,
     locale,
   ]);
@@ -1216,12 +1213,6 @@ function createHomeStyles() {
       padding: 2,
       borderRadius: 22,
       backgroundColor: native.fillPressed,
-    },
-    headerAccount: {
-      width: 36,
-      height: 36,
-      alignItems: "center",
-      justifyContent: "center",
     },
     circleButton: {
       width: 44,

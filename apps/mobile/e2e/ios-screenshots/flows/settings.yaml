@@ -41,7 +41,7 @@ name: Settings
     visible: "Passwords do not match"
     timeout: 10000
 - takeScreenshot: 05-password-mismatch
-- tapOn: "Cancel"
+- tapOn: "Back"
 - openLink: "rakazo:///models"
 - extendedWaitUntil:
     visible: "Active model"

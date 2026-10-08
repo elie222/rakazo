@@ -4,6 +4,7 @@ import { Button, cn } from "@rakazo/ui-web";
 import { Folder, Globe, SquareTerminal, X } from "lucide-react";
 import type { PointerEvent, ReactNode, RefObject } from "react";
 import { lazy, Suspense, useCallback, useRef, useState } from "react";
+import { ErrorBoundary, SectionLoadFailed } from "../ErrorBoundary";
 import { FilesApp } from "./FilesApp";
 
 // xterm is only needed once someone opens the terminal.
@@ -85,14 +86,16 @@ export function ComputerWorkspace({
             onClose={() => toggle(app.id)}
           >
             {app.id === "terminal" ? (
-              <Suspense fallback={null}>
-                <TerminalApp
-                  key={botId}
-                  botId={botId}
-                  canUseShell={shellAvailable && hasControl}
-                  onTakeControl={shellAvailable ? onTakeControl : undefined}
-                />
-              </Suspense>
+              <ErrorBoundary fallback={<SectionLoadFailed />}>
+                <Suspense fallback={null}>
+                  <TerminalApp
+                    key={botId}
+                    botId={botId}
+                    canUseShell={shellAvailable && hasControl}
+                    onTakeControl={shellAvailable ? onTakeControl : undefined}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             ) : (
               <FilesApp
                 key={botId}

@@ -2,6 +2,7 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
+import { commandVariableName } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
 import { Button, Input } from "@rakazo/ui-web";
 import { useState } from "react";
@@ -103,8 +104,13 @@ export function AskCard({
         <ChatMarkdown>{block.text}</ChatMarkdown>
       </div>
       {secretInput && block.credential ? (
-        <div className="mt-2 break-all text-[13px] text-muted-foreground">
-          {block.credential.origin}
+        <div
+          data-testid="secret-ask-destination"
+          className="mt-2 break-all text-[13px] text-muted-foreground"
+        >
+          {block.credential.auth.type === "command"
+            ? `${t`Command variable`} · $${commandVariableName(block.credential.name)}`
+            : block.credential.origin}
         </div>
       ) : null}
       {block.detail && !secretInput ? (

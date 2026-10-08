@@ -15,6 +15,9 @@ import {
   session,
   shell,
 } from "electron";
+import type { AppDocumentState } from "./app-document-state.js";
+import { APP_DOCUMENT_STATE_SCRIPT } from "./app-document-state.js";
+import { createAppOpener } from "./app-opener.js";
 import {
   DesktopUpdateController,
   type ElectronAutoUpdater,
@@ -82,7 +85,7 @@ let currentSetup: DesktopSetup | null = null;
 let currentTargetUrl: string | null = null;
 let setupError: string | null = null;
 let setupSaveInProgress = false;
-let openAppPromise: Promise<boolean> | null = null;
+const appOpener = createAppOpener(openAppOnce);
 /** Prior app window kept until setup is persisted (or the switch is abandoned). */
 let pendingPreviousWindow: BrowserWindow | null = null;
 let quitting = false;
@@ -335,7 +338,10 @@ function createWindow(url: string, partition: string | null) {
   win.webContents.once("did-stop-loading", () => markOnce("rk:main:did-stop-loading"));
   markOnce("rk:main:load-url-start");
   const loaded = loadAppUrl(win, url).then(
-    () => markOnce("rk:main:load-url-resolved"),
+    (state) => {
+      markOnce("rk:main:load-url-resolved");
+      return state;
+    },
     (error: unknown) => {
       markOnce("rk:main:load-url-rejected");
       throw error;
@@ -375,7 +381,7 @@ async function probeDocument(url: string): Promise<string | null> {
  * failures, renderer crashes during load, HTTP 4xx/5xx main-frame responses, and
  * shells that never mount application content.
  */
-function loadAppUrl(win: BrowserWindow, url: string): Promise<void> {
+function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> {
   const contents = win.webContents;
   const targetSession = contents.session;
   let mainStatus: number | undefined;
@@ -386,7 +392,7 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<void> {
     }
   });
 
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<AppDocumentState>((resolve, reject) => {
     let settled = false;
     const settle = (error?: Error) => {
       if (settled) return;
@@ -406,13 +412,13 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<void> {
         return;
       }
       void waitForMountedAppDocument(contents)
-        .then(() => {
+        .then((state) => {
           contents.removeListener("render-process-gone", onGone);
           if (contents.isCrashed()) {
             reject(new Error("Renderer stopped after load."));
             return;
           }
-          resolve();
+          resolve(state);
         })
         .catch((inspectError: unknown) => {
           contents.removeListener("render-process-gone", onGone);
@@ -451,58 +457,16 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<void> {
   });
 }
 
-/**
- * Empty `#root` shells and session-pending skeletons count as loaded HTML but are
- * not a usable app. After session resolves, wait for a bootstrapped shell
- * (`data-ready` / shell-ready mark) or an auth/welcome/onboarding surface so a
- * bare Suspense fallback or pre-bootstrap ShellPage cannot pass. Plain e2e
- * fixtures omit the Rakazo app-state marker.
- */
-async function waitForMountedAppDocument(contents: Electron.WebContents) {
+async function waitForMountedAppDocument(
+  contents: Electron.WebContents,
+): Promise<AppDocumentState> {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
-    const ready = (await contents.executeJavaScript(`(() => {
-      const appState =
-        document.querySelector("[data-rakazo-app-state]")?.getAttribute("data-rakazo-app-state") ??
-        null;
-      if (appState === "session-pending") return false;
-
-      const shell = document.querySelector('[data-testid="shell-root"]');
-      const shellBootstrapped = Boolean(
-        (shell && shell.getAttribute("data-ready") === "true") ||
-          performance.getEntriesByName("rk:renderer:shell-ready").length > 0,
-      );
-      const authOrWelcomeSurface = Boolean(
-        document.querySelector('[data-rakazo-surface="welcome"]') ||
-          document.querySelector(
-            'form input[type="email"], form input[name="email"], form input#email',
-          ) ||
-          Array.from(document.querySelectorAll("button")).some((button) =>
-            /sign\\s*in/i.test((button.textContent || "").trim()),
-          ) ||
-          document.querySelector(
-            '[aria-label="Model"], [aria-label="Model id"], [aria-label="Models from server"]',
-          ),
-      );
-      const surfaceReady = shellBootstrapped || authOrWelcomeSurface;
-      const sessionReady =
-        appState === "ready" ||
-        performance.getEntriesByName("rk:renderer:session-committed").length > 0;
-      if (sessionReady && surfaceReady) return true;
-
-      // Desktop e2e fixtures mount a plain page without Rakazo app-state markers.
-      if (appState === null) {
-        const bodyText = (document.body?.innerText || "").trim();
-        if (bodyText.includes("Opening your Space")) return false;
-        if (bodyText === "Loading…" || bodyText === "Loading...") return false;
-        const mainText = (document.querySelector("main")?.textContent || "").trim();
-        const rootChildren = document.getElementById("root")?.childElementCount ?? 0;
-        return mainText.length > 0 || rootChildren > 0;
-      }
-      return false;
-    })()`)) as boolean;
-    if (ready) return;
+    const state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as
+      | AppDocumentState
+      | "pending";
+    if (state !== "pending") return state;
     await new Promise((r) => setTimeout(r, 50));
   }
   throw new Error("The server page did not become ready.");
@@ -845,14 +809,6 @@ async function probeManagedStack(
   }
 }
 
-function openApp(targetUrl: string) {
-  if (openAppPromise !== null) return openAppPromise;
-  openAppPromise = openAppOnce(targetUrl).finally(() => {
-    openAppPromise = null;
-  });
-  return openAppPromise;
-}
-
 function openFailureDetail(error: unknown): string {
   if (error instanceof Error) {
     const { message } = error;
@@ -869,7 +825,7 @@ function openFailureDetail(error: unknown): string {
   return probeFailureMessage(error);
 }
 
-async function openAppOnce(targetUrl: string) {
+async function openAppOnce(targetUrl: string, switching: boolean) {
   const target = await resolveSessionForTarget(targetUrl);
   const previous = mainWindow;
   let win: BrowserWindow | null = null;
@@ -886,7 +842,11 @@ async function openAppOnce(targetUrl: string) {
     );
     const created = createWindow(targetUrl, target.partition);
     win = created.win;
-    await created.loaded;
+    // On launch the web app's error screen stays up so its Refresh can recover;
+    // switching to a server that cannot render keeps the previous one instead.
+    if ((await created.loaded) === "failed" && switching) {
+      throw new Error("The server page did not become ready.");
+    }
     currentTargetUrl = targetUrl;
     setupError = null;
     // Keep the previous window until the caller commits (after setup.json is written).
@@ -1195,7 +1155,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("desktop.setup.save", async (event, payload: unknown) => {
     if (!fromSetupWindow(event)) return { ok: false, error: "Setup is not active." };
-    if (setupSaveInProgress)
+    // A launch still loading counts too: the switch must open and check its own server.
+    if (setupSaveInProgress || appOpener.busy())
       return { ok: false, error: "A connection attempt is already running." };
     setupSaveInProgress = true;
     const previousSetup = currentSetup;
@@ -1228,7 +1189,7 @@ app.whenReady().then(async () => {
 
       // Open before persisting so a failed renderer load keeps the last working setup.
       currentSetup = openSetup;
-      const opened = await openApp(openSetup.serverUrl);
+      const opened = await appOpener.open(openSetup.serverUrl, { switching: true });
       if (!opened) {
         currentSetup = previousSetup;
         return {
@@ -1308,10 +1269,10 @@ app.whenReady().then(async () => {
       mainWindow.focus();
       return;
     }
-    if (openAppPromise !== null) return;
+    if (appOpener.busy()) return;
     if (currentTargetUrl === null) showSetupWindow(setupError);
     else
-      void openApp(currentTargetUrl).then((opened) => {
+      void appOpener.open(currentTargetUrl).then((opened) => {
         if (opened) commitPendingAppSwitch();
       });
   });
@@ -1324,7 +1285,7 @@ app.whenReady().then(async () => {
       const managedStackReady =
         managedUrl !== null ? await localStack.matchesDesiredStack() : false;
       if (managedStackReady && managedUrl !== null) {
-        if (await openApp(managedUrl)) {
+        if (await appOpener.open(managedUrl)) {
           commitPendingAppSwitch();
           destroySetupWindow();
         }
@@ -1337,7 +1298,7 @@ app.whenReady().then(async () => {
     } else {
       const reachability = await probeServer(target.url);
       if (reachability.ok) {
-        if (await openApp(target.url)) {
+        if (await appOpener.open(target.url)) {
           commitPendingAppSwitch();
           destroySetupWindow();
         }
@@ -1346,7 +1307,7 @@ app.whenReady().then(async () => {
       }
     }
   } else {
-    if (await openApp(target.url)) {
+    if (await appOpener.open(target.url)) {
       commitPendingAppSwitch();
       destroySetupWindow();
     }

@@ -7,6 +7,7 @@ import type {
   GroupMember,
   MessageBlock,
   MessageReaction,
+  ReplyPreview,
   RunStatus,
   ThreadSnapshot,
 } from "@rakazo/contracts";
@@ -20,7 +21,7 @@ import {
   resolveGroupTargetBotIds,
   runFailureError,
 } from "@rakazo/core";
-import { deriveMessageQuote } from "@rakazo/core/message-quote";
+import { deriveMessageQuote, messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
@@ -628,31 +629,45 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
+      let replyPreview: ReplyPreview | null | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
-          select: { id: true, blocks: true, role: true },
+          select: { id: true, blocks: true, role: true, botId: true },
         });
-        // A deleted or paged-out parent must not lose the send: drop to a
-        // plain reply, same as quote verification failing below.
-        if (reply) {
+        // A missing target must not lose the send or retain an unverified id.
+        // The empty server-owned quote preserves the unavailable state after reload.
+        if (!reply) {
+          replyQuote = "";
+          replyPreview = null;
+        } else {
           replyToMessageId = input.replyToMessageId;
+          const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
+          replyPreview = null;
+          if (parsed.success) {
+            replyPreview = messageReplyPreview(
+              parsed.data,
+              reply.role as ReplyPreview["role"],
+              reply.botId ?? undefined,
+            );
+            // Attachment labels stay in the preview; only selected text is persisted as a quote.
+            if (!requestedReplyQuote && !replyPreview.attachment) {
+              replyQuote = replyPreview.text || undefined;
+            }
+          }
           // Persist only text derived from the authoritative parent. A
           // mismatch or a derivation failure still sends a plain reply so
           // quote verification cannot lose a message.
-          if (requestedReplyQuote) {
-            const parsedBlocks = MessageBlockSchema.array().safeParse(reply.blocks);
-            if (parsedBlocks.success) {
-              try {
-                replyQuote = deriveMessageQuote(
-                  parsedBlocks.data,
-                  requestedReplyQuote,
-                  reply.role === "user" ? "plain-text" : "markdown",
-                );
-              } catch (error) {
-                getLogger().error("thread send quote derivation", error);
-                replyQuote = undefined;
-              }
+          if (requestedReplyQuote && parsed.success) {
+            try {
+              replyQuote = deriveMessageQuote(
+                parsed.data,
+                requestedReplyQuote,
+                reply.role === "user" ? "plain-text" : "markdown",
+              );
+            } catch (error) {
+              getLogger().error("thread send quote derivation", error);
+              replyQuote = undefined;
             }
           }
         }
@@ -728,6 +743,7 @@ export async function sendThreadMessage(
               runIds: answered.map((run) => run.id),
               replyToMessageId,
               replyQuote,
+              replyPreview,
             },
           });
           return { message, runs: answered, eventSeq: event.seq };
@@ -765,6 +781,7 @@ export async function sendThreadMessage(
               callId,
               replyToMessageId,
               replyQuote,
+              replyPreview,
             },
           });
           return { message, runs: [active], eventSeq: event.seq };
@@ -812,6 +829,7 @@ export async function sendThreadMessage(
             runIds: [run.id],
             replyToMessageId,
             replyQuote,
+            replyPreview,
           },
         });
         return { message, runs: [run], eventSeq: event.seq };
@@ -972,6 +990,7 @@ export async function sendThreadMessage(
           runIds: runs.map((run) => run.id),
           replyToMessageId,
           replyQuote,
+          replyPreview,
         },
       });
       return { message, runs, eventSeq: event.seq };

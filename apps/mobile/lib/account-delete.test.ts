@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const screen = readFileSync(resolve(mobileRoot, "app/account.tsx"), "utf8");
+const screen = readFileSync(resolve(mobileRoot, "app/(settings)/account.tsx"), "utf8");
 
 function sliceBetween(source: string, start: string, end: string) {
   const from = source.indexOf(start);
@@ -35,7 +35,7 @@ describe("Account delete", () => {
   it("keeps the password check, shows the failure, and signs out after a successful delete", () => {
     const deletion = sliceBetween(screen, "async function handleDeletion(", "return (");
     expect(deletion).toContain("await deleteAccount(password)");
-    expect(deletion).toContain('router.replace("/sign-in")');
+    expect(deletion).toContain('replaceWithSignIn("/sign-in")');
     expect(deletion).toContain('t("Could not delete account")');
     expect(deletion).toContain("setDeleteError");
     const dialog = sliceBetween(screen, "{deleteOpen ?", "</Modal>");
@@ -89,7 +89,7 @@ function deletionHarness(freshOidcAuth: boolean, codeSent = false) {
   const setSsoReauthenticated = vi.fn();
   const setPending = vi.fn();
   const setDeleteOpen = vi.fn();
-  const router = { dismissAll: vi.fn(), replace: vi.fn() };
+  const replaceWithSignIn = vi.fn();
   const dependencies = {
     security: { hasPassword: false },
     ssoReauthenticated: true,
@@ -102,7 +102,7 @@ function deletionHarness(freshOidcAuth: boolean, codeSent = false) {
     setPending,
     setDeleteOpen,
     setDeleteError: vi.fn(),
-    router,
+    replaceWithSignIn,
     errorText: vi.fn(),
     t: (value: string) => value,
   };
@@ -124,7 +124,7 @@ it("refreshes an expired proof and keeps the deletion dialog open", async () => 
   expect(h.setSecurity).toHaveBeenCalledWith({ hasPassword: false, freshOidcAuth: false });
   expect(h.deleteAccount).not.toHaveBeenCalled();
   expect(h.setDeleteOpen).not.toHaveBeenCalled();
-  expect(h.router.replace).not.toHaveBeenCalled();
+  expect(h.replaceWithSignIn).not.toHaveBeenCalled();
   expect(h.setPending).toHaveBeenLastCalledWith(false);
 });
 it.each([true, false])(
@@ -134,7 +134,7 @@ it.each([true, false])(
     await h.submit(fresh ? "" : " 123456 ");
     expect(h.fetchAccountSecurity).toHaveBeenCalledOnce();
     expect(h.deleteAccount).toHaveBeenCalledWith(undefined, fresh ? undefined : "123456");
-    expect(h.router.replace).toHaveBeenCalledWith("/sign-in");
+    expect(h.replaceWithSignIn).toHaveBeenCalledWith("/sign-in");
   },
 );
 it("does not submit whitespace as a deletion code after expiry", async () => {

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const screen = readFileSync(resolve(mobileRoot, "app/models.tsx"), "utf8");
+const screen = readFileSync(resolve(mobileRoot, "app/(settings)/models.tsx"), "utf8");
 
 function sliceBetween(source: string, start: string, end: string) {
   const from = source.indexOf(start);

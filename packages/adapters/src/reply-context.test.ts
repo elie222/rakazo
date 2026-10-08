@@ -30,7 +30,7 @@ describe("reply context", () => {
     expect(findFirst).toHaveBeenCalledWith({
       where: { id: "user-reply", threadId: "thread-1" },
       select: expect.objectContaining({
-        replyTo: { select: { id: true, threadId: true, role: true, blocks: true } },
+        replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
       }),
     });
     expect(context).toContain('"messageId":"message-first"');
@@ -154,4 +154,26 @@ describe("reply context", () => {
     expect(text).toContain("Test message 1/3: Hello!");
     expect(text).not.toContain("quotedText");
   });
+});
+
+it("includes the server-derived first line and author role for an id-only reply", () => {
+  const text = messageToAgentHistoryText({
+    id: "reply",
+    threadId: "thread-1",
+    role: "user",
+    blocks: [{ kind: "text", text: "Why?" }],
+    replyToMessageId: target.id,
+    replyQuote: "First line",
+    replyTo: {
+      ...target,
+      role: "bot",
+      botId: "bot-author",
+      blocks: [{ kind: "text", text: "First line\nSecond line" }],
+    },
+  });
+  expect(text).toContain('"role":"bot"');
+  expect(text).toContain('"botId":"bot-author"');
+  expect(text).toContain('"quotedText":"First line"');
+  expect(text).not.toContain("Second line");
+  expect(text).toContain("Why?");
 });

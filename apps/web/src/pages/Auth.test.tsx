@@ -19,11 +19,13 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@rakazo/ui-web", () => ({
   Button: ({
     children,
-    variant: _variant,
-    size: _size,
+    variant,
+    size,
     ...props
   }: React.ComponentProps<"button"> & { variant?: string; size?: string }) => (
-    <button {...props}>{children}</button>
+    <button data-variant={variant ?? "default"} data-size={size} {...props}>
+      {children}
+    </button>
   ),
   Input: (props: React.ComponentProps<"input">) => <input {...props} />,
   Label: ({ children, htmlFor, ...props }: React.ComponentProps<"label">) => (
@@ -55,7 +57,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   delete window.rakazoDesktop;
 });
-async function render(mode: "in" | "up" = "in") {
+async function render(mode: "in" | "up" | "forgot" = "in") {
   await act(async () =>
     root.render(
       <MemoryRouter>
@@ -75,6 +77,9 @@ it.each(["in", "up"] as const)("offers SSO and hides credentials on %s", async (
   await render(mode);
   expect(host.textContent).toContain("Continue with Example");
   expect(host.querySelector("input")).toBeNull();
+  const sso = host.querySelector("button")!;
+  expect(sso.dataset.variant).toBe("default");
+  expect(sso.className).toContain("w-full");
 });
 it("retries failed capabilities without exposing a password form", async () => {
   vi.mocked(fetchAuthCapabilities)
@@ -90,11 +95,31 @@ it("retries failed capabilities without exposing a password form", async () => {
   expect(fetchAuthCapabilities).toHaveBeenCalledTimes(2);
   expect(host.textContent).toContain("Continue with Example");
 });
-it("shows both auth choices in mixed mode", async () => {
+it.each(["in", "up"] as const)("puts quiet SSO below the primary action on %s", async (mode) => {
   vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
-  await render();
-  expect(host.querySelector('input[type="password"]')).not.toBeNull();
-  expect(host.textContent).toContain("Continue with Example");
+  await render(mode);
+  const email = host.querySelector('input[name="email"]')!;
+  const password = host.querySelector('input[type="password"]')!;
+  const submit = host.querySelector('button[type="submit"]')!;
+  const sso = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Continue with Example",
+  )!;
+  for (const [first, second] of [
+    [email, password],
+    [password, submit],
+    [submit, sso],
+  ] as const) {
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
+  expect(submit.getAttribute("data-variant")).toBe("default");
+  expect(sso.dataset.variant).toBe("link");
+  expect(sso.dataset.size).toBe("sm");
+});
+
+it("hides SSO in password recovery", async () => {
+  vi.mocked(fetchAuthCapabilities).mockResolvedValue({ ...capabilities, passwordAuth: true });
+  await render("forgot");
+  expect(host.textContent).not.toContain("Continue with Example");
 });
 
 it("selects a non-redirecting SSO request on desktop", async () => {

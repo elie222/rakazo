@@ -1,5 +1,6 @@
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
 
 const fake = vi.hoisted(() => {
   function deferred() {
@@ -88,7 +89,7 @@ const request: AgentRunRequest = {
   prompt: "fake task",
   instructions: "test",
   history: [],
-  tools: [],
+  tools: builtinAgentTools,
   model: { provider: "test", id: "fake-model" },
 };
 

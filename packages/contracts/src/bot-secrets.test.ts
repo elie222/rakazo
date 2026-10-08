@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   BotSecretDestination,
+  BotSecretDestinationInput,
   botSecretDestinationSchema,
+  commandVariableName,
+  commandVariableProblem,
   decodeLoginSecret,
   encodeLoginSecret,
   isCloudMetadataHost,
   isPrivateNetworkHost,
   SecretHttpRequest,
 } from "./bot-secrets.js";
+import { AGENT_SECRET_NAME_PATTERN } from "./domain.js";
 
 const destination = {
   name: "example_api",
@@ -163,5 +167,164 @@ describe("login credentials", () => {
     { username: "fake-user", password: "" },
   ])("rejects an incomplete login %j", (value) => {
     expect(() => encodeLoginSecret(value)).toThrow();
+  });
+});
+
+describe("command variables", () => {
+  const command = { type: "command" } as const;
+
+  it.each([
+    ["netbird-setup-key", "NETBIRD_SETUP_KEY"],
+    ["github_pat", "GITHUB_PAT"],
+    ["a", "A"],
+    ["x-1_y-2", "X_1_Y_2"],
+  ])("exports %s as $%s, a valid space variable name", (name, variable) => {
+    expect(commandVariableName(name)).toBe(variable);
+    expect(AGENT_SECRET_NAME_PATTERN.test(variable)).toBe(true);
+    expect(commandVariableProblem(variable)).toBeUndefined();
+  });
+
+  it.each([
+    "PATH",
+    "HOME",
+    "IFS",
+    "ENV",
+    "BASH_ENV",
+    "PROMPT_COMMAND",
+    "PS4",
+    "SSH_AUTH_SOCK",
+    "NODE_OPTIONS",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "PYTHONPATH",
+    "PERL5OPT",
+    "RUBYOPT",
+    "JDK_JAVA_OPTIONS",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "NODE_EXTRA_CA_CERTS",
+    "SSLKEYLOGFILE",
+    "GIT_SSL_CAINFO",
+    "GIT_SSL_NO_VERIFY",
+    "OPENSSL_CONF",
+    "OPENSSL_ENGINES",
+    "OPENSSL_MODULES",
+    "GIT_SSH_COMMAND",
+    "GIT_PROXY_COMMAND",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_PAGER",
+    "GIT_EDITOR",
+    "GIT_EXEC_PATH",
+    "GIT_TEMPLATE_DIR",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_COUNT",
+    "GCONV_PATH",
+    "NPM_CONFIG_PREFIX",
+    "NPM_CONFIG_REGISTRY",
+    "SSH_ASKPASS",
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_ANYTHING",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_ANYTHING",
+    "RAKAZO_TOKEN",
+  ])("reserves $%s", (variable) => {
+    expect(commandVariableProblem(variable)).toBe("reserved");
+  });
+
+  it("reserves exact names and prefixes only", () => {
+    expect(commandVariableProblem("PATHS")).toBeUndefined();
+    expect(commandVariableProblem("MY_PATH")).toBeUndefined();
+    expect(commandVariableProblem("OLD_LD_FLAG")).toBeUndefined();
+  });
+
+  it("marks a name outside the space variable pattern invalid", () => {
+    expect(commandVariableProblem("lower")).toBe("invalid");
+    expect(commandVariableProblem("1ABC")).toBe("invalid");
+    expect(commandVariableProblem("A".repeat(65))).toBe("invalid");
+  });
+
+  it("accepts a command destination with a missing or empty origin", () => {
+    for (const schema of [
+      BotSecretDestination,
+      botSecretDestinationSchema({ allowPrivateHttpOrigin: true }),
+    ]) {
+      expect(schema.parse({ name: "netbird-setup-key", auth: command })).toEqual({
+        name: "netbird-setup-key",
+        origin: "",
+        auth: command,
+      });
+      expect(
+        schema.safeParse({ name: "netbird-setup-key", origin: "", auth: command }).success,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects a site on a command destination", () => {
+    const result = BotSecretDestination.safeParse({
+      name: "netbird-setup-key",
+      origin: "https://api.example.test",
+      auth: command,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(["origin"]);
+  });
+
+  it.each([
+    ["ld_preload", "$LD_PRELOAD"],
+    ["dyld-insert-libraries", "$DYLD_INSERT_LIBRARIES"],
+    ["path", "$PATH"],
+    ["rakazo-token", "$RAKAZO_TOKEN"],
+  ])("rejects %s because %s is reserved", (name, variable) => {
+    const result = BotSecretDestination.safeParse({ name, auth: command });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]).toMatchObject({
+      path: ["name"],
+      message: expect.stringContaining(`${variable} is reserved`),
+    });
+  });
+
+  it("does not reserve names for credentials that are not command variables", () => {
+    expect(BotSecretDestination.safeParse({ ...destination, name: "path" }).success).toBe(true);
+  });
+
+  it.each([
+    { type: "bearer" },
+    { type: "header", name: "X-Api-Key" },
+    { type: "basic", username: "api-user" },
+    { type: "login" },
+  ])("still requires a valid HTTPS origin for %j", (auth) => {
+    const relaxed = botSecretDestinationSchema({ allowPrivateHttpOrigin: true });
+    for (const schema of [BotSecretDestination, relaxed]) {
+      expect(schema.safeParse({ name: "api", auth }).success).toBe(false);
+      expect(schema.safeParse({ name: "api", origin: "", auth }).success).toBe(false);
+      expect(
+        schema.safeParse({ name: "api", origin: "http://api.example.test", auth }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({ name: "api", origin: "https://api.example.test/path", auth }).success,
+      ).toBe(false);
+      expect(
+        schema.safeParse({ name: "api", origin: "https://api.example.test", auth }).success,
+      ).toBe(true);
+    }
+    const missing = BotSecretDestination.safeParse({ name: "api", auth });
+    expect(missing.error?.issues[0]?.message).toMatch(/Expected an HTTPS origin/);
+  });
+
+  it("lets the owner input omit the origin only for a command variable", () => {
+    expect(BotSecretDestinationInput.parse({ name: "cli-token", auth: command })).toEqual({
+      name: "cli-token",
+      origin: "",
+      auth: command,
+    });
+    expect(
+      BotSecretDestinationInput.safeParse({ name: "api", auth: { type: "bearer" } }).success,
+    ).toBe(false);
+    expect(
+      BotSecretDestinationInput.safeParse({ name: "api", origin: "", auth: { type: "bearer" } })
+        .success,
+    ).toBe(false);
   });
 });

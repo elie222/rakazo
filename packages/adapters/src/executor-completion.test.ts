@@ -205,6 +205,38 @@ describe("stripNoResponseReply", () => {
     expect(stripped).toEqual({ assembled: "", blocks: [] });
   });
 
+  it("treats the sentinel repeated across joined text segments as empty", () => {
+    // Segments are joined without a separator, so a model that re-emits the
+    // sentinel after each tool batch produces NO_RESPONSENO_RESPONSE.
+    const blocks = [
+      { kind: "text" as const, text: NO_RESPONSE },
+      { kind: "text" as const, text: NO_RESPONSE },
+      { kind: "text" as const, text: NO_RESPONSE },
+    ];
+    const stripped = stripNoResponseReply(NO_RESPONSE.repeat(3), blocks);
+    expect(stripped).toEqual({ assembled: "", blocks: [] });
+    expect(
+      completionMarksUnread(
+        "routine",
+        completionNotificationBody(stripped.assembled, stripped.blocks),
+      ),
+    ).toBe(false);
+  });
+
+  it("treats the sentinel repeated with whitespace between as empty", () => {
+    const spaced = `${NO_RESPONSE}\n${NO_RESPONSE} ${NO_RESPONSE}`;
+    expect(stripNoResponseReply(spaced, [{ kind: "text", text: spaced }])).toEqual({
+      assembled: "",
+      blocks: [],
+    });
+  });
+
+  it("keeps prose that merely repeats the sentinel around words", () => {
+    const text = `${NO_RESPONSE} and ${NO_RESPONSE}`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
+  });
+
   it("does not strip the sentinel when extra prose is present", () => {
     const text = `${NO_RESPONSE} all clear`;
     const blocks = [{ kind: "text" as const, text }];

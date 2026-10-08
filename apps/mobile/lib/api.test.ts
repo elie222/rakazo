@@ -2392,12 +2392,14 @@ describe("mobile thread event reduction", () => {
     const next = applyMobileThreadEvent(initial, {
       type: "thread.message.created",
       seq: 4,
+      createdAt: "2026-10-08T12:00:00.000Z",
       payload: {
         messageId: "reply-1",
         role: "user",
         blocks: [{ kind: "text", text: "why this?" }],
         replyToMessageId: "message-1",
         replyQuote: "Done",
+        replyPreview: { role: "user", text: "Done" },
       },
     });
 
@@ -2405,6 +2407,20 @@ describe("mobile thread event reduction", () => {
       role: "user",
       replyToMessageId: "message-1",
       replyQuote: "Done",
+      replyPreview: { role: "user", text: "Done" },
+      createdAt: "2026-10-08T12:00:00.000Z",
+    });
+
+    const updated = applyMobileThreadEvent(next, {
+      type: "thread.message.updated",
+      seq: 5,
+      payload: { messageId: "reply-1", role: "user", blocks: [{ kind: "text", text: "Updated" }] },
+    });
+    expect(updated?.messages.find((message) => message.id === "reply-1")).toMatchObject({
+      replyToMessageId: "message-1",
+      replyQuote: "Done",
+      replyPreview: { role: "user", text: "Done" },
+      createdAt: "2026-10-08T12:00:00.000Z",
     });
   });
 

@@ -54,8 +54,10 @@ describe("contracts", () => {
   it("parses bounded model context-window limits", () => {
     expect(parseModelContextWindow("1")).toBe(1);
     expect(parseModelContextWindow("1048576")).toBe(1048576);
+    expect(parseModelContextWindow("1050000")).toBe(1050000);
+    expect(parseModelContextWindow("2147483647")).toBe(2147483647);
     expect(parseModelContextWindow("0")).toBeUndefined();
-    expect(parseModelContextWindow("1048577")).toBeUndefined();
+    expect(parseModelContextWindow("2147483648")).toBeUndefined();
     expect(parseModelContextWindow("1.5")).toBeUndefined();
   });
 
@@ -221,6 +223,21 @@ describe("contracts", () => {
     expect(profile.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
   });
 
+  it("rejects unknown built-in tool names and keeps a known denylist", () => {
+    expect(
+      UpdateBotInput.parse({ botId: "bot-1", disabledBuiltinTools: ["web_search", "web_search"] })
+        .disabledBuiltinTools,
+    ).toEqual(["web_search"]);
+    const unknown = UpdateBotInput.safeParse({
+      botId: "bot-1",
+      disabledBuiltinTools: ["not_a_tool"],
+    });
+    expect(unknown.success).toBe(false);
+    if (!unknown.success) {
+      expect(unknown.error.issues.some((issue) => issue.message.includes("not_a_tool"))).toBe(true);
+    }
+  });
+
   it("accepts the same title limit when creating and updating bots", () => {
     const title = "T".repeat(BOT_TITLE_MAX_LENGTH);
     expect(CreateBotInput.safeParse({ name: "Chief", title }).success).toBe(true);
@@ -300,6 +317,7 @@ describe("contracts", () => {
     expect(appContract.bots.archive).toBeTruthy();
     expect(appContract.bots.restore).toBeTruthy();
     expect(appContract.bots.remove).toBeTruthy();
+    expect(appContract.spaces.rename).toBeTruthy();
     expect(appContract.spaces.remove).toBeTruthy();
     expect(appContract.botSections.list).toBeTruthy();
     expect(appContract.botSections.create).toBeTruthy();

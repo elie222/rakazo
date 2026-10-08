@@ -93,6 +93,8 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
         modelId: model.model.id,
         baseUrl: model.baseUrl,
         apiKey: fixtureKey,
+        contextWindow: 160_000,
+        maxTokens: 4096,
       });
       const bot = await rpc<{ id: string }>(handles.app, cookie, "bots/create", {
         name: "File fixture",
@@ -153,7 +155,7 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
       );
       expect(commands).toEqual([
         expect.objectContaining({
-          executionId: "product-write",
+          executionId: JSON.stringify(["pi-tool", "main", "product-write"]),
           kind: "write_file",
           command: "notes/result.txt",
           status: "done",
@@ -161,7 +163,7 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
           bytes: 5,
         }),
         expect.objectContaining({
-          executionId: "product-shell",
+          executionId: JSON.stringify(["pi-tool", "main", "product-shell"]),
           kind: "shell",
           command: "wc -c notes/result.txt",
           status: "done",

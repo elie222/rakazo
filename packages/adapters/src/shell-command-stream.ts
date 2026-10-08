@@ -1,5 +1,6 @@
 import type { ProcessEvent } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
+import { redactShellStreams } from "./agent-environment.js";
 import { clipToolResultText } from "./pi-runtime-limits.js";
 
 /**
@@ -123,10 +124,8 @@ export async function observeShellCommand(
     resolveIdle = resolve;
   });
 
-  const redact = (snapshot: ShellCommandSnapshot): ShellCommandSnapshot => ({
-    stdout: redactSecrets(snapshot.stdout, options.secrets),
-    stderr: redactSecrets(snapshot.stderr, options.secrets),
-  });
+  const redact = (snapshot: ShellCommandSnapshot, withholdPartial: boolean): ShellCommandSnapshot =>
+    redactShellStreams(snapshot, options.secrets, { withholdPartial });
 
   const clearIdle = () => {
     if (timer) clearTimeout(timer);
@@ -151,20 +150,26 @@ export async function observeShellCommand(
           code = event.code;
           break;
         } else continue;
-        const redacted = redact({ stdout, stderr });
+        const published = redact({ stdout, stderr }, true);
         try {
-          options.onOutput?.(redacted);
+          options.onOutput?.(published);
         } catch {
           // Live output is a view. A failed update must not kill the command.
         }
-        if (redacted.stdout.length > 0 || redacted.stderr.length > 0) armIdle();
+        if (stdout.length > 0 || stderr.length > 0) armIdle();
       }
+    } catch (error) {
+      // Providers may include command environment values in errors. Never expose the raw
+      // error or its cause to runtime tool handling or a background completion observer.
+      throw new Error(
+        redactSecrets(error instanceof Error ? error.message : String(error), options.secrets),
+      );
     } finally {
       clearIdle();
       finished = true;
       resolveIdle?.("done");
     }
-    return { ...redact({ stdout, stderr }), code: code ?? 0 };
+    return { ...redact({ stdout, stderr }, false), code: code ?? 0 };
   })();
 
   const reason = await Promise.race([
@@ -178,7 +183,9 @@ export async function observeShellCommand(
     return { result: await done };
   }
   return {
-    result: { ...redact({ stdout, stderr }), code: null, running: true },
+    // The process is still running, so an unfinished secret prefix stays out of the
+    // tool result. The completion publishes the rest once the command exits.
+    result: { ...redact({ stdout, stderr }, true), code: null, running: true },
     completion: done,
   };
 }

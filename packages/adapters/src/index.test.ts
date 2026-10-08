@@ -1,5 +1,7 @@
 import { createCipheriv, createHash } from "node:crypto";
+import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -170,7 +172,9 @@ describe("scripted runtime", () => {
 
 describe("builtin tools", () => {
   it("exposes the tools the executor actually applies", async () => {
-    const { builtinAgentTools } = await import("./builtin-tools.js");
+    expect([...BUILTIN_TOOL_NAMES].sort()).toEqual(
+      [...builtinAgentTools, ...agentConnectionTools].map((tool) => tool.name).sort(),
+    );
     expect(builtinAgentTools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "write_file",

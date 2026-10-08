@@ -256,7 +256,7 @@ describe("Android mobile platform contract", () => {
     expect(thread).not.toContain("Steer ");
     expect(thread).not.toContain("steering message");
     expect(thread).toContain('t("Message {name}"');
-    expect(thread).toContain("const clientNonce = newClientNonce()");
+    expect(thread).toContain("feedback.sendAttempt({");
     expect(thread).toContain("Work stopped, but the thread could not refresh");
     expect(stopSource).toContain("const targetBotId = botId;");
     expect(stopSource).toContain("const targetGroupId = groupId;");
@@ -264,10 +264,50 @@ describe("Android mobile platform contract", () => {
       "targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! },",
     );
     expect(stopSource).toMatch(
-      /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*setError\(errorText\(err, t\("Failed to stop work"\)\)\);/,
+      /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*Alert\.alert\(t\("Failed to stop work"\), errorText\(err, t\("Try again\."\)\)\);/,
     );
     expect(stopSource).toMatch(
       /if \(isCurrentTarget\(targetBotId, targetGroupId\)\) \{\s*(?:const detail = [^\n]+;\s*)?setError\(t\("Work stopped, but the thread could not refresh: \{detail\}", \{ detail \}\)\);/,
+    );
+  });
+
+  it("clears only the unchanged origin composer after delivery settles and preserves send errors", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const send = thread.slice(
+      thread.indexOf("async function send()"),
+      thread.indexOf("async function stop()"),
+    );
+    const firstDelivery = send.indexOf("await deliver(attempt, () => {");
+    expect(firstDelivery).toBeGreaterThan(-1);
+    expect(send.slice(0, firstDelivery)).not.toContain('setDraft("")');
+    const clear = send.slice(firstDelivery, send.indexOf("async function deliver"));
+    expect(clear).toMatch(
+      /if \(originThreadKey !== \(activeGroupId.current \?\? activeBotId.current\)\) return;\s*const settled = settleComposer/,
+    );
+    expect(clear).toContain("settleComposer(submitted, composerRef.current)");
+    expect(clear).toMatch(
+      /setPendingAttachments\(\(current\) =>\s*current.filter\(\(attachment\) => !submitted.attachmentIds.includes\(attachment.id\)\)/,
+    );
+    expect(clear).toMatch(/if \(!settled.clearComposer\) return;\s*setDraft\(""\)/);
+    expect(send).toMatch(/finally \{\s*onSettled\?\.\(\);/);
+    expect(send).toContain('attempt.error = errorText(err, t("Failed to send message"))');
+    expect(thread).toContain("onRetry={() => void deliver(attempt)}");
+  });
+
+  it("offers Voice settings when speaking has no configured provider", () => {
+    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const speaking = thread.slice(
+      thread.indexOf("void speakQueue(items)"),
+      thread.indexOf("async function startVoiceCall()"),
+    );
+    expect(speaking).toMatch(
+      /if \(!spoken\)\s*Alert\.alert\(t\("Could not speak"\), t\("Add a voice provider in Voice settings\."\), \[\s*\{ text: t\("Cancel"\), style: "cancel" \},\s*\{ text: t\("Open Voice"\), onPress: \(\) => router\.push\("\/voice"\) \},\s*\]\)/,
+    );
+    expect(speaking).toContain(
+      'Alert.alert(t("Could not speak"), errorText(err, t("Try again.")))',
+    );
+    expect(readFileSync(resolve(mobileRoot, "app/(settings)/voice.tsx"), "utf8")).toContain(
+      "export default",
     );
   });
 

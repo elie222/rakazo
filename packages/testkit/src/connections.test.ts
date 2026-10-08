@@ -8,6 +8,7 @@ import {
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
+import { listSpaceBackupModels, replaceSpaceBackupModels } from "@rakazo/db";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import { sessionCookieHeader } from "./index.js";
@@ -71,6 +72,25 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("serializes overlapping backup replacements without mixing users or orders", async () => {
+    const ownerCookie = await signup(app, `backup-owner-${stamp}@rakazo.test`, "Owner");
+    const otherCookie = await signup(app, `backup-other-${stamp}@rakazo.test`, "Other");
+    const owner = await rpc<Actor>(app, ownerCookie, "me");
+    const other = await rpc<Actor>(app, otherCookie, "me");
+    const first = [{ provider: "provider-a", modelId: "first" }];
+    const second = [
+      { provider: "provider-b", modelId: "second" },
+      { provider: "provider-c", modelId: "third" },
+    ];
+    await replaceSpaceBackupModels(handles.prisma, other, first);
+    await Promise.all([
+      replaceSpaceBackupModels(handles.prisma, owner, first),
+      replaceSpaceBackupModels(handles.prisma, owner, second),
+    ]);
+    expect([first, second]).toContainEqual(await listSpaceBackupModels(handles.prisma, owner));
+    expect(await listSpaceBackupModels(handles.prisma, other)).toEqual(first);
   });
 
   it("reconciles one scoped row per provider under concurrent catalog fetches", async () => {

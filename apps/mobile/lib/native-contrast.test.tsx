@@ -1,108 +1,50 @@
-// @vitest-environment jsdom
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { act } from "react";
-import type { Root } from "react-dom/client";
-import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import type * as NativeModule from "./native";
-
-const contrast = vi.hoisted(() => ({
-  changed: undefined as ((enabled: boolean) => void) | undefined,
+const appearance = vi.hoisted(() => ({
+  preference: "system" as "system" | "light" | "dark",
   resolved: "dark" as "dark" | "light",
-  resolveInitial: undefined as ((enabled: boolean) => void) | undefined,
 }));
 
 vi.mock("react-native", () => ({
-  AccessibilityInfo: {
-    addEventListener: (_event: string, handler: (enabled: boolean) => void) => {
-      contrast.changed = handler;
-      return { remove: () => undefined };
-    },
-    isDarkerSystemColorsEnabled: () =>
-      new Promise<boolean>((resolve) => {
-        contrast.resolveInitial = resolve;
-      }),
-  },
   Platform: { OS: "ios" },
   PlatformColor: (name: string) => `platform:${name}`,
 }));
 
 vi.mock("./appearance", () => ({
-  getCachedAppearancePreference: () => "system",
-  mobileTokens: () => ({ card: "token-card" }),
-  resolveMobileAppearance: () => contrast.resolved,
+  getCachedAppearancePreference: () => appearance.preference,
+  mobileTokens: () => ({
+    background: "token-background",
+    card: "token-card",
+    muted: "token-muted",
+  }),
+  resolveMobileAppearance: () => appearance.resolved,
   subscribeAppearance: () => () => undefined,
 }));
 
-let nativeModule: typeof NativeModule;
+import { native } from "./native";
 
-let seen: unknown;
-
-function Probe() {
-  seen = nativeModule.useThemedStyles(() => nativeModule.native.groupedCell);
-  return null;
-}
-
-describe("grouped cells with Increase Contrast", () => {
-  let root: Root | undefined;
-  let container: HTMLDivElement | undefined;
-
-  beforeEach(async () => {
-    // Each case gets a fresh contrast subscription and pending initial read.
-    vi.resetModules();
-    nativeModule = await import("./native");
-    contrast.changed = undefined;
-    contrast.resolveInitial = undefined;
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    contrast.resolved = "dark";
-    container = document.createElement("div");
-    document.body.append(container);
-    root = createRoot(container);
+describe("grouped colours", () => {
+  beforeEach(() => {
+    appearance.preference = "system";
+    appearance.resolved = "dark";
   });
 
-  afterEach(() => {
-    act(() => {
-      root?.unmount();
-    });
-    container?.remove();
-    vi.unstubAllGlobals();
+  it("uses the token page and card in dark, so red text keeps 4.5:1 inside sheets", () => {
+    expect(native.groupedPage).toBe("token-background");
+    expect(native.groupedCell).toBe("token-card");
+
+    appearance.preference = "dark";
+    expect(native.groupedPage).toBe("token-background");
+    expect(native.groupedCell).toBe("token-card");
   });
 
-  it("switches dark cells to the card token while darker system colours are on", async () => {
-    await act(async () => {
-      root?.render(<Probe />);
-    });
-    await act(async () => contrast.resolveInitial?.(false));
-    expect(seen).toBe("platform:secondarySystemGroupedBackground");
+  it("keeps the system grouped colours in light and the tokens when Light is forced", () => {
+    appearance.resolved = "light";
+    expect(native.groupedPage).toBe("platform:systemGroupedBackground");
+    expect(native.groupedCell).toBe("platform:secondarySystemGroupedBackground");
 
-    act(() => contrast.changed?.(true));
-    expect(seen).toBe("token-card");
-
-    act(() => contrast.changed?.(false));
-    expect(seen).toBe("platform:secondarySystemGroupedBackground");
-  });
-
-  it("applies Increase Contrast from the initial read", async () => {
-    await act(async () => root?.render(<Probe />));
-    await act(async () => contrast.resolveInitial?.(true));
-    expect(seen).toBe("token-card");
-  });
-
-  it("ignores an initial read that resolves after a newer change event", async () => {
-    await act(async () => root?.render(<Probe />));
-    act(() => contrast.changed?.(true));
-    await act(async () => contrast.resolveInitial?.(false));
-    expect(seen).toBe("token-card");
-  });
-
-  it("keeps the system cell in light", async () => {
-    contrast.resolved = "light";
-    await act(async () => {
-      root?.render(<Probe />);
-    });
-
-    act(() => contrast.changed?.(true));
-    expect(seen).toBe("platform:secondarySystemGroupedBackground");
+    appearance.preference = "light";
+    expect(native.groupedPage).toBe("token-muted");
+    expect(native.groupedCell).toBe("token-card");
   });
 });

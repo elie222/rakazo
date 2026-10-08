@@ -11,12 +11,16 @@ import type {
   ModelCredentialRetireReason,
   SecretStore,
 } from "@rakazo/adapter-kit";
+import type {
+  ModelContextLimits,
+  ModelOAuthBegin,
+  ModelOAuthSignInMode,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  type ModelOAuthBegin,
-  type ModelOAuthSignInMode,
-  type ThinkingLevel,
+  ModelContextLimitsSchema,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -30,7 +34,12 @@ export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 
 export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
   string,
-  { mode: ModelOAuthSignInMode; loginLabel: string; hint: string; billing: string }
+  {
+    mode: ModelOAuthSignInMode;
+    loginLabel: string;
+    hint: string;
+    billing: string;
+  }
 > = {
   [CHATGPT_OAUTH_PROVIDER]: {
     mode: "device-code",
@@ -244,10 +253,27 @@ export function isRetiredModelCredentialError(error: unknown): boolean {
   );
 }
 
+export type StoredModelLimits = ModelContextLimits;
+
+function modelLimits(value: Record<string, unknown>): StoredModelLimits {
+  const cache = ModelContextLimitsSchema.shape.cacheCapabilities.safeParse(value.cacheCapabilities);
+  const window = ModelContextLimitsSchema.shape.contextWindow.safeParse(value.contextWindow);
+  return {
+    ...(cache.success && cache.data !== undefined ? { cacheCapabilities: cache.data } : {}),
+    ...(window.success && window.data !== undefined ? { contextWindow: window.data } : {}),
+  };
+}
+
 export type StoredModelSecret =
-  | { kind: "api_key"; key: string; maxTokens?: number; accountId?: string; gatewayId?: string }
+  | ({
+      kind: "api_key";
+      key: string;
+      maxTokens?: number;
+      accountId?: string;
+      gatewayId?: string;
+    } & StoredModelLimits)
   | { kind: "oauth"; credential: OAuthCredential; maxTokens?: number }
-  | {
+  | ({
       kind: "openai_compatible";
       baseUrl: string;
       apiKey?: string;
@@ -257,7 +283,7 @@ export type StoredModelSecret =
       contextWindow?: number;
       visionModelIds?: string[];
       maxImagesPerPrompt?: number;
-    };
+    } & StoredModelLimits);
 
 export type PiOAuthConnected = {
   status: "connected";
@@ -394,6 +420,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(visionModelIds ? { visionModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      ...modelLimits(parsed),
     };
   }
   if (parsed.kind === "api_key") {
@@ -409,6 +436,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(accountId ? { accountId } : {}),
       ...(gatewayId ? { gatewayId } : {}),
+      ...modelLimits(parsed),
     };
   }
   if (parsed.kind === "oauth") {
@@ -442,6 +470,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
   if (secret.kind === "openai_compatible") {
     return JSON.stringify({
       kind: "openai_compatible",
+      ...modelLimits(secret as unknown as Record<string, unknown>),
       baseUrl: secret.baseUrl,
       ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),
       ...(secret.reasoning !== undefined ? { reasoning: secret.reasoning } : {}),
@@ -457,7 +486,9 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
   if (
     secret.maxTokens === undefined &&
     secret.accountId === undefined &&
-    secret.gatewayId === undefined
+    secret.gatewayId === undefined &&
+    secret.contextWindow === undefined &&
+    secret.cacheCapabilities === undefined
   ) {
     return secret.key;
   }
@@ -467,6 +498,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
     ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
     ...(secret.accountId ? { accountId: secret.accountId } : {}),
     ...(secret.gatewayId ? { gatewayId: secret.gatewayId } : {}),
+    ...modelLimits(secret as unknown as Record<string, unknown>),
   });
 }
 
@@ -632,7 +664,11 @@ export async function resolveModelAuth(
     throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
   }
   return {
-    secret: { kind: "oauth", credential, ...(maxTokens !== undefined ? { maxTokens } : {}) },
+    secret: {
+      kind: "oauth",
+      credential,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    },
     apiKey: auth.apiKey,
   };
 }
@@ -895,11 +931,20 @@ export class PiOAuthLogins {
         });
 
       if (input.signal?.aborted) abortFromRequest();
-      else input.signal?.addEventListener("abort", abortFromRequest, { once: true });
+      else
+        input.signal?.addEventListener("abort", abortFromRequest, {
+          once: true,
+        });
       void done.catch(() => undefined);
       this.pending.set(loginId, session);
       this.activeByScope.set(scope, session);
-      return { abort, abortFromRequest, signInStarted: signInStarted.promise, loginId, session };
+      return {
+        abort,
+        abortFromRequest,
+        signInStarted: signInStarted.promise,
+        loginId,
+        session,
+      };
     });
 
     const { abort, abortFromRequest, signInStarted, loginId, session } = prepared;
@@ -960,7 +1005,10 @@ export class PiOAuthLogins {
   complete(loginId: string, actor: { userId: string; spaceId: string }): PiOAuthComplete {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.spaceId !== actor.spaceId) {
-      return { status: "error", error: "Sign-in session not found. Start sign-in again." };
+      return {
+        status: "error",
+        error: "Sign-in session not found. Start sign-in again.",
+      };
     }
     if (session.error) {
       this.removeSession(session);
@@ -988,7 +1036,10 @@ export class PiOAuthLogins {
   ): Promise<PiOAuthFinish<T>> {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.spaceId !== actor.spaceId) {
-      return { status: "error", error: "Sign-in session not found. Start sign-in again." };
+      return {
+        status: "error",
+        error: "Sign-in session not found. Start sign-in again.",
+      };
     }
     if (session.state === "finalizing") return { status: "pending" };
     const result = this.complete(loginId, actor);

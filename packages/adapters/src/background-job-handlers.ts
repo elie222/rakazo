@@ -33,6 +33,7 @@ export function createBackgroundJobHandlers(deps: {
   secretStore: SecretStore;
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
+  deploymentModelConfigured?: boolean;
   messaging?: MessagingSurface;
   cloudAgent?: CloudAgentConnection | null;
 }): BackgroundJobHandlers {
@@ -99,6 +100,9 @@ export function createBackgroundJobHandlers(deps: {
       );
     },
     "history.compact": async (payload) => {
+      // Retrieval policies use stored context without paid message-count compaction.
+      // Skip legacy backlog work after a policy change.
+      if (deps.executor.contextStrategy && deps.executor.contextStrategy !== "current") return;
       await compactHistory(
         {
           prisma: deps.prisma,
@@ -106,6 +110,7 @@ export function createBackgroundJobHandlers(deps: {
           jobs: deps.jobs,
           memoryProviders: deps.memoryProviders,
           deploymentModelKey: deps.deploymentModelKey,
+          deploymentModelConfigured: deps.deploymentModelConfigured,
           ...(deps.executor.resolveModel ? { resolveModel: deps.executor.resolveModel } : {}),
         },
         payload.threadId,

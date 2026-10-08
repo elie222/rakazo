@@ -23,9 +23,10 @@ vi.mock("react-native", () => {
     accessibilityRole?: string;
     onPress?: () => void;
   }) {
+    const style = Array.isArray(props.style) ? Object.assign({}, ...props.style) : props.style;
     return createElement(
       "span",
-      { style: props.style, role: props.accessibilityRole, onClick: props.onPress },
+      { style, role: props.accessibilityRole, onClick: props.onPress },
       props.children,
     );
   }
@@ -35,6 +36,7 @@ vi.mock("react-native", () => {
     ScrollView: View,
     Pressable: View,
     TextInput: Text,
+    Image: () => createElement("img"),
     Animated: { View, createAnimatedComponent: (component: unknown) => component },
     StyleSheet: {
       create: <T,>(styles: T) => styles,
@@ -43,6 +45,14 @@ vi.mock("react-native", () => {
     },
     Platform: { OS: "ios", select: (options: { ios?: unknown }) => options.ios },
     Linking: linking,
+    Alert: {
+      alert: (
+        _title: string,
+        _message: string,
+        buttons: Array<{ text: string; onPress?: () => void }>,
+      ) => buttons.find((button) => button.text === "Open")?.onPress?.(),
+    },
+    I18nManager: { isRTL: false },
   };
 });
 
@@ -82,7 +92,8 @@ describe("attachment captions", () => {
   it("formats bot Markdown through ChatMarkdown", () => {
     render("bot");
 
-    expect(container.textContent).toBe("important https://example.test/docs");
+    // A bare address shows as host and path, joined to its site icon and isolated.
+    expect(container.textContent).toBe("important \u2060\u2068example.test/docs\u2069");
     expect(container.querySelector('[style*="font-weight: 700"]')?.textContent).toBe("important");
     expect(container.textContent).not.toContain("**");
   });
@@ -90,10 +101,10 @@ describe("attachment captions", () => {
   it("keeps user Markdown literal through LinkifiedText and links explicit URLs", async () => {
     render("user");
 
-    expect(container.textContent).toBe(caption);
+    expect(container.textContent).toBe("**important** \u2060\u2068example.test/docs\u2069");
     expect(container.querySelector('[style*="font-weight: 700"]')).toBeNull();
     const link = container.querySelector<HTMLElement>('[role="link"]');
-    expect(link?.textContent).toBe("https://example.test/docs");
+    expect(link?.textContent).toBe("\u2060\u2068example.test/docs\u2069");
 
     await act(async () => link?.click());
 

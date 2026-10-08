@@ -42,7 +42,16 @@ export function openAiCompatibleVisionModelIds(): ReadonlySet<string> {
 
 const MAX_MODELS_RESPONSE_BYTES = 64 * 1024;
 const MAX_MODEL_IDS = 500;
+/** Pinned catalogs (OpenRouter is ~1 MiB). Custom server URLs stay on the tight caps. */
+const CATALOG_MAX_MODELS_RESPONSE_BYTES = 8 * 1024 * 1024;
+const CATALOG_MAX_MODEL_IDS = 8_000;
 const MAX_MODEL_ID_LENGTH = 256;
+
+function modelsProbeLimits(catalogProbe?: boolean): { maxBytes: number; maxModelIds: number } {
+  return catalogProbe
+    ? { maxBytes: CATALOG_MAX_MODELS_RESPONSE_BYTES, maxModelIds: CATALOG_MAX_MODEL_IDS }
+    : { maxBytes: MAX_MODELS_RESPONSE_BYTES, maxModelIds: MAX_MODEL_IDS };
+}
 
 const OPENAI_COMPAT_BASE = "http://127.0.0.1:1/v1";
 const resolveHostname: ResolveHostname = (hostname) =>
@@ -161,17 +170,22 @@ function requestCarriesAuthorization(input: RequestInfo | URL, init?: RequestIni
 export function createOpenAiCompatibleFetch(
   baseFetch: typeof globalThis.fetch = dispatcherFetch,
   resolve: ResolveHostname = resolveHostname,
+  opts?: { allowPublic?: boolean },
 ): typeof globalThis.fetch {
   return async (input, init) => {
     const rawUrl = input instanceof Request ? input.url : String(input);
-    const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl);
+    const url = assertAllowedOpenAiCompatibleRequestUrl(rawUrl, {
+      allowPublic: opts?.allowPublic,
+    });
     if (requestCarriesAuthorization(input, init)) {
       assertHttpsForKeyedOpenAiCompatibleUrl(url, "present");
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
     const dispatcher =
       isIP(hostname) === 0
-        ? new Agent({ connect: { lookup: createOpenAiCompatibleLookup(url, resolve) } })
+        ? new Agent({
+            connect: { lookup: createOpenAiCompatibleLookup(url, resolve) },
+          })
         : undefined;
     // Node's fetch rejects this package Agent. Pair them only when the
     // dispatcher is attached; a caller-supplied fetch stays in charge.
@@ -199,7 +213,12 @@ async function requestInitFor(input: RequestInfo | URL, init?: RequestInit): Pro
   const request = new Request(input, init);
   const body =
     request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
-  return { method: request.method, headers: request.headers, body, signal: request.signal };
+  return {
+    method: request.method,
+    headers: request.headers,
+    body,
+    signal: request.signal,
+  };
 }
 
 async function closeDispatcherWithResponse(
@@ -343,7 +362,11 @@ export type OpenAiCompatibleModelsResponse = {
 /** Shared suffix: /models probe is optional when the user already knows a model id. */
 const OPENAI_COMPAT_PROBE_HAND_FILL_HINT = "You can still Connect with an explicit model id.";
 
-function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
+function probeModelIds(
+  body: OpenAiCompatibleModelsResponse,
+  opts?: { catalogProbe?: boolean },
+): string[] {
+  const { maxModelIds } = modelsProbeLimits(opts?.catalogProbe);
   const entries = Array.isArray(body.data)
     ? body.data
     : Array.isArray(body.models)
@@ -358,7 +381,7 @@ function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
   for (const entry of entries) {
     const id = typeof entry?.id === "string" ? entry.id.trim() : "";
     if (!id) continue;
-    if (id.length > MAX_MODEL_ID_LENGTH || ids.length >= MAX_MODEL_IDS) {
+    if (id.length > MAX_MODEL_ID_LENGTH || ids.length >= maxModelIds) {
       throw new Error("Model server returned too many or overly long model ids");
     }
     ids.push(id);
@@ -366,9 +389,13 @@ function probeModelIds(body: OpenAiCompatibleModelsResponse): string[] {
   return ids;
 }
 
-async function readBoundedJson(response: Response): Promise<OpenAiCompatibleModelsResponse> {
+async function readBoundedJson(
+  response: Response,
+  opts?: { catalogProbe?: boolean },
+): Promise<OpenAiCompatibleModelsResponse> {
+  const { maxBytes } = modelsProbeLimits(opts?.catalogProbe);
   const declaredSize = Number(response.headers.get("content-length") ?? 0);
-  if (declaredSize > MAX_MODELS_RESPONSE_BYTES) {
+  if (declaredSize > maxBytes) {
     await response.body?.cancel().catch(() => undefined);
     throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
   }
@@ -385,7 +412,7 @@ async function readBoundedJson(response: Response): Promise<OpenAiCompatibleMode
     const { done, value } = await reader.read();
     if (done) break;
     bytes += value.byteLength;
-    if (bytes > MAX_MODELS_RESPONSE_BYTES) {
+    if (bytes > maxBytes) {
       await reader.cancel().catch(() => undefined);
       throw new Error(`Model server response is too large. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`);
     }
@@ -403,8 +430,11 @@ export async function probeOpenAiCompatibleModels(
   input: { baseUrl: string; apiKey?: string },
   fetchImpl?: typeof fetch,
   signal?: AbortSignal,
+  opts?: { allowPublic?: boolean; catalogProbe?: boolean },
 ): Promise<string[]> {
-  const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl);
+  const baseUrl = assertAllowedOpenAiCompatibleUrl(input.baseUrl, {
+    allowPublic: opts?.allowPublic,
+  });
   assertHttpsForKeyedOpenAiCompatibleUrl(baseUrl, input.apiKey);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5_000);
@@ -412,7 +442,7 @@ export async function probeOpenAiCompatibleModels(
   try {
     const headers: Record<string, string> = { Accept: "application/json" };
     if (input.apiKey?.trim()) headers.Authorization = `Bearer ${input.apiKey.trim()}`;
-    const safeFetch = createOpenAiCompatibleFetch(fetchImpl);
+    const safeFetch = createOpenAiCompatibleFetch(fetchImpl, undefined, opts);
     const response = await safeFetch(new URL("models", `${baseUrl.href}/`).href, {
       headers,
       redirect: "error",
@@ -430,8 +460,8 @@ export async function probeOpenAiCompatibleModels(
         `Model server returned ${response.status}. ${OPENAI_COMPAT_PROBE_HAND_FILL_HINT}`,
       );
     }
-    const body = await readBoundedJson(response);
-    return probeModelIds(body);
+    const body = await readBoundedJson(response, opts);
+    return probeModelIds(body, opts);
   } catch (error) {
     const aborted =
       (error instanceof Error && error.name === "AbortError") ||

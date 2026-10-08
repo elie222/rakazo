@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { installPreloadRecovery } from "./preload-recovery";
 
 describe("preload recovery", () => {
-  function createTarget(store = new Map<string, string>()) {
+  function createTarget(store = new Map<string, string>(), onLine = true) {
     let listener: EventListener | undefined;
     const reload = vi.fn();
     const target = {
@@ -12,6 +12,7 @@ describe("preload recovery", () => {
       clearTimeout: vi.fn(),
       removeEventListener: vi.fn(),
       location: { reload },
+      navigator: { onLine },
       sessionStorage: {
         getItem: (key: string) => store.get(key) ?? null,
         setItem: (key: string, value: string) => store.set(key, value),
@@ -43,6 +44,16 @@ describe("preload recovery", () => {
     listener()?.(nextPageFailure);
 
     expect(nextPageFailure.defaultPrevented).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("leaves an offline failure to the error boundary instead of reloading", () => {
+    const { listener, reload } = createTarget(new Map(), false);
+    const offlineFailure = new Event("vite:preloadError", { cancelable: true });
+
+    listener()?.(offlineFailure);
+
+    expect(offlineFailure.defaultPrevented).toBe(false);
     expect(reload).not.toHaveBeenCalled();
   });
 });

@@ -88,6 +88,14 @@ async function main() {
     if (integration) {
       const suites = [
         "packages/testkit/src/pi-offline.postgres.test.ts",
+        "packages/testkit/src/usage-accounting.postgres.test.ts",
+        "packages/db/src/history-retrieval.postgres.test.ts",
+        "packages/testkit/src/history-retrieval.postgres.test.ts",
+        "packages/testkit/src/history-short-product.postgres.test.ts",
+        "packages/testkit/src/history-followup-product.postgres.test.ts",
+        "packages/testkit/src/history-search-continuation.postgres.test.ts",
+        "packages/testkit/src/history-product-loop.postgres.test.ts",
+        "packages/testkit/src/history-clarification.postgres.test.ts",
         "packages/testkit/src/computer-approval.postgres.test.ts",
         "packages/testkit/src/eval-history.postgres.test.ts",
         "packages/testkit/src/eval-customer-support.postgres.test.ts",

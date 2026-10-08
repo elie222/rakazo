@@ -1,6 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { BotSecretMetadata } from "@rakazo/contracts";
-import { BotSecretName, encodeLoginSecret } from "@rakazo/contracts";
+import {
+  BotSecretName,
+  commandVariableName,
+  commandVariableProblem,
+  encodeLoginSecret,
+} from "@rakazo/contracts";
 import { Button, Input, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { rpc } from "../../lib/rpc";
@@ -14,6 +19,11 @@ const fieldLabelClass = "mt-3 block text-[13px] text-muted-foreground";
 /** The stored value: a website login is saved as one encoded username and password pair. */
 function credentialPlaintext(type: CredentialAuthType, username: string, value: string) {
   return type === "login" ? encodeLoginSecret({ username, password: value }) : value;
+}
+
+/** A command variable has no site, so its destination carries no origin. */
+function credentialDestination(name: string, origin: string, auth: ReadableCredentialAuth) {
+  return auth.type === "command" ? { name, auth } : { name, origin, auth };
 }
 
 export function BotCredentialsSection({ botId }: { botId: string }) {
@@ -78,6 +88,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
       return t`Basic auth (${username})`;
     }
     if (auth.type === "login") return t`Website login`;
+    if (auth.type === "command") return t`Command variable`;
     return t`Bearer token`;
   }
 
@@ -85,10 +96,15 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
     if (authType === "header") return { type: "header", name: headerName.trim() };
     if (authType === "basic") return { type: "basic", username: basicUsername.trim() };
     if (authType === "login") return { type: "login" };
+    if (authType === "command") return { type: "command" };
     return { type: "bearer" };
   }
 
-  async function save(destination: { name: string; origin: string; auth: ReadableCredentialAuth }) {
+  async function save(destination: {
+    name: string;
+    origin?: string;
+    auth: ReadableCredentialAuth;
+  }) {
     const username = loginUsername.trim();
     const secretValue = value;
     clearProtectedFields();
@@ -117,8 +133,8 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
   }
 
   async function submitAdd() {
-    if (busy) return;
-    const saved = await save({ name: name.trim(), origin: origin.trim(), auth: newAuth() });
+    if (busy || !canAdd) return;
+    const saved = await save(credentialDestination(name.trim(), origin.trim(), newAuth()));
     if (!saved) return;
     setAdding(false);
     setName("");
@@ -130,7 +146,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
 
   async function submitReplace(secret: BotSecretMetadata) {
     if (busy || !secret.auth) return;
-    const saved = await save({ name: secret.name, origin: secret.origin, auth: secret.auth });
+    const saved = await save(credentialDestination(secret.name, secret.origin, secret.auth));
     if (saved) setReplacing(null);
   }
 
@@ -188,10 +204,19 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
   const valueReady = (type: CredentialAuthType) =>
     value.length > 0 && (type !== "login" || loginUsername.trim().length > 0);
 
+  const nameValid = BotSecretName.safeParse(name.trim()).success;
+  // Shown live while a command variable is named, so a reserved name is caught before saving.
+  const commandVariable =
+    authType === "command" && nameValid ? `$${commandVariableName(name.trim())}` : null;
+  const commandVariableError =
+    commandVariable && commandVariableProblem(commandVariable.slice(1))
+      ? t`${commandVariable} is reserved and cannot be used as a command variable. Choose another name.`
+      : null;
+
   const canAdd =
     !busy &&
-    BotSecretName.safeParse(name.trim()).success &&
-    origin.trim().length > 0 &&
+    nameValid &&
+    (authType === "command" ? !commandVariableError : origin.trim().length > 0) &&
     (authType !== "header" || headerName.trim().length > 0) &&
     (authType !== "basic" || basicUsername.trim().length > 0) &&
     valueReady(authType);
@@ -202,10 +227,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
         <Trans>Credentials</Trans>
       </div>
       <p className="mt-0.5 text-[12px] text-muted-foreground/70">
-        <Trans>
-          Keys and passwords this bot can use, each for one site only. Values are encrypted and
-          never shown again.
-        </Trans>
+        <Trans>Values are encrypted and never shown again.</Trans>
       </p>
       {loadFailed ? (
         <p className="mt-3 text-[13px] text-destructive">
@@ -237,7 +259,11 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                 <div className="truncate text-[13.5px] font-medium text-foreground">
                   {secret.name}
                 </div>
-                <div className="break-all text-[12.5px] text-muted-foreground">{secret.origin}</div>
+                {secret.origin ? (
+                  <div className="break-all text-[12.5px] text-muted-foreground">
+                    {secret.origin}
+                  </div>
+                ) : null}
                 {readableAuth === null ? (
                   <div className="text-[12px] text-destructive">
                     <Trans>These saved settings can't be read. Remove it and add it again.</Trans> ·{" "}
@@ -245,7 +271,11 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                   </div>
                 ) : (
                   <div className="text-[12px] text-muted-foreground/70">
-                    {authLabel(readableAuth)} · {t`Updated ${updated}`}
+                    {authLabel(readableAuth)}
+                    {readableAuth.type === "command"
+                      ? ` · $${commandVariableName(secret.name)}`
+                      : null}{" "}
+                    · {t`Updated ${updated}`}
                   </div>
                 )}
                 {readableAuth !== null && replacing === secret.name ? (
@@ -380,20 +410,37 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
                 Lowercase letters, numbers, hyphens and underscores, starting with a letter.
               </Trans>
             </span>
+            {commandVariableError ? (
+              <span
+                data-testid="credential-command-variable-error"
+                className="mt-1 block text-[12px] text-destructive"
+              >
+                {commandVariableError}
+              </span>
+            ) : commandVariable ? (
+              <span
+                data-testid="credential-command-variable"
+                className="mt-1 block text-[12px] text-muted-foreground"
+              >
+                {t`Available to this bot's shell commands as ${commandVariable}`}
+              </span>
+            ) : null}
           </label>
-          <label htmlFor={`${ids}-origin`} className={fieldLabelClass}>
-            <Trans>Site</Trans>
-            <Input
-              id={`${ids}-origin`}
-              data-testid="credential-origin"
-              autoComplete="off"
-              spellCheck={false}
-              value={origin}
-              onChange={(event) => setOrigin(event.target.value)}
-              placeholder="https://api.example.com"
-              className="mt-1.5"
-            />
-          </label>
+          {authType === "command" ? null : (
+            <label htmlFor={`${ids}-origin`} className={fieldLabelClass}>
+              <Trans>Site</Trans>
+              <Input
+                id={`${ids}-origin`}
+                data-testid="credential-origin"
+                autoComplete="off"
+                spellCheck={false}
+                value={origin}
+                onChange={(event) => setOrigin(event.target.value)}
+                placeholder="https://api.example.com"
+                className="mt-1.5"
+              />
+            </label>
+          )}
           <label htmlFor={`${ids}-auth`} className={fieldLabelClass}>
             <Trans>Type</Trans>
             <NativeSelect
@@ -407,6 +454,7 @@ export function BotCredentialsSection({ botId }: { botId: string }) {
               <NativeSelectOption value="header">{t`Custom header`}</NativeSelectOption>
               <NativeSelectOption value="basic">{t`Basic auth`}</NativeSelectOption>
               <NativeSelectOption value="login">{t`Website login`}</NativeSelectOption>
+              <NativeSelectOption value="command">{t`Command variable`}</NativeSelectOption>
             </NativeSelect>
           </label>
           {authType === "header" ? (

@@ -257,7 +257,12 @@ export function UsageSettingsPanel({
   usage,
   panelRef,
 }: {
-  usage?: { runs: number; inputTokens: number; outputTokens: number } | null;
+  usage?: {
+    runs: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens?: number | null;
+  } | null;
   panelRef?: RefObject<HTMLDivElement | null>;
 }) {
   return (
@@ -273,7 +278,7 @@ export function UsageSettingsPanel({
       {usage ? (
         <p className="mt-3 text-[14px] text-foreground/75">
           <Trans>
-            {usage.runs} runs · {usage.inputTokens + usage.outputTokens} tokens
+            {usage.runs} runs · {usage.totalTokens ?? "—"} tokens
           </Trans>
         </p>
       ) : null}

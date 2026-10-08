@@ -15,6 +15,28 @@ const context = {
 };
 
 describe("E2B computer backend", () => {
+  it("removes inherited variables after the command environment overlay", async () => {
+    const run = vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 }));
+    const provider = new E2BSandboxProvider("test-key", {
+      connect: vi.fn(async () => ({
+        sandboxId: "existing",
+        commands: { run },
+      })),
+    } as unknown as E2BSandboxSdk);
+    const events = [];
+    for await (const event of provider.execute(
+      { id: "existing", providerRef: "existing", kind: "e2b", botId: "bot" },
+      { argv: ["true"], env: { FAILED: "fake-space" }, unsetEnv: ["FAILED"] },
+      context,
+    ))
+      events.push(event);
+    expect(events).toEqual([{ type: "exit", code: 0 }]);
+    expect(run).toHaveBeenCalledWith(
+      "'env' '-u' 'FAILED' '--' 'true'",
+      expect.objectContaining({ envs: { FAILED: "fake-space" } }),
+    );
+  });
+
   it("revokes an extra display's control without starting or waiting for its view", async () => {
     const command = vi.fn(async (value: string) => {
       if (value.includes("RAKAZO_SCREEN_INDEX=")) {

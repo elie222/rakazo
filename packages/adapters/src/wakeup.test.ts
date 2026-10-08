@@ -19,6 +19,51 @@ function handlers(): BackgroundJobHandlers {
 describe("InMemoryJobQueue", () => {
   afterEach(() => vi.useRealTimers());
 
+  it("reports failed descendants after draining without exposing payloads or errors", async () => {
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    target["run.continue"] = async () => {
+      await queue.enqueue({ name: "history.compact", payload: { threadId: "fixture-thread" } });
+      await queue.enqueue({ name: "history.compact", payload: { threadId: "fixture-thread" } });
+    };
+    target["history.compact"] = async () => {
+      throw new Error("fixture-private-error");
+    };
+    await queue.start(target);
+    await queue.enqueue({ name: "run.continue", payload: { runId: "fixture-run" } });
+    await queue.awaitIdle();
+    const counts = queue.failureCounts();
+    expect(counts).toEqual([{ name: "history.compact", count: 2 }]);
+    expect(JSON.stringify(counts)).not.toContain("fixture-private");
+    counts[0]!.count = 99;
+    expect(queue.failureCounts()[0]!.count).toBe(2);
+    await queue.close();
+  });
+
+  it("waits for due descendants without closing the queue or running future work", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    target["run.continue"] = vi.fn(async () => {
+      await queue.enqueue({ name: "history.compact", payload: { threadId: "thread-1" } });
+    });
+    await queue.start(target);
+    await queue.enqueue({ name: "run.continue", payload: { runId: "run-1" } });
+    await queue.enqueue({
+      name: "computer.sleep",
+      payload: { computerId: "future" },
+      availableAt: new Date(Date.now() + 1_000),
+    });
+    await queue.awaitIdle();
+    expect(target["run.continue"]).toHaveBeenCalledTimes(1);
+    expect(target["history.compact"]).toHaveBeenCalledTimes(1);
+    expect(target["computer.sleep"]).not.toHaveBeenCalled();
+    await queue.enqueue({ name: "run.continue", payload: { runId: "run-2" } });
+    await queue.awaitIdle();
+    expect(target["run.continue"]).toHaveBeenCalledTimes(2);
+    await queue.close();
+  });
+
   it("delivers delayed jobs", async () => {
     vi.useFakeTimers();
     const queue = new InMemoryJobQueue();

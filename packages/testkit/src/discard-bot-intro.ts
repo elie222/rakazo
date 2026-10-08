@@ -3,7 +3,7 @@ import type { RunStatus } from "@rakazo/contracts";
 import { isActive } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
-type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
+type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
 export type BotIntroHarness = {
   app: App;

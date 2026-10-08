@@ -378,4 +378,48 @@ describe("botSecrets router", () => {
       where: { userId: "user-1", spaceId: "space-1", botId: "bot-1", name: "router" },
     });
   });
+  it("stores a command variable with no origin and lists it with its type", async () => {
+    const { secrets, rows, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: { name: "netbird-setup-key", auth: { type: "command" } },
+      value: FAKE_VALUE,
+    });
+    expect(result.status).toBe(200);
+    expect(result.body.json).toMatchObject({
+      name: "netbird-setup-key",
+      origin: "",
+      auth: { type: "command" },
+    });
+    expect(result.text).not.toContain(FAKE_VALUE);
+    expect(secrets.put).toHaveBeenCalledOnce();
+    expect(rows[0]).toMatchObject({ origin: "", auth: { type: "command" } });
+    const listed = await call("list", { botId: "bot-1" });
+    expect(listed.body.json).toEqual([expect.objectContaining({ auth: { type: "command" } })]);
+  });
+
+  it("rejects a reserved command variable name with a clear bad request", async () => {
+    const { secrets, rows, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: { name: "ld_preload", auth: { type: "command" } },
+      value: FAKE_VALUE,
+    });
+    expect(result.status).toBe(400);
+    expect(result.text).toContain("$LD_PRELOAD is reserved");
+    expect(result.text).not.toContain(FAKE_VALUE);
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(0);
+  });
+
+  it("still requires a site for every other credential type", async () => {
+    const { secrets, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: { name: "api", auth: { type: "bearer" } },
+      value: FAKE_VALUE,
+    });
+    expect(result.status).toBe(400);
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
 });

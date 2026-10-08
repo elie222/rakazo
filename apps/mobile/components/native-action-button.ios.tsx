@@ -4,6 +4,7 @@ import {
   buttonStyle,
   controlSize,
   disabled as disable,
+  font,
   foregroundStyle,
   frame,
   progressViewStyle,
@@ -51,7 +52,10 @@ export function NativeActionButton({
         role={role}
         modifiers={[
           buttonStyle(swiftStyle(prominence)),
-          controlSize(stretches ? "large" : "regular"),
+          controlSize(stretches ? "large" : prominence === "quiet" ? "small" : "regular"),
+          ...(prominence === "quiet"
+            ? [font({ size: 15 }), foregroundStyle(tokens.mutedForeground)]
+            : []),
           disable(inactive),
           ...(color ? [tint(color)] : []),
           ...(busy || (accessibilityLabel && accessibilityLabel !== label)
@@ -88,6 +92,7 @@ function swiftStyle(prominence: ActionProminence) {
   if (prominence === "primary" || prominence === "destructive") {
     return glass ? "glassProminent" : "borderedProminent";
   }
+  if (prominence === "quiet") return "plain";
   if (prominence === "plain") return glass ? "glass" : "plain";
   return glass ? "glass" : "bordered";
 }
