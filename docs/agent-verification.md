@@ -1,5 +1,7 @@
 # Agent verification
 
+Generated JSON reports are preserved locally under ignored `test-report/evals/archive/`, with a second backup outside the disposable worktree. They are not tracked documentation or repository downloads; maintained findings and synthetic fixtures remain in source control. Report references below identify local archived evidence, including every original failed and partial run.
+
 Rakazo separates deterministic execution regressions from real-model task quality.
 A scripted response can prove that a tool call executes correctly; only a real
 model can demonstrate that it chooses a useful action for a natural request.
@@ -268,7 +270,7 @@ fallback source passed all 54 unchanged workflows and all 27 repeated answers,
 costing USD 0.06519195 across 227 calls. Details, limitations, and preserved failed
 runs appear in `docs/evals/history-findings.md` and the task checklist. That initial
 qualification predates integration with Pi 0.87.1. The first current-base report,
-`docs/evals/history-pr-final-qualification.json`, passed 53/54 and preserves its
+`test-report/evals/archive/history-pr-final-qualification.json`, passed 53/54 and preserves its
 pagination recall failure; it does not replace the required passing final-source
 gate. Current integration checks also verify system transcript instructions and
 tools reach the provider after history selection.
@@ -329,7 +331,7 @@ source must complete its own unchanged 54-workflow qualification before merge.
 The restored-prefix PR qualification completed 54 workflows with 53 passing.
 All twelve distant-recall trials and all 27 repeated answers passed; one strict
 loop skipped segment seven and guessed an invalid cursor. The original result is
-preserved in `docs/evals/history-pr-restored-prefix-qualification.json`. Its charge
+preserved in `test-report/evals/archive/history-pr-restored-prefix-qualification.json`. Its charge
 was USD 0.093003835 across 248 calls, reconciled with zero reservations or
 background/cleanup failures. Cumulative guarded spend is USD 1.43272518 of USD 5.
 Shared opaque-cursor guidance and its actual-wire regressions address this new
@@ -342,7 +344,7 @@ after five reads, claiming missing continuation metadata. The raw JSON contained
 its cursor, but the failed live outgoing payload was not captured; the claim does
 not establish a serialization defect. The actual-wire offline loop passes without
 waiving the live failure. The preserved report is
-`docs/evals/history-pr-opaque-cursor-qualification.json`. Its charge was
+`test-report/evals/archive/history-pr-opaque-cursor-qualification.json`. Its charge was
 USD 0.09108541 across 238 calls, fully reconciled with zero reservations or
 background/cleanup failures. Cumulative guarded spend is USD 1.52381059 of USD 5.
 The live qualification gate remains failed, so this PR must not merge merely

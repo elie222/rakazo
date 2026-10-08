@@ -1,5 +1,7 @@
 # Conversation context and model eval tasks
 
+Generated JSON reports are preserved locally under ignored `test-report/evals/archive/`, with a second backup outside the disposable worktree. They are not tracked documentation or repository downloads; maintained findings and synthetic fixtures remain in source control. Report references below identify local archived evidence, including every original failed and partial run.
+
 Make long conversations reliable without sending their entire history on every
 model call. Give bots access to original messages and linked background work,
 select a bounded active context, and measure the full cost and performance of
@@ -22,7 +24,7 @@ uncontrolled provider cache prevent a causal savings claim. The final default an
 fallback source subsequently passed all 54 workflows, all 27 repeated answers,
 all twelve distant samples, and all six strict twelve-read loops. Its charge was
 USD 0.06519195 across 227 model calls, with median/p95 latency 8.661/32.224 seconds.
-The final report is `docs/evals/history-default-final-qualification.json`.
+The final report is `test-report/evals/archive/history-default-final-qualification.json`.
 
 Completed delivery steps:
 
@@ -131,7 +133,7 @@ All 27 repeated answers and all six strict twelve-read loops passed. Charge was
 USD 0.09115927 across 242 model calls, with median/p95 latency 9.971/35.225 seconds.
 Accounting reconciled; background and cleanup failures and reservations were zero.
 The failed qualification is preserved in
-`docs/evals/history-pr-final-qualification.json`; it does not satisfy the final
+`test-report/evals/archive/history-pr-final-qualification.json`; it does not satisfy the final
 gate. Its source fingerprint is separately method-labelled because the original
 CLI diff capture exceeded its buffer.
 
@@ -146,7 +148,7 @@ mobile behavior.
 
 The first pagination requalification was stopped gracefully after an audit found
 that reconciliation had moved memory ahead of stable instructions. Its partial
-report, `docs/evals/history-pr-pagination-qualification.json`, preserves eleven
+report, `test-report/evals/archive/history-pr-pagination-qualification.json`, preserves eleven
 passing workflows and 43 not run, charged USD 0.01331646 across 31 calls, and zero
 background/cleanup failures or reservations. The cumulative charge is now
 USD 1.339721345, leaving USD 3.660278655; no allowance was reset.
@@ -159,7 +161,7 @@ pass. The restored-prefix full run completed all 54 workflows: 53 passed. All tw
 distant recall trials and all 27 repeated answers passed, but one strict tool loop
 skipped a segment by inventing a cursor rather than copying the returned value.
 The unchanged grader correctly rejected eleven successful reads plus one invalid
-request. Its report, `docs/evals/history-pr-restored-prefix-qualification.json`,
+request. Its report, `test-report/evals/archive/history-pr-restored-prefix-qualification.json`,
 preserves the failure and reconciles USD 0.093003835 across 248 model calls, with
 zero background/cleanup failures and reservations. The cumulative guard charge
 is USD 1.43272518, leaving USD 3.56727482 under the original USD 5 cap.
@@ -176,7 +178,7 @@ a cursor; the failed live outgoing payload was not captured, so this explanation
 does not establish a serialization defect. Deterministic actual-wire regressions
 preserve every cursor, but they do not waive the live failure.
 
-`docs/evals/history-pr-opaque-cursor-qualification.json` preserves this result on
+`test-report/evals/archive/history-pr-opaque-cursor-qualification.json` preserves this result on
 clean committed source `3dd01cea`. Its USD 0.09108541 charge across 238 model calls
 reconciles, with no cleanup/background failures or outstanding reservations. The
 cumulative guard charge is USD 1.52381059, leaving USD 3.47618941 under the same
@@ -706,7 +708,7 @@ Search originally matched its own incoming question. A backend-owned historical
 sequence boundary now excludes that question and current-run output from search;
 explicit reads and linked outcomes retain their existing authorized visibility.
 The search interface documents literal keyword matching, its five-result cap, and
-the exact pagination handoff. Earlier diagnostic failures remain published rather
+the exact pagination handoff. Earlier diagnostic failures remain documented and archived rather
 than being relabeled as success.
 
 The integration fixtures also exposed globally reused provider tool IDs. Effect
@@ -716,7 +718,7 @@ effects; same-owner retries deduplicate. Ambiguous pre-upgrade Pi records fail
 closed and require outcome verification instead of repeating an uncertain effect.
 Existing approved-argument replay remains intact.
 
-`docs/evals/history-cache-prefix-probe.json` records four direct model calls costing
+`test-report/evals/archive/history-cache-prefix-probe.json` records four direct model calls costing
 USD 0.00106534 in total. Fresh and changed prefixes read zero cached tokens; both
 immediate replays read 3,882 cached tokens. Each replay cost USD 0.00004312 versus
 USD 0.00048955 for its fresh counterpart, about 91.2% less for these exact prefixes.
@@ -785,7 +787,7 @@ teardown throughout. All twelve distant recall samples passed, as did correction
 constraints, linked outcomes, six rich loops, and all three turns in each of nine
 repeated workflows. One absence answer volunteered an unrelated known label;
 three ambiguity answers volunteered candidate labels instead of obtaining the
-missing project selection. Those strict failures remain published and prevent
+missing project selection. Those strict failures remain documented and archived and prevent
 default selection. Full charges were USD 0.097921115 across 289 model calls.
 
 The shared history guidance now tells the bot to state absent facts briefly without
@@ -808,17 +810,17 @@ versions and failed reports remain intact.
 
 ### Latest qualification and short-history findings
 
-`docs/evals/history-concise-clarification-pilot.json` passed all nine workflows.
+`test-report/evals/archive/history-concise-clarification-pilot.json` passed all nine workflows.
 The three clarification trials persisted project-selection cards without revealing
 candidate labels. Known cost was USD 0.009844045 across 27 model calls.
 
-`docs/evals/history-current-final-measurement.json` passed three of six workflows.
+`test-report/evals/archive/history-current-final-measurement.json` passed three of six workflows.
 All three repeated 100-message workflows passed every turn; all three balanced
 clarification workflows failed. The 100-message workflows averaged USD 0.0012767017
 including two real compaction calls per workflow. Their mean preparation charge
 was USD 0.0004165. This establishes actual charges, not a causal payback threshold.
 
-`docs/evals/history-snapshots-final-qualification.json` completed all 54 workflows
+`test-report/evals/archive/history-snapshots-final-qualification.json` completed all 54 workflows
 with clean teardown. It passed 52: all 42 non-distant workflows and ten of twelve
 distant samples. Two paraphrase answers failed to retrieve available original
 facts. One abandoned the broader keyword query's pending cursor after narrower
@@ -850,7 +852,7 @@ keyword/cursor guidance still require a fresh matched live qualification.
 The latest broad offline run passed 3,807 tests across 372 files, with 178 opt-in
 tests across 34 files skipped. All 19 non-mobile package type checks and mobile
 TypeScript passed. Lint passed with 21 existing warnings and one existing notice.
-All 19 public JSON reports parsed and passed the credential/local-path scan.
+All 19 preserved local JSON reports parsed and passed the credential/local-path scan.
 Final default wiring, if selected, will require its own verification.
 
 The corrected-guidance diagnostic passed all twelve distant exact/paraphrase
@@ -863,8 +865,8 @@ was USD 0.000918375. This was about 28.1% below the measured current workflow an
 63.7% below the earlier forced-snapshot workflow. Three trials with uncontrolled
 provider cache state establish neither precise reliability nor causal preparation
 payback. The full final-source qualification remains mandatory.
-The two new sanitized reports are `docs/evals/history-keyword-qualification.json`
-and `docs/evals/history-adaptive-repeat-cost.json`; all 21 public JSON reports
+The two new archived sanitized reports are `test-report/evals/archive/history-keyword-qualification.json`
+and `test-report/evals/archive/history-adaptive-repeat-cost.json`; all 21 preserved local JSON reports
 parsed and passed the credential/local-path scan after publication.
 
 The cumulative guard has charged USD 0.938278085, leaving USD 0.061721915 under
