@@ -20,6 +20,17 @@ const offered = [
   { identifier: "voice-a", name: "Alice", language: "en-US" },
   { identifier: "voice-b", name: "Beth", language: "en-GB" },
 ];
+
+function deferredSave() {
+  let resolve!: () => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<void>((resolveSave, rejectSave) => {
+    resolve = resolveSave;
+    reject = rejectSave;
+  });
+  return { promise, resolve, reject };
+}
+
 vi.mock("./bot-voices", () => ({
   voiceLabel: (voice: { language: string; name: string }) => `${voice.language} · ${voice.name}`,
   deviceVoices: mocks.deviceVoices,
@@ -163,6 +174,58 @@ describe("bot settings device voice menu", () => {
     expect(container.textContent).toContain("Could not save that voice");
     expect(mocks.speak).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { firstSucceeds: false, latestSucceeds: true },
+    { firstSucceeds: false, latestSucceeds: false },
+    { firstSucceeds: true, latestSucceeds: false },
+    { firstSucceeds: true, latestSucceeds: true },
+  ])(
+    "keeps overlapping choices consistent (first saves: $firstSucceeds, latest saves: $latestSucceeds)",
+    async ({ firstSucceeds, latestSucceeds }) => {
+      mocks.deviceVoices.mockResolvedValue([
+        ...offered,
+        { identifier: "voice-c", name: "Clara", language: "en-US" },
+      ]);
+      const first = deferredSave();
+      const latest = deferredSave();
+      mocks.setVoiceForBot.mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
+      await render();
+      const actions = () => [...menu()!.querySelectorAll("button")];
+      await act(async () => actions()[1]!.click());
+      await act(async () => actions()[2]!.click());
+      expect(mocks.setVoiceForBot.mock.calls).toEqual([
+        ["bot-fixture", "voice-b"],
+        ["bot-fixture", "voice-c"],
+      ]);
+
+      await act(async () => {
+        if (firstSucceeds) first.resolve();
+        else first.reject(new Error("First save failed"));
+      });
+      expect(actions().map((action) => action.dataset.state)).toEqual(["off", "off", "on"]);
+      expect(container.textContent).not.toContain("Could not save that voice");
+      expect(mocks.speak).not.toHaveBeenCalled();
+
+      await act(async () => {
+        if (latestSucceeds) latest.resolve();
+        else latest.reject(new Error("Latest save failed"));
+      });
+      const savedIndex = latestSucceeds ? 2 : firstSucceeds ? 1 : 0;
+      expect(actions().map((action) => action.dataset.state)).toEqual(
+        [0, 1, 2].map((index) => (index === savedIndex ? "on" : "off")),
+      );
+      if (latestSucceeds) {
+        expect(container.textContent).not.toContain("Could not save that voice");
+        expect(mocks.speak).toHaveBeenCalledExactlyOnceWith("Hi, I'm Fixture.", {
+          voice: "voice-c",
+        });
+      } else {
+        expect(container.textContent).toContain("Could not save that voice");
+        expect(mocks.speak).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it.each([{ voices: [] }, { voices: offered.slice(0, 1) }])(
     "shows a plain row without a menu for $voices.length voices",

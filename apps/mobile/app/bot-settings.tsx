@@ -14,7 +14,7 @@ import {
 } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
@@ -63,6 +63,8 @@ export default function BotSettingsScreen() {
   const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
+  const savedVoiceId = useRef<string | undefined>(undefined);
+  const voiceChoice = useRef(0);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -177,6 +179,7 @@ export default function BotSettingsScreen() {
 
   function applyVoices(available: Voice[], assigned: string | undefined) {
     setVoices(available);
+    savedVoiceId.current = assigned;
     setVoiceId(assigned);
     setVoiceError(null);
   }
@@ -223,19 +226,24 @@ export default function BotSettingsScreen() {
     if (!botId) return;
     // Picking a voice cuts off a reply in progress before the sample starts.
     stopVoicePlayback();
-    const previous = voiceId;
+    const choice = ++voiceChoice.current;
     setVoiceId(voice.identifier);
     setError(null);
     try {
       await setVoiceForBot(botId, voice.identifier);
+      savedVoiceId.current = voice.identifier;
     } catch {
-      setVoiceId(previous);
+      if (choice !== voiceChoice.current) return;
+      setVoiceId(savedVoiceId.current);
       setError(t("Could not save that voice"));
       return;
     }
+    if (choice !== voiceChoice.current) return;
     try {
       const Speech = await import("expo-speech");
+      if (choice !== voiceChoice.current) return;
       await Speech.stop();
+      if (choice !== voiceChoice.current) return;
       const sampleName = name.trim();
       Speech.speak(
         sampleName ? t("Hi, I'm {name}.", { name: sampleName }) : t("Hi, this is how I'll sound."),
