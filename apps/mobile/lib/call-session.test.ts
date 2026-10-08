@@ -264,6 +264,35 @@ describe("mobile call session", () => {
     expect(fake.spoken.at(-1)).toBe("Hello from Max.");
   });
 
+  it.each([undefined, "Talk soon."])(
+    "ignores an old bot's end event throughout hand-over with farewell %j",
+    async (farewell) => {
+      const endCue = deferred<void>();
+      const fake = fakes();
+      const ring = vi.fn();
+      const id = startCall(
+        { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+        { ...fake.deps, cue: (cue) => (cue === "end" ? endCue.promise : Promise.resolve()) },
+      );
+      await flush();
+      fake.say("switch to Max");
+      await flush();
+      fake.endedCall(id, farewell);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.spoken).toEqual([]);
+      endCue.resolve();
+      await flush();
+      fake.endedCall(id, farewell);
+      expect(fake.spoken).toEqual(["OK, switching to Max."]);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      fake.speeches[0]?.resolve();
+      await flush();
+      expect(ring).toHaveBeenCalledOnce();
+      expect(fake.closeCall).toHaveBeenCalledWith("bot-1", id);
+      expect(getSnapshot()).toBeNull();
+    },
+  );
+
   it("plays the waiting sound after the closing cue, until the reply starts", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);

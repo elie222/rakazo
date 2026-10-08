@@ -1,6 +1,6 @@
 /** Match standalone switching requests, allowing polite openers and punctuation. */
 const SWITCH_REQUEST =
-  /^(?:(?:please|hey|ok|okay|so|can you|could you|would you)[\s,]+)*(?:switch|swap|transfer|put me through|connect me|take me)(?:\s+(?:me|us|over|back|the chat|this chat))*\s+(?:to|with)\s+(.+?)(?:[\s,]+please)?[\s.!?]*$/i;
+  /^(?:(?:please|hey|ok|okay|so|can you|could you|would you)[\s,]+)*(?:switch|swap|transfer|put me through|connect me|take me)(?:\s+(?:me|us|over|back|the chat|this chat))*\s+(?:to|with)\s+(.+?)[\s.!?]*$/i;
 
 function normalized(name: string): string {
   return name
@@ -19,13 +19,19 @@ export function findSwitchTarget<T extends { id: string; name: string }>(
   if (!asked) return undefined;
   const spoken = normalized(asked);
   // Match full names before stripping an optional article.
-  for (const wanted of [spoken, spoken.replace(/^the\s+/, "")]) {
+  const withoutPlease = spoken.replace(/\s+please$/, "");
+  for (const wanted of [
+    spoken,
+    spoken.replace(/^the\s+/, ""),
+    withoutPlease,
+    withoutPlease.replace(/^the\s+/, ""),
+  ]) {
     if (!wanted) continue;
     const exact = bots.filter((bot) => normalized(bot.name) === wanted);
     if (exact.length === 1) return exact[0];
     if (exact.length > 1) return undefined;
   }
-  const firstName = spoken.replace(/^the\s+/, "");
+  const firstName = withoutPlease.replace(/^the\s+/, "");
   const byFirstName = bots.filter((bot) => normalized(bot.name).split(" ")[0] === firstName);
   return byFirstName.length === 1 ? byFirstName[0] : undefined;
 }

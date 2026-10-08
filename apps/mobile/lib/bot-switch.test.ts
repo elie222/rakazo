@@ -49,6 +49,17 @@ describe("findSwitchTarget", () => {
     expect(findSwitchTarget("tell Max I said hi", bots)).toBeUndefined();
     expect(findSwitchTarget("should we switch to Max's plan for the launch", bots)).toBeUndefined();
   });
+
+  it("matches the complete name before removing a polite suffix", () => {
+    const named = [
+      { id: "travel-please", name: "Travel Please" },
+      { id: "travel", name: "Travel" },
+    ];
+    expect(findSwitchTarget("switch to Travel Please", named)?.id).toBe("travel-please");
+    expect(findSwitchTarget("switch to Travel Please, please!", named)?.id).toBe("travel-please");
+    expect(findSwitchTarget("switch to Travel please", [named[1]!])?.id).toBe("travel");
+    expect(findSwitchTarget("switch to Travel please", bots)?.id).toBe("bot-3");
+  });
 });
 
 describe("ringOnArrival", () => {

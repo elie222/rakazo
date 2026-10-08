@@ -586,7 +586,7 @@ function speakAndListen(text: string): void {
 
 /** The bot hung up: speak the goodbye it wrote, then end — the rest lands in the thread. */
 function onCallEnded(ended: CallEnded): void {
-  if (!state || ended.callId !== callId || botEndedCall) return;
+  if (!state || switching || ended.callId !== callId || botEndedCall) return;
   hangUpAfterReply = true;
   botEndedCall = true;
   if (hangUpTimer) clearTimeout(hangUpTimer);

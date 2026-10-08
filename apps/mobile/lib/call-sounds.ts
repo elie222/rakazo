@@ -64,23 +64,37 @@ export async function saveWaitSoundEnabled(on: boolean): Promise<void> {
 }
 
 export async function playCallCue(cue: CallCue): Promise<void> {
+  const epoch = waitCallEpoch;
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
+  if (epoch !== waitCallEpoch) return;
   const { createAudioPlayer } = await import("expo-audio");
+  if (epoch !== waitCallEpoch) return;
   const player = createAudioPlayer(CUE_ASSETS[cue]);
+  let finish: () => void = () => undefined;
+  cuePlayers.set(player, () => finish());
   try {
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, CUE_MAX_MS);
-      player.addListener("playbackStatusUpdate", (status) => {
-        if (!status.didJustFinish) return;
-        clearTimeout(timer);
-        resolve();
+      const timer = setTimeout(() => finish(), CUE_MAX_MS);
+      const subscription = player.addListener("playbackStatusUpdate", (status) => {
+        if (status.didJustFinish) finish();
       });
+      let finished = false;
+      finish = () => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        subscription.remove();
+        resolve();
+      };
       player.play();
     });
   } finally {
-    player.remove();
+    finish();
+    if (cuePlayers.delete(player)) player.remove();
   }
 }
+
+const cuePlayers = new Map<AudioPlayer, () => void>();
 
 /** Track the played pattern, excluding units that were only queued. */
 let lastWaitPattern = 0;
@@ -180,6 +194,12 @@ export function stopWaitSound(): void {
 export function releaseWaitSound(): void {
   waitGeneration += 1;
   waitCallEpoch += 1;
+  for (const [player, finish] of cuePlayers) {
+    finish();
+    player.pause();
+    player.remove();
+  }
+  cuePlayers.clear();
   wakeWait?.();
   endFade();
   waitCurrent = null;
