@@ -130,6 +130,8 @@ let canTranscribe = true;
 let onDevice: boolean | null = null;
 /** A microphone session is running, so playback can leave it open instead of restarting it. */
 let micOpen = false;
+/** True from ringing until the start cue ends: nothing may open the microphone before the greeting. */
+let opening = false;
 /** The caller cut the reply off: the speaker going idle must not reopen the microphone. */
 let bargedIn = false;
 /** Counting down a phrase heard over the reply, before it counts as cutting in. */
@@ -212,8 +214,10 @@ export function startCall(
 /** The opening cue, then the greeting, then the caller's first turn. */
 async function openCall(openedCallId: string, greeting?: string): Promise<void> {
   deps.waitSound("preload");
+  opening = true;
   await deps.cue("start").catch(() => undefined);
   if (!state || callId !== openedCallId) return;
+  opening = false;
   if (greeting) speakAndListen(greeting);
   else void listen();
 }
@@ -223,7 +227,7 @@ export function setCallProviderTranscribe(enabled: boolean, forCallId?: string):
   if (!state || (forCallId !== undefined && forCallId !== callId)) return;
   canTranscribe = enabled;
   // Dictation can fail before the probe returns, which leaves the mic closed.
-  if (enabled && state.phase === "listening" && !micOpen && !state.muted) void listen();
+  if (enabled && !opening && state.phase === "listening" && !micOpen && !state.muted) void listen();
 }
 
 export function endCall(): void {
@@ -245,6 +249,7 @@ export function endCall(): void {
   spokenMessageId = null;
   failures = 0;
   micOpen = false;
+  opening = false;
   bargedIn = false;
   switchBot = undefined;
   clearInterim();
@@ -266,7 +271,7 @@ export function toggleMute(): void {
     return;
   }
   consentBlocked = false;
-  if (state.phase === "listening") void listen();
+  if (state.phase === "listening" && !opening) void listen();
 }
 
 export function toggleTranscript(): void {

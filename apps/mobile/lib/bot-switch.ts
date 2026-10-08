@@ -34,3 +34,21 @@ export function findSwitchTarget<T extends { id: string; name: string }>(
   const byFirstName = bots.filter((bot) => normalized(bot.name).split(" ")[0] === firstName);
   return byFirstName.length === 1 ? byFirstName[0] : undefined;
 }
+
+/**
+ * A call hand-over rings the next bot once its chat opens. The request lives in memory
+ * only, never in the route, so a link can never start a call or open the microphone.
+ */
+const RING_WINDOW_MS = 10_000;
+let pendingRing: { botId: string; at: number } | undefined;
+
+export function ringOnArrival(botId: string, now = Date.now()): void {
+  pendingRing = { botId, at: now };
+}
+
+/** True once, for the bot a hand-over just asked to ring; any other arrival drops the request. */
+export function takeRingOnArrival(botId: string, now = Date.now()): boolean {
+  const ring = pendingRing;
+  pendingRing = undefined;
+  return ring !== undefined && ring.botId === botId && now - ring.at <= RING_WINDOW_MS;
+}

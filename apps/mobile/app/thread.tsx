@@ -137,7 +137,7 @@ import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
-import { findSwitchTarget } from "../lib/bot-switch";
+import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
 import { transparentColor } from "../lib/color";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
@@ -395,7 +395,6 @@ function Thread() {
     name,
     messageId,
     threadId,
-    call: callParam,
     readOnly: readOnlyParam,
   } = useLocalSearchParams<{
     botId?: string;
@@ -403,8 +402,6 @@ function Thread() {
     name?: string;
     messageId?: string;
     threadId?: string;
-    /** "1" when the caller switched here from another bot's call: ring this bot at once. */
-    call?: string;
     readOnly?: string;
   }>();
   const readOnly = readOnlyParam === "1";
@@ -1751,17 +1748,13 @@ function Thread() {
 
   /** Opens another bot's chat in place of this one, ringing it when the switch came from a call. */
   function openBotChat(target: MobileBot, ring: boolean): void {
-    router.replace({
-      pathname: "/thread",
-      params: { botId: target.id, name: target.name, ...(ring ? { call: "1" } : {}) },
-    });
+    if (ring) ringOnArrival(target.id);
+    router.replace({ pathname: "/thread", params: { botId: target.id, name: target.name } });
   }
 
   useEffect(() => {
-    if (callParam !== "1" || !botId) return;
-    router.setParams({ call: undefined });
-    void startVoiceCall(true);
-  }, [callParam, botId]);
+    if (botId && takeRingOnArrival(botId)) void startVoiceCall(true);
+  }, [botId]);
 
   const attachActions: MenuAction[] = [
     { id: "library", title: t("Photo library"), image: "photo.on.rectangle" },

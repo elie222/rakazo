@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSwitchTarget } from "./bot-switch";
+import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "./bot-switch";
 
 const bots = [
   { id: "bot-1", name: "Ada" },
@@ -41,5 +41,24 @@ describe("findSwitchTarget", () => {
     expect(findSwitchTarget("switch to Zelda", bots)).toBeUndefined();
     expect(findSwitchTarget("tell Max I said hi", bots)).toBeUndefined();
     expect(findSwitchTarget("should we switch to Max's plan for the launch", bots)).toBeUndefined();
+  });
+});
+
+describe("ringOnArrival", () => {
+  it("rings only the requested bot, once, and only soon after the hand-over", () => {
+    ringOnArrival("max", 1_000);
+    expect(takeRingOnArrival("max", 2_000)).toBe(true);
+    expect(takeRingOnArrival("max", 2_000)).toBe(false);
+
+    ringOnArrival("max", 1_000);
+    expect(takeRingOnArrival("riley", 2_000)).toBe(false);
+    expect(takeRingOnArrival("max", 2_000)).toBe(false);
+
+    ringOnArrival("max", 1_000);
+    expect(takeRingOnArrival("max", 12_000)).toBe(false);
+  });
+
+  it("does not ring without a hand-over", () => {
+    expect(takeRingOnArrival("max")).toBe(false);
   });
 });

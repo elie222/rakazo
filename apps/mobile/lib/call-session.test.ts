@@ -625,6 +625,27 @@ describe("mobile call session", () => {
     expect(fake.recordings).toHaveLength(1);
   });
 
+  it("keeps the microphone closed until the opening cue ends and the greeting starts", async () => {
+    const cue = deferred<void>();
+    const fake = fakes();
+    const startedCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false, greeting: "Hello, Ada here." },
+      { ...fake.deps, cue: () => cue.promise },
+    );
+    await flush();
+
+    setCallProviderTranscribe(true, startedCallId);
+    toggleMute();
+    toggleMute();
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+    expect(fake.spoken).toEqual([]);
+
+    cue.resolve();
+    await flush();
+    expect(fake.spoken).toEqual(["Hello, Ada here."]);
+  });
+
   it("ignores a transcribe probe for another call and resumes listening for this one", async () => {
     const fake = fakes();
     const startedCallId = startCall(
