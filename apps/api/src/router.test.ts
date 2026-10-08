@@ -3380,19 +3380,38 @@ describe("routines.update", () => {
     createdAt: new Date("2026-09-01T00:00:00.000Z"),
   };
 
-  function fixture(botArchived: boolean, archivedBeforeWrite = false) {
+  function fixture(
+    botArchived: boolean,
+    archivedBeforeWrite = false,
+    model: Record<string, unknown> = {},
+  ) {
+    const savedRoutine = { ...routine, ...model };
     const update = vi.fn(async (args: { data: Record<string, unknown> }) => {
       if (archivedBeforeWrite) throw Object.assign(new Error("not found"), { code: "P2025" });
       return {
-        ...routine,
+        ...savedRoutine,
         ...Object.fromEntries(Object.entries(args.data).filter(([, value]) => value !== undefined)),
       };
     });
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      spaceModelPreference: {
+        findMany: vi.fn(async () => []),
+        findFirst: vi.fn(async () => ({ id: "preference-1" })),
+      },
+      userModelCredential: {
+        findMany: vi.fn(async () => [
+          {
+            id: "credential-1",
+            provider: "openai-compatible",
+            apiKey: "fake-key",
+            userId: actor.userId,
+          },
+        ]),
+      },
       routine: {
         findFirst: vi.fn(async (args: { where: { bot?: { archivedAt: null } } }) =>
-          botArchived && args.where.bot?.archivedAt === null ? null : routine,
+          botArchived && args.where.bot?.archivedAt === null ? null : savedRoutine,
         ),
         update,
       },
@@ -3410,7 +3429,7 @@ describe("routines.update", () => {
         jobs: { enqueue, cancel: vi.fn(async () => undefined) },
       } as unknown as RouterDeps),
     );
-    const call = () =>
+    const call = (patch: Record<string, unknown> = {}) =>
       handler.handle(
         new Request("http://127.0.0.1/rpc/routines/update", {
           method: "POST",
@@ -3420,6 +3439,7 @@ describe("routines.update", () => {
               routineId: "routine-1",
               active: true,
               runAt: new Date(Date.now() + 60_000).toISOString(),
+              ...patch,
             },
           }),
         }),
@@ -3454,6 +3474,48 @@ describe("routines.update", () => {
     const { response } = await call();
     expect(response.status).toBe(404);
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  const ownModel = {
+    modelProvider: "openai-compatible",
+    modelId: "old-model",
+    thinkingLevel: "high",
+  };
+
+  it("leaves model columns out of unrelated updates", async () => {
+    const { call, update } = fixture(false, false, ownModel);
+    expect((await call({ name: "Renamed" })).response.status).toBe(200);
+    const data = update.mock.calls[0]![0].data;
+    for (const column of ["modelProvider", "modelId", "thinkingLevel"])
+      expect(data).not.toHaveProperty(column);
+  });
+
+  it("merges a model-id-only patch with the saved provider and clears old thinking", async () => {
+    const { call, update } = fixture(false, false, ownModel);
+    expect((await call({ modelId: "new-model" })).response.status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({
+      modelProvider: "openai-compatible",
+      modelId: "new-model",
+      thinkingLevel: null,
+    });
+  });
+
+  it("keeps an explicitly supplied thinking level when changing models", async () => {
+    const { call, update } = fixture(false, false, ownModel);
+    expect((await call({ modelId: "new-model", thinkingLevel: "low" })).response.status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({ thinkingLevel: "low" });
+  });
+
+  it("rejects a partial patch whose resulting model is incomplete", async () => {
+    const { call, update } = fixture(false, false, ownModel);
+    expect((await call({ modelId: null })).response.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("rejects thinking without a resulting model", async () => {
+    const { call, update } = fixture(false);
+    expect((await call({ thinkingLevel: "high" })).response.status).toBe(400);
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

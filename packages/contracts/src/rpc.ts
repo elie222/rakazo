@@ -60,7 +60,6 @@ import {
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   RoutineSchema,
-  routineModelIssues,
   ScratchpadItemSchema,
   ScratchpadItemStatusSchema,
   ServerUpdateCheckSchema,
@@ -513,9 +512,6 @@ export const appContract = {
             runAt: IsoDate.optional(),
           })
           .superRefine((value, ctx) => {
-            if (value.modelProvider !== undefined || value.modelId !== undefined) {
-              routineModelIssues(value, ctx);
-            }
             if (
               value.crons &&
               value.crons.length === 0 &&

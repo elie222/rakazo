@@ -3266,13 +3266,29 @@ export function createRouter(deps: RouterDeps) {
           input.modelProvider === undefined ? existing.modelProvider : input.modelProvider;
         const modelId = input.modelId === undefined ? existing.modelId : input.modelId;
         const hasModel = Boolean(modelProvider && modelId);
-        // A thinking level belongs to a model, so dropping the model drops it too.
+        const modelChanged =
+          modelProvider !== existing.modelProvider || modelId !== existing.modelId;
+        const touchesModel =
+          input.modelProvider !== undefined ||
+          input.modelId !== undefined ||
+          input.thinkingLevel !== undefined;
+        if (Boolean(modelProvider) !== Boolean(modelId)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Model provider and model id must both be set or both cleared",
+          });
+        }
+        if (input.thinkingLevel && !hasModel) {
+          throw new ORPCError("BAD_REQUEST", { message: "Pick a model for this routine first" });
+        }
+        // A thinking level belongs to a model, so changing the model resets it.
         const thinkingLevel = !hasModel
           ? null
           : input.thinkingLevel === undefined
-            ? existing.thinkingLevel
+            ? modelChanged
+              ? null
+              : existing.thinkingLevel
             : input.thinkingLevel;
-        if (modelProvider !== existing.modelProvider || modelId !== existing.modelId) {
+        if (modelChanged) {
           await assertRoutineModel(deps, context.actor, { modelProvider, modelId });
         }
         if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider) {
@@ -3348,9 +3364,7 @@ export function createRouter(deps: RouterDeps) {
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
-              modelProvider,
-              modelId,
-              thinkingLevel,
+              ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
               nextRunAt,
             },
           })
