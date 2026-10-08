@@ -414,7 +414,7 @@ export function RoutineEditor({
                 />
               ) : null}
             </PopoverTrigger>
-            <PopoverContent align="end" className="max-w-[calc(100vw-2rem)] p-4">
+            <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-4">
               <label htmlFor={`${fieldId}-model`} className="block text-sm text-muted-foreground">
                 <Trans>Model</Trans>
                 <NativeSelect

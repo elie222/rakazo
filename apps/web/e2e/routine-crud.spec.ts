@@ -164,8 +164,6 @@ test("a routine runs on the bot's model until another is picked", async ({ page 
     thinkingLevel: "low",
     reasoning: true,
   });
-  await page.reload();
-  await page.getByTitle("Agent computer").click();
   await page.getByRole("button", { name: /Model check/ }).click();
   await page.getByRole("button", { name: "Advanced", exact: true }).click();
   await modelSelect.selectOption("openai-compatible::llama-3.3-70b");

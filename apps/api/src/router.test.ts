@@ -3500,6 +3500,16 @@ describe("routines.update", () => {
     });
   });
 
+  it("merges a provider-only patch with the saved model and clears old thinking", async () => {
+    const { call, update } = fixture(false, false, { ...ownModel, modelProvider: "openrouter" });
+    expect((await call({ modelProvider: "openai-compatible" })).response.status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({
+      modelProvider: "openai-compatible",
+      modelId: "old-model",
+      thinkingLevel: null,
+    });
+  });
+
   it("keeps an explicitly supplied thinking level when changing models", async () => {
     const { call, update } = fixture(false, false, ownModel);
     expect((await call({ modelId: "new-model", thinkingLevel: "low" })).response.status).toBe(200);
