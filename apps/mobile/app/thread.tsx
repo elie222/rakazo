@@ -96,6 +96,7 @@ import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artif
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
 import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
+import { MessageHighlight } from "../components/message-highlight";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { ReplyDismissButton } from "../components/reply-dismiss-button";
@@ -2041,7 +2042,6 @@ function Thread() {
             : undefined
         }
         style={{
-          backgroundColor: highlightedMessageId === message.id ? tokens.muted : undefined,
           marginTop: 12,
           width: "100%",
         }}
@@ -2076,10 +2076,12 @@ function Thread() {
                   : "90%",
               flex: activityBotId ? 1 : undefined,
               flexShrink: 1,
+              alignItems: message.role === "user" ? "flex-end" : "stretch",
             }}
           >
             {isPeerReceiptBlocks(message.blocks) ? null : (
               <ReplyLine
+                role={message.role}
                 targetId={message.replyToMessageId}
                 quote={message.replyQuote}
                 preview={message.replyPreview}
@@ -2108,6 +2110,7 @@ function Thread() {
                   botId={botId ?? snap?.members?.[0]?.botId ?? ""}
                   groupId={groupId}
                   message={message}
+                  highlighted={highlightedMessageId === message.id}
                   botName={displayName}
                   bots={mentionBots}
                   members={snap?.members}
@@ -3235,7 +3238,9 @@ const MessageBubble = memo(function MessageBubble({
   onPreviewMarkdown,
   onPreviewImage,
   actionProps,
+  highlighted,
 }: {
+  highlighted: boolean;
   botId: string;
   botName?: string;
   bots: MobileBot[];
@@ -3829,6 +3834,7 @@ const MessageBubble = memo(function MessageBubble({
             onAccessibilityAction={actionProps.onAccessibilityAction}
           />
         ))}
+        <MessageHighlight active={highlighted} />
       </View>
     );
   }
@@ -3853,6 +3859,7 @@ const MessageBubble = memo(function MessageBubble({
           speaker={index === firstContent ? speaker : undefined}
           speakerColor={index === firstContent ? speakerColor : undefined}
           actionProps={actionProps}
+          highlighted={highlighted}
         />
       ))}
       {choiceBlocks.map((block, index) => (
@@ -3894,7 +3901,9 @@ function MessageTextCard({
   speaker,
   speakerColor,
   actionProps,
+  highlighted,
 }: {
+  highlighted: boolean;
   message: MobileMessage;
   speaker?: string;
   speakerColor?: string;
@@ -3935,6 +3944,7 @@ function MessageTextCard({
         colorScheme={colorScheme}
         streaming={message.id.startsWith("progress:")}
       />
+      <MessageHighlight active={highlighted} />
     </Pressable>
   );
 }

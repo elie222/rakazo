@@ -72,11 +72,14 @@ export function ReplyLine({
   if (isPeerReceiptBlocks(message.blocks)) return null;
   if (!message.replyToMessageId && message.replyQuote == null) return null;
   const unavailable = message.replyPreview === null || !message.replyToMessageId;
+  const alignment = message.role === "user" ? "text-right" : "text-left";
+  // Let the bubble size the column; the excerpt only fills that measured width.
+  const className = `mb-1 block w-0 min-w-full truncate text-xs text-muted-foreground ${alignment}`;
   if (unavailable)
     return (
       <div
         data-testid="reply-parent-preview"
-        className="mb-1 truncate text-xs text-muted-foreground"
+        className={className}
       >{t`Original message unavailable`}</div>
     );
   const text = replyLineText(message.replyQuote, message.replyPreview?.text, fallbackText);
@@ -89,7 +92,7 @@ export function ReplyLine({
       onClick={() => {
         if (message.replyToMessageId) onJump?.(message.replyToMessageId);
       }}
-      className="mb-1 block max-w-full truncate text-start text-xs text-muted-foreground hover:text-foreground"
+      className={`${className} hover:text-foreground`}
       dir="auto"
     >
       ↩ {author}: {text}

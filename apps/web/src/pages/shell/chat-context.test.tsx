@@ -117,3 +117,14 @@ it("keeps internal peer receipt replies out of the transcript", () => {
   );
   expect(container.textContent).toBe("");
 });
+
+it.each(["user", "bot"] as const)(
+  "keeps the %s reply on its message side without sizing the bubble column",
+  (role) => {
+    act(() => root.render(<ReplyLine message={{ ...message, role }} author="Helper" />));
+    const line = container.querySelector("button")!;
+    expect(line.classList.contains(role === "user" ? "text-right" : "text-left")).toBe(true);
+    for (const className of ["w-0", "min-w-full", "truncate"])
+      expect(line.classList.contains(className)).toBe(true);
+  },
+);
