@@ -12,7 +12,11 @@ const voices = vi.hoisted(() => ({
   }>,
 }));
 
-const device = vi.hoisted(() => ({ platform: "ios", locale: "en-US" }));
+const device = vi.hoisted(() => ({
+  platform: "ios",
+  locale: "en-US",
+  regionCode: null as string | null,
+}));
 vi.mock("react-native", () => ({
   Platform: {
     get OS() {
@@ -20,7 +24,9 @@ vi.mock("react-native", () => ({
     },
   },
 }));
-vi.mock("expo-localization", () => ({ getLocales: () => [{ languageTag: device.locale }] }));
+vi.mock("expo-localization", () => ({
+  getLocales: () => [{ languageTag: device.locale, regionCode: device.regionCode }],
+}));
 
 const ASSIGNMENTS = "doc/rakazo-bot-voices.json";
 
@@ -59,6 +65,7 @@ beforeEach(() => {
   voices.list = [];
   device.platform = "ios";
   device.locale = "en-US";
+  device.regionCode = null;
 });
 
 describe("deviceVoices", () => {
@@ -129,6 +136,71 @@ describe("deviceVoices", () => {
 });
 
 describe("voiceForBot", () => {
+  it.each(["en-IL", "en"])(
+    "falls back from %s to US English and shares within that tier",
+    async (locale) => {
+      device.locale = locale;
+      device.regionCode = "IL";
+      voices.list = [
+        { identifier: "fred", language: "en-US" },
+        { identifier: "kathy", language: "en-US" },
+        { identifier: "samantha", language: "en-US" },
+        { identifier: "karen", language: "en-AU" },
+        { identifier: "daniel", language: "en-GB" },
+        { identifier: "moira", language: "en-IE" },
+        { identifier: "rishi", language: "en-IN" },
+        { identifier: "tessa", language: "en-ZA", quality: "Enhanced" },
+      ];
+      const assigned = [];
+      for (const botId of ["bot-a", "bot-b", "bot-c", "bot-d"]) {
+        const voice = await voiceForBot(botId);
+        expect(["fred", "kathy", "samantha"]).toContain(voice);
+        assigned.push(voice);
+      }
+      expect(new Set(assigned.slice(0, 3)).size).toBe(3);
+      expect(await deviceVoices()).toHaveLength(8);
+    },
+  );
+
+  it.each([
+    { locale: "EN-gb", region: null },
+    { locale: "en", region: "gb" },
+  ])(
+    "matches the device locale or region case-insensitively ($locale, $region)",
+    async ({ locale, region }) => {
+      device.locale = locale;
+      device.regionCode = region;
+      voices.list = [
+        { identifier: "us", language: "en-US" },
+        { identifier: "gb", language: "en-GB" },
+      ];
+      expect(await voiceForBot("bot-a")).toBe("gb");
+      expect(await voiceForBot("bot-b")).toBe("gb");
+    },
+  );
+
+  it.each([
+    ["de-AT", "de-DE"],
+    ["ru-KZ", "ru-RU"],
+    ["zh-SG", "zh-CN"],
+    ["fr-CA", "fr-FR"],
+    ["es-MX", "es-ES"],
+    ["ja", "ja-JP"],
+  ])("uses the primary region for %s", async (locale, primary) => {
+    device.locale = locale;
+    voices.list = [
+      { identifier: "other", language: `${locale.split("-")[0]}-ZZ`, quality: "Enhanced" },
+      { identifier: "primary", language: primary },
+    ];
+    expect(await voiceForBot("bot-a")).toBe("primary");
+  });
+
+  it("skips the primary-region tier for an unmapped language", async () => {
+    device.locale = "pt-AO";
+    voices.list = [{ identifier: "brazil", language: "pt-BR" }];
+    expect(await voiceForBot("bot-a")).toBe("brazil");
+  });
+
   it("prefers the full device locale over a different accent and higher quality", async () => {
     device.locale = "en-GB";
     voices.list = [

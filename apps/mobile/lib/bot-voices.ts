@@ -87,6 +87,16 @@ function isNoveltyVoice(voice: { identifier: string; name?: string }): boolean {
   return NOVELTY_VOICE_NAMES.has(noveltyKey(voice));
 }
 
+const PRIMARY_LOCALES: Readonly<Record<string, string>> = {
+  en: "en-us",
+  de: "de-de",
+  ru: "ru-ru",
+  zh: "zh-cn",
+  fr: "fr-fr",
+  es: "es-es",
+  ja: "ja-jp",
+};
+
 export async function deviceVoices(): Promise<Voice[]> {
   const Speech = await loadSpeech();
   const locale = getLocales()[0]?.languageTag ?? getActiveUiLocale();
@@ -123,9 +133,22 @@ export function voiceForBot(botId: string): Promise<string | undefined> {
         .filter(([id]) => id !== botId)
         .map(([, voice]) => voice),
     );
-    const locale = getLocales()[0]?.languageTag.toLowerCase();
-    const sameLocale = available.filter((voice) => voice.language.toLowerCase() === locale);
-    const candidates = sameLocale.length ? sameLocale : available;
+    const deviceLocale = getLocales()[0];
+    const locale = (deviceLocale?.languageTag ?? getActiveUiLocale()).toLowerCase();
+    const region = deviceLocale?.regionCode?.toLowerCase();
+    const sameLocale = available.filter((voice) => {
+      const tag = voice.language.toLowerCase();
+      return tag === locale || (region && tag.split("-").slice(1).includes(region));
+    });
+    const primaryLocale = PRIMARY_LOCALES[locale.split("-")[0] ?? ""];
+    const primaryRegion = available.filter(
+      (voice) => voice.language.toLowerCase() === primaryLocale,
+    );
+    const candidates = sameLocale.length
+      ? sameLocale
+      : primaryRegion.length
+        ? primaryRegion
+        : available;
     const unused = candidates.filter((voice) => !taken.has(voice.identifier));
     const pool = unused.length ? unused : candidates;
     const higherQuality = pool.filter(

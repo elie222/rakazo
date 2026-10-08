@@ -333,7 +333,7 @@ export default function BotSettingsScreen() {
       accessibilityRole={!voiceError && voices.length > 1 ? "button" : undefined}
       accessibilityValue={{ text: voiceError ?? currentVoiceLabel }}
       accessible={!voiceError}
-      style={styles.row}
+      style={[styles.row, styles.voiceRow]}
     >
       <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>{t("Device voice")}</Text>
       <Text
@@ -576,5 +576,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: { fontSize: 14, flex: 1 },
+  voiceRow: { width: "100%" },
   rowValue: { fontSize: 14, flexShrink: 1, textAlign: "right" },
 });
