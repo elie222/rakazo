@@ -11,8 +11,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
+import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark } from "../../components/row-accessories";
-import { SettingsGroup, SettingsSwitch } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import {
@@ -425,20 +425,30 @@ export default function VoiceSettings() {
             onPress={() => void testVoice()}
           />
         ) : null}
-        <SettingsGroup>
-          <SettingsSwitch
-            label={t("Call sounds")}
-            value={callSounds === true}
-            disabled={callSounds === null}
-            onChange={(next) => void toggleCallSounds(next)}
-          />
-          <SettingsSwitch
-            label={t("Waiting sound")}
-            value={waitSound === true}
-            disabled={waitSound === null}
-            onChange={(next) => void toggleWaitSound(next)}
-          />
-        </SettingsGroup>
+        <View style={styles.group}>
+          <View style={styles.groupRow}>
+            <View style={styles.rowCopy}>
+              <Text style={styles.cardTitle}>{t("Call sounds")}</Text>
+            </View>
+            <NativeSwitch
+              accessibilityLabel={t("Call sounds")}
+              value={callSounds === true}
+              disabled={callSounds === null}
+              onValueChange={(next) => void toggleCallSounds(next)}
+            />
+          </View>
+          <View style={[styles.groupRow, styles.groupDivider]}>
+            <View style={styles.rowCopy}>
+              <Text style={styles.cardTitle}>{t("Waiting sound")}</Text>
+            </View>
+            <NativeSwitch
+              accessibilityLabel={t("Waiting sound")}
+              value={waitSound === true}
+              disabled={waitSound === null}
+              onValueChange={(next) => void toggleWaitSound(next)}
+            />
+          </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
