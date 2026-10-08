@@ -1,11 +1,15 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, Text, View, type ViewProps } from "react-native";
+import type { ViewProps } from "react-native";
+import { Linking, Text, View } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
+import { useThreadReadOnly } from "../lib/thread-read-only";
+import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "./native-action-button";
 
 export function AppConnectCard({
   botId,
@@ -19,6 +23,7 @@ export function AppConnectCard({
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
+  const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const [busy, setBusy] = useState(false);
   const [localStatus, setLocalStatus] = useState<"pending" | "connected">(block.status);
@@ -30,6 +35,7 @@ export function AppConnectCard({
   useEffect(() => () => connectionAttempt.current?.abort(), []);
 
   async function authorize() {
+    if (readOnly) return;
     connectionAttempt.current?.abort();
     const controller = new AbortController();
     connectionAttempt.current = controller;
@@ -70,7 +76,7 @@ export function AppConnectCard({
       if (!controller.signal.aborted) setError(t("Authorization timed out. Please try again."));
     } catch (reason) {
       if (!controller.signal.aborted) {
-        setError(reason instanceof Error ? reason.message : t("Could not authorize this app"));
+        setError(errorText(reason, t("Could not authorize this app")));
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -86,9 +92,7 @@ export function AppConnectCard({
       style={{
         width: "90%",
         borderRadius: 18,
-        borderWidth: 1,
-        borderColor: tokens.border,
-        backgroundColor: tokens.card,
+        backgroundColor: native.fill,
         paddingHorizontal: 16,
         paddingVertical: 14,
         gap: 8,
@@ -100,7 +104,7 @@ export function AppConnectCard({
             width: 40,
             height: 40,
             borderRadius: 10,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fillPressed,
             alignItems: "center",
             justifyContent: "center",
           }}
@@ -121,34 +125,20 @@ export function AppConnectCard({
             {view.description}
           </Text>
         </View>
-        {view.showAuthorize ? (
-          <Pressable
-            accessibilityRole="button"
+        {view.showAuthorize && !readOnly ? (
+          <NativeActionButton
+            label={view.actionLabel}
             accessibilityLabel={t("Authorize {name}", { name: block.name })}
-            disabled={busy}
+            fill={false}
+            busy={busy}
+            style={{ alignSelf: "center" }}
             onPress={() => void authorize()}
-            style={{
-              minHeight: 36,
-              paddingHorizontal: 14,
-              borderRadius: 999,
-              backgroundColor: native.fillPressed,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            {busy ? (
-              <ActivityIndicator color={native.label} />
-            ) : (
-              <Text style={{ color: native.label, fontSize: 14, fontWeight: "600" }}>
-                {view.actionLabel}
-              </Text>
-            )}
-          </Pressable>
-        ) : (
+          />
+        ) : !view.showAuthorize ? (
           <Text style={{ color: tokens.success, fontSize: 13.5, fontWeight: "600" }}>
             {view.actionLabel}
           </Text>
-        )}
+        ) : null}
       </View>
       {error ? <Text style={{ color: tokens.destructive, fontSize: 13 }}>{error}</Text> : null}
     </View>

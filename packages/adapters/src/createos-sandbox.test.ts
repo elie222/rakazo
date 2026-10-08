@@ -252,7 +252,7 @@ describe("CreateOSSandboxProvider", () => {
     const events = [];
     for await (const event of provider(fixture).execute(
       computer,
-      { argv: ["echo", "hello"], cwd: "notes", env: { TEST_VALUE: "works" } },
+      { argv: ["echo", "hello"], cwd: "notes", env: { TEST_VALUE: "works" }, unsetEnv: ["FAILED"] },
       context,
     )) {
       events.push(event);
@@ -265,6 +265,7 @@ describe("CreateOSSandboxProvider", () => {
     const command = fixture.execs.at(-1)?.command ?? "";
     expect(command).toContain("cd '/home/desktop/rakazo-home/notes'");
     expect(command).toContain("TEST_VALUE='works'");
+    expect(command).toContain("'env' '-u' 'FAILED' '--'");
   });
 
   it("reports a timed-out command as exit code 124", async () => {

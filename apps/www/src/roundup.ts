@@ -313,33 +313,6 @@ export function roundupStructuredData() {
   };
 }
 
-export function roundupVisibleText(): string {
-  return [
-    ROUNDUP_H1,
-    ROUNDUP_DESCRIPTION,
-    ...ROUNDUP_TLDR,
-    ...ROUNDUP_ROWS.flatMap((row) => [
-      row.product,
-      row.license,
-      row.selfHost,
-      row.model,
-      row.price,
-      row.setup,
-      row.chat,
-    ]),
-    ...ROUNDUP_CARDS.flatMap((card) => [card.heading, card.name, ...card.paragraphs]),
-    ...ROUNDUP_TIMELINE.flatMap((item) => [item.when, item.what]),
-    ...ROUNDUP_CHANGELOG,
-    ...ROUNDUP_HOWTO,
-    ...ROUNDUP_FAQ.flatMap((item) => [item.question, item.answer]),
-    `Updated ${COMPARED_ON}.`,
-  ].join(" ");
-}
-
-export function roundupWordCount(): number {
-  return roundupVisibleText().split(/\s+/).filter(Boolean).length;
-}
-
 export function roundupMarkdown(): string {
   const table = [
     `| Product | ${ROUNDUP_COLUMNS.join(" | ")} |`,

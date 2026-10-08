@@ -48,6 +48,7 @@ const structuredData = homeStructuredData({
   inLanguage: LOCALE_HTML_LANG[locale],
   defaultInLanguage: LOCALE_HTML_LANG[DEFAULT_LOCALE],
   availableLanguages,
+  faq: copy.faq.items,
 });
 ---
 
@@ -125,6 +126,22 @@ const structuredData = homeStructuredData({
               <article class="feature-card">
                 <h3>{feature.title}</h3>
                 <p>{feature.body}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
+      <section id="faq" class="section" aria-labelledby="faq-heading">
+        <div class="section-intro">
+          <h2 id="faq-heading" class="section-heading">{copy.faq.heading}</h2>
+        </div>
+        <div class="home-faq">
+          {
+            copy.faq.items.map((item) => (
+              <article>
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
               </article>
             ))
           }

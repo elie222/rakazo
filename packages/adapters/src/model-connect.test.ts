@@ -25,7 +25,11 @@ describe("built-in provider output limits", () => {
       key: "sk-test-key",
       maxTokens: 16384,
     });
-    expect(modelCredentialDto(row, plaintext)).toMatchObject({ maxTokens: 16384, hasKey: true });
+    expect(modelCredentialDto(row, plaintext)).toMatchObject({
+      maxTokens: 16384,
+      hasKey: true,
+      authKind: "api_key",
+    });
     expect(JSON.stringify(modelCredentialDto(row, plaintext))).not.toContain("sk-test-key");
   });
 
@@ -53,6 +57,35 @@ describe("built-in provider output limits", () => {
       key: "sk-test-key",
       maxTokens: 16384,
     });
+  });
+
+  it("validates an output-only update against the saved context window", () => {
+    const previous = buildModelConnectPlaintext({
+      provider: "openrouter",
+      apiKey: "fake-api-key",
+      contextWindow: 16_384,
+      maxTokens: 4096,
+    });
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openrouter", maxTokens: 20_000 }, previous),
+    ).toThrow("Maximum output tokens must leave room for input");
+    expect(
+      parseModelSecret(
+        buildModelConnectPlaintext({ provider: "openrouter", maxTokens: 12_288 }, previous),
+      ),
+    ).toMatchObject({ contextWindow: 16_384, maxTokens: 12_288 });
+  });
+
+  it("validates a context-only update against the saved output limit", () => {
+    const previous = buildModelConnectPlaintext({
+      provider: "openrouter",
+      apiKey: "fake-api-key",
+      contextWindow: 32_768,
+      maxTokens: 8192,
+    });
+    expect(() =>
+      buildModelConnectPlaintext({ provider: "openrouter", contextWindow: 4096 }, previous),
+    ).toThrow("Maximum output tokens must leave room for input");
   });
 
   it("clears the limit without replacing the key", () => {
@@ -92,6 +125,17 @@ describe("built-in provider output limits", () => {
         buildModelConnectPlaintext({ provider: "openai-codex", maxTokens: 8192 }, previous),
       ),
     ).toEqual({ kind: "oauth", credential, maxTokens: 8192 });
+    expect(
+      modelCredentialDto(
+        {
+          id: "cred-oauth",
+          provider: "openai-codex",
+          label: "ChatGPT",
+          isDefault: false,
+        },
+        previous,
+      ).authKind,
+    ).toBe("oauth");
   });
 
   it("rejects a limit update when no credential exists", () => {
@@ -268,6 +312,7 @@ describe("modelCredentialDto", () => {
       hasKey: false,
       isDefault: true,
       supportsImages: false,
+      authKind: "openai_compatible",
       baseUrl: "https://example.invalid/v1",
       modelId: "qwen3-4b",
       reasoning: false,

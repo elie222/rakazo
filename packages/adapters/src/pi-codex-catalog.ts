@@ -1,4 +1,5 @@
 import type { OAuthCredential } from "@earendil-works/pi-ai";
+import type { SecretStore } from "@rakazo/adapter-kit";
 import type { ThinkingLevel } from "@rakazo/contracts";
 import { ThinkingLevelSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -7,7 +8,6 @@ import type { PiCatalogEntry } from "./pi-models.js";
 import { listPiCatalog } from "./pi-models.js";
 import type { StoredModelSecret } from "./pi-oauth.js";
 import { CHATGPT_OAUTH_PROVIDER, oauthCredentialAccountId, parseModelSecret } from "./pi-oauth.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 
 /**
  * The ChatGPT backend reports which Codex models a subscription account can call.
@@ -444,7 +444,7 @@ export async function codexLiveListsModel(
  */
 export async function codexLiveCatalogsForSpace(
   prisma: PrismaClient,
-  secretStore: Pick<EncryptedSecretStore, "load">,
+  secretStore: Pick<SecretStore, "load">,
   scope: { userId: string; spaceId: string },
   auth: CodexCatalogSpaceAuth,
   catalog: CodexLiveCatalog,
@@ -461,7 +461,7 @@ export async function codexLiveCatalogsForSpace(
   for (const secret of secrets) {
     let credential: OAuthCredential | undefined;
     try {
-      const parsed = parseModelSecret(secretStore.load(secret.ciphertext, secret.id));
+      const parsed = parseModelSecret(await secretStore.load(secret.ciphertext, secret.id));
       credential = parsed.kind === "oauth" ? parsed.credential : undefined;
     } catch {
       // Unreadable secrets keep static behavior.

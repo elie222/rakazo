@@ -136,7 +136,7 @@ describe("Pi approval pause", () => {
     fakeAgentState.toolCallId = "call-2";
     const args = { collection: "notes", title: "Result", body: "Done" };
     const executeTool = vi.fn(async (_tool, toolArgs, toolCallId) => {
-      expect(toolCallId).toBe("call-2");
+      expect(toolCallId).toBe(JSON.stringify(["pi-tool", "main", "call-2"]));
       expect(approvalEffectKey("run", "destination.write", toolArgs)).toBe(
         approvalEffectKey("run", "destination.write", args),
       );

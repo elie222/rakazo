@@ -221,3 +221,40 @@ describe("loadEnv", () => {
     );
   });
 });
+
+describe("OIDC environment", () => {
+  const oidc = {
+    OIDC_ISSUER: "https://identity.example.test",
+    OIDC_CLIENT_ID: "fake-client",
+    OIDC_CLIENT_SECRET: "fake-secret",
+  };
+  it("requires all credentials and an HTTPS issuer", () => {
+    for (const [key, value] of Object.entries(oidc))
+      expect(() => loadEnv({ ...base, [key]: value })).toThrow(/configured together/);
+    expect(() =>
+      loadEnv({ ...base, ...oidc, OIDC_ISSUER: "http://identity.example.test" }),
+    ).toThrow(/HTTPS/);
+  });
+  it.each(["identity.example.test", "/issuer", "https://"])(
+    "reports invalid issuer %s as a configuration error",
+    (issuer) => {
+      expect(() => loadEnv({ ...base, ...oidc, OIDC_ISSUER: issuer })).toThrow(
+        "OIDC_ISSUER must be an HTTPS issuer URL",
+      );
+    },
+  );
+  it("guards password-only lockout without contacting discovery", () => {
+    expect(() => loadEnv({ ...base, AUTH_PASSWORD_ENABLED: "false" })).toThrow(/requires OIDC/);
+    expect(loadEnv({ ...base, ...oidc, AUTH_PASSWORD_ENABLED: "false" }).passwordAuth).toBe(false);
+  });
+  it("defaults to SSO with no policy bypass", () => {
+    expect(loadEnv({ ...base, ...oidc }).oidc).toMatchObject({
+      name: "SSO",
+      allowSignupBypass: false,
+      scopes: ["openid", "email", "profile"],
+    });
+    expect(
+      loadEnv({ ...base, ...oidc, OIDC_ALLOW_SIGNUP_BYPASS: "true" }).oidc?.allowSignupBypass,
+    ).toBe(true);
+  });
+});

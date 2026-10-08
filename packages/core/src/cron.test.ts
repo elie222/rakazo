@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { CronPreset } from "./cron.js";
 import {
-  type CronPreset,
   cronFromPreset,
   describeCronPreset,
   formatCron,
@@ -127,6 +127,40 @@ describe("formatCron", () => {
       lead: "Every hour",
       detail: "",
     });
+  });
+
+  it("names any single weekday", () => {
+    expect(formatCron("0 6 * * 0")).toBe("Every Sunday at 6:00 AM");
+    expect(formatCron("0 6 * * 7")).toBe("Every Sunday at 6:00 AM");
+    expect(formatCron("30 18 * * 2")).toBe("Every Tuesday at 6:30 PM");
+    expect(formatCron("0 9 * * 3")).toBe("Every Wednesday at 9:00 AM");
+    expect(formatCron("0 9 * * 4")).toBe("Every Thursday at 9:00 AM");
+    expect(formatCron("0 17 * * 5")).toBe("Every Friday at 5:00 PM");
+    expect(formatCron(" 0 0 * * 6 ")).toBe("Every Saturday at 12:00 AM");
+  });
+
+  it("keeps the other shapes", () => {
+    expect(formatCron("0 6 * * *")).toBe("Every day at 6:00 AM");
+    expect(formatCron("0 * * * *")).toBe("Every hour");
+    expect(formatCron("0 9 1 * *")).toBe("Monthly on the 1st at 9:00 AM");
+    expect(formatCron("0 6 * * 6,0")).toBe("Cron 0 6 * * 6,0");
+    expect(formatCron("0 6 1 * 0")).toBe("Cron 0 6 1 * 0");
+    expect(presetFromCron("0 6 * * 0")).toMatchObject({ freq: "Advanced", cron: "0 6 * * 0" });
+  });
+
+  it.each(["* * 2", "* * 1", "* * 7", "* * *", "* * 1-5", "1 * *"])(
+    "falls back to cron for out-of-range clocks with %s",
+    (fields) => {
+      for (const clock of ["60 24", "60 9", "0 24"]) {
+        const cron = `${clock} ${fields}`;
+        expect(formatCron(cron)).toBe(`Cron ${cron}`);
+      }
+    },
+  );
+
+  it("formats the clock boundaries", () => {
+    expect(formatCron("0 0 * * 2")).toBe("Every Tuesday at 12:00 AM");
+    expect(formatCron("59 23 * * 2")).toBe("Every Tuesday at 11:59 PM");
   });
 });
 

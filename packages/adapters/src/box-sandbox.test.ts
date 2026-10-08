@@ -1,4 +1,5 @@
 import type { Command200Response } from "@asciidev/box-sdk";
+import { parse } from "shell-quote";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BoxSandboxProvider, type BoxSandboxSdk, isUnrecoverableBoxError } from "./box-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
@@ -50,7 +51,7 @@ describe("BoxSandboxProvider", () => {
     const events = [];
     for await (const event of provider.execute(
       computer,
-      { argv: ["echo", "hello"], cwd: "notes", env: { TEST_VALUE: "works" } },
+      { argv: ["echo", "hello"], cwd: "notes", env: { TEST_VALUE: "works" }, unsetEnv: ["FAILED"] },
       context,
     )) {
       events.push(event);
@@ -62,6 +63,9 @@ describe("BoxSandboxProvider", () => {
     const executeRequest = fixture.command.mock.calls.find(([request]) =>
       request.commandRequest.command.includes("TEST_VALUE=works"),
     )?.[0];
+    expect(parse(executeRequest?.commandRequest.command ?? "").at(-1)).toBe(
+      "'env' 'TEST_VALUE=works' 'env' '-u' 'FAILED' '--' 'echo' 'hello'",
+    );
     expect(executeRequest?.commandRequest.cwd).toBe("rakazo-home/notes");
 
     await provider.writeFile(

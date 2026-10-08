@@ -8,6 +8,7 @@ import {
   COMPUTER_IMAGE,
   computerBridgeNameFor,
   computerNetworkNameFor,
+  computerNetworkOwnerFor,
   containerNameFor,
   hostComputerUser,
 } from "./computer-spec.js";
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     createContainer: vi.fn(),
     createNetwork: vi.fn(),
     getNetwork: vi.fn(),
+    listNetworks: vi.fn(),
   },
   assertHomeWritable: vi.fn(),
 }));
@@ -33,6 +35,7 @@ vi.mock("dockerode", () => ({
     createContainer = mocks.docker.createContainer;
     createNetwork = mocks.docker.createNetwork;
     getNetwork = mocks.docker.getNetwork;
+    listNetworks = mocks.docker.listNetworks;
   },
 }));
 vi.mock("./home-ownership.js", () => ({ assertComputerHomeWritable: mocks.assertHomeWritable }));
@@ -250,7 +253,7 @@ describe("computer loopback provision lifecycle", () => {
       State: { Running: false },
       NetworkSettings: {
         Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
-        Networks: { [computerNetworkNameFor("bot")]: {} },
+        Networks: { [computerNetworkNameFor("bot")]: { NetworkID: "bot-network" } },
       },
     };
     const existing = {
@@ -271,6 +274,9 @@ describe("computer loopback provision lifecycle", () => {
     mocks.docker.listContainers.mockResolvedValue([{ Id: existing.id }]);
     mocks.docker.createContainer.mockResolvedValue(replacement);
     mocks.docker.createNetwork.mockResolvedValue({});
+    mocks.docker.getNetwork.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({ Id: "bot-network" }),
+    });
 
     const response = await supervisorApp.request("/computers", {
       method: "POST",
@@ -285,6 +291,7 @@ describe("computer loopback provision lifecycle", () => {
     expect(await response.json()).toMatchObject({
       resumed,
       id: resumed ? "existing" : "replacement",
+      ...(resumed ? { started: true } : {}),
     });
     expect(response.status).toBe(200);
     if (resumed) {
@@ -434,6 +441,7 @@ describe("provisioning network rollback", () => {
           Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
         },
         HostConfig: { PortBindings: {} },
+        State: { Running: true },
       }),
     };
     mocks.docker.listContainers.mockResolvedValue([{ Id: existing.id }]);
@@ -498,7 +506,7 @@ describe("restricted egress rekeying", () => {
       State: { Running: false },
       NetworkSettings: {
         Ports: { "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: screenPort }] },
-        Networks: { [botNet]: {} },
+        Networks: { [botNet]: { NetworkID: "bot-network" } },
       },
     };
     const existing = {
@@ -542,7 +550,7 @@ describe("restricted egress rekeying", () => {
     const botNet = computerNetworkNameFor("bot");
     const { existing } = setupExisting(botNet);
     const network = {
-      inspect: vi.fn().mockResolvedValue({ Options: {} }),
+      inspect: vi.fn().mockResolvedValue({ Id: "bot-network", Options: {} }),
       disconnect: vi.fn().mockResolvedValue(undefined),
       connect: vi.fn().mockResolvedValue(undefined),
       remove: vi.fn().mockResolvedValue(undefined),
@@ -563,6 +571,7 @@ describe("restricted egress rekeying", () => {
     const { existing } = setupExisting(botNet);
     const network = {
       inspect: vi.fn().mockResolvedValue({
+        Id: "bot-network",
         Options: { "com.docker.network.bridge.name": computerBridgeNameFor("bot") },
       }),
       disconnect: vi.fn().mockResolvedValue(undefined),
@@ -595,6 +604,7 @@ describe("restricted egress rekeying", () => {
     mocks.docker.getContainer.mockImplementation((id: string) => (id === "peer" ? peer : existing));
     const network = {
       inspect: vi.fn().mockResolvedValue({
+        Id: "bot-network",
         Options: {},
         Containers: { existing: {}, peer: {} },
       }),
@@ -642,6 +652,7 @@ describe("restricted egress rekeying", () => {
     mocks.docker.getContainer.mockImplementation((id: string) => (id === "peer" ? peer : existing));
     const network = {
       inspect: vi.fn().mockResolvedValue({
+        Id: "bot-network",
         Options: {},
         Containers: { existing: {}, peer: {} },
       }),
@@ -1191,5 +1202,588 @@ describe("screen registry across run boundaries", () => {
     expect((await view()).status).toBe(200);
     // The first request after a supervisor start resets; a released screen must not.
     expect(resets()).toBe(1);
+  });
+});
+
+describe("computer network reclaim", () => {
+  const botNet = computerNetworkNameFor("bot");
+  const homePath = () => path.join(process.env.DATA_DIR!, "homes", "bot");
+  const headers = {
+    authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+    "x-rakazo-bot-id": "bot",
+    "x-rakazo-space-id": "space",
+  };
+
+  function botNetwork(attached: string[] = []) {
+    return {
+      inspect: vi.fn().mockResolvedValue({
+        Id: "net-current",
+        Containers: Object.fromEntries(attached.map((id) => [id, {}])),
+      }),
+      connect: vi.fn().mockResolvedValue(undefined),
+      disconnect: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  function computer() {
+    let running = true;
+    const container = {
+      id: "computer",
+      inspect: vi.fn(async () => ({
+        Id: "computer-full-id",
+        Config: {
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        State: { Running: running },
+        // Docker keeps a stopped container's endpoint on its network.
+        NetworkSettings: { Networks: { [botNet]: { NetworkID: "net-current" } } },
+      })),
+      exec: vi.fn(async () => ({
+        start: async () => Readable.from([]),
+        inspect: async () => ({ ExitCode: 0 }),
+      })),
+      stop: vi.fn(async () => {
+        running = false;
+      }),
+    };
+    mocks.docker.getContainer.mockReturnValue(container);
+    networkUsers(["computer-full-id"]);
+    return container;
+  }
+
+  // Containers listed by network, stopped ones included; webIds answers the
+  // Compose web proxy lookup.
+  function networkUsers(ids: string[], webIds: string[] = []) {
+    mocks.docker.listContainers.mockImplementation(
+      async ({ filters }: { filters: { network?: string[] } }) =>
+        (filters.network ? ids : webIds).map((Id) => ({ Id })),
+    );
+  }
+
+  async function stop() {
+    const { supervisorApp } = await import("./index.js");
+    return supervisorApp.request("/computers/computer/stop", { method: "POST", headers });
+  }
+
+  describe("on stop", () => {
+    it("disconnects the stopped computer, then gives its network back to Docker", async () => {
+      const container = computer();
+      const network = botNetwork();
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      expect((await stop()).status).toBe(200);
+      expect(mocks.docker.getNetwork).toHaveBeenCalledWith(botNet);
+      expect(network.disconnect).toHaveBeenCalledExactlyOnceWith({
+        Container: "computer-full-id",
+      });
+      expect(network.remove).toHaveBeenCalledExactlyOnceWith();
+      expect(container.stop.mock.invocationCallOrder[0]).toBeLessThan(
+        network.disconnect.mock.invocationCallOrder[0]!,
+      );
+      expect(network.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+        network.remove.mock.invocationCallOrder[0]!,
+      );
+    });
+
+    it("reclaims a network created before networks carried an owner label", async () => {
+      computer();
+      const network = botNetwork();
+      // Ownership comes from the computer's identity, not from network labels.
+      network.inspect.mockResolvedValue({ Id: "net-legacy", Labels: {}, Containers: {} });
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      expect((await stop()).status).toBe(200);
+      expect(network.remove).toHaveBeenCalledOnce();
+    });
+
+    it("disconnects the Compose screen peers of an isolated computer network", async () => {
+      vi.stubEnv("SANDBOX_SCREEN_NETWORK", "isolated");
+      vi.stubEnv("HOSTNAME", "supervisor");
+      const container = computer();
+      const supervisor = {
+        inspect: vi.fn().mockResolvedValue({
+          Id: "supervisor-id",
+          Config: { Labels: { "com.docker.compose.project": "example" } },
+        }),
+      };
+      mocks.docker.getContainer.mockImplementation((id: string) =>
+        id === "supervisor" ? supervisor : container,
+      );
+      networkUsers(["supervisor-id", "computer-full-id", "web-id"], ["web-id"]);
+      // The web proxy is stopped, so network inspect lists only the supervisor. Left
+      // attached, it could not start again once the network is gone.
+      const network = botNetwork(["supervisor-id"]);
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      expect((await stop()).status).toBe(200);
+      expect(mocks.docker.listContainers).toHaveBeenCalledWith({
+        all: true,
+        filters: { network: [botNet] },
+      });
+      expect(mocks.docker.listContainers).toHaveBeenCalledWith({
+        all: true,
+        filters: {
+          label: ["com.docker.compose.project=example", "com.docker.compose.service=web"],
+        },
+      });
+      expect(network.disconnect.mock.calls).toEqual([
+        [{ Container: "computer-full-id" }],
+        [{ Container: "supervisor-id" }],
+        [{ Container: "web-id" }],
+      ]);
+      expect(network.remove).toHaveBeenCalledOnce();
+    });
+
+    it("keeps the network when a screen peer cannot be disconnected from it", async () => {
+      vi.stubEnv("SANDBOX_SCREEN_NETWORK", "isolated");
+      vi.stubEnv("HOSTNAME", "supervisor");
+      const container = computer();
+      const supervisor = {
+        inspect: vi.fn().mockResolvedValue({ Id: "supervisor-id", Config: { Labels: {} } }),
+      };
+      mocks.docker.getContainer.mockImplementation((id: string) =>
+        id === "supervisor" ? supervisor : container,
+      );
+      networkUsers(["computer-full-id", "supervisor-id"]);
+      const network = botNetwork();
+      network.disconnect.mockImplementation(async ({ Container }: { Container: string }) => {
+        if (Container === "supervisor-id") throw new Error("disconnect failed");
+      });
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      expect((await stop()).status).toBe(200);
+      expect(network.remove).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["running", ["another-container"]],
+      ["stopped", []],
+    ])(
+      "keeps a network that a %s container other than a screen peer uses",
+      async (_state, running) => {
+        computer();
+        networkUsers(["computer-full-id", "another-container"]);
+        const network = botNetwork(running);
+        mocks.docker.getNetwork.mockReturnValue(network);
+
+        expect((await stop()).status).toBe(200);
+        expect(network.disconnect).not.toHaveBeenCalled();
+        expect(network.remove).not.toHaveBeenCalled();
+      },
+    );
+
+    it("keeps the network when the computer cannot be disconnected from it", async () => {
+      computer();
+      const network = botNetwork();
+      network.disconnect.mockRejectedValue(new Error("disconnect failed"));
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      expect((await stop()).status).toBe(200);
+      expect(network.remove).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["logs", new Error("permission denied"), true],
+      ["does not log", new Error("network example has active endpoints"), false],
+    ])("%s a failed removal without failing the stop: %s", async (_case, error, logged) => {
+      computer();
+      const network = botNetwork();
+      network.remove.mockRejectedValue(error);
+      mocks.docker.getNetwork.mockReturnValue(network);
+      const { getLogger } = await import("@rakazo/logging");
+      const logError = vi.spyOn(getLogger(), "error").mockImplementation(() => undefined);
+
+      expect((await stop()).status).toBe(200);
+      if (logged) {
+        expect(logError).toHaveBeenCalledWith("computer network reclaim failed", error);
+      } else {
+        expect(logError).not.toHaveBeenCalled();
+      }
+    });
+
+    it("does not touch the shared internal network", async () => {
+      vi.stubEnv("SANDBOX_SCREEN_NETWORK", "internal");
+      computer();
+      mocks.docker.getNetwork.mockReturnValue(botNetwork());
+
+      expect((await stop()).status).toBe(200);
+      expect(mocks.docker.getNetwork).not.toHaveBeenCalled();
+    });
+
+    it("does not reclaim the network of a computer that failed to stop", async () => {
+      const container = computer();
+      container.stop.mockRejectedValue(new Error("stop failed"));
+      mocks.docker.getNetwork.mockReturnValue(botNetwork());
+
+      expect((await stop()).status).toBe(500);
+      expect(mocks.docker.getNetwork).not.toHaveBeenCalled();
+    });
+
+    it("waits for an in-flight provision of the same bot before reclaiming", async () => {
+      const { supervisorApp } = await import("./index.js");
+      computer();
+      const network = botNetwork();
+      mocks.docker.getNetwork.mockReturnValue(network);
+      mocks.docker.getImage.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({ Id: "image" }),
+      });
+      mocks.docker.listContainers.mockResolvedValue([]);
+      mocks.docker.createNetwork.mockResolvedValue(network);
+      let attach!: () => void;
+      const attached = new Promise<void>((resolve) => {
+        attach = resolve;
+      });
+      mocks.docker.createContainer.mockImplementation(async () => {
+        await attached;
+        return { id: "replacement", start: vi.fn().mockResolvedValue(undefined) };
+      });
+      const provision = supervisorApp.request("/computers", {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ botId: "bot", spaceId: "space", homePath: homePath() }),
+      });
+      await vi.waitFor(() => expect(mocks.docker.createContainer).toHaveBeenCalled());
+
+      const stopped = stop();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(network.inspect).not.toHaveBeenCalled();
+      attach();
+      expect((await provision).status).toBe(200);
+      expect((await stopped).status).toBe(200);
+      expect(network.inspect).toHaveBeenCalled();
+    });
+  });
+
+  it("disconnects a stopped screen peer when the computer is deleted", async () => {
+    vi.stubEnv("SANDBOX_SCREEN_NETWORK", "isolated");
+    vi.stubEnv("HOSTNAME", "supervisor");
+    const container = Object.assign(computer(), { remove: vi.fn().mockResolvedValue(undefined) });
+    const supervisor = {
+      inspect: vi.fn().mockResolvedValue({
+        Id: "supervisor-id",
+        Config: { Labels: { "com.docker.compose.project": "example" } },
+      }),
+    };
+    mocks.docker.getContainer.mockImplementation((id: string) =>
+      id === "supervisor" ? supervisor : container,
+    );
+    networkUsers(["supervisor-id", "web-id"], ["web-id"]);
+    // The web proxy is stopped, so network inspect lists only the supervisor.
+    const network = botNetwork(["supervisor-id"]);
+    mocks.docker.getNetwork.mockImplementation((name: string) =>
+      name === botNet
+        ? network
+        : { inspect: vi.fn().mockRejectedValue(new Error("no such network")) },
+    );
+    const { supervisorApp } = await import("./index.js");
+
+    const response = await supervisorApp.request("/computers/computer", {
+      method: "DELETE",
+      headers,
+    });
+    expect(response.status).toBe(200);
+    expect(container.remove).toHaveBeenCalledWith({ force: true });
+    expect(network.disconnect.mock.calls).toEqual([
+      [{ Container: "supervisor-id" }],
+      [{ Container: "web-id" }],
+    ]);
+    expect(network.remove).toHaveBeenCalledOnce();
+  });
+
+  describe("on startup", () => {
+    async function reclaim() {
+      const { reclaimIdleComputerNetworks } = await import("./index.js");
+      return reclaimIdleComputerNetworks();
+    }
+
+    function ownerLabel() {
+      return computerNetworkOwnerFor(process.env.DATA_DIR!, undefined);
+    }
+
+    it("removes only its own labeled networks that no container uses", async () => {
+      const networks: Record<string, ReturnType<typeof botNetwork>> = {
+        [computerNetworkNameFor("orphan")]: botNetwork(),
+        [computerNetworkNameFor("stopped")]: botNetwork(),
+        [computerNetworkNameFor("renamed")]: botNetwork(),
+      };
+      mocks.docker.listNetworks.mockResolvedValue([
+        { Name: computerNetworkNameFor("orphan"), Labels: { "rakazo.botId": "orphan" } },
+        { Name: computerNetworkNameFor("stopped"), Labels: { "rakazo.botId": "stopped" } },
+        // The bot label must name the network, since it picks the lock.
+        { Name: computerNetworkNameFor("renamed"), Labels: { "rakazo.botId": "other" } },
+      ]);
+      mocks.docker.getNetwork.mockImplementation((name: string) => networks[name]);
+      mocks.docker.listContainers.mockImplementation(
+        async ({ filters }: { filters: { network: string[] } }) =>
+          // A stopped computer still uses its network, though network inspect omits it.
+          filters.network[0] === computerNetworkNameFor("stopped") ? [{ Id: "stopped-id" }] : [],
+      );
+
+      await reclaim();
+      expect(mocks.docker.listNetworks).toHaveBeenCalledWith({
+        filters: { label: [`rakazo.computerOwner=${ownerLabel()}`] },
+      });
+      expect(mocks.docker.listContainers).toHaveBeenCalledWith({
+        all: true,
+        filters: { network: [computerNetworkNameFor("orphan")] },
+      });
+      expect(networks[computerNetworkNameFor("orphan")]!.remove).toHaveBeenCalledOnce();
+      expect(networks[computerNetworkNameFor("stopped")]!.remove).not.toHaveBeenCalled();
+      expect(networks[computerNetworkNameFor("stopped")]!.disconnect).not.toHaveBeenCalled();
+      expect(mocks.docker.getNetwork).not.toHaveBeenCalledWith(computerNetworkNameFor("renamed"));
+    });
+
+    it("disconnects the Compose screen peers from an orphaned isolated network", async () => {
+      vi.stubEnv("SANDBOX_SCREEN_NETWORK", "isolated");
+      vi.stubEnv("HOSTNAME", "supervisor");
+      mocks.docker.getContainer.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({
+          Id: "supervisor-id",
+          Config: { Labels: { "com.docker.compose.project": "example" } },
+          Mounts: [],
+        }),
+      });
+      const network = botNetwork();
+      mocks.docker.getNetwork.mockReturnValue(network);
+      mocks.docker.listNetworks.mockResolvedValue([
+        { Name: botNet, Labels: { "rakazo.botId": "bot" } },
+      ]);
+      mocks.docker.listContainers.mockImplementation(
+        async ({ filters }: { filters: { network?: string[] } }) =>
+          filters.network ? [{ Id: "supervisor-id" }, { Id: "web-id" }] : [{ Id: "web-id" }],
+      );
+
+      await reclaim();
+      expect(network.disconnect.mock.calls).toEqual([
+        [{ Container: "supervisor-id" }],
+        [{ Container: "web-id" }],
+      ]);
+      expect(network.remove).toHaveBeenCalledOnce();
+    });
+
+    it("does nothing in the shared internal topology", async () => {
+      vi.stubEnv("SANDBOX_SCREEN_NETWORK", "internal");
+      await reclaim();
+      expect(mocks.docker.listNetworks).not.toHaveBeenCalled();
+      expect(mocks.docker.getNetwork).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resuming a stopped computer", () => {
+    function stoppedComputer(networks: Record<string, { NetworkID: string }>) {
+      const info = {
+        Image: "image",
+        Config: {
+          User: hostComputerUser(),
+          Labels: { "rakazo.managed": "true", "rakazo.botId": "bot", "rakazo.spaceId": "space" },
+        },
+        HostConfig: { NetworkMode: botNet, PortBindings: {} },
+        State: { Running: false },
+        NetworkSettings: { Networks: networks },
+      };
+      const existing = {
+        id: "existing",
+        inspect: vi.fn().mockResolvedValue(info),
+        start: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      const replacement = { id: "replacement", start: vi.fn().mockResolvedValue(undefined) };
+      mocks.docker.getImage.mockReturnValue({
+        inspect: vi.fn().mockResolvedValue({ Id: "image" }),
+      });
+      mocks.docker.getContainer.mockReturnValue(existing);
+      mocks.docker.listContainers.mockResolvedValue([{ Id: existing.id }]);
+      mocks.docker.createNetwork.mockResolvedValue({ remove: vi.fn() });
+      mocks.docker.createContainer.mockResolvedValue(replacement);
+      return { existing, replacement };
+    }
+
+    async function provision() {
+      const { supervisorApp } = await import("./index.js");
+      return supervisorApp.request("/computers", {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ botId: "bot", spaceId: "space", homePath: homePath() }),
+      });
+    }
+
+    function expectReconnected(
+      existing: { start: ReturnType<typeof vi.fn>; remove: ReturnType<typeof vi.fn> },
+      network: ReturnType<typeof botNetwork>,
+    ) {
+      expect(network.connect).toHaveBeenCalledExactlyOnceWith({ Container: "existing" });
+      expect(existing.start).toHaveBeenCalledOnce();
+      expect(network.connect.mock.invocationCallOrder[0]).toBeLessThan(
+        existing.start.mock.invocationCallOrder[0]!,
+      );
+      expect(existing.remove).not.toHaveBeenCalled();
+      expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    }
+
+    it.each(["open", "restricted"])(
+      "recreates a reclaimed network and reconnects the same container (%s egress)",
+      async (egress) => {
+        vi.stubEnv("SANDBOX_COMPUTER_EGRESS", egress);
+        const { existing } = stoppedComputer({});
+        const network = botNetwork();
+        network.inspect.mockRejectedValue(
+          Object.assign(new Error("no such network"), { statusCode: 404 }),
+        );
+        mocks.docker.getNetwork.mockReturnValue(network);
+
+        const response = await provision();
+        expect(await response.json()).toMatchObject({ id: "existing", resumed: true });
+        expect(mocks.docker.createNetwork).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            Name: botNet,
+            Labels: {
+              "rakazo.computerOwner": computerNetworkOwnerFor(process.env.DATA_DIR!, undefined),
+              "rakazo.botId": "bot",
+            },
+            ...(egress === "restricted"
+              ? { Options: { "com.docker.network.bridge.name": computerBridgeNameFor("bot") } }
+              : {}),
+          }),
+        );
+        expect(network.disconnect).not.toHaveBeenCalled();
+        expectReconnected(existing, network);
+      },
+    );
+
+    it.each([
+      ["removed", Object.assign(new Error("no such network"), { statusCode: 404 })],
+      ["recreated", undefined],
+    ])("moves a stale endpoint onto the network when it was %s under it", async (_case, error) => {
+      const { existing } = stoppedComputer({ [botNet]: { NetworkID: "net-old" } });
+      const network = botNetwork();
+      if (error) network.inspect.mockRejectedValue(error);
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      const response = await provision();
+      expect(await response.json()).toMatchObject({ id: "existing", resumed: true });
+      expect(network.disconnect).toHaveBeenCalledWith({ Container: "existing", Force: true });
+      expect(network.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
+        network.connect.mock.invocationCallOrder[0]!,
+      );
+      expectReconnected(existing, network);
+    });
+
+    it("restarts it without reconnecting while its endpoint is on the current network", async () => {
+      const { existing } = stoppedComputer({ [botNet]: { NetworkID: "net-current" } });
+      const network = botNetwork();
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      const response = await provision();
+      expect(await response.json()).toMatchObject({ id: "existing", resumed: true });
+      expect(existing.start).toHaveBeenCalledOnce();
+      expect(network.connect).not.toHaveBeenCalled();
+      expect(mocks.docker.createNetwork).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["a leftover endpoint", new Error("endpoint with name rakazo-bot-bot already exists")],
+      ["a missing container", Object.assign(new Error("no such container"), { statusCode: 404 })],
+    ])(
+      "replaces it, never starting it unattached, when Docker refuses to attach it: %s",
+      async (_case, error) => {
+        const { existing, replacement } = stoppedComputer({});
+        const network = botNetwork();
+        network.connect.mockRejectedValue(error);
+        mocks.docker.getNetwork.mockReturnValue(network);
+
+        const response = await provision();
+        expect(await response.json()).toMatchObject({ id: "replacement", resumed: false });
+        expect(existing.start).not.toHaveBeenCalled();
+        expect(existing.remove).toHaveBeenCalledWith({ force: true });
+        expect(replacement.start).toHaveBeenCalledOnce();
+      },
+    );
+
+    it("keeps it when its network cannot be recreated", async () => {
+      const { existing } = stoppedComputer({});
+      mocks.docker.getNetwork.mockReturnValue(botNetwork());
+      mocks.docker.createNetwork.mockRejectedValue(new Error("address pools exhausted"));
+
+      const response = await provision();
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: "address pools exhausted" });
+      expect(existing.start).not.toHaveBeenCalled();
+      expect(existing.remove).not.toHaveBeenCalled();
+    });
+
+    it("keeps it through a transient failure that a retry would get past", async () => {
+      const { existing } = stoppedComputer({});
+      mocks.docker.getNetwork.mockReturnValue(botNetwork());
+      // Only the first create fails, so falling through to the replace path's
+      // own create would succeed and remove this container.
+      mocks.docker.createNetwork
+        .mockRejectedValueOnce(new Error("daemon busy"))
+        .mockResolvedValue({ remove: vi.fn() });
+
+      const response = await provision();
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({ error: "daemon busy" });
+      expect(mocks.docker.createNetwork).toHaveBeenCalledOnce();
+      expect(existing.start).not.toHaveBeenCalled();
+      expect(existing.remove).not.toHaveBeenCalled();
+      expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        "fails transiently and keeps it",
+        Object.assign(new Error("daemon busy"), { statusCode: 500 }),
+        false,
+      ],
+      [
+        "is already gone and reconnects it",
+        new Error("container is not connected to the network"),
+        true,
+      ],
+    ])("when clearing a stale endpoint %s", async (_case, error, resumed) => {
+      const { existing } = stoppedComputer({ [botNet]: { NetworkID: "net-old" } });
+      const network = botNetwork();
+      network.disconnect.mockRejectedValue(error);
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      const response = await provision();
+      if (resumed) {
+        expect(await response.json()).toMatchObject({ id: "existing", resumed: true });
+        expect(network.connect).toHaveBeenCalledOnce();
+      } else {
+        expect(response.status).toBe(500);
+        expect(network.connect).not.toHaveBeenCalled();
+        expect(existing.start).not.toHaveBeenCalled();
+      }
+      expect(existing.remove).not.toHaveBeenCalled();
+      expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    });
+
+    it("keeps it when attaching it fails transiently", async () => {
+      const { existing } = stoppedComputer({});
+      const network = botNetwork();
+      network.connect.mockRejectedValue(
+        Object.assign(new Error("daemon busy"), { statusCode: 500 }),
+      );
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      const response = await provision();
+      expect(response.status).toBe(500);
+      expect(existing.start).not.toHaveBeenCalled();
+      expect(existing.remove).not.toHaveBeenCalled();
+      expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    });
+
+    it("surfaces a transient network inspect failure instead of replacing it", async () => {
+      const { existing } = stoppedComputer({ [botNet]: { NetworkID: "net-current" } });
+      const network = botNetwork();
+      network.inspect.mockRejectedValue(new Error("daemon unavailable"));
+      mocks.docker.getNetwork.mockReturnValue(network);
+
+      expect((await provision()).status).toBe(500);
+      expect(existing.start).not.toHaveBeenCalled();
+      expect(existing.remove).not.toHaveBeenCalled();
+    });
   });
 });

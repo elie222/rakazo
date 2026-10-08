@@ -20,8 +20,3 @@ export function splitInlineCode(value: string): InlinePart[] {
   }
   return parts;
 }
-
-/** Visible text after inline code markers are rendered as elements. */
-export function visibleInlineCode(value: string): string {
-  return value.replace(inlineCodePattern(), "$1");
-}

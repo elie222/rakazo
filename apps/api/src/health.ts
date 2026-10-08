@@ -7,6 +7,10 @@ import { Hono } from "hono";
  */
 export function healthRoutes(details: () => Record<string, unknown>) {
   const app = new Hono();
+  app.get("/ready", (c) => {
+    const degraded = details().degraded === true;
+    return c.json({ ok: !degraded, degraded }, degraded ? 503 : 200);
+  });
   app.get("/health", (c) => c.json({ ok: true }));
   app.get("/internal/health", (c) => {
     if (c.req.header("x-forwarded-for") || c.req.header("forwarded")) return c.notFound();

@@ -230,6 +230,7 @@ type HarnessMessage = {
 function compactionHarness(
   options: {
     deploymentModelKey?: string;
+    deploymentModelConfigured?: boolean;
     settings?: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
     messages?: HarnessMessage[];
     nextMessageSeq?: number;
@@ -374,6 +375,8 @@ function compactionHarness(
     jobs: jobs as unknown as JobPublisher,
     memoryProviders,
     deploymentModelKey: options.deploymentModelKey,
+    deploymentModelConfigured:
+      options.deploymentModelConfigured ?? options.deploymentModelKey !== undefined,
     ...(options.resolveModel ? { resolveModel: options.resolveModel } : {}),
   };
   return {
@@ -892,6 +895,24 @@ describe("compactHistory", () => {
       provider: "openrouter",
       id: "moonshotai/kimi-k2",
       apiKey: "openrouter-key",
+    });
+  });
+
+  it("summarizes with a deployment model that authenticates from the host, without a key", async () => {
+    const harness = compactionHarness({ deploymentModelConfigured: true });
+    vi.stubEnv("PI_DEFAULT_PROVIDER", "amazon-bedrock");
+    vi.stubEnv("PI_DEFAULT_MODEL", "eu.anthropic.claude-sonnet-5");
+    try {
+      await compactHistory(harness.deps, "thread-1");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const [request] = harness.runtime.run.mock.calls[0]!;
+    expect(request.model).toEqual({
+      provider: "amazon-bedrock",
+      id: "eu.anthropic.claude-sonnet-5",
+      apiKey: undefined,
     });
   });
 

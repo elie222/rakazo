@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "./desktop";
 import { waitForModelOAuth } from "./model-auth";
 import { rpc } from "./rpc";
+import { errorText } from "./user-error";
 
 export type ModelOAuthSignInBegin = {
   provider: string;
@@ -72,7 +73,7 @@ export function useModelOAuthSignIn(options: {
       await onFinishedRef.current(controller);
     } catch (err) {
       if (controller.signal.aborted) return;
-      onErrorRef.current(err instanceof Error ? err.message : "Connected, but could not refresh");
+      onErrorRef.current(errorText(err, "Connected, but could not refresh"));
     }
   }
 
@@ -105,7 +106,7 @@ export function useModelOAuthSignIn(options: {
         retryable = true;
         setPasteCode(code);
       }
-      onErrorRef.current(err instanceof Error ? err.message : "Could not finish sign-in");
+      onErrorRef.current(errorText(err, "Could not finish sign-in"));
     } finally {
       // A cancelled attempt may already have started another sign-in; do not clear
       // its submitting guard or the newer desktop callback is dropped.
@@ -177,7 +178,7 @@ export function useModelOAuthSignIn(options: {
       const loginId = oauthLoginIdRef.current;
       oauthLoginIdRef.current = null;
       if (loginId) void rpc.models.cancelOAuth({ loginId }).catch(() => undefined);
-      onErrorRef.current(err instanceof Error ? err.message : "Could not start sign-in");
+      onErrorRef.current(errorText(err, "Could not start sign-in"));
       setOauth(null);
     } finally {
       if (!waitingForCode) {

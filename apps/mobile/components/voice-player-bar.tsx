@@ -1,8 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { useThemedStyles } from "../lib/native";
+import { iosAtLeast } from "../lib/native-controls";
 import {
   getVoicePlaybackState,
   pauseVoicePlayback,
@@ -10,6 +11,7 @@ import {
   stopVoicePlayback,
   subscribeVoicePlayback,
 } from "../lib/voice";
+import { GlassSurface } from "./glass-surface";
 import { NativeSymbol } from "./native-symbol";
 
 /**
@@ -33,7 +35,7 @@ export function VoicePlayerBar({
   const paused = playback.status === "paused";
 
   return (
-    <View style={[styles.bar, style]}>
+    <GlassSurface style={[styles.bar, style]} fallbackStyle={styles.barFallback}>
       <NativeSymbol ios="waveform" android="pulse-outline" size={16} color={speakerColor} />
       <Text numberOfLines={1} style={[styles.name, { color: speakerColor }]}>
         {playback.speaker?.name || t("Bot")}
@@ -59,7 +61,7 @@ export function VoicePlayerBar({
         ios="stop.fill"
         android="stop"
       />
-    </View>
+    </GlassSurface>
   );
 }
 
@@ -80,7 +82,11 @@ function VoiceControlButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={onPress}
-      style={styles.button}
+      style={({ pressed }) => [
+        styles.button,
+        !iosAtLeast(26) && styles.buttonFallback,
+        pressed && { opacity: 0.6 },
+      ]}
     >
       <NativeSymbol ios={ios} android={android} size={14} color={mobileTokens().foreground} />
     </Pressable>
@@ -95,8 +101,12 @@ function createStyles() {
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+    },
+    barFallback: {
       borderRadius: 18,
-      padding: 10,
+      paddingHorizontal: 10,
       borderWidth: 1,
       borderColor: tokens.border,
       backgroundColor: tokens.card,
@@ -106,11 +116,13 @@ function createStyles() {
       width: 34,
       height: 34,
       borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    buttonFallback: {
       borderWidth: 1,
       borderColor: tokens.border,
       backgroundColor: tokens.background,
-      alignItems: "center",
-      justifyContent: "center",
     },
   });
 }

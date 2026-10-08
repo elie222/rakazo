@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { useEffect } from "react";
 import { loadSessionToken } from "./api";
 import { notificationResponseRoute } from "./notification-open";
+import { closeSettingsSheet } from "./settings-sheet";
 
 const openedResponses = new Set<string>();
 
@@ -47,6 +48,7 @@ export async function openNotificationResponse(
       openedResponses.delete(key);
       return false;
     }
+    closeSettingsSheet();
     router.push(target);
     clearNotificationResponseIfCurrent(response);
     return true;

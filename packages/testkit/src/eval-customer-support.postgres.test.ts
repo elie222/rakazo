@@ -77,6 +77,8 @@ describe.skipIf(!databaseAvailable)("offline Slack customer-support eval", () =>
           modelId: model.model.id,
           baseUrl: model.baseUrl,
           apiKey: fixtureKey,
+          contextWindow: 160_000,
+          maxTokens: 4096,
         },
         timeoutMs: 20_000,
         maxToolCalls: 8,

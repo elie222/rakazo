@@ -6,6 +6,7 @@ import { useEffect, useId, useState } from "react";
 import { newClientId } from "../../lib/client-id";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 
 type Choice = "direct" | "composio" | "pipedream" | "executor";
 
@@ -77,7 +78,7 @@ export function IntegrationSetup({
     try {
       await action();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not connect`);
+      setError(errorText(err, t`Could not connect`));
     } finally {
       setBusy(false);
     }

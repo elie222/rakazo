@@ -138,6 +138,22 @@ export function retainScreenSource(held: string, next: string, now = Date.now())
   return held;
 }
 
+/**
+ * URL the screen WebView should keep. A visible page ignores a same-stream capability
+ * refresh, so the keyboard bridge stays attached to the document that is already loaded.
+ * A hidden screen forgets the held URL and the next open loads the current capability.
+ */
+export function nextLoadedScreenUrl(
+  held: string | null,
+  next: string | null,
+  visible: boolean,
+  now = Date.now(),
+): string | null {
+  if (!visible || !next) return null;
+  if (!held) return next;
+  return retainScreenSource(held, next, now);
+}
+
 export function previewPlaceholder(
   state: string | undefined,
   booting: boolean,

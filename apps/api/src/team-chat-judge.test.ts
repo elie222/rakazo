@@ -87,17 +87,29 @@ describe("team chat engagement judge", () => {
         messages: [],
       }),
     ).resolves.toEqual({ act: false });
-    expect(create).toHaveBeenCalledWith({
+    expect(create).toHaveBeenCalledExactlyOnceWith({
       data: {
         spaceId: "space-1",
         botId: "bot-1",
         userId: "user-1",
+        parentRunId: undefined,
+        operationId: expect.stringMatching(/^team-chat-judge:[0-9a-f-]{36}$/),
+        operationKind: "setup",
         provider: "google",
         model: "gemini-3.8-flash",
         inputTokens: 150,
         outputTokens: 20,
         cacheReadTokens: 40,
         cacheWriteTokens: 10,
+        cacheWrite1hTokens: null,
+        reasoningTokens: null,
+        totalTokens: null,
+        costUsd: null,
+        costSource: null,
+        pricingVersion: null,
+        usageSource: null,
+        callId: null,
+        agentId: null,
       },
     });
   });

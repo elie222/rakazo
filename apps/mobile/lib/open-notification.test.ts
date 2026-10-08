@@ -13,11 +13,15 @@ vi.mock("expo-router", () => ({
 vi.mock("./api", () => ({
   loadSessionToken: vi.fn(),
 }));
+vi.mock("./settings-sheet", () => ({
+  closeSettingsSheet: vi.fn(),
+}));
 
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { loadSessionToken } from "./api";
 import { openNotificationResponse } from "./open-notification";
+import { closeSettingsSheet } from "./settings-sheet";
 
 const DEFAULT_ACTION = "expo.modules.notifications.actions.DEFAULT";
 
@@ -33,6 +37,16 @@ beforeEach(() => {
 });
 
 describe("opening a notification tap", () => {
+  it("closes the settings sheet before opening the thread, so it doesn't open behind it", async () => {
+    vi.mocked(loadSessionToken).mockResolvedValue("token");
+
+    await expect(openNotificationResponse(tap("tap-over-settings"))).resolves.toBe(true);
+    expect(closeSettingsSheet).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(closeSettingsSheet).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(router.push).mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
   it("opens a signed-in tap once when the cold start and the listener both see it", async () => {
     let release: (token: string) => void = () => undefined;
     vi.mocked(loadSessionToken).mockImplementation(

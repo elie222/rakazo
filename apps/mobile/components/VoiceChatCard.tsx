@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { MobileMessage } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
 function clock(seconds: number): string {
@@ -18,7 +18,7 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
   const [open, setOpen] = useState(false);
   const summary = voiceChatSummary(group);
   return (
-    <View style={[styles.card, { backgroundColor: tokens.card, borderColor: tokens.border }]}>
+    <View style={[styles.card, { backgroundColor: native.fill }]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={open ? t("Hide transcript") : t("Show transcript")}
@@ -54,7 +54,10 @@ export function VoiceChatCard({ group }: { group: VoiceChatGroup<MobileMessage> 
             ) : (
               <Text
                 key={message.id}
-                style={[styles.bot, { backgroundColor: tokens.muted, color: tokens.foreground }]}
+                style={[
+                  styles.bot,
+                  { backgroundColor: native.fillPressed, color: tokens.foreground },
+                ]}
               >
                 {text}
               </Text>
@@ -75,7 +78,6 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     maxWidth: "88%",
     borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
   },
   header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, height: 40 },
   title: { fontSize: 15, fontWeight: "500" },

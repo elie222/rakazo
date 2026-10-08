@@ -23,6 +23,7 @@ import {
   workspacePath,
 } from "./computer-support.js";
 import { FakeTerminalGateway } from "./fake-terminal.js";
+import { sandboxCommandEnvironment } from "./sandbox-command-environment.js";
 
 export interface FakeBox {
   ref: ComputerRef;
@@ -90,6 +91,12 @@ export class FakeSandboxProvider implements SandboxProvider {
     if (!box) {
       yield { type: "stderr", data: "computer not found" };
       yield { type: "exit", code: 1 };
+      return;
+    }
+    if (request.argv[0] === "printenv") {
+      const value = sandboxCommandEnvironment(request)[request.argv[1] ?? ""];
+      if (value !== undefined) yield { type: "stdout", data: `${value}\n` };
+      yield { type: "exit", code: value === undefined ? 1 : 0 };
       return;
     }
     // The shell tool wraps the model's command in a background-work launcher; answer the command.

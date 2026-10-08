@@ -41,6 +41,9 @@ export const CADDY_SNIPPET = `app.example.com {
 	reverse_proxy 127.0.0.1:5173
 }`;
 
+export const RUN_ON_YOUR_MAC =
+  "Run on your Mac with the desktop app. This computer installs Rakazo on that Mac. A Mac Mini can stay on as the always-on box.";
+
 export type FaqItem = {
   question: string;
   answer: string;
@@ -332,6 +335,8 @@ The Postgres overlay publishes loopback \`127.0.0.1:5433\` for host-side tools. 
 ## Desktop and mobile
 
 With a server already running, the Electron app's **Existing instance** option takes its \`https://\` address (HTTP is accepted only for loopback and private LAN addresses). **This computer** installs the published images with Docker Compose on that machine.
+
+${RUN_ON_YOUR_MAC}
 
 In the mobile app, tap **Use a custom server** on the sign-in screen and enter the same HTTPS origin as \`WEB_ORIGIN\`.
 

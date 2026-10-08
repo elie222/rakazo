@@ -1,4 +1,18 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Try Again": "Повторить",
+  "Not sent · Tap to retry": "Не отправлено · Нажмите, чтобы повторить",
+  Photo: "Фото",
+  Today: "Сегодня",
+  Yesterday: "Вчера",
+  You: "Вы",
+  "Original message unavailable": "Исходное сообщение недоступно",
+  "No archived bots": "Нет архивированных ботов",
+  "Recover computer?": "Восстановить компьютер?",
+  "Recreate a computer that is not working.": "Пересоздать неработающий компьютер.",
+  "Restore the last saved workspace.": "Восстановить последнее сохранённое рабочее пространство.",
+  "Save the workspace and install current software.":
+    "Сохранить рабочее пространство и установить актуальное ПО.",
+  "More computer actions": "Другие действия с компьютером",
   "Update your server to use AI data sharing in this mobile version.":
     "Обновите сервер, чтобы использовать обмен данными с ИИ в этой версии мобильного приложения.",
   "Ask the server owner to configure this provider.":
@@ -54,6 +68,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Updating {name}’s Computer": "Обновление компьютера {name}",
   "Workers and operations are stopped": "Воркеры и операции остановлены",
   "Cloud agent": "Облачный агент",
+  "Command variable": "Командная переменная",
   "Pull request": "Запрос на слияние",
   running: "выполняется",
   finished: "завершено",
@@ -150,6 +165,16 @@ export const RU_MESSAGES: Record<string, string> = {
   "Clear conversation?": "Очистить диалог?",
   "Close chat organization": "Закрыть организацию чатов",
   "Close computer": "Закрыть компьютер",
+  "Computer keyboard": "Клавиатура компьютера",
+  Control: "Ctrl",
+  Down: "Вниз",
+  Escape: "Esc",
+  "Hide keyboard": "Скрыть клавиатуру",
+  Left: "Влево",
+  Right: "Вправо",
+  "Show keyboard": "Показать клавиатуру",
+  Tab: "Tab",
+  Up: "Вверх",
   "Close preview": "Закрыть предварительный просмотр",
   Code: "Код",
   Color: "Цвет",
@@ -167,6 +192,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Allow speech recognition in Settings, or connect ElevenLabs, OpenAI, or Fish Audio.":
     "Разрешите распознавание речи в Настройках или подключите ElevenLabs, OpenAI или Fish Audio.",
   "Connect a voice provider first.": "Сначала подключите провайдера голосовой связи.",
+  "Use your own key": "Использовать свой ключ",
+  "Uses this server's own {source} credentials to access {provider}.":
+    "Использует собственные учётные данные {source} этого сервера для доступа к {provider}.",
   "Connect API key": "Подключить API-ключ",
   "Connect Executor": "Подключить Executor",
   "Connect MCP server {name}": "Подключение MCP-сервера {name}",
@@ -226,6 +254,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
   "Could not play that clip.": "Не удалось воспроизвести этот клип.",
+  "Could not reach the server": "Не удалось связаться с сервером",
+  "Enter a password": "Введите пароль",
+  "Enter a valid email": "Введите корректный адрес электронной почты",
+  "Something went wrong. Try again.": "Что-то пошло не так. Попробуйте ещё раз.",
   "Could not reach that server": "Не удалось связаться с этим сервером",
   "Could not reach this model server": "Не удалось связаться с сервером этой модели.",
   "Could not remove source": "Не удалось удалить источник",
@@ -394,7 +426,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Password: "Пароль",
   "Password recovery is not configured for this server":
     "Восстановление пароля не настроено для этого сервера",
-  "Password updated": "Пароль обновлён",
   "Passwords do not match": "Пароли не совпадают",
   "Paste a replacement key": "Вставьте запасной ключ",
   "Paste your API key": "Вставьте свой ключ API",
@@ -638,7 +669,24 @@ export const RU_MESSAGES: Record<string, string> = {
     "Встроенный голос телефона. Бесплатно, без аккаунта",
   "Could not save that preference": "Не удалось сохранить эту настройку",
   Username: "Имя пользователя",
-  // app/models.tsx
+  // app/(settings)/models.tsx
+  "Add connected model": "Добавить подключённую модель",
+  "Add connected models to use them as backups.":
+    "Добавьте подключённые модели, чтобы использовать их как резервные.",
+  "Backup models": "Резервные модели",
+  "Backup models saved.": "Резервные модели сохранены.",
+  "Connect a provider to add backups.": "Подключите провайдера, чтобы добавить резервные модели.",
+  "Could not load backup models": "Не удалось загрузить резервные модели.",
+  "Could not save backup models": "Не удалось сохранить резервные модели.",
+  "Maximum of 10 backup models.": "Можно добавить не более 10 резервных моделей.",
+  "Move {model} down": "Переместить {model} ниже",
+  "Move {model} up": "Переместить {model} выше",
+  "Remove {model}": "Удалить {model}",
+  "Save backups": "Сохранить резервные модели",
+  "Space changed. Reload Models to refresh backup models.":
+    "Пространство изменилось. Перезагрузите раздел «Модели», чтобы обновить резервные модели.",
+  "Space changed. Reload Models before saving backups.":
+    "Пространство изменилось. Перезагрузите раздел «Модели», прежде чем сохранять резервные модели.",
   "A sign-in page opened — enter this code there:":
     "Открылась страница входа — введите там этот код:",
   "All providers": "Все провайдеры",
@@ -690,4 +738,44 @@ export const RU_MESSAGES: Record<string, string> = {
     "Встроенный голос телефона — бесплатно, без аккаунта",
   "Speaks with your phone's own text-to-speech instead of a connected provider.":
     "Озвучивает встроенным синтезом речи телефона вместо подключённого провайдера.",
+
+  "Open external link?": "Открыть внешнюю ссылку?",
+  Open: "Открыть",
+  // ai-data-sharing
+  "AI models": "Модели ИИ",
+  Memory: "Память",
+  "Privacy policies": "Политики конфиденциальности",
+  Rakazo: "Rakazo",
+  "Withdraw all permissions": "Отозвать все разрешения",
+  "Withdraw all permissions?": "Отозвать все разрешения?",
+  "New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.":
+    "Новые действия на мобильном устройстве не будут отправлять данные этим сервисам. Текущие запуски и задачи продолжат выполняться, пока вы их не остановите.",
+  Withdraw: "Отозвать",
+  "Share data with {name}?": "Поделиться данными с {name}?",
+  "You can turn this off in Account → AI data sharing.":
+    "Это можно отключить в разделе Аккаунт → Передача данных ИИ.",
+  Allow: "Разрешить",
+  "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.":
+    "Сообщения, история чата, инструкции ботов, воспоминания, вложения, снимки экрана и содержимое подключённых приложений отправляются для работы ваших ботов, включая задачи.",
+  "Your recordings are sent for transcription, and text you play is sent to generate speech.":
+    "Ваши записи отправляются для расшифровки, а воспроизводимый вами текст — для генерации речи.",
+  "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context.":
+    "Сводки разговоров, воспоминания, поисковые запросы и идентификаторы ботов и пространств отправляются для хранения и извлечения контекста.",
+  "AI data sharing": "Передача данных ИИ",
+  "Allow {name} on mobile": "Разрешить {name} на телефоне",
+  "Could not load permissions.": "Не удалось загрузить разрешения.",
+  "No AI services configured.": "Сервисы ИИ не настроены.",
+  "Privacy policy": "Политика конфиденциальности",
+  "Continue with {name}": "Продолжить с {name}",
+  "Could not load sign-in options": "Не удалось загрузить способы входа",
+  "Deletion code": "Код удаления",
+  "Email is not allowed to register": "Регистрация с этим адресом электронной почты запрещена",
+  "Email verification required": "Требуется подтверждение электронной почты",
+  "Link SSO": "Привязать SSO",
+  "Registration is closed": "Регистрация закрыта",
+  Retry: "Повторить",
+  "Send deletion code": "Отправить код удаления",
+  "Sign in to your existing account to link SSO":
+    "Войдите в существующий аккаунт, чтобы привязать SSO",
+  "SSO is temporarily unavailable. Try again.": "SSO временно недоступен. Попробуйте снова.",
 };

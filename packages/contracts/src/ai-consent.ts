@@ -6,11 +6,11 @@ export const AiDataUseSchema = z.enum(["model", "voice", "memory"]);
 export type AiDataUse = z.infer<typeof AiDataUseSchema>;
 export const AI_DATA_DISCLOSURES: Record<AiDataUse, string> = {
   model:
-    "Messages, relevant conversation history, bot instructions, memories, attachments, screenshots, and connected-app content used by your bots are sent to generate responses and carry out tasks, including scheduled tasks.",
+    "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.",
   voice:
-    "Audio you record is sent for transcription. Text you choose to play, including bot responses, is sent to generate speech.",
+    "Your recordings are sent for transcription, and text you play is sent to generate speech.",
   memory:
-    "Conversation summaries, saved memories, search queries, and bot and Space identifiers are sent to store and retrieve context for your bots.",
+    "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context.",
 };
 export const AiConsentQuerySchema = z
   .object({

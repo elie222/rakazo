@@ -98,9 +98,9 @@ jobs:
           DAYTONA_API_KEY: ${{ inputs.sandbox_provider == 'daytona' && secrets.DAYTONA_API_KEY || '' }}
           BOX_API_KEY: ${{ inputs.sandbox_provider == 'box' && secrets.BOX_API_KEY || '' }}
         run: pnpm test:e2e -- --sandbox="$SANDBOX_TEST_PROVIDER"
-      # Marketing homepage only: separate config so product chromium does not start Astro.
+      # Homepage screenshots only: no copy or layout assertions.
       # Runs after product e2e so shared apps/web/test-results is not wiped by the product run.
-      - name: Run marketing homepage E2E
+      - name: Capture marketing homepage screenshots
         id: www_playwright_tests
         if: always() && (steps.playwright_tests.outcome == 'success' || steps.playwright_tests.outcome == 'failure')
         run: pnpm --filter @rakazo/www e2e

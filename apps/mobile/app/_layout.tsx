@@ -1,33 +1,43 @@
-import { RemoteImagesContext } from "@rakazo/chat-ui/native";
-import { DarkTheme, router, Stack, ThemeProvider } from "expo-router";
+import type { LinkFavicons } from "@rakazo/chat-ui/native";
+import {
+  LinkFaviconsContext,
+  MarkdownLinkPromptProvider,
+  RemoteImagesContext,
+} from "@rakazo/chat-ui/native";
+import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { View } from "react-native";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { CallCard } from "../components/CallCard";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
+import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
+import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
   currentApiBase,
   loadApiBase,
   loadSessionToken,
   selectedSpaceId,
+  subscribeApiBase,
   subscribeSessionRejected,
 } from "../lib/api";
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
-import { explicitSignInRoute } from "../lib/auth-routing";
+import { replaceWithSignIn } from "../lib/auth-routing";
 import { loadAvatarStyle } from "../lib/avatar-style";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
+import { loadLinkFavicon } from "../lib/link-favicons";
 import {
   configureForegroundNotifications,
   resumeLiveNotifications,
 } from "../lib/live-notifications";
-import { native, useResolvedAppearance } from "../lib/native";
+import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
 import {
   getCachedRemoteImagesEnabled,
@@ -39,6 +49,38 @@ import { loadResponseStreamingPreference } from "../lib/response-streaming";
 configureForegroundNotifications();
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+function LinkGlobe() {
+  const tokens = useMobileTokens();
+  return (
+    <NativeSymbol ios="globe" android="globe-outline" size={16} color={tokens.mutedForeground} />
+  );
+}
+
+function ChatContentProviders({
+  loadRemoteImages,
+  children,
+}: {
+  loadRemoteImages: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useI18n();
+  const endpoint = useSyncExternalStore(subscribeApiBase, currentApiBase, currentApiBase);
+  const linkFavicons = useMemo<LinkFavicons>(
+    () => ({ endpoint, load: (origin) => loadLinkFavicon(origin, endpoint), globe: <LinkGlobe /> }),
+    [endpoint],
+  );
+  return (
+    <MarkdownLinkPromptProvider
+      appOrigin={endpoint}
+      copy={{ title: t("Open external link?"), cancel: t("Cancel"), open: t("Open") }}
+    >
+      <RemoteImagesContext.Provider value={loadRemoteImages}>
+        <LinkFaviconsContext.Provider value={linkFavicons}>{children}</LinkFaviconsContext.Provider>
+      </RemoteImagesContext.Provider>
+    </MarkdownLinkPromptProvider>
+  );
+}
 
 export default function Layout() {
   useEffect(() => {
@@ -82,10 +124,7 @@ export default function Layout() {
   useEffect(() => {
     if (!ready) return;
     // A session revoked or expired on the server ends here, from whichever screen noticed it.
-    return subscribeSessionRejected(() => {
-      if (router.canDismiss()) router.dismissAll();
-      router.replace(explicitSignInRoute);
-    });
+    return subscribeSessionRejected(() => replaceWithSignIn());
   }, [ready]);
 
   useEffect(() => {
@@ -114,13 +153,14 @@ export default function Layout() {
       <KeyboardProvider>
         {ready ? (
           <AvatarStyleProvider>
-            <RemoteImagesContext.Provider value={loadRemoteImages}>
+            <ChatContentProviders loadRemoteImages={loadRemoteImages}>
               <ThemeProvider value={navigationTheme}>
                 <StatusBar style={resolved === "light" ? "dark" : "light"} />
                 <View style={{ flex: 1 }}>
                   <Stack
                     screenOptions={{
                       headerStyle: { backgroundColor: navigationTheme.colors.background },
+                      ...floatingHeaderOptions(),
                       headerTintColor: navigationTheme.colors.text,
                       headerShadowVisible: false,
                       headerBackButtonDisplayMode: "minimal",
@@ -130,26 +170,27 @@ export default function Layout() {
                     <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
                     <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                     <Stack.Screen
-                      name="integration-setup"
-                      options={{ title: t("Server integrations") }}
-                    />
-                    <Stack.Screen name="ai-data-sharing" options={{ title: "AI data sharing" }} />
-                    <Stack.Screen name="account" options={{ title: t("Account") }} />
-                    <Stack.Screen
-                      name="change-password"
+                      name="(settings)"
                       options={{
-                        title: t("Change password"),
+                        headerShown: false,
+                        // One stack of settings pages in a sheet over the screen that opened it.
+                        // Android keeps pushed pages: it has no nested stack inside a formSheet.
+                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                        sheetAllowedDetents: [0.95],
+                        sheetGrabberVisible: false,
+                        sheetExpandsWhenScrolledToEdge: false,
+                        contentStyle: { backgroundColor: native.groupedPage },
+                      }}
+                    />
+                    <Stack.Screen
+                      name="server"
+                      options={{
+                        title: t("Server"),
                         presentation: "formSheet",
                         sheetAllowedDetents: [0.6, 1],
                         sheetGrabberVisible: true,
-                        // Expo Router makes formSheet headers transparent on Liquid Glass, which
-                        // puts the first field under the bar; keep it opaque so the form starts below.
-                        headerTransparent: false,
                       }}
                     />
-                    <Stack.Screen name="models" options={{ title: t("Models") }} />
-                    <Stack.Screen name="voice" options={{ title: t("Voice") }} />
-                    <Stack.Screen name="integrations" options={{ title: t("Integrations") }} />
                     <Stack.Screen
                       name="new"
                       options={{
@@ -176,13 +217,19 @@ export default function Layout() {
                         headerBackVisible: false,
                       }}
                     />
-                    <Stack.Screen name="artifacts" options={{ title: t("Artifacts") }} />
+                    <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                     <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
                     <Stack.Screen name="group-thread" options={{ title: t("Group") }} />
-                    <Stack.Screen name="group-settings" options={{ title: t("Group settings") }} />
-                    <Stack.Screen name="bot-settings" options={{ title: t("Chat settings") }} />
+                    <Stack.Screen
+                      name="group-settings"
+                      options={glassHeaderOptions(t("Group settings"))}
+                    />
+                    <Stack.Screen
+                      name="bot-settings"
+                      options={glassHeaderOptions(t("Chat settings"))}
+                    />
                     <Stack.Screen name="thread" options={{ title: t("Thread") }} />
-                    <Stack.Screen name="routine" options={{ title: t("Routine") }} />
+                    <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen
                       name="image"
@@ -198,7 +245,7 @@ export default function Layout() {
                 <ComputerUpdateProgress />
                 <CallCard />
               </ThemeProvider>
-            </RemoteImagesContext.Provider>
+            </ChatContentProviders>
           </AvatarStyleProvider>
         ) : (
           <View style={{ flex: 1, backgroundColor: String(native.page) }} />

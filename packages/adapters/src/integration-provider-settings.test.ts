@@ -1,7 +1,9 @@
 import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { IntegrationProviderSettings } from "./integration-provider-settings.js";
+import { infisicalFake } from "./secret-store-fake.js";
 import { EncryptedSecretStore } from "./secrets.js";
 
 const context: AdapterContext = {
@@ -111,5 +113,85 @@ describe("integration provider settings", () => {
     await settings.save({ provider: "composio", apiKey: "fake-warm-key" }, context);
     settings.warmDirectories();
     await vi.waitFor(() => expect(warm).toHaveBeenCalledOnce());
+  });
+});
+
+describe("integration credentials with Infisical", () => {
+  it("reloads external rotation and does not retain credentials expired during a slow save", async () => {
+    vi.useFakeTimers();
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore({
+      ...fake.options,
+      cacheTtlMs: 100,
+      cacheMaxEntries: 1,
+    });
+    await store.start();
+    let row: { id: string; ciphertext: string } | undefined;
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const saving = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const prisma = {
+      integrationProviderConfig: {
+        findUnique: vi.fn(async () => row),
+        upsert: vi.fn(async ({ create }: { create: { id: string; ciphertext: string } }) => {
+          row = create;
+          started();
+          await gate;
+          return row;
+        }),
+      },
+    };
+    const adapter = {
+      listConnectedExternalIds: vi.fn(async () => []),
+    } as unknown as ManagedConnectorProvider;
+    const factory = vi.fn(() => adapter);
+    const settings = new IntegrationProviderSettings(
+      prisma as unknown as PrismaClient,
+      store,
+      "fake",
+      {},
+      factory,
+    );
+    try {
+      const pending = settings.save({ provider: "composio", apiKey: "fake-initial" }, context);
+      await saving;
+      fake.values.set(
+        row!.ciphertext.split(":").at(-1)!,
+        JSON.stringify({ provider: "composio", apiKey: "fake-rotated" }),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      release();
+      await pending;
+      const changed = vi.fn();
+      store.onChange(changed);
+      await settings.resolve("composio");
+      expect(changed).toHaveBeenCalledExactlyOnceWith(row!.ciphertext);
+      expect(factory).toHaveBeenLastCalledWith({ provider: "composio", apiKey: "fake-rotated" });
+      changed.mockClear();
+      const calls = factory.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(100);
+      await settings.resolve("composio");
+      expect(factory).toHaveBeenCalledTimes(calls);
+      expect(changed).not.toHaveBeenCalled();
+      await store.put("unrelated", context);
+      changed.mockClear();
+      fake.values.set(
+        row!.ciphertext.split(":").at(-1)!,
+        JSON.stringify({ provider: "composio", apiKey: "fake-again" }),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await settings.resolve("composio");
+      expect(factory).toHaveBeenLastCalledWith({ provider: "composio", apiKey: "fake-again" });
+      expect(changed).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await store.close();
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,0 +1,23 @@
+appId: com.rakazo.app
+name: Search
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn: "Search"
+- takeScreenshot: 01-search-empty
+- inputText: "zzzz-no-such-fixture"
+- extendedWaitUntil:
+    visible: ".*No results.*"
+    timeout: 15000
+- takeScreenshot: 02-search-none
+- tapOn:
+    text: "Clear text"
+    optional: true
+- eraseText: 40
+- inputText: "marigold"
+- extendedWaitUntil:
+    visible: ".*marigold checklist.*"
+    timeout: 15000
+- takeScreenshot: 03-search-results

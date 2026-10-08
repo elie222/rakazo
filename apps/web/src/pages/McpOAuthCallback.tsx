@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 
 // The window.open name set by the OAuth popup flow. Providers whose login
 // pages send COOP sever window.opener mid-flow, but the window name survives,
@@ -39,9 +40,7 @@ export function McpOAuthCallbackPage() {
         }
         navigate("/app?mcp_oauth=connected", { replace: true });
       })
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : t`Could not complete OAuth`),
-      );
+      .catch((err: unknown) => setError(errorText(err, t`Could not complete OAuth`)));
   }, [navigate, params, t]);
   const showReturn = Boolean(error) && window.name !== POPUP_NAME;
   return (

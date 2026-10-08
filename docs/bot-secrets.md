@@ -36,7 +36,34 @@ Calling `request_secret` again with the same name and configuration returns the 
 
 The model has no tool for reading these values, and the backend removes direct and common encoded echoes from API responses. The approved service still receives the credential: redaction cannot defend against a malicious service deliberately transforming it. Choose a service you trust and use appropriately scoped credentials.
 
-This boundary supports authenticated HTTP requests. Injecting credentials into arbitrary AI-controlled shell commands, files or environment variables would let those commands read them, so those paths are not exposed. APIs needing request signing, OAuth refresh, multiple credentials or custom protocols should use a connector adapter. Existing `request_secret` calls with a `connectionId` retain their one-use connector-code flow.
+This boundary supports authenticated HTTP requests. Injecting a site credential into an AI-controlled shell command, file or arbitrary environment variable would let those commands read it, so those paths are not exposed. A value you deliberately want in the bot's own shell is a command variable, below. APIs needing request signing, OAuth refresh, multiple credentials or custom protocols should use a connector adapter. Existing `request_secret` calls with a `connectionId` retain their one-use connector-code flow.
+
+## Command variables
+
+When a value belongs in the bot's own shell rather than an HTTP header, save it as a command credential. The bot calls `request_secret` with `"auth": {"type":"command"}` and no origin:
+
+```json
+{
+  "label": "NetBird setup key",
+  "purpose": "api_key",
+  "credential": {
+    "name": "netbird-setup-key",
+    "auth": { "type": "command" }
+  }
+}
+```
+
+The name is exported to that bot's shell commands as an environment variable: upper case with hyphens as underscores, so `netbird-setup-key` becomes `$NETBIRD_SETUP_KEY`. The environment is loaded fresh before every command, so a variable added, replaced or removed mid-run applies to the next command.
+
+A command variable overrides a space variable exported under the same name. That is accepted and owner-controlled: you decide which environment a bot's commands run in, and a per-bot value is the narrower choice, so it wins over the space-wide value it shadows. Remove the space variable, or rename the command variable, if you want the space value instead.
+
+If a saved bot command variable cannot be loaded, that variable is unset for the command, even when a space variable has the same name. Other variables remain available; no credential value or load error is exposed.
+
+A command variable is redacted from command output in its plain, base64 and URL-encoded forms, and it cannot be used with `secret_request` or a `browser_act` login fill. Names that change how a shell or a common runtime starts, trust TLS, or run git or ssh helpers are reserved, as are names beginning with `LD_`, `DYLD_`, `RAKAZO_`, `GIT_CONFIG_` or `NPM_CONFIG_`. The reserved list is not exhaustive: it covers the well-known variables, and saving a reserved name is refused with the reason.
+
+**The bot's shell reads this value.** A command variable is a convenience for the bot, not a boundary against it: the shell command the bot runs, and the code that command starts, can print, encode or send the value. Redaction stops it appearing in a result the model reads; it does not stop a permitted bot, or anything the bot runs, from using it. There is no secrecy from the bot that was given the credential, so treat a command variable as shared with that bot and save only values you would let it use unattended, scoped to what it needs.
+
+Command variables are managed with the same Credentials section as other reusable credentials: web and the Electron-hosted web UI can add, replace and remove one. Mobile has no credentials settings screen, but the request card a bot opens in a thread shows a command variable's variable name in place of a site, so a bot can obtain a command variable value on the phone; listing, adding, replacing and removing one is web and desktop only.
 
 ## Saved website logins
 

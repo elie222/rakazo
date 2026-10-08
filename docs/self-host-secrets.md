@@ -107,3 +107,8 @@ later" item.
 ## Related
 
 - [Self-hosting](./self-host.md)
+
+## Optional credential storage
+
+Stored credentials can use self-hosted Infisical while short-lived secrets stay
+encrypted in Postgres. See [Infisical setup, migration, and rollback](./infisical-secrets.md).

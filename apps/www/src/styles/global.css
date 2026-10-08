@@ -557,6 +557,35 @@ button.button--secondary:focus-visible {
   line-height: 1.55;
 }
 
+.home-faq {
+  display: grid;
+  gap: 16px;
+  margin-top: 36px;
+}
+
+.home-faq article {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  padding: 22px 24px;
+  box-shadow: var(--shadow-soft);
+}
+
+.home-faq h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.home-faq p {
+  margin: 8px 0 0;
+  color: var(--body);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
 .comparison-grid {
   grid-template-columns: 1.15fr 1fr;
   align-items: stretch;

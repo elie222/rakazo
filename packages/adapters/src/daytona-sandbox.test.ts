@@ -93,7 +93,11 @@ describe("DaytonaSandboxProvider", () => {
     );
 
     const events = [];
-    for await (const event of provider.execute(computer, { argv: ["echo", "hello"] }, context)) {
+    for await (const event of provider.execute(
+      computer,
+      { argv: ["echo", "hello"], unsetEnv: ["FAILED"] },
+      context,
+    )) {
       events.push(event);
     }
     expect(events).toEqual([
@@ -101,7 +105,7 @@ describe("DaytonaSandboxProvider", () => {
       { type: "exit", code: 0 },
     ]);
     expect(fixture.executeCommand).toHaveBeenCalledWith(
-      "'echo' 'hello'",
+      "'env' '-u' 'FAILED' '--' 'echo' 'hello'",
       "/home/daytona/rakazo-home",
       undefined,
       300,
@@ -383,7 +387,7 @@ function daytonaFixture(options: { id?: string; state?: string; prepareFails?: b
       const registryResult = screenRegistry(command);
       if (registryResult)
         return { exitCode: registryResult.exitCode, result: registryResult.stdout };
-      if (command === "'echo' 'hello'") return { exitCode: 0, result: "hello\n" };
+      if (command.endsWith("'echo' 'hello'")) return { exitCode: 0, result: "hello\n" };
       if (options.prepareFails && command.startsWith("mkdir -p -- ")) {
         return { exitCode: 1, result: "could not create Daytona workspace" };
       }

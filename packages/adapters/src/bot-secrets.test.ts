@@ -34,7 +34,7 @@ async function fixture(auth = destination.auth) {
       traceId: "test",
       signal: new AbortController().signal,
     },
-    "secret-1",
+    { recordId: "secret-1" },
   );
   const row = { ...scope, ...destination, auth, ...encrypted };
   const findFirst = vi.fn(async ({ where }) =>
@@ -58,6 +58,26 @@ async function fixture(auth = destination.auth) {
 }
 
 describe("authenticated secret requests", () => {
+  it("starts the request deadline before loading the credential", async () => {
+    const { input, fetch } = await fixture();
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    let credentialSignal: AbortSignal | undefined;
+    const load = vi.spyOn(secretStore, "load").mockImplementationOnce(async (_ref, context) => {
+      expect(timeout).toHaveBeenCalledWith(30_000);
+      expect(typeof context).toBe("object");
+      if (typeof context === "string") throw new Error("Missing signal");
+      expect(context.signal).not.toBe(input.signal);
+      credentialSignal = context.signal;
+      return secret;
+    });
+    try {
+      await requestWithBotSecret(input);
+      expect(fetch.mock.calls[0]?.[1]?.signal).toBe(credentialSignal);
+    } finally {
+      load.mockRestore();
+      timeout.mockRestore();
+    }
+  });
   it.each([
     [{ type: "bearer" }, "Authorization", `Bearer ${secret}`],
     [{ type: "header", name: "X-Api-Key" }, "X-Api-Key", secret],
@@ -182,7 +202,7 @@ describe("authenticated secret requests", () => {
     const encrypted = await secretStore.put(
       secret,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
-      "secret-2",
+      { recordId: "secret-2" },
     );
     const row = {
       ...scope,
@@ -226,7 +246,7 @@ describe("authenticated secret requests", () => {
     const encrypted = await secretStore.put(
       secret,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
-      "secret-3",
+      { recordId: "secret-3" },
     );
     const row = {
       ...scope,
@@ -263,6 +283,23 @@ describe("resolveRequestSecretDestination", () => {
     credential: destination,
   };
   const plantedSecret = "not-a-real-secret-value";
+
+  it("keeps command destinations metadata-only with an omitted or empty origin", () => {
+    for (const origin of [undefined, ""]) {
+      const resolved = resolveRequestSecretDestination({
+        credential: {
+          name: "cli-token",
+          origin,
+          auth: { type: "command", value: plantedSecret },
+          value: plantedSecret,
+        },
+      });
+      expect(resolved).toEqual({
+        destination: { name: "cli-token", origin: "", auth: { type: "command" } },
+      });
+      expect(JSON.stringify(resolved)).not.toContain(plantedSecret);
+    }
+  });
 
   it("accepts the documented credential shape", () => {
     expect(resolveRequestSecretDestination(documented)).toEqual({ destination });
@@ -675,7 +712,7 @@ describe("saved website logins", () => {
     const encrypted = await secretStore.put(
       plaintext,
       { ...scope, operationId: "test", traceId: "test", signal: new AbortController().signal },
-      "login-1",
+      { recordId: "login-1" },
     );
     const row = { ...scope, ...login, origin, auth, ...encrypted };
     const findFirst = vi.fn(async ({ where }) =>
