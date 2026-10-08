@@ -453,7 +453,7 @@ describe("thread message pages", () => {
 
     expect(findMany).toHaveBeenCalledWith({
       include: {
-        replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+        replyTo: { select: { threadId: true, role: true, botId: true, blocks: true } },
       },
       where: { threadId: "thread-1", seq: { lt: 6 } },
       orderBy: { seq: "desc" },
@@ -529,7 +529,7 @@ describe("thread message pages", () => {
     expect(page.coveredThroughSeq).toBe(7);
     expect(findMany).toHaveBeenCalledWith({
       include: {
-        replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+        replyTo: { select: { threadId: true, role: true, botId: true, blocks: true } },
       },
       where: { threadId: "thread-1", seq: { gte: 3, lte: 7 } },
       orderBy: { seq: "asc" },
@@ -647,7 +647,7 @@ describe("authoritative reply previews", () => {
       expect.objectContaining({
         where: { threadId: "thread-1" },
         include: {
-          replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
+          replyTo: { select: { threadId: true, role: true, botId: true, blocks: true } },
         },
       }),
     );

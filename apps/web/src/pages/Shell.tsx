@@ -4916,21 +4916,16 @@ const Transcript = memo(function Transcript({
     jumpScrollTimer.current = window.setTimeout(endJumpScroll, 2_000);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     row.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
-    const tint = "inset 0 0 0 100vmax color-mix(in srgb, var(--foreground) 8%, transparent)";
-    for (const bubble of row.querySelectorAll(
-      '[data-testid="message-user-bubble"], [data-testid="message-bot-bubble"]',
-    )) {
-      bubble.animate(
-        reducedMotion
-          ? [{ boxShadow: tint }, { boxShadow: tint }]
-          : [
-              { boxShadow: tint, offset: 0 },
-              { boxShadow: tint, offset: 0.5 },
-              { boxShadow: "none" },
-            ],
-        { duration: 1200 },
-      );
-    }
+    row.animate(
+      reducedMotion
+        ? [{ backgroundColor: "var(--muted)" }, { backgroundColor: "var(--muted)" }]
+        : [
+            { backgroundColor: "transparent" },
+            { backgroundColor: "var(--muted)" },
+            { backgroundColor: "transparent" },
+          ],
+      { duration: 1200 },
+    );
     onScrollRequestHandled();
   }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled]);
 

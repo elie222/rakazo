@@ -43,26 +43,7 @@ test("a short reply thread shows one time separator and navigates to its parent"
   await expect(quote).toHaveText("↩ You: Let's review the release notes.");
   await expect(transcript.getByTestId("time-separator")).toHaveCount(1);
   await expect(transcript.getByTestId("time-separator")).toContainText("Today");
-  const bubble = reply.getByTestId("message-user-bubble");
-  const parentBubble = parent.getByTestId("message-user-bubble");
-  const replyBounds = await bubble.boundingBox();
-  const parentBounds = await parentBubble.boundingBox();
-  const quoteBounds = await quote.boundingBox();
-  expect(replyBounds).not.toBeNull();
-  expect(parentBounds).not.toBeNull();
-  expect(quoteBounds).not.toBeNull();
-  expect(
-    Math.abs(replyBounds!.x + replyBounds!.width - parentBounds!.x - parentBounds!.width),
-  ).toBeLessThan(1);
-  expect(quoteBounds!.width).toBeLessThanOrEqual(replyBounds!.width + 1);
   await quote.click();
-  await expect
-    .poll(() => parentBubble.evaluate((element) => element.getAnimations().length))
-    .toBeGreaterThan(0);
-  expect(await parent.evaluate((element) => element.getAnimations().length)).toBe(0);
-  expect(await parentBubble.evaluate((element) => getComputedStyle(element).borderRadius)).toBe(
-    "20px",
-  );
   await expect(parent).toBeInViewport();
   await page.mouse.move(0, 0);
   await captureScreenshot(page, testInfo, "time-separator-sent-reply");

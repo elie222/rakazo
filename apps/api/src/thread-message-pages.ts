@@ -7,7 +7,6 @@ import type { Prisma, PrismaClient } from "@rakazo/db";
 type MessageDb = PrismaClient | Prisma.TransactionClient;
 
 const replySelection = {
-  id: true,
   threadId: true,
   role: true,
   botId: true,

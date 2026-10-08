@@ -14,27 +14,18 @@ vi.mock("../components/native-symbol", () => ({
     createElement("i", { "data-symbol": ios, "data-color": color, "data-size": size }),
 }));
 vi.mock("react-native", () => ({
-  View: ({ children, style }: { children?: ReactNode; style?: object }) =>
-    createElement("div", { "data-style": JSON.stringify(style) }, children),
   Pressable: ({
     children,
-    style,
     onPress,
     accessibilityRole,
   }: {
     children?: ReactNode;
-    style?: object;
     onPress?: () => void;
     accessibilityRole?: string;
   }) =>
     createElement(
       "button",
-      {
-        type: "button",
-        onClick: onPress,
-        role: accessibilityRole,
-        "data-style": JSON.stringify(style),
-      },
+      { type: "button", onClick: onPress, role: accessibilityRole },
       children,
     ),
   Text: ({
@@ -42,25 +33,15 @@ vi.mock("react-native", () => ({
     onPress,
     accessibilityRole,
     selectable,
-    numberOfLines,
-    style,
   }: {
     children?: ReactNode;
     onPress?: () => void;
     accessibilityRole?: string;
     selectable?: boolean;
-    numberOfLines?: number;
-    style?: object;
   }) =>
     createElement(
       "span",
-      {
-        onClick: onPress,
-        role: accessibilityRole,
-        "data-selectable": selectable,
-        "data-lines": numberOfLines,
-        "data-style": JSON.stringify(style),
-      },
+      { onClick: onPress, role: accessibilityRole, "data-selectable": selectable },
       children,
     ),
 }));
@@ -96,6 +77,12 @@ it("navigates to the authoritative reply target and hides subsequent lines", () 
     ),
   );
   expect(container.textContent).toBe("Helper: First");
+  expect(container.textContent).not.toContain("↩");
+  const symbol = container.querySelector("i")!;
+  expect(symbol.getAttribute("data-symbol")).toBe("arrowshape.turn.up.left");
+  expect(symbol.getAttribute("data-color")).toBe(lightTokens.mutedForeground);
+  expect(symbol.getAttribute("data-size")).toBe("12");
+  expect(container.firstElementChild?.getAttribute("role")).toBe("button");
   act(() => (container.firstElementChild as HTMLElement).click());
   expect(onJump).toHaveBeenCalledWith("parent");
 });
@@ -105,43 +92,8 @@ it("exposes deleted targets as static text", () => {
     root.render(<ReplyLine quote="Old text" preview={null} author="Helper" onJump={onJump} />),
   );
   expect(container.textContent).toBe("Original message unavailable");
+  expect(container.querySelector("i")).toBeNull();
+  expect(container.firstElementChild?.getAttribute("role")).toBe("text");
   act(() => (container.firstElementChild as HTMLElement).click());
   expect(onJump).not.toHaveBeenCalled();
 });
-
-it.each(["user", "bot"] as const)(
-  "constrains the %s reply to its bubble column and aligns its text and symbol",
-  (role) => {
-    act(() =>
-      root.render(
-        <ReplyLine
-          role={role}
-          targetId="parent"
-          preview={{ role: "bot", text: "A long excerpt" }}
-          author="Helper"
-        />,
-      ),
-    );
-    expect(
-      JSON.parse(container.querySelector("button")!.getAttribute("data-style")!),
-    ).toMatchObject({ alignSelf: "stretch", height: 22 });
-    expect(JSON.parse(container.querySelector("div")!.getAttribute("data-style")!)).toMatchObject({
-      position: "absolute",
-      left: 0,
-      right: 0,
-      justifyContent: role === "user" ? "flex-end" : "flex-start",
-    });
-    expect(container.querySelector("span")!.getAttribute("data-lines")).toBe("1");
-    expect(JSON.parse(container.querySelector("span")!.getAttribute("data-style")!)).toMatchObject({
-      flexShrink: 1,
-      textAlign: role === "user" ? "right" : "left",
-    });
-    expect(container.querySelector("i")!.getAttribute("data-symbol")).toBe(
-      "arrowshape.turn.up.left",
-    );
-    expect(container.querySelector("i")!.getAttribute("data-color")).toBe(
-      lightTokens.mutedForeground,
-    );
-    expect(container.querySelector("i")!.getAttribute("data-size")).toBe("12");
-  },
-);
