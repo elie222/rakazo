@@ -59,7 +59,6 @@ export default function VoiceSettings() {
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const deviceVoiceRevision = useRef(0);
   const deviceVoiceSaveInFlight = useRef(false);
 
@@ -111,38 +110,39 @@ export default function VoiceSettings() {
     deviceVoiceSaveInFlight.current = true;
     deviceVoiceRevision.current++;
     setDeviceVoice(next);
-    setPending("device-voice");
-    setError(null);
     try {
       await saveDeviceVoiceEnabled(next);
       return true;
-    } catch {
+    } catch (err) {
       setDeviceVoice(!next);
-      setError(t("Could not save that preference"));
+      setError(errorText(err, t("Could not save that preference")));
       return false;
     } finally {
       deviceVoiceSaveInFlight.current = false;
       deviceVoiceRevision.current++;
-      setPending(null);
     }
   }
 
   async function toggleDeviceVoice() {
     if (pending !== null || !deviceVoiceReady) return;
-    await saveDeviceVoice(!deviceVoice);
+    setPending("device-voice");
+    setError(null);
+    try {
+      await saveDeviceVoice(!deviceVoice);
+    } finally {
+      setPending(null);
+    }
   }
 
-  // The device voice and a hosted provider are one choice: picking a provider turns the device voice off.
   async function chooseProvider(nextProvider: string) {
-    // Until the saved device-voice choice is known, a tap could not tell whether to turn it off.
     if (pending !== null || !deviceVoiceReady) return;
     const wasDeviceVoice = deviceVoice;
-    if (wasDeviceVoice && !(deviceVoiceReady && (await saveDeviceVoice(false)))) return;
     const previousProvider = provider;
-    setProvider(nextProvider);
     setPending("voice");
+    setError(null);
     try {
-      // Picking a connected provider makes it the one that speaks.
+      if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
+      setProvider(nextProvider);
       const cred = credentials.find((entry) => entry.provider === nextProvider);
       if (cred?.voiceId && status?.provider !== nextProvider) {
         try {
@@ -150,26 +150,24 @@ export default function VoiceSettings() {
             voiceId: cred.voiceId,
             provider: nextProvider,
           });
-          // The server now speaks with this provider: track that even if the refresh fails.
           setStatus(saved);
-          setVoiceId(cred.voiceId);
-          setSpeechModel(cred.speechModel ?? "");
         } catch (err) {
-          // Nothing changed on the server: put back what was chosen before this tap.
           setProvider(previousProvider);
-          // A failed rollback shows its own error, which matters more than this one.
           if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
-          setError(err instanceof Error ? err.message : t("Could not save that voice"));
+          setError(errorText(err, t("Could not save that voice")));
           return;
         }
       }
+      setApiKey("");
+      setVoiceId(cred?.voiceId ?? "");
+      setSpeechModel(cred?.speechModel ?? "");
+      setVoices([]);
       try {
         await load(nextProvider);
       } catch (err) {
-        // The new provider is the one that speaks now; drop the old provider's voices so none
-        // of them can be saved against it.
+        // A refresh failure must not leave another provider's voices available.
         setVoices([]);
-        setError(err instanceof Error ? err.message : t("Could not load voice settings"));
+        setError(errorText(err, t("Could not load voice settings")));
       }
     } finally {
       setPending(null);
@@ -192,7 +190,6 @@ export default function VoiceSettings() {
       });
       setApiKey("");
       await load(selected.id);
-      setNotice(t("Connected {name}.", { name: selected.name }));
     } catch (err) {
       setError(errorText(err, t("Could not connect")));
     } finally {
@@ -204,7 +201,6 @@ export default function VoiceSettings() {
     if (!credential) return;
     setPending("disconnect");
     setError(null);
-    setNotice(null);
     try {
       await rpc("voice/disconnect", { provider: credential.provider });
       setApiKey("");
@@ -274,7 +270,6 @@ export default function VoiceSettings() {
       <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
         <View style={styles.group}>
           <Pressable
             accessibilityRole="button"
@@ -404,13 +399,11 @@ export default function VoiceSettings() {
           </>
         ) : null}
         {deviceVoice || status?.ready ? (
-          <Pressable
+          <NativeActionButton
             disabled={pending !== null}
+            label={t("Hear a sample")}
             onPress={() => void testVoice()}
-            style={styles.secondary}
-          >
-            <Text style={styles.secondaryLabel}>{t("Hear a sample")}</Text>
-          </Pressable>
+          />
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -423,7 +416,6 @@ function createVoiceStyles() {
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 10 },
     error: { color: tokens.destructive, marginBottom: 8 },
-    notice: { color: tokens.success, marginBottom: 8 },
     group: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
     groupRow: {
       minHeight: 52,
@@ -453,7 +445,5 @@ function createVoiceStyles() {
     pressed: { opacity: 0.7 },
     voices: { marginTop: 12 },
     voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
-    secondary: { marginTop: 16, alignItems: "center" },
-    secondaryLabel: { color: native.secondaryLabel, fontSize: 15 },
   });
 }
