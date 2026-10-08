@@ -1,4 +1,5 @@
 {
+  "Today": "Bugün",
   " (unread)": " (okunmadı)",
   "macOS will not ask for extra permission if you let bots run on this Mac. They run as you.": "Botların bu Mac'te çalışmasına izin verirsen macOS ek izin istemez. Botlar senin adına çalışır.",
   "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you.": "Botların {hostLabel} üzerinde çalışmasına izin verirsen işletim sistemin ek izin istemez. Botlar senin adına çalışır.",

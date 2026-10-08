@@ -221,6 +221,11 @@ export interface SendUserMessageResult {
 }
 
 export interface RunSecretWriter {
+  withPrepared?<T>(
+    prisma: PrismaClient,
+    input: AnswerRunInput,
+    commit: (writer: RunSecretWriter) => Promise<T>,
+  ): Promise<T>;
   store(input: {
     botId: string;
     credential?: BotSecretDestination;
@@ -745,9 +750,13 @@ export async function answerRunInput(
   realtime?: RealtimeFanout,
   runSecretWriter?: RunSecretWriter,
 ): Promise<boolean> {
-  const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) =>
-    commitAnswerRunInput(tx, input, runSecretWriter),
-  );
+  const commit = (writer = runSecretWriter) =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) =>
+      commitAnswerRunInput(tx, input, writer),
+    );
+  const committed = runSecretWriter?.withPrepared
+    ? await runSecretWriter.withPrepared(prisma, input, commit)
+    : await commit();
 
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);

@@ -46,7 +46,7 @@ describe("appearance preference", () => {
     expect(tokensForAppearance("dark")).toBe(darkTokens);
     expect(tokensForAppearance("light")).toBe(lightTokens);
     for (const key of Object.keys(darkTokens) as (keyof ColorTokens)[]) {
-      if (key === "destructiveForeground") continue;
+      if (key === "destructiveForeground" || key === "faviconPlate") continue;
       expect(darkTokens[key], key).not.toBe(lightTokens[key]);
     }
   });

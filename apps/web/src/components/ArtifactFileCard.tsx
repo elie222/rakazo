@@ -8,6 +8,7 @@ import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { downloadArtifact, downloadArtifactBytes, fetchArtifactBytes } from "../lib/artifact-open";
+import { errorText } from "../lib/user-error";
 import { PdfViewer } from "./PdfViewer";
 import { SandboxedHtmlViewer } from "./SandboxedHtmlViewer";
 
@@ -147,7 +148,7 @@ function FilePreview({
         if (cancelled) return;
         setState({
           status: "error",
-          message: error instanceof Error ? error.message : t`Could not load this file.`,
+          message: errorText(error, t`Could not load this file.`),
         });
       });
     return () => {

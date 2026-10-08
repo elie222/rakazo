@@ -1,6 +1,7 @@
 import type { AiRecipient } from "@rakazo/contracts";
 import { AI_DATA_DISCLOSURES, AI_PRIVACY_URL } from "@rakazo/contracts";
 import { Alert, AppState, Linking } from "react-native";
+import { t } from "./i18n";
 
 export const FOREGROUND_FALLBACK_MS = 400;
 
@@ -72,18 +73,18 @@ export function promptAiConsent(
       dialogOpen = true;
       let privacyPolicyPressed = false;
       Alert.alert(
-        `Share data with ${recipient.name}?`,
+        t("Share data with {name}?", { name: recipient.name }),
         [
           recipient.detail,
-          AI_DATA_DISCLOSURES[recipient.use],
-          "You can withdraw permission for new mobile actions in Account → AI data sharing.",
+          t(AI_DATA_DISCLOSURES[recipient.use]),
+          t("You can turn this off in Account → AI data sharing."),
         ]
           .filter(Boolean)
           .join("\n\n"),
         [
-          { text: "Not now", style: "cancel", onPress: () => finish(false) },
+          { text: t("Not now"), style: "cancel", onPress: () => finish(false) },
           {
-            text: "Privacy policy",
+            text: t("Privacy policy"),
             onPress: () => {
               // The button callback is the deterministic lifecycle point on both platforms.
               // RN only maps onDismiss on Android, and Android consumes a button callback
@@ -113,7 +114,7 @@ export function promptAiConsent(
               );
             },
           },
-          { text: "Allow", onPress: () => finish(true) },
+          { text: t("Allow"), onPress: () => finish(true) },
         ],
         {
           cancelable: true,

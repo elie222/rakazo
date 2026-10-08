@@ -1,9 +1,16 @@
-import type { AdapterContext, ManagedConnectorProvider } from "@rakazo/adapter-kit";
-import { SecretAskPurpose } from "@rakazo/contracts";
+import type { AdapterContext, ManagedConnectorProvider, SecretStore } from "@rakazo/adapter-kit";
+import {
+  encodeLoginSecret,
+  LoginSecretValue,
+  MessageBlock as MessageBlockSchema,
+  SecretAskPurpose,
+} from "@rakazo/contracts";
+import { isSecretAskBlock } from "@rakazo/core";
 import type { PrismaClient, RunSecretWriter } from "@rakazo/db";
+import { withTransactionRetry } from "@rakazo/db";
 import { type ApprovalPausedToolResult, resolveDuplicateEffectGate } from "./approval-effect.js";
-import { storeBotSecret } from "./bot-secrets.js";
-import type { EncryptedSecretStore } from "./secrets.js";
+import { prepareBotSecret } from "./bot-secrets.js";
+import { persistPreparedSecret } from "./secret-persistence.js";
 
 export function runSecretKind(runId: string): string {
   return `run-secret:${runId}`;
@@ -109,35 +116,104 @@ export async function reconcileManagedConnection(
   return "pending";
 }
 
-export function createRunSecretWriter(secretStore: EncryptedSecretStore): RunSecretWriter {
+export function createRunSecretWriter(secretStore: SecretStore): RunSecretWriter {
   return {
-    async store({ runId, userId, spaceId, botId, credential, plaintext, tx }) {
-      if (credential) {
-        await storeBotSecret({
-          tx,
-          secretStore,
-          scope: { userId, spaceId, botId },
-          destination: credential,
-          plaintext,
+    async withPrepared(prisma, input, commit) {
+      return withTransactionRetry(async () => {
+        const run = await prisma.run.findFirst({
+          where: {
+            id: input.runId,
+            spaceId: input.spaceId,
+            threadId: input.threadId,
+            status: "waiting_input",
+          },
+          select: { botId: true, userId: true },
         });
-        return;
-      }
-      const stored = await secretStore.put(plaintext, {
-        operationId: runId,
-        traceId: runId,
-        spaceId,
-        userId,
-        signal: new AbortController().signal,
+        const message = run
+          ? await prisma.message.findFirst({
+              where: {
+                id: input.messageId,
+                threadId: input.threadId,
+                runId: input.runId,
+                role: "bot",
+              },
+            })
+          : null;
+        const blocks = MessageBlockSchema.array().safeParse(message?.blocks);
+        const ask = blocks.success
+          ? blocks.data.find((block) => block.kind === "ask" && block.status !== "answered")
+          : undefined;
+        if (!run || ask?.kind !== "ask" || !isSecretAskBlock(ask))
+          return commit({
+            store: async () => {
+              throw new Error("Secret request changed; retry");
+            },
+          });
+        if (
+          (ask.credential && run.userId !== input.answeredByUserId) ||
+          (ask.credential?.auth.type === "login") !== Boolean(input.username?.trim()) ||
+          (ask.credential?.auth.type === "login" &&
+            !LoginSecretValue.safeParse({
+              username: input.username?.trim(),
+              password: input.answer,
+            }).success)
+        )
+          return commit({
+            store: async () => {
+              throw new Error("Secret request changed; retry");
+            },
+          });
+        const plaintext =
+          ask.credential?.auth.type === "login"
+            ? encodeLoginSecret({ username: input.username?.trim() ?? "", password: input.answer })
+            : input.answer;
+        const scope = { userId: run.userId, spaceId: input.spaceId, botId: run.botId };
+        const prepared = ask.credential
+          ? await prepareBotSecret({
+              prisma,
+              secretStore,
+              scope,
+              destination: ask.credential,
+              plaintext,
+            })
+          : await secretStore.put(
+              plaintext,
+              {
+                operationId: input.runId,
+                traceId: input.runId,
+                ...scope,
+                signal: new AbortController().signal,
+              },
+              { ephemeral: true },
+            );
+        return persistPreparedSecret(prisma, secretStore, prepared, () =>
+          commit({
+            async store(value) {
+              if (
+                value.userId !== run.userId ||
+                value.botId !== run.botId ||
+                value.plaintext !== plaintext ||
+                JSON.stringify(value.credential) !== JSON.stringify(ask.credential)
+              )
+                throw new Error("Secret request changed; retry");
+              if ("store" in prepared) await prepared.store(value.tx);
+              else
+                await value.tx.secret.create({
+                  data: {
+                    id: prepared.id,
+                    userId: run.userId,
+                    spaceId: input.spaceId,
+                    kind: runSecretKind(input.runId),
+                    ciphertext: prepared.ciphertext,
+                  },
+                });
+            },
+          }),
+        );
       });
-      await tx.secret.create({
-        data: {
-          id: stored.id,
-          userId,
-          spaceId,
-          kind: runSecretKind(runId),
-          ciphertext: stored.ciphertext,
-        },
-      });
+    },
+    async store() {
+      throw new Error("Prepare secret material before opening a transaction");
     },
   };
 }

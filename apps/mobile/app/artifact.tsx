@@ -3,6 +3,7 @@ import type { ArtifactVersion } from "@rakazo/contracts";
 import { isAttachmentImageMimeType } from "@rakazo/contracts";
 import type { File } from "expo-file-system";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -19,16 +20,19 @@ import { SandboxedHtmlPreview } from "../components/sandboxed-html-preview";
 import { formatActivityRelativeTime } from "../lib/activity";
 import { mobileTokens } from "../lib/appearance";
 import { shareLocalFile, writeArtifactCacheFile } from "../lib/artifact-open";
+import type { MobileArtifactWithContent } from "../lib/artifacts";
 import {
   artifactThreadTarget,
   getArtifactById,
   listArtifactVersions,
-  type MobileArtifactWithContent,
   removeArtifact,
 } from "../lib/artifacts";
+import { useFloatingHeaderInset } from "../lib/floating-header";
 import { t, useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { iosAtLeast } from "../lib/native-controls";
+import { errorText } from "../lib/user-error";
 
 type PreviewContent =
   | { kind: "html"; html: string }
@@ -52,6 +56,7 @@ export default function ArtifactDetailScreen() {
   const { artifactId } = useLocalSearchParams<{ artifactId: string }>();
   const navigation = useNavigation();
   const router = useRouter();
+  const headerInset = useFloatingHeaderInset();
   const { t } = useI18n();
   const colorScheme = useResolvedAppearance();
   const styles = useThemedStyles(createStyles);
@@ -93,7 +98,7 @@ export default function ArtifactDetailScreen() {
         if (!cancelled) {
           setContent({
             status: "error",
-            message: error instanceof Error ? error.message : t("Could not load this artifact."),
+            message: errorText(error, t("Could not load this artifact.")),
           });
         }
       });
@@ -122,10 +127,7 @@ export default function ArtifactDetailScreen() {
             void removeArtifact(artifactId)
               .then(() => router.back())
               .catch((error: unknown) =>
-                Alert.alert(
-                  t("Could not delete this artifact"),
-                  error instanceof Error ? error.message : t("Try again."),
-                ),
+                Alert.alert(t("Could not delete this artifact"), errorText(error, t("Try again."))),
               ),
         },
       ],
@@ -167,10 +169,7 @@ export default function ArtifactDetailScreen() {
     try {
       await shareLocalFile(content.file.uri, content.artifact.mimeType, content.artifact.name);
     } catch (error) {
-      Alert.alert(
-        t("Could not share this artifact"),
-        error instanceof Error ? error.message : t("Try again."),
-      );
+      Alert.alert(t("Could not share this artifact"), errorText(error, t("Try again.")));
     }
   }, [content, t]);
 
@@ -203,27 +202,52 @@ export default function ArtifactDetailScreen() {
             </Pressable>
           </View>
         ) : null,
+      ...(iosAtLeast(26)
+        ? {
+            unstable_headerRightItems: () =>
+              content.status === "ready"
+                ? [
+                    {
+                      type: "button" as const,
+                      label: t("Share"),
+                      icon: { type: "sfSymbol" as const, name: "square.and.arrow.up" },
+                      onPress: () => void share(),
+                    },
+                    {
+                      type: "button" as const,
+                      label: t("Delete"),
+                      icon: { type: "sfSymbol" as const, name: "trash" },
+                      tintColor: mobileTokens().destructive,
+                      onPress: confirmDelete,
+                    },
+                  ]
+                : [],
+          }
+        : {}),
     });
   }, [confirmDelete, content, navigation, share, styles, t]);
 
-  return (
-    <View style={styles.screen}>
-      {content.status === "ready" && versions && versions.length > 1 ? (
-        <View style={styles.pillRow}>
-          <Pressable accessibilityRole="button" onPress={pickVersion} style={styles.pill}>
-            <Text style={styles.pillText}>
-              {`v${content.artifact.version} · ${formatActivityRelativeTime(content.artifact.createdAt)}`}
-            </Text>
-            <NativeSymbol
-              ios="chevron.down"
-              android="chevron-down"
-              size={12}
-              color={native.secondaryLabel}
-            />
-          </Pressable>
-        </View>
-      ) : null}
+  const scrolling = content.status === "ready" && content.preview.kind === "markdown";
+  const versionPicker =
+    content.status === "ready" && versions && versions.length > 1 ? (
+      <View style={styles.pillRow}>
+        <Pressable accessibilityRole="button" onPress={pickVersion} style={styles.pill}>
+          <Text style={styles.pillText}>
+            {`v${content.artifact.version} · ${formatActivityRelativeTime(content.artifact.createdAt)}`}
+          </Text>
+          <NativeSymbol
+            ios="chevron.down"
+            android="chevron-down"
+            size={12}
+            color={native.secondaryLabel}
+          />
+        </Pressable>
+      </View>
+    ) : null;
 
+  return (
+    <View style={[styles.screen, { paddingTop: scrolling ? 0 : headerInset }]}>
+      {scrolling ? null : versionPicker}
       <View style={styles.body}>
         {content.status === "loading" ? (
           <View style={styles.centered}>
@@ -236,6 +260,7 @@ export default function ArtifactDetailScreen() {
         ) : (
           <ArtifactPreview
             preview={content.preview}
+            scrollHeader={scrolling ? versionPicker : undefined}
             imageLabel={content.artifact.name}
             onOpenImage={openImage}
           />
@@ -247,10 +272,12 @@ export default function ArtifactDetailScreen() {
 
 function ArtifactPreview({
   preview,
+  scrollHeader,
   imageLabel,
   onOpenImage,
 }: {
   preview: PreviewContent;
+  scrollHeader?: ReactNode;
   imageLabel: string;
   onOpenImage: (() => void) | null;
 }) {
@@ -266,7 +293,11 @@ function ArtifactPreview({
   }
   if (preview.kind === "markdown") {
     return (
-      <ScrollView contentContainerStyle={styles.markdownScroll}>
+      <ScrollView
+        contentContainerStyle={styles.markdownScroll}
+        contentInsetAdjustmentBehavior="automatic"
+      >
+        {scrollHeader}
         <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
           {preview.text}
         </ChatMarkdown>

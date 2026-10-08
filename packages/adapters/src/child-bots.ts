@@ -10,7 +10,6 @@ import type {
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
 import { type Actor, type Bot, type ComputerMode, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
-import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import {
   cancelRunsInTransaction,
   computerScopeKey,
@@ -24,7 +23,13 @@ import {
 import { getLogger } from "@rakazo/logging";
 import { BrowserStoppedReleaseError } from "./computer-screens.js";
 import { toComputerRef } from "./computer-support.js";
-import { checkpointAndRecordComputerWorkspace } from "./computer-workspace.js";
+import {
+  checkpointAndRecordComputerWorkspace,
+  isTeamBotFolderName,
+  removeComputerWorkspaceDirectories,
+  teamBrowserProfileName,
+  withCleanupDeadline,
+} from "./computer-workspace.js";
 import { resolveAgentHomePath } from "./home.js";
 import { removePiBotSessions } from "./pi-session.js";
 
@@ -460,6 +465,9 @@ export async function destroyBot(
     }).catch(() => undefined);
   }
   await removeTeamBrowserProfile(deps, bot.id, sharedComputer, context);
+  await removeTeamBotWorkspace(deps, bot, context).catch((error) => {
+    getLogger().error("team bot folder cleanup", error);
+  });
   const artifactStore = deps.artifacts;
   if (artifactStore) {
     await removeStoredArtifacts(artifactStore, deletion.artifactKeys, context);
@@ -625,98 +633,87 @@ async function sharedTeamComputer(
 }
 
 const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "box", "createos"]);
-
-const REMOVE_CONTAINED_BROWSER_PROFILE = [
-  'parent="$1"',
-  'name="$2"',
-  'if [ "$parent" != ".browser-profiles" ]; then echo "browser profile escapes the team home" >&2; exit 1; fi',
-  'if [[ ! "$name" =~ ^chromium-bot-[0-9a-f]{32}$ ]]; then echo "browser profile escapes the team home" >&2; exit 1; fi',
-  'if [ -L "$parent" ]; then echo "browser profile escapes the team home" >&2; exit 1; fi',
-  'target="$parent/$name"',
-  'if [ ! -e "$target" ] && [ ! -L "$target" ]; then exit 0; fi',
-  'if [ -L "$target" ]; then rm -- "$target"; exit 0; fi',
-  'if [ ! -d "$target" ]; then echo "browser profile escapes the team home" >&2; exit 1; fi',
-  'resolved_parent=$(cd -- "$parent" && pwd -P)',
-  'resolved_target=$(cd -- "$target" && pwd -P)',
-  'case "$resolved_target" in',
-  '  "$resolved_parent/$name") ;;',
-  '  *) echo "browser profile escapes the team home" >&2; exit 1 ;;',
-  "esac",
-  'rm -rf -- "$target"',
-].join("\n");
+// The bot is already deleted; whatever this misses is removed when the computer next boots.
+const LIVE_CLEANUP_BUDGET_MS = 10_000;
 
 async function removeTeamBrowserProfile(
   deps: BotLifecycleDeps,
   botId: string,
-  computer: { scope: string; homeKey: string; kind: string; providerRef: string | null } | null,
+  computer: {
+    scope: string;
+    homeKey: string;
+    kind: string;
+    providerRef: string | null;
+    state: string;
+  } | null,
   context: AdapterContext,
 ) {
   if (computer?.scope !== "team") return;
-  const name = browserProfileName(botId);
+  const name = teamBrowserProfileName(botId);
   if (!name) return;
   const profileContext = { ...context, botId, screenLeaseId: undefined };
-  if (
-    computer.providerRef &&
-    deps.sandbox.releaseScreen &&
-    REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)
-  ) {
-    await removeRemoteBrowserProfile(
-      deps,
-      { homeKey: computer.homeKey, kind: computer.kind, providerRef: computer.providerRef },
-      name,
-      profileContext,
+  // Only a running computer is cleaned now, since connecting can start a stopped one; others
+  // drop the profile on their next boot. Only a remote provider's stored copy is deleted on
+  // the server. See removeTeamBotWorkspace.
+  if (computer.providerRef && deps.sandbox.releaseScreen && computer.state === "running") {
+    await withCleanupDeadline(profileContext, LIVE_CLEANUP_BUDGET_MS, (cleanupContext) =>
+      removeComputerWorkspaceDirectories(
+        deps.sandbox,
+        toComputerRef(computer),
+        ".browser-profiles",
+        [name],
+        cleanupContext,
+      ),
     ).catch((error) => {
       getLogger().error("team browser profile cleanup", error);
     });
   }
+  if (!REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) return;
   const homeDir = resolveAgentHomePath(deps.home, computer.homeKey, deps.dataDir ?? "./data");
-  await removeContainedDirectory(homeDir, path.join(homeDir, ".browser-profiles", name)).catch(
-    (error) => {
-      getLogger().error("team browser profile cleanup", error);
-    },
-  );
+  await removeContainedDirectory(homeDir, ".browser-profiles", name).catch((error) => {
+    getLogger().error("team browser profile cleanup", error);
+  });
 }
 
-async function removeRemoteBrowserProfile(
+/** A Team Computer that is not running removes the folder when it next boots. */
+async function removeTeamBotWorkspace(
   deps: BotLifecycleDeps,
-  computer: { homeKey: string; kind: string; providerRef: string },
-  name: string,
+  bot: LifecycleBot,
   context: AdapterContext,
 ) {
-  let exitCode: number | undefined;
-  let stderr = "";
-  for await (const event of deps.sandbox.execute(
-    toComputerRef(computer),
-    {
-      argv: [
-        "bash",
-        "-eu",
-        "-c",
-        REMOVE_CONTAINED_BROWSER_PROFILE,
-        "bash",
-        ".browser-profiles",
-        name,
-      ],
-      cwd: ".",
-    },
-    context,
-  )) {
-    if (event.type === "stderr") stderr += event.data;
-    if (event.type === "exit") exitCode = event.code;
+  if (!isTeamBotFolderName(bot.id)) return;
+  // Look the computer up by space: a bot moved to its own computer can still have a folder here.
+  const computer = await deps.prisma.computer.findUnique({
+    where: { scopeKey: computerScopeKey("team", bot.spaceId) },
+  });
+  if (!computer) return;
+  // Remote providers keep a stored copy that only the server writes, and replacement computers
+  // restore from it. Any other home may be mounted by a running computer, where a bot could
+  // swap bots/ for a symlink between the checks and rm, so it is only cleaned inside the computer.
+  if (REMOTE_TEAM_SANDBOX_KINDS.has(computer.kind)) {
+    const homeDir = resolveAgentHomePath(deps.home, computer.homeKey, deps.dataDir ?? "./data");
+    await removeContainedDirectory(homeDir, "bots", bot.id).catch((error) => {
+      getLogger().error("team bot folder cleanup", error);
+    });
   }
-  if (exitCode !== 0) {
-    throw new Error(stderr.trim() || "browser profile cleanup failed");
-  }
+  if (computer.state !== "running" || !computer.providerRef) return;
+  const folderContext = { ...context, botId: bot.id, screenLeaseId: undefined };
+  await withCleanupDeadline(folderContext, LIVE_CLEANUP_BUDGET_MS, (cleanupContext) =>
+    removeComputerWorkspaceDirectories(
+      deps.sandbox,
+      toComputerRef(computer),
+      "bots",
+      [bot.id],
+      cleanupContext,
+    ),
+  ).catch((error) => {
+    getLogger().error("team bot folder cleanup", error);
+  });
 }
 
-function browserProfileName(botId: string) {
-  const name = path.posix.basename(browserProfilePathForScreen(botId));
-  if (!/^chromium-bot-[0-9a-f]{32}$/.test(name)) return null;
-  return name;
-}
-
-/** Delete one profile directory. A symlinked parent is refused; a final symlink is unlinked. */
-async function removeContainedDirectory(root: string, target: string) {
+/** Delete one folder in the team home. A symlinked parent is refused; a final symlink is unlinked. */
+async function removeContainedDirectory(root: string, parent: string, name: string) {
+  const target = path.join(root, parent, name);
   const info = await lstat(target).catch((error: unknown) => {
     if (isMissing(error)) return null;
     throw error;
@@ -727,7 +724,7 @@ async function removeContainedDirectory(root: string, target: string) {
     throw error;
   });
   if (!parentInfo || parentInfo.isSymbolicLink() || !parentInfo.isDirectory()) {
-    throw new Error("browser profile escapes the team home");
+    throw new Error("folder escapes the team home");
   }
   if (info.isSymbolicLink()) {
     await unlink(target);
@@ -737,13 +734,13 @@ async function removeContainedDirectory(root: string, target: string) {
   const resolvedTarget = await realpath(target);
   const relative = path.relative(resolvedRoot, resolvedTarget);
   if (
-    path.dirname(resolvedTarget) !== path.join(resolvedRoot, ".browser-profiles") ||
-    path.basename(resolvedTarget) !== path.basename(target) ||
+    path.dirname(resolvedTarget) !== path.join(resolvedRoot, parent) ||
+    path.basename(resolvedTarget) !== name ||
     relative === "" ||
     relative.startsWith("..") ||
     path.isAbsolute(relative)
   ) {
-    throw new Error("browser profile escapes the team home");
+    throw new Error("folder escapes the team home");
   }
   await rm(resolvedTarget, { recursive: true, force: true });
 }

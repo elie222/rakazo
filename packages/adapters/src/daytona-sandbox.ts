@@ -31,6 +31,7 @@ import {
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
 import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
+import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 
 const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
 
@@ -170,7 +171,7 @@ export class DaytonaSandboxProvider implements SandboxProvider {
     const timeoutMs = boundedSandboxCommandTimeoutMs(request.timeoutMs);
     try {
       const result = await sandbox.process.executeCommand(
-        request.argv.map(shellQuote).join(" "),
+        sandboxCommandArgv(request).map(shellQuote).join(" "),
         daytonaCwd(root, request.cwd),
         request.env,
         Math.max(1, Math.ceil(timeoutMs / 1_000)),

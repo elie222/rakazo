@@ -39,7 +39,6 @@ import {
   clampMentionHighlightIndex,
   cronFromPreset,
   formatMessageTime,
-  groupBotsForSidebar,
   groupVoiceChats,
   inferAttachmentMimeType,
   isActive,
@@ -52,6 +51,7 @@ import {
   plainTextFromMarkdown,
   projectMessageReactions,
   reorderBotTo,
+  replyAttachment,
   resolveComposerSendPlan,
   resolveMentionPickerKey,
   runThreadSubscription,
@@ -60,6 +60,7 @@ import {
   searchHitThreadTarget,
   serializeComposerPrompt,
   speechFromBlocks,
+  timeSeparatorIds,
   truncateSlashDescription,
   userVisibleMessages,
   withLiveStreamingProgress,
@@ -119,7 +120,7 @@ import {
 import {
   type ClipboardEvent,
   type DragEvent,
-  lazy,
+  Fragment,
   type MutableRefObject,
   memo,
   type RefObject,
@@ -148,6 +149,7 @@ import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
 import { CallCard } from "../components/call/CallCard";
 import { VoiceChatCard } from "../components/call/VoiceChatCard";
 import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
+import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import {
   LIVE_TOOL_STEP_WINDOW,
@@ -237,6 +239,7 @@ import {
   transcriptMovedDown,
 } from "../lib/transcript-scroll";
 import { speaker } from "../lib/tts";
+import { errorText } from "../lib/user-error";
 import { ActivityList } from "./ActivityList";
 import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
@@ -255,6 +258,7 @@ import type { SettingsSection } from "./SettingsOverlay";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
 import { BotCreatePicker } from "./shell/bot-picker";
+import { ComposerReplyPreview, ReplyLine, TimeSeparator } from "./shell/chat-context";
 import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import {
   ClearConversationDialog,
@@ -264,6 +268,7 @@ import {
   NewSpaceDialog,
   PickerInfoDialog,
   RenameBotSectionDialog,
+  RenameSpaceDialog,
 } from "./shell/dialogs";
 import {
   AppConnectCard,
@@ -272,27 +277,26 @@ import {
   ChoiceCard,
   McpApprovalCard,
 } from "./shell/message-cards";
+import { commitSpaceRename, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { WindowChrome } from "./WindowChrome";
 
-const BotContextMenu = lazy(() =>
-  import("./BotContextMenu").then((module) => ({ default: module.BotContextMenu })),
+const BotContextMenu = lazyOverlay(() =>
+  import("./BotContextMenu").then((module) => module.BotContextMenu),
 );
-const MessagingSettingsOverlay = lazy(() =>
-  import("./MessagingSettingsOverlay").then((module) => ({
-    default: module.MessagingSettingsOverlay,
-  })),
+const MessagingSettingsOverlay = lazyOverlay(() =>
+  import("./MessagingSettingsOverlay").then((module) => module.MessagingSettingsOverlay),
 );
-const SettingsOverlay = lazy(() =>
-  import("./SettingsOverlay").then((module) => ({ default: module.SettingsOverlay })),
+const SettingsOverlay = lazyOverlay(() =>
+  import("./SettingsOverlay").then((module) => module.SettingsOverlay),
 );
-const PeerMessagesOverlay = lazy(() =>
-  import("./PeerMessagesOverlay").then((module) => ({ default: module.PeerMessagesOverlay })),
+const PeerMessagesOverlay = lazyOverlay(() =>
+  import("./PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
 );
-const PluginsOverlay = lazy(() =>
-  import("./PluginsOverlay").then((module) => ({ default: module.PluginsOverlay })),
+const PluginsOverlay = lazyOverlay(() =>
+  import("./PluginsOverlay").then((module) => module.PluginsOverlay),
 );
-const McpServersOverlay = lazy(() =>
-  import("./McpServersOverlay").then((module) => ({ default: module.McpServersOverlay })),
+const McpServersOverlay = lazyOverlay(() =>
+  import("./McpServersOverlay").then((module) => module.McpServersOverlay),
 );
 
 type PendingAttachment = {
@@ -602,6 +606,7 @@ export function ShellPage() {
   const [deleteTarget, setDeleteTarget] = useState<Bot | null>(null);
   const [deleteGroupTarget, setDeleteGroupTarget] = useState<Group | null>(null);
   const [deleteSpaceTarget, setDeleteSpaceTarget] = useState<Space | null>(null);
+  const [renameSpaceTarget, setRenameSpaceTarget] = useState<Space | null>(null);
   const [spaceMenu, setSpaceMenu] = useState<{
     id: string;
     position: ContextMenuPosition;
@@ -613,6 +618,9 @@ export function ShellPage() {
     spaceMenuAnchor.current = null;
   }, [spaceMenu]);
   const closeSpaceMenu = useCallback(() => setSpaceMenu(null), []);
+  const spaceMenuTarget = spaceMenu
+    ? (spaces.find((space) => space.id === spaceMenu.id) ?? null)
+    : null;
   const [clearTarget, setClearTarget] = useState<
     { kind: "bot"; chat: Bot } | { kind: "group"; chat: Group } | null
   >(null);
@@ -717,10 +725,17 @@ export function ShellPage() {
     };
   }, [session.data?.user]);
   const [usage, setUsage] = useState<{
-    inputTokens: number;
-    outputTokens: number;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens?: number | null;
     runs: number;
   } | null>(null);
+  const refreshUsage = useCallback(() => {
+    void rpc.usage
+      .summary()
+      .then(setUsage)
+      .catch(() => undefined);
+  }, []);
   const autoBooted = useRef<string | null>(null);
   const routineSavePending = useRef(false);
   const webhookSecretProvisionRef = useRef(new Map<string, Promise<string>>());
@@ -1498,7 +1513,6 @@ export function ShellPage() {
   }, [activeGroup?.id, groupId, notifyBrowserForEvent]);
 
   const sidebarGroups = useMemo(() => {
-    const needle = query.toLowerCase();
     const sidebarSpaces =
       spaces.length > 0
         ? spaces.map((space) =>
@@ -1511,6 +1525,7 @@ export function ShellPage() {
                 name: "Personal",
                 isDefault: true,
                 hasContent: true,
+                canRename: false,
                 canDelete: false,
                 bots,
                 groups,
@@ -1518,59 +1533,7 @@ export function ShellPage() {
               },
             ]
           : [];
-    const showSpaceNames = sidebarSpaces.length > 1;
-    return sidebarSpaces.flatMap((space) => {
-      const visibleBots = space.bots.filter((bot) =>
-        `${bot.name} ${bot.title ?? ""} ${bot.preview ?? ""}`.toLowerCase().includes(needle),
-      );
-      const visibleGroups = space.groups.filter((group) =>
-        `${group.name} ${group.preview}`.toLowerCase().includes(needle),
-      );
-      const sections = groupBotsForSidebar(
-        [
-          ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
-          ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
-        ].map((item) => ({
-          ...item,
-          id: item.chat.id,
-          parentBotId: item.kind === "bot" ? item.chat.parentBotId : null,
-          pinned: item.chat.pinned,
-          sectionId: item.chat.sectionId,
-        })),
-        space.botSections,
-      ).map((group, index) => ({
-        ...group,
-        sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
-        key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
-        title: showSpaceNames
-          ? group.title
-            ? `${space.name} · ${group.title}`
-            : space.name
-          : group.title,
-        showLock: showSpaceNames,
-        emptySpaceId: undefined as string | undefined,
-        spaceId: space.id,
-        spaceName: space.name,
-        canDeleteSpace: index === 0 && space.canDelete === true,
-      }));
-      if (sections.length > 0) return sections;
-      // Keep empty spaces selectable; chat clicks are the only switch control.
-      if (!showSpaceNames) return [];
-      if (needle && (space.bots.length > 0 || space.groups.length > 0)) return [];
-      return [
-        {
-          key: `space:${space.id}:empty`,
-          title: space.name,
-          bots: [],
-          sectionId: null,
-          showLock: true,
-          emptySpaceId: space.id,
-          spaceId: space.id,
-          spaceName: space.name,
-          canDeleteSpace: space.canDelete === true,
-        },
-      ];
-    });
+    return sidebarGroupsForSpaces(sidebarSpaces, query);
   }, [bootstrapMe, botSections, bots, groups, spaces, query]);
 
   const openSpaceChat = useCallback(
@@ -2016,11 +1979,11 @@ export function ShellPage() {
     }
     const groupId = activeGroupId.current;
     if (groupId) {
-      void jumpToMessageRef.current({ groupId, messageId });
+      void jumpToMessageRef.current({ groupId, messageId }).catch(() => undefined);
       return;
     }
     const botId = activeBotId.current;
-    if (botId) void jumpToMessageRef.current({ botId, messageId });
+    if (botId) void jumpToMessageRef.current({ botId, messageId }).catch(() => undefined);
   }, []);
   const answerMessage = useCallback(
     async (message: ThreadMessage, text: string, username?: string) => {
@@ -2059,7 +2022,7 @@ export function ShellPage() {
           ? activeGroupId.current === groupId
           : activeBotId.current === botId;
         if (!stillHere) return;
-        setSendError(error instanceof Error ? error.message : t`Could not update reaction`);
+        setSendError(errorText(error, t`Could not update reaction`));
       }
     },
     [t],
@@ -2235,11 +2198,11 @@ export function ShellPage() {
         else if (botTarget) void refreshThreadRef.current(botTarget).catch(() => undefined);
       } catch (error) {
         if (reroutedToGroup && groupTarget) {
-          setSendError(error instanceof Error ? error.message : t`Failed to send message`);
+          setSendError(errorText(error, t`Failed to send message`));
         } else if (groupTarget && activeGroupId.current === groupTarget) {
-          setSendError(error instanceof Error ? error.message : t`Failed to send message`);
+          setSendError(errorText(error, t`Failed to send message`));
         } else if (botTarget && activeBotId.current === botTarget) {
-          setSendError(error instanceof Error ? error.message : t`Failed to send message`);
+          setSendError(errorText(error, t`Failed to send message`));
         }
       } finally {
         sendingRef.current = false;
@@ -2270,7 +2233,7 @@ export function ShellPage() {
           await rpc.threads.stop({ groupId: groupTarget });
         } catch (error) {
           if (activeGroupId.current === groupTarget) {
-            setSendError(error instanceof Error ? error.message : t`Failed to stop`);
+            setSendError(errorText(error, t`Failed to stop`));
           }
           return;
         }
@@ -2289,7 +2252,7 @@ export function ShellPage() {
         await rpc.threads.stop({ botId: botTarget });
       } catch (error) {
         if (activeBotId.current === botTarget) {
-          setSendError(error instanceof Error ? error.message : t`Failed to stop`);
+          setSendError(errorText(error, t`Failed to stop`));
         }
         return;
       }
@@ -2483,7 +2446,7 @@ export function ShellPage() {
       await refreshComputerFor(targetBotId);
     } catch (error) {
       if (!stillThisBoot() || !stillThisBot()) return;
-      setComputerError(error instanceof Error ? error.message : t`Could not take control`);
+      setComputerError(errorText(error, t`Could not take control`));
       setComputerErrorFromScreen(false);
       throw error;
     } finally {
@@ -2838,13 +2801,6 @@ export function ShellPage() {
           className="absolute inset-y-0 end-0 start-[min(calc(100%-48px),316px)] z-30 bg-overlay md:hidden"
         />
       ) : null}
-      {!mobileSidebarOpen ? (
-        <div
-          data-testid="mobile-sidebar-swipe-edge"
-          aria-hidden="true"
-          className="absolute bottom-20 start-0 top-16 z-20 w-8 touch-none md:hidden"
-        />
-      ) : null}
       <aside
         data-testid="bots-sidebar"
         data-collapsed={botsSidebarCollapsed ? "true" : "false"}
@@ -2990,85 +2946,99 @@ export function ShellPage() {
                   nestedRows.flatMap((row) =>
                     row.item.kind === "bot" && row.parentId === parentId ? [row.item.chat.id] : [],
                   );
+                const hasSpaceActions = group.canRenameSpace || group.canDeleteSpace;
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
-                    {group.title ? (
-                      <div className="flex items-center pt-3 pb-0.5">
-                        <button
-                          type="button"
-                          className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground/60 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-                          onClick={() => {
-                            if (group.emptySpaceId) {
-                              openSpaceChat(group.emptySpaceId, "/onboarding");
-                              return;
-                            }
-                            toggleSidebarSection(group.key);
-                          }}
-                          onContextMenu={
-                            group.sectionId
-                              ? (event) => {
-                                  event.preventDefault();
-                                  // Prefer section rename over delete-space when both apply;
-                                  // the dedicated space-actions button still opens the space menu.
-                                  const sections =
-                                    group.spaceId === bootstrapMe?.spaceId
-                                      ? botSections
-                                      : (spaces.find((space) => space.id === group.spaceId)
-                                          ?.botSections ?? []);
-                                  const section = sections.find(
-                                    (item) => item.id === group.sectionId,
-                                  );
-                                  if (!section) return;
-                                  sectionMenuAnchor.current = event.currentTarget;
-                                  setSectionMenu({
-                                    section,
-                                    spaceId: group.spaceId,
-                                    position: { x: event.clientX, y: event.clientY },
-                                  });
-                                }
-                              : group.canDeleteSpace
+                    {group.title || hasSpaceActions ? (
+                      <div
+                        className={
+                          group.title && hasSpaceActions
+                            ? "grid pt-3 pb-0.5"
+                            : `flex items-center pt-3 pb-0.5${group.title ? "" : " justify-end"}`
+                        }
+                      >
+                        {group.title ? (
+                          <button
+                            type="button"
+                            className={`flex min-w-0 items-center justify-between gap-2 rounded-lg px-2.5 py-1 text-[11px] font-semibold tracking-wider uppercase text-muted-foreground/60 hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${hasSpaceActions ? "col-start-1 row-start-1 w-full pe-8" : "flex-1"}`}
+                            onClick={() => {
+                              if (group.emptySpaceId) {
+                                openSpaceChat(group.emptySpaceId, "/onboarding");
+                                return;
+                              }
+                              toggleSidebarSection(group.key);
+                            }}
+                            onContextMenu={
+                              group.sectionId
                                 ? (event) => {
                                     event.preventDefault();
-                                    spaceMenuAnchor.current = event.currentTarget;
-                                    setSpaceMenu({
-                                      id: group.spaceId,
+                                    // Prefer section rename over the space menu when both apply;
+                                    // the dedicated space-actions button still opens the space menu.
+                                    const sections =
+                                      group.spaceId === bootstrapMe?.spaceId
+                                        ? botSections
+                                        : (spaces.find((space) => space.id === group.spaceId)
+                                            ?.botSections ?? []);
+                                    const section = sections.find(
+                                      (item) => item.id === group.sectionId,
+                                    );
+                                    if (!section) return;
+                                    sectionMenuAnchor.current = event.currentTarget;
+                                    setSectionMenu({
+                                      section,
+                                      spaceId: group.spaceId,
                                       position: { x: event.clientX, y: event.clientY },
                                     });
                                   }
-                                : undefined
-                          }
-                          aria-expanded={group.emptySpaceId ? undefined : !collapsed}
-                          aria-label={
-                            group.emptySpaceId
-                              ? t`Open ${group.title}`
-                              : collapsed
-                                ? t`Expand ${group.title}`
-                                : t`Collapse ${group.title}`
-                          }
-                        >
-                          <span className="flex min-w-0 items-center gap-1.5 truncate">
-                            {group.showLock ? (
-                              <Lock size={11} strokeWidth={2} aria-hidden="true" />
-                            ) : null}
-                            <span className="truncate">{group.title}</span>
-                          </span>
-                          {group.emptySpaceId ? null : (
-                            <ChevronDown
-                              size={14}
-                              strokeWidth={1.8}
-                              className={
-                                collapsed
-                                  ? "-rotate-90 transition-transform"
-                                  : "transition-transform"
-                              }
-                              aria-hidden="true"
-                            />
-                          )}
-                        </button>
-                        {group.canDeleteSpace ? (
+                                : hasSpaceActions
+                                  ? (event) => {
+                                      event.preventDefault();
+                                      spaceMenuAnchor.current = event.currentTarget;
+                                      setSpaceMenu({
+                                        id: group.spaceId,
+                                        position: { x: event.clientX, y: event.clientY },
+                                      });
+                                    }
+                                  : undefined
+                            }
+                            aria-expanded={group.emptySpaceId ? undefined : !collapsed}
+                            aria-label={
+                              group.emptySpaceId
+                                ? t`Open ${group.title}`
+                                : collapsed
+                                  ? t`Expand ${group.title}`
+                                  : t`Collapse ${group.title}`
+                            }
+                          >
+                            <span className="flex min-w-0 items-center gap-1.5 truncate">
+                              {group.showLock ? (
+                                <Lock size={11} strokeWidth={2} aria-hidden="true" />
+                              ) : null}
+                              <span className="truncate">{group.title}</span>
+                            </span>
+                            {group.emptySpaceId ? null : (
+                              <ChevronDown
+                                size={14}
+                                strokeWidth={1.8}
+                                className={
+                                  collapsed
+                                    ? "-rotate-90 transition-transform"
+                                    : "transition-transform"
+                                }
+                                aria-hidden="true"
+                              />
+                            )}
+                          </button>
+                        ) : null}
+                        {hasSpaceActions ? (
                           <Button
                             variant="ghost"
                             size="icon-sm"
+                            className={
+                              group.title
+                                ? "col-start-1 row-start-1 justify-self-end self-center"
+                                : undefined
+                            }
                             aria-label={t`Actions for ${group.spaceName}`}
                             onClick={(event) => {
                               const rect = event.currentTarget.getBoundingClientRect();
@@ -3435,10 +3405,6 @@ export function ShellPage() {
                 aria-label={t`Usage`}
                 onClick={() => {
                   setMenuOpen(false);
-                  void rpc.usage
-                    .summary()
-                    .then(setUsage)
-                    .catch(() => undefined);
                   openSettings("usage");
                 }}
               >
@@ -3509,11 +3475,20 @@ export function ShellPage() {
         />
       )}
 
+      {/* Keep the composer's z-index inside the chat so phone overlays like the side panel cover it. */}
       <main
         aria-hidden={mobileSidebarOpen || undefined}
         inert={mobileSidebarOpen}
-        className="flex min-w-0 flex-1 flex-col bg-background"
+        className="isolate flex min-w-0 flex-1 flex-col bg-background"
       >
+        {/* Inside main so the composer and its menus stay above it. */}
+        {!mobileSidebarOpen ? (
+          <div
+            data-testid="mobile-sidebar-swipe-edge"
+            aria-hidden="true"
+            className="absolute bottom-20 start-0 top-16 z-20 w-8 touch-none md:hidden"
+          />
+        ) : null}
         <div className="app-drag flex items-center justify-between border-b border-sidebar-border px-3 py-[17px] md:px-[22px]">
           <div className="flex min-w-0 items-center gap-2">
             {/* Collapsed bots sidebar: this header is the leading edge for window chrome. */}
@@ -3675,6 +3650,7 @@ export function ShellPage() {
                   }
                 : undefined
             }
+            artifactTarget={transcriptArtifactTarget}
             replyTarget={activeReplyTarget}
             replyQuote={activeReplyQuote}
             replyTargetName={replyTargetName}
@@ -3692,10 +3668,6 @@ export function ShellPage() {
                 return;
               }
               if (action === "settings-usage") {
-                void rpc.usage
-                  .summary()
-                  .then(setUsage)
-                  .catch(() => undefined);
                 openSettings("usage");
               }
             }}
@@ -3911,8 +3883,12 @@ export function ShellPage() {
                       mode: computerMode,
                     });
                   }
-                  await rpc.bots.update({ botId: active.id, ...patch });
-                  await refreshBots();
+                  const updated = await rpc.bots.update({ botId: active.id, ...patch });
+                  setBots((current) =>
+                    current.map((bot) => (bot.id === updated.id ? updated : bot)),
+                  );
+                  // Persistence succeeded; a failed navigation refresh must not undo the tool edit.
+                  await refreshBots().catch(() => undefined);
                 }}
                 onExport={async () => {
                   const manifest = await rpc.export.bot({ botId: active.id });
@@ -4039,9 +4015,7 @@ export function ShellPage() {
                     ) {
                       return;
                     }
-                    setRoutineError(
-                      error instanceof Error ? error.message : t`Could not save routine`,
-                    );
+                    setRoutineError(errorText(error, t`Could not save routine`));
                     return;
                   } finally {
                     routineSavePending.current = false;
@@ -4068,9 +4042,7 @@ export function ShellPage() {
                     await refreshThread(targetBotId);
                   } catch (error) {
                     if (activeBotId.current === targetBotId) {
-                      setRoutineError(
-                        error instanceof Error ? error.message : t`Could not run routine`,
-                      );
+                      setRoutineError(errorText(error, t`Could not run routine`));
                     }
                   } finally {
                     routineRunPending.current = false;
@@ -4226,17 +4198,29 @@ export function ShellPage() {
               sideOffset={0}
               className="w-[220px]"
             >
-              <DropdownMenuItem
-                variant="destructive"
-                onClick={() => {
-                  const target = spaces.find((space) => space.id === spaceMenu.id);
-                  if (target) setDeleteSpaceTarget(target);
-                  setSpaceMenu(null);
-                }}
-              >
-                <Trash2 />
-                {t`Delete space`}
-              </DropdownMenuItem>
+              {spaceMenuTarget?.canRename ? (
+                <DropdownMenuItem
+                  onClick={() => {
+                    setRenameSpaceTarget(spaceMenuTarget);
+                    setSpaceMenu(null);
+                  }}
+                >
+                  <Pencil />
+                  {t`Rename space`}
+                </DropdownMenuItem>
+              ) : null}
+              {spaceMenuTarget?.canDelete ? (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => {
+                    setDeleteSpaceTarget(spaceMenuTarget);
+                    setSpaceMenu(null);
+                  }}
+                >
+                  <Trash2 />
+                  {t`Delete space`}
+                </DropdownMenuItem>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
@@ -4264,6 +4248,28 @@ export function ShellPage() {
               setDeleteGroupTarget(null);
               setPanel(null);
               await refreshBots(true);
+            }}
+          />
+        ) : null}
+
+        {renameSpaceTarget ? (
+          <RenameSpaceDialog
+            space={renameSpaceTarget}
+            onCancel={() => setRenameSpaceTarget(null)}
+            onConfirm={async (name) => {
+              const spaceId = renameSpaceTarget.id;
+              await commitSpaceRename({
+                rename: async () => {
+                  await rpc.spaces.rename({ spaceId, name });
+                },
+                apply: () => {
+                  setSpaces((current) =>
+                    current.map((space) => (space.id === spaceId ? { ...space, name } : space)),
+                  );
+                },
+                refresh: () => refreshBots(),
+              });
+              setRenameSpaceTarget(null);
             }}
           />
         ) : null}
@@ -4463,6 +4469,7 @@ export function ShellPage() {
             name={userName}
             email={session.data?.user.email}
             usage={usage}
+            onUsageOpen={refreshUsage}
             initialSection={settingsSection}
             avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
@@ -4739,7 +4746,7 @@ const Transcript = memo(function Transcript({
   onJumpToMessage: (messageId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   memberName?: (botId: string | undefined) => string | undefined;
-  peerBot: (botId: string) => { color: string; status?: string } | undefined;
+  peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
@@ -4760,6 +4767,11 @@ const Transcript = memo(function Transcript({
     [messages],
   );
   const reactionView = useMemo(() => projectMessageReactions(messages), [messages]);
+  const separatorIds = timeSeparatorIds(
+    reactionView.visibleMessages.filter((message) =>
+      messageHasVisibleBlocks(message.blocks, showToolActivity),
+    ),
+  );
   const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
   const workingLabel =
     workingBotName != null && workingBotName !== ""
@@ -4909,7 +4921,18 @@ const Transcript = memo(function Transcript({
     element.addEventListener("scrollend", endJumpScroll, { once: true });
     window.clearTimeout(jumpScrollTimer.current);
     jumpScrollTimer.current = window.setTimeout(endJumpScroll, 2_000);
-    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    row.animate(
+      reducedMotion
+        ? [{ backgroundColor: "var(--muted)" }, { backgroundColor: "var(--muted)" }]
+        : [
+            { backgroundColor: "transparent" },
+            { backgroundColor: "var(--muted)" },
+            { backgroundColor: "transparent" },
+          ],
+      { duration: 1200 },
+    );
     onScrollRequestHandled();
   }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled]);
 
@@ -5007,11 +5030,15 @@ const Transcript = memo(function Transcript({
         {groupVoiceChats(reactionView.visibleMessages).map((item) => {
           if (item.kind === "voiceChat") {
             return (
-              <VoiceChatCard
-                key={item.key}
-                group={item}
-                revealMessageId={scrollRequest?.messageId}
-              />
+              <div key={item.key}>
+                {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
+                  <TimeSeparator
+                    createdAt={item.messages[0].createdAt}
+                    locale={i18n.locale || "en"}
+                  />
+                ) : null}
+                <VoiceChatCard group={item} revealMessageId={scrollRequest?.messageId} />
+              </div>
             );
           }
           const message = item.message;
@@ -5019,115 +5046,118 @@ const Transcript = memo(function Transcript({
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           const messageReactions = reactionView.reactions.get(message.id);
           return (
-            <div
-              key={message.id}
-              data-message-id={message.id}
-              className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
-            >
+            <Fragment key={message.id}>
+              {separatorIds.has(message.id) ? (
+                <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
+              ) : null}
               <div
-                className={
-                  peerReceipt
-                    ? undefined
-                    : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
-                }
+                data-message-id={message.id}
+                className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
               >
                 <div
-                  data-testid={peerReceipt ? undefined : "message-bubble-frame"}
                   className={
                     peerReceipt
                       ? undefined
-                      : `relative w-fit min-w-0 ${
-                          message.role === "user"
-                            ? "max-w-[min(84%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[84%]"
-                            : "max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
-                        }`
+                      : `relative flex ${message.role === "user" ? "justify-end" : "justify-start"}`
                   }
                 >
-                  <MessageView
-                    artifactTarget={artifactTarget}
-                    message={message}
-                    canAnswer={message.id === answerableAskMessageId}
-                    onOpenBot={onOpenBot}
-                    onOpenPeerMessages={onOpenPeerMessages}
-                    onAnswer={onAnswer}
-                    speakerName={
+                  <div
+                    data-testid={peerReceipt ? undefined : "message-bubble-frame"}
+                    className={
                       peerReceipt
                         ? undefined
-                        : message.role === "bot"
-                          ? memberName?.(message.botId)
-                          : undefined
+                        : `relative w-fit min-w-0 ${
+                            message.role === "user"
+                              ? "max-w-[min(84%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[84%]"
+                              : "max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
+                          }`
                     }
-                    memberName={memberName}
-                    peerBot={peerBot}
-                    replyPreview={
-                      message.replyToMessageId
-                        ? messageById.get(message.replyToMessageId)
-                        : undefined
-                    }
-                    replyToMessageId={message.replyToMessageId}
-                    onJumpToMessage={onJumpToMessage}
-                    onRefresh={onRefresh}
-                    onBotChanged={onBotChanged}
-                    onAddRoutine={onAddRoutine}
-                    voiceReady={voiceReady}
-                    speaking={speakingMessageId === message.id}
-                    onSpeak={() => onSpeak(message)}
-                    onOpenComputer={onOpenComputer}
-                    showToolActivity={showToolActivity}
-                  />
-                  {peerReceipt ? null : (
-                    <MessageHoverActions
+                  >
+                    <MessageView
+                      artifactTarget={artifactTarget}
                       message={message}
-                      side={message.role === "user" ? "start" : "end"}
-                      onReply={onReply}
-                      onReact={onReact}
+                      canAnswer={message.id === answerableAskMessageId}
+                      onOpenBot={onOpenBot}
+                      onOpenPeerMessages={onOpenPeerMessages}
+                      onAnswer={onAnswer}
+                      speakerName={
+                        peerReceipt
+                          ? undefined
+                          : message.role === "bot"
+                            ? memberName?.(message.botId)
+                            : undefined
+                      }
+                      memberName={memberName}
+                      peerBot={peerBot}
+                      replyParent={
+                        message.replyToMessageId
+                          ? messageById.get(message.replyToMessageId)
+                          : undefined
+                      }
+                      onJumpToMessage={onJumpToMessage}
+                      onRefresh={onRefresh}
+                      onBotChanged={onBotChanged}
+                      onAddRoutine={onAddRoutine}
+                      voiceReady={voiceReady}
+                      speaking={speakingMessageId === message.id}
+                      onSpeak={() => onSpeak(message)}
+                      onOpenComputer={onOpenComputer}
+                      showToolActivity={showToolActivity}
                     />
-                  )}
+                    {peerReceipt ? null : (
+                      <MessageHoverActions
+                        message={message}
+                        side={message.role === "user" ? "start" : "end"}
+                        onReply={onReply}
+                        onReact={onReact}
+                      />
+                    )}
+                  </div>
                 </div>
+                {!peerReceipt && !message.id.startsWith("progress:") ? (
+                  <time
+                    dateTime={message.createdAt}
+                    data-testid="message-hover-time"
+                    className={cn(
+                      "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100 [@media(hover:none)]:transition-none",
+                      // Hover keeps the date in the side margin. Touch leaves that margin for the bubble and drops the revealed time under it.
+                      message.role === "user"
+                        ? "start-0 max-w-[max(8rem,16%)] text-start"
+                        : "end-0 max-w-[max(8rem,12%)] text-end",
+                      "[@media(hover:none)]:group-hover/message:static [@media(hover:none)]:group-focus-within/message:static [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:static",
+                      "[@media(hover:none)]:group-hover/message:block [@media(hover:none)]:group-focus-within/message:block [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:block",
+                      "[@media(hover:none)]:group-hover/message:mt-1 [@media(hover:none)]:group-focus-within/message:mt-1 [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:mt-1",
+                      "[@media(hover:none)]:group-hover/message:w-full [@media(hover:none)]:group-focus-within/message:w-full [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:w-full",
+                      "[@media(hover:none)]:group-hover/message:max-w-none [@media(hover:none)]:group-focus-within/message:max-w-none [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:max-w-none",
+                      message.role === "user"
+                        ? "[@media(hover:none)]:group-hover/message:text-end [@media(hover:none)]:group-focus-within/message:text-end [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-end"
+                        : "[@media(hover:none)]:group-hover/message:text-start [@media(hover:none)]:group-focus-within/message:text-start [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-start",
+                    )}
+                  >
+                    {formatMessageTime(message.createdAt, i18n.locale || "en")}
+                  </time>
+                ) : null}
+                {!peerReceipt && messageReactions ? (
+                  <div
+                    data-testid="message-reactions"
+                    className={cn(
+                      "mt-1 flex flex-wrap gap-1",
+                      message.role === "user" && "justify-end",
+                    )}
+                  >
+                    {[...messageReactions].map(([emoji, count]) => (
+                      <span
+                        key={emoji}
+                        className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs"
+                      >
+                        {emoji}
+                        {count > 1 ? ` ${count}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-              {!peerReceipt && !message.id.startsWith("progress:") ? (
-                <time
-                  dateTime={message.createdAt}
-                  data-testid="message-hover-time"
-                  className={cn(
-                    "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100 [@media(hover:none)]:transition-none",
-                    // Hover keeps the date in the side margin. Touch leaves that margin for the bubble and drops the revealed time under it.
-                    message.role === "user"
-                      ? "start-0 max-w-[max(8rem,16%)] text-start"
-                      : "end-0 max-w-[max(8rem,12%)] text-end",
-                    "[@media(hover:none)]:group-hover/message:static [@media(hover:none)]:group-focus-within/message:static [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:static",
-                    "[@media(hover:none)]:group-hover/message:block [@media(hover:none)]:group-focus-within/message:block [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:block",
-                    "[@media(hover:none)]:group-hover/message:mt-1 [@media(hover:none)]:group-focus-within/message:mt-1 [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:mt-1",
-                    "[@media(hover:none)]:group-hover/message:w-full [@media(hover:none)]:group-focus-within/message:w-full [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:w-full",
-                    "[@media(hover:none)]:group-hover/message:max-w-none [@media(hover:none)]:group-focus-within/message:max-w-none [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:max-w-none",
-                    message.role === "user"
-                      ? "[@media(hover:none)]:group-hover/message:text-end [@media(hover:none)]:group-focus-within/message:text-end [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-end"
-                      : "[@media(hover:none)]:group-hover/message:text-start [@media(hover:none)]:group-focus-within/message:text-start [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-start",
-                  )}
-                >
-                  {formatMessageTime(message.createdAt, i18n.locale || "en")}
-                </time>
-              ) : null}
-              {!peerReceipt && messageReactions ? (
-                <div
-                  data-testid="message-reactions"
-                  className={cn(
-                    "mt-1 flex flex-wrap gap-1",
-                    message.role === "user" && "justify-end",
-                  )}
-                >
-                  {[...messageReactions].map(([emoji, count]) => (
-                    <span
-                      key={emoji}
-                      className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs"
-                    >
-                      {emoji}
-                      {count > 1 ? ` ${count}` : ""}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+            </Fragment>
           );
         })}
         {running &&
@@ -5244,6 +5274,7 @@ const QuoteSelectionButton = memo(function QuoteSelectionButton({
 });
 
 const Composer = memo(function Composer({
+  artifactTarget,
   activeName,
   running,
   disabled,
@@ -5287,6 +5318,7 @@ const Composer = memo(function Composer({
   onSend: (text: string, mentions?: ComposerMention[]) => Promise<void>;
   onStop: () => Promise<void>;
   onVoice?: () => void;
+  artifactTarget: ArtifactTarget;
   replyTarget?: ThreadMessage | null;
   replyQuote?: string | null;
   replyTargetName?: string;
@@ -5719,34 +5751,20 @@ const Composer = memo(function Composer({
         </div>
       ) : null}
       {replyTarget ? (
-        <div
-          data-testid="reply-chip"
-          className="mb-2 flex items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-[13px] text-foreground/75"
-        >
-          <span className="min-w-0 flex-1 truncate text-muted-foreground">
-            {replyQuote
-              ? t`Replying to ${replyName}: “${replyQuote}”`
-              : t`Replying to ${replyName}`}
-          </span>
-          <button
-            type="button"
-            aria-label={t`Cancel reply`}
-            onClick={() => {
-              replyAnnouncementKind.current = "cancelled";
-              // Kill a pending arm announce in this event — the effect's
-              // cleanup can lag the timer, and a late "Replying to" would
-              // then be cleared as stale, dropping the cancel announcement.
-              window.clearTimeout(announceTimer.current);
-              onClearReply?.();
-              setReplyAnnouncement(t`Reply cancelled`);
-              // The chip unmounts with this button — keep focus in the composer.
-              textareaRef.current?.focus();
-            }}
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-          >
-            <X size={13} strokeWidth={2} />
-          </button>
-        </div>
+        <ComposerReplyPreview
+          author={replyName}
+          text={previewMessageText(replyTarget)}
+          quote={replyQuote}
+          attachment={replyAttachment(replyTarget.blocks)}
+          target={artifactTarget}
+          onDismiss={() => {
+            replyAnnouncementKind.current = "cancelled";
+            window.clearTimeout(announceTimer.current);
+            onClearReply?.();
+            setReplyAnnouncement(t`Reply cancelled`);
+            textareaRef.current?.focus();
+          }}
+        />
       ) : null}
       {attachmentNotice ? (
         <div className="mb-3 rounded-[14px] border border-warning/40 bg-warning/10 px-4 py-2 text-[13px] text-warning">
@@ -6172,19 +6190,9 @@ function previewMessageText(message: ThreadMessage): string {
     .join(" ")
     .trim();
   if (text) return text;
-  if (message.blocks.some((block) => block.kind === "image" || block.kind === "file")) {
-    return t`Attachment`;
-  }
+  const attachment = replyAttachment(message.blocks);
+  if (attachment) return attachment.kind === "image" ? t`Photo` : attachment.name || t`Attachment`;
   return t`Message`;
-}
-
-/** Bound reply excerpts used in accessible names (visible UI truncates via CSS). */
-function accessibleReplyExcerpt(text: string, max = 120): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= max) return normalized;
-  // Reserve a slot for the ellipsis; never split a surrogate pair at the cut.
-  const end = (normalized.charCodeAt(max - 2) & 0xfc00) === 0xd800 ? max - 2 : max - 1;
-  return `${normalized.slice(0, end).trimEnd()}…`;
 }
 
 function formatRosterTime(isoDate?: string | null): string {
@@ -6303,6 +6311,15 @@ function MessageHoverActions({
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"}>
+            <DropdownMenuItem
+              onClick={() => {
+                setMoreOpen(false);
+                onReply(message);
+              }}
+            >
+              <Reply size={14} strokeWidth={1.7} />
+              <Trans>Reply</Trans>
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={copyMessage}>
               <Copy size={14} strokeWidth={1.7} />
               <Trans>Copy</Trans>
@@ -6377,8 +6394,7 @@ const MessageView = memo(function MessageView({
   speakerName,
   memberName,
   peerBot,
-  replyPreview,
-  replyToMessageId,
+  replyParent,
   onJumpToMessage,
   onRefresh,
   onBotChanged,
@@ -6397,9 +6413,8 @@ const MessageView = memo(function MessageView({
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
-  peerBot: (botId: string) => { color: string; status?: string } | undefined;
-  replyPreview?: ThreadMessage;
-  replyToMessageId?: string;
+  peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
+  replyParent?: ThreadMessage;
   onJumpToMessage?: (messageId: string) => void;
   onRefresh: () => Promise<void>;
   onBotChanged: () => Promise<void>;
@@ -6420,7 +6435,8 @@ const MessageView = memo(function MessageView({
   const isLive = message.id.startsWith("progress:");
   const quoteMessageId = message.id.includes(":") ? undefined : message.id;
   const visibleNarrationBlocks = renderableMessageBlocks(message.blocks, showToolActivity);
-  const parentJumpId = replyPreview?.id ?? replyToMessageId;
+
+  const replyBotId = message.replyPreview?.botId ?? replyParent?.botId;
   const speakerBot = message.botId ? peerBot?.(message.botId) : undefined;
   const speakerColorDef = useMemo(
     () => resolvePersonaColorDef(message.botId ?? "bot", speakerBot?.color),
@@ -6442,30 +6458,19 @@ const MessageView = memo(function MessageView({
           {speakerName}
         </div>
       ) : null}
-      {parentJumpId ? (
-        <button
-          type="button"
-          data-testid="reply-parent-preview"
-          // Name the action and a short excerpt; a bare action label would
-          // hide the quote, and an unbounded quote can be thousands of chars.
-          aria-label={
-            message.replyQuote
-              ? t`Jump to replied message: “${accessibleReplyExcerpt(message.replyQuote)}”`
-              : replyPreview
-                ? t`Jump to replied message: ${accessibleReplyExcerpt(previewMessageText(replyPreview))}`
-                : t`Jump to replied message`
-          }
-          onClick={() => onJumpToMessage?.(parentJumpId)}
-          className="mb-2 block max-w-[74%] truncate rounded-[14px] border border-border bg-background px-3 py-2 text-start text-[12.5px] text-muted-foreground hover:border-border hover:text-foreground/75"
-          dir="auto"
-        >
-          {message.replyQuote
-            ? `“${message.replyQuote}”`
-            : replyPreview
-              ? previewMessageText(replyPreview)
-              : t`Earlier message`}
-        </button>
-      ) : null}
+      <ReplyLine
+        target={artifactTarget}
+        message={message}
+        fallbackText={replyParent ? previewMessageText(replyParent) : undefined}
+        author={
+          (message.replyPreview?.role ?? replyParent?.role) === "user"
+            ? t`You`
+            : ((replyBotId ? peerBot(replyBotId)?.name : undefined) ??
+              memberName?.(replyBotId) ??
+              t`Bot`)
+        }
+        onJump={onJumpToMessage}
+      />
     </>
   );
   if (isNarration) {

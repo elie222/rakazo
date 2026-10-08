@@ -1,3 +1,4 @@
+import { expo } from "@better-auth/expo";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import {
   allowlistedSignupAdmission,
@@ -7,13 +8,31 @@ import {
   parseAllowlist,
   signupPolicyFromEnv,
 } from "@rakazo/core";
-import { bootstrapUserSpace, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { bootstrapUserSpace } from "@rakazo/db";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import {
+  APIError,
+  addOAuthServerContext,
+  createAuthMiddleware,
+  getOAuthState,
+} from "better-auth/api";
 import { bearer, organization } from "better-auth/plugins";
+import {
+  accountSecurity,
+  OIDC_FRESH_AGE,
+  oidcProofKey,
+  sessionForAuthHook,
+} from "./account-security.js";
+import type { OidcConfig } from "./oidc.js";
+import { oidcDiscovery } from "./oidc.js";
+
+export type { OidcConfig } from "./oidc.js";
 
 export interface AuthEnv {
+  passwordAuth?: boolean;
+  oidc?: OidcConfig;
   secret: string;
   baseURL: string;
   webOrigin: string;
@@ -218,20 +237,29 @@ export function authRateLimitOptions(nodeEnv = process.env.NODE_ENV) {
   return {
     enabled: nodeEnv === "production",
     storage: "database" as const,
-    customRules: Object.fromEntries(CREDENTIAL_PATHS.map((path) => [path, rule])),
+    customRules: {
+      ...Object.fromEntries(CREDENTIAL_PATHS.map((path) => [path, rule])),
+      "/request-account-deletion": { window: 600, max: 3 },
+    },
   };
 }
 
 export function createAuth(prisma: PrismaClient, env: AuthEnv) {
-  return betterAuth({
+  if (env.passwordAuth === false && !env.oidc)
+    throw new Error("Password auth requires OIDC when disabled");
+  const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
+  const auth = betterAuth({
     appName: "Rakazo",
     secret: env.secret,
     baseURL: env.baseURL,
-    trustedOrigins: buildTrustedOrigins(env),
+    trustedOrigins: [...buildTrustedOrigins(env), "rakazo://"],
+    account: {
+      accountLinking: { enabled: true, disableImplicitLinking: true, trustedProviders: [] },
+    },
     rateLimit: authRateLimitOptions(),
     database: prismaAdapter(prisma, { provider: "postgresql" }),
     emailAndPassword: {
-      enabled: true,
+      enabled: env.passwordAuth !== false,
       // Signup policy is mutable deployment state, so the request hook below
       // enforces it instead of freezing an environment value at process start.
       disableSignUp: false,
@@ -262,6 +290,38 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         : undefined,
     },
     user: {
+      validateUserInfo: async ({ user, source }, ctx) => {
+        if (source.method !== "oauth" || source.oauth?.providerId !== "oidc") return;
+        const expectedUser = (await getOAuthState())?.serverContext?.reauthUserId;
+        if (typeof expectedUser === "string" && user.id !== expectedUser)
+          return { error: "REAUTHENTICATION_REQUIRED" };
+        const verified = user.emailVerified === true;
+        const email = String(user.email ?? "").toLowerCase();
+        if (isMessagingEmail(email)) return { error: "EMAIL_NOT_AVAILABLE" };
+        if (source.action === "link-account") {
+          if (!verified) return { error: "unable_to_link_account" };
+          return;
+        }
+        if (source.action === "create-user") {
+          const policy = await resolveSignupPolicy(prisma, env);
+          if (!policy.enabled) return { error: "REGISTRATION_CLOSED" };
+          if (!env.oidc?.allowSignupBypass && !emailAllowed(email, policy.allowlist))
+            return { error: "EMAIL_NOT_ALLOWED" };
+          if (!env.oidc?.allowSignupBypass && policy.allowlist.length > 0 && !verified)
+            return { error: "EMAIL_VERIFICATION_REQUIRED" };
+          return;
+        }
+        if (source.action === "sign-in" && user.id) {
+          const collision = await ctx.context.internalAdapter.findUserByEmail(email);
+          if (collision && collision.user.id !== user.id) return { error: "account_not_linked" };
+          const stored = await ctx.context.internalAdapter.findUserById(user.id);
+          const credential = await ctx.context.internalAdapter.findCredentialAccount(user.id);
+          if (credential?.password && stored?.email.toLowerCase() !== email)
+            return { error: "email_does_not_match" };
+          // A previous verified claim must not mask a later false/missing claim.
+          await ctx.context.internalAdapter.updateUser(user.id, { email, emailVerified: verified });
+        }
+      },
       deleteUser: {
         enabled: true,
         beforeDelete: async (user) => {
@@ -279,25 +339,28 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             )
             .map(({ organizationId }) => organizationId);
 
-          await prisma.$transaction([
-            prisma.deploymentSettings.updateMany({
+          await prisma.$transaction(async (tx) => {
+            await tx.deploymentSettings.updateMany({
               where: { ownerUserId: user.id },
               data: { ownerUserId: null },
-            }),
+            });
             // Messaging identities are deliberately FK-free, so clear them
             // here or the unique address would point at a deleted bot forever.
-            prisma.messagingIdentity.deleteMany({
+            await tx.messagingIdentity.deleteMany({
               where: { userId: user.id },
-            }),
-            prisma.organization.deleteMany({
+            });
+            await tx.organization.deleteMany({
               where: { id: { in: personalOrganizationIds } },
-            }),
-          ]);
+            });
+          });
         },
       },
     },
     plugins: [
       bearer(),
+      expo(),
+      accountSecurity(env.email, env.oidc?.name, env.oidc?.issuer, env.passwordAuth !== false),
+      ...(discovery ? [discovery.plugin] : []),
       organization({
         allowUserToCreateOrganization: false,
         disableOrganizationDeletion: true,
@@ -306,17 +369,29 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
     ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (
+          ctx.path === "/sign-in/social" &&
+          ctx.body?.provider === "oidc" &&
+          ctx.body?.additionalData?.reauthenticate === true
+        ) {
+          const session = await sessionForAuthHook(ctx);
+          if (!session || isMessagingEmail(session.user.email)) throw new APIError("UNAUTHORIZED");
+          await addOAuthServerContext({ reauthUserId: session.user.id });
+        }
         for (const value of [ctx.body?.email, ctx.body?.newEmail]) {
           if (typeof value === "string" && isMessagingEmail(value)) {
             throw new APIError("BAD_REQUEST", { message: "Email is not available" });
           }
         }
-        // Better Auth skips the password for a session under a day old, so a
-        // borrowed session alone could delete the account.
-        if (ctx.path === "/delete-user" && !ctx.body?.password) {
-          throw new APIError("BAD_REQUEST", {
-            message: "Invalid password",
-            code: "INVALID_PASSWORD",
+        if (
+          env.passwordAuth === false &&
+          [...CREDENTIAL_PATHS, "/reset-password", "/change-password", "/set-password"].includes(
+            ctx.path,
+          )
+        ) {
+          throw new APIError("FORBIDDEN", {
+            code: "PASSWORD_AUTH_DISABLED",
+            message: "Password authentication is disabled",
           });
         }
         let policy =
@@ -353,6 +428,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         } else if (policy) {
           requireEmailVerification = policy.allowlist.length > 0;
         }
+        const findSession = ctx.context.internalAdapter.findSession;
         // Return a request-local override; mutating the shared auth options
         // would leak a concurrent request's policy into another signup.
         return {
@@ -370,9 +446,15 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 // Authorize at lookup: bearer conversion happens after before
                 // hooks, and auth mutations also read sessions through here.
                 findSession: async (token: string) => {
-                  const session = await ctx.context.internalAdapter.findSession(token);
+                  const session = await findSession(token);
                   if (!session || isMessagingEmail(session.user.email)) return null;
                   if (session.user.emailVerified) return session;
+                  if (env.oidc?.allowSignupBypass) {
+                    const accounts = await ctx.context.internalAdapter.findAccounts(
+                      session.user.id,
+                    );
+                    if (accounts.some((account) => account.providerId === "oidc")) return session;
+                  }
                   policy ??= await resolveSignupPolicy(prisma, env);
                   return policy.allowlist.length === 0 ? session : null;
                 },
@@ -396,10 +478,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             // The auth adapter can still be inside the signup transaction.
             const user = await ctx?.context.internalAdapter.findUserById(session.userId);
             const policy = await resolveSignupPolicy(prisma, env);
+            const oidcSignIn = isOidcCallback(ctx);
+            const bypassAllowlist = oidcSignIn && env.oidc?.allowSignupBypass;
             if (!user || isMessagingEmail(user.email)) {
               throw new APIError("FORBIDDEN", { message: "Email verification required" });
             }
-            if (!user.emailVerified && policy.allowlist.length > 0) {
+            if (!user.emailVerified && policy.allowlist.length > 0 && !bypassAllowlist) {
+              if (oidcSignIn)
+                throw new APIError("FORBIDDEN", {
+                  code: "EMAIL_VERIFICATION_REQUIRED",
+                  message: "Email verification required",
+                });
               if (env.email || !emailAllowed(user.email, policy.allowlist)) {
                 throw new APIError("FORBIDDEN", { message: "Email verification required" });
               }
@@ -415,13 +504,23 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             // deployment owner. Bootstrap only at the first admitted session.
             const membership = await prisma.spaceMember.findFirst({ where: { userId: user.id } });
             if (!membership) {
-              if (!policy.enabled || !emailAllowed(user.email, policy.allowlist)) {
+              if (
+                !policy.enabled ||
+                (!bypassAllowlist && !emailAllowed(user.email, policy.allowlist))
+              ) {
                 throw new APIError("FORBIDDEN", { message: "Registration is closed" });
               }
               await bootstrapUserSpace(prisma, user, env);
             }
           },
           after: async (session, ctx) => {
+            if (ctx && isOidcCallback(ctx)) {
+              await ctx.context.internalAdapter.createVerificationValue({
+                identifier: oidcProofKey(session.id),
+                value: session.userId,
+                expiresAt: new Date(Date.now() + OIDC_FRESH_AGE * 1_000),
+              });
+            }
             const previous = replacedSession(ctx);
             if (previous) await env.afterReplaceSession?.(previous, session);
           },
@@ -449,6 +548,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         },
       },
     },
+  });
+  return Object.assign(auth, {
+    ssoAvailability: () => discovery?.availability(),
+    disposeOidcDiscovery: () => discovery?.dispose(),
   });
 }
 
@@ -571,4 +674,10 @@ export function loopbackTwinOrigins(origin: string): string[] {
  */
 export function isBlockedAuthPath(path: string): boolean {
   return path.startsWith("/organization");
+}
+
+function isOidcCallback(
+  ctx: { path?: string; params?: Record<string, unknown> } | null | undefined,
+): boolean {
+  return ctx?.path === "/callback/:id" && ctx.params?.id === "oidc";
 }

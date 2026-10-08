@@ -15,6 +15,7 @@ import {
 import { isFileDrag, readFileAsBase64 } from "../../lib/pending-attachments";
 import { rpc } from "../../lib/rpc";
 import { useObjectUrl } from "../../lib/use-object-url";
+import { errorText } from "../../lib/user-error";
 
 type Entry = ComputerFileEntry;
 type Preview =
@@ -65,7 +66,7 @@ export function FilesApp({
         setPreview(null);
       } catch (cause) {
         if (generation !== loadGeneration.current) return;
-        setError(errorMessage(cause, t`Could not list files`));
+        setError(errorText(cause, t`Could not list files`));
       }
     },
     [botId, t],
@@ -119,7 +120,7 @@ export function FilesApp({
         setPreview({ path: entry.path, kind: "text", content: file.content });
       }
     } catch (cause) {
-      setError(errorMessage(cause, t`Could not open file`));
+      setError(errorText(cause, t`Could not open file`));
     }
   }
 
@@ -133,7 +134,7 @@ export function FilesApp({
         decodeArtifactBase64(file.contentBase64),
       );
     } catch (cause) {
-      setError(errorMessage(cause, t`Could not download file`));
+      setError(errorText(cause, t`Could not download file`));
     }
   }
 
@@ -153,7 +154,7 @@ export function FilesApp({
       }
       await load(path);
     } catch (cause) {
-      setError(errorMessage(cause, t`Could not upload file`));
+      setError(errorText(cause, t`Could not upload file`));
     } finally {
       setBusy(false);
     }
@@ -294,8 +295,4 @@ function ImagePreview({ preview }: { preview: Extract<Preview, { kind: "image" }
 function extension(path: string) {
   const name = basename(path);
   return name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-}
-
-function errorMessage(cause: unknown, fallback: string) {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
 }

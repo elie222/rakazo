@@ -66,6 +66,23 @@ describe("agent secrets", () => {
     ).rejects.toBeInstanceOf(ORPCError);
   });
 
+  it("writes a fresh key after a serialization conflict", async () => {
+    prisma.secret.create.mockRejectedValueOnce({ code: "P2034" });
+    put.mockResolvedValueOnce({ id: "losing", ciphertext: "deleted-ref" });
+    put.mockResolvedValueOnce({ id: "winning", ciphertext: "live-ref" });
+    await putAgentSecret({ prisma: prisma as never, secrets: { put } }, actor, {
+      name: "ACME_TOKEN",
+      value: "fake",
+    });
+    expect(put).toHaveBeenCalledTimes(2);
+    expect(prisma.secret.create).toHaveBeenLastCalledWith({
+      data: expect.objectContaining({
+        id: "winning",
+        ciphertext: "live-ref",
+      }),
+    });
+  });
+
   it("puts and removes secrets", async () => {
     await putAgentSecret({ prisma: prisma as never, secrets: { put } }, actor, {
       name: "ACME_TOKEN",

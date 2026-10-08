@@ -27,6 +27,7 @@ import {
   computerNetworkCreateOptions,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
+  computerNetworkOwnerFor,
   containerCreateOptions,
   containerNameFor,
   controlPortPublicationMatches,
@@ -160,19 +161,20 @@ describe("graphical computer spec", () => {
   });
 
   it("names the bridge only when egress is restricted", () => {
-    const open = computerNetworkCreateOptions("bot_1", "open");
+    const open = computerNetworkCreateOptions("bot_1", "owner", "open");
     expect(open).toEqual({
       Name: computerNetworkNameFor("bot_1"),
       Driver: "bridge",
       CheckDuplicate: true,
+      Labels: { "rakazo.computerOwner": "owner", "rakazo.botId": "bot_1" },
     });
     expect(open).not.toHaveProperty("Options");
 
-    const restricted = computerNetworkCreateOptions("bot_1", "restricted");
+    const restricted = computerNetworkCreateOptions("bot_1", "owner", "restricted");
     expect(restricted.Options).toEqual({
       "com.docker.network.bridge.name": computerBridgeNameFor("bot_1"),
     });
-    expect(computerNetworkCreateOptions("bot_1")).toEqual(open);
+    expect(computerNetworkCreateOptions("bot_1", "owner")).toEqual(open);
     // The bridge name differs from the network name so `docker network` output
     // still shows the readable rakazo-computer-* name while iptables matches the interface.
     expect(restricted.Options?.["com.docker.network.bridge.name"]).not.toBe(restricted.Name);
@@ -1730,6 +1732,27 @@ describe("computer home storage", () => {
         runtime({ Type: "volume", Destination: "/data" }),
       ),
     ).toThrow(/no name/);
+  });
+  it("derives the network owner from where computer homes live, without exposing it", () => {
+    const volume = (name: string) =>
+      runtime({
+        Type: "volume",
+        Name: name,
+        Source: `/var/lib/docker/volumes/${name}/_data`,
+        Destination: "/data",
+      });
+    const owner = computerNetworkOwnerFor("/data", volume("example_appdata"));
+    expect(owner).toMatch(/^[0-9a-f]{32}$/);
+    expect(computerNetworkOwnerFor("/data", volume("example_appdata"))).toBe(owner);
+    expect(computerNetworkOwnerFor("/data", volume("other_appdata"))).not.toBe(owner);
+    const hostRun = computerNetworkOwnerFor("/srv/install-a/data", undefined);
+    expect(computerNetworkOwnerFor("/srv/install-b/data", undefined)).not.toBe(hostRun);
+    expect(
+      computerNetworkOwnerFor(
+        "/data",
+        runtime({ Type: "bind", Source: "/srv/install-a/data", Destination: "/data" }),
+      ),
+    ).toBe(hostRun);
   });
   it("fails closed on daemons that could ignore volume subpaths", () => {
     for (const version of ["1.44", "", "invalid", "0.99"])

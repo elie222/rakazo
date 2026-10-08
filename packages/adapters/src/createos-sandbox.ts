@@ -35,6 +35,7 @@ import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { readBodyCapped } from "./web-ssrf.js";
 
 const CREATEOS_WORKSPACE = "/home/desktop/rakazo-home";
@@ -1401,7 +1402,7 @@ raise SystemExit(1)
     const command = [
       `mkdir -p ${shellQuote(cwd)}`,
       `cd ${shellQuote(cwd)}`,
-      `${env ? `${env} ` : ""}${request.argv.map(shellQuote).join(" ")}`,
+      `${env ? `${env} ` : ""}${sandboxCommandArgv(request).map(shellQuote).join(" ")}`,
     ].join(" && ");
     const seconds = Math.max(1, Math.ceil(timeoutMs / 1_000));
     return this.postJson<CreateOSExecResponse>(

@@ -1,0 +1,179 @@
+---
+import { getCollection, render } from "astro:content";
+import type { CollectionEntry } from "astro:content";
+import type { BlogCategory } from "../../blog/indexability";
+import {
+  BLOG_CATEGORIES,
+  CATEGORY_LABEL,
+  categoryIsIndexed,
+  categoryPath,
+} from "../../blog/indexability";
+import { formatPostDate, isoDate } from "../../blog/format";
+import { blogPostStructuredData } from "../../blog/structured-data";
+import ComparisonTable from "../../components/ComparisonTable.astro";
+import FaqList from "../../components/FaqList.astro";
+import SiteFrame from "../../components/SiteFrame.astro";
+import { blogOgId, ogPublicPath } from "../../og-pages";
+import { SITE_URL } from "../../site";
+
+type Props =
+  | { kind: "post"; post: CollectionEntry<"blog"> }
+  | { kind: "category"; category: BlogCategory };
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog");
+  return [
+    ...BLOG_CATEGORIES.map((category) => ({
+      params: { slug: category },
+      props: { kind: "category" as const, category },
+    })),
+    ...posts.map((post) => ({
+      params: { slug: post.id },
+      props: { kind: "post" as const, post },
+    })),
+  ];
+}
+
+const props = Astro.props as Props;
+
+let post: CollectionEntry<"blog"> | undefined;
+let category: BlogCategory | undefined;
+let Content: Awaited<ReturnType<typeof render>>["Content"] | undefined;
+let headings: Awaited<ReturnType<typeof render>>["headings"] = [];
+
+if (props.kind === "post") {
+  post = props.post;
+  const rendered = await render(post);
+  Content = rendered.Content;
+  headings = rendered.headings;
+} else {
+  category = props.category;
+}
+
+const posts = (await getCollection("blog")).sort(
+  (a, b) => b.data.updated.getTime() - a.data.updated.getTime(),
+);
+const categoryPosts = category ? posts.filter((entry) => entry.data.category === category) : [];
+const indexed = category ? categoryIsIndexed(category) : true;
+const toc = [
+  { slug: "tldr", text: "TL;DR" },
+  { slug: "comparison", text: "Comparison" },
+  ...headings.filter((heading) => heading.depth === 2).map((heading) => ({
+    slug: heading.slug,
+    text: heading.text,
+  })),
+  { slug: "faq", text: "FAQ" },
+  { slug: "sources", text: "Sources" },
+  { slug: "related", text: "Related" },
+];
+const pageUrl = post ? new URL(`/blog/${post.id}/`, SITE_URL).toString() : "";
+const image = post ? new URL(ogPublicPath(blogOgId(post.id)), SITE_URL).toString() : "";
+const structuredData = post
+  ? blogPostStructuredData({
+      pageUrl,
+      title: post.data.title,
+      description: post.data.description,
+      published: isoDate(post.data.published),
+      updated: isoDate(post.data.updated),
+      image,
+      categoryLabel: CATEGORY_LABEL[post.data.category],
+      categoryUrl: new URL(categoryPath(post.data.category), SITE_URL).toString(),
+    })
+  : undefined;
+---
+
+{
+  post && Content ? (
+    <SiteFrame
+      title={`${post.data.title} – Rakazo`}
+      description={post.data.description}
+      structuredData={structuredData}
+      ogImage={ogPublicPath(blogOgId(post.id))}
+      ogType="article"
+    >
+      <p class="alt-crumb">
+        <a href="/blog/">Blog</a>
+        <span aria-hidden="true"> / </span>
+        <a href={categoryPath(post.data.category)}>{CATEGORY_LABEL[post.data.category]}</a>
+      </p>
+      <h1>{post.data.title}</h1>
+      <p class="post-meta">
+        <span>Published {formatPostDate(post.data.published)}</span>
+        <span>Updated {formatPostDate(post.data.updated)}</span>
+        <span>{post.data.author}</span>
+      </p>
+      <aside class="tldr">
+        <h2 id="tldr">TL;DR</h2>
+        <p>{post.data.tldr}</p>
+      </aside>
+      {
+        toc.length > 0 && (
+          <nav class="toc" aria-label="Contents">
+            <p>Contents</p>
+            <ol>
+              {toc.map((heading) => (
+                <li>
+                  <a href={`#${heading.slug}`}>{heading.text}</a>
+                </li>
+              ))}
+            </ol>
+          </nav>
+        )
+      }
+      <h2 id="comparison">Comparison</h2>
+      <ComparisonTable
+        caption={post.data.comparison.caption}
+        columns={post.data.comparison.columns}
+        rows={post.data.comparison.rows}
+      />
+      <div class="blog-body">
+        <Content />
+      </div>
+      <FaqList items={post.data.faq} />
+      <h2 id="sources">Sources</h2>
+      <ul class="source-list">
+        {post.data.sources.map((source) => (
+          <li>
+            <a href={source.href} target="_blank" rel="noreferrer">
+              {source.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <h2 id="related">Related</h2>
+      <ul class="blog-related">
+        {post.data.related.map((link) => (
+          <li>
+            <a href={link.href}>
+              <span>{link.title}</span>
+              <span>{link.description}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </SiteFrame>
+  ) : (
+    category && (
+      <SiteFrame
+        title={`${CATEGORY_LABEL[category]} – Rakazo blog`}
+        description={`${CATEGORY_LABEL[category]} from the Rakazo blog.`}
+        index={indexed}
+      >
+        <p class="alt-crumb">
+          <a href="/blog/">Blog</a>
+        </p>
+        <h1>{CATEGORY_LABEL[category]}</h1>
+        <ul class="blog-index">
+          {categoryPosts.map((entry) => (
+            <li>
+              <a class="alt-card" href={`/blog/${entry.id}/`}>
+                <h2>{entry.data.title}</h2>
+                <p>{entry.data.description}</p>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </SiteFrame>
+    )
+  )
+}

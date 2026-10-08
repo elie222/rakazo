@@ -1,6 +1,13 @@
+import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
 import { type McpOAuthBroker, StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import { InMemoryRealtimeFanout } from "./realtime.js";
+import { migrateSecrets } from "./secret-migration.js";
+import { ComposedSecretStore } from "./secret-store-factory.js";
+import { infisicalFake } from "./secret-store-fake.js";
+import { EncryptedSecretStore } from "./secrets.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -95,6 +102,274 @@ function mcpFetch(
 }
 
 describe("MCP connector session cache", () => {
+  it("keeps sessions across unchanged TTL reads and reconnects on observed rotation", async () => {
+    vi.useFakeTimers();
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore({ ...fake.options, cacheTtlMs: 100 });
+    const context = {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    };
+    await store.start();
+    const record = await store.put(
+      JSON.stringify({ headers: { Authorization: "Bearer initial" } }),
+      context,
+    );
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: record.id, ciphertext: record.ref })) },
+    };
+    const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const connector = new McpConnector(prisma as never, store, { network: TEST_NETWORK });
+    try {
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(1);
+      const reads = fake.fetcher.mock.calls.length;
+      await connector.discoverTools(context);
+      expect(fake.fetcher).toHaveBeenCalledTimes(reads);
+      expect(state.initializations).toBe(1);
+      const changed = vi.fn();
+      store.onChange(changed);
+      await vi.advanceTimersByTimeAsync(100);
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(1);
+      expect(changed).not.toHaveBeenCalled();
+      fake.values.set(
+        record.ref.split(":").at(-1)!,
+        JSON.stringify({ headers: { Authorization: "Bearer rotated" } }),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await connector.discoverTools(context);
+      expect(changed).toHaveBeenCalledExactlyOnceWith(record.ref);
+      expect(state.initializations).toBe(2);
+      expect(state.headers.some((headers) => headers.authorization === "Bearer rotated")).toBe(
+        true,
+      );
+    } finally {
+      await connector.close();
+      await store.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("detects rotation after digest eviction and evicts deleted credentials", async () => {
+    vi.useFakeTimers();
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore({
+      ...fake.options,
+      cacheTtlMs: 100,
+      cacheMaxEntries: 1,
+    });
+    const context = {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    };
+    await store.start();
+    const record = await store.put(
+      JSON.stringify({ headers: { Authorization: "Bearer initial" } }),
+      context,
+    );
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: record.id, ciphertext: record.ref })) },
+    };
+    const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const connector = new McpConnector(prisma as never, store, { network: TEST_NETWORK });
+    try {
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(1);
+      const changed = vi.fn();
+      store.onChange(changed);
+      await store.put("unrelated", context);
+      fake.values.set(
+        record.ref.split(":").at(-1)!,
+        JSON.stringify({ headers: { Authorization: "Bearer rotated" } }),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await connector.discoverTools(context);
+      expect(changed).not.toHaveBeenCalledWith(record.ref);
+      expect(state.initializations).toBe(2);
+      expect(state.headers.some((headers) => headers.authorization === "Bearer rotated")).toBe(
+        true,
+      );
+      fake.values.delete(record.ref.split(":").at(-1)!);
+      await vi.advanceTimersByTimeAsync(100);
+      // Discovery suppresses per-server errors; no tools from the deleted credential survive.
+      await expect(connector.discoverTools(context)).resolves.toEqual([]);
+      expect((connector as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
+    } finally {
+      await connector.close();
+      await store.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a live session working during a secret-store outage after TTL", async () => {
+    vi.useFakeTimers();
+    const sink = createTestSink();
+    const previousLogger = getLogger();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    const fake = infisicalFake();
+    const store = new InfisicalSecretStore({ ...fake.options, cacheTtlMs: 100 });
+    const context = {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    };
+    await store.start();
+    const record = await store.put(
+      JSON.stringify({ headers: { Authorization: "Bearer initial" } }),
+      context,
+    );
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: record.id, ciphertext: record.ref })) },
+    };
+    const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const connector = new McpConnector(prisma as never, store, { network: TEST_NETWORK });
+    try {
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(1);
+      const reads = fake.fetcher.mock.calls.length;
+      fake.offline = true;
+      await vi.advanceTimersByTimeAsync(100);
+      const tools = await connector.discoverTools(context);
+      expect(tools).toHaveLength(1);
+      expect(fake.fetcher.mock.calls.length).toBeGreaterThan(reads);
+      expect(state.initializations).toBe(1);
+      expect(state.headers.at(-1)?.authorization).toBe("Bearer initial");
+      const events = [];
+      for (const tool of tools) {
+        const call = { tool: tool.name, args: {}, executionId: "test", route: tool.route };
+        for await (const event of connector.execute(call, context)) events.push(event);
+      }
+      expect(events).toMatchObject([{ type: "result" }]);
+      expect(state.initializations).toBe(1);
+      expect(sink.events).toHaveLength(2);
+      const log = JSON.stringify(sink.events);
+      expect(log).toContain("MCP secret revalidation failed");
+      expect(log).not.toContain("private response value");
+      expect(log).not.toContain(record.ref);
+      expect(log).not.toContain(record.id);
+      expect(log).not.toContain("Bearer initial");
+      // Recovery still revalidates and observes a rotation without a manual read.
+      fake.offline = false;
+      fake.values.set(
+        record.ref.split(":").at(-1)!,
+        JSON.stringify({ headers: { Authorization: "Bearer rotated" } }),
+      );
+      expect(await connector.discoverTools(context)).toHaveLength(1);
+      expect(state.initializations).toBe(2);
+      expect(state.headers.at(-1)?.authorization).toBe("Bearer rotated");
+    } finally {
+      await connector.close();
+      await store.close();
+      installLogger(previousLogger);
+      vi.useRealTimers();
+    }
+  });
+
+  it("reconnects a legacy session when migration publishes the old ref through realtime", async () => {
+    const fake = infisicalFake();
+    const fanout = new InMemoryRealtimeFanout();
+    const source = new ComposedSecretStore(new EncryptedSecretStore("fake-key"), undefined, fanout);
+    const target = new ComposedSecretStore(
+      new EncryptedSecretStore("fake-key"),
+      new InfisicalSecretStore(fake.options),
+      fanout,
+    );
+    const worker = new ComposedSecretStore(
+      new EncryptedSecretStore("fake-key"),
+      new InfisicalSecretStore(fake.options),
+      fanout,
+    );
+    await source.start();
+    await target.start();
+    await worker.start();
+    const context = {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    };
+    const record = await source.put(
+      JSON.stringify({ headers: { Authorization: "Bearer fake" } }),
+      context,
+    );
+    const row = { id: record.id, ciphertext: record.ref };
+    const assignment = { ...ASSIGNMENT, server: { ...SERVER, secretId: record.id } };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => row) },
+    };
+    const state = { failNext: false, initializations: 0 };
+    vi.stubGlobal("fetch", mcpFetch(state));
+    const connector = new McpConnector(prisma as never, worker, { network: TEST_NETWORK });
+    try {
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(1);
+      const result = await migrateSecrets(
+        {
+          async *rows() {
+            yield { id: row.id, recordId: row.id, ref: row.ciphertext, label: "secret" };
+          },
+          async replace(original, ref) {
+            if (original.ref !== row.ciphertext) return false;
+            row.ciphertext = ref;
+            return true;
+          },
+          async referenced(ref) {
+            return row.ciphertext === ref;
+          },
+        },
+        source,
+        target,
+        context,
+        { direction: "forward" },
+      );
+      expect(result.migrated).toBe(1);
+      await connector.discoverTools(context);
+      expect(state.initializations).toBe(2);
+    } finally {
+      await connector.close();
+      await source.close();
+      await target.close();
+      await worker.close();
+      await fanout.close();
+    }
+  });
+
   it("keeps large MCP schemas out of the initial runtime tool catalog", async () => {
     const state = {
       failNext: false,

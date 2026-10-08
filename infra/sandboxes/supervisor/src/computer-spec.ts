@@ -179,12 +179,32 @@ export function computerBridgeNameFor(botId: string) {
   return `rakazo-c${hash}`;
 }
 
+/**
+ * Owner label for this install's computer networks, which can share a Docker host
+ * with other installs that name theirs the same way. It is derived from where the
+ * computer homes live (see computerHomeStorage) and hashed to keep host paths out.
+ */
+export function computerNetworkOwnerFor(
+  dataDir: string,
+  info: Docker.ContainerInspectInfo | undefined,
+) {
+  const mount = info?.Mounts.find((entry) => entry.Destination === dataDir);
+  const root =
+    mount?.Type === "volume" ? `volume:${mount.Name}` : `path:${mount?.Source ?? dataDir}`;
+  return createHash("sha256").update(root).digest("hex").slice(0, 32);
+}
+
 /** docker.createNetwork payload for a bot's computer network. */
-export function computerNetworkCreateOptions(botId: string, egress: ComputerEgressMode = "open") {
+export function computerNetworkCreateOptions(
+  botId: string,
+  owner: string,
+  egress: ComputerEgressMode = "open",
+) {
   return {
     Name: computerNetworkNameFor(botId),
     Driver: "bridge",
     CheckDuplicate: true,
+    Labels: { "rakazo.computerOwner": owner, "rakazo.botId": botId },
     ...(egress === "restricted"
       ? { Options: { "com.docker.network.bridge.name": computerBridgeNameFor(botId) } }
       : {}),

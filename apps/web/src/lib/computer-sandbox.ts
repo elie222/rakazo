@@ -1,5 +1,7 @@
+import { t } from "@lingui/core/macro";
 import type { Me } from "@rakazo/contracts";
 import { rpc } from "./rpc";
+import { errorText } from "./user-error";
 
 export function computersAreUnavailable(sandboxProvider: string | null | undefined): boolean {
   return sandboxProvider === "none" || sandboxProvider === "";
@@ -64,6 +66,5 @@ export async function refreshSandboxFromServer(): Promise<Me> {
 }
 
 export function sandboxCheckFailureMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return "Could not reach the server";
+  return errorText(error, t`Could not reach the server`);
 }

@@ -256,19 +256,19 @@ describe("isMessagingEnabled", () => {
 });
 
 describe("isMessagingSurfaceEnabled", () => {
-  it("requires the deployment model key only for open signup", () => {
+  it("requires a configured deployment model only for open signup", () => {
     vi.stubEnv("VITEST", "");
     const platforms = messagingPlatformsFromEnv(fullEnv);
-    const key = (deploymentModelKey: string | undefined, openSignup: boolean) => ({
-      deploymentModelKey,
+    const options = (deploymentModelConfigured: boolean, openSignup: boolean) => ({
+      deploymentModelConfigured,
       openSignup,
     });
     // Open signup provisions users with no credentials of their own.
-    expect(isMessagingSurfaceEnabled(platforms, key("model-key", true))).toBe(true);
-    expect(isMessagingSurfaceEnabled(platforms, key(undefined, true))).toBe(false);
+    expect(isMessagingSurfaceEnabled(platforms, options(true, true))).toBe(true);
+    expect(isMessagingSurfaceEnabled(platforms, options(false, true))).toBe(false);
     // Linking-only deployments run linked users on their own credentials.
-    expect(isMessagingSurfaceEnabled(platforms, key(undefined, false))).toBe(true);
-    expect(isMessagingSurfaceEnabled([], key("model-key", true))).toBe(false);
+    expect(isMessagingSurfaceEnabled(platforms, options(false, false))).toBe(true);
+    expect(isMessagingSurfaceEnabled([], options(true, true))).toBe(false);
     vi.unstubAllEnvs();
   });
 });

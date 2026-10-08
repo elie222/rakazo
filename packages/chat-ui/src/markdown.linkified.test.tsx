@@ -12,7 +12,8 @@ describe("web user message links", () => {
     expect(html).toContain("**important**");
     expect(html).toContain('href="https://example.com/docs"');
     expect(html).toContain('rel="noreferrer noopener"');
-    expect(html).toContain("docs</a>.");
+    // A bare address shows as host and path, after its site icon.
+    expect(html).toContain('<bdi class="rk-chat-link-label">example.com/docs</bdi></a>.');
     expect(html).not.toContain("<h1");
     expect(html).not.toContain("<strong");
   });

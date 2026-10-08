@@ -8,6 +8,7 @@ import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
 import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
+import { errorText } from "./user-error";
 
 /** Who is speaking, for the dock: it is mounted outside any one thread's bot list. */
 export type PlaybackSpeaker = { name?: string; color?: string };
@@ -380,10 +381,14 @@ async function renderUtterance(
         signal: deadline.signal,
       }),
       deadline.signal,
-    );
+    ).catch((error: unknown) => {
+      throw deadline.signal.aborted
+        ? error
+        : new Error(errorText(error, t("Could not speak that.")));
+    });
     if (!res.ok) {
       const body = await readVoiceError(res, deadline.signal);
-      throw new Error(body.error ?? `Voice failed (${res.status})`);
+      throw new Error(errorText(body.error ?? "", t("Could not speak that.")));
     }
     return await readResponseBytes(res, MAX_VOICE_AUDIO_BYTES, deadline.signal);
   } finally {

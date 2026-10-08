@@ -2,7 +2,7 @@ import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
 import type { ReactNode } from "react";
 import type { ColorSchemeName, GestureResponderEvent } from "react-native";
-import { Platform, Pressable } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import type { MessageMenuEntry, MessageMenuSymbol } from "../lib/message-context-menu";
 
 const symbols = {
@@ -18,18 +18,24 @@ export function MessageContextMenu({
   actions,
   children,
   colorScheme,
+  maxWidth,
   onAction,
   onLongPress,
 }: {
   actions: readonly MessageMenuEntry[];
   children: ReactNode;
   colorScheme: ColorSchemeName;
+  maxWidth: number;
   onAction: (id: string) => void;
   onLongPress?: (event: GestureResponderEvent) => void;
 }) {
   if (Platform.OS !== "ios") {
     return (
-      <Pressable accessible={false} onLongPress={onLongPress}>
+      <Pressable
+        accessible={false}
+        onLongPress={onLongPress}
+        style={{ maxWidth: "100%", flexShrink: 1 }}
+      >
         {children}
       </Pressable>
     );
@@ -40,8 +46,10 @@ export function MessageContextMenu({
       colorScheme={colorScheme}
       onPressAction={(event) => onAction(event.nativeEvent.event)}
       shouldOpenOnLongPress
+      style={{ maxWidth: "100%", flexShrink: 1 }}
     >
-      {children}
+      {/* The SwiftUI bridge measures its trigger without a horizontal constraint. */}
+      <View style={{ maxWidth, flexShrink: 1 }}>{children}</View>
     </MenuView>
   );
 }

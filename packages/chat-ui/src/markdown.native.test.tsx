@@ -4,10 +4,20 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+const alert = vi.hoisted(() => vi.fn());
+
 const linking = vi.hoisted(() => ({
   canOpenURL: vi.fn(async () => true),
   openURL: vi.fn(async () => undefined),
 }));
+
+const i18n = vi.hoisted(() => ({ isRTL: false }));
+
+// The load handler of each rendered Image, so a test can report its decoded size.
+const imageLoads = vi.hoisted(
+  () =>
+    [] as Array<(event: { nativeEvent: { source: { width: number; height: number } } }) => void>,
+);
 
 const tableEvents = vi.hoisted(() => ({
   onLayout: undefined as
@@ -53,6 +63,11 @@ vi.mock("react-native", async () => {
       if (tag === "rn-view" && typeof rest.onLayout === "function") {
         tableEvents.onLayout = rest.onLayout as typeof tableEvents.onLayout;
       }
+      if (tag === "rn-image" && typeof rest.onLoad === "function") {
+        imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
+        delete rest.onLoad;
+        delete rest.onError;
+      }
       if (tag === "rn-scroll-view" && typeof rest.onScroll === "function") {
         tableEvents.onScroll = rest.onScroll as typeof tableEvents.onScroll;
       }
@@ -89,13 +104,20 @@ vi.mock("react-native", async () => {
       "flexShrink",
       "flex",
       "flexGrow",
+      "flexDirection",
       "overflow",
+      "accessibilityElementsHidden",
+      "importantForAccessibility",
     ]),
     Text: mockComponent("rn-text", [
       "accessibilityRole",
+      "accessibilityLabel",
       "textDecorationLine",
       "color",
       "fontWeight",
+      "textAlign",
+      "writingDirection",
+      "width",
     ]),
     ScrollView: mockComponent("rn-scroll-view", ["horizontal", "borderColor", "borderWidth"]),
     Pressable: mockComponent("rn-pressable", [
@@ -110,7 +132,7 @@ vi.mock("react-native", async () => {
       createAnimatedComponent: (component: unknown) => component,
       timing: () => ({ start: () => undefined }),
       sequence: (...animations: unknown[]) => animations,
-      loop: (animation: unknown) => animation,
+      loop: () => ({ start: () => undefined, stop: () => undefined }),
       delay: () => ({}),
       Value: class {},
     },
@@ -127,16 +149,21 @@ vi.mock("react-native", async () => {
         options.ios ?? options.default ?? options.android,
     },
     Linking: linking,
+    Alert: { alert },
+    I18nManager: i18n,
   };
 });
 
 import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
-import { act } from "react";
+import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Pressable } from "react-native";
+import type { LinkFavicons } from "./markdown.native";
 import {
   ChatMarkdown,
+  LinkFaviconsContext,
   LinkifiedText,
+  MarkdownLinkPromptProvider,
   RemoteImagesContext,
   RemoteMarkdownImage,
 } from "./markdown.native";
@@ -350,7 +377,11 @@ describe("user message links", () => {
       root.render(
         <Pressable accessible={false} onLongPress={longPress}>
           <Pressable onLongPress={longPress}>
-            <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link}>
+            <LinkifiedText
+              color={darkTokens.foreground}
+              linkColor={darkTokens.link}
+              palette={darkTokens}
+            >
               {"# Title **important** https://example.com/docs"}
             </LinkifiedText>
           </Pressable>
@@ -361,12 +392,17 @@ describe("user message links", () => {
     const link = container.querySelector<HTMLElement>(
       "rn-pressable rn-pressable [data-accessibility-role='link']",
     );
-    expect(link?.textContent).toBe("https://example.com/docs");
+    // A bare address shows as host and path, joined to its site icon.
+    expect(link?.textContent).toBe("\u2060\u2068example.com/docs\u2069");
     expect(container.textContent).toContain("# Title");
     expect(container.textContent).toContain("**important**");
 
     await act(async () => {
       link?.click();
+    });
+    expect(linking.openURL).not.toHaveBeenCalled();
+    await act(async () => {
+      alert.mock.calls.at(-1)?.[2][1].onPress();
     });
     await vi.waitFor(() => {
       expect(linking.openURL).toHaveBeenCalledWith("https://example.com/docs");
@@ -542,6 +578,10 @@ describe("native markdown images", () => {
     await act(async () => {
       liveLink?.click();
     });
+    expect(linking.openURL).not.toHaveBeenCalled();
+    await act(async () => {
+      alert.mock.calls.at(-1)?.[2][1].onPress();
+    });
     await vi.waitFor(() => {
       expect(linking.openURL).toHaveBeenCalledWith("https://ci.example.test/tap-linked");
     });
@@ -632,5 +672,510 @@ describe("native markdown images", () => {
     // The image component is a stub under test; a link would mean it fell back.
     expect(html).toContain("<rn-stub");
     expect(html).not.toContain("data-accessibility-role");
+  });
+});
+
+describe("message direction", () => {
+  const parse = (html: string) => new DOMParser().parseFromString(html, "text/html");
+  const directionAttributes =
+    /data-text-align|data-writing-direction|data-flex-direction="row-reverse"/;
+
+  function userBubble(text: string) {
+    const html = renderToStaticMarkup(
+      <LinkifiedText color={darkTokens.foreground} linkColor={darkTokens.link} palette={darkTokens}>
+        {text}
+      </LinkifiedText>,
+    );
+    return { html, root: parse(html).querySelector("rn-text") };
+  }
+
+  function botTextGroups(markdown: string) {
+    const document = parse(renderToStaticMarkup(<ChatMarkdown>{markdown}</ChatMarkdown>));
+    // A text group is the outermost text of a block; its leaves are nested texts.
+    const groups = [...document.querySelectorAll("rn-text")].filter(
+      (text) => text.parentElement?.tagName.toLowerCase() !== "rn-text",
+    );
+    return { document, groups };
+  }
+
+  function textOf(element: Element | null | undefined) {
+    return element?.textContent ?? "";
+  }
+
+  it("right-aligns a user message whose first letter is Hebrew or Arabic", () => {
+    for (const text of [
+      "שלום! זה מבחן של טקסט בעברית בלבד, עם סימני פיסוק בסוף.",
+      "2026: مرحبا بالعالم، هذه رسالة طويلة بما يكفي لتلتف.",
+      "«שלום», see the CHANGELOG sentence.",
+    ]) {
+      const { root } = userBubble(text);
+      expect(root?.getAttribute("data-text-align")).toBe("right");
+      // iOS already shapes each paragraph by its own first letter.
+      expect(root?.hasAttribute("data-writing-direction")).toBe(false);
+    }
+  });
+
+  it("leaves Latin, CJK and messages that start in English as they were", () => {
+    for (const text of ["Hello there.", "你好，世界。", "Translate: שלום", "😀 123 !!", ""]) {
+      expect(userBubble(text).html).not.toMatch(directionAttributes);
+    }
+  });
+
+  it("aligns each bot block by its own first letter", () => {
+    const { groups } = botTextGroups(
+      [
+        "Fake reply 9. You said:",
+        "",
+        "## כותרת",
+        "",
+        "רשימה קצרה.",
+        "",
+        "See README.md.",
+        "",
+        "> ציטוט",
+      ].join("\n"),
+    );
+    const alignment = Object.fromEntries(
+      groups.map((group) => [
+        textOf(group),
+        [group.getAttribute("data-text-align"), group.getAttribute("data-width")],
+      ]),
+    );
+    expect(alignment).toEqual({
+      "Fake reply 9. You said:": [null, null],
+      כותרת: ["right", "100%"],
+      "רשימה קצרה.": ["right", "100%"],
+      "See README.md.": [null, null],
+      ציטוט: ["right", "100%"],
+    });
+  });
+
+  it("puts each list item's marker on its own side", () => {
+    const { document } = botTextGroups(
+      "- פריט ראשון\n- Install the CLI.\n\n1. אחד\n2. second\n3. שלוש",
+    );
+    const items = [...document.querySelectorAll("rn-view")].filter((view) => {
+      const marker = view.firstElementChild;
+      return marker?.tagName.toLowerCase() === "rn-text" && /^(\u00B7|\d\.)$/.test(textOf(marker));
+    });
+    expect(
+      items.map((item) => [
+        textOf(item.lastElementChild),
+        item.getAttribute("data-flex-direction"),
+        item.firstElementChild?.getAttribute("data-writing-direction") ?? null,
+      ]),
+    ).toEqual([
+      ["פריט ראשון", "row-reverse", "rtl"],
+      ["Install the CLI.", "row", null],
+      ["אחד", "row-reverse", "rtl"],
+      ["second", "row", null],
+      ["שלוש", "row-reverse", "rtl"],
+    ]);
+  });
+
+  it("renders an English block in a Hebrew-first reply the same as on its own", () => {
+    const englishItem = (markdown: string) =>
+      [...botTextGroups(markdown).document.querySelectorAll("rn-view")]
+        .filter(
+          (view) =>
+            textOf(view.firstElementChild) === "\u00B7" &&
+            textOf(view.lastElementChild) === "Install the CLI.",
+        )
+        .map((view) => view.outerHTML);
+    const englishParagraph = (markdown: string) =>
+      botTextGroups(markdown)
+        .groups.filter((group) => textOf(group) === "See README.md.")
+        .map((group) => group.outerHTML);
+    const mixed = "שלום רב.\n\n- פריט ראשון\n- Install the CLI.\n\nSee README.md.";
+    expect(englishItem(mixed)).toEqual(englishItem("- Install the CLI."));
+    expect(englishParagraph(mixed)).toEqual(englishParagraph("See README.md."));
+    expect(englishItem(mixed)).toHaveLength(1);
+  });
+
+  it("keeps code in a right-to-left message as it was", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>{"שלום\n\n    indented();\n\n```\nfenced();\n```"}</ChatMarkdown>,
+    );
+    const code = [...parse(html).querySelectorAll("rn-text")].filter((text) =>
+      /indented|fenced/.test(textOf(text)),
+    );
+    expect(code.length).toBeGreaterThan(0);
+    for (const text of code) expect(text.outerHTML).not.toMatch(directionAttributes);
+  });
+
+  it("keeps a left-to-right bot message laid out as before", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown>
+        {"## Heading\n\nIntro שלום.\n\n- one\n- two\n\n1. first\n2. second"}
+      </ChatMarkdown>,
+    );
+    expect(html).not.toMatch(directionAttributes);
+  });
+
+  it("aligns an English message to the far side in a right-to-left app", () => {
+    i18n.isRTL = true;
+    try {
+      // React Native mirrors `right` in a right-to-left layout, so it lands on the left.
+      expect(userBubble("Hello there.").root?.getAttribute("data-text-align")).toBe("right");
+      expect(userBubble("שלום").html).not.toMatch(directionAttributes);
+      const { document } = botTextGroups("- Install the CLI.");
+      expect(document.querySelector('rn-view[data-flex-direction="row-reverse"]')).not.toBeNull();
+      expect(document.querySelector('rn-text[data-writing-direction="ltr"]')).not.toBeNull();
+    } finally {
+      i18n.isRTL = false;
+    }
+  });
+});
+
+const ICON = "data:image/png;base64,iVBORw0KGgo=";
+// Word joiner, then the label wrapped in a first-strong isolate.
+const joined = (label: string) => `\u2060\u2068${label}\u2069`;
+
+async function renderNativeLinks(
+  node: (streaming: boolean) => ReactNode,
+  favicons: LinkFavicons,
+  streaming = false,
+) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const render = async (nextStreaming: boolean) => {
+    await act(async () => {
+      root.render(
+        <LinkFaviconsContext.Provider value={favicons}>
+          {node(nextStreaming)}
+        </LinkFaviconsContext.Provider>,
+      );
+    });
+  };
+  await render(streaming);
+  return {
+    container,
+    render,
+    links: () => [
+      ...container.querySelectorAll<HTMLElement>("rn-text[data-accessibility-role='link']"),
+    ],
+    cleanup: async () => {
+      await act(async () => {
+        root.unmount();
+      });
+      container.remove();
+    },
+  };
+}
+
+describe("native website links", () => {
+  const globe = createElement("rn-globe");
+
+  it("draws the API's icon in a hidden tile joined to the author's label", async () => {
+    const load = vi.fn(async () => ({ icon: ICON }));
+    const view = await renderNativeLinks(
+      () => (
+        <ChatMarkdown>{"Traffic plunges. [Post](https://native-a.example.test/p/1)"}</ChatMarkdown>
+      ),
+      { load, globe },
+    );
+    const [link] = view.links();
+    expect(link?.getAttribute("data-accessibility-label")).toBe("Post");
+    expect(link?.textContent).toBe(joined("Post"));
+    const marker = link?.querySelector("rn-view");
+    expect(marker?.getAttribute("data-accessibility-elements-hidden")).toBe("true");
+    expect(marker?.getAttribute("data-important-for-accessibility")).toBe("no-hide-descendants");
+    expect(marker?.querySelector("rn-image")).not.toBeNull();
+    expect(
+      marker
+        ?.querySelector("rn-view[data-background-color]")
+        ?.getAttribute("data-background-color"),
+    ).toBe(darkTokens.faviconPlate);
+    // Body colour, not the old blue; the underline sits on the label, not the tile.
+    expect(link?.getAttribute("data-color")).toBe(darkTokens.foreground);
+    expect(link?.getAttribute("data-text-decoration-line")).toBe("none");
+    expect(load).toHaveBeenCalledWith("https://native-a.example.test");
+    await view.cleanup();
+  });
+
+  it("shortens a bare URL to host and path", async () => {
+    const view = await renderNativeLinks(
+      () => <ChatMarkdown>{"See https://www.native-b.example.test/status/9?s=1 now"}</ChatMarkdown>,
+      { load: async () => ({ icon: null }), globe },
+    );
+    const [link] = view.links();
+    expect(link?.getAttribute("data-accessibility-label")).toBe("native-b.example.test/status/9");
+    expect(link?.textContent).toBe(joined("native-b.example.test/status/9"));
+    await view.cleanup();
+  });
+
+  it("shows the app's globe when there is no icon or the icon is a 1×1 pixel", async () => {
+    const view = await renderNativeLinks(
+      () => (
+        <ChatMarkdown>
+          {"[A](https://native-c.example.test/) [B](https://native-d.example.test/)"}
+        </ChatMarkdown>
+      ),
+      {
+        load: async (origin) => ({
+          icon: origin === "https://native-c.example.test" ? null : ICON,
+        }),
+        globe,
+      },
+    );
+    const [first, second] = view.links();
+    expect(first?.querySelector("rn-globe")).not.toBeNull();
+    expect(second?.querySelector("rn-image")).not.toBeNull();
+    await act(async () => {
+      imageLoads.at(-1)?.({ nativeEvent: { source: { width: 1, height: 1 } } });
+    });
+    expect(view.links()[1]?.querySelector("rn-image")).toBeNull();
+    expect(view.links()[1]?.querySelector("rn-globe")).not.toBeNull();
+    await view.cleanup();
+  });
+
+  it("shortens and cleans bare URLs whose escapes the parser decoded", async () => {
+    const view = await renderNativeLinks(
+      () => (
+        <ChatMarkdown>
+          {
+            "See https://bidi.example.test/%E2%80%AEtxt.exe and https://native-k.example.test/caf%C3%A9 now"
+          }
+        </ChatMarkdown>
+      ),
+      { load: async () => ({ icon: null }), globe },
+    );
+    const [bidi, cafe] = view.links();
+    expect(bidi?.getAttribute("data-accessibility-label")).toBe("bidi.example.test/txt.exe");
+    expect(bidi?.textContent).toBe(joined("bidi.example.test/txt.exe"));
+    expect(cafe?.textContent).toBe(joined("native-k.example.test/café"));
+    expect(view.container.textContent).not.toContain("\u202E");
+    await view.cleanup();
+  });
+
+  it("isolates a label so its direction characters stay inside the link", async () => {
+    const view = await renderNativeLinks(
+      () => (
+        <ChatMarkdown>
+          {
+            "See [\u202Eevil](https://native-j.example.test/) then [next](https://native-j.example.test/n)"
+          }
+        </ChatMarkdown>
+      ),
+      { load: async () => ({ icon: null }), globe },
+    );
+    const [evil, next] = view.links();
+    expect(evil?.textContent).toBe(joined("\u202Eevil"));
+    expect(next?.textContent).toBe(joined("next"));
+    await view.cleanup();
+  });
+
+  it("keeps formatting inside a labelled link in the website link style", async () => {
+    const view = await renderNativeLinks(
+      () => <ChatMarkdown>{"[**Bold** label](https://native-h.example.test/)"}</ChatMarkdown>,
+      { load: async () => ({ icon: null }), globe },
+    );
+    const [link] = view.links();
+    // The innermost text run, which carries the style the renderer gives text inside a link.
+    const bold = [...(link?.querySelectorAll("rn-text") ?? [])]
+      .filter((text) => text.textContent === "Bold")
+      .at(-1);
+    expect(bold?.getAttribute("data-color")).toBe(darkTokens.foreground);
+    expect(bold?.getAttribute("data-text-decoration-line")).toBe("underline");
+    expect(bold?.getAttribute("data-font-weight")).toBe("700");
+    const plain = [...(link?.querySelectorAll("rn-text") ?? [])]
+      .filter((text) => text.textContent === " label")
+      .at(-1);
+    expect(plain?.getAttribute("data-font-weight")).toBe("500");
+    await view.cleanup();
+  });
+
+  it("shows the globe and does not ask again right away after a failed lookup", async () => {
+    const load = vi.fn(async () => {
+      throw new Error("Not found");
+    });
+    const markdown = "[A](https://native-i.example.test/) and [B](https://native-i.example.test/b)";
+    const view = await renderNativeLinks(() => <ChatMarkdown>{markdown}</ChatMarkdown>, {
+      load,
+      globe,
+    });
+    expect(view.container.querySelectorAll("rn-globe")).toHaveLength(2);
+    await view.render(false);
+    await view.cleanup();
+    const again = await renderNativeLinks(() => <ChatMarkdown>{markdown}</ChatMarkdown>, {
+      load,
+      globe,
+    });
+    expect(again.container.querySelectorAll("rn-globe")).toHaveLength(2);
+    expect(load).toHaveBeenCalledTimes(1);
+    await again.cleanup();
+  });
+
+  it("asks for no icon while a reply streams", async () => {
+    const load = vi.fn(async () => ({ icon: ICON }));
+    const view = await renderNativeLinks(
+      (streaming) => (
+        <ChatMarkdown streaming={streaming}>
+          {"Partial https://native-e.example.test/x"}
+        </ChatMarkdown>
+      ),
+      { load, globe },
+      true,
+    );
+    expect(load).not.toHaveBeenCalled();
+    await view.render(false);
+    expect(load).toHaveBeenCalledWith("https://native-e.example.test");
+    await view.cleanup();
+  });
+
+  it("gives no tile to links that are not websites", async () => {
+    const load = vi.fn(async () => ({ icon: ICON }));
+    const view = await renderNativeLinks(
+      () => (
+        <ChatMarkdown>
+          {[
+            "[mail](mailto:someone@example.com) [call](tel:+15555550100) [docs](/docs)",
+            "`https://native-f.example.test/in-code`",
+            "[![build](https://badge.example.test/b.svg)](https://native-f.example.test/ci)",
+          ].join("\n\n")}
+        </ChatMarkdown>
+      ),
+      { load, globe },
+    );
+    expect(view.container.querySelector("rn-globe")).toBeNull();
+    expect(view.container.querySelector("rn-image")).toBeNull();
+    expect(load).not.toHaveBeenCalled();
+    // Links that are not websites keep the plain link style.
+    const mail = view.links().find((link) => link.textContent === "mail");
+    expect(mail?.getAttribute("data-color")).toBe(darkTokens.link);
+    await view.cleanup();
+  });
+
+  it("draws the tile in user messages, in the message's own colour", async () => {
+    const view = await renderNativeLinks(
+      () => (
+        <LinkifiedText
+          color={lightTokens.secondaryForeground}
+          linkColor={lightTokens.link}
+          palette={lightTokens}
+        >
+          {"look https://native-g.example.test/a/ or mail me@example.com"}
+        </LinkifiedText>
+      ),
+      { load: async () => ({ icon: ICON }), globe },
+    );
+    const [site, mail] = view.links();
+    expect(site?.getAttribute("data-accessibility-label")).toBe("native-g.example.test/a");
+    expect(site?.getAttribute("data-color")).toBe(lightTokens.secondaryForeground);
+    expect(site?.querySelector("rn-image")).not.toBeNull();
+    expect(mail?.textContent).toBe("me@example.com");
+    expect(mail?.querySelector("rn-view")).toBeNull();
+    expect(mail?.getAttribute("data-color")).toBe(lightTokens.link);
+    await view.cleanup();
+  });
+});
+
+describe("native external link confirmation", () => {
+  async function renderMarkdown(markdown: string, appOrigin?: string) {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    linking.openURL.mockClear();
+    alert.mockClear();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const body = <ChatMarkdown>{markdown}</ChatMarkdown>;
+    await act(async () => {
+      root.render(
+        appOrigin ? (
+          <MarkdownLinkPromptProvider appOrigin={appOrigin}>{body}</MarkdownLinkPromptProvider>
+        ) : (
+          body
+        ),
+      );
+    });
+    return {
+      container,
+      async cleanup() {
+        await act(async () => {
+          root.unmount();
+        });
+        container.remove();
+      },
+    };
+  }
+
+  it("asks before an external link and leaves it closed on cancel", async () => {
+    const view = await renderMarkdown("[Docs](https://example.test/docs?x=1)");
+    await act(async () => {
+      view.container.querySelector<HTMLElement>("[data-accessibility-role='link']")?.click();
+    });
+    expect(alert).toHaveBeenCalledWith(
+      "Open external link?",
+      "example.test\n\nhttps://example.test/docs?x=1",
+      expect.any(Array),
+      { cancelable: true },
+    );
+    expect(alert.mock.calls.at(-1)?.[2][0]).toMatchObject({ text: "Cancel", style: "cancel" });
+    expect(linking.openURL).not.toHaveBeenCalled();
+    expect(view.container.textContent).not.toContain("Open external link?");
+    await view.cleanup();
+  });
+
+  it("opens mailto and tel without asking", async () => {
+    const view = await renderMarkdown("[mail](mailto:user@example.test) [call](tel:+15551212)");
+    const links = view.container.querySelectorAll<HTMLElement>("[data-accessibility-role='link']");
+    expect(links).toHaveLength(2);
+    await act(async () => {
+      links[0]?.click();
+    });
+    await act(async () => {
+      links[1]?.click();
+    });
+    expect(view.container.textContent).not.toContain("Open external link?");
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("mailto:user@example.test");
+      expect(linking.openURL).toHaveBeenCalledWith("tel:+15551212");
+    });
+    await view.cleanup();
+  });
+
+  it("opens a same-origin link without asking", async () => {
+    const view = await renderMarkdown(
+      "[thread](https://app.example.test/threads/1)",
+      "https://app.example.test",
+    );
+    await act(async () => {
+      view.container.querySelector<HTMLElement>("[data-accessibility-role='link']")?.click();
+    });
+    expect(view.container.textContent).not.toContain("Open external link?");
+    await vi.waitFor(() => {
+      expect(linking.openURL).toHaveBeenCalledWith("https://app.example.test/threads/1");
+    });
+    await view.cleanup();
+  });
+});
+
+it("shows a full long native URL and opens it only on confirmation", async () => {
+  const url = `https://example.test/${"a".repeat(10000)}`;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  alert.mockClear();
+  linking.openURL.mockClear();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(<ChatMarkdown>{`[Docs](${url})`}</ChatMarkdown>);
+  });
+  await act(async () => {
+    container.querySelector<HTMLElement>("[data-accessibility-role='link']")?.click();
+  });
+  const [title, message, buttons, options] = alert.mock.calls.at(-1)!;
+  expect(title).toBe("Open external link?");
+  expect(message).toBe(`example.test\n\n${url}`);
+  expect(buttons.map((button: { text: string }) => button.text)).toEqual(["Cancel", "Open"]);
+  expect(options).toEqual({ cancelable: true });
+  expect(linking.openURL).not.toHaveBeenCalled();
+  await act(async () => {
+    buttons[1].onPress();
+  });
+  expect(linking.openURL).toHaveBeenCalledWith(url);
+  await act(async () => {
+    root.unmount();
   });
 });

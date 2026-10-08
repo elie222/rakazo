@@ -50,7 +50,10 @@ const fakeAgentState = vi.hoisted(() => ({
 
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
-    state = { errorMessage: undefined as string | undefined, messages: [] as unknown[] };
+    state = {
+      errorMessage: undefined as string | undefined,
+      messages: [] as unknown[],
+    };
     private readonly tools: typeof fakeAgentState.tools;
     private readonly listeners: Array<(event: Record<string, unknown>) => void> = [];
     private readonly prepareNextTurnWithContext?: (input: {
@@ -80,7 +83,9 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       if (fakeAgentState.mode === "empty" || fakeAgentState.mode === "two-boundaries") {
         await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
         if (fakeAgentState.mode === "two-boundaries") {
-          await this.prepareNextTurnWithContext?.({ context: { messages: [] } });
+          await this.prepareNextTurnWithContext?.({
+            context: { messages: [] },
+          });
         }
         fakeAgentState.preparedMessages = [...fakeAgentState.steeredMessages];
         return;
@@ -92,7 +97,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         if (!target) throw new Error("expected tool was not exposed");
         const rawArgs = fakeAgentState.invoke.args;
         const args = target.prepareArguments?.(rawArgs) ?? rawArgs;
-        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolName: target.name,
+          args,
+        });
         fakeAgentState.toolResult = await target.execute("call-1", args);
         return;
       }
@@ -108,7 +117,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           type: "message_update",
           assistantMessageEvent: { type: "text_delta", delta: narration },
         });
-        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolName: target.name,
+          args,
+        });
         await target.execute("call-1", args);
         this.emit({
           type: "turn_end",
@@ -170,7 +183,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
             delta: narration,
           },
         });
-        this.emit({ type: "tool_execution_start", toolName: target.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolName: target.name,
+          args,
+        });
         await target.execute("call-1", args);
         this.emit({
           type: "turn_end",
@@ -178,7 +195,12 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
             role: "assistant",
             content: [
               { type: "text", text: narration },
-              { type: "toolCall", id: "call-1", name: target.name, arguments: args },
+              {
+                type: "toolCall",
+                id: "call-1",
+                name: target.name,
+                arguments: args,
+              },
             ],
           },
           toolResults: [{ toolCallId: "call-1", result: { ok: true } }],
@@ -193,7 +215,10 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         if (fakeAgentState.finalDelta) {
           this.emit({
             type: "message_update",
-            assistantMessageEvent: { type: "text_delta", delta: fakeAgentState.finalDelta },
+            assistantMessageEvent: {
+              type: "text_delta",
+              delta: fakeAgentState.finalDelta,
+            },
           });
         }
         this.emit({ type: "message_end", message: terminal });
@@ -210,7 +235,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         if (!shell) throw new Error("shell was not exposed");
         for (let index = 0; index < 100; index += 1) {
           const args = { command: `echo ${index}` };
-          this.emit({ type: "tool_execution_start", toolName: shell.name, args });
+          this.emit({
+            type: "tool_execution_start",
+            toolName: shell.name,
+            args,
+          });
           if (this.aborted) break;
           await shell.execute(`shell-${index}`, args);
         }
@@ -224,7 +253,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           args: { command: `echo ${index}` },
         }));
         for (const item of batch) {
-          this.emit({ type: "tool_execution_start", toolName: shell.name, args: item.args });
+          this.emit({
+            type: "tool_execution_start",
+            toolName: shell.name,
+            args: item.args,
+          });
         }
         await Promise.all(
           batch.map((item, index) =>
@@ -239,7 +272,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           const delegation = this.tools.find((tool) => tool.name === "run_subagent");
           if (delegation) {
             const args = { name: "helper", task: "ask the user" };
-            this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+            this.emit({
+              type: "tool_execution_start",
+              toolName: delegation.name,
+              args,
+            });
             await delegation.execute("delegate-1", args);
             return;
           }
@@ -250,7 +287,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
         if (!askUser) throw new Error("ask_user was not exposed");
         for (let index = 0; index < 2; index += 1) {
           const args = { command: `echo ${index}` };
-          this.emit({ type: "tool_execution_start", toolName: shell.name, args });
+          this.emit({
+            type: "tool_execution_start",
+            toolName: shell.name,
+            args,
+          });
           if (this.aborted) return;
           await shell.execute(`shell-pause-${index}`, args);
         }
@@ -258,7 +299,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
           question: "Which option?",
           options: ["Keep going", "Stop here"],
         };
-        this.emit({ type: "tool_execution_start", toolName: askUser.name, args: askArgs });
+        this.emit({
+          type: "tool_execution_start",
+          toolName: askUser.name,
+          args: askArgs,
+        });
         if (!this.aborted) await askUser.execute("ask-1", askArgs);
         return;
       }
@@ -266,7 +311,11 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       const delegation = this.tools.find((tool) => tool.name === "run_subagent");
       if (delegation) {
         const args = { name: "loop", task: "keep calling shell" };
-        this.emit({ type: "tool_execution_start", toolName: delegation.name, args });
+        this.emit({
+          type: "tool_execution_start",
+          toolName: delegation.name,
+          args,
+        });
         await delegation.execute("delegate-1", args);
         return;
       }
@@ -405,8 +454,16 @@ describe("Pi connector tool dispatch", () => {
       return claimCount === 1
         ? []
         : [
-            { id: "steering-1", messageId: "message-1", text: "Use the newer customer totals." },
-            { id: "steering-2", messageId: "message-2", text: "Keep the original date range." },
+            {
+              id: "steering-1",
+              messageId: "message-1",
+              text: "Use the newer customer totals.",
+            },
+            {
+              id: "steering-2",
+              messageId: "message-2",
+              text: "Keep the original date range.",
+            },
           ];
     });
     const runtime = new PiAgentRuntime();
@@ -431,8 +488,14 @@ describe("Pi connector tool dispatch", () => {
     expect(claimSteering).toHaveBeenNthCalledWith(1, []);
     expect(claimSteering).toHaveBeenNthCalledWith(2, []);
     expect(fakeAgentState.preparedMessages).toEqual([
-      expect.objectContaining({ role: "user", content: "Use the newer customer totals." }),
-      expect.objectContaining({ role: "user", content: "Keep the original date range." }),
+      expect.objectContaining({
+        role: "user",
+        content: "Use the newer customer totals.",
+      }),
+      expect.objectContaining({
+        role: "user",
+        content: "Keep the original date range.",
+      }),
     ]);
   });
 
@@ -443,8 +506,20 @@ describe("Pi connector tool dispatch", () => {
       claimCount += 1;
       if (claimCount === 1) return [];
       return claimCount === 2
-        ? [{ id: "steering-1", messageId: "message-1", text: "First boundary context." }]
-        : [{ id: "steering-2", messageId: "message-2", text: "Next boundary context." }];
+        ? [
+            {
+              id: "steering-1",
+              messageId: "message-1",
+              text: "First boundary context.",
+            },
+          ]
+        : [
+            {
+              id: "steering-2",
+              messageId: "message-2",
+              text: "Next boundary context.",
+            },
+          ];
     });
     const runtime = new PiAgentRuntime();
 
@@ -477,8 +552,16 @@ describe("Pi connector tool dispatch", () => {
   it("consumes pending continuation steering once in the first prompt", async () => {
     fakeAgentState.mode = "empty";
     const steering = [
-      { id: "steering-1", messageId: "message-1", text: "Use the newer customer totals." },
-      { id: "steering-2", messageId: "message-2", text: "Keep the original date range." },
+      {
+        id: "steering-1",
+        messageId: "message-1",
+        text: "Use the newer customer totals.",
+      },
+      {
+        id: "steering-2",
+        messageId: "message-2",
+        text: "Keep the original date range.",
+      },
     ];
     const claimSteering = vi.fn(async (seenIds: string[]) => (seenIds.length ? [] : steering));
     const runtime = new PiAgentRuntime();
@@ -491,8 +574,16 @@ describe("Pi connector tool dispatch", () => {
         prompt: "Respond to the user's steering context.",
         instructions: "Follow the user's instructions.",
         history: [
-          { id: steering[0]!.messageId, role: "user", content: steering[0]!.text },
-          { id: steering[1]!.messageId, role: "user", content: steering[1]!.text },
+          {
+            id: steering[0]!.messageId,
+            role: "user",
+            content: steering[0]!.text,
+          },
+          {
+            id: steering[1]!.messageId,
+            role: "user",
+            content: steering[1]!.text,
+          },
           { role: "assistant", content: "Here is the first result." },
         ],
         tools: [],
@@ -539,7 +630,11 @@ describe("Pi connector tool dispatch", () => {
           messageId: "boundary-image-message",
           text: "Compare the second image.",
           images: [
-            { name: "second.png", mimeType: "image/png" as const, data: new Uint8Array([4, 5, 6]) },
+            {
+              name: "second.png",
+              mimeType: "image/png" as const,
+              data: new Uint8Array([4, 5, 6]),
+            },
           ],
         },
       ];
@@ -611,7 +706,7 @@ describe("Pi connector tool dispatch", () => {
         [
           "shell",
           cwd ? { command, cwd } : { command },
-          "call-1",
+          JSON.stringify(["pi-tool", "main", "call-1"]),
           undefined,
           { onShellStillRunning: expect.any(Function) },
         ],
@@ -650,7 +745,7 @@ describe("Pi connector tool dispatch", () => {
     expect(executeTool).toHaveBeenCalledWith(
       "destination.write",
       { collection: "notes", title: "Result", body: "Done" },
-      "call-1",
+      JSON.stringify(["pi-tool", "main", "call-1"]),
       { connectorId: "destination", toolName: "destination.write" },
       { onShellStillRunning: expect.any(Function) },
     );
@@ -688,7 +783,10 @@ describe("Pi connector tool dispatch", () => {
       text: "Using destination_write",
       activity: true,
     });
-    expect(events).not.toContainEqual({ type: "text", text: "I finished the work." });
+    expect(events).not.toContainEqual({
+      type: "text",
+      text: "I finished the work.",
+    });
     expect(events.at(-1)).toEqual({ type: "done" });
   });
 
@@ -732,7 +830,7 @@ describe("Pi connector tool dispatch", () => {
     expect(onToolCompleted).toHaveBeenCalledWith(
       expect.objectContaining({
         name: "destination.write",
-        executionId: "call-1",
+        executionId: JSON.stringify(["pi-tool", "main", "call-1"]),
         result: expect.objectContaining({ content: expect.any(Array) }),
         durationMs: expect.any(Number),
       }),
@@ -1092,7 +1190,10 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
-    expect(events).toContainEqual({ type: "text", text: "The inbox has 3 unread notes." });
+    expect(events).toContainEqual({
+      type: "text",
+      text: "The inbox has 3 unread notes.",
+    });
     expect(events.at(-1)).toEqual({
       type: "done",
       text: "I will check the destination first.The inbox has 3 unread notes.",
@@ -1162,7 +1263,10 @@ describe("Pi connector tool dispatch", () => {
     }
 
     expect(events).toContainEqual({ type: "text", text: "The inbox" });
-    expect(events).toContainEqual({ type: "text", text: " has 3 unread notes." });
+    expect(events).toContainEqual({
+      type: "text",
+      text: " has 3 unread notes.",
+    });
     expect(events).not.toContainEqual({
       type: "text",
       text: "The inbox has 3 unread notes.",
@@ -1238,7 +1342,10 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
-    const followUp = fakeAgentState.followUpMessages[0] as { role: string; content: string };
+    const followUp = fakeAgentState.followUpMessages[0] as {
+      role: string;
+      content: string;
+    };
     expect(followUp).toEqual(
       expect.objectContaining({
         role: "user",
@@ -1282,7 +1389,10 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
-    expect(events).not.toContainEqual({ type: "text", text: "No response. Try again." });
+    expect(events).not.toContainEqual({
+      type: "text",
+      text: "No response. Try again.",
+    });
     expect(events).toEqual([{ type: "done" }]);
   });
 
@@ -1314,8 +1424,14 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
-    expect(events).toContainEqual({ type: "text", text: "No response. Try again." });
-    expect(events.at(-1)).toEqual({ type: "done", text: "No response. Try again." });
+    expect(events).toContainEqual({
+      type: "text",
+      text: "No response. Try again.",
+    });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "No response. Try again.",
+    });
   });
 
   it("surfaces a contextual peer fallback when that run produces nothing", async () => {
@@ -1386,7 +1502,10 @@ describe("Pi connector tool dispatch", () => {
       events.push(event);
     }
 
-    expect(events.at(-1)).toEqual({ type: "done", text: "No response. Try again." });
+    expect(events.at(-1)).toEqual({
+      type: "done",
+      text: "No response. Try again.",
+    });
   });
 
   it("allows more than 80 tool calls by default when no fuse is configured", async () => {
@@ -1804,7 +1923,11 @@ describe("Pi connector tool dispatch", () => {
 
   it("clips structured tool results to one aggregate text budget", async () => {
     const first = "a".repeat(TOOL_RESULT_TEXT_LIMIT - 5);
-    const image = { type: "image" as const, data: "iVBORw0KGgo=", mimeType: "image/png" as const };
+    const image = {
+      type: "image" as const,
+      data: "iVBORw0KGgo=",
+      mimeType: "image/png" as const,
+    };
     fakeAgentState.invoke = {
       name: "destination_write",
       args: { collection: "notes", title: "Result", body: "Done" },
@@ -1890,7 +2013,7 @@ describe("Pi connector tool dispatch", () => {
         path: "shared/state.json",
         content: '{\n  "last_run": 1787648953\n}',
       },
-      "call-1",
+      JSON.stringify(["pi-tool", "main", "call-1"]),
       undefined,
       { onShellStillRunning: expect.any(Function) },
     );

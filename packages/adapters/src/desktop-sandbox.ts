@@ -45,6 +45,7 @@ import {
   type Win32FileHandle,
   win32NtRelativeAvailable,
 } from "./desktop-sandbox-win32-path.js";
+import { sandboxCommandEnvironment } from "./sandbox-command-environment.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
 
@@ -141,6 +142,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
       cwd,
       boundedSandboxCommandTimeoutMs(request.timeoutMs),
       context.signal,
+      request,
     );
   }
 
@@ -690,10 +692,11 @@ async function* streamLocalCommand(
   cwd: string,
   timeoutMs: number,
   signal: AbortSignal,
+  request: CommandRequest,
 ): AsyncIterable<ProcessEvent> {
   const child = spawn(argv[0]!, argv.slice(1), {
     cwd,
-    env: process.env,
+    env: sandboxCommandEnvironment(request, process.env),
     detached: process.platform !== "win32",
   });
   const queue: ProcessEvent[] = [];

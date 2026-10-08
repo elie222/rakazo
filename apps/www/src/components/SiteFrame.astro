@@ -10,12 +10,25 @@ type Props = {
   title: string;
   description: string;
   faq?: readonly FaqItem[];
+  structuredData?: object;
+  ogImage?: string;
+  ogType?: string;
+  index?: boolean;
 };
 
-const { title, description, faq } = Astro.props;
+const {
+  title,
+  description,
+  faq,
+  structuredData: structuredDataProp,
+  ogImage,
+  ogType,
+  index = true,
+} = Astro.props;
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
-const structuredData = faq && faq.length > 0 ? faqPageSchema(faq) : undefined;
+const structuredData =
+  structuredDataProp ?? (faq && faq.length > 0 ? faqPageSchema(faq) : undefined);
 ---
 
 <BaseLayout
@@ -23,6 +36,9 @@ const structuredData = faq && faq.length > 0 ? faqPageSchema(faq) : undefined;
   description={description}
   structuredData={structuredData}
   localeAlternates={false}
+  ogImage={ogImage}
+  ogType={ogType}
+  index={index}
 >
   <div class="container">
     <Header starsLabel={starsLabel} />

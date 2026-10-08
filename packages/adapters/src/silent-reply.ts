@@ -17,9 +17,16 @@ function joinedText(blocks: readonly MessageBlock[]): string {
     .join("");
 }
 
-/** True when trimmed text is exactly the silent-routine sentinel. Extra prose does not match. */
+/**
+ * The sentinel alone, once or repeated. Text segments of one turn are joined
+ * with no separator, so a model that re-emits the sentinel after each tool
+ * batch yields `NO_RESPONSENO_RESPONSE`; that is still a silent reply, not prose.
+ */
+const SENTINEL_ONLY = /^(?:NO_RESPONSE\s*)+$/;
+
+/** True when trimmed text is only the silent-routine sentinel, once or repeated. Extra prose does not match. */
 export function isExactNoResponse(text: string): boolean {
-  return text.trim() === NO_RESPONSE;
+  return SENTINEL_ONLY.test(text.trim());
 }
 
 /**

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
-import type { JobPublisher } from "@rakazo/adapter-kit";
-import { runContinueJob } from "@rakazo/adapter-kit";
-import type { EncryptedSecretStore } from "@rakazo/adapters";
+import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
+import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -24,7 +23,7 @@ export type WebhookEvents = {
 
 export type WebhookDeps = {
   prisma: PrismaClient;
-  secrets: EncryptedSecretStore;
+  secrets: SecretStore;
   events: WebhookEvents;
   jobs: Pick<JobPublisher, "enqueue">;
 };
@@ -97,10 +96,25 @@ type WebhookSecretCacheEntry = {
   secretId: string;
   ciphertext: string;
   plaintext: Promise<string | null>;
+  expires: number;
 };
 
 /** Webhook secrets by bot id; the decrypt promise is shared so concurrent misses decrypt once. */
 export type WebhookSecretCache = Map<string, WebhookSecretCacheEntry>;
+
+const subscribedWebhookCaches = new WeakMap<SecretStore, WeakSet<WebhookSecretCache>>();
+function subscribeWebhookCache(secrets: SecretStore, cache: WebhookSecretCache): void {
+  let caches = subscribedWebhookCaches.get(secrets);
+  if (!caches) {
+    caches = new WeakSet();
+    subscribedWebhookCaches.set(secrets, caches);
+  }
+  if (caches.has(cache)) return;
+  caches.add(cache);
+  secrets.onChange?.((ref) => {
+    for (const [botId, entry] of cache) if (entry.ciphertext === ref) cache.delete(botId);
+  });
+}
 
 function isPermanentDecryptFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : "";
@@ -132,10 +146,16 @@ function decryptWebhookSecret(
     secretId: secret.id,
     ciphertext: secret.ciphertext,
     plaintext: Promise.resolve(null),
+    expires: Date.now() + 30_000,
   };
-  entry.plaintext = secrets.loadAsync(secret.ciphertext, secret.id).catch((error: unknown) => {
+  entry.plaintext = secrets.load(secret.ciphertext, secret.id).catch((error: unknown) => {
     // Auth and malformed ciphertext stay unusable. Anything else can clear, so retry it.
-    if (!isPermanentDecryptFailure(error) && cache.get(botId) === entry) cache.delete(botId);
+    if (
+      (error instanceof SecretStoreUnavailableError || !isPermanentDecryptFailure(error)) &&
+      cache.get(botId) === entry
+    )
+      cache.delete(botId);
+    if (error instanceof SecretStoreUnavailableError) throw error;
     return null;
   });
   return entry;
@@ -148,9 +168,12 @@ function loadWebhookSecret(
   botId: string,
   secret: { id: string; ciphertext: string },
 ): Promise<string | null> {
+  subscribeWebhookCache(secrets, cache);
   const cached = cache.get(botId);
   const entry =
-    cached?.secretId === secret.id && cached.ciphertext === secret.ciphertext
+    cached?.secretId === secret.id &&
+    cached.ciphertext === secret.ciphertext &&
+    cached.expires > Date.now()
       ? cached
       : decryptWebhookSecret(secrets, cache, botId, secret);
   touchWebhookSecret(cache, botId, entry);

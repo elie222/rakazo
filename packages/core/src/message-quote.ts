@@ -1,10 +1,12 @@
-import type { MessageBlock } from "@rakazo/contracts";
+import type { MessageBlock, ReplyPreview } from "@rakazo/contracts";
 import { droppedTableHtmlText, truncateReplyQuote } from "@rakazo/contracts";
 import { toText } from "hast-util-to-text";
 import { toHast } from "mdast-util-to-hast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import { blocksToAgentHistoryText } from "./attachments.js";
+import { replyAttachment } from "./message-replies.js";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
 /** Past this much source text in one message, quote derivation refuses to run. */
@@ -117,4 +119,76 @@ export function deriveMessageQuote(
     return truncateReplyQuote(cleanVisibleExcerpt(visible.slice(start, end)));
   }
   return undefined;
+}
+
+/** A compact server-owned preview; text takes priority over cards and attachments. */
+export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
+  for (const block of [
+    ...blocks.filter((block) => block.kind === "text"),
+    ...blocks.filter((block) => block.kind !== "text"),
+  ]) {
+    const source = replyBlockText(block).slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
+    const visible =
+      block.kind === "text" && role !== "user" ? visibleTextFromMarkdown(source) : source;
+    const first = visible
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean);
+    if (first) {
+      const excerpt = first.slice(0, 280);
+      return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
+    }
+  }
+  return "";
+}
+
+function replyBlockText(block: MessageBlock): string {
+  switch (block.kind) {
+    case "text":
+    case "ask":
+    case "channel_message":
+    case "computer":
+    case "meta":
+    case "progress":
+    case "handoff":
+    case "bot_message_sent":
+    case "bot_message_received":
+      return block.text;
+    case "choice":
+      return block.question;
+    case "card":
+      return block.lines.map((line) => `${line.k}: ${line.v}`).join(" · ");
+    case "steps":
+      return block.steps.map((step) => step.label).join(" · ");
+    case "voice_call":
+    case "cloud_agent":
+      return block.title;
+    case "subagent":
+      return block.name || block.task;
+    case "child_bot":
+    case "skill_draft":
+    case "connect":
+    case "app_connect":
+    case "mcp_approval":
+    case "chart":
+      return block.name;
+    case "image":
+    case "file":
+      return block.name || blocksToAgentHistoryText([block]);
+  }
+}
+
+/** UI previews keep attachment labels separate from agent-history descriptions. */
+export function messageReplyPreview(
+  blocks: MessageBlock[],
+  role: ReplyPreview["role"],
+  botId?: string,
+): ReplyPreview {
+  const attachment = replyAttachment(blocks);
+  const caption = messageReplyExcerpt(
+    blocks.filter((block) => block.kind !== "image" && block.kind !== "file"),
+    role,
+  );
+  const text = caption || (attachment?.kind === "file" ? attachment.name : "");
+  return { role, botId, text, ...(attachment ? { attachment } : {}) };
 }

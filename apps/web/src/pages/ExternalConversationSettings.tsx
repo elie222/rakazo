@@ -10,6 +10,7 @@ import { Button } from "@rakazo/ui-web";
 import { RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { SuccessPop } from "../components/ai/primitives";
+import { errorText } from "../lib/user-error";
 
 type ListenMode = "inherit" | "listen" | "mentions";
 
@@ -246,9 +247,7 @@ export function ExternalConversationSettings({
               automatedSenderPolicies: policies,
             })
               .then(() => setSaved(true))
-              .catch((cause) =>
-                setError(cause instanceof Error ? cause.message : t`Could not save`),
-              )
+              .catch((cause) => setError(errorText(cause, t`Could not save`)))
               .finally(() => setSaving(false));
           }}
         >

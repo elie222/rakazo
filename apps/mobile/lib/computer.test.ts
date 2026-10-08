@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import type { ComputerStatus } from "./computer.js";
 import {
-  type ComputerStatus,
   controlLabel,
   embeddableScreenUrl,
+  nextLoadedScreenUrl,
   previewPlaceholder,
   readScreenUrl,
   retainScreenSource,
@@ -104,6 +105,19 @@ describe("screen stream identity", () => {
         now,
       ),
     ).toBe("https://other.example/novnc/session/view/1710000000000.aaaToken/embed.html");
+  });
+
+  it("keeps a visible screen on the loaded URL when the capability refreshes early", () => {
+    const held = view("aaaToken");
+    const refreshed = view("bbbToken");
+    expect(nextLoadedScreenUrl(held, refreshed, true, now)).toBe(held);
+    expect(nextLoadedScreenUrl(held, refreshed, false, now)).toBeNull();
+    expect(nextLoadedScreenUrl(null, refreshed, true, now)).toBe(refreshed);
+    expect(nextLoadedScreenUrl(held, control("cccToken"), true, now)).toBe(control("cccToken"));
+    const renewing = view("oldToken", now + 10 * 60_000);
+    expect(nextLoadedScreenUrl(renewing, view("newToken", now + 70 * 60_000), true, now)).toBe(
+      view("newToken", now + 70 * 60_000),
+    );
   });
 
   it("renews a reused seal before its original expiry", () => {
@@ -238,12 +252,20 @@ describe("mobile computer screen", () => {
     expect(src).toContain("Take control");
     expect(src).toContain("Release");
     expect(src).toContain("Close computer");
+    expect(src).toContain("ComputerKeyboardBar");
+    expect(src).toContain("NATIVE_COMPUTER_KEYBOARD_BOOT");
+    expect(src).toContain("computerKeyboardReadyProbe");
+    expect(src).toContain("createComputerKeyboardBridge");
     expect(src).toContain("currentApiBase()");
     expect(src).toContain("SafeAreaProvider");
     expect(src).toContain("readScreenUrl");
     expect(src).toContain("SCREEN_URL_OPEN_ATTEMPTS");
+    expect(src).toContain("nextLoadedScreenUrl");
     expect(src).toContain("retainScreenSource");
-    expect(src).toContain("key={sourceUrl.current}");
+    expect(src).toContain("isReady()");
+    expect(src).not.toContain("${embeddedScreenUrl ??");
+    expect(src).toContain(`key={\`$\{nativeKeyboard ? "keys" : "view"}:$\{sourceUrl.current}\`}`);
     expect(src).not.toContain("key={url}");
+    expect(src).not.toContain("key={sourceUrl.current}");
   });
 });

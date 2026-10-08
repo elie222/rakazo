@@ -4,9 +4,9 @@ import type {
   AgentRuntime,
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import {
-  type EncryptedSecretStore,
   formatCurrentTimeInstruction,
   matchesFailedOAuthSecret,
   resolveModelAuth,
@@ -14,7 +14,12 @@ import {
   toOAuthCredential,
 } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
-import { findDefaultModelCredential, findModelCredential, retireModelCredential } from "@rakazo/db";
+import {
+  findDefaultModelCredential,
+  findModelCredential,
+  recordUsage,
+  retireModelCredential,
+} from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 const MAX_RULES_CHARS = 4_000;
@@ -111,7 +116,7 @@ export function parseTeamChatEngagementDecision(
 interface ModelTeamChatEngagementJudgeDeps {
   prisma: PrismaClient;
   runtime: AgentRuntime;
-  secrets: EncryptedSecretStore;
+  secrets: SecretStore;
   deploymentProvider: string;
   deploymentModel: string;
   deploymentModelKey?: string;
@@ -141,6 +146,16 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           botId: input.bot.id,
           threadId: judgeId,
           runId: judgeId,
+          usageOperationKind: "setup",
+          onUsage: async (event) => {
+            await recordUsage(this.deps.prisma, event, {
+              spaceId: input.bot.spaceId,
+              botId: input.bot.id,
+              userId: input.bot.userId,
+              operationId: judgeId,
+              operationKind: "setup",
+            });
+          },
           prompt,
           instructions: [
             formatCurrentTimeInstruction(),
@@ -163,19 +178,13 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
         },
       )) {
         if (event.type === "done" && event.text) text = event.text;
-        if (event.type === "usage") {
-          await this.deps.prisma.usageRecord.create({
-            data: {
-              spaceId: input.bot.spaceId,
-              botId: input.bot.id,
-              userId: input.bot.userId,
-              provider: event.provider,
-              model: event.model,
-              inputTokens: event.inputTokens,
-              outputTokens: event.outputTokens,
-              cacheReadTokens: event.cacheReadTokens,
-              cacheWriteTokens: event.cacheWriteTokens,
-            },
+        if (event.type === "usage" && !event.accounted) {
+          await recordUsage(this.deps.prisma, event, {
+            spaceId: input.bot.spaceId,
+            botId: input.bot.id,
+            userId: input.bot.userId,
+            operationId: judgeId,
+            operationKind: "setup",
           });
         }
       }
@@ -187,13 +196,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
   }
 
   private async resolveModel(bot: TeamChatEngagementInput["bot"]): Promise<{
-    model: {
-      provider: string;
-      id: string;
-      apiKey?: string;
-      baseUrl?: string;
-      oauth?: AgentRunModel["oauth"];
-    };
+    model: AgentRunModel;
   } | null> {
     const settings = await this.deps.prisma.deploymentSettings.findUnique({
       where: { id: "default" },
@@ -243,7 +246,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           botId: bot.id,
           signal: new AbortController().signal,
         },
-        secret.id,
+        { recordId: secret.id },
       );
       await this.deps.prisma.secret.update({
         where: { id: secret.id },
@@ -268,10 +271,17 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             )
           : undefined,
       });
-    const plaintext = this.deps.secrets.load(secret.ciphertext, secret.id);
+    const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
     const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
     const parsed = auth.secret;
     const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};
+    const context =
+      parsed.kind === "oauth"
+        ? {}
+        : {
+            cacheCapabilities: parsed.cacheCapabilities,
+            contextWindow: parsed.contextWindow,
+          };
     if (parsed.kind === "oauth") {
       return {
         model: {
@@ -302,10 +312,19 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
           ...limit,
+          ...context,
         },
       };
     }
-    return { model: { provider, id: modelId, apiKey: auth.apiKey, ...limit } };
+    return {
+      model: {
+        provider,
+        id: modelId,
+        apiKey: auth.apiKey,
+        ...limit,
+        ...context,
+      },
+    };
   }
 }
 
