@@ -167,3 +167,125 @@ describe("messageReplyExcerpt", () => {
     ).toBe("example.png");
   });
 });
+
+const visibleBlocks: Array<[MessageBlock, string]> = [
+  [{ kind: "ask", text: "Which release?" }, "Which release?"],
+  [
+    {
+      kind: "channel_message",
+      provider: "test",
+      channelId: "channel",
+      fromAddress: "sender",
+      fromLabel: "Sender",
+      text: "Release notes",
+    },
+    "Release notes",
+  ],
+  [{ kind: "chart", name: "Adoption", spec: {}, data: [] }, "Adoption"],
+  [{ kind: "choice", question: "Choose a version", options: [] }, "Choose a version"],
+  [{ kind: "card", lines: [{ k: "Version", v: "One" }] }, "Version: One"],
+  [{ kind: "connect", name: "Mail", initial: "M", color: "test", status: "pending" }, "Mail"],
+  [
+    {
+      kind: "app_connect",
+      name: "Mail",
+      provider: "test",
+      description: "Connect",
+      logo: null,
+      status: "pending",
+    },
+    "Mail",
+  ],
+  [{ kind: "computer", state: "ready", text: "Ready" }, "Ready"],
+  [{ kind: "voice_call", title: "Voice call", farewell: "Bye" }, "Voice call"],
+  [{ kind: "meta", text: "Paused" }, "Paused"],
+  [{ kind: "progress", text: "Working" }, "Working"],
+  [{ kind: "steps", steps: [{ label: "Search", count: 1 }] }, "Search"],
+  [
+    { kind: "subagent", agentId: "agent", name: "Research", task: "Search", status: "running" },
+    "Research",
+  ],
+  [{ kind: "child_bot", botId: "child", name: "Helper", status: "created" }, "Helper"],
+  [
+    {
+      kind: "cloud_agent",
+      agentId: "agent",
+      title: "Fix",
+      status: "running",
+      url: "https://example.test",
+    },
+    "Fix",
+  ],
+  [
+    {
+      kind: "skill_draft",
+      skillId: "skill",
+      name: "Release",
+      goal: "Publish",
+      status: "draft",
+      playbook: {
+        whenToUse: "",
+        inputs: [],
+        steps: [],
+        howToCheck: "",
+        whatToReturn: "",
+        approvalBoundaries: "",
+        failureHandling: "",
+      },
+    },
+    "Release",
+  ],
+  [
+    {
+      kind: "mcp_approval",
+      name: "Tools",
+      serverId: "server",
+      transport: "streamable_http",
+      endpoint: null,
+      needsOAuth: false,
+      status: "pending",
+    },
+    "Tools",
+  ],
+  [
+    { kind: "image", artifactId: "image", name: "diagram.png", mimeType: "image/png" },
+    "diagram.png",
+  ],
+  [
+    { kind: "file", artifactId: "file", name: "notes.txt", mimeType: "text/plain", size: 12 },
+    "notes.txt",
+  ],
+  [{ kind: "handoff", fromBotId: "one", toBotId: "two", text: "Please review" }, "Please review"],
+  [
+    { kind: "bot_message_sent", toBotId: "two", toBotName: "Helper", text: "Check this" },
+    "Check this",
+  ],
+  [
+    { kind: "bot_message_received", fromBotId: "two", fromBotName: "Helper", text: "Checked" },
+    "Checked",
+  ],
+];
+
+it.each(visibleBlocks)("previews a visible $kind block", (block, expected) => {
+  expect(messageReplyExcerpt([block], "bot")).toBe(expected);
+});
+it("prefers narration over attachments and bounds every block's preview", () => {
+  expect(
+    messageReplyExcerpt(
+      [
+        { kind: "image", artifactId: "image", name: "diagram.png", mimeType: "image/png" },
+        ...textBlock("Caption"),
+      ],
+      "user",
+    ),
+  ).toBe("Caption");
+  expect(messageReplyExcerpt([{ kind: "ask", text: `${"a".repeat(279)}😀more` }], "bot")).toBe(
+    "a".repeat(279),
+  );
+  expect(
+    messageReplyExcerpt(
+      [{ kind: "image", artifactId: "image", name: "", mimeType: "image/png" }],
+      "user",
+    ),
+  ).toBe("[image: ]");
+});

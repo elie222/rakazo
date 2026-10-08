@@ -5,6 +5,7 @@ import { toHast } from "mdast-util-to-hast";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import { blocksToAgentHistoryText } from "./attachments.js";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
 /** Past this much source text in one message, quote derivation refuses to run. */
@@ -119,12 +120,15 @@ export function deriveMessageQuote(
   return undefined;
 }
 
-/** A compact server-owned preview of the first visible text line. */
+/** A compact server-owned preview; text takes priority over cards and attachments. */
 export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
-  for (const block of blocks) {
-    if (block.kind !== "text") continue;
-    const source = block.text.slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
-    const visible = role === "user" ? source : visibleTextFromMarkdown(source);
+  for (const block of [
+    ...blocks.filter((block) => block.kind === "text"),
+    ...blocks.filter((block) => block.kind !== "text"),
+  ]) {
+    const source = replyBlockText(block).slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
+    const visible =
+      block.kind === "text" && role !== "user" ? visibleTextFromMarkdown(source) : source;
     const first = visible
       .split(/\r?\n/u)
       .map((line) => line.trim())
@@ -134,8 +138,41 @@ export function messageReplyExcerpt(blocks: MessageBlock[], role: string): strin
       return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
     }
   }
-  const attachment = blocks.find((block) => block.kind === "image" || block.kind === "file");
-  return attachment?.kind === "image" || attachment?.kind === "file"
-    ? truncateReplyQuote(attachment.name)
-    : "";
+  return "";
+}
+
+function replyBlockText(block: MessageBlock): string {
+  switch (block.kind) {
+    case "text":
+    case "ask":
+    case "channel_message":
+    case "computer":
+    case "meta":
+    case "progress":
+    case "handoff":
+    case "bot_message_sent":
+    case "bot_message_received":
+      return block.text;
+    case "choice":
+      return block.question;
+    case "card":
+      return block.lines.map((line) => `${line.k}: ${line.v}`).join(" · ");
+    case "steps":
+      return block.steps.map((step) => step.label).join(" · ");
+    case "voice_call":
+    case "cloud_agent":
+      return block.title;
+    case "subagent":
+      return block.name || block.task;
+    case "child_bot":
+    case "skill_draft":
+    case "connect":
+    case "app_connect":
+    case "mcp_approval":
+    case "chart":
+      return block.name;
+    case "image":
+    case "file":
+      return block.name || blocksToAgentHistoryText([block]);
+  }
 }
