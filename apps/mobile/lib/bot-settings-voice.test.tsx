@@ -55,7 +55,29 @@ vi.mock("expo-router", () => ({
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
 vi.mock("react-native", () => {
-  const view = ({ children }: { children?: ReactNode }) => createElement("div", null, children);
+  const view = ({
+    children,
+    style,
+    accessibilityLabel,
+    accessibilityRole,
+    accessibilityValue,
+  }: {
+    children?: ReactNode;
+    style?: unknown;
+    accessibilityLabel?: string;
+    accessibilityRole?: string;
+    accessibilityValue?: { text: string };
+  }) =>
+    createElement(
+      "div",
+      {
+        "data-style": JSON.stringify(style),
+        "aria-label": accessibilityLabel,
+        role: accessibilityRole,
+        "aria-valuetext": accessibilityValue?.text,
+      },
+      children,
+    );
   return {
     Platform: { OS: "ios" },
     StyleSheet: { create: (styles: unknown) => styles },
@@ -148,6 +170,16 @@ describe("bot settings device voice menu", () => {
     const labels = [...container.querySelectorAll("span")];
     const label = (text: string) => labels.find((item) => item.textContent === text)!;
     expect(label("Device voice").dataset.style).toBe(label("Read replies aloud").dataset.style);
+    const row = label("Device voice").parentElement!;
+    expect(row.lastElementChild).toBe(menu());
+    expect(JSON.parse(row.dataset.style!)).toEqual(
+      JSON.parse(label("Read replies aloud").parentElement!.dataset.style!)[0],
+    );
+    expect(menu()!.contains(label("Device voice"))).toBe(false);
+    const trigger = menu()!.firstElementChild!;
+    expect(trigger.getAttribute("role")).toBe("button");
+    expect(trigger.getAttribute("aria-label")).toBe("Device voice");
+    expect(trigger.getAttribute("aria-valuetext")).toBe("en-US · Alice");
     expect(label("en-US · Alice").dataset.style).toContain('"textAlign":"right"');
     expect(menu()!.querySelector("i")!.dataset).toMatchObject({
       ios: "chevron.up.chevron.down",
@@ -233,7 +265,13 @@ describe("bot settings device voice menu", () => {
       mocks.deviceVoices.mockResolvedValue(voices);
       await render();
       expect(menu()).toBeNull();
-      expect(container.textContent).toContain("Device voice");
+      const label = [...container.querySelectorAll("span")].find(
+        (item) => item.textContent === "Device voice",
+      )!;
+      expect(label.parentElement!.lastElementChild!.tagName).toBe("SPAN");
+      expect(label.parentElement!.lastElementChild!.getAttribute("data-style")).toContain(
+        '"textAlign":"right"',
+      );
       expect(container.querySelector("i")).toBeNull();
     },
   );

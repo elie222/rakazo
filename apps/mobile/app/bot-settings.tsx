@@ -327,29 +327,49 @@ export default function BotSettingsScreen() {
     }
   }
 
-  const voiceRow = (
-    <View
-      accessibilityLabel={t("Device voice")}
-      accessibilityRole={!voiceError && voices.length > 1 ? "button" : undefined}
-      accessibilityValue={{ text: voiceError ?? currentVoiceLabel }}
-      accessible={!voiceError}
-      style={[styles.row, styles.voiceRow]}
+  const voiceValue = (
+    <Text
+      numberOfLines={1}
+      style={[styles.rowValue, { color: voiceError ? tokens.destructive : tokens.foreground }]}
     >
+      {voiceError ?? currentVoiceLabel}
+    </Text>
+  );
+  const voiceRow = (
+    <View style={styles.row}>
       <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>{t("Device voice")}</Text>
-      <Text
-        numberOfLines={1}
-        style={[styles.rowValue, { color: voiceError ? tokens.destructive : tokens.foreground }]}
-      >
-        {voiceError ?? currentVoiceLabel}
-      </Text>
       {!voiceError && voices.length > 1 ? (
-        <NativeSymbol
-          android="chevron-expand"
-          color={native.tertiaryLabel}
-          ios="chevron.up.chevron.down"
-          size={13}
-        />
-      ) : null}
+        <MenuPickerMenu
+          choices={voices.map((voice) => ({
+            key: voice.identifier,
+            label: voiceLabel(voice),
+          }))}
+          label={t("Device voice")}
+          onChange={(key) => {
+            const voice = voices.find((candidate) => candidate.identifier === key);
+            if (voice) void chooseVoice(voice);
+          }}
+          value={voiceId ?? ""}
+        >
+          <View
+            accessibilityLabel={t("Device voice")}
+            accessibilityRole="button"
+            accessibilityValue={{ text: currentVoiceLabel }}
+            accessible
+            style={styles.voiceTrigger}
+          >
+            {voiceValue}
+            <NativeSymbol
+              android="chevron-expand"
+              color={native.tertiaryLabel}
+              ios="chevron.up.chevron.down"
+              size={13}
+            />
+          </View>
+        </MenuPickerMenu>
+      ) : (
+        voiceValue
+      )}
     </View>
   );
 
@@ -468,22 +488,6 @@ export default function BotSettingsScreen() {
             >
               {voiceRow}
             </Pressable>
-          ) : voices.length > 1 ? (
-            <MenuPickerMenu
-              choices={voices.map((voice) => ({
-                key: voice.identifier,
-                label: voiceLabel(voice),
-              }))}
-              label={t("Device voice")}
-              onChange={(key) => {
-                const voice = voices.find((candidate) => candidate.identifier === key);
-                if (voice) void chooseVoice(voice);
-              }}
-              style={{ alignSelf: "stretch" }}
-              value={voiceId ?? ""}
-            >
-              {voiceRow}
-            </MenuPickerMenu>
           ) : (
             voiceRow
           )
@@ -577,6 +581,11 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: { fontSize: 14, flex: 1 },
-  voiceRow: { alignSelf: "stretch" },
+  voiceTrigger: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   rowValue: { fontSize: 14, flexShrink: 1, textAlign: "right" },
 });

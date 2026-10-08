@@ -1,6 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { ReactNode } from "react";
-import type { StyleProp, ViewStyle } from "react-native";
 import { StyleSheet, Text, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
@@ -13,14 +12,12 @@ export function MenuPickerMenu({
   choices,
   value,
   onChange,
-  style,
   children,
 }: {
   label: string;
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
-  style?: StyleProp<ViewStyle>;
   children: ReactNode;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -37,7 +34,6 @@ export function MenuPickerMenu({
         const id = event.nativeEvent.event;
         if (id.startsWith("choice:")) onChange(id.slice("choice:".length));
       }}
-      style={style}
       title={label}
     >
       {children}
