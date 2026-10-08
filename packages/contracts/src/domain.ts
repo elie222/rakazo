@@ -1377,7 +1377,9 @@ export const ExportManifestSchema = z.object({
   bot: BotSchema.pick({ name: true, title: true, description: true, instructions: true }),
   memory: z.array(z.object({ path: z.string(), content: z.string() })),
   routines: z.array(RoutineSchema.pick({ name: true, prompt: true, crons: true, timezone: true })),
-  files: z.array(z.object({ path: z.string(), content: z.string() })),
+  files: z.array(
+    z.object({ path: z.string(), content: z.string(), encoding: z.literal("base64").optional() }),
+  ),
   history: z.array(ThreadMessageSchema),
 });
 export type ExportManifest = z.infer<typeof ExportManifestSchema>;

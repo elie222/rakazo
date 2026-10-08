@@ -166,22 +166,70 @@ export default function VoiceSettings() {
     if (saved && next) await playCallCue("start").catch(() => undefined);
   }
 
-  async function toggleDeviceVoice() {
-    if (pending !== null || !deviceVoiceReady) return;
-    const next = !deviceVoice;
+  async function saveDeviceVoice(next: boolean): Promise<boolean> {
     deviceVoiceSaveInFlight.current = true;
     deviceVoiceRevision.current++;
     setDeviceVoice(next);
-    setPending("device-voice");
-    setError(null);
     try {
       await saveDeviceVoiceEnabled(next);
-    } catch {
+      return true;
+    } catch (err) {
       setDeviceVoice(!next);
-      setError(t("Could not save that preference"));
+      setError(errorText(err, t("Could not save that preference")));
+      return false;
     } finally {
       deviceVoiceSaveInFlight.current = false;
       deviceVoiceRevision.current++;
+    }
+  }
+
+  async function toggleDeviceVoice() {
+    if (pending !== null || !deviceVoiceReady) return;
+    setPending("device-voice");
+    setError(null);
+    try {
+      await saveDeviceVoice(!deviceVoice);
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function chooseProvider(nextProvider: string) {
+    if (pending !== null || !deviceVoiceReady) return;
+    const wasDeviceVoice = deviceVoice;
+    const previousProvider = provider;
+    setPending("voice");
+    setError(null);
+    try {
+      if (wasDeviceVoice && !(await saveDeviceVoice(false))) return;
+      setProvider(nextProvider);
+      const cred = credentials.find((entry) => entry.provider === nextProvider);
+      if (cred?.voiceId && status?.provider !== nextProvider) {
+        try {
+          const saved = await rpc<VoiceStatus>("voice/setVoice", {
+            voiceId: cred.voiceId,
+            provider: nextProvider,
+          });
+          setStatus(saved);
+        } catch (err) {
+          setProvider(previousProvider);
+          if (wasDeviceVoice && !(await saveDeviceVoice(true))) return;
+          setError(errorText(err, t("Could not save that voice")));
+          return;
+        }
+      }
+      setApiKey("");
+      setVoiceId(cred?.voiceId ?? "");
+      setSpeechModel(cred?.speechModel ?? "");
+      setVoices([]);
+      try {
+        await load(nextProvider);
+      } catch (err) {
+        // A refresh failure must not leave another provider's voices available.
+        setVoices([]);
+        setError(errorText(err, t("Could not load voice settings")));
+      }
+    } finally {
       setPending(null);
     }
   }
@@ -313,21 +361,13 @@ export default function VoiceSettings() {
                 <Pressable
                   key={entry.id}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: provider === entry.id }}
-                  disabled={pending !== null}
-                  onPress={() => {
-                    setProvider(entry.id);
-                    setPending("voice");
-                    void load(entry.id)
-                      .catch((err: unknown) =>
-                        setError(errorText(err, t("Could not load voice settings"))),
-                      )
-                      .finally(() => setPending(null));
-                  }}
+                  accessibilityState={{ selected: !deviceVoice && provider === entry.id }}
+                  disabled={pending !== null || !deviceVoiceReady}
+                  onPress={() => void chooseProvider(entry.id)}
                   style={({ pressed }) => [
                     styles.groupRow,
                     index > 0 && styles.groupDivider,
-                    pending !== null && styles.disabled,
+                    (pending !== null || !deviceVoiceReady) && styles.disabled,
                     pressed && styles.pressed,
                   ]}
                 >
@@ -341,13 +381,13 @@ export default function VoiceSettings() {
                           : t("Speak only")}
                     </Text>
                   </View>
-                  {provider === entry.id ? <Checkmark /> : null}
+                  {!deviceVoice && provider === entry.id ? <Checkmark /> : null}
                 </Pressable>
               );
             })}
           </View>
         ) : null}
-        {selected ? (
+        {selected && !deviceVoice ? (
           <>
             <TextInput
               accessibilityLabel={t("API key")}

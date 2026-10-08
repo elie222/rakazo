@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
@@ -8,6 +11,7 @@ import {
   ComputerScreenUnavailableError,
   EncryptedSecretStore,
   IntegrationProviderSettings,
+  LocalAgentHomeStore,
   screenLeaseIdForRun,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
@@ -3689,6 +3693,141 @@ describe("groups.archive", () => {
       }),
     );
     expect(calls).toEqual(["cancel run work", "release screen", "expire lease"]);
+  });
+});
+
+describe("export.bot", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const roots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  async function homeWith(files: Record<string, string | Uint8Array>) {
+    const root = await mkdtemp(path.join(tmpdir(), "rakazo-export-"));
+    roots.push(root);
+    const home = new LocalAgentHomeStore(root);
+    for (const [file, content] of Object.entries(files)) {
+      const target = path.join(home.pathFor("home-1"), file);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, content);
+    }
+    return home;
+  }
+
+  async function exportFiles(scope: "team" | "dedicated", home: LocalAgentHomeStore) {
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          name: "Writer",
+          title: "",
+          description: "",
+          instructions: "",
+          thread: { id: "thread-1" },
+          computer: { id: "computer-1", scope, homeKey: "home-1" },
+        }),
+      },
+      memoryDocument: { findMany: vi.fn().mockResolvedValue([]) },
+      routine: { findMany: vi.fn().mockResolvedValue([]) },
+      message: { findMany: vi.fn().mockResolvedValue([]) },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      home,
+      env: {
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "docker",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    const manifest = await client.export.bot({ botId: "bot-1" });
+    return manifest.files.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  it("exports only the bot's own folder from a Team Computer", async () => {
+    const home = await homeWith({
+      "bots/bot-1/notes/result.txt": "mine",
+      "bots/bot-1/project/.gitignore": "dist",
+      "bots/bot-1/.cache/pip/wheel": "cache",
+      "bots/bot-10/notes.txt": "prefix-sharing bot",
+      "bots/bot-2/private.txt": "other bot",
+      "shared/handoff.txt": "shared",
+      ".cache/fontconfig/cache-1": Uint8Array.from([0, 159, 146, 150]),
+      ".browser-profiles/chromium-bot-1/Cookies": "session",
+    });
+    const own = path.join(home.pathFor("home-1"), "bots/bot-1");
+    await symlink("../bot-2", path.join(own, "peer-dir"));
+    await symlink("../bot-2/private.txt", path.join(own, "peer-file"));
+    await symlink("../../shared", path.join(own, "shared-link"));
+    await symlink(".cache/pip/wheel", path.join(own, "wheel.txt"));
+
+    expect(await exportFiles("team", home)).toEqual([
+      { path: "notes/result.txt", content: "mine" },
+      { path: "project/.gitignore", content: "dist" },
+    ]);
+  });
+
+  it("keeps the bot's files that another bot links to", async () => {
+    const home = await homeWith({
+      "bots/bot-1/attachments/photo.bin": Uint8Array.from([0, 255]),
+      "bots/bot-00/notes.txt": "other bot",
+    });
+    await symlink("../bot-1/attachments", path.join(home.pathFor("home-1"), "bots/bot-00/grab"));
+
+    expect((await exportFiles("team", home)).map((file) => file.path)).toEqual([
+      "attachments/photo.bin",
+    ]);
+  });
+
+  it("exports nothing when the bot's Team Computer folder is a link", async () => {
+    const home = await homeWith({ "bots/bot-2/private.txt": "other bot" });
+    await symlink("bot-2", path.join(home.pathFor("home-1"), "bots/bot-1"));
+
+    expect(await exportFiles("team", home)).toEqual([]);
+  });
+
+  it("skips machine state at the root of a Private Computer home", async () => {
+    const home = await homeWith({
+      "notes/result.txt": "mine",
+      "project/.gitignore": "dist",
+      ".cache/fontconfig/cache-1": Uint8Array.from([0, 159, 146, 150]),
+      ".config/mimeapps.list": "[Default Applications]",
+      ".browser-profiles/chromium/Cookies": "session",
+      ".bash_history": "history",
+    });
+    const root = home.pathFor("home-1");
+    await symlink(".bash_history", path.join(root, "history.txt"));
+    await symlink(".config/mimeapps.list", path.join(root, "notes/mimeapps.list"));
+    await symlink(".gitignore", path.join(root, "project/ignore.txt"));
+
+    expect((await exportFiles("dedicated", home)).map((file) => file.path)).toEqual([
+      "notes/result.txt",
+      "project/.gitignore",
+      "project/ignore.txt",
+    ]);
+  });
+
+  it("keeps binary and byte-order-marked files byte-exact", async () => {
+    const binary = Uint8Array.from([0, 255, 137, 80, 78, 71, 13, 10, 26, 10, 192, 128]);
+    const bom = Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode("hello")]);
+    const home = await homeWith({ "image.png": binary, "bom.txt": bom, "plain.txt": "שלום ✎" });
+
+    const files = await exportFiles("dedicated", home);
+    expect(files).toEqual([
+      { path: "bom.txt", content: "\uFEFFhello" },
+      { path: "image.png", content: Buffer.from(binary).toString("base64"), encoding: "base64" },
+      { path: "plain.txt", content: "שלום ✎" },
+    ]);
+    expect(new TextEncoder().encode(files[0]!.content)).toEqual(bom);
   });
 });
 

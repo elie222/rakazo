@@ -1495,7 +1495,7 @@ describeJourneys("required product journeys", () => {
     expect(connector.records.length).toBe(afterFirst);
   });
 
-  it("9: export includes memory and files but not secrets or browser sessions", async () => {
+  it("9: export includes memory and the bot's own files but not secrets or browser sessions", async () => {
     const cookie = await signup(app, `export-j-${stamp}@rakazo.test`, "Export");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
@@ -1517,11 +1517,26 @@ describeJourneys("required product journeys", () => {
       bot.id,
       "write a file in your home called notes/result.txt that says export-ok",
     );
-    const manifest = await rpc<Record<string, unknown>>(app, cookie, "export/bot", {
+    const other = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Other",
+      title: "",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    await sendAndWait(
+      app,
+      cookie,
+      other.id,
+      "write a file in your home called notes/other.txt that says other-bot-private",
+    );
+    const manifest = await rpc<{ files: Array<{ path: string }> }>(app, cookie, "export/bot", {
       botId: bot.id,
     });
     const rawJson = JSON.stringify(manifest);
+    expect(manifest.files.map((file) => file.path)).toContain("notes/result.txt");
     expect(rawJson).toContain("export-ok");
+    expect(rawJson).not.toContain("other-bot-private");
     expect(rawJson).toContain("Be useful");
     expect(rawJson).not.toContain(secret);
     expect(rawJson).not.toMatch(/browserProfile|ciphertext|sessionCookie/i);
