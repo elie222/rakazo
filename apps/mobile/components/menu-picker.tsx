@@ -1,27 +1,26 @@
 import { MenuView } from "@expo/ui/community/menu";
+import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { native, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { NativeSymbol } from "./native-symbol";
 
 export type MenuPickerChoice = { key: string; label: string };
 
-/** A list row that opens a native menu of choices; the current one carries the system checkmark. */
-export function MenuPicker({
+/** Native choice menu shared by rows with different layouts. */
+export function MenuPickerMenu({
   label,
   choices,
   value,
   onChange,
-  divider = false,
+  children,
 }: {
   label: string;
   choices: readonly MenuPickerChoice[];
   value: string;
   onChange: (key: string) => void;
-  divider?: boolean;
+  children: ReactNode;
 }) {
   const colorScheme = useResolvedAppearance();
-  const styles = useThemedStyles(createStyles);
-  const current = choices.find((choice) => choice.key === value)?.label ?? choices[0]?.label ?? "";
   return (
     <MenuView
       actions={choices.map((choice) => ({
@@ -37,6 +36,29 @@ export function MenuPicker({
       }}
       title={label}
     >
+      {children}
+    </MenuView>
+  );
+}
+
+/** A list row that opens a native menu of choices; the current one carries the system checkmark. */
+export function MenuPicker({
+  label,
+  choices,
+  value,
+  onChange,
+  divider = false,
+}: {
+  label: string;
+  choices: readonly MenuPickerChoice[];
+  value: string;
+  onChange: (key: string) => void;
+  divider?: boolean;
+}) {
+  const styles = useThemedStyles(createStyles);
+  const current = choices.find((choice) => choice.key === value)?.label ?? choices[0]?.label ?? "";
+  return (
+    <MenuPickerMenu choices={choices} label={label} onChange={onChange} value={value}>
       <View
         accessibilityLabel={label}
         accessibilityRole="button"
@@ -55,7 +77,7 @@ export function MenuPicker({
           size={13}
         />
       </View>
-    </MenuView>
+    </MenuPickerMenu>
   );
 }
 

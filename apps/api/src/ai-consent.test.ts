@@ -19,6 +19,7 @@ function setup() {
       userModelCredential: { findMany: vi.fn(async () => []) },
       secret: { findMany: vi.fn(async () => []) },
       bot: { findMany: vi.fn(async () => []) },
+      routine: { findMany: vi.fn(async () => []) },
       spaceVoicePreference: {
         findFirst: vi.fn(async () => ({ credential: { provider: "openai" }, voiceId: "alloy" })),
         findMany: vi.fn(async () => [{ credential: { provider: "openai" } }]),
@@ -54,6 +55,26 @@ describe("consent grants", () => {
     expect(deps.prisma.spaceVoicePreference.findMany).not.toHaveBeenCalled();
     expect(deps.prisma.bot.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ id: { in: ["bot"] } }) }),
+    );
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          botId: { in: ["bot"] },
+          OR: [{ active: true }],
+        }),
+      }),
+    );
+  });
+  it("includes an inactive routine only when the check is for that routine", async () => {
+    const { deps, actor } = setup();
+    deps.env.agentRuntime = "pi";
+    await aiConsentStatus(deps, actor, { routineId: "routine-1", uses: ["model"] });
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ active: true }, { id: "routine-1" }],
+        }),
+      }),
     );
   });
   it("includes selected backup models in the provider-sharing disclosure until each is allowed", async () => {

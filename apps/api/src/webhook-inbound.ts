@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { JobPublisher, SecretStore } from "@rakazo/adapter-kit";
 import { runContinueJob, SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { inboundRoutineModelPin } from "@rakazo/adapters";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -18,6 +19,11 @@ export type WebhookEvents = {
     trigger: "webhook";
     clientNonce?: string;
     allowParallelRun?: boolean;
+    modelPin?: {
+      modelProvider: string;
+      modelId: string;
+      thinkingLevel: string | null;
+    };
   }): Promise<{ messageId: string; runId: string | null; seq: number }>;
 };
 
@@ -261,7 +267,13 @@ export async function deliverWebhookEvent(
   target: InboundTarget,
   input: {
     prompt: string;
-    routines: Array<{ name: string; prompt: string }>;
+    routines: Array<{
+      name: string;
+      prompt: string;
+      modelProvider: string | null;
+      modelId: string | null;
+      thinkingLevel: string | null;
+    }>;
     source: "webhook" | "github" | "messaging";
     idempotencyKey?: string;
     /** Messaging wakes share the live chat thread; keep a separate webhook run. */
@@ -287,6 +299,7 @@ export async function deliverWebhookEvent(
   const clientNonce = input.idempotencyKey
     ? inboundDeliveryClientNonce(input.source, target.bot.id, input.idempotencyKey)
     : undefined;
+  const pin = inboundRoutineModelPin(input.routines);
 
   const sent = await deps.events.sendUserMessage({
     spaceId: target.bot.spaceId,
@@ -298,6 +311,15 @@ export async function deliverWebhookEvent(
     trigger: "webhook",
     clientNonce,
     ...(input.allowParallelRun ? { allowParallelRun: true } : {}),
+    ...(pin.modelProvider && pin.modelId
+      ? {
+          modelPin: {
+            modelProvider: pin.modelProvider,
+            modelId: pin.modelId,
+            thinkingLevel: pin.thinkingLevel ?? null,
+          },
+        }
+      : {}),
   });
 
   if (sent.runId) {

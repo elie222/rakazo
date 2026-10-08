@@ -389,6 +389,7 @@ msgstr "Wird hinzugefügt…"
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
+#: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Advanced"
@@ -742,6 +743,10 @@ msgstr "Bot-Bildschirmvorschau"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Bot to link"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Bot's model"
+msgstr "Modell des Bots"
 
 #: src/pages/Artifacts.tsx
 msgid "Bots"
@@ -1825,6 +1830,7 @@ msgstr ""
 #. placeholder {0}: thinkingLevelLabel("medium")
 #. placeholder {0}: thinkingLevelLabel(defaultThinkingLevel)
 #: src/pages/Onboarding.tsx
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Default ({0})"
 msgstr "Standard ({0})"
@@ -2805,6 +2811,7 @@ msgstr "Minuten"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Model"
 msgstr "Modell"
@@ -4289,6 +4296,7 @@ msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Thinking"
 msgstr "Denkmodus"

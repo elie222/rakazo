@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { promptAiConsent } from "./ai-consent";
 import type { ApiRequestContext } from "./api";
 import { aiConsentCoalesceKey, captureApiRequestContext, rpc } from "./api";
+import { voiceForBot } from "./bot-voices";
 import { loadDeviceVoiceEnabled } from "./device-voice";
 import { t } from "./i18n";
 import { errorText } from "./user-error";
@@ -269,6 +270,8 @@ async function speakOnDevice(
   // that await and then overlap this call's remaining chunks.
   const session = startDeviceSpeechSession();
   const Speech = await loadExpoSpeech();
+  // Each bot keeps its own offline voice; without one the engine's default speaks.
+  const voice = botId ? await voiceForBot(botId).catch(() => undefined) : undefined;
   if (!isCurrentDeviceSpeechSession(session) || !isCurrentSpeech(mine)) return true;
   await Speech.stop();
   if (!isCurrentDeviceSpeechSession(session) || !isCurrentSpeech(mine)) return true;
@@ -307,7 +310,7 @@ async function speakOnDevice(
   try {
     for (const utterance of utterances) {
       if (!isCurrentDeviceSpeechSession(session) || !isCurrentSpeech(mine)) return true;
-      await speakOneUtterance(Speech, utterance);
+      await speakOneUtterance(Speech, utterance, voice);
     }
     finished = isCurrentDeviceSpeechSession(session) && isCurrentSpeech(mine);
     return true;
@@ -329,12 +332,11 @@ async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
   return Speech as typeof ExpoSpeech;
 }
 
-function speakOneUtterance(Speech: typeof ExpoSpeech, text: string): Promise<void> {
+function speakOneUtterance(Speech: typeof ExpoSpeech, text: string, voice?: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    // No language or voice override: the platform default stays on device.
-    // Forcing the UI locale mispronounces replies written in another language,
-    // and Android's "network" voices upload the text.
+    // Only offline voices are assigned; without one, use the engine default.
     Speech.speak(text, {
+      ...(voice ? { voice } : {}),
       onDone: () => resolve(),
       // Speech.stop() reports onStopped, not onDone.
       onStopped: () => resolve(),

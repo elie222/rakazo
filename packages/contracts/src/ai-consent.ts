@@ -16,6 +16,7 @@ export const AiConsentQuerySchema = z
   .object({
     botId: z.string().optional(),
     groupId: z.string().optional(),
+    routineId: z.string().optional(),
     uses: z.array(AiDataUseSchema).optional(),
   })
   .default({});

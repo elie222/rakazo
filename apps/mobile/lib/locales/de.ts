@@ -741,6 +741,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "{bot} here. Hi {name}.": "Hier ist {bot}. Hallo {name}.",
   "{bot} here.": "Hier ist {bot}.",
   "Waiting sound": "Wartegeräusch",
+  "Device voice": "Gerätestimme",
+  "Could not load voices": "Stimmen konnten nicht geladen werden",
+  "Hi, I'm {name}.": "Hallo, ich bin {name}.",
+  "Hi, this is how I'll sound.": "Hallo, so klinge ich.",
   "Open external link?": "Externen Link öffnen?",
   Open: "Öffnen",
   // ai-data-sharing

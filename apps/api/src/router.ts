@@ -98,6 +98,7 @@ import {
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   revokeScreenControl,
+  routineRunModelPin,
   sanitizeComposioError,
   savePushToken,
   scheduleComputerControlExpiry,
@@ -127,6 +128,7 @@ import type {
   McpServer,
   Me,
   ProductEvent,
+  Routine,
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
@@ -3201,6 +3203,7 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         const bot = await repos.getBot(context.actor, input.botId);
+        await assertRoutineModel(deps, context.actor, input);
         // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
         let nextRunAt: Date | null = null;
         if (input.crons.length > 0 && !isOneShotRoutineCrons(input.crons)) {
@@ -3221,6 +3224,9 @@ export function createRouter(deps: RouterDeps) {
             webhookEnabled: input.webhookEnabled,
             githubEnabled: input.githubEnabled,
             messageProvider: input.messageProvider,
+            modelProvider: input.modelProvider,
+            modelId: input.modelId,
+            thinkingLevel: input.thinkingLevel,
             nextRunAt,
           },
         });
@@ -3257,6 +3263,35 @@ export function createRouter(deps: RouterDeps) {
         const githubEnabled = input.githubEnabled ?? existing.githubEnabled;
         const messageProvider =
           input.messageProvider === undefined ? existing.messageProvider : input.messageProvider;
+        const modelProvider =
+          input.modelProvider === undefined ? existing.modelProvider : input.modelProvider;
+        const modelId = input.modelId === undefined ? existing.modelId : input.modelId;
+        const hasModel = Boolean(modelProvider && modelId);
+        const modelChanged =
+          modelProvider !== existing.modelProvider || modelId !== existing.modelId;
+        const touchesModel =
+          input.modelProvider !== undefined ||
+          input.modelId !== undefined ||
+          input.thinkingLevel !== undefined;
+        if (Boolean(modelProvider) !== Boolean(modelId)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Model provider and model id must both be set or both cleared",
+          });
+        }
+        if (input.thinkingLevel && !hasModel) {
+          throw new ORPCError("BAD_REQUEST", { message: "Pick a model for this routine first" });
+        }
+        // A thinking level belongs to a model, so changing the model resets it.
+        const thinkingLevel = !hasModel
+          ? null
+          : input.thinkingLevel === undefined
+            ? modelChanged
+              ? null
+              : existing.thinkingLevel
+            : input.thinkingLevel;
+        if (modelChanged) {
+          await assertRoutineModel(deps, context.actor, { modelProvider, modelId });
+        }
         if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider) {
           throw new ORPCError("BAD_REQUEST", {
             message: "Add a schedule, webhook, GitHub, or message trigger",
@@ -3317,9 +3352,20 @@ export function createRouter(deps: RouterDeps) {
               ? (armedOneShotAt ?? existing.nextRunAt)
               : (recalculatedNextRunAt ?? existing.nextRunAt);
         // Re-check the parent in the write itself so an archive that lands after the read wins.
+        // Model patches must also match the snapshot used to resolve omitted model fields.
         const row = await deps.prisma.routine
           .update({
-            where: { id: existing.id, bot: { archivedAt: null } },
+            where: {
+              id: existing.id,
+              bot: { archivedAt: null },
+              ...(touchesModel
+                ? {
+                    modelProvider: existing.modelProvider,
+                    modelId: existing.modelId,
+                    thinkingLevel: existing.thinkingLevel,
+                  }
+                : {}),
+            },
             data: {
               name: input.name,
               prompt: input.prompt,
@@ -3330,11 +3376,28 @@ export function createRouter(deps: RouterDeps) {
               webhookEnabled: input.webhookEnabled,
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
+              ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
               nextRunAt,
             },
           })
-          .catch((error: unknown) => {
-            if (isRecordNotFound(error)) throw new ORPCError("NOT_FOUND");
+          .catch(async (error: unknown) => {
+            if (isRecordNotFound(error)) {
+              if (
+                touchesModel &&
+                (await deps.prisma.routine.findFirst({
+                  where: {
+                    id: existing.id,
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                    bot: { archivedAt: null },
+                  },
+                  select: { id: true },
+                }))
+              ) {
+                throw new ORPCError("CONFLICT", { message: "Routine model changed; retry." });
+              }
+              throw new ORPCError("NOT_FOUND");
+            }
             throw error;
           });
         if (bot.thread) {
@@ -3411,6 +3474,11 @@ export function createRouter(deps: RouterDeps) {
                 status: "queued",
               },
             });
+            const currentModel = await tx.routine.findUnique({
+              where: { id: routine.id },
+              select: { modelProvider: true, modelId: true, thinkingLevel: true },
+            });
+            if (!currentModel) throw new IsolationError();
             return tx.run.create({
               data: {
                 spaceId: context.actor.spaceId,
@@ -3421,6 +3489,7 @@ export function createRouter(deps: RouterDeps) {
                 status: "queued",
                 trigger: "routine",
                 routineId: routine.id,
+                ...routineRunModelPin(currentModel),
                 clientNonce: nonce,
               },
               select: { id: true },
@@ -6522,6 +6591,22 @@ function nextRoutineDate(crons: string[], timezone: string): Date {
   return next;
 }
 
+/** A routine may only name a model the space has connected. */
+async function assertRoutineModel(
+  deps: RouterDeps,
+  actor: Actor,
+  model: { modelProvider?: string | null; modelId?: string | null },
+) {
+  if (!model.modelProvider || !model.modelId) return;
+  const message = await validateConnectedModelChoice(
+    deps.prisma,
+    actor,
+    model.modelProvider,
+    model.modelId,
+  );
+  if (message) throw new ORPCError("BAD_REQUEST", { message });
+}
+
 function mapRoutine(row: {
   id: string;
   botId: string;
@@ -6534,10 +6619,13 @@ function mapRoutine(row: {
   webhookEnabled: boolean;
   githubEnabled: boolean;
   messageProvider: string | null;
+  modelProvider: string | null;
+  modelId: string | null;
+  thinkingLevel: string | null;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   createdAt: Date;
-}) {
+}): Routine {
   return {
     id: row.id,
     botId: row.botId,
@@ -6550,6 +6638,9 @@ function mapRoutine(row: {
     webhookEnabled: row.webhookEnabled,
     githubEnabled: row.githubEnabled,
     messageProvider: row.messageProvider,
+    modelProvider: row.modelProvider ?? null,
+    modelId: row.modelId ?? null,
+    thinkingLevel: (row.thinkingLevel as Routine["thinkingLevel"]) ?? null,
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

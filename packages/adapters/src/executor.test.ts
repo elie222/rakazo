@@ -1515,7 +1515,14 @@ describe("createRunExecutor", () => {
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
-          routine: { updateMany },
+          routine: {
+            updateMany,
+            findUnique: vi.fn(async () => ({
+              modelProvider: null,
+              modelId: null,
+              thinkingLevel: null,
+            })),
+          },
           task: { create: taskCreate },
           run: { create: runCreate },
         }),
@@ -1549,6 +1556,109 @@ describe("createRunExecutor", () => {
         type: "routine.fired",
         runId: "run-1",
         threadId: "group-thread-1",
+      }),
+    );
+  });
+
+  it("pins the routine's own model onto the run it fires", async () => {
+    const scheduledAt = new Date(Date.now() - 1_000);
+    const taskCreate = vi.fn(async () => ({ id: "task-1" }));
+    const runCreate = vi.fn(async () => ({ id: "run-1" }));
+    function fixture(
+      model: {
+        modelProvider: string | null;
+        modelId: string | null;
+        thinkingLevel: string | null;
+      },
+      claimedModel = model,
+    ) {
+      return {
+        routine: {
+          findUnique: vi.fn(async () => ({
+            id: "routine-1",
+            spaceId: "ws-1",
+            botId: "bot-1",
+            userId: "user-1",
+            prompt: "say hi",
+            crons: [ONCE_ROUTINE_CRON],
+            timezone: "UTC",
+            active: true,
+            nextRunAt: scheduledAt,
+            threadId: null,
+            ...model,
+          })),
+        },
+        bot: {
+          findUnique: vi.fn(async () => ({ id: "bot-1", thread: { id: "thread-1" } })),
+        },
+        agentSkill: { findMany: vi.fn(async () => []) },
+        $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+          callback({
+            routine: {
+              updateMany: vi.fn(async () => ({ count: 1 })),
+              findUnique: vi.fn(async () => claimedModel),
+            },
+            task: { create: taskCreate },
+            run: { create: runCreate },
+          }),
+        ),
+      } as unknown as PrismaClient;
+    }
+    function executorFor(prisma: PrismaClient) {
+      return createRunExecutor({
+        prisma,
+        jobs: {
+          enqueue: vi.fn(async () => undefined),
+          cancel: vi.fn(async () => undefined),
+          close: vi.fn(async () => undefined),
+        },
+        events: { append: vi.fn(async () => undefined) },
+      } as unknown as Parameters<typeof createRunExecutor>[0]);
+    }
+
+    await executorFor(
+      fixture({
+        modelProvider: "routine-provider",
+        modelId: "routine-model",
+        thinkingLevel: "low",
+      }),
+    ).wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          routineId: "routine-1",
+          modelProvider: "routine-provider",
+          modelId: "routine-model",
+          thinkingLevel: "low",
+          modelPinned: true,
+        }),
+      }),
+    );
+
+    runCreate.mockClear();
+    await executorFor(
+      fixture({ modelProvider: null, modelId: null, thinkingLevel: null }),
+    ).wakeRoutine("routine-1", scheduledAt.toISOString());
+    const [unpinned] = runCreate.mock.calls.at(0) as unknown as [{ data: Record<string, unknown> }];
+    expect(unpinned.data).not.toHaveProperty("modelProvider");
+    expect(unpinned.data).not.toHaveProperty("modelId");
+    expect(unpinned.data).not.toHaveProperty("modelPinned");
+
+    runCreate.mockClear();
+    await executorFor(
+      fixture(
+        { modelProvider: "stale-provider", modelId: "stale-model", thinkingLevel: "low" },
+        { modelProvider: "current-provider", modelId: "current-model", thinkingLevel: "high" },
+      ),
+    ).wakeRoutine("routine-1", scheduledAt.toISOString());
+    expect(runCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          modelProvider: "current-provider",
+          modelId: "current-model",
+          thinkingLevel: "high",
+          modelPinned: true,
+        }),
       }),
     );
   });
@@ -1630,7 +1740,14 @@ describe("createRunExecutor", () => {
       agentSkill: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
-          routine: { updateMany: vi.fn(async () => ({ count: 1 })) },
+          routine: {
+            updateMany: vi.fn(async () => ({ count: 1 })),
+            findUnique: vi.fn(async () => ({
+              modelProvider: null,
+              modelId: null,
+              thinkingLevel: null,
+            })),
+          },
           task: { create: taskCreate },
           run: { create: runCreate },
         }),
@@ -1695,7 +1812,14 @@ describe("createRunExecutor", () => {
       agentSkill: { findMany: vi.fn(async () => []) },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
-          routine: { updateMany: vi.fn(async () => ({ count: 1 })) },
+          routine: {
+            updateMany: vi.fn(async () => ({ count: 1 })),
+            findUnique: vi.fn(async () => ({
+              modelProvider: null,
+              modelId: null,
+              thinkingLevel: null,
+            })),
+          },
           task: { create: taskCreate },
           run: { create: runCreate },
         }),
@@ -1777,7 +1901,14 @@ description: Prepare standup notes
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
-          routine: { updateMany: vi.fn(async () => ({ count: 1 })) },
+          routine: {
+            updateMany: vi.fn(async () => ({ count: 1 })),
+            findUnique: vi.fn(async () => ({
+              modelProvider: null,
+              modelId: null,
+              thinkingLevel: null,
+            })),
+          },
           task: { create: taskCreate },
           run: { create: vi.fn(async () => ({ id: "run-1" })) },
         }),
@@ -1830,7 +1961,14 @@ description: Prepare standup notes
       },
       $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
         callback({
-          routine: { updateMany },
+          routine: {
+            updateMany,
+            findUnique: vi.fn(async () => ({
+              modelProvider: null,
+              modelId: null,
+              thinkingLevel: null,
+            })),
+          },
           task: { create: vi.fn(async () => ({ id: "task-1" })) },
           run: { create: vi.fn(async () => ({ id: "run-1", taskId: "task-1" })) },
         }),
@@ -1888,7 +2026,14 @@ description: Prepare standup notes
         transactionCalls += 1;
         if (transactionCalls === 1) {
           return callback({
-            routine: { updateMany: claimUpdateMany },
+            routine: {
+              updateMany: claimUpdateMany,
+              findUnique: vi.fn(async () => ({
+                modelProvider: null,
+                modelId: null,
+                thinkingLevel: null,
+              })),
+            },
             task: { create: vi.fn(async () => ({ id: "task-1" })) },
             run: { create: vi.fn(async () => ({ id: "run-1", taskId: "task-1" })) },
           });
@@ -2260,6 +2405,111 @@ description: Prepare standup notes
       expect.objectContaining({
         outcome: "failed",
         error: "Connect a model in Settings before running bots.",
+      }),
+    );
+    expect(runtimeRun).not.toHaveBeenCalled();
+  });
+
+  it("fails a pinned routine run instead of falling back to the space default", async () => {
+    const runtimeRun = vi.fn();
+    const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+    const run = {
+      id: "run-1",
+      botId: "bot-1",
+      threadId: "thread-1",
+      taskId: "task-1",
+      userId: "user-1",
+      spaceId: "ws-1",
+      status: "queued",
+      trigger: "routine",
+      routineId: "routine-1",
+      modelProvider: "openai-compatible",
+      modelId: "private-model",
+      thinkingLevel: "low",
+      modelPinned: true,
+      sourceMessageId: null,
+      checkpoint: null,
+      leaseFence: 0,
+    };
+    const prisma = {
+      run: {
+        findUnique: vi.fn(async () => run),
+        findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      bot: {
+        findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
+          args.select?.computerId
+            ? { computerId: "computer-1", computerSwitching: false }
+            : {
+                id: "bot-1",
+                name: "Assistant",
+                modelProvider: null,
+                modelId: null,
+                thinkingLevel: null,
+                memoryScope: "isolated",
+                computer: { id: "computer-1", scope: "private" },
+              },
+        ),
+      },
+      computer: {
+        findUniqueOrThrow: vi.fn(async () => ({ scope: "private", state: "running" })),
+      },
+      attempt: {
+        create: vi.fn(async () => ({ id: "attempt-1" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      thread: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          id: "thread-1",
+          groupId: null,
+          historyCompactionSummary: null,
+          historyCompactedUpToSeq: null,
+          historyCompactionGeneration: 0,
+        })),
+      },
+      message: { findMany: vi.fn(async () => []) },
+      task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
+      connection: { findMany: vi.fn(async () => []) },
+      spaceModelPreference: {
+        findFirst: vi.fn(async (args: { where: { isDefault?: boolean } }) =>
+          args.where.isDefault
+            ? modelPreference({
+                provider: "openrouter",
+                secretId: "secret-or",
+                modelId: "deepseek/deepseek-v4-flash-0731",
+                isDefault: true,
+              })
+            : null,
+        ),
+      },
+      userModelCredential: { findFirst: vi.fn(async () => null) },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      taughtSkill: { findMany: vi.fn(async () => []) },
+      botSecret: { findMany: vi.fn(async () => []) },
+      agentSecret: { findMany: vi.fn(async () => []) },
+      agentSkill: { findMany: vi.fn(async () => []) },
+      scratchpadItem: { findMany: vi.fn(async () => []) },
+    } as unknown as PrismaClient;
+    const executor = createRunExecutor({
+      prisma,
+      runtime: {
+        describe: () => ({ capabilities: { scripted: false } }),
+        run: runtimeRun,
+      },
+      memoryProviders: { resolve: vi.fn(async () => null) },
+      memory: { read: vi.fn(async () => ({ documents: [] })) },
+      events: { append: vi.fn(async () => undefined), finalizeRun },
+      jobs: { enqueue: vi.fn(async () => undefined) },
+      secrets: [],
+    } as unknown as Parameters<typeof createRunExecutor>[0]);
+
+    await executor.continueRun("run-1", "worker-1");
+
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "failed",
+        error: "Connect that model provider first",
       }),
     );
     expect(runtimeRun).not.toHaveBeenCalled();

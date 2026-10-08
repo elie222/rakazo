@@ -211,6 +211,12 @@ export interface SendUserMessageInput {
   createRun?: boolean;
   /** When true, start a new run even if the bot is already busy (team-chat delivery). */
   allowParallelRun?: boolean;
+  /** Model every routine in an inbound delivery agreed on. */
+  modelPin?: {
+    modelProvider: string;
+    modelId: string;
+    thinkingLevel: string | null;
+  };
 }
 
 export interface SendUserMessageResult {
@@ -434,6 +440,14 @@ export async function sendUserMessage(
             trigger: input.trigger,
             clientNonce: input.clientNonce ? `send:${message.id}` : undefined,
             sourceMessageId: message.id,
+            ...(input.modelPin
+              ? {
+                  modelProvider: input.modelPin.modelProvider,
+                  modelId: input.modelPin.modelId,
+                  thinkingLevel: input.modelPin.thinkingLevel,
+                  modelPinned: true,
+                }
+              : {}),
           },
         });
         if (input.linkMessageToRun) {
@@ -449,6 +463,13 @@ export async function sendUserMessage(
             // Keep messaging on the hold so the later run is mirrored back to that app.
             runId: held ? null : busy.id,
             ...(held && input.trigger === "messaging" ? { originTrigger: "messaging" } : {}),
+            ...(input.modelPin
+              ? {
+                  modelProvider: input.modelPin.modelProvider,
+                  modelId: input.modelPin.modelId,
+                  thinkingLevel: input.modelPin.thinkingLevel,
+                }
+              : {}),
           },
         });
         await tx.message.update({ where: { id: message.id }, data: { runId: busy.id } });
@@ -1232,6 +1253,7 @@ export async function createPendingSteeringRun(
   const origin = steeringOrigin(pending[0]!);
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
+  const modelPin = continuationModelPin(batch);
   const task = await tx.task.create({
     data: {
       spaceId: input.spaceId,
@@ -1252,6 +1274,7 @@ export async function createPendingSteeringRun(
       status: "queued",
       trigger: origin === "app" ? "follow_up" : "messaging",
       sourceMessageId: source.message.id,
+      ...(modelPin ?? {}),
     },
   });
   await tx.steeringMessage.updateMany({
@@ -1259,6 +1282,30 @@ export async function createPendingSteeringRun(
     data: { runId: run.id, claimedAt: null },
   });
   return run.id;
+}
+
+function continuationModelPin(
+  batch: ReadonlyArray<{
+    modelProvider?: string | null;
+    modelId?: string | null;
+    thinkingLevel?: string | null;
+  }>,
+) {
+  const first = batch[0];
+  if (!first?.modelProvider || !first.modelId) return null;
+  const agreed = batch.every(
+    (item) =>
+      item.modelProvider === first.modelProvider &&
+      item.modelId === first.modelId &&
+      (item.thinkingLevel ?? null) === (first.thinkingLevel ?? null),
+  );
+  if (!agreed) return null;
+  return {
+    modelProvider: first.modelProvider,
+    modelId: first.modelId,
+    thinkingLevel: first.thinkingLevel ?? null,
+    modelPinned: true,
+  };
 }
 
 function steeringOrigin(item: {

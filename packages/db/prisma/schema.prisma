@@ -618,6 +618,10 @@ model Run {
   trigger              String
   modelProvider        String?
   modelId              String?
+  thinkingLevel        String?
+  // True when these columns are the model the run must keep. A later attempt
+  // may record the model it used in the same columns without setting this.
+  modelPinned          Boolean          @default(false)
   error                String?
   leaseOwner           String?
   leaseFence           Int              @default(0)
@@ -665,6 +669,10 @@ model SteeringMessage {
   run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   /// Set when a pending row must resume as this trigger so its reply can be delivered.
   originTrigger String?
+  /// Model agreed for an inbound delivery that had to wait. Empty follows the bot.
+  modelProvider String?
+  modelId       String?
+  thinkingLevel String?
   claimedAt DateTime?
   createdAt DateTime @default(now())
 
@@ -765,6 +773,9 @@ model Routine {
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
+  modelProvider  String?
+  modelId        String?
+  thinkingLevel  String?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())

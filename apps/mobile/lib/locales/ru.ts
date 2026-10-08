@@ -745,6 +745,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "{bot} here. Hi {name}.": "Это {bot}. Привет, {name}.",
   "{bot} here.": "Это {bot}.",
   "Waiting sound": "Звук ожидания",
+  "Device voice": "Голос устройства",
+  "Could not load voices": "Не удалось загрузить голоса",
+  "Hi, I'm {name}.": "Привет, я {name}.",
+  "Hi, this is how I'll sound.": "Привет, вот так я звучу.",
   "Open external link?": "Открыть внешнюю ссылку?",
   Open: "Открыть",
   // ai-data-sharing

@@ -723,6 +723,10 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{bot} here. Hi {name}.": "我是 {bot}。你好 {name}。",
   "{bot} here.": "我是 {bot}。",
   "Waiting sound": "等待提示音",
+  "Device voice": "设备语音",
+  "Could not load voices": "无法加载语音",
+  "Hi, I'm {name}.": "你好，我是 {name}。",
+  "Hi, this is how I'll sound.": "你好，这是我的声音。",
   "Open external link?": "打开外部链接？",
   Open: "打开",
   // ai-data-sharing
