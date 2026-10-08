@@ -15,7 +15,15 @@ vi.mock("../pages/Paywall", () => ({ PaywallPage: () => <div>paywall</div> }));
 async function renderGate(billing: boolean) {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => Response.json({ billing })),
+    vi.fn(async () =>
+      Response.json({
+        billing,
+        passwordAuth: true,
+        sso: null,
+        passwordReset: false,
+        resetUrl: null,
+      }),
+    ),
   );
   vi.resetModules();
   const { SubscriptionGate } = await import("./SubscriptionGate");

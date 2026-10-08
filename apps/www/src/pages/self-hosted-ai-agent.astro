@@ -1,5 +1,7 @@
 ---
+import ArchitectureDiagram from "../components/ArchitectureDiagram.astro";
 import Button from "../components/Button.astro";
+import CaptionedImage from "../components/CaptionedImage.astro";
 import FaqSection from "../components/FaqSection.astro";
 import Footer from "../components/Footer.astro";
 import GetStartedDialog from "../components/GetStartedDialog.astro";
@@ -9,6 +11,7 @@ import {
   faqPageStructuredData,
   PUBLISHED_IMAGES_INSTALL,
   PUBLISHED_IMAGES_SERVER,
+  RUN_ON_YOUR_MAC,
   SELF_HOST_DESCRIPTION,
   SELF_HOST_FAQS,
   SELF_HOST_TITLE,
@@ -18,6 +21,7 @@ import {
 import { fetchGithubStars, formatStarCount } from "../github";
 import { getHomeCopy } from "../i18n/home";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { ogPublicPath } from "../og-pages";
 import {
   DOCS_URL,
   GITHUB_URL,
@@ -38,6 +42,7 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
   description={SELF_HOST_DESCRIPTION}
   {structuredData}
   localeAlternates={false}
+  ogImage={ogPublicPath("self-hosted-ai-agent")}
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
@@ -54,6 +59,8 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         to run it. The <a href={DOCS_URL}>full self-hosting guide</a> on GitHub covers backups, upgrades,
         secrets, restricted networks, and production Compose.
       </p>
+
+      <ArchitectureDiagram />
 
       <h2>What self-hosting gives you</h2>
       <h3>Data ownership</h3>
@@ -98,6 +105,34 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         Open <a href="http://127.0.0.1:5173">http://127.0.0.1:5173</a> and create an account. The first
         registered user becomes the deployment owner. Connect a model in the app, or set <code>OPENROUTER_API_KEY</code> before startup. Local Docker computers are on by default.
       </p>
+      <CaptionedImage
+        src="/graphics/chat/create-bot.png"
+        width={1200}
+        height={800}
+        alt="The new bot form in Rakazo, filled with a demo bot named Inbox."
+        caption="Creating a bot in the Rakazo app. The name, title, and description here are demo data."
+      />
+      <CaptionedImage
+        src="/graphics/chat/model.png"
+        width={1200}
+        height={800}
+        alt="Bot settings with the model menu open on a demo Inbox bot."
+        caption="Each bot can use a different model. This menu lists models for the credentials connected on that deployment."
+      />
+      <CaptionedImage
+        src="/graphics/chat/routine.png"
+        width={1200}
+        height={800}
+        alt="A routine editor for a weekday inbox check, with the instruction written as text."
+        caption="A routine is readable text with a schedule. You can edit it in the app."
+      />
+      <CaptionedImage
+        src="/graphics/chat/approval.png"
+        width={1200}
+        height={800}
+        alt="An approval card asking whether a demo bot may send an email, with allow once, always allow, and deny."
+        caption="When work crosses a boundary you set, the bot stops on an approval card. The action is also written to the audit log."
+      />
       <p>
         For an agent-assisted install, use the <a href={SETUP_PROMPT_URL}>setup prompt</a>.
       </p>
@@ -147,6 +182,7 @@ const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
         addresses. <strong>This computer</strong> installs the published images with Docker Compose on
         that machine.
       </p>
+      <p>{RUN_ON_YOUR_MAC}</p>
       <p>
         In the mobile app, tap <strong>Use a custom server</strong> on the sign-in screen and enter
         the same HTTPS origin as <code>WEB_ORIGIN</code>.

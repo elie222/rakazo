@@ -198,11 +198,11 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await page.getByRole("button", { name: "Find models" }).click();
     await expect(discoveredModels).toHaveValue(LOCAL_MODEL_ID);
     await expect(page.getByText("Found 1 model.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
     await captureScreenshot(page, testInfo, "openai-compatible-model-discovery");
 
-    await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.getByText("Saved.")).toBeVisible();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: /OpenAI-compatible/ })).toContainText(
       "Connected",
     );
@@ -210,9 +210,9 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
 
     await page.getByLabel("OpenAI-compatible server URL").fill("");
     await expect(page.getByRole("button", { name: "Find models" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await page.getByLabel("OpenAI-compatible server URL").fill(baseUrl);
-    await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 
     if (process.env.AGENT_RUNTIME === "pi") {
       await page.getByRole("button", { name: "Close model settings" }).click();
@@ -243,7 +243,9 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   const providerSearch = page.getByPlaceholder("Search providers");
   await providerSearch.fill("scripted");
   await page.getByRole("button", { name: /Scripted/ }).click();
-  await expect(page.getByRole("combobox", { name: "Model" })).toHaveText(/Scripted runtime/);
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveText(
+    /Scripted runtime/,
+  );
   const apiKeyInput = page.getByLabel("API key");
   await expect(apiKeyInput).toHaveAttribute("autocomplete", "new-password");
   await apiKeyInput.fill("fake-scripted-key-one");
@@ -258,8 +260,12 @@ test("model settings connect, replace, and cancel provider authentication", asyn
     {},
   );
   expect(connected.find((entry) => entry.provider === "scripted")?.maxTokens).toBe(8192);
-  await page.getByText("Advanced", { exact: true }).click();
-  await page.getByLabel("Maximum output tokens").fill("16384");
+  // Connecting preserves the open disclosure; only open it if the form remounted.
+  const outputLimit = page.getByLabel("Maximum output tokens");
+  if (!(await outputLimit.isVisible())) {
+    await page.getByText("Advanced", { exact: true }).click();
+  }
+  await outputLimit.fill("16384");
   await page.getByRole("button", { name: "Save limits", exact: true }).click();
   await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
   const updated = await rpc<Array<{ provider: string; maxTokens?: number }>>(
@@ -270,7 +276,9 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   expect(updated.find((entry) => entry.provider === "scripted")?.maxTokens).toBe(16384);
   await page.reload();
   await openUserSettings(page, "models");
-  await expect(page.getByRole("combobox", { name: "Model" })).toHaveText(/Scripted runtime/);
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveText(
+    /Scripted runtime/,
+  );
   const storedKey = page.getByLabel("Replace API key");
   await expect(storedKey).toHaveValue("");
   await expect(storedKey).toHaveAttribute("placeholder", "Paste a replacement key");
@@ -301,6 +309,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
     hasKey: false,
     isDefault: false,
     modelId: "gpt-6-luna",
+    authKind: "oauth",
   };
   let oauthReady = false;
   let oauthFinished = false;
@@ -412,6 +421,109 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await expect(page.getByRole("button", { name: /Scripted/ })).not.toContainText("Connected");
 });
 
+test("a deployment default on server credentials says so and keeps an own key optional", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `server-credentials-${stamp}@rakazo.test`, "password12", `Server ${stamp}`);
+  await completeOnboarding(page);
+  // The E2E deployment runs on a scripted model, so present the active default as one that
+  // authenticates from the host, the way an Amazon Bedrock deployment on an AWS role does.
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        json: {
+          ...body.json,
+          defaultProvider: "amazon-bedrock",
+          defaultModel: "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
+          hostCredentialProvider: "amazon-bedrock",
+          hostCredentialSource: "AWS IAM",
+        },
+      },
+    });
+  });
+  await openUserSettings(page, "models");
+
+  const serverNote = page.getByText(
+    "Uses this server's own AWS IAM credentials to access Amazon Bedrock.",
+  );
+  const ownKeyDisclosure = page.getByText("Use your own key", { exact: true });
+  await expect(serverNote).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect API key" })).toBeHidden();
+  await captureScreenshot(page, testInfo, "model-settings-server-credentials");
+
+  await ownKeyDisclosure.click();
+  await expect(page.getByRole("button", { name: "Connect API key" })).toBeVisible();
+  await expect(serverNote).toBeVisible();
+  await ownKeyDisclosure.click();
+  await expect(page.getByRole("button", { name: "Connect API key" })).toBeHidden();
+  await expect(serverNote).toBeVisible();
+});
+
+test("a key connected in another space can replace server credentials for the same model", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `shared-model-${stamp}@rakazo.test`, "password12", "Model Owner");
+  await completeOnboarding(page);
+  const otherSpace = await rpc<{ id: string }>(page, "spaces/create", { name: "Other space" });
+  const provider = "amazon-bedrock";
+  const modelId = "eu.anthropic.claude-haiku-4-5-20251001-v1:0";
+  const connected = await page.request.post("/rpc/models/connect", {
+    headers: { "x-rakazo-space-id": otherSpace.id },
+    data: { json: { provider, modelId, apiKey: "fake-bedrock-key" } },
+  });
+  expect(connected.ok()).toBe(true);
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    // The offline deployment uses Scripted; expose its untouched default as host Bedrock.
+    if (body.json.defaultProvider !== provider) {
+      Object.assign(body.json, {
+        defaultProvider: provider,
+        defaultModel: modelId,
+        hostCredentialProvider: provider,
+        hostCredentialSource: "AWS IAM",
+      });
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await openUserSettings(page, "models");
+  await expect(page.getByRole("combobox", { name: "Model", exact: true })).toHaveText(
+    /Claude Haiku/,
+  );
+  await expect(
+    page.getByText("Uses this server's own AWS IAM credentials to access Amazon Bedrock."),
+  ).toBeVisible();
+  const useModel = page.getByRole("button", { name: "Use this model", exact: true });
+  await expect(useModel).toBeVisible();
+  const personalBillingNote = page.getByText(
+    "Uses your Amazon Bedrock API key. Rakazo does not pay for model usage.",
+  );
+  await expect(personalBillingNote).toBeHidden();
+  await captureScreenshot(page, testInfo, "model-settings-server-credentials-connected-key");
+  const saved = page.waitForRequest("**/rpc/models/setDefault");
+  await useModel.click();
+  const request = await saved;
+  expect(request.postDataJSON().json).toMatchObject({ provider, modelId });
+  expect(request.headers()["x-rakazo-space-id"]).not.toBe(otherSpace.id);
+  await expect(page.getByText(/Now using/)).toBeVisible();
+  await expect(useModel).toBeHidden();
+  await expect(personalBillingNote).toBeVisible();
+  await expect(
+    page.getByText("Uses this server's own AWS IAM credentials to access Amazon Bedrock."),
+  ).toBeHidden();
+  expect(await rpc(page, "me", {})).toMatchObject({
+    defaultProvider: provider,
+    defaultModel: modelId,
+    hostCredentialProvider: null,
+  });
+});
+
 test("catalog models keep a space default thinking level per saved model", async ({
   page,
 }, testInfo) => {
@@ -425,7 +537,7 @@ test("catalog models keep a space default thinking level per saved model", async
   // A non-reasoning provider never shows the control.
   await providerSearch.fill("scripted");
   await page.getByRole("button", { name: /Scripted/ }).click();
-  await expect(page.getByRole("combobox", { name: "Thinking" })).toBeHidden();
+  await expect(page.getByRole("combobox", { name: "Thinking", exact: true })).toBeHidden();
 
   await providerSearch.fill("anthropic");
   await page.getByRole("button", { name: /^Anthropic / }).click();
@@ -470,4 +582,92 @@ test("catalog models keep a space default thinking level per saved model", async
     {},
   );
   expect(updated.find((entry) => entry.provider === "anthropic")?.thinkingLevel).toBeUndefined();
+});
+
+test("saves and reloads an ordered backup model list for connected models", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `backup-models-${stamp}@rakazo.test`, "password12", `Backups ${stamp}`);
+  await completeOnboarding(page);
+
+  const catalog = await rpc<
+    Array<{
+      provider: string;
+      id: string;
+      label: string;
+      providerName?: string;
+      placeholder?: boolean;
+    }>
+  >(page, "models/list", {});
+  const targets = ["anthropic", "openai"].map((provider) => {
+    const model = catalog.find((entry) => entry.provider === provider && !entry.placeholder);
+    expect(model, `expected a ${provider} catalog entry`).toBeDefined();
+    return model!;
+  });
+  // Fake credentials exercise the connected-model picker without calling a provider.
+  for (const model of targets) {
+    await rpc(page, "models/connect", {
+      provider: model.provider,
+      apiKey: `fake-backup-${model.provider}-key`,
+      modelId: model.id,
+    });
+  }
+
+  const settings = await openUserSettings(page, "models");
+  const panel = settings.getByTestId("model-backups");
+  await panel.scrollIntoViewIfNeeded();
+  await expect(panel).toBeVisible();
+  await expect(panel.getByText("Add connected models to use them as backups.")).toBeVisible();
+  const picker = panel.getByRole("combobox", { name: "Add connected model" });
+  const firstValue = JSON.stringify([targets[0]!.provider, targets[0]!.id]);
+  const secondValue = JSON.stringify([targets[1]!.provider, targets[1]!.id]);
+  await picker.selectOption(firstValue);
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+  await picker.selectOption(secondValue);
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+
+  const firstLabel = `${targets[0]!.providerName ?? targets[0]!.provider} · ${targets[0]!.label}`;
+  const secondLabel = `${targets[1]!.providerName ?? targets[1]!.provider} · ${targets[1]!.label}`;
+  await panel.getByRole("button", { name: `Move ${secondLabel} up` }).click();
+  const rows = panel.locator('[data-testid^="model-backup-"]');
+  await expect(rows.nth(0)).toContainText(secondLabel);
+  await expect(rows.nth(1)).toContainText(firstLabel);
+  await panel.scrollIntoViewIfNeeded();
+  await expect(panel).toBeInViewport();
+
+  const savedResponse = page.waitForResponse(
+    (response) => response.url().includes("/rpc/models/setBackups") && response.ok(),
+  );
+  await panel.getByRole("button", { name: "Save backups", exact: true }).click();
+  await savedResponse;
+  await expect(panel.getByText("Backup models saved.")).toBeVisible();
+  expect(await rpc(page, "models/backups", {})).toEqual([
+    { provider: targets[1]!.provider, modelId: targets[1]!.id },
+    { provider: targets[0]!.provider, modelId: targets[0]!.id },
+  ]);
+
+  await page.reload();
+  const reloadedSettings = await openUserSettings(page, "models");
+  const reloadedPanel = reloadedSettings.getByTestId("model-backups");
+  await reloadedPanel.scrollIntoViewIfNeeded();
+  const reloadedRows = reloadedPanel.locator('[data-testid^="model-backup-"]');
+  await expect(reloadedRows.nth(0)).toContainText(secondLabel);
+  await expect(reloadedRows.nth(1)).toContainText(firstLabel);
+  await reloadedPanel.scrollIntoViewIfNeeded();
+  await expect(reloadedPanel).toBeInViewport();
+  await testInfo.attach("settings-backup-models-control", {
+    body: await reloadedPanel.screenshot({ animations: "disabled" }),
+    contentType: "image/png",
+  });
+  await captureScreenshot(page, testInfo, "settings-backup-models-order");
+  await reloadedPanel.getByRole("button", { name: `Remove ${firstLabel}` }).click();
+  const removalResponse = page.waitForResponse(
+    (response) => response.url().includes("/rpc/models/setBackups") && response.ok(),
+  );
+  await reloadedPanel.getByRole("button", { name: "Save backups", exact: true }).click();
+  await removalResponse;
+  expect(await rpc(page, "models/backups", {})).toEqual([
+    { provider: targets[1]!.provider, modelId: targets[1]!.id },
+  ]);
 });

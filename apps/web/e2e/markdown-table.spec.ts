@@ -116,6 +116,11 @@ test("rich table links participate in dialog keyboard navigation", async ({ page
     element.addEventListener("click", (event) => event.preventDefault(), { capture: true });
   });
   await headerLink.click();
+  const confirm = page.getByRole("alertdialog", { name: "Open external link?" });
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText("https://example.test/ref");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirm).toHaveCount(0);
   await expect(referenceHeader).not.toHaveAttribute("aria-sort", /./);
   await card.getByRole("button", { name: "Sort by Reference" }).click();
   await expect(referenceHeader).toHaveAttribute("aria-sort", "ascending");

@@ -37,14 +37,11 @@ export function aiRecipient(input: {
     key,
     name: origin ? `${name} (${origin})` : name,
     use: input.use,
-    detail: [
-      input.modelId ? `Model: ${input.modelId}.` : "",
-      ["openrouter", "vercel-ai-gateway"].includes(input.provider)
-        ? `${name} forwards requests to model providers using the routing and privacy settings configured for this connection.`
-        : "",
-    ]
-      .filter(Boolean)
-      .join(" "),
+    detail: ["openrouter", "vercel-ai-gateway"].includes(input.provider)
+      ? input.modelId
+        ? `${input.modelId}, forwarded to its provider`
+        : "Forwards to model providers"
+      : (input.modelId ?? ""),
     privacyUrl: PRIVACY_URLS[input.provider],
   };
 }

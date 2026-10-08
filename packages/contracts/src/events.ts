@@ -339,6 +339,21 @@ export const ProductEventSchema = z.object({
 });
 export type ProductEvent = z.infer<typeof ProductEventSchema>;
 
+export const ReplyPreviewSchema = z.object({
+  role: MessageRole,
+  botId: Id.optional(),
+  text: z.string(),
+  attachment: z
+    .object({
+      kind: z.enum(["image", "file"]),
+      artifactId: Id,
+      mimeType: z.string(),
+      name: z.string(),
+    })
+    .optional(),
+});
+export type ReplyPreview = z.infer<typeof ReplyPreviewSchema>;
+
 export const ThreadMessageSchema = z.object({
   id: Id,
   threadId: Id,
@@ -348,6 +363,7 @@ export const ThreadMessageSchema = z.object({
   botId: Id.optional(),
   replyToMessageId: Id.optional(),
   replyQuote: z.string().optional(),
+  replyPreview: ReplyPreviewSchema.nullable().optional(),
   runId: Id.optional(),
   /** Set when the message was sent from a live voice call; groups one call's transcript. */
   callId: z.string().optional(),

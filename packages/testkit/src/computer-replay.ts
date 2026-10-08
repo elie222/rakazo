@@ -123,7 +123,8 @@ export async function runComputerReplay(
           "Complete the requested task using your computer. Inspect current state before acting.",
         history: [],
         tools: builtinAgentTools.filter((definition) => names.has(definition.name)),
-        model: emulator.model,
+        // Exercise a normal vision-model window with real screenshot budgeting.
+        model: { ...emulator.model, contextWindow: 128_000 },
         executeTool: async (name, args) => {
           usedTools.push(name);
           if (name === "browser_navigate")

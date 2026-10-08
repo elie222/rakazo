@@ -34,6 +34,7 @@ type Props = {
     privacy: string;
     terms: string;
     grokAlternative: string;
+    blog: string;
   };
 };
 
@@ -56,6 +57,7 @@ const {
     privacy: "Privacy",
     terms: "Terms",
     grokAlternative: "Grok Bot alternative",
+    blog: "Blog",
   },
 } = Astro.props;
 
@@ -107,6 +109,7 @@ function isCurrentPage(href: string): boolean {
       <a href={GROK_ALTERNATIVE_PATH} aria-current={isCurrentPage(GROK_ALTERNATIVE_PATH) ? "page" : undefined}>
         {linkLabels.grokAlternative}
       </a>
+      <a href="/blog/" aria-current={isCurrentPage("/blog/") ? "page" : undefined}>{linkLabels.blog}</a>
       <a href="/about/">{linkLabels.about}</a>
       <a href="/support/">{linkLabels.support}</a>
       <a href="/privacy/">{linkLabels.privacy}</a>

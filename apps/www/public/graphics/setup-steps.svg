@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="setupTitle setupDesc">
+  <title id="setupTitle">Setup paths for Rakazo, OpenClaw, and Hermes Agent</title>
+  <desc id="setupDesc">Three columns of setup steps taken from each project's public install docs. No times are shown.</desc>
+  <rect width="1200" height="720" fill="#fdfdfd"/>
+  <text x="48" y="64" fill="#242424" font-family="Geist, ui-sans-serif, system-ui, sans-serif" font-size="28" font-weight="600">Setup paths</text>
+  <text x="48" y="98" fill="#6d6e70" font-family="Geist, ui-sans-serif, system-ui, sans-serif" font-size="16">From each project's public install docs. Download time is extra.</text>
+  <g font-family="Geist, ui-sans-serif, system-ui, sans-serif">
+    <rect x="48" y="132" width="348" height="520" rx="16" fill="#ffffff" stroke="#e6e6e6"/>
+    <rect x="426" y="132" width="348" height="520" rx="16" fill="#ffffff" stroke="#e6e6e6"/>
+    <rect x="804" y="132" width="348" height="520" rx="16" fill="#ffffff" stroke="#e6e6e6"/>
+    <text x="72" y="176" fill="#242424" font-size="20" font-weight="600">Rakazo</text>
+    <text x="450" y="176" fill="#242424" font-size="20" font-weight="600">OpenClaw</text>
+    <text x="828" y="176" fill="#242424" font-size="20" font-weight="600">Hermes Agent</text>
+    <g fill="#3d3d3d" font-size="15">
+      <text x="72" y="230">1. Docker installer, or the desktop</text>
+      <text x="92" y="252">app's local stack</text>
+      <text x="72" y="292">2. Create an account</text>
+      <text x="72" y="332">3. Connect a model</text>
+      <text x="72" y="372">4. Chat, and manage the bot there</text>
+      <text x="450" y="230">1. Install script</text>
+      <text x="450" y="270">2. Onboarding</text>
+      <text x="450" y="310">3. Gateway, then the background</text>
+      <text x="470" y="332">service if you want it</text>
+      <text x="450" y="372">4. Config under ~/.openclaw</text>
+      <text x="828" y="230">1. Desktop app, or the CLI</text>
+      <text x="848" y="252">installer</text>
+      <text x="828" y="292">2. Provider in the app, or</text>
+      <text x="848" y="314">hermes setup and hermes model</text>
+      <text x="828" y="354">3. Config under ~/.hermes</text>
+      <text x="828" y="394">4. A separate gateway only</text>
+      <text x="848" y="416">for messaging apps</text>
+    </g>
+    <text x="72" y="600" fill="#6d6e70" font-size="13">Apache-2.0. Chat is the product.</text>
+    <text x="450" y="600" fill="#6d6e70" font-size="13">MIT. Gateway for chat apps.</text>
+    <text x="828" y="588" fill="#6d6e70" font-size="13">MIT. Desktop can reach a first</text>
+    <text x="828" y="608" fill="#6d6e70" font-size="13">message without the CLI.</text>
+  </g>
+</svg>

@@ -3,7 +3,13 @@ import { truncateReplyQuote } from "@rakazo/contracts";
 import { blocksToAgentHistoryText, messageReaction } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
-type QuotedMessage = { id: string; threadId: string; role: string; blocks: unknown };
+type QuotedMessage = {
+  id: string;
+  threadId: string;
+  role: string;
+  botId?: string | null;
+  blocks: unknown;
+};
 type ReplyMessage = QuotedMessage & {
   replyToMessageId?: string | null;
   replyQuote?: string | null;
@@ -34,6 +40,7 @@ function replyContext(source: ReplyMessage, threadId: string): string | undefine
   const quote = JSON.stringify({
     messageId: target.id,
     role: target.role,
+    botId: target.botId ?? undefined,
     ...targetPayload,
   })
     .replaceAll("<", "\\u003c")
@@ -56,7 +63,7 @@ export async function loadReplyContext(
   sourceMessageId: string | null | undefined,
 ): Promise<string | undefined> {
   if (!sourceMessageId) return undefined;
-  const selection = { id: true, threadId: true, role: true, blocks: true } as const;
+  const selection = { id: true, threadId: true, role: true, botId: true, blocks: true } as const;
   const source = await prisma.message.findFirst({
     where: { id: sourceMessageId, threadId },
     select: {

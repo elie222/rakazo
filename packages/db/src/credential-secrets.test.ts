@@ -292,6 +292,50 @@ describe("retireModelCredential", () => {
     expect(state.secrets).toHaveLength(1);
   });
 
+  it.each([false, true])(
+    "checks slow provider material outside transactions and fences a concurrent rotation (%s)",
+    async (rotate) => {
+      const state = {
+        credentials: [codexCredential()],
+        preferences: [codexPreference()],
+        secrets: [{ id: "secret-codex", ciphertext: "failed" }],
+      };
+      const { prisma, tx } = retirePrisma(state);
+      tx.secret.findFirst.mockImplementation(async (args) => {
+        const row = state.secrets.find((row) => row.id === args.where.id);
+        return row ? { ...row } : null;
+      });
+      let active = false;
+      let clock = 0;
+      vi.mocked(prisma.$transaction).mockImplementation((async (
+        callback: (client: typeof tx) => Promise<unknown>,
+      ) => {
+        const start = clock;
+        active = true;
+        try {
+          const result = await callback(tx);
+          if (clock - start > 5000) throw new Error("Transaction expired");
+          return result;
+        } finally {
+          active = false;
+        }
+      }) as never);
+      const retired = await retireModelCredential(prisma, {
+        userId: "user-1",
+        credentialId: "cred-codex",
+        secretId: "secret-codex",
+        matchesFailedSecret: async () => {
+          expect(active).toBe(false);
+          clock += 15000;
+          if (rotate) state.secrets[0]!.ciphertext = "fresh";
+          return true;
+        },
+      });
+      expect(retired).toBe(!rotate);
+      expect(state.credentials).toHaveLength(rotate ? 1 : 0);
+    },
+  );
+
   it("is a no-op without a credential id", async () => {
     const { prisma } = retirePrisma({
       credentials: [codexCredential()],

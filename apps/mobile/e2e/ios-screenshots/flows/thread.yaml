@@ -1,0 +1,41 @@
+appId: com.rakazo.app
+name: Thread
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*The fixture workspace is ready.*"
+    timeout: 20000
+- takeScreenshot: 01-thread
+- scrollUntilVisible:
+    element: ".*launch-notes.txt.*"
+    direction: DOWN
+    timeout: 15000
+    visibilityPercentage: 40
+    optional: true
+- takeScreenshot: 02-attachment
+- openLink: "rakazo:///group-thread?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}&name=Launch%20team"
+- extendedWaitUntil:
+    visible: ".*The fixture launch plan is ready.*"
+    timeout: 20000
+- takeScreenshot: 03-group-thread
+- openLink: "rakazo:///thread?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*The fixture workspace is ready.*"
+    timeout: 20000
+- longPressOn:
+    text: ".*The fixture workspace is ready.*"
+- extendedWaitUntil:
+    visible: ".*Reply.*"
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      visible: ".*Reply.*"
+    commands:
+      - assertVisible: ".*Copy.*"
+      - takeScreenshot: 04-message-actions
+      - tapOn: "Copy"

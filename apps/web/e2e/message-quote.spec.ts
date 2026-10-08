@@ -104,7 +104,7 @@ test("selecting a text span quotes it into a reply", async ({ page }, testInfo) 
   await expect(replyChip).toBeVisible();
   await expect(composer).toBeFocused();
   await expect(page.getByTestId("composer-announcement")).toHaveText(/Replying to/);
-  await expect(replyChip).toContainText(/Replying to/);
+  await expect(replyChip).toContainText(/forty two percent/);
   await expect(replyChip).toContainText("**forty two percent**");
 
   const replyText = `quote-reply-${stamp} why this number?`;
@@ -216,7 +216,7 @@ test("rendered markdown selections survive server quote derivation", async ({ pa
     .filter({ hasText: `reply-plain-${stamp}` })
     .first();
   const plainPreview = plainReply.getByTestId("reply-parent-preview");
-  await expect(plainPreview).toContainText("cell-a, cell-b");
+  await expect(plainPreview).toContainText(`md-${stamp}`);
   await expect(plainPreview).not.toContainText("|");
   await captureScreenshot(page, testInfo, "reply-preview-plain-text");
 });
@@ -254,7 +254,7 @@ test("selecting text inside a table cell quotes the rendered cell", async ({ pag
   await expect(replyChip).toBeVisible();
   // Exact match: an excerpt that picked up an adjacent cell or chrome would
   // still satisfy a substring check.
-  await expect(replyChip).toHaveText(new RegExp(`^Replying to .+: “${cellText}”$`));
+  await expect(replyChip).toHaveText(new RegExp(`^.+: ${cellText}$`));
   await expect(composer).toBeFocused();
 
   // The sent reply persists the server-derived excerpt from the same cell.
@@ -268,7 +268,7 @@ test("selecting text inside a table cell quotes the rendered cell", async ({ pag
     .first();
   await expect(replyRow).toBeVisible({ timeout: 20_000 });
   const parentPreview = replyRow.getByTestId("reply-parent-preview");
-  await expect(parentPreview).toHaveText(`“${cellText}”`);
+  await expect(parentPreview).toHaveText(`↩ Chief: ${cellText}`);
 });
 
 test("an armed reply survives the parent paging out of the transcript", async ({ page }) => {

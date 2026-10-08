@@ -211,7 +211,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     expect(state.secrets).toHaveLength(1);
     const auth = await modelCredentialAuthKindsForSpace(
       prisma,
-      { load: vi.fn(() => expiredOAuthPlaintext()) },
+      { load: vi.fn(async () => expiredOAuthPlaintext()) },
       SCOPE,
     );
     expect(auth.byProvider[PROVIDER]).toBe("oauth");
@@ -263,7 +263,7 @@ describe("OAuth credential retirement on terminal refresh rejection", () => {
     expect(state.secrets).toHaveLength(1);
     const auth = await modelCredentialAuthKindsForSpace(
       prisma,
-      { load: vi.fn(() => rotatedOAuthPlaintext()) },
+      { load: vi.fn(async () => rotatedOAuthPlaintext()) },
       SCOPE,
     );
     expect(auth.byProvider[PROVIDER]).toBe("oauth");

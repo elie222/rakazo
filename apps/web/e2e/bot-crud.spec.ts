@@ -107,6 +107,15 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(settings.getByRole("button", { name: "Update computer" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "27a-settings-panel");
   await settings.getByText("Advanced", { exact: true }).click();
+  const disabledTools = settings.getByLabel("Disabled tools");
+  await expect(disabledTools).toBeVisible();
+  await disabledTools.fill("not_a_tool");
+  await disabledTools.press("Enter");
+  await expect(settings.getByText("Unknown tool")).toBeVisible();
+  await disabledTools.fill("web_search");
+  await disabledTools.press("Enter");
+  await expect(settings.getByRole("switch", { name: "web_search" })).toBeChecked();
+  await captureScreenshot(page, testInfo, "27c-disabled-builtin-tools");
   await expect(teamComputer).toBeVisible();
   await expect(openWork).toBeVisible();
   await expect(modelSelect).toBeVisible();

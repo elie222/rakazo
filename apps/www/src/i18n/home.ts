@@ -1,5 +1,6 @@
 import { DEMO_ROSTER, type RosterBot } from "../demo";
 import { SITE_DESCRIPTION } from "../site";
+import { CLAUDE_CHATGPT_SUBSCRIPTION_FAQ } from "../subscription-faq";
 import type { Locale } from "./locales";
 
 export type HomeCopy = {
@@ -19,6 +20,9 @@ export type HomeCopy = {
     openSource: string;
     grokBot: string;
     docs: string;
+    blog: string;
+    alternatives: string;
+    alternativesMenu: string;
     viewOnGithub: string;
   };
   hero: {
@@ -43,6 +47,10 @@ export type HomeCopy = {
     heading: string;
     copy: string;
     bots: RosterBot[];
+  };
+  faq: {
+    heading: string;
+    items: Array<{ question: string; answer: string }>;
   };
   openSource: {
     eyebrow: string;
@@ -105,6 +113,7 @@ export type HomeCopy = {
       privacy: string;
       terms: string;
       grokAlternative: string;
+      blog: string;
     };
   };
 };
@@ -137,10 +146,10 @@ const DE_ROSTER: RosterBot[] = [
     desc: "Ordnet Belege den Buchungen zu, reicht den Report ein und fragt nach, statt zu raten.",
   },
   {
-    name: "Bug Triage",
-    color: "#D9508A",
-    slug: "rakazo/bug-triage",
-    desc: "Reproduziert Reports in einem echten Browser und hängt die Schritte an das Issue.",
+    name: "Coding Agent",
+    color: "#5B6EE1",
+    slug: "rakazo/coding-agent",
+    desc: "Fragt zum Repository und zur Änderung, arbeitet dann auf deiner Maschine und meldet sich, bevor es weitergeht.",
   },
   {
     name: "Account Manager",
@@ -188,10 +197,10 @@ const KO_ROSTER: RosterBot[] = [
     desc: "영수증과 결제를 맞추고 리포트를 제출하며, 추측하기 전에 묻습니다.",
   },
   {
-    name: "Bug Triage",
-    color: "#D9508A",
-    slug: "rakazo/bug-triage",
-    desc: "실제 브라우저에서 리포트를 재현하고 이슈에 재현 절차를 붙입니다.",
+    name: "Coding Agent",
+    color: "#5B6EE1",
+    slug: "rakazo/coding-agent",
+    desc: "저장소와 변경 내용을 물은 뒤, 당신 머신에서 작업하고 더 나가기 전에 확인합니다.",
   },
   {
     name: "Account Manager",
@@ -239,10 +248,10 @@ const ZH_ROSTER: RosterBot[] = [
     desc: "核对票据与账目、提交报销，拿不准时先问而不是猜。",
   },
   {
-    name: "Bug Triage",
-    color: "#D9508A",
-    slug: "rakazo/bug-triage",
-    desc: "在真实浏览器里复现报告，并把复现步骤附到工单上。",
+    name: "Coding Agent",
+    color: "#5B6EE1",
+    slug: "rakazo/coding-agent",
+    desc: "先问清仓库和这次改动，再在你的机器上干活，继续之前会回来确认。",
   },
   {
     name: "Account Manager",
@@ -283,6 +292,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       openSource: "Open source",
       grokBot: "Grok Bot",
       docs: "Docs",
+      blog: "Blog",
+      alternatives: "Alternatives",
+      alternativesMenu: "Alternative pages",
       viewOnGithub: "View on GitHub",
     },
     hero: {
@@ -299,11 +311,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "Self-hosted. The computer is yours.",
-      copy: "Run Rakazo on your machine. Your keys, your model, your data.",
+      copy: "Run on your Mac, or any machine you control. The desktop app's This computer option installs Rakazo there. A Mac Mini can stay on. Your keys, your model, your data.",
       features: [
         {
-          title: "Any model, your key",
-          body: "Point a bot at Claude, GPT, Grok, or a local model. Swap per bot: the cheap one triages, the smart one writes.",
+          title: "Your model",
+          body: "Sign in with Claude Pro/Max (Sonnet or Opus) or ChatGPT Plus/Pro, or use an Anthropic or OpenAI API key. OpenRouter, Grok or SuperGrok, and Ollama or LM Studio work too. Swap per bot: the cheap one triages, the smart one writes.",
         },
         {
           title: "Readable routines",
@@ -320,6 +332,22 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Give each bot a job",
       copy: "Start a new bot and it interviews you. A few questions about the work, how you write, and where it lives. Then it gets going.",
       bots: EN_ROSTER,
+    },
+    faq: {
+      heading: "FAQ",
+      items: [
+        CLAUDE_CHATGPT_SUBSCRIPTION_FAQ,
+        {
+          question: "Do I need an API key if I already pay for Claude or ChatGPT?",
+          answer:
+            "No. Sign in with Claude Pro/Max or ChatGPT Plus/Pro and that subscription covers the model. An API key is the other path, for Anthropic, OpenAI, OpenRouter, or Grok. Rakazo does not pay either way.",
+        },
+        {
+          question: "Can I run a local model?",
+          answer:
+            "Yes. Point a bot at a local OpenAI-compatible server such as Ollama or LM Studio. Each bot can use a different model.",
+        },
+      ],
     },
     openSource: {
       eyebrow: "Open source",
@@ -398,6 +426,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         privacy: "Privacy",
         terms: "Terms",
         grokAlternative: "Grok Bot alternative",
+        blog: "Blog",
       },
     },
   },
@@ -420,6 +449,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       openSource: "Open Source",
       grokBot: "Grok Bot",
       docs: "Docs",
+      blog: "Blog",
+      alternatives: "Alternativen",
+      alternativesMenu: "Vergleichsseiten",
       viewOnGithub: "Auf GitHub ansehen",
     },
     hero: {
@@ -436,11 +468,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "Self-hosted",
       heading: "Self-hosted. Der Computer gehört dir.",
-      copy: "Betreibe Rakazo auf deiner Maschine. Deine Keys, dein Modell, deine Daten.",
+      copy: "Auf deinem Mac oder auf jeder Maschine, die du kontrollierst. In der Desktop-App installiert This computer Rakazo dort. Ein Mac Mini kann an bleiben. Deine Keys, dein Modell, deine Daten.",
       features: [
         {
-          title: "Beliebiges Modell, dein Key",
-          body: "Richte einen Bot auf Claude, GPT, Grok oder ein lokales Modell aus. Pro Bot wechselbar: der günstige triagiert, der smarte schreibt.",
+          title: "Dein Modell",
+          body: "Melde dich mit Claude Pro/Max (Sonnet oder Opus) oder ChatGPT Plus/Pro an, oder nutze einen Anthropic- oder OpenAI-API-Key. OpenRouter, Grok oder SuperGrok und Ollama oder LM Studio gehen auch. Pro Bot wechselbar: der günstige triagiert, der smarte schreibt.",
         },
         {
           title: "Lesbare Routinen",
@@ -457,6 +489,26 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Gib jedem Bot eine Aufgabe",
       copy: "Starte einen neuen Bot und er interviewt dich. Ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
       bots: DE_ROSTER,
+    },
+    faq: {
+      heading: "FAQ",
+      items: [
+        {
+          question: "Kann ich mein Claude Pro/Max- oder ChatGPT Plus/Pro-Abo nutzen?",
+          answer:
+            "Ja — melde dich mit diesem Abo an, oder nutze einen API-Key, OpenRouter oder einen lokalen OpenAI-kompatiblen Server (Ollama, LM Studio usw.). Rakazo zahlt die Modellrechnung nicht.",
+        },
+        {
+          question: "Brauche ich einen API-Key, wenn ich schon für Claude oder ChatGPT zahle?",
+          answer:
+            "Nein. Melde dich mit Claude Pro/Max oder ChatGPT Plus/Pro an. Dieses Abo deckt das Modell ab. Ein API-Key ist der andere Weg, für Anthropic, OpenAI, OpenRouter oder Grok. Rakazo zahlt so oder so nicht.",
+        },
+        {
+          question: "Kann ich ein lokales Modell nutzen?",
+          answer:
+            "Ja. Richte einen Bot auf einen lokalen OpenAI-kompatiblen Server wie Ollama oder LM Studio. Jeder Bot kann ein anderes Modell nutzen.",
+        },
+      ],
     },
     openSource: {
       eyebrow: "Open Source",
@@ -535,6 +587,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         privacy: "Datenschutz",
         terms: "AGB",
         grokAlternative: "Grok-Bot-Alternative",
+        blog: "Blog",
       },
     },
   },
@@ -556,6 +609,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       openSource: "오픈소스",
       grokBot: "Grok Bot",
       docs: "Docs",
+      blog: "블로그",
+      alternatives: "대안",
+      alternativesMenu: "대안 페이지",
       viewOnGithub: "GitHub에서 보기",
     },
     hero: {
@@ -572,11 +628,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "셀프 호스트",
       heading: "셀프 호스트. 컴퓨터는 당신 것",
-      copy: "당신 머신에서 Rakazo를 실행하세요. 키, 모델, 데이터는 모두 당신 것.",
+      copy: "Mac에서, 또는 당신이 관리하는 머신에서 실행하세요. 데스크톱 앱의 This computer가 Rakazo를 그곳에 설치합니다. Mac Mini는 켜 둔 채 둘 수 있습니다. 키, 모델, 데이터는 모두 당신 것.",
       features: [
         {
-          title: "어떤 모델이든, 키는 당신 것",
-          body: "봇을 Claude, GPT, Grok 또는 로컬 모델에 연결하세요. 봇마다 바꿀 수 있습니다. 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
+          title: "당신 모델",
+          body: "Claude Pro/Max(Sonnet 또는 Opus) 또는 ChatGPT Plus/Pro로 로그인하거나 Anthropic·OpenAI API 키를 사용하세요. OpenRouter, Grok 또는 SuperGrok, Ollama나 LM Studio도 됩니다. 봇마다 바꿀 수 있습니다. 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
         },
         {
           title: "읽을 수 있는 루틴",
@@ -593,6 +649,26 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "봇마다 역할을 주세요",
       copy: "새 봇을 시작하면 인터뷰합니다. 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
       bots: KO_ROSTER,
+    },
+    faq: {
+      heading: "질문",
+      items: [
+        {
+          question: "Claude Pro/Max 또는 ChatGPT Plus/Pro 구독을 쓸 수 있나요?",
+          answer:
+            "네 — 그 구독으로 로그인하거나, API 키, OpenRouter, 로컬 OpenAI 호환 서버(Ollama, LM Studio 등)를 사용하세요. 모델 요금은 Rakazo가 내지 않습니다.",
+        },
+        {
+          question: "이미 Claude나 ChatGPT를 결제 중이면 API 키가 필요한가요?",
+          answer:
+            "아니요. Claude Pro/Max 또는 ChatGPT Plus/Pro로 로그인하면 그 구독이 모델을 부담합니다. API 키는 Anthropic, OpenAI, OpenRouter, Grok을 쓰는 다른 경로입니다. 어느 쪽이든 Rakazo가 요금을 내지 않습니다.",
+        },
+        {
+          question: "로컬 모델을 쓸 수 있나요?",
+          answer:
+            "네. Ollama나 LM Studio 같은 로컬 OpenAI 호환 서버에 봇을 연결하세요. 봇마다 다른 모델을 쓸 수 있습니다.",
+        },
+      ],
     },
     openSource: {
       eyebrow: "오픈소스",
@@ -671,6 +747,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         privacy: "개인정보 처리방침",
         terms: "이용약관",
         grokAlternative: "Grok Bot 대안",
+        blog: "블로그",
       },
     },
   },
@@ -692,6 +769,9 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       openSource: "开源",
       grokBot: "Grok Bot",
       docs: "文档",
+      blog: "博客",
+      alternatives: "替代方案",
+      alternativesMenu: "替代页面",
       viewOnGithub: "在 GitHub 上查看",
     },
     hero: {
@@ -708,11 +788,11 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     selfHost: {
       eyebrow: "自托管",
       heading: "自托管。电脑归你所有。",
-      copy: "在你自己的机器上运行 Rakazo。密钥、模型、数据，都归你所有。",
+      copy: "在你的 Mac 上运行，或在你控制的任何机器上运行。桌面应用里，This computer 会把 Rakazo 装在那台机器上。Mac Mini 可以一直开着。密钥、模型、数据，都归你所有。",
       features: [
         {
-          title: "任意模型，密钥归你",
-          body: "让 Bot 使用 Claude、GPT、Grok 或本地模型。可按 Bot 切换：用便宜的模型做分流，用聪明的模型写作。",
+          title: "你的模型",
+          body: "使用 Claude Pro/Max（Sonnet 或 Opus）或 ChatGPT Plus/Pro 登录，或使用 Anthropic、OpenAI 的 API 密钥。OpenRouter、Grok 或 SuperGrok，以及 Ollama、LM Studio 也可以。可按 Bot 切换：用便宜的模型做分流，用聪明的模型写作。",
         },
         {
           title: "可读的例行任务",
@@ -729,6 +809,26 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "给每个 Bot 分配一份工作",
       copy: "新建一个 Bot，它会先面试你：几个关于工作内容、写作风格和运行位置的问题。然后它就开始干活。",
       bots: ZH_ROSTER,
+    },
+    faq: {
+      heading: "常见问题",
+      items: [
+        {
+          question: "可以用我的 Claude Pro/Max 或 ChatGPT Plus/Pro 订阅吗？",
+          answer:
+            "可以 — 用该订阅登录，或使用 API 密钥、OpenRouter，或本地的 OpenAI 兼容服务（Ollama、LM Studio 等）。模型费用不由 Rakazo 支付。",
+        },
+        {
+          question: "已经在为 Claude 或 ChatGPT 付费，还需要 API 密钥吗？",
+          answer:
+            "不需要。用 Claude Pro/Max 或 ChatGPT Plus/Pro 登录，由该订阅承担模型费用。API 密钥是另一条路，用于 Anthropic、OpenAI、OpenRouter 或 Grok。两种方式都不是 Rakazo 付费。",
+        },
+        {
+          question: "可以用本地模型吗？",
+          answer:
+            "可以。把 Bot 指向 Ollama 或 LM Studio 这类本地 OpenAI 兼容服务。每个 Bot 可以使用不同的模型。",
+        },
+      ],
     },
     openSource: {
       eyebrow: "开源",
@@ -807,6 +907,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         privacy: "隐私",
         terms: "条款",
         grokAlternative: "Grok Bot 替代品",
+        blog: "博客",
       },
     },
   },

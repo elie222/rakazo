@@ -9,6 +9,7 @@ import {
 import {
   canDeleteInboxSpace,
   type InboxSpace,
+  inboxNeedsCreateHint,
   removeInboxSpace,
   retryInboxSpaceFallback,
   selectInboxSpace,
@@ -71,6 +72,14 @@ describe("spaceInboxItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ type: "heading", space: personal });
     expect(canDeleteInboxSpace(personal)).toBe(false);
+    expect(inboxNeedsCreateHint(items)).toBe(true);
+  });
+
+  it("does not ask for a create hint once a space has a bot", () => {
+    expect(inboxNeedsCreateHint(spaceInboxItems([space({ isDefault: true, bots: [bot] })]))).toBe(
+      false,
+    );
+    expect(inboxNeedsCreateHint([])).toBe(false);
   });
 
   it("renders space actions once, separate from pinned and named bot sections", () => {

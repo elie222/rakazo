@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const promptCalls = vi.hoisted(() => ({
+  tools: [] as unknown[],
   images: [] as Array<{ type: "image"; data: string; mimeType: string }> | undefined,
   initialMessages: [] as unknown[],
 }));
@@ -8,8 +9,11 @@ const promptCalls = vi.hoisted(() => ({
 vi.mock("@earendil-works/pi-agent-core", () => ({
   Agent: class {
     state = { errorMessage: undefined, messages: [] };
-    constructor(options: { initialState: { messages: unknown[] } }) {
+    constructor(options: {
+      initialState: { messages: unknown[]; tools: unknown[] };
+    }) {
       promptCalls.initialMessages = options.initialState.messages;
+      promptCalls.tools = options.initialState.tools;
     }
     subscribe() {}
     async prompt(
@@ -86,6 +90,7 @@ describe("Pi runtime attachments", () => {
       // exhaust runtime
     }
 
+    expect(promptCalls.tools).toEqual([]);
     expect(promptCalls.images).toEqual([
       {
         type: "image",
@@ -110,7 +115,11 @@ describe("Pi runtime attachments", () => {
             role: "user",
             content: "[image: ticket.png]",
             images: [
-              { name: "ticket.png", mimeType: "image/png", data: new Uint8Array([1, 2, 3]) },
+              {
+                name: "ticket.png",
+                mimeType: "image/png",
+                data: new Uint8Array([1, 2, 3]),
+              },
             ],
           },
           { id: "message-2", role: "assistant", content: "Got it." },
@@ -134,11 +143,25 @@ describe("Pi runtime attachments", () => {
         role: "user",
         content: [
           { type: "text", text: "[image: ticket.png]" },
-          { type: "image", data: Buffer.from([1, 2, 3]).toString("base64"), mimeType: "image/png" },
+          {
+            type: "image",
+            data: Buffer.from([1, 2, 3]).toString("base64"),
+            mimeType: "image/png",
+          },
         ],
         timestamp: expect.any(Number),
+        rakazoHistory: true,
+        rakazoMessageId: "message-1",
+        rakazoCreatedAt: undefined,
       },
-      { role: "user", content: "Assistant: Got it.", timestamp: expect.any(Number) },
+      {
+        role: "user",
+        content: "Assistant: Got it.",
+        timestamp: expect.any(Number),
+        rakazoHistory: true,
+        rakazoMessageId: "message-2",
+        rakazoCreatedAt: undefined,
+      },
     ]);
     expect(promptCalls.images).toBeUndefined();
   });

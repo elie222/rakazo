@@ -11,8 +11,11 @@ import {
   View,
 } from "react-native";
 import type { MobileBot, MobileBotSection } from "../lib/api";
+import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
+import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "./native-action-button";
 import { NativeSymbol } from "./native-symbol";
 
 export type BotOrganizationUpdate = {
@@ -53,7 +56,7 @@ export function BotOrganizeModal({
       await request();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not update chat"));
+      setError(errorText(err, t("Could not update chat")));
       setSaving(false);
     }
   }
@@ -145,11 +148,13 @@ export function BotOrganizeModal({
                 placeholderTextColor={native.secondaryLabel}
                 style={styles.newSectionInput}
               />
-              <Pressable
-                accessibilityRole="button"
+              <NativeActionButton
+                label={mode === "rename" ? t("Save") : t("Create")}
                 accessibilityLabel={
                   mode === "rename" ? t("Save section name") : t("Create section")
                 }
+                fill={false}
+                style={{ alignSelf: "center" }}
                 disabled={
                   saving ||
                   !name.trim() ||
@@ -163,12 +168,7 @@ export function BotOrganizeModal({
                   }
                   void save(() => onCreateSection(trimmed));
                 }}
-                style={styles.newSectionSubmit}
-              >
-                <Text style={styles.newSectionSubmitLabel}>
-                  {mode === "rename" ? t("Save") : t("Create")}
-                </Text>
-              </Pressable>
+              />
             </View>
           ) : (
             <>
@@ -193,9 +193,13 @@ export function BotOrganizeModal({
             </>
           )}
           {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable onPress={onClose} style={styles.cancel}>
-            <Text style={styles.cancelLabel}>{t("Cancel")}</Text>
-          </Pressable>
+          <NativeActionButton
+            label={t("Cancel")}
+            prominence="secondary"
+            fill
+            style={styles.cancel}
+            onPress={onClose}
+          />
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -232,11 +236,12 @@ function SectionOption({
 }
 
 function createBotOrganizeStyles() {
+  const tokens = mobileTokens();
   return StyleSheet.create({
     overlay: {
       flex: 1,
       justifyContent: "flex-end",
-      backgroundColor: "rgba(0, 0, 0, 0.62)",
+      backgroundColor: tokens.overlay,
     },
     sheet: {
       maxHeight: "82%",
@@ -307,33 +312,12 @@ function createBotOrganizeStyles() {
       paddingHorizontal: 12,
       fontSize: 16,
     },
-    newSectionSubmit: {
-      minHeight: 40,
-      justifyContent: "center",
-      borderRadius: 10,
-      backgroundColor: native.label,
-      paddingHorizontal: 14,
-    },
-    newSectionSubmitLabel: {
-      color: native.page,
-      fontSize: 14,
-      fontWeight: "600",
-    },
     error: {
-      color: "#EF4444",
+      color: tokens.destructive,
       fontSize: 13,
       paddingHorizontal: 10,
       paddingTop: 8,
     },
-    cancel: {
-      alignItems: "center",
-      paddingTop: 14,
-      paddingBottom: 2,
-    },
-    cancelLabel: {
-      color: native.secondaryLabel,
-      fontSize: 16,
-      fontWeight: "600",
-    },
+    cancel: { marginTop: 14 },
   });
 }

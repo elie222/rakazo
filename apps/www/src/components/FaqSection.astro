@@ -1,5 +1,6 @@
 ---
 import type { FaqItem } from "../guide";
+import InlineCode from "./InlineCode.astro";
 
 type Props = {
   items: readonly FaqItem[];
@@ -14,7 +15,9 @@ const { items } = Astro.props;
     items.map((item) => (
       <div>
         <h3>{item.question}</h3>
-        <p>{item.answer}</p>
+        <p>
+          <InlineCode text={item.answer} />
+        </p>
       </div>
     ))
   }

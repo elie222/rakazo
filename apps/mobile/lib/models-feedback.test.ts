@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const screen = readFileSync(resolve(mobileRoot, "app/models.tsx"), "utf8");
+const screen = readFileSync(resolve(mobileRoot, "app/(settings)/models.tsx"), "utf8");
 
 function sliceBetween(source: string, start: string, end: string) {
   const from = source.indexOf(start);
@@ -15,15 +15,21 @@ function sliceBetween(source: string, start: string, end: string) {
 }
 
 describe("Models save feedback", () => {
-  it("shows results under the buttons that produced them and announces them", () => {
+  it("shows errors under the buttons that produced them and announces results", () => {
     const header = screen.slice(
       screen.indexOf('{t("Active model")}'),
       screen.indexOf('{t("Providers")}'),
     );
     expect(header).not.toContain("{error ?");
     expect(header).not.toContain("{notice ?");
+    const feedback = sliceBetween(screen, "const feedback =", "function disclosureRow(");
+    expect(feedback).toContain("styles.error");
+    expect(feedback).not.toContain("styles.notice");
+    expect(feedback).not.toContain("notice ?");
+    expect(screen).not.toContain("tokens.success");
+    expect(screen).not.toContain("selected.billing");
     expect(screen).toMatch(
-      /t\("Find models"\)\}<\/Text>\s*<\/Pressable>\s*\{feedbackAnchor === "probe" \? feedback : null\}/,
+      /t\("Find models"\)\}[\s\S]*?prominence="secondary"[\s\S]*?\/>\s*\{feedbackAnchor === "probe" \? feedback : null\}/,
     );
     expect(screen).toMatch(
       /\{compatKeySection\}\s*\{saveRow\}\s*\{feedbackAnchor === "probe" \? null : feedback\}/,

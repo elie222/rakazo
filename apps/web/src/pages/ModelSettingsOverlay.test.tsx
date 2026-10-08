@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const models = vi.hoisted(() => ({
   list: vi.fn(),
+  backups: vi.fn(async () => []),
+  setBackups: vi.fn(async () => ({ ok: true })),
   credentials: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
@@ -20,6 +22,7 @@ const models = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/rpc", () => ({
+  selectedSpaceId: () => "space-1",
   rpc: {
     models,
     me: vi.fn(),
@@ -128,6 +131,8 @@ function account(provider: string, modelId: string) {
     needsModel: false,
     defaultProvider: provider,
     defaultModel: modelId,
+    hostCredentialProvider: null,
+    hostCredentialSource: null,
     computerHost: null,
     canChooseHostComputer: false,
     sandboxProvider: "docker",

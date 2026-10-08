@@ -6,6 +6,7 @@ type PreloadRecoveryWindow = Pick<
   | "addEventListener"
   | "clearTimeout"
   | "location"
+  | "navigator"
   | "removeEventListener"
   | "sessionStorage"
   | "setTimeout"
@@ -14,6 +15,8 @@ type PreloadRecoveryWindow = Pick<
 /**
  * Vite emits this event when a lazy chunk from an older deployment no longer
  * exists. Reload once so the browser receives the current asset manifest.
+ * While offline a reload would only reach the browser's offline page, so the
+ * failure is left to the app's error boundaries, which offer a retry.
  */
 export function installPreloadRecovery(target: PreloadRecoveryWindow = window): () => void {
   const clearRecovery = target.setTimeout(
@@ -21,7 +24,7 @@ export function installPreloadRecovery(target: PreloadRecoveryWindow = window): 
     PRELOAD_RECOVERY_COOLDOWN_MS,
   );
   const onPreloadError = (event: Event) => {
-    if (target.sessionStorage.getItem(PRELOAD_RECOVERY_KEY)) return;
+    if (!target.navigator.onLine || target.sessionStorage.getItem(PRELOAD_RECOVERY_KEY)) return;
     event.preventDefault();
     target.sessionStorage.setItem(PRELOAD_RECOVERY_KEY, "1");
     target.location.reload();

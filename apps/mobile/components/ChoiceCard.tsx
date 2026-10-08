@@ -10,12 +10,13 @@ import {
   threadCardWidth,
 } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
+import { useThreadReadOnly } from "../lib/thread-read-only";
+import { errorText } from "../lib/user-error";
 import { NativeSymbol } from "./native-symbol";
 
 const styles = StyleSheet.create({
   card: {
     borderRadius: 18,
-    borderWidth: 1,
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -60,6 +61,7 @@ export function ChoiceCard({
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
+  const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const { width: windowWidth } = useWindowDimensions();
   const [busy, setBusy] = useState(false);
@@ -72,7 +74,7 @@ export function ChoiceCard({
 
   // Dismissing records the server's dismissed answer id, so both outcomes share this path.
   async function submit(optionId: string) {
-    if (pending.current || answerId) return;
+    if (readOnly || pending.current || answerId) return;
     pending.current = true;
     setBusy(true);
     try {
@@ -84,10 +86,7 @@ export function ChoiceCard({
       setLocalAnswerId(optionId);
       if (optionId === DISMISSED_CHOICE_ANSWER_ID) onDismissed?.();
     } catch (reason) {
-      Alert.alert(
-        t("Could not complete action"),
-        reason instanceof Error ? reason.message : t("Please try again."),
-      );
+      Alert.alert(t("Could not complete action"), errorText(reason, t("Please try again.")));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -101,8 +100,7 @@ export function ChoiceCard({
         styles.card,
         {
           width: threadCardWidth(windowWidth),
-          borderColor: tokens.border,
-          backgroundColor: tokens.card,
+          backgroundColor: native.fill,
         },
       ]}
     >
@@ -122,7 +120,7 @@ export function ChoiceCard({
             </Text>
           ) : null}
         </View>
-        {!answerId ? (
+        {!readOnly && !answerId ? (
           <Pressable
             testID="choice-card-dismiss"
             accessibilityRole="button"
@@ -145,18 +143,18 @@ export function ChoiceCard({
               key={option.id}
               accessibilityRole="button"
               accessibilityLabel={option.label}
-              accessibilityState={{ disabled: busy || chosen, selected: chosen }}
-              disabled={busy || chosen}
+              accessibilityState={{ disabled: readOnly || busy || chosen, selected: chosen }}
+              disabled={readOnly || busy || chosen}
               onPress={() => void submit(option.id)}
               style={({ pressed }) => [
                 styles.option,
                 {
-                  backgroundColor: pressed || chosen ? native.fillPressed : native.fill,
+                  backgroundColor: pressed || chosen ? native.fillPressed : native.page,
                   opacity: busy ? 0.6 : 1,
                 },
               ]}
             >
-              <View style={[styles.letter, { backgroundColor: tokens.background }]}>
+              <View style={[styles.letter, { backgroundColor: native.fill }]}>
                 <Text style={[styles.letterText, { color: tokens.mutedForeground }]}>
                   {option.letter}
                 </Text>

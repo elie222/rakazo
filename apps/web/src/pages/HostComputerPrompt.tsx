@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { sandboxCheckFailureMessage } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 
 export function HostComputerPrompt({
   initialMe,
@@ -67,7 +68,7 @@ export function HostComputerPrompt({
     try {
       await rpc.deployment.update({ computerHost });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save that choice`);
+      setError(errorText(err, t`Could not save that choice`));
       setPending(false);
       return;
     }

@@ -1,4 +1,5 @@
 import { DOCS_URL, GITHUB_URL, SITE_URL } from "./site";
+import { CLAUDE_CHATGPT_SUBSCRIPTION_FAQ } from "./subscription-faq";
 
 export const GROK_ALTERNATIVE_PATH = "/grok-bot-alternative/";
 
@@ -35,7 +36,7 @@ export const COMPARE_ROWS = [
   {
     topic: "Model",
     rakazo:
-      "You bring a key. Documented providers include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, Cursor, custom servers, and a local model.",
+      "Sign in with Claude Pro/Max, ChatGPT Plus/Pro, or SuperGrok, or bring a key. Documented providers include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, Cursor, custom servers, and a local model (Ollama, LM Studio). Rakazo does not pay the model bill.",
     grok: "Included with paid Cursor plans and SuperGrok subscriptions. The Grok Bot docs do not describe connecting your own model provider.",
   },
   {
@@ -74,6 +75,75 @@ export const SELF_HOST_AFTER = [
   "On a server, run the installer with --prepare-only, set the public HTTPS origin, and create the owner account before anyone else can reach it. The self-hosting guide covers that setup. The desktop app can install the stack on this computer, or connect to an instance you already run.",
 ] as const;
 
+export const GROK_UPDATED = "October 7, 2026";
+
+export const GROK_SECTIONS = [
+  {
+    heading: "What Grok Bot is",
+    paragraphs: [
+      "Grok Bot is xAI's hosted product for persistent bots. The public docs describe named bots, a computer they can use, routines, and approvals. The computer in the default setup is a cloud computer on your account. Bots on that account share it, including files and logins. An optional local computer can run approved commands on the machine in front of you. That local computer is not the same thing as installing the Grok Bot service on a server you operate. The docs do not describe that install.",
+      "The model comes with the plan. The Grok Bot docs do not describe connecting OpenAI, Anthropic, a custom server, or a local model. Training opt-out follows the Cursor account settings. Desktop apps exist for macOS, Windows, and Linux, plus iOS and Android.",
+      "Price follows the plan, not a separate Grok Bot seat. The docs and pricing page used here say Grok Bot is included with paid individual Cursor plans, Cursor Teams, and SuperGrok subscriptions. SuperGrok is listed at $30 a month and includes Grok Bot access. Plans include weekly usage, and extra usage can be billed. The free plan on the pricing page does not list Grok Bot.",
+      "Two other xAI releases are easy to mix up with the bot. Grok Build, the coding-agent CLI, is Apache-2.0. The older Grok-1 model weights were released under Apache-2.0. Neither of those is the Grok Bot service, and neither one is a self-hosted Grok Bot.",
+    ],
+  },
+  {
+    heading: "What Rakazo keeps from that shape",
+    paragraphs: [
+      "Rakazo is an open source AI agent for persistent teammates, and a self-hosted AI assistant. It is in beta. Each bot keeps conversations, memory, routines, and history. It can use a browser, a terminal, files, and a graphical desktop, and it can hand work to another bot or a short-lived subagent. The clients are the web app, the Electron desktop app, and the Expo mobile app.",
+      "Like Grok Bot, Rakazo is just chat once it is running. You set up the bot and manage it from that chat. A new bot interviews you about the work. Routines are readable Markdown and can run on a schedule. A bot can pause for approval when a task crosses a boundary you set, and actions are recorded in an audit log. Optional connectors can attach Slack, WhatsApp, Telegram, iMessage via Sendblue, and Feishu/Lark. They are not required.",
+      "The parts that are not Grok Bot are the ones you operate. The license is Apache-2.0. You self-host with published Docker images or from source. Hosted Rakazo Cloud is not generally available. Sign in with Claude Pro/Max, ChatGPT Plus/Pro, or SuperGrok, or bring a key for OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, or a local model server such as Ollama or LM Studio. Rakazo does not pay the model bill. Each bot can use a different model. Connector credentials are encrypted on your server and are not returned by the API.",
+      "Computers are separate from the chat product. Local Docker is the default. E2B, Daytona, CreateOS, and Box are optional remote computers. An explicit desktop provider can run on the host, and it is not the default. Team computers are shared. Private computers are isolated. That split is the opposite of Grok Bot's shared cloud computer for every bot on the account.",
+    ],
+  },
+  {
+    heading: "Setup, then the chat",
+    paragraphs: [
+      "Published images need Docker Engine 26 or newer, the Compose plugin, curl, and OpenSSL. You do not need Node.js for that path. A source checkout needs a supported Node.js line and pnpm, plus Docker. The desktop app can install the published images on this computer, or connect to an instance you already run.",
+      "On this computer, open the local web app, create an account, and connect a model. The first registered user becomes the deployment owner. Local Docker computers are on by default. From there the product is the chat. You do not keep a gateway process running, and you do not edit a config file to change the bot's routines.",
+      "On a server, the installer can stop before startup so you can set the public HTTPS origin and create the owner account before anyone else can reach it. The self-hosting guide covers backups, upgrades, secrets, and restricted networks. Voice, if you want it, uses a key you bring for ElevenLabs, OpenAI, Cartesia, or Fish Audio.",
+    ],
+  },
+] as const;
+
+export const GROK_OTHER_ALTERNATIVES = [
+  {
+    href: "/muse-alternative/",
+    label: "Meta Muse",
+    note: "Meta's hosted agent, introduced September 8, 2026, on a virtual machine Meta operates.",
+  },
+  {
+    href: "/dots-alternative/",
+    label: "OpenAI Dots",
+    note: "Always-on agents on eligible ChatGPT plans, announced September 29, 2026.",
+  },
+  {
+    href: "/instinct-alternative/",
+    label: "Instinct",
+    note: "The hosted assistant at instinct.com that you text or call.",
+  },
+  {
+    href: "/hark-alternative/",
+    label: "Hark Pro",
+    note: "The hosted personal agent at hark.com, launched October 6, 2026, with a free tier.",
+  },
+  {
+    href: "/openclaw-alternative/",
+    label: "OpenClaw",
+    note: "An MIT-licensed agent you run yourself. The docs add a Gateway and a config file.",
+  },
+  {
+    href: "/hermes-alternative/",
+    label: "Hermes Agent",
+    note: "Nous Research's MIT-licensed agent, with a desktop app and a separate messaging gateway.",
+  },
+  {
+    href: "/alternatives/",
+    label: "All comparisons",
+    note: "The 2026 roundup, with the license, price, and setup table.",
+  },
+] as const;
+
 export const GROK_ALTERNATIVE_FAQ = [
   {
     question: "Is Grok Bot open source?",
@@ -89,6 +159,17 @@ export const GROK_ALTERNATIVE_FAQ = [
     question: "How is Rakazo different from Grok Bot?",
     answer:
       "Both are persistent bots that can use a computer, sign in to tools, keep context, and run routines. Grok Bot hosts that computer for you and comes with paid Cursor plans and SuperGrok subscriptions. Rakazo is open source: you host it, you choose the model, and team computers and private computers stay separate. Hosted Rakazo Cloud is not generally available yet.",
+  },
+  {
+    question: "Is Rakazo just chat, like Grok Bot?",
+    answer:
+      "After the install, yes. You create an account, connect a model, and manage the bot from that chat. A new bot interviews you. Routines, memory, and approval boundaries stay with the bot. Rakazo is that chat plus the computer you run. Grok Bot is also a chat for named bots. The difference is who hosts the service and who picks the model.",
+  },
+  CLAUDE_CHATGPT_SUBSCRIPTION_FAQ,
+  {
+    question: "What are the other alternatives?",
+    answer:
+      "Meta Muse, OpenAI Dots, Instinct, and Hark Pro are hosted assistants. OpenClaw and Hermes Agent are open source agents you can run yourself, with a gateway and a config file in their docs. The comparisons page lists licenses, prices, and setup side by side. None of them imports a Grok Bot account.",
   },
 ] as const;
 
@@ -124,7 +205,11 @@ export function grokAlternativeMarkdown(): string {
 
   return `# ${GROK_ALTERNATIVE_H1}
 
+Updated ${GROK_UPDATED}.
+
 ${GROK_INTRO.join("\n\n")}
+
+${GROK_SECTIONS.map((section) => `## ${section.heading}\n\n${section.paragraphs.join("\n\n")}`).join("\n\n")}
 
 ## How they compare
 
@@ -146,6 +231,10 @@ ${SELF_HOST_AFTER.join("\n\n")}
 
 - [Self-hosting guide](${DOCS_URL})
 - [Source code](${GITHUB_URL})
+
+## Other alternatives
+
+${GROK_OTHER_ALTERNATIVES.map((item) => `- [${item.label}](${SITE_URL}${item.href}) — ${item.note}`).join("\n")}
 
 ## FAQ
 

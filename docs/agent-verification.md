@@ -1,5 +1,7 @@
 # Agent verification
 
+Generated JSON reports are preserved locally under ignored `test-report/evals/archive/`, with a second backup outside the disposable worktree. They are not tracked documentation or repository downloads; maintained findings and synthetic fixtures remain in source control. Report references below identify local archived evidence, including every original failed and partial run.
+
 Rakazo separates deterministic execution regressions from real-model task quality.
 A scripted response can prove that a tool call executes correctly; only a real
 model can demonstrate that it chooses a useful action for a natural request.
@@ -191,3 +193,159 @@ injection warnings must not be mistaken for compliance with the injection.
 Keep functional criteria deterministic. Add a model judge only for a quality
 that cannot be graded directly, with a versioned rubric and human calibration.
 Do not let a judge override forbidden effects or missing artifacts.
+
+### Long conversation and cost evals
+
+List seeded long-chat cases without a database or model connection:
+
+```sh
+pnpm exec tsx packages/testkit/src/cli/evals.ts --suite history --list
+```
+
+Run the original context strategy explicitly with a disposable database and an
+explicit generic model connection. Connection and pricing JSON files must stay
+outside tracked content. Pricing requires `source`, `version`, and USD per million
+rates for `input`, `output`, `cacheRead`, and `cacheWrite`. Optional `longContext`
+rates use the same four fields plus `thresholdTokens`. Optional `cacheWrite1h`
+prices one-hour writes separately; these tokens are a subset of all cache writes.
+
+```sh
+pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 1 --spend-cap-usd 5
+```
+
+The default live cap is USD 5. Every runtime model call reserves its estimated
+maximum spend before inference, including subagent and summarization calls.
+Concurrent reservations share one budget; unavailable usage retains the reserved
+estimate. Unknown pricing prevents live execution. This is an estimate guard,
+not a provider billing guarantee. Cache writes are priced conservatively for
+reservations and by their actual reported buckets for reports. Reasoning tokens
+are included in output, never charged twice.
+
+Total tokens require an explicit upstream total or a complete known breakdown of
+uncached input, output, cache reads, and cache writes. SDK totals synthesized from
+missing cache fields are not proof of complete usage. When that breakdown and a
+reported total are unavailable, settlement retains the reservation. An observed
+one-hour write without pricing in its applicable context tier also retains the
+estimate and prevents further scheduling until pricing is resolved.
+
+Reservations use the highest rates across pricing tiers reachable by the upper
+token estimate; actual usage may remain in a more expensive base tier. Explicit
+one-hour writes require a known applicable one-hour price before inference.
+Omitted connection cache controls use the audited SDK short default, so a hidden
+SDK environment setting cannot silently enable long retention. This default does
+not guarantee a cache hit or an exact expiration time.
+
+History fixtures seed 100, 1,000, and 10,000 original messages directly without
+inference. They cover facts, paraphrases, dates, superseded decisions, open work,
+ambiguity, absence, durable constraints, injected historical instructions,
+oversized input, stale compaction coverage, and invalid summaries. Cases report
+factual checks and forbidden external effects; they do not grade prose quality.
+The original strategy includes the stable-guidance-first prompt ordering change.
+
+Reports record the code revision, working diff hash, fixture version, strategy,
+pricing provenance, token buckets, cache hit rate, model/tool calls, and cost by
+operation. A missing measurement stays null. Cache hit rate is cache reads divided
+by eligible uncached input plus cache reads plus cache writes. Eligibility requires
+a configured minimum cache size or observed reuse/write evidence; unknown
+eligibility and a zero denominator stay null. First response means the first persisted streamed text event after run
+creation, falling back to the final persisted bot-message timestamp when no text
+streamed; tool and activity events are excluded. Trial latency includes fixture
+setup and cleanup. Background due work is awaited before final accounting;
+cleanup must stop remaining scheduled and active work before further trials.
+
+
+Compare strategies in one process so all trials and concurrent calls share one
+spend cap. The order rotates deterministically within each case and trial; the
+provider's cache state is uncontrolled. `current` preserves the original history
+window and summary behavior; the other strategies permit history retrieval.
+
+The selected product default is recent context with original-history retrieval.
+Both retrieval and snapshots passed the same 54-workflow candidate qualification;
+retrieval had the lower observed full workflow cost. These sequential runs had
+uncontrolled provider cache, so the difference is not a causal savings estimate.
+Explicit `current` remains available for baseline comparisons. Standalone
+runtimes without usable history tools preserve loaded originals within the model
+input budget instead of advertising unavailable retrieval. The final default and
+fallback source passed all 54 unchanged workflows and all 27 repeated answers,
+costing USD 0.06519195 across 227 calls. Details, limitations, and preserved failed
+runs appear in `docs/evals/history-findings.md` and the task checklist. That initial
+qualification predates integration with Pi 0.87.1. The first current-base report,
+`test-report/evals/archive/history-pr-final-qualification.json`, passed 53/54 and preserves its
+pagination recall failure; it does not replace the required passing final-source
+gate. Current integration checks also verify system transcript instructions and
+tools reach the provider after history selection.
+
+```sh
+pnpm exec tsx packages/testkit/src/cli/evals.ts --live --suite history --strategy current --strategy retrieval --strategy snapshots --strategy cache-aware --connection /tmp/eval-connection.json --pricing /tmp/eval-pricing.json --trials 2 --spend-cap-usd 1
+```
+
+Ordinary long-history cases begin with a deterministic prepared summary that
+omits rare original details while retaining common constraints and corrections.
+Its generation is free fixture setup, so these cases do not measure real summary
+preparation cost. Backlog, oversized-input, and invalid-summary cases are separate
+bounded stress workloads. Invalid stored summaries do not simulate a provider
+failure during summarization. Reports include post-run summary coverage and
+queue failure counts when the loaded code supports them; counts omit error
+messages and payloads. Expected recovery must be assessed against coverage and
+outcomes, rather than treating every background failure as an outcome failure.
+
+Per-call context telemetry records sanitized selection decisions, predicted
+freshness, measured reuse, and cost by prediction. Unsupported retention metadata
+remains unknown. History diagnostics retain only synthetic search queries,
+result counts, and bounded options; original messages, credentials, and IDs are
+excluded. Exclusive retrieval cost attribution covers an entire model call that
+requests or consumes history tools; it does not split the call's answer tokens.
+
+Use `--cache-probe` for four direct model calls: a fresh synthetic prefix,
+identical replay, changed prefix, and changed replay. This requires an explicit
+connection and pricing, shares the invocation's spend guard, and avoids database
+setup. It measures observed reuse and first-response latency; it is not an expiry
+test. `--cache-capabilities /tmp/cache-capabilities.json` supplies generic documented
+metadata independently of credentials. Predictions remain advisory because
+routing and eviction can prevent reuse. Separate invocations must receive only
+the remaining approved budget after earlier reservations and charges.
+
+
+Retention metadata describes the selector's prediction. In particular,
+`retentionMode: none` disables inferred warmth and does not promise that the
+provider disables caching or bills all input at the ordinary rate. Fake-clock
+checks cover expiry transitions; live prefix replay covers immediate reuse and
+changed-prefix observations. Live retention expiry remains unproven unless a
+separate expiry experiment is explicitly reported.
+
+New workflow reports also partition final durable usage into numbered steps
+using run and parent-run associations. Compaction and calls without an observed
+step association remain separate workflow background buckets. Reports publish
+no ledger or run identifiers. The partition reconciles model-call counts and
+known charges with the full workflow total; unknown incurred costs stay unknown.
+This attribution does not add waits between questions or change background
+scheduling. Earlier reports without `stepAccounting` cannot establish exact
+first-question versus follow-up charges from the combined setup cost alone.
+
+The partial pagination qualification was stopped after eleven passing workflows
+when a source audit found an incomplete instruction-ordering reconciliation. Its
+remaining 43 workflows are explicitly not run. Restored ordering is checked on
+actual provider requests assembled by the executor helper; the final corrected
+source must complete its own unchanged 54-workflow qualification before merge.
+
+The restored-prefix PR qualification completed 54 workflows with 53 passing.
+All twelve distant-recall trials and all 27 repeated answers passed; one strict
+loop skipped segment seven and guessed an invalid cursor. The original result is
+preserved in `test-report/evals/archive/history-pr-restored-prefix-qualification.json`. Its charge
+was USD 0.093003835 across 248 calls, reconciled with zero reservations or
+background/cleanup failures. Cumulative guarded spend is USD 1.43272518 of USD 5.
+Shared opaque-cursor guidance and its actual-wire regressions address this new
+failure; a full unchanged live qualification remains required before merge.
+
+The separate opaque-cursor qualification on clean committed source `3dd01cea`
+completed all 54 workflows: 53 passed. All twelve distant-recall trials and all
+27 repeated answers passed; five of six strict loops passed. One loop stopped
+after five reads, claiming missing continuation metadata. The raw JSON contained
+its cursor, but the failed live outgoing payload was not captured; the claim does
+not establish a serialization defect. The actual-wire offline loop passes without
+waiving the live failure. The preserved report is
+`test-report/evals/archive/history-pr-opaque-cursor-qualification.json`. Its charge was
+USD 0.09108541 across 238 calls, fully reconciled with zero reservations or
+background/cleanup failures. Cumulative guarded spend is USD 1.52381059 of USD 5.
+The live qualification gate remains failed, so this PR must not merge merely
+because CI passes. No further paid run is active.

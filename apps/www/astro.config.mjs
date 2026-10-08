@@ -2,6 +2,7 @@ import react from "@astrojs/react";
 import sitemap from "@astrojs/sitemap";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
+import { isIndexedPath } from "./src/blog/indexability.ts";
 import { LOCALE_HREFLANG } from "./src/i18n/locales.ts";
 import { resolveWwwPort } from "./www-port.mjs";
 
@@ -20,6 +21,7 @@ export default defineConfig({
   integrations: [
     react(),
     sitemap({
+      filter: (page) => isIndexedPath(new URL(page).pathname),
       i18n: {
         defaultLocale: "en",
         locales: LOCALE_HREFLANG,

@@ -31,12 +31,18 @@ export async function aiConsentStatus(
       ? [target.botId]
       : target.memberBotIds
     : undefined;
-  const [preferences, defaultCredential, bots, voices, memory, settings, consents] =
+  const [preferences, backups, defaultCredential, bots, voices, memory, settings, consents] =
     await Promise.all([
       modelsEnabled
         ? deps.prisma.spaceModelPreference.findMany({
             where: { userId: actor.userId, spaceId: actor.spaceId },
             include: { credential: true },
+          })
+        : [],
+      modelsEnabled
+        ? deps.prisma.spaceBackupModel.findMany({
+            where: { userId: actor.userId, spaceId: actor.spaceId },
+            orderBy: { position: "asc" },
           })
         : [],
       modelsEnabled ? findDefaultModelCredential(deps.prisma, actor) : null,
@@ -78,7 +84,7 @@ export async function aiConsentStatus(
       recipients.set(recipient.key, { ...recipient, allowed: allowed.has(recipient.key) });
   };
   if (modelsEnabled) {
-    const deployment = deps.env.deploymentModelKey
+    const deployment = deps.env.deploymentModelConfigured
       ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
       : null;
     const selected = await Promise.all(
@@ -109,6 +115,20 @@ export async function aiConsentStatus(
         },
         thinkingLevel: null,
       });
+    const backupModels = await Promise.all(
+      backups.map(async (backup) => {
+        const credential = await findModelCredential(
+          deps.prisma,
+          actor,
+          backup.provider,
+          backup.modelId,
+        );
+        return credential
+          ? { provider: backup.provider, id: backup.modelId, credential, thinkingLevel: null }
+          : null;
+      }),
+    );
+    selected.push(...backupModels.filter((model) => model !== null));
     if (deps.env.teamChatJudgeProvider && deps.env.teamChatJudgeModel) {
       selected.push({
         provider: deps.env.teamChatJudgeProvider,
@@ -144,15 +164,17 @@ export async function aiConsentStatus(
         })
       : [];
     const baseUrls = new Map(
-      secrets.map((secret): [string, string | undefined] => {
-        try {
-          const parsed = parseModelSecret(deps.secrets.load(secret.ciphertext, secret.id));
-          return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
-        } catch {
-          // Unreadable credentials still disclose by provider; the base URL is unknown.
-          return [secret.id, undefined];
-        }
-      }),
+      await Promise.all(
+        secrets.map(async (secret): Promise<[string, string | undefined]> => {
+          try {
+            const parsed = parseModelSecret(await deps.secrets.load(secret.ciphertext, secret.id));
+            return [secret.id, parsed.kind === "openai_compatible" ? parsed.baseUrl : undefined];
+          } catch {
+            // Unreadable credentials still disclose by provider; the base URL is unknown.
+            return [secret.id, undefined];
+          }
+        }),
+      ),
     );
     for (const model of models) {
       add(

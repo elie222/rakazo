@@ -79,8 +79,10 @@ function botSecretDeps(seed: Row[] = []) {
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => fn(prisma));
   const secrets = {
-    put: vi.fn(async (_plaintext: string, _context: unknown, id: string) => ({
-      ciphertext: `enc:${id}`,
+    put: vi.fn(async (_plaintext: string, _context: unknown, options: { recordId: string }) => ({
+      id: options.recordId,
+      ref: `enc:${options.recordId}`,
+      ciphertext: `enc:${options.recordId}`,
     })),
     load: vi.fn(),
   };
@@ -126,6 +128,32 @@ afterEach(() => {
 });
 
 describe("botSecrets router", () => {
+  it("prepares a slow credential before opening the five-second transaction", async () => {
+    const { prisma, secrets, call } = botSecretDeps();
+    let clock = 0;
+    let active = false;
+    prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => {
+      const start = clock;
+      active = true;
+      try {
+        const result = await fn(prisma);
+        if (clock - start > 5000) throw new Error("Transaction expired");
+        return result;
+      } finally {
+        active = false;
+      }
+    });
+    const put = secrets.put.getMockImplementation()!;
+    secrets.put.mockImplementation(async (...args) => {
+      expect(active).toBe(false);
+      clock += 15000;
+      return put(...args);
+    });
+    expect((await call("put", putInput("https://api.example.test"))).status).toBe(200);
+    expect(secrets.put).toHaveBeenCalledOnce();
+    expect(prisma.botSecret.create).toHaveBeenCalledOnce();
+  });
+
   it("rejects another user's bot and a missing bot before any secret access", async () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     const { prisma, secrets, call } = botSecretDeps();
@@ -208,7 +236,7 @@ describe("botSecrets router", () => {
     expect(allowed.secrets.put).toHaveBeenCalledWith(
       FAKE_VALUE,
       expect.anything(),
-      expect.any(String),
+      expect.objectContaining({ recordId: expect.any(String) }),
     );
     expect(allowed.rows).toHaveLength(1);
     expect(allowed.rows[0]).toMatchObject({ userId: "user-1", spaceId: "space-1", botId: "bot-1" });
@@ -349,5 +377,49 @@ describe("botSecrets router", () => {
     expect(prisma.botSecret.deleteMany).toHaveBeenCalledWith({
       where: { userId: "user-1", spaceId: "space-1", botId: "bot-1", name: "router" },
     });
+  });
+  it("stores a command variable with no origin and lists it with its type", async () => {
+    const { secrets, rows, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: { name: "netbird-setup-key", auth: { type: "command" } },
+      value: FAKE_VALUE,
+    });
+    expect(result.status).toBe(200);
+    expect(result.body.json).toMatchObject({
+      name: "netbird-setup-key",
+      origin: "",
+      auth: { type: "command" },
+    });
+    expect(result.text).not.toContain(FAKE_VALUE);
+    expect(secrets.put).toHaveBeenCalledOnce();
+    expect(rows[0]).toMatchObject({ origin: "", auth: { type: "command" } });
+    const listed = await call("list", { botId: "bot-1" });
+    expect(listed.body.json).toEqual([expect.objectContaining({ auth: { type: "command" } })]);
+  });
+
+  it("rejects a reserved command variable name with a clear bad request", async () => {
+    const { secrets, rows, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: { name: "ld_preload", auth: { type: "command" } },
+      value: FAKE_VALUE,
+    });
+    expect(result.status).toBe(400);
+    expect(result.text).toContain("$LD_PRELOAD is reserved");
+    expect(result.text).not.toContain(FAKE_VALUE);
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(0);
+  });
+
+  it("still requires a site for every other credential type", async () => {
+    const { secrets, call } = botSecretDeps();
+    const result = await call("put", {
+      botId: "bot-1",
+      destination: { name: "api", auth: { type: "bearer" } },
+      value: FAKE_VALUE,
+    });
+    expect(result.status).toBe(400);
+    expect(secrets.put).not.toHaveBeenCalled();
   });
 });

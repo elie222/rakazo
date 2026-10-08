@@ -266,3 +266,55 @@
     opacity: 0;
   }
 }
+
+/* A website link: its site icon, then the label. The icon never ends a line on its own. */
+a.rk-chat-link {
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.rk-chat-link-tile {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin-inline-end: 4px;
+  overflow: hidden;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  padding: 1px;
+  /* Centred on the capitals of the surrounding text. */
+  vertical-align: calc((1cap - 18px) / 2);
+}
+
+.rk-chat-link-tile-icon {
+  background: var(--favicon-plate);
+  padding: 2px;
+}
+
+/* Outranks the block layout that markdown images get inside a reply. */
+a.rk-chat-link .rk-chat-link-tile > img,
+a.rk-chat-link .rk-chat-link-tile > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.rk-chat-link-label {
+  white-space: normal;
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+a.rk-chat-link:hover .rk-chat-link-label {
+  text-decoration-color: currentColor;
+}

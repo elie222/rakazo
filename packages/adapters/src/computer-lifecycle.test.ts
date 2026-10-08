@@ -4,6 +4,8 @@ import path from "node:path";
 import type {
   AdapterContext,
   AgentHomeStore,
+  CommandRequest,
+  ComputerRef,
   JobPublisher,
   SandboxProvider,
 } from "@rakazo/adapter-kit";
@@ -1344,6 +1346,166 @@ describe("computer provisioning", () => {
     } finally {
       await rm(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("Team Computer wake", () => {
+  function isFolderListing(request: CommandRequest) {
+    return request.argv[0] === "bash" && request.argv.length === 4;
+  }
+
+  function wakeHarness(
+    state: "stopped" | "running",
+    findMany = vi.fn().mockResolvedValue([{ id: "deleted-bot" }]),
+    provisioned: Partial<ComputerRef> = {},
+  ) {
+    const ref = {
+      id: "sandbox-1",
+      botId: "team-workspace-1",
+      kind: "e2b" as const,
+      providerRef: "sandbox-1",
+      fresh: false,
+      ...provisioned,
+    };
+    const execute = vi.fn(async function* (_computer: unknown, request: CommandRequest) {
+      // The cleanup first lists what is on the computer.
+      if (isFolderListing(request)) yield { type: "stdout" as const, data: "bots/deleted-bot\n" };
+      yield { type: "exit" as const, code: 0 };
+    });
+    const prisma = {
+      computer: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "computer-1",
+          spaceId: "workspace-1",
+          homeKey: "team-workspace-1",
+          providerRef: "sandbox-1",
+          kind: "e2b",
+          scope: "team",
+          state,
+          controlLeaseId: null,
+          maintenanceId: null,
+          updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      botDeletion: { findMany },
+    } as unknown as PrismaClient;
+    const sandbox = {
+      provision: vi.fn().mockResolvedValue(ref),
+      prepare: vi.fn().mockResolvedValue(undefined),
+      importWorkspace: vi.fn().mockResolvedValue(undefined),
+      execute,
+    } as unknown as SandboxProvider;
+    return { ref, prisma, sandbox, execute, findMany };
+  }
+
+  async function boot(harness: ReturnType<typeof wakeHarness>) {
+    const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-team-wake-"));
+    try {
+      return await provisionComputer(
+        {
+          prisma: harness.prisma,
+          sandbox: harness.sandbox,
+          home: {
+            exportHome: vi.fn().mockReturnValue((async function* () {})()),
+          } as unknown as AgentHomeStore,
+          jobs: {} as JobPublisher,
+          events: {} as ThreadEvents,
+          dataDir,
+        },
+        "computer-1",
+        context,
+      );
+    } finally {
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  }
+
+  it("removes folders of bots deleted while the Team Computer was stopped", async () => {
+    const harness = wakeHarness("stopped");
+
+    await expect(boot(harness)).resolves.toEqual(harness.ref);
+
+    expect(harness.findMany).toHaveBeenCalledWith({
+      where: { spaceId: "workspace-1" },
+      select: { id: true },
+    });
+    expect(harness.execute).toHaveBeenCalledWith(
+      harness.ref,
+      {
+        argv: ["bash", "-eu", "-c", expect.any(String), "bash", "bots", "deleted-bot"],
+        cwd: ".",
+      },
+      expect.objectContaining({ botId: "bot-1" }),
+    );
+  });
+
+  it("does not look for deleted bots' folders when reconnecting to a running Team Computer", async () => {
+    const harness = wakeHarness("running");
+
+    await expect(boot(harness)).resolves.toEqual(harness.ref);
+
+    expect(harness.findMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["started the stopped computer", { started: true }],
+    ["replaced the computer", { id: "sandbox-2", providerRef: "sandbox-2", fresh: true }],
+  ])(
+    "removes deleted bots' folders when a reconnect %s",
+    async (_case, provisioned: Partial<ComputerRef>) => {
+      const harness = wakeHarness(
+        "running",
+        vi.fn().mockResolvedValue([{ id: "deleted-bot" }]),
+        provisioned,
+      );
+
+      await expect(boot(harness)).resolves.toEqual(harness.ref);
+
+      expect(harness.execute).toHaveBeenCalledWith(
+        harness.ref,
+        {
+          argv: ["bash", "-eu", "-c", expect.any(String), "bash", "bots", "deleted-bot"],
+          cwd: ".",
+        },
+        expect.objectContaining({ botId: "bot-1" }),
+      );
+    },
+  );
+
+  it("does not hold the boot past the folder cleanup's time budget", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let markStarted: () => void = () => undefined;
+      const cleanupStarted = new Promise<void>((resolve) => {
+        markStarted = resolve;
+      });
+      const harness = wakeHarness("stopped");
+      harness.execute.mockImplementation(async function* (_computer, request) {
+        if (isFolderListing(request)) {
+          markStarted();
+          await new Promise(() => undefined);
+        }
+        yield { type: "exit" as const, code: 0 };
+      });
+
+      const booting = boot(harness);
+      await cleanupStarted;
+      await vi.advanceTimersByTimeAsync(20_000);
+
+      await expect(booting).resolves.toEqual(harness.ref);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still boots when the folder cleanup fails", async () => {
+    const harness = wakeHarness(
+      "stopped",
+      vi.fn().mockRejectedValue(new Error("database unavailable")),
+    );
+
+    await expect(boot(harness)).resolves.toEqual(harness.ref);
   });
 });
 

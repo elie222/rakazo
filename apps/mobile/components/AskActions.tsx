@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Alert, Pressable, Text, View, type ViewProps } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
+import { native } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 type AskAction = { id: string; label: string };
 
@@ -35,10 +37,7 @@ export function AskActions({
     try {
       await onAnswer(answer);
     } catch (error) {
-      Alert.alert(
-        t("Could not submit answer"),
-        error instanceof Error ? error.message : t("Please try again."),
-      );
+      Alert.alert(t("Could not submit answer"), errorText(error, t("Please try again.")));
     } finally {
       setPendingAction(null);
     }
@@ -60,9 +59,7 @@ export function AskActions({
               borderRadius: 12,
               paddingHorizontal: 14,
               paddingVertical: 12,
-              backgroundColor: emphasized ? tokens.muted : "transparent",
-              borderWidth: 1,
-              borderColor: tokens.border,
+              backgroundColor: emphasized ? native.fillPressed : native.fill,
               opacity: disabled || submitting ? 0.5 : 1,
             }}
           >

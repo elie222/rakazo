@@ -132,7 +132,14 @@ describe("BotCredentialsSection", () => {
   });
 
   it("adds a header credential and clears the value, then refetches", async () => {
-    botSecrets.put.mockResolvedValue(rows[1]);
+    const savedHeader = rows[1];
+    if (!savedHeader) throw new Error("missing header fixture");
+    let resolvePut: (row: typeof savedHeader) => void = () => undefined;
+    botSecrets.put.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePut = resolve;
+      }),
+    );
     await render();
     await click("credential-add");
     await type("credential-name", "custom");
@@ -143,6 +150,13 @@ describe("BotCredentialsSection", () => {
     expect(byTestId<HTMLInputElement>("credential-value").type).toBe("password");
     expect(byTestId<HTMLInputElement>("credential-value").autocomplete).toBe("new-password");
     await click("credential-add-save");
+    expect(byTestId<HTMLInputElement>("credential-value").value).toBe("");
+    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+
+    await act(async () => {
+      resolvePut(savedHeader);
+    });
+    await flush();
 
     expect(botSecrets.put).toHaveBeenCalledWith({
       botId: "bot-1",
@@ -300,5 +314,71 @@ describe("BotCredentialsSection", () => {
     await click("credential-remove-confirm-api");
     expect(botSecrets.remove).toHaveBeenCalledWith({ botId: "bot-1", name: "api" });
     expect(botSecrets.list).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("BotCredentialsSection command variables", () => {
+  const commandRow = {
+    name: "netbird-setup-key",
+    origin: "",
+    auth: { type: "command" },
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+
+  it("adds a command variable with no origin and shows its derived name", async () => {
+    botSecrets.put.mockResolvedValue(commandRow);
+    await render();
+    await click("credential-add");
+    await type("credential-origin", "https://leftover.example.com");
+    await type("credential-auth-type", "command");
+    expect(container.querySelector('[data-testid="credential-origin"]')).toBeNull();
+    await type("credential-name", "netbird-setup-key");
+    expect(byTestId("credential-command-variable").textContent).toContain("$NETBIRD_SETUP_KEY");
+    await type("credential-value", FAKE_VALUE);
+    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(false);
+    await click("credential-add-save");
+
+    expect(botSecrets.put).toHaveBeenCalledWith({
+      botId: "bot-1",
+      destination: { name: "netbird-setup-key", auth: { type: "command" } },
+      value: FAKE_VALUE,
+    });
+    expect(botSecrets.put.mock.calls[0]![0].destination).not.toHaveProperty("origin");
+    expect(container.innerHTML).not.toContain(FAKE_VALUE);
+  });
+
+  it("shows the blocklist error and cannot save a reserved name", async () => {
+    await render();
+    await click("credential-add");
+    await type("credential-auth-type", "command");
+    await type("credential-name", "ld_preload");
+    await type("credential-value", FAKE_VALUE);
+    expect(byTestId("credential-command-variable-error").textContent).toContain(
+      "$LD_PRELOAD is reserved",
+    );
+    expect(container.querySelector('[data-testid="credential-command-variable"]')).toBeNull();
+    expect(byTestId<HTMLButtonElement>("credential-add-save").disabled).toBe(true);
+    await act(async () => {
+      byTestId<HTMLFormElement>("credential-add-form").requestSubmit();
+    });
+    await flush();
+    expect(botSecrets.put).not.toHaveBeenCalled();
+  });
+
+  it("lists a command variable with its variable name and replaces its value", async () => {
+    botSecrets.list.mockResolvedValue([commandRow]);
+    botSecrets.put.mockResolvedValue(commandRow);
+    await render();
+    const row = byTestId("bot-credential-row");
+    expect(row.textContent).toContain("Command variable · $NETBIRD_SETUP_KEY");
+    await click("credential-replace-netbird-setup-key");
+    await type("credential-replace-value", FAKE_VALUE);
+    await click("credential-replace-save");
+    expect(botSecrets.put).toHaveBeenCalledWith({
+      botId: "bot-1",
+      destination: { name: "netbird-setup-key", auth: { type: "command" } },
+      value: FAKE_VALUE,
+    });
   });
 });

@@ -7,7 +7,8 @@
     "dev": "node ../../scripts/dev-watch.mjs src/index.ts",
     "start": "tsx src/index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --root ../.. apps/api/src"
+    "test": "vitest run --root ../.. apps/api/src",
+    "secrets:infisical": "tsx src/cli/secrets-infisical.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",

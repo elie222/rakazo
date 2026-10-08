@@ -1,6 +1,13 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it, vi } from "vitest";
-import { assertSafeWebUrl, fetchSafeWebText, isBlockedHostname } from "./web-ssrf.js";
+import {
+  assertSafeWebUrl,
+  fetchSafeWebBytes,
+  fetchSafeWebText,
+  isBlockedHostname,
+} from "./web-ssrf.js";
 
 const publicResolver = async () => [{ address: "203.0.113.10", family: 4 as const }];
 
@@ -93,6 +100,68 @@ describe("web SSRF policy", () => {
     expect(result.body).toContain("hello");
   });
 
+  it("refuses ports outside allowedPorts on every hop", async () => {
+    await expect(
+      assertSafeWebUrl("https://example.test:8443/", publicResolver, undefined, [80, 443]),
+    ).rejects.toThrow(/port/i);
+    await expect(
+      assertSafeWebUrl("https://example.test/", publicResolver, undefined, [80, 443]),
+    ).resolves.toBeInstanceOf(URL);
+
+    const fetched: string[] = [];
+    const fetchMock: typeof fetch = async (input) => {
+      fetched.push(String(input));
+      return new Response(null, {
+        status: 302,
+        headers: { location: "http://example.test:6379/" },
+      });
+    };
+    await expect(
+      fetchSafeWebBytes("https://example.test/", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+        allowedPorts: [80, 443],
+      }),
+    ).rejects.toThrow(/port/i);
+    expect(fetched).toEqual(["https://example.test/"]);
+  });
+
+  it("keeps the first maxBytes of a longer body when truncating", async () => {
+    const fetchMock: typeof fetch = async () =>
+      new Response("a".repeat(5000), { status: 200, headers: { "content-length": "5000" } });
+
+    const result = await fetchSafeWebBytes("https://example.test/", {
+      fetch: fetchMock,
+      resolveHostname: publicResolver,
+      maxBytes: 100,
+      truncate: true,
+    });
+    expect(result.body.byteLength).toBe(100);
+    await expect(
+      fetchSafeWebBytes("https://example.test/", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+        maxBytes: 100,
+      }),
+    ).rejects.toThrow(/too large/i);
+  });
+
+  it("stops at maxRedirects", async () => {
+    const fetched: string[] = [];
+    const fetchMock: typeof fetch = async (input) => {
+      fetched.push(String(input));
+      return new Response(null, { status: 302, headers: { location: `/${fetched.length}` } });
+    };
+    await expect(
+      fetchSafeWebBytes("https://example.test/", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+        maxRedirects: 1,
+      }),
+    ).rejects.toThrow(/too many redirects/i);
+    expect(fetched).toHaveLength(2);
+  });
+
   it("drops caller-provided headers on cross-origin redirects", async () => {
     let finalHeaders = new Headers();
     const fetchMock: typeof fetch = async (input, init) => {
@@ -141,6 +210,35 @@ describe("web SSRF policy", () => {
           },
         }),
       ).rejects.toMatchObject({ cause: { message: "lookup reached" } });
+    }
+  });
+
+  it("refuses a host that rebinds to loopback between the check and the connection", async () => {
+    // No fetch seam: the real dispatcher and its connect-time lookup run against a real
+    // listener. The name checks out as public, then resolves to the listener at connect time.
+    let connections = 0;
+    const listener = createServer((_request, response) => response.end("reached"));
+    listener.on("connection", () => {
+      connections += 1;
+    });
+    await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+    const { port } = listener.address() as AddressInfo;
+    let resolutions = 0;
+    try {
+      await expect(
+        fetchSafeWebBytes(`http://rebind.test:${port}/`, {
+          resolveHostname: async () => {
+            resolutions += 1;
+            return resolutions === 1
+              ? [{ address: "203.0.113.10", family: 4 }]
+              : [{ address: "127.0.0.1", family: 4 }];
+          },
+        }),
+      ).rejects.toMatchObject({ cause: { message: expect.stringMatching(/private address/) } });
+      expect(resolutions).toBe(2);
+      expect(connections).toBe(0);
+    } finally {
+      await new Promise<void>((resolve) => listener.close(() => resolve()));
     }
   });
 

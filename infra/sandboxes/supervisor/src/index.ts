@@ -12,7 +12,7 @@ import {
   resolveSupervisorToken,
 } from "@rakazo/core";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
-import { SERVICE_NAMES } from "@rakazo/logging";
+import { getLogger, SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
 import Docker from "dockerode";
@@ -30,6 +30,7 @@ import {
   computerNetworkCreateOptions,
   computerNetworkNameFor,
   computerNetworkNamesForCleanup,
+  computerNetworkOwnerFor,
   computerResourceLimits,
   containerCreateOptions,
   containerNameFor,
@@ -178,6 +179,7 @@ app.post("/computers", async (c) => {
       await ensureComputerImage();
       const runtimeInfo = await inspectSupervisorContainer();
       const networkMode = computerNetworkName(body.botId, runtimeInfo);
+      const networkOwner = computerNetworkOwnerFor(dataDir, runtimeInfo);
       const serviceHomePath = path.resolve(body.homePath);
       assertBotHomePath(serviceHomePath, body.botId);
       const hostUid = process.getuid?.();
@@ -199,31 +201,30 @@ app.post("/computers", async (c) => {
           info.HostConfig.PortBindings,
           controlViaLoopback,
         );
+        const botNetwork =
+          networkMode === computerNetworkNameFor(body.botId) ? networkMode : undefined;
+        const endpoint = botNetwork ? info.NetworkSettings?.Networks?.[botNetwork] : undefined;
+        const botNetworkInfo =
+          botNetwork && (computerEgressMode === "restricted" || !info.State.Running)
+            ? await inspectNetworkIfPresent(botNetwork)
+            : undefined;
+        // A stop gives the network back after disconnecting the computer, and a
+        // network removed or recreated under a stopped computer leaves its endpoint
+        // on the old network ID. Either way it rejoins the network before starting:
+        // Docker would start it with no network, or not at all.
+        const reconnect =
+          Boolean(botNetwork) &&
+          !info.State.Running &&
+          (!endpoint || botNetworkInfo?.Id !== endpoint.NetworkID);
         // A network created while egress was open keeps a generic br-* bridge
         // the host ruleset does not match, so restricted mode must not resume a
         // computer on it — the replace path rekeys the network instead.
         const restrictedBridgeOk =
-          !networkMode ||
+          !botNetwork ||
+          reconnect ||
           computerEgressMode !== "restricted" ||
-          networkMode !== computerNetworkNameFor(body.botId) ||
-          (await docker
-            .getNetwork(networkMode)
-            .inspect()
-            .then(
-              (net) =>
-                net.Options?.["com.docker.network.bridge.name"] ===
-                computerBridgeNameFor(body.botId),
-              (error) => {
-                // A missing network is incompatible; transient inspect
-                // failures must surface instead of force-replacing a
-                // healthy computer.
-                const status = (error as { statusCode?: number })?.statusCode;
-                if (status === 404 || /no such network|not found/i.test(String(error))) {
-                  return false;
-                }
-                throw error;
-              },
-            ));
+          botNetworkInfo?.Options?.["com.docker.network.bridge.name"] ===
+            computerBridgeNameFor(body.botId);
         if (
           info.Image === desired.Id &&
           // A named-network container must also still be attached: a network
@@ -231,17 +232,22 @@ app.post("/computers", async (c) => {
           // NetworkSettings is empty, and resuming that yields no connectivity.
           (!networkMode ||
             (info.HostConfig.NetworkMode === networkMode &&
-              Boolean(info.NetworkSettings?.Networks?.[networkMode]))) &&
+              (reconnect || Boolean(info.NetworkSettings?.Networks?.[networkMode])))) &&
           restrictedBridgeOk &&
           info.Config.User === computerUser &&
           controlPublishOk &&
-          (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume))
+          (!storage.homeVolume || homeVolumeMatches(info.HostConfig.Mounts, storage.homeVolume)) &&
+          // A computer that cannot rejoin its network is replaced below instead.
+          (!reconnect ||
+            (await reconnectBotComputer(existing, body.botId, networkOwner, Boolean(endpoint))))
         ) {
-          if (!info.State.Running) await existing.start();
+          const started = !info.State.Running;
+          if (started) await existing.start();
           return c.json({
             id: existing.id,
             image: COMPUTER_IMAGE,
             resumed: true,
+            started,
           });
         }
       }
@@ -277,7 +283,9 @@ app.post("/computers", async (c) => {
         await assertComputerHomeWritable(serviceHomePath, effectiveUid, effectiveGid);
         const name = containerNameFor(body.botId);
         const createdNetwork =
-          screenNetworkMode === "internal" ? undefined : await ensureBotNetwork(body.botId);
+          screenNetworkMode === "internal"
+            ? undefined
+            : await ensureBotNetwork(body.botId, networkOwner);
         let container: Docker.Container | undefined;
         try {
           if (existing) {
@@ -907,12 +915,9 @@ app.delete("/computers/:id/screen", async (c) => {
 
 app.post("/computers/:id/stop", async (c) => {
   const id = c.req.param("id");
+  const botId = c.req.header("x-rakazo-bot-id");
   try {
-    const { container } = await managedContainer(
-      id,
-      c.req.header("x-rakazo-bot-id"),
-      c.req.header("x-rakazo-space-id"),
-    );
+    const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
     await withComputerScreenLock(id, async () => {
       const info = await container.inspect();
       if (info.State.Running) {
@@ -933,6 +938,11 @@ app.post("/computers/:id/stop", async (c) => {
       }
       clearComputerScreenRegistry(computerScreens, id);
     });
+    if (botId && screenNetworkMode !== "internal") {
+      await reclaimComputerNetwork(container, botId).catch((error) => {
+        getLogger().error("computer network reclaim failed", error);
+      });
+    }
     return c.json({ ok: true });
   } catch (error) {
     if (error instanceof ComputerIdentityError)
@@ -978,6 +988,9 @@ function startSupervisor() {
       "SANDBOX_COMPUTER_EGRESS=restricted requires the host firewall rules from infra/compose/restrict-computer-egress.sh (see docs/self-host.md)",
     );
   }
+  void reclaimIdleComputerNetworks().catch((error) => {
+    logger.error("computer network reclaim failed", error);
+  });
   const port = Number(process.env.SUPERVISOR_PORT ?? 7091);
   const hostname = process.env.SUPERVISOR_HOST ?? "127.0.0.1";
   const server = serve({ fetch: app.fetch, hostname, port }, () => {
@@ -1374,7 +1387,7 @@ function computerNetworkName(botId: string, info: Docker.ContainerInspectInfo | 
   return computerNetworkNameFor(botId);
 }
 
-async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {
+async function composeScreenPeerIds(info: Docker.ContainerInspectInfo) {
   const peerIds = new Set([info.Id]);
   const project = info.Config.Labels?.["com.docker.compose.project"];
   if (project) {
@@ -1386,6 +1399,11 @@ async function connectComposeScreenPeers(networkName: string, info: Docker.Conta
     });
     for (const container of webContainers) peerIds.add(container.Id);
   }
+  return peerIds;
+}
+
+async function connectComposeScreenPeers(networkName: string, info: Docker.ContainerInspectInfo) {
+  const peerIds = await composeScreenPeerIds(info);
   const network = docker.getNetwork(networkName);
   const networkInfo = await network.inspect();
   const connectedIds = new Set(Object.keys(networkInfo.Containers ?? {}));
@@ -1400,23 +1418,136 @@ async function connectComposeScreenPeers(networkName: string, info: Docker.Conta
   );
 }
 
-async function ensureBotNetwork(botId: string) {
+// A missing network is undefined; transient inspect failures must surface
+// instead of force-replacing a healthy computer.
+async function inspectNetworkIfPresent(name: string) {
   return docker
-    .createNetwork(computerNetworkCreateOptions(botId, computerEgressMode))
+    .getNetwork(name)
+    .inspect()
+    .catch((error) => {
+      const status = (error as { statusCode?: number })?.statusCode;
+      if (status === 404 || /no such network|not found/i.test(String(error))) return undefined;
+      throw error;
+    });
+}
+
+// Rejoins a stopped computer to its network, recreating the network if a stop
+// gave it back. Docker errors surface like any provision failure, so a brief
+// outage cannot cost the computer its container. False means Docker refuses to
+// attach this container, and the caller replaces it instead.
+async function reconnectBotComputer(
+  container: Docker.Container,
+  botId: string,
+  owner: string,
+  staleEndpoint: boolean,
+) {
+  await ensureBotNetwork(botId, owner);
+  const network = docker.getNetwork(computerNetworkNameFor(botId));
+  if (staleEndpoint) {
+    await network.disconnect({ Container: container.id, Force: true }).catch((error) => {
+      // Already gone is fine. Anything else fails the provision: a stale endpoint
+      // left in place would make the connect below look unattachable.
+      const status = (error as { statusCode?: number })?.statusCode;
+      if (status !== 404 && !/not connected|not found|no such/i.test(String(error))) throw error;
+    });
+  }
+  return network.connect({ Container: container.id }).then(
+    () => true,
+    (error) => {
+      // A leftover or conflicting endpoint, which a retry would not clear.
+      const status = (error as { statusCode?: number })?.statusCode;
+      const unattachable =
+        status === 404 ||
+        status === 409 ||
+        /not found|no such|already exists|already connected/i.test(String(error));
+      if (!unattachable) throw error;
+      getLogger().error("computer network reconnect failed", error);
+      return false;
+    },
+  );
+}
+
+/**
+ * Startup cleanup for networks whose computer is gone, e.g. removed by hand.
+ * Other installs can share this Docker host and name their networks the same
+ * way, so only networks carrying this install's owner label are considered;
+ * unlabeled networks from older supervisors are left alone.
+ */
+export async function reclaimIdleComputerNetworks() {
+  if (screenNetworkMode === "internal") return;
+  const runtime = await inspectSupervisorContainer();
+  const owner = computerNetworkOwnerFor(dataDir, runtime);
+  const networks = await docker.listNetworks({
+    filters: { label: [`rakazo.computerOwner=${owner}`] },
+  });
+  for (const { Name, Labels } of networks) {
+    const botId = Labels?.["rakazo.botId"];
+    if (!botId || Name !== computerNetworkNameFor(botId)) continue;
+    await withBotLifecycleLock(botId, () => removeUnusedComputerNetwork(Name)).catch((error) => {
+      getLogger().error("computer network reclaim failed", error);
+    });
+  }
+}
+
+// The supervisor and Compose web proxy join isolated computer networks to reach
+// screens and rejoin lazily, so they do not keep a network in use.
+async function screenPeerIds() {
+  const runtime = screenNetworkMode === "isolated" ? await inspectSupervisorContainer() : undefined;
+  return runtime ? await composeScreenPeerIds(runtime) : new Set<string>();
+}
+
+// Removes a computer network used by nothing but screen peers and, when given,
+// its stopped computer. Network inspect lists only running containers, so the
+// users are listed by network: a stopped container left referencing a removed
+// network cannot start again. Each user is disconnected first, and a failed
+// disconnect keeps the network for the same reason.
+async function removeUnusedComputerNetwork(name: string, computerId?: string) {
+  const users = await docker.listContainers({ all: true, filters: { network: [name] } });
+  const peerIds = await screenPeerIds();
+  if (users.some((user) => user.Id !== computerId && !peerIds.has(user.Id))) return;
+  const network = docker.getNetwork(name);
+  // The computer goes first: it must be able to rejoin when it resumes.
+  users.sort((a, b) => Number(b.Id === computerId) - Number(a.Id === computerId));
+  for (const user of users) {
+    await network.disconnect({ Container: user.Id });
+  }
+  // Docker refuses while an endpoint is active, e.g. a peer that rejoined meanwhile.
+  await network.remove().catch((error) => {
+    if (!/active endpoints/i.test(String(error))) throw error;
+  });
+}
+
+// Every computer network holds a subnet from Docker's address pools, which run
+// out after a few dozen networks, so a stopped computer gives its network back.
+// It is reconnected when it resumes, and screen peers rejoin lazily.
+async function reclaimComputerNetwork(container: Docker.Container, botId: string) {
+  // The bot lock keeps a provision from resuming the computer meanwhile.
+  await withBotLifecycleLock(botId, async () => {
+    const name = computerNetworkNameFor(botId);
+    const computer = await container.inspect();
+    if (computer.State.Running || !(await inspectNetworkIfPresent(name))) return;
+    await removeUnusedComputerNetwork(name, computer.Id);
+  });
+}
+
+async function ensureBotNetwork(botId: string, owner: string) {
+  return docker
+    .createNetwork(computerNetworkCreateOptions(botId, owner, computerEgressMode))
     .catch(async (error) => {
       // Existing networks and concurrent provision requests are both safe.
       if (!/already exists/i.test(String(error))) throw error;
       if (computerEgressMode === "restricted") {
-        await rekeyRestrictedBotNetwork(computerNetworkNameFor(botId), botId);
+        await rekeyRestrictedBotNetwork(computerNetworkNameFor(botId), botId, owner);
       }
     });
 }
 
 // A network created before SANDBOX_COMPUTER_EGRESS=restricted has a generic br-*
 // bridge the host ruleset does not match. Recreate it with the named bridge: the
-// only caller is the create path, which replaces the computer container anyway,
-// and supervisor/web screen peers rejoin lazily via connectComposeScreenPeers.
-async function rekeyRestrictedBotNetwork(name: string, botId: string) {
+// callers attach the computer afterwards (the create path replaces it, a resume
+// reconnects it), and supervisor/web screen peers rejoin lazily via
+// connectComposeScreenPeers.
+async function rekeyRestrictedBotNetwork(name: string, botId: string, owner: string) {
   const expectedBridge = computerBridgeNameFor(botId);
   const inspect = () =>
     docker
@@ -1445,9 +1576,11 @@ async function rekeyRestrictedBotNetwork(name: string, botId: string) {
     }
   }
   if (!info || !hasNamedBridge(info)) {
-    await docker.createNetwork(computerNetworkCreateOptions(botId, "restricted")).catch((error) => {
-      if (!/already exists/i.test(String(error))) throw error;
-    });
+    await docker
+      .createNetwork(computerNetworkCreateOptions(botId, owner, "restricted"))
+      .catch((error) => {
+        if (!/already exists/i.test(String(error))) throw error;
+      });
   }
   if (!hasNamedBridge(await inspect())) {
     throw new Error(`cannot restrict egress: network ${name} is missing the named bridge`);
@@ -1489,25 +1622,29 @@ async function removeBotNetwork(botId: string) {
     const network = docker.getNetwork(name);
     const info = await network.inspect().catch(() => undefined);
     if (!info) continue;
-    const containerIds = Object.keys(info.Containers ?? {});
-    if (name !== currentName) {
-      const owners: Array<string | undefined> = [];
-      for (const containerId of containerIds) {
-        const labels =
-          (
-            await docker
-              .getContainer(containerId)
-              .inspect()
-              .catch(() => undefined)
-          )?.Config.Labels ?? {};
-        const owner = labels["rakazo.botId"];
-        owners.push(owner);
-        if (owner === botId) {
-          await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
-        }
-      }
-      if (!legacyNetworkOwnedSolelyBy(botId, owners)) continue;
+    if (name === currentName) {
+      // Stopped screen peers must be disconnected too, or they cannot start again.
+      await removeUnusedComputerNetwork(name).catch((error) => {
+        getLogger().error("computer network reclaim failed", error);
+      });
+      continue;
     }
+    const owners: Array<string | undefined> = [];
+    for (const containerId of Object.keys(info.Containers ?? {})) {
+      const labels =
+        (
+          await docker
+            .getContainer(containerId)
+            .inspect()
+            .catch(() => undefined)
+        )?.Config.Labels ?? {};
+      const owner = labels["rakazo.botId"];
+      owners.push(owner);
+      if (owner === botId) {
+        await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);
+      }
+    }
+    if (!legacyNetworkOwnedSolelyBy(botId, owners)) continue;
     const remaining = await network.inspect().catch(() => undefined);
     for (const containerId of Object.keys(remaining?.Containers ?? {})) {
       await network.disconnect({ Container: containerId, Force: true }).catch(() => undefined);

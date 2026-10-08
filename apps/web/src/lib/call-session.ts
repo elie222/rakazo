@@ -17,6 +17,7 @@ import { dictation } from "./dictation.js";
 import { rpc } from "./rpc.js";
 import { isThreadSnapshotEvent, reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
+import { errorText } from "./user-error";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
 export type CallExchange = { role: "user" | "bot"; text: string };
@@ -482,10 +483,6 @@ function latestAskId(snapshot: ThreadSnapshot | null): string | null {
     }
   }
   return null;
-}
-
-function errorText(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
 }
 
 function randomId(): string {

@@ -1,0 +1,29 @@
+---
+import { faqPageSchema } from "../alternatives";
+
+type Item = {
+  question: string;
+  answer: string;
+};
+
+type Props = {
+  items: readonly Item[];
+  headingId?: string;
+};
+
+const { items, headingId = "faq" } = Astro.props;
+const structuredDataJson = JSON.stringify(faqPageSchema(items)).replaceAll("<", "\\u003c");
+---
+
+<section aria-labelledby={headingId}>
+  <h2 id={headingId}>FAQ</h2>
+  {
+    items.map((item, index) => (
+      <div>
+        <h3 id={`${headingId}-${index}`}>{item.question}</h3>
+        <p>{item.answer}</p>
+      </div>
+    ))
+  }
+</section>
+<script is:inline type="application/ld+json" set:html={structuredDataJson} />

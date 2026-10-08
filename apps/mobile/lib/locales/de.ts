@@ -1,4 +1,19 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Try Again": "Erneut versuchen",
+  "Not sent · Tap to retry": "Nicht gesendet · Zum Wiederholen tippen",
+  Photo: "Foto",
+  Today: "Heute",
+  Yesterday: "Gestern",
+  You: "Du",
+  "Original message unavailable": "Originalnachricht nicht verfügbar",
+  "No archived bots": "Keine archivierten Bots",
+  "Recover computer?": "Computer wiederherstellen?",
+  "Recreate a computer that is not working.":
+    "Einen nicht funktionierenden Computer neu erstellen.",
+  "Restore the last saved workspace.": "Den zuletzt gespeicherten Arbeitsbereich wiederherstellen.",
+  "Save the workspace and install current software.":
+    "Den Arbeitsbereich speichern und aktuelle Software installieren.",
+  "More computer actions": "Weitere Computeraktionen",
   // shared/const
   "Chat Settings": "Chat-Einstellungen",
   "Configure a plugin catalog on the server to connect apps.":
@@ -107,6 +122,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Clear conversation?": "Unterhaltung leeren?",
   "Cloud agent": "Cloud-Agent",
   Code: "Code",
+  "Command variable": "Befehlsvariable",
   Completed: "Abgeschlossen",
   Copy: "Kopieren",
   "Could not archive bot": "Bot konnte nicht archiviert werden",
@@ -274,6 +290,16 @@ export const DE_MESSAGES: Record<string, string> = {
   "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",
   "Close computer": "Computer schließen",
+  "Computer keyboard": "Computertastatur",
+  Control: "Strg",
+  Down: "Nach unten",
+  Escape: "Esc",
+  "Hide keyboard": "Tastatur ausblenden",
+  Left: "Nach links",
+  Right: "Nach rechts",
+  "Show keyboard": "Tastatur anzeigen",
+  Tab: "Tab",
+  Up: "Nach oben",
   "Could not continue": "Fortfahren fehlgeschlagen",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "Der Desktop konnte nicht geladen werden. Dieses Gerät erreicht die Bildschirm-URL nicht.",
@@ -286,14 +312,15 @@ export const DE_MESSAGES: Record<string, string> = {
   Skip: "Überspringen",
   "Take control": "Kontrolle übernehmen",
   "You have control": "Du hast die Kontrolle",
-  // app/models.tsx
+  // app/(settings)/models.tsx
   "Active model": "Aktives Modell",
   "Authorization code": "Autorisierungscode",
   "Configured by deployment": "Durch die Bereitstellung konfiguriert",
+  "Use your own key": "Eigenen Schlüssel verwenden",
+  "Uses this server's own {source} credentials to access {provider}.":
+    "Verwendet die eigenen {source}-Zugangsdaten dieses Servers für den Zugriff auf {provider}.",
   "Connect API key": "API-Schlüssel verbinden",
   "Connect MCP server {name}": "MCP-Server „{name}“ verbinden",
-  "Connect this provider to use it as your personal model.":
-    "Verbinde diesen Anbieter, um ihn als persönliches Modell zu verwenden.",
   "Connected and using {label}.": "Verbunden, {label} ist aktiv.",
   "Connected · {label}": "Verbunden · {label}",
   "Connected. Its tools are available from your next message.":
@@ -342,7 +369,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Show less": "Weniger anzeigen",
   "Sign in": "Anmelden",
   "Starting…": "Wird gestartet…",
-  "Stored securely. Never shown here.": "Sicher gespeichert. Hier nie angezeigt.",
   Submit: "Absenden",
   "Supports images": "Unterstützt Bilder",
   "Supports thinking": "Unterstützt Denkmodus",
@@ -359,7 +385,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "http://localhost:53692/callback?code=…": "http://localhost:53692/callback?code=…",
   "sk-…": "sk-…",
   "this model": "dieses Modell",
-  // app/integrations.tsx
+  // app/(settings)/integrations.tsx
   "1 tool": "1 Tool",
   "Account label": "Kontobezeichnung",
   Accounts: "Konten",
@@ -415,7 +441,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "https://example.com/openapi.json": "https://example.com/openapi.json",
   "https://executor.example/mcp": "https://executor.example/mcp",
   "{count} tools": "{count} Tools",
-  // app/integration-setup.tsx
+  // app/(settings)/integration-setup.tsx
   "API key": "API-Schlüssel",
   "Account ID": "Konto-ID",
   "Gateway ID": "Gateway-ID",
@@ -435,7 +461,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Project ID": "Projekt-ID",
   "Set up Executor on your server in the web app.":
     "Richte Executor auf deinem Server in der Web-App ein.",
-  // app/voice.tsx
+  // app/(settings)/voice.tsx
   Connect: "Verbinden",
   "Connect a voice provider first.": "Verbinde zuerst einen Sprachanbieter.",
   "Connected {name}.": "{name} verbunden.",
@@ -462,7 +488,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "This device": "Dieses Gerät",
   "Your phone's built-in voice. Free, no account needed":
     "Die eingebaute Stimme deines Telefons. Kostenlos, kein Konto nötig",
-  // app/account.tsx
+  // app/(settings)/account.tsx
   "Agent messages": "Agent-Nachrichten",
   "Alerts from routines": "Meldungen von Routinen",
   Appearance: "Erscheinungsbild",
@@ -507,11 +533,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Your account": "Dein Konto",
   "{runs} runs · {tokens} tokens": "{runs} Ausführungen · {tokens} Token",
   "{style} avatars": "Avatare: {style}",
-  // app/change-password.tsx
+  // app/(settings)/change-password.tsx
   "Confirm password": "Passwort bestätigen",
   "Could not change password": "Passwort konnte nicht geändert werden",
   "New password": "Neues Passwort",
-  "Password updated": "Passwort aktualisiert",
   "Passwords do not match": "Die Passwörter stimmen nicht überein",
   // components/AskActions.tsx
   "Allow once": "Einmal erlauben",
@@ -651,9 +676,31 @@ export const DE_MESSAGES: Record<string, string> = {
   "Use an http or https URL": "Verwende eine http- oder https-URL",
   // lib/live-notifications.ts
   "Android blocked notifications.": "Android hat Benachrichtigungen blockiert.",
+  // lib/user-error.ts
+  "Could not reach the server": "Server konnte nicht erreicht werden",
+  "Enter a password": "Gib ein Passwort ein",
+  "Enter a valid email": "Gib eine gültige E-Mail-Adresse ein",
+  "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
   // lib/voice.ts
   "Could not play that clip.": "Dieser Clip konnte nicht abgespielt werden.",
-  // app/models.tsx
+  // app/(settings)/models.tsx
+  "Add connected model": "Verbundenes Modell hinzufügen",
+  "Add connected models to use them as backups.":
+    "Füge verbundene Modelle hinzu, um sie als Backups zu verwenden.",
+  "Backup models": "Backup-Modelle",
+  "Backup models saved.": "Backup-Modelle gespeichert.",
+  "Connect a provider to add backups.": "Verbinde einen Anbieter, um Backups hinzuzufügen.",
+  "Could not load backup models": "Backup-Modelle konnten nicht geladen werden.",
+  "Could not save backup models": "Backup-Modelle konnten nicht gespeichert werden.",
+  "Maximum of 10 backup models.": "Maximal 10 Backup-Modelle.",
+  "Move {model} down": "{model} nach unten verschieben",
+  "Move {model} up": "{model} nach oben verschieben",
+  "Remove {model}": "{model} entfernen",
+  "Save backups": "Backups speichern",
+  "Space changed. Reload Models to refresh backup models.":
+    "Der Space wurde gewechselt. Lade Modelle neu, um die Backups zu aktualisieren.",
+  "Space changed. Reload Models before saving backups.":
+    "Der Space wurde gewechselt. Lade Modelle neu, bevor du Backups speicherst.",
   "A sign-in page opened — enter this code there:":
     "Eine Anmeldeseite wurde geöffnet — gib dort diesen Code ein:",
   "All providers": "Alle Anbieter",
@@ -687,4 +734,44 @@ export const DE_MESSAGES: Record<string, string> = {
   Transcript: "Transkript",
   Unmute: "Stummschaltung aufheben",
   "Voice chat": "Sprachchat",
+  "Open external link?": "Externen Link öffnen?",
+  Open: "Öffnen",
+  // ai-data-sharing
+  "AI models": "KI-Modelle",
+  Memory: "Gedächtnis",
+  "Privacy policies": "Datenschutzerklärungen",
+  Rakazo: "Rakazo",
+  "Withdraw all permissions": "Alle Berechtigungen widerrufen",
+  "Withdraw all permissions?": "Alle Berechtigungen widerrufen?",
+  "New mobile actions won't send data to these services. Runs already in progress and routines keep going until you stop them.":
+    "Neue mobile Aktionen senden keine Daten an diese Dienste. Laufende Ausführungen und Routinen laufen weiter, bis du sie stoppst.",
+  Withdraw: "Widerrufen",
+  "Share data with {name}?": "Daten mit {name} teilen?",
+  "You can turn this off in Account → AI data sharing.":
+    "Du kannst dies unter Konto → KI-Datenfreigabe ausschalten.",
+  Allow: "Erlauben",
+  "Messages, chat history, bot instructions, memories, attachments, screenshots and connected-app content are sent to run your bots, including routines.":
+    "Nachrichten, Chatverlauf, Bot-Anweisungen, Erinnerungen, Anhänge, Screenshots und Inhalte verbundener Apps werden gesendet, um deine Bots auszuführen, einschließlich Routinen.",
+  "Your recordings are sent for transcription, and text you play is sent to generate speech.":
+    "Deine Aufnahmen werden zur Transkription gesendet, und Text, den du abspielst, wird zur Spracherzeugung gesendet.",
+  "Conversation summaries, memories, searches and bot and Space IDs are sent to store and recall context.":
+    "Gesprächszusammenfassungen, Erinnerungen, Suchanfragen sowie Bot- und Space-IDs werden gesendet, um Kontext zu speichern und abzurufen.",
+  "AI data sharing": "KI-Datenfreigabe",
+  "Allow {name} on mobile": "{name} auf dem Handy erlauben",
+  "Could not load permissions.": "Berechtigungen konnten nicht geladen werden.",
+  "No AI services configured.": "Keine KI-Dienste eingerichtet.",
+  "Privacy policy": "Datenschutzerklärung",
+  "Continue with {name}": "Mit {name} fortfahren",
+  "Could not load sign-in options": "Anmeldeoptionen konnten nicht geladen werden",
+  "Deletion code": "Löschcode",
+  "Email is not allowed to register": "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen",
+  "Email verification required": "E-Mail-Verifizierung erforderlich",
+  "Link SSO": "SSO verknüpfen",
+  "Registration is closed": "Registrierung ist geschlossen",
+  Retry: "Erneut versuchen",
+  "Send deletion code": "Löschcode senden",
+  "Sign in to your existing account to link SSO":
+    "Melde dich bei deinem bestehenden Konto an, um SSO zu verknüpfen",
+  "SSO is temporarily unavailable. Try again.":
+    "SSO ist vorübergehend nicht verfügbar. Versuche es erneut.",
 };

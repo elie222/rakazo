@@ -28,8 +28,10 @@ vi.mock("react-native", () => ({
 }));
 
 import type { AiRecipient } from "@rakazo/contracts";
+import { AI_DATA_DISCLOSURES } from "@rakazo/contracts";
 import { Alert } from "react-native";
 import { FOREGROUND_FALLBACK_MS, promptAiConsent } from "./ai-consent";
+import { resetI18nForTests, t } from "./i18n";
 
 type AlertButton = { text?: string; onPress?: () => void };
 type AlertOptions = { onDismiss?: () => void };
@@ -57,11 +59,44 @@ function flushTimers() {
 
 describe("mobile AI consent prompt", () => {
   beforeEach(() => {
+    resetI18nForTests();
     vi.useRealTimers();
     native.alert.mockReset();
     native.openURL.mockReset().mockResolvedValue(undefined);
     native.appState.currentState = "active";
     native.listeners.clear();
+  });
+
+  it.each(["en", "de", "ru", "zh-CN"] as const)(
+    "translates the consent copy in %s without changing recipient detail",
+    async (locale) => {
+      resetI18nForTests(locale);
+      const pending = promptAiConsent(recipient);
+      expect(native.alert.mock.calls[0]?.slice(0, 2)).toEqual([
+        t("Share data with {name}?", { name: recipient.name }),
+        [
+          recipient.detail,
+          t(AI_DATA_DISCLOSURES.model),
+          t("You can turn this off in Account → AI data sharing."),
+        ].join("\n\n"),
+      ]);
+      expect(currentAlert().buttons.map((button) => button.text)).toEqual([
+        t("Not now"),
+        t("Privacy policy"),
+        t("Allow"),
+      ]);
+      currentAlert().buttons[0]?.onPress?.();
+      await expect(pending).resolves.toBe(false);
+    },
+  );
+
+  it("omits empty details from the consent message", async () => {
+    const pending = promptAiConsent({ ...recipient, detail: "" });
+    expect(native.alert.mock.calls[0]?.[1]).toBe(
+      `${AI_DATA_DISCLOSURES.model}\n\nYou can turn this off in Account → AI data sharing.`,
+    );
+    currentAlert().buttons[0]?.onPress?.();
+    await expect(pending).resolves.toBe(false);
   });
 
   it("settles refusal once and does not reopen when Android dismisses the alert", async () => {
