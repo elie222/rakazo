@@ -479,6 +479,7 @@ export default function BotSettingsScreen() {
                 const voice = voices.find((candidate) => candidate.identifier === key);
                 if (voice) void chooseVoice(voice);
               }}
+              style={{ alignSelf: "stretch" }}
               value={voiceId ?? ""}
             >
               {voiceRow}
@@ -576,6 +577,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   rowLabel: { fontSize: 14, flex: 1 },
-  voiceRow: { width: "100%" },
+  voiceRow: { alignSelf: "stretch" },
   rowValue: { fontSize: 14, flexShrink: 1, textAlign: "right" },
 });
