@@ -1,11 +1,10 @@
+import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
-  type ComputerMode,
   normalizeCreateBotProfile,
-  type ThinkingLevel,
 } from "@rakazo/contracts";
 import {
   connectedModelChoices,
@@ -13,10 +12,10 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
-import { Stack, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
@@ -25,20 +24,16 @@ import { MenuPicker } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
 import { Chevron } from "../components/row-accessories";
-import {
-  type MobileBot,
-  type MobileMe,
-  type MobileModel,
-  type MobileModelCredential,
-  rpc,
-} from "../lib/api";
+import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
+import { rpc } from "../lib/api";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
 import { presentMessageActionSheet } from "../lib/message-action-sheet";
-import { stopVoicePlayback } from "../lib/voice";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { errorText } from "../lib/user-error";
+import { stopVoicePlayback } from "../lib/voice";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
@@ -46,6 +41,7 @@ type BotSettingsRecord = MobileBot & {
 
 export default function BotSettingsScreen() {
   const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const router = useRouter();
   const navigation = useNavigation();
@@ -66,6 +62,7 @@ export default function BotSettingsScreen() {
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [voiceId, setVoiceId] = useState<string | undefined>();
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -191,8 +188,24 @@ export default function BotSettingsScreen() {
     setVoiceError(t("Could not load voices"));
   }
 
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      void loadDeviceVoiceEnabled()
+        .then((enabled) => {
+          if (current) setDeviceVoiceEnabled(enabled);
+        })
+        .catch(() => {
+          if (current) setDeviceVoiceEnabled(false);
+        });
+      return () => {
+        current = false;
+      };
+    }, []),
+  );
+
   useEffect(() => {
-    if (!botId) return;
+    if (!botId || !deviceVoiceEnabled) return;
     let current = true;
     void Promise.all([deviceVoices(), voiceForBot(botId)])
       .then(([available, assigned]) => {
@@ -206,7 +219,7 @@ export default function BotSettingsScreen() {
     return () => {
       current = false;
     };
-  }, [botId]);
+  }, [botId, deviceVoiceEnabled, t]);
 
   async function chooseVoice(voice: Voice) {
     if (!botId) return;
@@ -235,7 +248,6 @@ export default function BotSettingsScreen() {
     }
   }
 
-  // No assignment means the engine default speaks, so say that rather than naming a voice.
   const currentVoice = voices.find((voice) => voice.identifier === voiceId);
   const currentVoiceLabel = currentVoice ? voiceLabel(currentVoice) : t("Default");
 
@@ -267,32 +279,6 @@ export default function BotSettingsScreen() {
     } catch {
       failVoices();
     }
-  }
-
-  function openModelPicker() {
-    presentMessageActionSheet({
-      title: t("Model"),
-      actions: modelChoices.map((choice) => ({
-        text: choice.label,
-        onPress: () => selectModel(choice.key),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
-  }
-
-  function openThinkingPicker() {
-    presentMessageActionSheet({
-      title: t("Thinking"),
-      actions: thinkingChoices.map((choice) => ({
-        text: choice.label,
-        onPress: () => setThinkingLevel(choice.key),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
   }
 
   async function save() {
@@ -450,17 +436,8 @@ export default function BotSettingsScreen() {
           ))}
         </ScrollView>
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        <View
-          style={{
-            marginTop: 20,
-            minHeight: 44,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <Text style={{ color: tokens.mutedForeground, fontSize: 14, flex: 1 }}>
+        <View style={[styles.row, { marginTop: 20 }]}>
+          <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
             {t("Read replies aloud")}
           </Text>
           <NativeSwitch
@@ -469,44 +446,22 @@ export default function BotSettingsScreen() {
             value={autoSpeak}
           />
         </View>
-        {voices.length === 1 && !voiceError ? (
-          <View
-            style={{
-              minHeight: 44,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
-            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
-            <Text
-              style={{ color: tokens.foreground, fontSize: 14, flexShrink: 1, textAlign: "right" }}
-            >
-              {currentVoiceLabel}
-            </Text>
-          </View>
-        ) : voices.length > 1 || voiceError ? (
+        {deviceVoiceEnabled ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={t("Device voice")}
+            disabled={!voiceError && voices.length <= 1}
             onPress={() => void openDeviceVoice()}
-            style={{
-              minHeight: 44,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
+            style={styles.row}
           >
-            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Device voice")}</Text>
+            <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
+              {t("Device voice")}
+            </Text>
             <Text
-              style={{
-                color: voiceError ? tokens.destructive : tokens.foreground,
-                fontSize: 14,
-                flexShrink: 1,
-                textAlign: "right",
-              }}
+              style={[
+                styles.rowValue,
+                { color: voiceError ? tokens.destructive : tokens.foreground },
+              ]}
             >
               {voiceError ?? currentVoiceLabel}
             </Text>
@@ -591,3 +546,15 @@ function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string
   if (level === "max") return t("Max");
   return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
 }
+
+const styles = StyleSheet.create({
+  row: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  rowLabel: { fontSize: 14, flex: 1 },
+  rowValue: { fontSize: 14, flexShrink: 1, textAlign: "right" },
+});

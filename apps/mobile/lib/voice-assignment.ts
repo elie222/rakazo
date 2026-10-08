@@ -1,7 +1,4 @@
-/**
- * A voice for a bot that no other bot has, starting from a spot set by the bot's id so the
- * same bot tends to land on the same voice. When every voice is taken, bots share.
- */
+// Start at a stable bot-specific offset; share only when every voice is taken.
 export function pickUnusedVoice(
   voices: readonly string[],
   taken: ReadonlySet<string>,

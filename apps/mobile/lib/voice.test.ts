@@ -19,6 +19,8 @@ import {
   VOICE_RESPONSE_TIMEOUT_MS,
 } from "./voice";
 
+vi.mock("expo-localization", () => ({ getLocales: () => [{ languageTag: "en-US" }] }));
+
 vi.mock("./ai-consent", () => ({ promptAiConsent: vi.fn() }));
 vi.mock("expo-file-system", () => ({
   File: class {

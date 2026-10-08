@@ -1,9 +1,12 @@
 import { File, Paths } from "expo-file-system";
+import { getLocales } from "expo-localization";
+import type * as ExpoSpeech from "expo-speech";
 import type { Voice } from "expo-speech";
+import { Platform } from "react-native";
 import { getActiveUiLocale } from "./i18n";
 import { pickUnusedVoice } from "./voice-assignment";
 
-/** Which on-device voice each bot speaks with. Lives on this phone only, like the voice itself. */
+// Assignments stay on this device.
 function assignmentsFile(): File {
   return new File(Paths.document, "rakazo-bot-voices.json");
 }
@@ -25,10 +28,7 @@ function saveAssignments(assignments: Record<string, string>): void {
   file.write(JSON.stringify(assignments));
 }
 
-/**
- * Every read-change-write of the assignments runs after the previous one, so two bots
- * speaking at once never both take the same free voice or drop each other's entry.
- */
+// Serialize assignment updates so concurrent bots keep distinct voices.
 let assignmentQueue: Promise<unknown> = Promise.resolve();
 function serialized<T>(work: () => Promise<T>): Promise<T> {
   const run = assignmentQueue.then(work, work);
@@ -36,7 +36,7 @@ function serialized<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
-let speechModule: Promise<typeof import("expo-speech")> | undefined;
+let speechModule: Promise<typeof ExpoSpeech> | undefined;
 function loadSpeech() {
   speechModule ??= import("expo-speech").catch((error: unknown) => {
     speechModule = undefined;
@@ -47,21 +47,12 @@ function loadSpeech() {
 
 type ListedVoice = Voice & { localService?: boolean; requiresNetwork?: boolean };
 
-/**
- * Network voices upload the text they speak. Android marks that with
- * `requiresNetwork` (see the expo-speech patch); the web engine uses `localService`;
- * older engines only encode it in the id. Any one of those keeps the voice off the list.
- */
 function isNetworkVoice(voice: ListedVoice): boolean {
   if (voice.requiresNetwork === true) return true;
   if (voice.localService === false) return true;
   return /network/i.test(voice.identifier) || /network/i.test(voice.name ?? "");
 }
 
-/**
- * iOS novelty voices (Bubbles, Zarvox, and the rest of that set). A person can still
- * pick one; auto-assignment never does.
- */
 const NOVELTY_VOICE_NAMES = new Set([
   "albert",
   "badnews",
@@ -92,25 +83,23 @@ function noveltyKey(voice: { identifier: string; name?: string }): string {
   return leaf.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-export function isNoveltyVoice(voice: { identifier: string; name?: string }): boolean {
+function isNoveltyVoice(voice: { identifier: string; name?: string }): boolean {
   return NOVELTY_VOICE_NAMES.has(noveltyKey(voice));
 }
 
-/**
- * The engine's offline voices in the app's language. Network voices are removed first and
- * nothing puts them back; with no offline voice in that language the list is empty, so the
- * engine default speaks rather than a voice for another language.
- */
 export async function deviceVoices(): Promise<Voice[]> {
   const Speech = await loadSpeech();
-  const offline = ((await Speech.getAvailableVoicesAsync()) as ListedVoice[]).filter(
-    (voice) => !isNetworkVoice(voice),
-  );
-  const language = getActiveUiLocale().split("-")[0]?.toLowerCase() ?? "en";
-  const sameLanguage = offline.filter((voice) =>
-    voice.language?.toLowerCase().startsWith(language),
-  );
-  return sameLanguage.sort((a, b) => a.identifier.localeCompare(b.identifier));
+  const locale = getLocales()[0]?.languageTag ?? getActiveUiLocale();
+  const language = locale.split("-")[0]?.toLowerCase() ?? "en";
+  return ((await Speech.getAvailableVoicesAsync()) as ListedVoice[])
+    .filter(
+      (voice) =>
+        !isNetworkVoice(voice) &&
+        (Platform.OS !== "android" || /-local$/i.test(voice.identifier)) &&
+        !isNoveltyVoice(voice) &&
+        voice.language?.toLowerCase().split("-")[0] === language,
+    )
+    .sort((a, b) => a.identifier.localeCompare(b.identifier));
 }
 
 /** "en-us-x-iol-local" reads as "en-US · iol": the engine's names are ids, not labels. */
@@ -129,14 +118,21 @@ export function voiceForBot(botId: string): Promise<string | undefined> {
     const assignments = await loadAssignments();
     const current = assignments[botId];
     if (current && voices.includes(current)) return current;
-    const assignable = available
-      .filter((voice) => !isNoveltyVoice(voice))
-      .map((voice) => voice.identifier);
-    if (assignable.length === 0) return undefined;
     const taken = new Set(
       Object.entries(assignments)
         .filter(([id]) => id !== botId)
         .map(([, voice]) => voice),
+    );
+    const locale = getLocales()[0]?.languageTag.toLowerCase();
+    const sameLocale = available.filter((voice) => voice.language.toLowerCase() === locale);
+    const candidates = sameLocale.length ? sameLocale : available;
+    const unused = candidates.filter((voice) => !taken.has(voice.identifier));
+    const pool = unused.length ? unused : candidates;
+    const higherQuality = pool.filter(
+      (voice) => voice.quality === "Enhanced" || (voice.quality as string) === "Premium",
+    );
+    const assignable = (higherQuality.length ? higherQuality : pool).map(
+      (voice) => voice.identifier,
     );
     const picked = pickUnusedVoice(assignable, taken, botId);
     saveAssignments({ ...assignments, [botId]: picked });

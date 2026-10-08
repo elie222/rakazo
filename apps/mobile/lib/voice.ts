@@ -334,9 +334,7 @@ async function loadExpoSpeech(): Promise<typeof ExpoSpeech> {
 
 function speakOneUtterance(Speech: typeof ExpoSpeech, text: string, voice?: string): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    // No language override: forcing the UI locale mispronounces replies written in
-    // another language. A bot's voice is always an offline one (see deviceVoices), since
-    // Android's "network" voices upload the text.
+    // Only offline voices are assigned; without one, use the engine default.
     Speech.speak(text, {
       ...(voice ? { voice } : {}),
       onDone: () => resolve(),

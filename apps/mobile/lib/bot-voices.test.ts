@@ -6,10 +6,21 @@ const voices = vi.hoisted(() => ({
     identifier: string;
     language: string;
     name?: string;
+    quality?: string;
     localService?: boolean;
     requiresNetwork?: boolean;
   }>,
 }));
+
+const device = vi.hoisted(() => ({ platform: "ios", locale: "en-US" }));
+vi.mock("react-native", () => ({
+  Platform: {
+    get OS() {
+      return device.platform;
+    },
+  },
+}));
+vi.mock("expo-localization", () => ({ getLocales: () => [{ languageTag: device.locale }] }));
 
 const ASSIGNMENTS = "doc/rakazo-bot-voices.json";
 
@@ -45,9 +56,43 @@ const { deviceVoices, setVoiceForBot, voiceForBot } = await import("./bot-voices
 
 beforeEach(() => {
   files.clear();
+  voices.list = [];
+  device.platform = "ios";
+  device.locale = "en-US";
 });
 
 describe("deviceVoices", () => {
+  it("only offers explicitly local Android voices", async () => {
+    device.platform = "android";
+    voices.list = [
+      { identifier: "en-US-language", language: "en-US" },
+      { identifier: "en-us-x-iob-network", language: "en-US" },
+      { identifier: "en-us-x-iob-local", language: "en-US" },
+      { identifier: "remote-local", language: "en-US", localService: false },
+      { identifier: "requires-local", language: "en-US", requiresNetwork: true },
+      { identifier: "network-local", language: "en-US" },
+      { identifier: "named-local", name: "Network voice", language: "en-US" },
+    ];
+    expect((await deviceVoices()).map((voice) => voice.identifier)).toEqual(["en-us-x-iob-local"]);
+  });
+
+  it("excludes novelty names and identifiers from the picker", async () => {
+    voices.list = ["Bubbles", "Zarvox", "Bad News", "Bells", "Albert", "Junior", "Ralph"].map(
+      (name) => ({ identifier: `com.apple.voice.${name}`, language: "en-US" }),
+    );
+    expect(await deviceVoices()).toEqual([]);
+  });
+
+  it("uses the device language even when the UI language differs", async () => {
+    device.locale = "de-DE";
+    voices.list = [
+      { identifier: "english", language: "en-US" },
+      { identifier: "german", language: "de-DE" },
+    ];
+    expect((await deviceVoices()).map((voice) => voice.identifier)).toEqual(["german"]);
+    expect(await voiceForBot("bot-a")).toBe("german");
+  });
+
   it("offers neither a network voice nor a voice for another language", async () => {
     voices.list = [
       { identifier: "en-us-x-iob-network", language: "en-US" },
@@ -84,6 +129,45 @@ describe("deviceVoices", () => {
 });
 
 describe("voiceForBot", () => {
+  it("prefers the full device locale over a different accent and higher quality", async () => {
+    device.locale = "en-GB";
+    voices.list = [
+      { identifier: "us", language: "en-US", quality: "Enhanced" },
+      { identifier: "gb", language: "en-GB", quality: "Default" },
+    ];
+    expect(await voiceForBot("bot-a")).toBe("gb");
+    expect(await voiceForBot("bot-b")).toBe("gb");
+    expect(await deviceVoices()).toHaveLength(2);
+  });
+
+  it("falls back to another region of the same language", async () => {
+    device.locale = "en-AU";
+    voices.list = [{ identifier: "gb", language: "en-GB" }];
+    expect(await voiceForBot("bot-a")).toBe("gb");
+  });
+
+  it.each(["Enhanced", "Premium"])(
+    "prefers %s quality but preserves unused voices",
+    async (quality) => {
+      voices.list = [
+        { identifier: "default", language: "en-US", quality: "Default" },
+        { identifier: "better", language: "en-US", quality },
+      ];
+      expect(await voiceForBot("bot-a")).toBe("better");
+      expect(await voiceForBot("bot-b")).toBe("default");
+      expect(await voiceForBot("bot-c")).toBe("better");
+    },
+  );
+
+  it("keeps a saved normal voice even if its region or quality differs", async () => {
+    voices.list = [
+      { identifier: "gb", language: "en-GB", quality: "Default" },
+      { identifier: "us", language: "en-US", quality: "Enhanced" },
+    ];
+    await setVoiceForBot("bot-a", "gb");
+    expect(await voiceForBot("bot-a")).toBe("gb");
+  });
+
   it("gives bots asking at the same time different voices and keeps both", async () => {
     voices.list = [
       { identifier: "en-us-x-iob-local", language: "en-US" },
@@ -121,11 +205,7 @@ describe("voiceForBot", () => {
     ];
     expect(await voiceForBot("bot-a")).toBe("com.apple.voice.compact.en-US.Samantha");
     expect(await voiceForBot("bot-b")).toBe("com.apple.voice.compact.en-US.Samantha");
-    expect((await deviceVoices()).map((voice) => voice.name)).toEqual([
-      "Bubbles",
-      "Zarvox",
-      "Samantha",
-    ]);
+    expect((await deviceVoices()).map((voice) => voice.name)).toEqual(["Samantha"]);
   });
 
   it("leaves the choice unset when the only offline voices are novelty voices", async () => {
@@ -145,13 +225,13 @@ describe("voiceForBot", () => {
     expect(files.has(ASSIGNMENTS)).toBe(false);
   });
 
-  it("keeps a novelty voice someone picked on purpose", async () => {
+  it("replaces a saved novelty voice with a normal voice", async () => {
     const bubbles = "com.apple.speech.synthesis.voice.Bubbles";
     voices.list = [
       { identifier: bubbles, name: "Bubbles", language: "en-US" },
       { identifier: "com.apple.voice.compact.en-US.Samantha", name: "Samantha", language: "en-US" },
     ];
     await setVoiceForBot("bot-a", bubbles);
-    expect(await voiceForBot("bot-a")).toBe(bubbles);
+    expect(await voiceForBot("bot-a")).toBe("com.apple.voice.compact.en-US.Samantha");
   });
 });
