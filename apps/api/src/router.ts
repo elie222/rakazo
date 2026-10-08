@@ -3351,9 +3351,20 @@ export function createRouter(deps: RouterDeps) {
               ? (armedOneShotAt ?? existing.nextRunAt)
               : (recalculatedNextRunAt ?? existing.nextRunAt);
         // Re-check the parent in the write itself so an archive that lands after the read wins.
+        // Model patches must also match the snapshot used to resolve omitted model fields.
         const row = await deps.prisma.routine
           .update({
-            where: { id: existing.id, bot: { archivedAt: null } },
+            where: {
+              id: existing.id,
+              bot: { archivedAt: null },
+              ...(touchesModel
+                ? {
+                    modelProvider: existing.modelProvider,
+                    modelId: existing.modelId,
+                    thinkingLevel: existing.thinkingLevel,
+                  }
+                : {}),
+            },
             data: {
               name: input.name,
               prompt: input.prompt,
@@ -3368,8 +3379,24 @@ export function createRouter(deps: RouterDeps) {
               nextRunAt,
             },
           })
-          .catch((error: unknown) => {
-            if (isRecordNotFound(error)) throw new ORPCError("NOT_FOUND");
+          .catch(async (error: unknown) => {
+            if (isRecordNotFound(error)) {
+              if (
+                touchesModel &&
+                (await deps.prisma.routine.findFirst({
+                  where: {
+                    id: existing.id,
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                    bot: { archivedAt: null },
+                  },
+                  select: { id: true },
+                }))
+              ) {
+                throw new ORPCError("CONFLICT", { message: "Routine model changed; retry." });
+              }
+              throw new ORPCError("NOT_FOUND");
+            }
             throw error;
           });
         if (bot.thread) {

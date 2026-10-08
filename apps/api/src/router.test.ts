@@ -3386,13 +3386,17 @@ describe("routines.update", () => {
     model: Record<string, unknown> = {},
   ) {
     const savedRoutine = { ...routine, ...model };
-    const update = vi.fn(async (args: { data: Record<string, unknown> }) => {
-      if (archivedBeforeWrite) throw Object.assign(new Error("not found"), { code: "P2025" });
-      return {
-        ...savedRoutine,
-        ...Object.fromEntries(Object.entries(args.data).filter(([, value]) => value !== undefined)),
-      };
-    });
+    const update = vi.fn(
+      async (args: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+        if (archivedBeforeWrite) throw Object.assign(new Error("not found"), { code: "P2025" });
+        return {
+          ...savedRoutine,
+          ...Object.fromEntries(
+            Object.entries(args.data).filter(([, value]) => value !== undefined),
+          ),
+        };
+      },
+    );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
       spaceModelPreference: {
@@ -3445,7 +3449,7 @@ describe("routines.update", () => {
         }),
         { prefix: "/rpc", context: { actor } },
       );
-    return { update, enqueue, call };
+    return { update, enqueue, call, findFirst: prisma.routine.findFirst };
   }
 
   it("refuses to re-arm a routine on an archived bot without writing", async () => {
@@ -3485,9 +3489,35 @@ describe("routines.update", () => {
   it("leaves model columns out of unrelated updates", async () => {
     const { call, update } = fixture(false, false, ownModel);
     expect((await call({ name: "Renamed" })).response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "routine-1", bot: { archivedAt: null } } }),
+    );
     const data = update.mock.calls[0]![0].data;
     for (const column of ["modelProvider", "modelId", "thinkingLevel"])
       expect(data).not.toHaveProperty(column);
+  });
+
+  it.each(["modelProvider", "modelId", "thinkingLevel"])(
+    "rejects a partial model patch when %s changes before the write",
+    async (column) => {
+      const { call, update, enqueue } = fixture(false, false, ownModel);
+      update.mockImplementationOnce(async (args) => {
+        const current: Record<string, unknown> = { ...ownModel, [column]: "concurrent-choice" };
+        expect(args.where).toMatchObject(ownModel);
+        if (args.where[column] !== current[column]) {
+          throw Object.assign(new Error("not found"), { code: "P2025" });
+        }
+        throw new Error("Concurrent model change was not guarded");
+      });
+      expect((await call({ thinkingLevel: "low" })).response.status).toBe(409);
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("returns not found if a model update races with a parent archive", async () => {
+    const { call, findFirst } = fixture(false, true, ownModel);
+    findFirst.mockResolvedValueOnce({ ...routine, ...ownModel }).mockResolvedValueOnce(null);
+    expect((await call({ thinkingLevel: "low" })).response.status).toBe(404);
   });
 
   it("merges a model-id-only patch with the saved provider and clears old thinking", async () => {
