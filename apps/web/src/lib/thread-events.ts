@@ -7,6 +7,7 @@ import type {
   ThreadMessagePage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
+import { ReplyPreviewSchema } from "@rakazo/contracts";
 import {
   isActive,
   isRunTerminalEvent,
@@ -482,6 +483,7 @@ export function reduceThreadSnapshot(
     const blocks = (event.payload.blocks as ThreadMessage["blocks"]) ?? [];
     const id = String(event.payload.messageId ?? event.id);
     const known = prev.messages.find((message) => message.id === id);
+    const preview = ReplyPreviewSchema.nullable().safeParse(event.payload.replyPreview);
     const next: ThreadMessage = {
       id,
       threadId: event.threadId,
@@ -494,10 +496,11 @@ export function reduceThreadSnapshot(
       replyToMessageId:
         typeof event.payload.replyToMessageId === "string"
           ? event.payload.replyToMessageId
-          : undefined,
+          : known?.replyToMessageId,
       replyQuote:
-        typeof event.payload.replyQuote === "string" ? event.payload.replyQuote : undefined,
-      createdAt: event.createdAt,
+        typeof event.payload.replyQuote === "string" ? event.payload.replyQuote : known?.replyQuote,
+      replyPreview: preview.success ? preview.data : known?.replyPreview,
+      createdAt: known?.createdAt ?? event.createdAt,
     };
     const replacedSubagentIds = new Set(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),

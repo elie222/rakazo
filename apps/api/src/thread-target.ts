@@ -7,6 +7,7 @@ import type {
   GroupMember,
   MessageBlock,
   MessageReaction,
+  ReplyPreview,
   RunStatus,
   ThreadSnapshot,
 } from "@rakazo/contracts";
@@ -20,7 +21,7 @@ import {
   resolveGroupTargetBotIds,
   runFailureError,
 } from "@rakazo/core";
-import { deriveMessageQuote } from "@rakazo/core/message-quote";
+import { deriveMessageQuote, messageReplyExcerpt } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   answerWaitingRunWithTextInTransaction,
@@ -628,15 +629,26 @@ export async function sendThreadMessage(
     deps.prisma.$transaction(async (tx) => {
       let replyToMessageId: string | undefined;
       let replyQuote: string | undefined;
+      let replyPreview: ReplyPreview | undefined;
       if (input.replyToMessageId) {
         const reply = await tx.message.findFirst({
           where: { id: input.replyToMessageId, threadId: target.threadId },
-          select: { id: true, blocks: true, role: true },
+          select: { id: true, blocks: true, role: true, botId: true },
         });
         // A deleted or paged-out parent must not lose the send: drop to a
         // plain reply, same as quote verification failing below.
         if (reply) {
           replyToMessageId = input.replyToMessageId;
+          const parsed = MessageBlockSchema.array().safeParse(reply.blocks);
+          if (parsed.success) {
+            const text = messageReplyExcerpt(parsed.data, reply.role);
+            replyPreview = {
+              role: reply.role as ReplyPreview["role"],
+              botId: reply.botId ?? undefined,
+              text,
+            };
+            if (!requestedReplyQuote) replyQuote = text;
+          }
           // Persist only text derived from the authoritative parent. A
           // mismatch or a derivation failure still sends a plain reply so
           // quote verification cannot lose a message.
@@ -728,6 +740,7 @@ export async function sendThreadMessage(
               runIds: answered.map((run) => run.id),
               replyToMessageId,
               replyQuote,
+              replyPreview,
             },
           });
           return { message, runs: answered, eventSeq: event.seq };
@@ -765,6 +778,7 @@ export async function sendThreadMessage(
               callId,
               replyToMessageId,
               replyQuote,
+              replyPreview,
             },
           });
           return { message, runs: [active], eventSeq: event.seq };
@@ -812,6 +826,7 @@ export async function sendThreadMessage(
             runIds: [run.id],
             replyToMessageId,
             replyQuote,
+            replyPreview,
           },
         });
         return { message, runs: [run], eventSeq: event.seq };
@@ -972,6 +987,7 @@ export async function sendThreadMessage(
           runIds: runs.map((run) => run.id),
           replyToMessageId,
           replyQuote,
+          replyPreview,
         },
       });
       return { message, runs, eventSeq: event.seq };

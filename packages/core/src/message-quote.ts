@@ -118,3 +118,24 @@ export function deriveMessageQuote(
   }
   return undefined;
 }
+
+/** A compact server-owned preview of the first visible text line. */
+export function messageReplyExcerpt(blocks: MessageBlock[], role: string): string {
+  for (const block of blocks) {
+    if (block.kind !== "text") continue;
+    const source = block.text.slice(0, MAX_QUOTABLE_SOURCE_LENGTH);
+    const visible = role === "user" ? source : visibleTextFromMarkdown(source);
+    const first = visible
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .find(Boolean);
+    if (first) {
+      const excerpt = first.slice(0, 280);
+      return /[\uD800-\uDBFF]$/u.test(excerpt) ? excerpt.slice(0, -1) : excerpt;
+    }
+  }
+  const attachment = blocks.find((block) => block.kind === "image" || block.kind === "file");
+  return attachment?.kind === "image" || attachment?.kind === "file"
+    ? truncateReplyQuote(attachment.name)
+    : "";
+}

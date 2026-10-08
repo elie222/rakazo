@@ -2234,7 +2234,7 @@ describe("sendThreadMessage", () => {
     expect(result).toMatchObject({ runId: "run-1", taskId: "task-1" });
     expect(tx.message.findFirst).toHaveBeenCalledWith({
       where: { id: "parent", threadId: "thread-1" },
-      select: { id: true, blocks: true, role: true },
+      select: { id: true, blocks: true, role: true, botId: true },
     });
     expect(tx.message.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

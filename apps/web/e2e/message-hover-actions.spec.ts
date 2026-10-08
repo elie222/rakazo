@@ -205,9 +205,11 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   expect(rowBox).not.toBeNull();
   expect(Math.abs(timeBox!.x - rowBox!.x)).toBeLessThan(2);
   await toolbar.getByRole("button", { name: "More" }).click();
+  await expect(page.getByRole("menu")).toBeVisible();
   await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
   // Escape closes More and restores focus to the trigger so the rail stays up.
   await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(toolbar.getByRole("button", { name: "More" })).toBeFocused();
   await captureScreenshot(page, testInfo, "message-user-actions-hover-desktop");
   // Default transcript shot: rail at rest (no hover pin, mouse clear).
@@ -271,7 +273,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   await toolbar.getByRole("button", { name: "Reply" }).click();
   const replyChip = page.getByTestId("reply-chip");
   await expect(replyChip).toBeVisible();
-  await expect(replyChip).toContainText(/Replying to/);
+  await expect(replyChip).toContainText(parentText);
 
   await sendComposerMessage(page, composer, replyText);
   await expect(replyChip).toHaveCount(0);
@@ -281,6 +283,7 @@ test("message hover shows beside-bubble actions; reply links to parent", async (
   const parentPreview = replyRow.getByTestId("reply-parent-preview");
   await expect(parentPreview).toBeVisible();
   await expect(parentPreview).toContainText(parentText);
+  await expect(transcript.getByTestId("time-separator").first()).toContainText(/Today/);
   await captureScreenshot(page, testInfo, "message-reply-thread");
 
   await parentPreview.click();
@@ -370,7 +373,7 @@ test("reply preview jumps to parent outside the loaded page", async ({ page }) =
     .filter({ hasText: replyText })
     .getByTestId("reply-parent-preview");
   await expect(offlinePreview).toBeVisible();
-  await expect(offlinePreview).toHaveText("Earlier message");
+  await expect(offlinePreview).toContainText(parentText);
 
   await page.unroute(hydrateRpc, stripHydrate);
   await offlinePreview.click();
@@ -531,6 +534,7 @@ test.describe("touch message actions", () => {
     // A date uses this same label. Under the actions it cannot cover the bubble.
     expect(timeBox!.y).toBeGreaterThanOrEqual(openBubbleBox!.y + openBubbleBox!.height - 1);
     expect(timeBox!.y).toBeGreaterThanOrEqual(openRailBox!.y + openRailBox!.height - 1);
+    await expect(page.getByRole("menu")).toBeVisible();
     await expect(page.getByRole("menu").locator("time")).toHaveCount(0);
     await captureScreenshot(page, testInfo, "message-actions-touch-menu");
     await page.keyboard.press("Escape");

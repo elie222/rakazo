@@ -10,6 +10,7 @@ import type {
   MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
+  ReplyPreview,
   Space,
   SpaceNavigation,
 } from "@rakazo/contracts";
@@ -18,6 +19,7 @@ import {
   authCapabilitiesSchema,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
+  ReplyPreviewSchema,
 } from "@rakazo/contracts";
 import type { ThreadHistory } from "@rakazo/core";
 import {
@@ -895,6 +897,7 @@ export type MobileMessage = {
   botId?: string;
   replyToMessageId?: string;
   replyQuote?: string;
+  replyPreview?: ReplyPreview | null;
   createdAt?: string;
   blocks: MessageBlock[];
 };
@@ -1055,6 +1058,7 @@ export function blockText(message: MobileMessage) {
 
 type ThreadEvent = {
   id?: string;
+  createdAt?: string;
   botId?: string;
   type: string;
   seq?: number;
@@ -1292,8 +1296,11 @@ export function applyMobileThreadEvent(
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
+    const known = prev.messages.find((message) => message.id === id);
+    const preview = ReplyPreviewSchema.nullable().safeParse(event.payload?.replyPreview);
     const next: MobileMessage = {
       id,
+      createdAt: known?.createdAt ?? event.createdAt,
       runId: event.runId ? String(event.runId) : undefined,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
       // An update can leave the call id out — the `end_call` marker does — so keep the one
@@ -1306,8 +1313,12 @@ export function applyMobileThreadEvent(
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
       replyToMessageId: event.payload?.replyToMessageId
         ? String(event.payload.replyToMessageId)
-        : undefined,
-      replyQuote: event.payload?.replyQuote ? String(event.payload.replyQuote) : undefined,
+        : known?.replyToMessageId,
+      replyQuote:
+        typeof event.payload?.replyQuote === "string"
+          ? event.payload.replyQuote
+          : known?.replyQuote,
+      replyPreview: preview.success ? preview.data : known?.replyPreview,
     };
     return {
       ...prev,

@@ -31,12 +31,13 @@ export function loadRunHistoryMessages(
       threadId: true,
       seq: true,
       role: true,
+      botId: true,
       runId: true,
       blocks: true,
       createdAt: true,
       replyToMessageId: true,
       replyQuote: true,
-      replyTo: { select: { id: true, threadId: true, role: true, blocks: true } },
+      replyTo: { select: { id: true, threadId: true, role: true, botId: true, blocks: true } },
     },
   });
 }

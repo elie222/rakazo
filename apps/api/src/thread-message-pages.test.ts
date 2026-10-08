@@ -452,6 +452,7 @@ describe("thread message pages", () => {
     const page = await loadMessagePage(prisma, "thread-1", 6, 2);
 
     expect(findMany).toHaveBeenCalledWith({
+      include: { replyTo: true },
       where: { threadId: "thread-1", seq: { lt: 6 } },
       orderBy: { seq: "desc" },
       take: 3,
@@ -525,6 +526,7 @@ describe("thread message pages", () => {
     expect(page.olderCursor).toBe(3);
     expect(page.coveredThroughSeq).toBe(7);
     expect(findMany).toHaveBeenCalledWith({
+      include: { replyTo: true },
       where: { threadId: "thread-1", seq: { gte: 3, lte: 7 } },
       orderBy: { seq: "asc" },
       take: 4,
@@ -588,5 +590,85 @@ describe("thread message pages", () => {
     const page = await loadMessagePage(prisma, "thread-1", undefined, 2);
 
     expect(page.messages.map((message) => message.callId)).toEqual([undefined, "call-1"]);
+  });
+});
+
+describe("authoritative reply previews", () => {
+  it("serializes a parent outside the loaded page and marks deleted parents unavailable", async () => {
+    const base = {
+      threadId: "thread-1",
+      role: "user",
+      botId: null,
+      runId: null,
+      createdAt: new Date(),
+      blocks: [{ kind: "text", text: "My reply" }],
+    };
+    const parent = {
+      threadId: "thread-1",
+      role: "bot",
+      botId: "bot-1",
+      blocks: [{ kind: "text", text: "**First** line\n\nSecond line" }],
+    };
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        ...base,
+        id: "reply-2",
+        seq: 2,
+        replyToMessageId: null,
+        replyQuote: "First line",
+        replyTo: null,
+      },
+      {
+        ...base,
+        id: "reply-1",
+        seq: 1,
+        replyToMessageId: "older-parent",
+        replyQuote: null,
+        replyTo: parent,
+      },
+    ]);
+    const page = await loadMessagePage(
+      { message: { findMany } } as unknown as PrismaClient,
+      "thread-1",
+      undefined,
+      100,
+    );
+    expect(page.messages[0]?.replyPreview).toEqual({
+      role: "bot",
+      botId: "bot-1",
+      text: "First line",
+    });
+    expect(page.messages[1]?.replyPreview).toBeNull();
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { threadId: "thread-1" }, include: { replyTo: true } }),
+    );
+  });
+  it("does not expose a parent from another thread", async () => {
+    const row = {
+      id: "reply",
+      threadId: "thread-1",
+      seq: 1,
+      role: "user",
+      blocks: [],
+      botId: null,
+      runId: null,
+      createdAt: new Date(),
+      replyToMessageId: "foreign",
+      replyQuote: null,
+      replyTo: {
+        threadId: "other",
+        role: "bot",
+        botId: "other-bot",
+        blocks: [{ kind: "text", text: "Private text" }],
+      },
+    };
+    const page = await loadMessagePage(
+      { message: { findMany: vi.fn().mockResolvedValue([row]) } } as unknown as PrismaClient,
+      "thread-1",
+      undefined,
+      100,
+    );
+    expect(page.messages[0]?.replyPreview).toBeNull();
+    expect(JSON.stringify(page)).not.toContain("Private text");
   });
 });

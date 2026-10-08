@@ -1,5 +1,6 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
 import { callIdFromClientNonce, isPeerReceiptBlocks } from "@rakazo/core";
+import { messageReplyExcerpt } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
@@ -30,6 +31,7 @@ export async function loadMessagePage(
         where: { threadId, seq: { gte: minSeq, lte: maxSeq } },
         orderBy: { seq: "asc" },
         take: pageSize,
+        include: { replyTo: true },
       });
       const truncated = rows.length >= pageSize;
       const coveredThroughSeq = truncated ? (rows[rows.length - 1]?.seq ?? maxSeq) : maxSeq;
@@ -59,6 +61,7 @@ export async function loadMessagePage(
       },
       orderBy: { seq: "desc" },
       take: pageSize + 1,
+      include: { replyTo: true },
     });
     const hasOlder = rows.length > pageSize;
     const pageRows = rows.slice(0, pageSize).reverse();
@@ -179,6 +182,12 @@ function toThreadMessage(row: {
   botId: string | null;
   replyToMessageId: string | null;
   replyQuote: string | null;
+  replyTo?: {
+    threadId: string;
+    role: string;
+    botId: string | null;
+    blocks: Prisma.JsonValue;
+  } | null;
   runId: string | null;
   clientNonce?: string | null;
   createdAt: Date;
@@ -192,6 +201,16 @@ function toThreadMessage(row: {
     botId: row.botId ?? undefined,
     replyToMessageId: row.replyToMessageId ?? undefined,
     replyQuote: row.replyQuote ?? undefined,
+    replyPreview:
+      row.replyTo?.threadId === row.threadId
+        ? {
+            role: row.replyTo.role as ThreadMessage["role"],
+            botId: row.replyTo.botId ?? undefined,
+            text: messageReplyExcerpt(row.replyTo.blocks as MessageBlock[], row.replyTo.role),
+          }
+        : row.replyToMessageId || row.replyQuote != null
+          ? null
+          : undefined,
     runId: row.runId ?? undefined,
     callId: callIdFromClientNonce(row.clientNonce),
     createdAt: row.createdAt.toISOString(),

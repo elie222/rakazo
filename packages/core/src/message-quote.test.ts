@@ -1,7 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { deriveMessageQuote, visibleTextFromMarkdown } from "./message-quote.js";
+import {
+  deriveMessageQuote,
+  messageReplyExcerpt,
+  visibleTextFromMarkdown,
+} from "./message-quote.js";
 
 const textBlock = (text: string): MessageBlock[] => [{ kind: "text", text }];
 
@@ -142,5 +146,24 @@ describe("deriveMessageQuote", () => {
     const parent = "a".repeat(REPLY_QUOTE_MAX_LENGTH - 1);
     const quote = deriveMessageQuote(textBlock(parent), `${parent}😀`, "markdown");
     expect(quote).toBe(parent);
+  });
+});
+
+describe("messageReplyExcerpt", () => {
+  it("uses the first visible line and strips bot Markdown", () => {
+    expect(messageReplyExcerpt(textBlock("\n## **First** line\n\nSecond line"), "bot")).toBe(
+      "First line",
+    );
+    expect(messageReplyExcerpt(textBlock("**literal**\nSecond line"), "user")).toBe("**literal**");
+  });
+  it("bounds the preview and handles messages without text", () => {
+    expect(messageReplyExcerpt(textBlock("a".repeat(1000)), "bot")).toHaveLength(280);
+    expect(messageReplyExcerpt([], "user")).toBe("");
+    expect(
+      messageReplyExcerpt(
+        [{ kind: "image", artifactId: "image", mimeType: "image/png", name: "example.png" }],
+        "user",
+      ),
+    ).toBe("example.png");
   });
 });
