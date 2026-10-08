@@ -17,8 +17,15 @@ describe("findSwitchTarget", () => {
     "Can you put me through to Max?",
     "OK, switch me over to Max!",
     "connect me with Max",
+    "swap to Max",
+    "transfer to Max",
+    "take me to Max",
   ])("finds Max in %j", (text) => {
     expect(findSwitchTarget(text, bots)?.id).toBe("bot-2");
+  });
+
+  it.each(["go with Max", "go to Max", "change to Max"])("leaves %j as a message", (text) => {
+    expect(findSwitchTarget(text, bots)).toBeUndefined();
   });
 
   it("matches a full multi-word name and a unique first name", () => {

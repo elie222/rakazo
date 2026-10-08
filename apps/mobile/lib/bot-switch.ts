@@ -1,10 +1,6 @@
-/**
- * "Switch to Max", "please put me through to Max", "can you swap me over to Max?":
- * the caller wants another bot, not a message for this one. Polite openers and trailing
- * punctuation are allowed; anything else around the request means it is a normal message.
- */
+/** Match standalone switching requests, allowing polite openers and punctuation. */
 const SWITCH_REQUEST =
-  /^(?:(?:please|hey|ok|okay|so|can you|could you|would you)[\s,]+)*(?:switch|swap|change|transfer|go|put me through|connect me|take me)(?:\s+(?:me|us|over|back|the chat|this chat))*\s+(?:to|with)\s+(.+?)(?:[\s,]+please)?[\s.!?]*$/i;
+  /^(?:(?:please|hey|ok|okay|so|can you|could you|would you)[\s,]+)*(?:switch|swap|transfer|put me through|connect me|take me)(?:\s+(?:me|us|over|back|the chat|this chat))*\s+(?:to|with)\s+(.+?)(?:[\s,]+please)?[\s.!?]*$/i;
 
 function normalized(name: string): string {
   return name
@@ -22,8 +18,7 @@ export function findSwitchTarget<T extends { id: string; name: string }>(
   const asked = SWITCH_REQUEST.exec(text.trim())?.[1];
   if (!asked) return undefined;
   const spoken = normalized(asked);
-  // A full name wins, so "The Planner" reaches its own bot before "the" is treated as
-  // an article; only then is "the travel bot" read as "travel bot".
+  // Match full names before stripping an optional article.
   for (const wanted of [spoken, spoken.replace(/^the\s+/, "")]) {
     if (!wanted) continue;
     const exact = bots.filter((bot) => normalized(bot.name) === wanted);
@@ -35,10 +30,7 @@ export function findSwitchTarget<T extends { id: string; name: string }>(
   return byFirstName.length === 1 ? byFirstName[0] : undefined;
 }
 
-/**
- * A call hand-over rings the next bot once its chat opens. The request lives in memory
- * only, never in the route, so a link can never start a call or open the microphone.
- */
+/** Keep hand-over requests in memory so links cannot open the microphone. */
 const RING_WINDOW_MS = 10_000;
 let pendingRing: { botId: string; at: number } | undefined;
 

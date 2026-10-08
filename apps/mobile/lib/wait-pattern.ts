@@ -3,11 +3,7 @@ export type WaitUnit = { tone: WaitTone; pattern: number };
 
 export const WAIT_PATTERNS = 10;
 
-/**
- * The next unit of the waiting sound: a coin-flip tone and a pattern picked evenly from all
- * but the one just played. `last` carries across waits for the whole call, so two waits
- * never meet on a repeat; 0 means nothing has played yet.
- */
+/** Pick a tone and pattern without repeating the last pattern; 0 means none played yet. */
 export function nextWaitUnit(last: number, random: () => number = Math.random): WaitUnit {
   const tone: WaitTone = random() < 0.5 ? "wood" : "hollow";
   const excludes = last >= 1 && last <= WAIT_PATTERNS;

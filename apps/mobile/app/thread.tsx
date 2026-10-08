@@ -185,7 +185,11 @@ import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll
 import { ThreadScrollBehavior } from "../lib/thread-scroll";
 import { errorText } from "../lib/user-error";
 import { speakQueue, speakText } from "../lib/voice";
-import { probeProviderTranscribe, resolveVoiceCallPlan } from "../lib/voice-call-entry";
+import {
+  loadCallCallerName,
+  probeProviderTranscribe,
+  resolveVoiceCallPlan,
+} from "../lib/voice-call-entry";
 
 type PendingAttachment = PickedAttachment & { threadKey: string };
 type AskAction = NonNullable<Extract<MessageBlock, { kind: "ask" }>["actions"]>[number];
@@ -1694,13 +1698,13 @@ function Thread() {
     voiceCallStarting.current = true;
     const loadVoiceStatus = () => rpc<{ ready: boolean; transcribe: boolean }>("voice/status");
     try {
-      const [plan, me] = await Promise.all([
+      const [plan, callerName] = await Promise.all([
         resolveVoiceCallPlan({
           loadDeviceVoiceEnabled,
           dictationAvailable,
           loadVoiceStatus,
         }),
-        rpc<MobileMe>("me").catch(() => null),
+        loadCallCallerName(() => rpc<MobileMe>("me")),
       ]);
       if (activeBotId.current !== targetBotId) return;
       if (plan.kind === "settings") {
@@ -1719,7 +1723,6 @@ function Thread() {
         return;
       }
       const botName = displayName ?? t("Bot");
-      const callerName = me?.name?.trim().split(/\s+/)[0];
       const startedCallId = startCall({
         botId: targetBotId,
         botName,

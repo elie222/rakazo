@@ -138,6 +138,7 @@ let bargedIn = false;
 let interimTimer: ReturnType<typeof setTimeout> | null = null;
 /** Takes over a turn that asks for another bot: the bot to hand over to, or nothing. */
 let switchBot: ((text: string) => CallSwitch | undefined) | undefined;
+let switching = false;
 const watchers = new Set<() => void>();
 
 export function subscribe(watcher: () => void): () => void {
@@ -252,6 +253,7 @@ export function endCall(): void {
   opening = false;
   bargedIn = false;
   switchBot = undefined;
+  switching = false;
   clearInterim();
   spokenMemory.clear();
   if (!state) return;
@@ -492,7 +494,7 @@ function clearInterim(): void {
 
 function onReply(messageId: string, text: string, runId?: string): void {
   // Work the bot files after hanging up belongs in the thread, not in the caller's ear.
-  if (!state || botEndedCall || messageId === spokenMessageId) return;
+  if (!state || switching || botEndedCall || messageId === spokenMessageId) return;
   // A reply to something typed into the thread mid-call belongs on screen only.
   if (callRunId && runId && runId !== callRunId) return;
   spokenMessageId = messageId;
@@ -501,7 +503,8 @@ function onReply(messageId: string, text: string, runId?: string): void {
 
 /** The bot on the line says it is handing over, then this call hangs up and the other bot rings. */
 async function switchCall(target: CallSwitch, heard: string): Promise<void> {
-  if (!state) return;
+  if (!state || switching) return;
+  switching = true;
   const { botId } = state;
   const switchingCallId = callId;
   const notice = t("OK, switching to {name}.", { name: target.name });
@@ -523,6 +526,7 @@ async function switchCall(target: CallSwitch, heard: string): Promise<void> {
     if (!stillOn()) return;
     // A refused voice disclosure stays refused: mute here rather than ring a bot that would ask again.
     if (error instanceof AiConsentBlocked) {
+      switching = false;
       blockForConsent(error);
       return;
     }

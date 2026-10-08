@@ -1,5 +1,6 @@
 import type { AudioPlayer } from "expo-audio";
 import * as SecureStore from "expo-secure-store";
+import { configureVoiceAudio } from "./voice-audio-mode";
 import type { WaitTone, WaitUnit } from "./wait-pattern";
 import { nextWaitUnit, WAIT_PATTERNS } from "./wait-pattern";
 
@@ -13,7 +14,6 @@ const CUE_ASSETS: Record<CallCue, number> = {
   end: require("../assets/sounds/warm-end.m4a"),
 };
 
-/** Ten patterns in two tones; pattern N is the same tune in both. */
 const WAIT_ASSETS = {
   wood: [
     require("../assets/sounds/wait-wood-01.m4a"),
@@ -41,12 +41,11 @@ const WAIT_ASSETS = {
   ],
 } as const;
 
-/** A cue never holds the call up for longer than this, even if playback never reports done. */
+/** Bound playback when no completion event arrives. */
 const CUE_MAX_MS = 1600;
 const WAIT_FADE_MS = 150;
 const WAIT_FADE_STEPS = 6;
 
-/** On unless the caller turned them off. */
 export async function loadCallSoundsEnabled(): Promise<boolean> {
   return (await SecureStore.getItemAsync(CALL_SOUNDS_KEY)) !== "0";
 }
@@ -56,7 +55,6 @@ export async function saveCallSoundsEnabled(on: boolean): Promise<void> {
   else await SecureStore.setItemAsync(CALL_SOUNDS_KEY, "0");
 }
 
-/** On unless the caller turned it off. */
 export async function loadWaitSoundEnabled(): Promise<boolean> {
   return (await SecureStore.getItemAsync(WAIT_SOUND_KEY)) !== "0";
 }
@@ -66,10 +64,10 @@ export async function saveWaitSoundEnabled(on: boolean): Promise<void> {
   else await SecureStore.setItemAsync(WAIT_SOUND_KEY, "0");
 }
 
-/** Plays a call cue to the end, or not at all when the caller turned call sounds off. */
 export async function playCallCue(cue: CallCue): Promise<void> {
   if (!(await loadCallSoundsEnabled().catch(() => true))) return;
   const { createAudioPlayer } = await import("expo-audio");
+  await configureVoiceAudio();
   const player = createAudioPlayer(CUE_ASSETS[cue]);
   try {
     await new Promise<void>((resolve) => {
@@ -86,15 +84,14 @@ export async function playCallCue(cue: CallCue): Promise<void> {
   }
 }
 
-/** The pattern last heard, not merely queued: a stopped wait discards its queued unit. */
+/** Track the played pattern, excluding units that were only queued. */
 let lastWaitPattern = 0;
 let waitPlayers: Map<string, AudioPlayer> | null = null;
-/** Bumped on every start, stop, and release, so a unit finishing late never chains on. */
+/** Invalidate pending playback on start, stop, or release. */
 let waitGeneration = 0;
-/** Bumped at hang-up, so a preload or wait that began during the call caches nothing after. */
+/** Prevent preloads from caching players after hang-up. */
 let waitCallEpoch = 0;
 let waitCurrent: AudioPlayer | null = null;
-/** Ends the wait for the playing unit at once when the sound is stopped. */
 let wakeWait: (() => void) | null = null;
 let fade: { timer: ReturnType<typeof setInterval>; player: AudioPlayer } | null = null;
 
@@ -111,7 +108,7 @@ async function waitPlayer(unit: WaitUnit, epoch: number): Promise<AudioPlayer | 
   return player;
 }
 
-/** Loads every waiting unit up front, so no unit waits on disk once a wait begins. */
+/** Preload waiting units before the first turn. */
 export async function preloadWaitSound(): Promise<void> {
   const epoch = waitCallEpoch;
   if (!(await loadWaitSoundEnabled().catch(() => true))) return;
@@ -122,11 +119,12 @@ export async function preloadWaitSound(): Promise<void> {
   }
 }
 
-/** Chains random waiting units until stopWaitSound, unless the caller turned it off. */
 export async function startWaitSound(): Promise<void> {
   const generation = ++waitGeneration;
   const epoch = waitCallEpoch;
   if (!(await loadWaitSoundEnabled().catch(() => true))) return;
+  await configureVoiceAudio();
+  if (generation !== waitGeneration || epoch !== waitCallEpoch) return;
   let unit = nextWaitUnit(lastWaitPattern);
   let next = await waitPlayer(unit, epoch);
   while (next && generation === waitGeneration) {
@@ -150,14 +148,13 @@ export async function startWaitSound(): Promise<void> {
     });
     player.play();
     lastWaitPattern = playing.pattern;
-    // Choose and load the next unit while this one plays, so the two run back to back.
+    // Queue the next unit during playback.
     unit = nextWaitUnit(lastWaitPattern);
     next = await waitPlayer(unit, epoch);
     await finished;
   }
 }
 
-/** Cuts a fade short: the player is silenced now instead of by a timer that may outlive it. */
 function endFade(): void {
   if (!fade) return;
   clearInterval(fade.timer);
@@ -166,7 +163,7 @@ function endFade(): void {
   fade = null;
 }
 
-/** Fades the waiting sound out over about 150 ms and drops whatever was queued next. */
+/** Fade out and discard the queued unit. */
 export function stopWaitSound(): void {
   waitGeneration += 1;
   wakeWait?.();
@@ -183,7 +180,6 @@ export function stopWaitSound(): void {
   fade = { timer, player };
 }
 
-/** Frees the preloaded units when the call ends. */
 export function releaseWaitSound(): void {
   waitGeneration += 1;
   waitCallEpoch += 1;

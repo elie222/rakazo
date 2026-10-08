@@ -232,6 +232,38 @@ describe("mobile call session", () => {
     expect(getSnapshot()).toBeNull();
   });
 
+  it("ignores replies throughout the hand-over cue and speech", async () => {
+    const endCue = deferred<void>();
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      {
+        ...fake.deps,
+        cue: (cue) => (cue === "end" ? endCue.promise : Promise.resolve()),
+      },
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    fake.replyWith("late-1", "An earlier reply.");
+    expect(fake.spoken).toEqual([]);
+    endCue.resolve();
+    await flush();
+    fake.replyWith("late-2", "Another earlier reply.");
+    expect(fake.spoken).toEqual(["OK, switching to Max."]);
+    expect(fake.recordings).toHaveLength(1);
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(ring).toHaveBeenCalledOnce();
+    expect(getSnapshot()).toBeNull();
+
+    startCall({ botId: "bot-2", botName: "Max" }, fake.deps);
+    await flush();
+    fake.replyWith("new-1", "Hello from Max.");
+    expect(fake.spoken.at(-1)).toBe("Hello from Max.");
+  });
+
   it("plays the waiting sound after the closing cue, until the reply starts", async () => {
     const fake = fakes();
     startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
@@ -277,6 +309,10 @@ describe("mobile call session", () => {
     expect(ring).not.toHaveBeenCalled();
     expect(fake.closeCall).not.toHaveBeenCalled();
     expect(getSnapshot()).toMatchObject({ muted: true, caption: "consent denied" });
+    toggleMute();
+    await flush();
+    fake.replyWith("new-reply", "Back on the line.");
+    expect(fake.spoken.at(-1)).toBe("Back on the line.");
   });
 
   it("does not ring the other bot when the caller hangs up before the hand-over is spoken", async () => {

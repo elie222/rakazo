@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeActionButton } from "../../components/native-action-button";
 import { Checkmark } from "../../components/row-accessories";
+import { SettingsGroup, SettingsSwitch } from "../../components/settings-group";
 import { rpc } from "../../lib/api";
 import { mobileTokens } from "../../lib/appearance";
 import {
@@ -63,8 +64,7 @@ export default function VoiceSettings() {
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
   const [callSounds, setCallSounds] = useState<boolean | null>(null);
   const [waitSound, setWaitSound] = useState<boolean | null>(null);
-  // Bumped when a sound-switch save starts and when it finishes, so a load from
-  // either side of that write cannot overwrite the switch.
+  // Prevent stale reads from overwriting a saved preference.
   const soundPrefsRevision = useRef(0);
   const soundPrefSaving = useRef(false);
   const [loading, setLoading] = useState(true);
@@ -72,7 +72,6 @@ export default function VoiceSettings() {
     "connect" | "disconnect" | "voice" | "speech" | "test" | "device-voice" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const deviceVoiceRevision = useRef(0);
   const deviceVoiceSaveInFlight = useRef(false);
 
@@ -115,15 +114,17 @@ export default function VoiceSettings() {
           setError(errorText(err, t("Could not load voice settings")));
         });
       const soundRevision = soundPrefsRevision.current;
-      void Promise.all([
-        loadCallSoundsEnabled().catch(() => true),
-        loadWaitSoundEnabled().catch(() => true),
-      ]).then(([calls, waiting]) => {
-        // A save started after this read, or is still writing: keep the switch the tap set.
-        if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
-        setCallSounds(calls);
-        setWaitSound(waiting);
-      });
+      void Promise.allSettled([loadCallSoundsEnabled(), loadWaitSoundEnabled()]).then(
+        ([calls, waiting]) => {
+          if (soundPrefSaving.current || soundPrefsRevision.current !== soundRevision) return;
+          setCallSounds(calls.status === "fulfilled" ? calls.value : null);
+          setWaitSound(waiting.status === "fulfilled" ? waiting.value : null);
+          const failed = [calls, waiting].find((result) => result.status === "rejected");
+          if (failed?.status === "rejected") {
+            setError(errorText(failed.reason, t("Could not load voice settings")));
+          }
+        },
+      );
       void load()
         .catch((err: unknown) => setError(errorText(err, t("Could not load voice settings"))))
         .finally(() => setLoading(false));
@@ -153,14 +154,13 @@ export default function VoiceSettings() {
     }
   }
 
-  async function toggleWaitSound() {
+  async function toggleWaitSound(next: boolean) {
     if (waitSound === null) return;
-    await saveSoundPref(!waitSound, setWaitSound, saveWaitSoundEnabled);
+    await saveSoundPref(next, setWaitSound, saveWaitSoundEnabled);
   }
 
-  async function toggleCallSounds() {
+  async function toggleCallSounds(next: boolean) {
     if (callSounds === null) return;
-    const next = !callSounds;
     const saved = await saveSoundPref(next, setCallSounds, saveCallSoundsEnabled);
     // The preview is a courtesy: if it cannot play, the saved choice still stands.
     if (saved && next) await playCallCue("start").catch(() => undefined);
@@ -202,7 +202,6 @@ export default function VoiceSettings() {
       });
       setApiKey("");
       await load(selected.id);
-      setNotice(t("Connected {name}.", { name: selected.name }));
     } catch (err) {
       setError(errorText(err, t("Could not connect")));
     } finally {
@@ -214,7 +213,6 @@ export default function VoiceSettings() {
     if (!credential) return;
     setPending("disconnect");
     setError(null);
-    setNotice(null);
     try {
       await rpc("voice/disconnect", { provider: credential.provider });
       setApiKey("");
@@ -284,7 +282,6 @@ export default function VoiceSettings() {
       <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
         {loading ? <ActivityIndicator color={native.secondaryLabel} /> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
         <View style={styles.group}>
           <Pressable
             accessibilityRole="button"
@@ -422,49 +419,26 @@ export default function VoiceSettings() {
           </>
         ) : null}
         {deviceVoice || status?.ready ? (
-          <Pressable
+          <NativeActionButton
             disabled={pending !== null}
+            label={t("Hear a sample")}
             onPress={() => void testVoice()}
-            style={styles.secondary}
-          >
-            <Text style={styles.secondaryLabel}>{t("Hear a sample")}</Text>
-          </Pressable>
+          />
         ) : null}
-        <View style={styles.group}>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: callSounds === true }}
+        <SettingsGroup>
+          <SettingsSwitch
+            label={t("Call sounds")}
+            value={callSounds === true}
             disabled={callSounds === null}
-            onPress={() => void toggleCallSounds()}
-            style={({ pressed }) => [
-              styles.groupRow,
-              callSounds === null && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.rowCopy}>
-              <Text style={styles.cardTitle}>{t("Call sounds")}</Text>
-              <Text style={styles.cardMeta}>{callSounds === false ? t("Off") : t("On")}</Text>
-            </View>
-          </Pressable>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: waitSound === true }}
+            onChange={(next) => void toggleCallSounds(next)}
+          />
+          <SettingsSwitch
+            label={t("Waiting sound")}
+            value={waitSound === true}
             disabled={waitSound === null}
-            onPress={() => void toggleWaitSound()}
-            style={({ pressed }) => [
-              styles.groupRow,
-              styles.groupDivider,
-              waitSound === null && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <View style={styles.rowCopy}>
-              <Text style={styles.cardTitle}>{t("Waiting sound")}</Text>
-              <Text style={styles.cardMeta}>{waitSound === false ? t("Off") : t("On")}</Text>
-            </View>
-          </Pressable>
-        </View>
+            onChange={(next) => void toggleWaitSound(next)}
+          />
+        </SettingsGroup>
       </ScrollView>
     </SafeAreaView>
   );
@@ -476,7 +450,6 @@ function createVoiceStyles() {
     screen: { flex: 1, backgroundColor: native.page },
     content: { padding: 20, gap: 10 },
     error: { color: tokens.destructive, marginBottom: 8 },
-    notice: { color: tokens.success, marginBottom: 8 },
     group: { borderRadius: 14, backgroundColor: native.fill, overflow: "hidden" },
     groupRow: {
       minHeight: 52,
@@ -506,7 +479,5 @@ function createVoiceStyles() {
     pressed: { opacity: 0.7 },
     voices: { marginTop: 12 },
     voiceLabel: { flex: 1, color: native.label, fontSize: 16 },
-    secondary: { marginTop: 16, alignItems: "center" },
-    secondaryLabel: { color: native.secondaryLabel, fontSize: 15 },
   });
 }
