@@ -22,6 +22,7 @@ import type {
   NotificationMessage,
   NotificationProvider,
   SandboxProvider,
+  SecretStore,
   SemanticMemoryProvider,
   WebProvider,
 } from "@rakazo/adapter-kit";
@@ -314,7 +315,6 @@ import {
   updateScratchpadItemFromTool,
 } from "./scratchpad-tools.js";
 import { inferScript } from "./scripted-runtime.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 import {
   isRunningShellCommand,
   observeShellCommand,
@@ -2609,7 +2609,7 @@ export interface ExecutorDeps {
   connector?: ConnectorProvider;
   connectors?: { managed(id: string): ManagedConnectorProvider | undefined };
   secrets: string[];
-  secretStore: EncryptedSecretStore;
+  secretStore: SecretStore;
   deploymentModelKey?: string;
   dataDir?: string;
   notifications?: NotificationProvider;
@@ -3342,7 +3342,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             },
           }),
         ]);
-        const agentEnvironment = decryptAgentEnvironment(agentSecretRows, deps.secretStore);
+        const agentEnvironment = await decryptAgentEnvironment(agentSecretRows, deps.secretStore);
         runSecrets.push(...Object.values(agentEnvironment));
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction(agentEnvironment);
         const hasModelOverride = Boolean(bot.modelProvider && bot.modelId);
@@ -5526,7 +5526,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               },
             });
             if (storedSecret) {
-              const plaintext = deps.secretStore.load(storedSecret.ciphertext, storedSecret.id);
+              const plaintext = await deps.secretStore.load(
+                storedSecret.ciphertext,
+                storedSecret.id,
+              );
               runSecrets.push(plaintext);
               // Keep the tail the old redactor still holds; a fresh instance drops it.
               pendingProgress += progressRedactor.finish();
@@ -7677,7 +7680,7 @@ async function resolveModelKey(
         cloudflareGatewayProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       }
-      const plaintext = deps.secretStore.load(row.ciphertext, row.id);
+      const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
       const persist = persistStoredModelSecret(
         deps.prisma,
@@ -7769,7 +7772,7 @@ async function resolveModelKey(
                 });
                 if (!currentRow) return;
                 const current = parseModelSecret(
-                  deps.secretStore.load(currentRow.ciphertext, currentRow.id),
+                  await deps.secretStore.load(currentRow.ciphertext, currentRow.id),
                 );
                 if (current.kind === "oauth") {
                   const stored = current.credential;

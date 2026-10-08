@@ -169,10 +169,12 @@ describe("mobile custom server UI", () => {
   it("exposes a sign-in control that writes the stored origin", () => {
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const signIn = readFileSync(path.join(dir, "../app/sign-in.tsx"), "utf8");
+    const server = readFileSync(path.join(dir, "../app/server.tsx"), "utf8");
     const api = readFileSync(path.join(dir, "api.ts"), "utf8");
     expect(signIn).toContain("Use a custom server");
-    expect(signIn).toContain("saveApiBase");
-    expect(signIn).toContain("probeApiBase");
+    expect(signIn).toContain('router.push("/server")');
+    expect(server).toContain("saveApiBase");
+    expect(server).toContain("probeApiBase");
     expect(api).toContain("currentApiBase()");
     expect(api).not.toMatch(/export const API /);
   });

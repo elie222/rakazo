@@ -6,7 +6,11 @@ import type {
   OAuthCredential,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import type {
+  ModelCredentialFailedState,
+  ModelCredentialRetireReason,
+  SecretStore,
+} from "@rakazo/adapter-kit";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
@@ -18,7 +22,6 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -484,12 +487,12 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
  * credential it cannot prove stale.
  */
 export function matchesFailedOAuthSecret(
-  load: (ciphertext: string, secretId: string) => string,
+  load: (ciphertext: string, secretId: string) => string | Promise<string>,
   failed: ModelCredentialFailedState,
-): (secret: { id: string; ciphertext: string }) => boolean {
-  return (secret) => {
+): (secret: { id: string; ciphertext: string }) => Promise<boolean> {
+  return async (secret) => {
     try {
-      const stored = parseModelSecret(load(secret.ciphertext, secret.id));
+      const stored = parseModelSecret(await load(secret.ciphertext, secret.id));
       return (
         stored.kind === "oauth" &&
         stored.credential.access === failed.access &&
@@ -677,7 +680,7 @@ export async function withModelCredentialLock<T>(key: string, fn: () => Promise<
  */
 export function persistStoredModelSecret(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "put">,
+  secretStore: Pick<SecretStore, "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
 ): (next: string) => Promise<void> {
@@ -691,7 +694,7 @@ export function persistStoredModelSecret(
         userId: scope.userId,
         signal: new AbortController().signal,
       },
-      secretId,
+      { recordId: secretId },
     );
     await prisma.secret.update({
       where: { id: secretId },
@@ -709,7 +712,7 @@ export function persistStoredModelSecret(
  */
 export async function refreshExpiredModelCredential(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "load" | "put">,
+  secretStore: Pick<SecretStore, "load" | "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,
@@ -723,7 +726,7 @@ export async function refreshExpiredModelCredential(
     if (!row) return;
     let plaintext: string;
     try {
-      plaintext = secretStore.load(row.ciphertext, row.id);
+      plaintext = await secretStore.load(row.ciphertext, row.id);
       if (parseModelSecret(plaintext).kind !== "oauth") return;
     } catch {
       return;
@@ -745,7 +748,7 @@ const credentialRefreshKicks = new Map<string, Promise<void>>();
  */
 export function kickModelCredentialRefresh(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "load" | "put">,
+  secretStore: Pick<SecretStore, "load" | "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,

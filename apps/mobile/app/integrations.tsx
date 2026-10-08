@@ -22,11 +22,14 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { NativeActionButton } from "../components/native-action-button";
+import { Chevron } from "../components/row-accessories";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { loadLastBotId } from "../lib/last-bot";
 import { native, useThemedStyles } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
 type ConnectionTool = { name: string; description: string };
@@ -152,7 +155,7 @@ export default function Integrations() {
   useEffect(() => {
     void refresh().catch((reason) => {
       setCatalogReady(false);
-      setCatalogError(reason instanceof Error ? reason.message : t("Could not load integrations"));
+      setCatalogError(errorText(reason, t("Could not load integrations")));
     });
     void loadLastBotId().then(setLastBotId);
     return () => connectionAttempt.current?.abort();
@@ -270,7 +273,7 @@ export default function Integrations() {
       );
     } catch (reason) {
       if (controller.signal.aborted) return;
-      setCatalogError(reason instanceof Error ? reason.message : t("Could not connect"));
+      setCatalogError(errorText(reason, t("Could not connect")));
     } finally {
       if (connectionAttempt.current === controller) {
         connectionAttempt.current = null;
@@ -287,7 +290,7 @@ export default function Integrations() {
       await refresh();
       setToolsTick((tick) => tick + 1);
     } catch (reason) {
-      setCatalogError(reason instanceof Error ? reason.message : t("Could not revoke connection"));
+      setCatalogError(errorText(reason, t("Could not revoke connection")));
     } finally {
       setPending(null);
     }
@@ -310,7 +313,7 @@ export default function Integrations() {
       );
       setLabelDrafts((current) => ({ ...current, [row.id]: updated.displayName }));
     } catch (reason) {
-      setCatalogError(reason instanceof Error ? reason.message : t("Could not rename connection"));
+      setCatalogError(errorText(reason, t("Could not rename connection")));
     } finally {
       setPending(null);
     }
@@ -332,7 +335,7 @@ export default function Integrations() {
       await refresh();
       closeDetail();
     } catch (reason) {
-      setCatalogError(reason instanceof Error ? reason.message : t("Could not revoke connection"));
+      setCatalogError(errorText(reason, t("Could not revoke connection")));
       await refresh().catch(() => undefined);
     } finally {
       setPending(null);
@@ -382,7 +385,7 @@ export default function Integrations() {
       setSourceKind(null);
       await refresh();
     } catch (reason) {
-      setSourceError(reason instanceof Error ? reason.message : t("Could not add source"));
+      setSourceError(errorText(reason, t("Could not add source")));
     } finally {
       setPending(null);
     }
@@ -395,7 +398,7 @@ export default function Integrations() {
       await rpc("capabilities/remove", { id: source.id });
       setSources((current) => current.filter((item) => item.id !== source.id));
     } catch (reason) {
-      setSourceError(reason instanceof Error ? reason.message : t("Could not remove source"));
+      setSourceError(errorText(reason, t("Could not remove source")));
     } finally {
       setPending(null);
     }
@@ -407,25 +410,25 @@ export default function Integrations() {
     const connecting = pending === key;
     if (connected) {
       return (
-        <Pressable
-          accessibilityRole="button"
+        <NativeActionButton
           accessibilityLabel={t("Added")}
           disabled={connecting}
+          fill={false}
+          label={connecting ? t("Working…") : t("Added")}
           onPress={() => openDetail(item)}
-        >
-          <Text style={styles.link}>{connecting ? t("Working…") : t("Added")}</Text>
-        </Pressable>
+          prominence="secondary"
+        />
       );
     }
     return (
-      <Pressable
-        accessibilityRole="button"
+      <NativeActionButton
         accessibilityLabel={t("Add {name}", { name: label })}
         disabled={connecting}
+        fill={false}
+        label={connecting ? t("Working…") : t("Add")}
         onPress={() => void connect(item)}
-      >
-        <Text style={styles.link}>{connecting ? t("Working…") : t("Add")}</Text>
-      </Pressable>
+        prominence="secondary"
+      />
     );
   }
 
@@ -486,14 +489,14 @@ export default function Integrations() {
               {item.name}
             </Text>
           </View>
-          <Pressable
-            accessibilityRole="button"
+          <NativeActionButton
             accessibilityLabel={t("Uninstall")}
             disabled={uninstalling || connecting}
+            fill={false}
+            label={uninstalling ? t("Working…") : t("Uninstall")}
             onPress={() => void uninstall(item)}
-          >
-            <Text style={styles.link}>{uninstalling ? t("Working…") : t("Uninstall")}</Text>
-          </Pressable>
+            prominence="destructive"
+          />
         </View>
 
         <View style={styles.card}>
@@ -509,25 +512,23 @@ export default function Integrations() {
                 accessibilityLabel={t("Account label")}
                 style={styles.accountLabel}
               />
-              <Pressable
-                accessibilityRole="button"
+              <NativeActionButton
                 accessibilityLabel={t("Remove {name}", { name: row.displayName })}
                 disabled={pending === row.id || uninstalling}
+                fill={false}
+                label={pending === row.id ? t("Working…") : t("Remove")}
                 onPress={() => void revokeAccount(row)}
-              >
-                <Text style={styles.link}>{pending === row.id ? t("Working…") : t("Remove")}</Text>
-              </Pressable>
+                prominence="destructive"
+              />
             </View>
           ))}
-          <Pressable
-            accessibilityRole="button"
+          <NativeActionButton
             accessibilityLabel={t("Add another {name}", { name: item.name })}
             disabled={connecting || uninstalling}
+            label={connecting ? t("Working…") : t("Add another")}
             onPress={() => void connect(item)}
-            style={styles.cardButton}
-          >
-            <Text style={styles.buttonLabel}>{connecting ? t("Working…") : t("Add another")}</Text>
-          </Pressable>
+            prominence="secondary"
+          />
         </View>
 
         <View style={styles.card}>
@@ -544,7 +545,7 @@ export default function Integrations() {
                   ? t("1 tool")
                   : t("{count} tools", { count: toolCount })}
             </Text>
-            <Text style={styles.chevron}>{toolsOpen ? "˅" : "›"}</Text>
+            <Chevron expanded={toolsOpen} />
           </Pressable>
           {toolsOpen ? (
             <View style={styles.toolsBody}>
@@ -568,7 +569,11 @@ export default function Integrations() {
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+      >
         {!detailItem ? (
           <TextInput
             value={query}
@@ -639,13 +644,11 @@ export default function Integrations() {
             ) : null}
 
             {renderedApps.length < catalogApps.length ? (
-              <Pressable
-                accessibilityRole="button"
+              <NativeActionButton
+                label={t("Show more")}
                 onPress={() => setVisibleCount((count) => count + CONNECTION_CATALOG_PAGE_SIZE)}
-                style={styles.smallButton}
-              >
-                <Text style={styles.buttonLabel}>{t("Show more")}</Text>
-              </Pressable>
+                prominence="secondary"
+              />
             ) : null}
 
             <Pressable
@@ -659,21 +662,17 @@ export default function Integrations() {
               style={styles.advancedToggle}
             >
               <Text style={styles.advancedLabel}>{t("Advanced")}</Text>
-              <Text style={styles.chevron}>›</Text>
+              <Chevron expanded={advancedOpen} />
             </Pressable>
 
             {advancedOpen ? (
               <View style={styles.advancedBody}>
                 <View style={styles.accountActions}>
                   {(["mcp", "api", "graphql", "executor", "treg"] as const).map((kind) => (
-                    <Pressable
+                    <NativeActionButton
                       key={kind}
-                      accessibilityRole="button"
-                      onPress={() => beginSource(kind)}
-                      style={styles.smallButton}
-                    >
-                      <Text style={styles.buttonLabel}>
-                        {kind === "treg"
+                      label={
+                        kind === "treg"
                           ? t("Add Treg")
                           : kind === "executor"
                             ? t("Add Executor")
@@ -681,9 +680,11 @@ export default function Integrations() {
                               ? t("Add MCP server")
                               : kind === "graphql"
                                 ? t("Add GraphQL")
-                                : t("Add OpenAPI")}
-                      </Text>
-                    </Pressable>
+                                : t("Add OpenAPI")
+                      }
+                      onPress={() => beginSource(kind)}
+                      prominence="secondary"
+                    />
                   ))}
                 </View>
 
@@ -758,25 +759,17 @@ export default function Integrations() {
                       />
                     ) : null}
                     <View style={styles.accountActions}>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={pending === "source"}
+                      <NativeActionButton
+                        busy={pending === "source"}
+                        label={t("Verify and add")}
                         onPress={() => void addSource()}
-                        style={styles.smallButton}
-                      >
-                        {pending === "source" ? (
-                          <ActivityIndicator color={native.label} />
-                        ) : (
-                          <Text style={styles.buttonLabel}>{t("Verify and add")}</Text>
-                        )}
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
+                        prominence="secondary"
+                      />
+                      <NativeActionButton
+                        label={t("Cancel")}
                         onPress={() => setSourceKind(null)}
-                        style={styles.smallButton}
-                      >
-                        <Text style={styles.buttonLabel}>{t("Cancel")}</Text>
-                      </Pressable>
+                        prominence="secondary"
+                      />
                     </View>
                   </View>
                 ) : null}
@@ -793,11 +786,12 @@ export default function Integrations() {
                         {source.kind.toUpperCase()} · {source.source}
                       </Text>
                     </View>
-                    <Pressable accessibilityRole="button" onPress={() => void removeSource(source)}>
-                      <Text style={styles.remove}>
-                        {pending === source.id ? t("Removing…") : t("Remove")}
-                      </Text>
-                    </Pressable>
+                    <NativeActionButton
+                      fill={false}
+                      label={pending === source.id ? t("Removing…") : t("Remove")}
+                      onPress={() => void removeSource(source)}
+                      prominence="destructive"
+                    />
                   </View>
                 ))}
               </View>
@@ -816,24 +810,6 @@ function createIntegrationsStyles() {
     content: { padding: 20, gap: 14 },
     explanation: { color: native.secondaryLabel, fontSize: 14, lineHeight: 20 },
     section: { color: native.secondaryLabel, fontSize: 14, fontWeight: "600", marginTop: 2 },
-    smallButton: {
-      minHeight: 42,
-      paddingHorizontal: 14,
-      borderRadius: 12,
-      backgroundColor: native.fill,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    cardButton: {
-      alignSelf: "flex-start",
-      minHeight: 42,
-      paddingHorizontal: 14,
-      borderRadius: 12,
-      backgroundColor: native.fillPressed,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    buttonLabel: { color: native.label, fontSize: 14, fontWeight: "600" },
     card: { padding: 16, borderRadius: 16, backgroundColor: native.fill, gap: 12 },
     input: {
       minHeight: 48,
@@ -901,7 +877,6 @@ function createIntegrationsStyles() {
       fontSize: 13,
     },
     link: { color: native.label, fontSize: 14, fontWeight: "600" },
-    remove: { color: destructive, fontSize: 14, fontWeight: "600" },
     error: { color: destructive, fontSize: 14 },
     detail: { gap: 14 },
     detailHeader: {
@@ -930,6 +905,5 @@ function createIntegrationsStyles() {
     },
     advancedLabel: { color: native.secondaryLabel, fontSize: 14 },
     advancedBody: { gap: 14 },
-    chevron: { color: native.secondaryLabel, fontSize: 18 },
   });
 }

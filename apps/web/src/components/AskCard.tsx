@@ -5,6 +5,7 @@ import type { ThreadMessage } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
 import { Button, Input } from "@rakazo/ui-web";
 import { useState } from "react";
+import { errorText } from "../lib/user-error";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
 
@@ -82,8 +83,11 @@ export function AskCard({
     try {
       await onAnswer(submitValue, submitUsername);
     } catch (err) {
+      // A secret answer's failure may echo the secret, so never show its message.
       setError(
-        !secretInput && err instanceof Error ? err.message : t`Could not submit this answer`,
+        secretInput
+          ? t`Could not submit this answer`
+          : errorText(err, t`Could not submit this answer`),
       );
     } finally {
       setPendingAction(null);

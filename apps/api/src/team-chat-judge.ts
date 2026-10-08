@@ -4,9 +4,9 @@ import type {
   AgentRuntime,
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import {
-  type EncryptedSecretStore,
   formatCurrentTimeInstruction,
   matchesFailedOAuthSecret,
   resolveModelAuth,
@@ -111,7 +111,7 @@ export function parseTeamChatEngagementDecision(
 interface ModelTeamChatEngagementJudgeDeps {
   prisma: PrismaClient;
   runtime: AgentRuntime;
-  secrets: EncryptedSecretStore;
+  secrets: SecretStore;
   deploymentProvider: string;
   deploymentModel: string;
   deploymentModelKey?: string;
@@ -243,7 +243,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           botId: bot.id,
           signal: new AbortController().signal,
         },
-        secret.id,
+        { recordId: secret.id },
       );
       await this.deps.prisma.secret.update({
         where: { id: secret.id },
@@ -268,7 +268,7 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
             )
           : undefined,
       });
-    const plaintext = this.deps.secrets.load(secret.ciphertext, secret.id);
+    const plaintext = await this.deps.secrets.load(secret.ciphertext, secret.id);
     const auth = await resolveModelAuth(plaintext, provider, { persist, retire });
     const parsed = auth.secret;
     const limit = parsed.maxTokens !== undefined ? { maxTokens: parsed.maxTokens } : {};

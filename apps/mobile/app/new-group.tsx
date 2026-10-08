@@ -1,11 +1,14 @@
 import { GROUP_MEMBER_MAX, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { Stack, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput } from "react-native";
+import { ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
-import { type MobileBot, rpc } from "../lib/api";
+import { NativeActionButton } from "../components/native-action-button";
+import type { MobileBot } from "../lib/api";
+import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 export default function NewGroup() {
   const { t } = useI18n();
@@ -43,7 +46,7 @@ export default function NewGroup() {
         params: { groupId: group.id, name: group.name },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not create group"));
+      setError(errorText(err, t("Could not create group")));
     } finally {
       setPending(false);
     }
@@ -53,6 +56,7 @@ export default function NewGroup() {
     <>
       <Stack.Screen options={{ title: t("New group") }} />
       <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
         style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
       >
@@ -64,7 +68,7 @@ export default function NewGroup() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 14,
             color: tokens.foreground,
@@ -81,33 +85,17 @@ export default function NewGroup() {
           disabled={pending}
         />
         {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
-        <Pressable
-          onPress={() => void create()}
+        <NativeActionButton
           disabled={
             !name.trim() ||
             selected.length < GROUP_MEMBER_MIN ||
             selected.length > GROUP_MEMBER_MAX ||
             pending
           }
-          style={{
-            marginTop: 24,
-            backgroundColor: tokens.primary,
-            opacity:
-              !name.trim() ||
-              selected.length < GROUP_MEMBER_MIN ||
-              selected.length > GROUP_MEMBER_MAX ||
-              pending
-                ? 0.5
-                : 1,
-            borderRadius: 11,
-            padding: 14,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: tokens.primaryForeground, fontSize: 16, fontWeight: "600" }}>
-            {pending ? t("Creating…") : t("Create group")}
-          </Text>
-        </Pressable>
+          label={pending ? t("Creating…") : t("Create group")}
+          onPress={() => void create()}
+          style={{ marginTop: 24 }}
+        />
       </ScrollView>
     </>
   );

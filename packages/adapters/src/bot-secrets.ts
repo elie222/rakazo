@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { SecretStore } from "@rakazo/adapter-kit";
 import type { BotSecretDestination } from "@rakazo/contracts";
 import {
   BotSecretAuth,
@@ -9,10 +10,11 @@ import {
   SecretHttpRequest,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
+import { withTransactionRetry } from "@rakazo/db";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { createPrivateNetworkFetch, createSafeRemoteFetch } from "./remote-mcp.js";
-import type { EncryptedSecretStore } from "./secrets.js";
+import { persistPreparedSecret } from "./secret-persistence.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 export type BotSecretScope = { userId: string; spaceId: string; botId: string };
@@ -234,31 +236,29 @@ export async function findBotSecret(prisma: PrismaClient, scope: BotSecretScope,
   return row ? normalizeSecretDestination(row) : null;
 }
 
-export async function storeBotSecret(input: {
-  tx: Prisma.TransactionClient;
-  secretStore: EncryptedSecretStore;
+export async function prepareBotSecret(input: {
+  prisma: PrismaClient;
+  secretStore: SecretStore;
   scope: BotSecretScope;
   destination: BotSecretDestination;
   plaintext: string;
-}): Promise<void> {
-  const { tx, secretStore, scope, plaintext } = input;
+}) {
+  const { prisma, secretStore, scope, plaintext } = input;
   if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);
   if (destination.auth.type === "login") decodeLoginSecret(plaintext);
   else credentialHeader(destination, plaintext);
-  // Serialize credential updates and deletions for a bot, including concurrent first saves.
-  await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
-  const existing = await tx.botSecret.findFirst({
+  const existing = await prisma.botSecret.findFirst({
     where: { ...scopeFields(scope), name: destination.name },
   });
-  if (existing && !sameSecretDestination(normalizeSecretDestination(existing), destination)) {
-    throw new Error("Remove the existing credential before changing its destination");
+  function validate(row: typeof existing, count: number) {
+    if (row && !sameSecretDestination(normalizeSecretDestination(row), destination))
+      throw new Error("Remove the existing credential before changing its destination");
+    if (!row && count >= 100) throw new Error("Credential limit reached");
   }
-  if (!existing && (await tx.botSecret.count({ where: scopeFields(scope) })) >= 100) {
-    throw new Error("Credential limit reached");
-  }
+  validate(existing, await prisma.botSecret.count({ where: scopeFields(scope) }));
   const id = existing?.id ?? randomBytes(12).toString("hex");
-  const encrypted = await secretStore.put(
+  const stored = await secretStore.put(
     plaintext,
     {
       operationId: id,
@@ -267,15 +267,39 @@ export async function storeBotSecret(input: {
       spaceId: scope.spaceId,
       signal: new AbortController().signal,
     },
-    id,
+    { recordId: id },
   );
-  if (existing) {
-    await tx.botSecret.update({ where: { id }, data: { ciphertext: encrypted.ciphertext } });
-  } else {
-    await tx.botSecret.create({
-      data: { id, ...scopeFields(scope), ...destination, ciphertext: encrypted.ciphertext },
-    });
-  }
+  return {
+    id,
+    ciphertext: stored.ciphertext,
+    async store(tx: Prisma.TransactionClient) {
+      await tx.$queryRaw`SELECT id FROM bots WHERE id = ${scope.botId} FOR UPDATE`;
+      const current = await tx.botSecret.findFirst({
+        where: { ...scopeFields(scope), name: destination.name },
+      });
+      validate(current, await tx.botSecret.count({ where: scopeFields(scope) }));
+      if (current?.id !== existing?.id)
+        throw Object.assign(new Error("Credential changed while saving; retry"), { code: "P2034" });
+      if (current)
+        await tx.botSecret.update({ where: { id }, data: { ciphertext: stored.ciphertext } });
+      else
+        await tx.botSecret.create({
+          data: { id, ...scopeFields(scope), ...destination, ciphertext: stored.ciphertext },
+        });
+    },
+  };
+}
+
+export async function storeBotSecret(input: Parameters<typeof prepareBotSecret>[0]) {
+  return withTransactionRetry(async () => {
+    const prepared = await prepareBotSecret(input);
+    return persistPreparedSecret(input.prisma, input.secretStore, prepared, () =>
+      input.prisma.$transaction(async (tx) => {
+        await prepared.store(tx);
+        return getBotSecretMetadata(tx, input.scope, input.destination.name);
+      }),
+    );
+  });
 }
 
 export function listBotSecrets(prisma: PrismaClient, scope: BotSecretScope) {
@@ -321,7 +345,7 @@ export async function forgetBotSecret(prisma: PrismaClient, scope: BotSecretScop
 /** Credentials are resolved only inside this destination-bound HTTP boundary. */
 export async function requestWithBotSecret(input: {
   prisma: PrismaClient;
-  secretStore: EncryptedSecretStore;
+  secretStore: SecretStore;
   scope: BotSecretScope;
   request: unknown;
   signal: AbortSignal;
@@ -341,7 +365,12 @@ export async function requestWithBotSecret(input: {
   if (url.origin !== destination.origin || url.username || url.password || url.hash) {
     return { error: "This credential cannot be sent to that destination." };
   }
-  const plaintext = input.secretStore.load(row.ciphertext, row.id);
+  const controller = new AbortController();
+  const signal = combineSignals(input.signal, controller.signal, AbortSignal.timeout(30_000));
+  const plaintext = await input.secretStore.load(row.ciphertext, {
+    recordId: row.id,
+    signal,
+  });
   const headers = new Headers({ accept: "application/json", "content-type": request.contentType });
   const { name: headerName, value: headerValue } = credentialHeader(destination, plaintext);
   const redactions = [
@@ -354,8 +383,6 @@ export async function requestWithBotSecret(input: {
     ]),
   ].filter(Boolean);
   input.registerRedactions?.(redactions);
-  const controller = new AbortController();
-  const signal = combineSignals(input.signal, controller.signal, AbortSignal.timeout(30_000));
   // The safe fetch refuses plain-HTTP and private hosts outright. A credential
   // saved under the owner's private-HTTP opt-in was validated against exactly
   // those rules at save time, and the request URL is pinned to its origin, so
@@ -413,7 +440,7 @@ const MIN_REDACTED_USERNAME = 6;
  */
 export async function resolveLoginFill(input: {
   prisma: PrismaClient;
-  secretStore: EncryptedSecretStore;
+  secretStore: SecretStore;
   scope: BotSecretScope;
   name: string;
   field: LoginField;
@@ -439,7 +466,7 @@ export async function resolveLoginFill(input: {
   if (destination.origin !== storedOrigin.origin) {
     return { error: "Website logins can only be filled on an HTTPS origin." };
   }
-  const login = decodeLoginSecret(input.secretStore.load(row.ciphertext, row.id));
+  const login = decodeLoginSecret(await input.secretStore.load(row.ciphertext, row.id));
   return {
     text: login[input.field],
     origin: destination.origin,

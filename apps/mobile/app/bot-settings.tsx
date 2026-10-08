@@ -15,9 +15,15 @@ import {
 } from "@rakazo/core";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { glassHeaderOptions } from "../components/glass-title";
+import type { MenuPickerChoice } from "../components/menu-picker";
+import { MenuPicker } from "../components/menu-picker";
+import { NativeActionButton } from "../components/native-action-button";
+import { NativeSwitch } from "../components/native-switch";
+import { Chevron } from "../components/row-accessories";
 import {
   type MobileBot,
   type MobileMe,
@@ -27,21 +33,15 @@ import {
 } from "../lib/api";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { useI18n } from "../lib/i18n";
-import { presentMessageActionSheet } from "../lib/message-action-sheet";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
 };
 
-type PickerChoice = {
-  key: string;
-  label: string;
-};
-
 export default function BotSettingsScreen() {
   const tokens = useMobileTokens();
-  const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const router = useRouter();
   const { botId } = useLocalSearchParams<{ botId: string }>();
@@ -81,7 +81,7 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
+      .catch((err) => setError(errorText(err, t("Could not load bot"))));
   }, [botId]);
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export default function BotSettingsScreen() {
       })
       .catch((err) => {
         setModelMetaReady(false);
-        setModelMetaError(err instanceof Error ? err.message : t("Could not load model settings"));
+        setModelMetaError(errorText(err, t("Could not load model settings")));
       });
   }, [t]);
 
@@ -141,8 +141,8 @@ export default function BotSettingsScreen() {
     ? `${t("Space default")} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
     : t("Space default");
 
-  const modelChoices: PickerChoice[] = useMemo(() => {
-    const choices: PickerChoice[] = [{ key: "", label: spaceDefaultLabel }];
+  const modelChoices: MenuPickerChoice[] = useMemo(() => {
+    const choices: MenuPickerChoice[] = [{ key: "", label: spaceDefaultLabel }];
     if (selectedModelKey && !connectedOptions.some((option) => option.key === selectedModelKey)) {
       choices.push({
         key: selectedModelKey,
@@ -155,7 +155,7 @@ export default function BotSettingsScreen() {
     return choices;
   }, [connectedOptions, selectedModel?.modelId, selectedModelKey, spaceDefaultLabel]);
 
-  const thinkingChoices: PickerChoice[] = useMemo(
+  const thinkingChoices: MenuPickerChoice[] = useMemo(
     () => [
       { key: "", label: t("Default (medium)") },
       ...thinkingOptions.map((level) => ({
@@ -166,41 +166,10 @@ export default function BotSettingsScreen() {
     [t, thinkingOptions],
   );
 
-  const selectedModelLabel =
-    modelChoices.find((choice) => choice.key === selectedModelKey)?.label ?? spaceDefaultLabel;
-  const selectedThinkingLabel =
-    thinkingChoices.find((choice) => choice.key === thinkingLevel)?.label ?? t("Default (medium)");
-
   function selectModel(key: string) {
     if (key === selectedModelKey) return;
     setModelKey(key);
     setThinkingLevel("");
-  }
-
-  function openModelPicker() {
-    presentMessageActionSheet({
-      title: t("Model"),
-      actions: modelChoices.map((choice) => ({
-        text: choice.label,
-        onPress: () => selectModel(choice.key),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
-  }
-
-  function openThinkingPicker() {
-    presentMessageActionSheet({
-      title: t("Thinking"),
-      actions: thinkingChoices.map((choice) => ({
-        text: choice.label,
-        onPress: () => setThinkingLevel(choice.key),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
   }
 
   async function save() {
@@ -257,7 +226,7 @@ export default function BotSettingsScreen() {
       }
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not save bot"));
+      setError(errorText(err, t("Could not save bot")));
     } finally {
       setPending(false);
     }
@@ -265,10 +234,11 @@ export default function BotSettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: t("Chat settings") }} />
+      <Stack.Screen options={glassHeaderOptions(t("Chat settings"))} />
       <ScrollView
         style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
+        contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
@@ -286,7 +256,7 @@ export default function BotSettingsScreen() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -303,7 +273,7 @@ export default function BotSettingsScreen() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -321,7 +291,7 @@ export default function BotSettingsScreen() {
           multiline
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -370,10 +340,10 @@ export default function BotSettingsScreen() {
           <Text style={{ color: tokens.mutedForeground, fontSize: 14, flex: 1 }}>
             {t("Read replies aloud")}
           </Text>
-          <Switch
+          <NativeSwitch
             accessibilityLabel={t("Read replies aloud")}
-            value={autoSpeak}
             onValueChange={setAutoSpeak}
+            value={autoSpeak}
           />
         </View>
         <Pressable
@@ -390,66 +360,34 @@ export default function BotSettingsScreen() {
           }}
         >
           <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Advanced")}</Text>
-          <Text style={{ color: tokens.mutedForeground, fontSize: 18 }}>
-            {advancedOpen ? "⌃" : "⌄"}
-          </Text>
+          <Chevron expanded={advancedOpen} />
         </Pressable>
         {advancedOpen ? (
           <View>
-            <Text
+            <View
               style={{
-                color: tokens.mutedForeground,
                 marginTop: 8,
-                marginBottom: 8,
-                fontSize: 14,
+                borderRadius: 14,
+                backgroundColor: native.fill,
+                overflow: "hidden",
               }}
             >
-              {t("Model")}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Model")}
-              onPress={openModelPicker}
-              style={{
-                borderWidth: 1,
-                borderColor: tokens.border,
-                backgroundColor: tokens.muted,
-                borderRadius: 11,
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-              }}
-            >
-              <Text style={{ color: tokens.foreground }}>{selectedModelLabel}</Text>
-            </Pressable>
-            {thinkingOptions.length ? (
-              <>
-                <Text
-                  style={{
-                    color: tokens.mutedForeground,
-                    marginTop: 16,
-                    marginBottom: 8,
-                    fontSize: 14,
-                  }}
-                >
-                  {t("Thinking")}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t("Thinking")}
-                  onPress={openThinkingPicker}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: tokens.border,
-                    backgroundColor: tokens.muted,
-                    borderRadius: 11,
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                  }}
-                >
-                  <Text style={{ color: tokens.foreground }}>{selectedThinkingLabel}</Text>
-                </Pressable>
-              </>
-            ) : null}
+              <MenuPicker
+                choices={modelChoices}
+                label={t("Model")}
+                onChange={selectModel}
+                value={selectedModelKey}
+              />
+              {thinkingOptions.length ? (
+                <MenuPicker
+                  choices={thinkingChoices}
+                  divider
+                  label={t("Thinking")}
+                  onChange={setThinkingLevel}
+                  value={thinkingLevel}
+                />
+              ) : null}
+            </View>
             {modelMetaError ? (
               <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
                 {modelMetaError}
@@ -458,22 +396,12 @@ export default function BotSettingsScreen() {
           </View>
         ) : null}
         {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
-        <Pressable
-          onPress={() => void save()}
+        <NativeActionButton
           disabled={!name.trim() || pending || !bot}
-          style={{
-            marginTop: 24,
-            backgroundColor: tokens.primary,
-            borderRadius: 11,
-            padding: 16,
-            alignItems: "center",
-            opacity: !name.trim() || pending || !bot ? 0.4 : 1,
-          }}
-        >
-          <Text style={{ color: tokens.primaryForeground, fontSize: 16 }}>
-            {pending ? t("Saving…") : t("Save")}
-          </Text>
-        </Pressable>
+          label={pending ? t("Saving…") : t("Save")}
+          onPress={() => void save()}
+          style={{ marginTop: 24 }}
+        />
       </ScrollView>
     </>
   );

@@ -756,7 +756,7 @@ describe("codexLiveCatalogsForSpace", () => {
 
   function secretsById(map: Record<string, string>) {
     return {
-      load: vi.fn((ciphertext: string, id: string) => {
+      load: vi.fn(async (ciphertext: string, id: string) => {
         const plaintext = map[ciphertext];
         if (plaintext === undefined) throw new Error(`unreadable ${id}`);
         return plaintext;

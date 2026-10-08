@@ -1,5 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import { signupRequiresEmailVerification } from "@rakazo/core";
+import { credentialIssue, signupRequiresEmailVerification } from "@rakazo/core";
 import { Button, Input, Label } from "@rakazo/ui-web";
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -8,6 +8,8 @@ import { authClient } from "../lib/auth";
 import type { AuthCapabilities } from "../lib/auth-capabilities";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { clearSpaceSelection } from "../lib/rpc";
+import { runSsoFlow } from "../lib/sso-flow";
+import { authErrorText, credentialIssueText } from "../lib/user-error";
 
 type AuthMode = "in" | "up" | "forgot";
 
@@ -22,12 +24,18 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => {
+    const code = searchParams.get("error");
+    if (!code) return null;
+    return authErrorText({ code }, t`Could not continue`);
+  });
   const [pending, setPending] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   // Signup triggers a session refresh that remounts the anonymous auth page.
   const sent = resetSent || searchParams.get("verify") === "email";
   const [reset, setReset] = useState<AuthCapabilities | null>(null);
+  const [capabilityError, setCapabilityError] = useState(false);
+  const [capabilityAttempt, setCapabilityAttempt] = useState(0);
   const passwordFieldId = mode === "in" ? "current-password" : "new-password";
   const title = sent ? (
     <Trans>Check your email</Trans>
@@ -40,13 +48,16 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   );
 
   useEffect(() => {
-    if (mode === "up") return;
+    setReset(null);
+    setCapabilityError(false);
     let active = true;
     void fetchAuthCapabilities()
       .then((capabilities) => {
         if (active) setReset(capabilities);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setCapabilityError(true);
+      });
     return () => {
       // Do not abort on unmount: a guard redirect that bounces through this
       // page only mounts it for a render or two, and the cancelled fetch then
@@ -54,10 +65,16 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
       // keeps its own time bound.
       active = false;
     };
-  }, [mode]);
+  }, [mode, capabilityAttempt]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!reset?.passwordAuth) return;
+    const issue = credentialIssue({ email, password: mode === "forgot" ? undefined : password });
+    if (issue) {
+      setError(credentialIssueText(issue));
+      return;
+    }
     setPending(true);
     setError(null);
     try {
@@ -71,22 +88,23 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
           redirectTo: reset.resetUrl,
         });
         if (result.error) {
-          setError(result.error.message ?? t`Could not send reset email`);
+          setError(authErrorText(result.error, t`Could not send reset email`));
           return;
         }
         setResetSent(true);
         return;
       }
+      const trimmedEmail = email.trim();
       const result =
         mode === "up"
           ? await authClient.signUp.email({
-              email,
+              email: trimmedEmail,
               password,
-              name: name || email.split("@")[0] || "User",
+              name: name || trimmedEmail.split("@")[0] || "User",
             })
-          : await authClient.signIn.email({ email, password });
+          : await authClient.signIn.email({ email: trimmedEmail, password });
       if (result.error) {
-        setError(result.error.message ?? t`Could not continue`);
+        setError(authErrorText(result.error, t`Could not continue`));
         return;
       }
       if (mode === "up" && signupRequiresEmailVerification(result.data)) {
@@ -108,6 +126,28 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
     }
   }
 
+  async function signInWithSso() {
+    setError(null);
+    try {
+      const result = await runSsoFlow(
+        (disableRedirect, callbackURL) =>
+          authClient.signIn.social({
+            disableRedirect,
+            provider: "oidc",
+            newUserCallbackURL: callbackURL("/onboarding"),
+            callbackURL: callbackURL(
+              searchParams.get("next") === "/integrations/setup" ? "/integrations/setup" : "/app",
+            ),
+            errorCallbackURL: callbackURL("/sign-in"),
+          }),
+        ["/app", "/onboarding", "/integrations/setup", "/sign-in"],
+      );
+      if (result.error) setError(authErrorText(result.error, t`Could not continue`));
+    } catch {
+      setError(t`Could not continue`);
+    }
+  }
+
   return (
     <AuthFrame onSubmit={submit} title={title}>
       {sent ? (
@@ -118,114 +158,151 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
         </div>
       ) : (
         <>
-          {mode === "up" ? (
-            <div className="mb-4 w-full">
-              <Label htmlFor="name" className="text-muted-foreground">
-                <Trans>Name</Trans>
-              </Label>
-              <Input
-                id="name"
-                name="name"
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t`Your name`}
-                className={fieldClass}
-              />
+          {capabilityError ? (
+            <div role="alert" className="w-full text-center">
+              <p>
+                <Trans>Could not load sign-in options</Trans>
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCapabilityAttempt((attempt) => attempt + 1)}
+              >
+                <Trans>Retry</Trans>
+              </Button>
             </div>
+          ) : !reset ? (
+            <p role="status">
+              <Trans>Loading…</Trans>
+            </p>
           ) : null}
-          <div className="w-full">
-            <Label htmlFor="email" className="text-muted-foreground">
-              <Trans>Email</Trans>
-            </Label>
-            <Input
-              id="email"
-              name="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder={t`Your email address`}
-              type="email"
-              required
-              className={fieldClass}
-            />
-          </div>
-          {mode !== "forgot" ? (
-            <div className="mt-4 w-full">
-              <Label htmlFor={passwordFieldId} className="text-muted-foreground">
-                <Trans>Password</Trans>
-              </Label>
-              <div className="relative">
-                <Input
-                  id={passwordFieldId}
-                  name="password"
-                  autoComplete={mode === "in" ? "current-password" : "new-password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={t`Password`}
-                  type={showPassword ? "text" : "password"}
-                  required
-                  minLength={8}
-                  className={`${fieldClass} pr-12`}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPassword((shown) => !shown)}
-                  aria-label={showPassword ? t`Hide password` : t`Show password`}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-2 my-auto text-muted-foreground"
-                >
-                  {showPassword ? <EyeOff /> : <Eye />}
-                </Button>
-              </div>
-              {mode === "in" && reset?.passwordReset ? (
-                <div className="mt-2 text-right text-sm">
-                  <Link to="/forgot-password" className="font-medium text-foreground">
-                    <Trans>Forgot password?</Trans>
-                  </Link>
-                </div>
-              ) : null}
-            </div>
+          {reset?.sso && mode !== "forgot" ? (
+            <Button
+              type="button"
+              disabled={pending}
+              className={submitClass}
+              onClick={() => void signInWithSso()}
+            >
+              <Trans>Continue with {reset.sso.name}</Trans>
+            </Button>
           ) : null}
-          {error ? (
-            <p role="alert" className="mt-3 w-full text-sm text-destructive">
+          {error && !reset?.passwordAuth ? (
+            <p role="alert" className="mt-3 text-sm text-destructive">
               {error}
             </p>
           ) : null}
-          <Button type="submit" size="lg" disabled={pending} className={submitClass}>
-            {pending ? (
-              <Trans>Working…</Trans>
-            ) : mode === "in" ? (
-              <Trans>Continue with email</Trans>
-            ) : mode === "forgot" ? (
-              <Trans>Send reset link</Trans>
-            ) : (
-              <Trans>Create account</Trans>
-            )}
-          </Button>
-          <p className="mt-8 text-muted-foreground">
-            {mode === "in" ? (
-              <>
-                <Trans>Don’t have an account?</Trans>{" "}
-                <Link to="/sign-up" className="font-medium text-foreground">
-                  <Trans>Sign up</Trans>
-                </Link>
-              </>
-            ) : mode === "up" ? (
-              <>
-                <Trans>Already have an account?</Trans>{" "}
-                <Link to="/sign-in" className="font-medium text-foreground">
-                  <Trans>Sign in</Trans>
-                </Link>
-              </>
-            ) : (
-              <Link to="/sign-in" className="font-medium text-foreground">
-                <Trans>Back to sign in</Trans>
-              </Link>
-            )}
-          </p>
+          {reset?.passwordAuth ? (
+            <>
+              {mode === "up" ? (
+                <div className="mb-4 w-full">
+                  <Label htmlFor="name" className="text-muted-foreground">
+                    <Trans>Name</Trans>
+                  </Label>
+                  <Input
+                    id="name"
+                    name="name"
+                    autoComplete="name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder={t`Your name`}
+                    className={fieldClass}
+                  />
+                </div>
+              ) : null}
+              <div className="w-full">
+                <Label htmlFor="email" className="text-muted-foreground">
+                  <Trans>Email</Trans>
+                </Label>
+                <Input
+                  id="email"
+                  name="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder={t`Your email address`}
+                  type="email"
+                  required
+                  className={fieldClass}
+                />
+              </div>
+              {mode !== "forgot" ? (
+                <div className="mt-4 w-full">
+                  <Label htmlFor={passwordFieldId} className="text-muted-foreground">
+                    <Trans>Password</Trans>
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id={passwordFieldId}
+                      name="password"
+                      autoComplete={mode === "in" ? "current-password" : "new-password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={t`Password`}
+                      type={showPassword ? "text" : "password"}
+                      required
+                      minLength={8}
+                      className={`${fieldClass} pr-12`}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowPassword((shown) => !shown)}
+                      aria-label={showPassword ? t`Hide password` : t`Show password`}
+                      aria-pressed={showPassword}
+                      className="absolute inset-y-0 right-2 my-auto text-muted-foreground"
+                    >
+                      {showPassword ? <EyeOff /> : <Eye />}
+                    </Button>
+                  </div>
+                  {mode === "in" && reset?.passwordReset ? (
+                    <div className="mt-2 text-right text-sm">
+                      <Link to="/forgot-password" className="font-medium text-foreground">
+                        <Trans>Forgot password?</Trans>
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {error ? (
+                <p role="alert" className="mt-3 w-full text-sm text-destructive">
+                  {error}
+                </p>
+              ) : null}
+              <Button type="submit" size="lg" disabled={pending} className={submitClass}>
+                {pending ? (
+                  <Trans>Working…</Trans>
+                ) : mode === "in" ? (
+                  <Trans>Continue with email</Trans>
+                ) : mode === "forgot" ? (
+                  <Trans>Send reset link</Trans>
+                ) : (
+                  <Trans>Create account</Trans>
+                )}
+              </Button>
+              <p className="mt-8 text-muted-foreground">
+                {mode === "in" ? (
+                  <>
+                    <Trans>Don’t have an account?</Trans>{" "}
+                    <Link to="/sign-up" className="font-medium text-foreground">
+                      <Trans>Sign up</Trans>
+                    </Link>
+                  </>
+                ) : mode === "up" ? (
+                  <>
+                    <Trans>Already have an account?</Trans>{" "}
+                    <Link to="/sign-in" className="font-medium text-foreground">
+                      <Trans>Sign in</Trans>
+                    </Link>
+                  </>
+                ) : (
+                  <Link to="/sign-in" className="font-medium text-foreground">
+                    <Trans>Back to sign in</Trans>
+                  </Link>
+                )}
+              </p>
+            </>
+          ) : null}
         </>
       )}
     </AuthFrame>
@@ -256,7 +333,7 @@ export function PasswordResetPage() {
     try {
       const result = await authClient.resetPassword({ newPassword: password, token });
       if (result.error) {
-        setError(result.error.message ?? t`Could not reset password`);
+        setError(authErrorText(result.error, t`Could not reset password`));
         return;
       }
       setComplete(true);

@@ -1,4 +1,11 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "No archived bots": "Нет архивированных ботов",
+  "Recover computer?": "Восстановить компьютер?",
+  "Recreate a computer that is not working.": "Пересоздать неработающий компьютер.",
+  "Restore the last saved workspace.": "Восстановить последнее сохранённое рабочее пространство.",
+  "Save the workspace and install current software.":
+    "Сохранить рабочее пространство и установить актуальное ПО.",
+  "More computer actions": "Другие действия с компьютером",
   "Update your server to use AI data sharing in this mobile version.":
     "Обновите сервер, чтобы использовать обмен данными с ИИ в этой версии мобильного приложения.",
   "Ask the server owner to configure this provider.":
@@ -48,7 +55,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Space default": "Пространство по умолчанию",
   "Stop all workers and confirm that provider operations have stopped before releasing this computer.":
     "Остановите всех воркеров и убедитесь, что операции провайдера остановлены, прежде чем освобождать этот компьютер.",
-  "Stored securely. Never shown here.": "Хранится безопасно. Здесь не отображается.",
   Thinking: "Рассуждение",
   "Update failed": "Обновление не выполнено",
   "Updating Team Computer": "Обновление компьютера команды",
@@ -172,8 +178,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Connect Executor": "Подключить Executor",
   "Connect MCP server {name}": "Подключение MCP-сервера {name}",
   "Connect Treg": "Подключить Treg",
-  "Connect this provider to use it as your personal model.":
-    "Подключите этого провайдера, чтобы использовать его в качестве своей личной модели.",
   Connected: "Подключено",
   "Connected · {label}": "Подключено · {label}",
   "Connected. Its tools are available from your next message.":
@@ -229,6 +233,10 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not open message": "Не удалось открыть сообщение",
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
   "Could not play that clip.": "Не удалось воспроизвести этот клип.",
+  "Could not reach the server": "Не удалось связаться с сервером",
+  "Enter a password": "Введите пароль",
+  "Enter a valid email": "Введите корректный адрес электронной почты",
+  "Something went wrong. Try again.": "Что-то пошло не так. Попробуйте ещё раз.",
   "Could not reach that server": "Не удалось связаться с этим сервером",
   "Could not reach this model server": "Не удалось связаться с сервером этой модели.",
   "Could not remove source": "Не удалось удалить источник",
@@ -702,4 +710,26 @@ export const RU_MESSAGES: Record<string, string> = {
   "{bot} here. Hi {name}.": "Это {bot}. Привет, {name}.",
   "{bot} here.": "Это {bot}.",
   "Waiting sound": "Звук ожидания",
+  // ai-data-sharing
+  "AI data sharing": "Передача данных ИИ",
+  "Allow {name} on mobile": "Разрешить {name} на телефоне",
+  "Could not load permissions.": "Не удалось загрузить разрешения.",
+  "No AI services configured.": "Сервисы ИИ не настроены.",
+  "Privacy policy": "Политика конфиденциальности",
+  "Provider privacy policy": "Политика конфиденциальности провайдера",
+  "Withdraw all mobile permissions": "Отозвать все мобильные разрешения",
+  "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
+    "Отзыв применяется к новым действиям с телефона. Остановите текущие запуски и отключите рутины отдельно.",
+  "Continue with {name}": "Продолжить с {name}",
+  "Could not load sign-in options": "Не удалось загрузить способы входа",
+  "Deletion code": "Код удаления",
+  "Email is not allowed to register": "Регистрация с этим адресом электронной почты запрещена",
+  "Email verification required": "Требуется подтверждение электронной почты",
+  "Link SSO": "Привязать SSO",
+  "Registration is closed": "Регистрация закрыта",
+  Retry: "Повторить",
+  "Send deletion code": "Отправить код удаления",
+  "Sign in to your existing account to link SSO":
+    "Войдите в существующий аккаунт, чтобы привязать SSO",
+  "SSO is temporarily unavailable. Try again.": "SSO временно недоступен. Попробуйте снова.",
 };

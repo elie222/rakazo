@@ -1,27 +1,39 @@
-import type { AvatarStyle } from "@rakazo/contracts";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
-  Alert,
-  Button,
+  KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppMark } from "../components/app-mark";
 import { useAvatarStyle } from "../components/avatar-style";
 import { BotAvatar } from "../components/bot-avatar";
+import { NativeActionButton } from "../components/native-action-button";
+import { NativeSegmentedControl } from "../components/native-segmented-control";
+import { NativeSymbol } from "../components/native-symbol";
+import {
+  SettingsGroup,
+  SettingsLabel,
+  SettingsRow,
+  SettingsSwitch,
+  useStackedSettings,
+} from "../components/settings-group";
 import type { MobileBot, MobileMe } from "../lib/api";
 import {
   currentApiBase,
   deleteAccount,
+  fetchAccountSecurity,
   loadSessionToken,
+  requestAccountDeletionCode,
   rpc,
   selectedSpaceId,
   signOut,
@@ -33,7 +45,7 @@ import {
   setAppearancePreference,
 } from "../lib/appearance";
 import { explicitSignInRoute } from "../lib/auth-routing";
-import { confirmDeleteBot } from "../lib/bot-lifecycle";
+import { promptAccountDeletion } from "../lib/delete-account-prompt";
 import { setUiLocale, useI18n } from "../lib/i18n";
 import type { LiveNotificationSettings } from "../lib/live-notifications";
 import {
@@ -57,8 +69,10 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../lib/response-streaming";
+import { continueWithSso } from "../lib/sso";
 import type { AccountUiLocale } from "../lib/ui-locale";
 import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../lib/ui-locale";
+import { errorText } from "../lib/user-error";
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
@@ -67,10 +81,20 @@ export default function Account() {
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
-  const [password, setPassword] = useState("");
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [security, setSecurity] = useState<AccountSecurity | null>(null);
+  const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
+  const [deletionCodeSent, setDeletionCodeSent] = useState(false);
+  const [ssoReauthenticated, setSsoReauthenticated] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
   const [localeSaving, setLocaleSaving] = useState(false);
   const [localeError, setLocaleError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const deletionDisabled =
+    pending ||
+    (security?.hasPassword
+      ? !deletePassword
+      : !ssoReauthenticated && (!deletionCodeSent || !deletePassword.trim()));
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
@@ -79,7 +103,8 @@ export default function Account() {
   const [notificationsReady, setNotificationsReady] = useState(Platform.OS !== "android");
   const [notificationPending, setNotificationPending] = useState(false);
   const [notificationError, setNotificationError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [archivedBots, setArchivedBots] = useState<MobileBot[]>([]);
   const [usage, setUsage] = useState<{
     runs: number;
@@ -100,6 +125,7 @@ export default function Account() {
   );
   const loadRemoteImagesLabel = t("Load web images automatically");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const stackOptions = useStackedSettings();
   const styles = useThemedStyles(createAccountStyles);
   const versionInfo = getAppVersionInfo();
   const updateLabel = formatUpdateLabel(versionInfo.update, t);
@@ -108,9 +134,6 @@ export default function Account() {
   useEffect(() => {
     void rpc<MobileMe>("me")
       .then(setMe)
-      .catch(() => undefined);
-    void rpc<MobileBot[]>("bots/listArchived")
-      .then(setArchivedBots)
       .catch(() => undefined);
     void rpc<{ runs: number; inputTokens: number; outputTokens: number }>("usage/summary")
       .then(setUsage)
@@ -124,30 +147,33 @@ export default function Account() {
   }, []);
 
   const usageBlock = (
-    <View accessibilityLabel={t("Usage")} style={styles.profile}>
-      <Text style={styles.settingsTitle}>{t("Usage")}</Text>
-      {usage ? (
-        <Text style={styles.email}>
-          {t("{runs} runs · {tokens} tokens", {
-            runs: usage.runs,
-            tokens: usage.inputTokens + usage.outputTokens,
-          })}
-        </Text>
-      ) : null}
-    </View>
+    <SettingsRow
+      accessible
+      title={t("Usage")}
+      detail={
+        usage
+          ? t("{runs} runs · {tokens} tokens", {
+              runs: usage.runs,
+              tokens: usage.inputTokens + usage.outputTokens,
+            })
+          : undefined
+      }
+    />
   );
 
-  async function restoreBot(botId: string) {
-    try {
-      await rpc("bots/restore", { botId });
-      setArchivedBots((bots) => bots.filter((bot) => bot.id !== botId));
-    } catch (restoreError) {
-      Alert.alert(
-        t("Could not restore bot"),
-        restoreError instanceof Error ? restoreError.message : t("Try again."),
-      );
-    }
-  }
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      void rpc<MobileBot[]>("bots/listArchived")
+        .then((bots) => {
+          if (active) setArchivedBots(bots);
+        })
+        .catch(() => undefined);
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
 
   async function selectAvatarStyle(next: AvatarStyle) {
     if (next === avatarStyle) return;
@@ -164,13 +190,13 @@ export default function Account() {
 
   async function handleSignOut() {
     setPending(true);
-    setError(null);
+    setSignOutError(null);
     try {
       await signOut();
       router.dismissAll();
       router.replace(explicitSignInRoute);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not sign out"));
+      setSignOutError(errorText(err, t("Could not sign out")));
       setPending(false);
     }
   }
@@ -193,30 +219,66 @@ export default function Account() {
       await registerPushToken();
     } catch (cause) {
       setNotifications(previous);
-      setNotificationError(
-        cause instanceof Error ? cause.message : t("Could not update notifications"),
-      );
+      setNotificationError(errorText(cause, t("Could not update notifications")));
     } finally {
       setNotificationPending(false);
     }
   }
 
-  function confirmDeletion() {
-    setError(null);
-    Alert.alert(
-      t("Delete your account?"),
-      t(
+  async function securityAction(run: () => Promise<void>) {
+    setPending(true);
+    setDeleteError(null);
+    try {
+      await run();
+    } catch (err) {
+      setDeleteError(errorText(err, t("Could not continue")));
+    } finally {
+      setPending(false);
+    }
+  }
+  useEffect(() => {
+    void fetchAccountSecurity()
+      .then(setSecurity)
+      .catch(() => undefined);
+  }, []);
+
+  function closeDeletePrompt() {
+    if (pending) return;
+    setDeleteOpen(false);
+    setDeletePassword("");
+  }
+
+  async function requestDeletion() {
+    if (pending) return;
+    setDeleteError(null);
+    try {
+      const value = await fetchAccountSecurity();
+      setSecurity(value);
+      if (!value.hasPassword) {
+        setDeletePassword("");
+        setDeletionCodeSent(false);
+        setSsoReauthenticated(value.freshOidcAuth);
+        setDeleteOpen(true);
+        return;
+      }
+    } catch (err) {
+      setDeleteError(errorText(err, t("Could not continue")));
+      return;
+    }
+
+    const prompted = promptAccountDeletion({
+      title: t("Delete your account?"),
+      message: t(
         "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
       ),
-      [
-        { text: t("Cancel"), style: "cancel" },
-        {
-          text: t("Delete account"),
-          style: "destructive",
-          onPress: () => void handleDeletion(),
-        },
-      ],
-    );
+      cancelLabel: t("Cancel"),
+      deleteLabel: t("Delete"),
+      onSubmit: (password) => void handleDeletion(password, true),
+    });
+    if (!prompted) {
+      setDeletePassword("");
+      setDeleteOpen(true);
+    }
   }
 
   function applyLocale(code: AccountUiLocale) {
@@ -244,15 +306,25 @@ export default function Account() {
     });
   }
 
-  async function handleDeletion() {
+  async function handleDeletion(password: string, hasPassword = security?.hasPassword === true) {
+    if ((!password && !ssoReauthenticated) || pending) return;
     setPending(true);
-    setError(null);
+    setDeleteError(null);
     try {
-      await deleteAccount(password);
+      if (hasPassword) await deleteAccount(password);
+      else {
+        const current = await fetchAccountSecurity();
+        setSecurity(current);
+        setSsoReauthenticated(current.freshOidcAuth);
+        const token = deletionCodeSent ? password.trim() : undefined;
+        if (current.hasPassword || (!current.freshOidcAuth && !token)) return;
+        await deleteAccount(undefined, token);
+      }
+      setDeleteOpen(false);
       router.dismissAll();
       router.replace("/sign-in");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not delete account"));
+      setDeleteError(errorText(err, t("Could not delete account")));
     } finally {
       setPending(false);
     }
@@ -260,63 +332,65 @@ export default function Account() {
 
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Button
-          color={mobileTokens().primary}
-          title="AI data sharing"
-          onPress={() => router.push("/ai-data-sharing")}
-        />
-        {focus === "usage" ? usageBlock : null}
-        <View style={styles.profile}>
-          <Text style={styles.name}>{me?.name || t("Your account")}</Text>
-          {me?.email ? <Text style={styles.email}>{me.email}</Text> : null}
+      <ScrollView
+        contentContainerStyle={[styles.content, stackOptions && styles.compactContent]}
+        contentInsetAdjustmentBehavior="automatic"
+      >
+        {focus === "usage" ? <SettingsGroup>{usageBlock}</SettingsGroup> : null}
+        <SettingsGroup>
+          <SettingsRow
+            accessible
+            detail={me?.email || undefined}
+            prominent
+            title={me?.name || t("Your account")}
+          />
+          {focus !== "usage" ? usageBlock : null}
+        </SettingsGroup>
+
+        {(security?.sso && !security.ssoLinked) || canChangePassword ? (
+          <SettingsGroup>
+            {security?.sso && !security.ssoLinked ? (
+              <SettingsRow
+                accessibilityRole="button"
+                chevron="right"
+                disabled={pending}
+                dimmed={pending}
+                title={t("Link SSO")}
+                onPress={() =>
+                  void securityAction(async () => {
+                    if (await continueWithSso("link")) setSecurity(await fetchAccountSecurity());
+                  })
+                }
+              />
+            ) : null}
+            {canChangePassword ? (
+              <SettingsRow
+                accessibilityRole="button"
+                chevron="right"
+                onPress={() => router.push("/change-password")}
+                title={t("Change password")}
+              />
+            ) : null}
+          </SettingsGroup>
+        ) : null}
+
+        <View accessibilityLabel={t("Appearance")} style={styles.section}>
+          <SettingsLabel>{t("Appearance")}</SettingsLabel>
+          <NativeSegmentedControl
+            accessibilityLabel={t("Appearance")}
+            onChange={(value) => void setAppearancePreference(value)}
+            options={[
+              { value: "system", label: t("System") },
+              { value: "light", label: t("Light") },
+              { value: "dark", label: t("Dark") },
+            ]}
+            value={appearance}
+          />
         </View>
-        {focus !== "usage" ? usageBlock : null}
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => router.push("/change-password")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Change password")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        <View accessibilityLabel={t("Appearance")} style={styles.avatarSection}>
-          <Text style={styles.settingsTitle}>{t("Appearance")}</Text>
-          <View style={styles.appearanceOptions}>
-            {(
-              [
-                ["system", "System"],
-                ["light", "Light"],
-                ["dark", "Dark"],
-              ] as const
-            ).map(([value, label]) => {
-              const selected = appearance === value;
-              const translated = t(label);
-              return (
-                <Pressable
-                  key={value}
-                  accessibilityLabel={translated}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => void setAppearancePreference(value)}
-                  style={({ pressed }) => [
-                    styles.appearanceOption,
-                    selected && styles.appearanceOptionSelected,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.appearanceLabel}>{translated}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        <View accessibilityLabel={t("Avatar style")} style={styles.avatarSection}>
-          <Text style={styles.settingsTitle}>{t("Avatars")}</Text>
-          <View style={styles.avatarOptions}>
+        <View accessibilityLabel={t("Avatar style")} style={styles.section}>
+          <SettingsLabel>{t("Avatars")}</SettingsLabel>
+          <View style={[styles.options, stackOptions && styles.optionsStacked]}>
             {(["robot", "organic"] as const).map((style) => {
               const selected = avatarStyle === style;
               const styleLabel = style === "robot" ? t("Robot") : t("Organic");
@@ -329,8 +403,9 @@ export default function Account() {
                   disabled={avatarPending}
                   onPress={() => void selectAvatarStyle(style)}
                   style={({ pressed }) => [
+                    styles.option,
                     styles.avatarOption,
-                    selected && styles.avatarOptionSelected,
+                    !stackOptions && styles.optionSideBySide,
                     pressed && styles.pressed,
                   ]}
                 >
@@ -340,39 +415,41 @@ export default function Account() {
                     size={42}
                     variant={style}
                   />
-                  <Text style={styles.avatarLabel}>{styleLabel}</Text>
+                  <Text style={styles.optionLabel}>{styleLabel}</Text>
+                  <NativeSymbol
+                    android={selected ? "checkmark-circle" : "ellipse-outline"}
+                    color={selected ? native.label : native.tertiaryLabel}
+                    ios={selected ? "checkmark.circle.fill" : "circle"}
+                    size={22}
+                  />
                 </Pressable>
               );
             })}
           </View>
-          {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
+          <SettingsGroup>
+            {avatarError ? <Text style={styles.error}>{avatarError}</Text> : null}
+          </SettingsGroup>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("Language")}
-          accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
-          accessibilityState={{ disabled: localeSaving }}
-          disabled={localeSaving}
-          onPress={openLanguagePicker}
-          style={({ pressed }) => [
-            styles.settingsButton,
-            pressed && styles.pressed,
-            localeSaving && { opacity: 0.6 },
-          ]}
-        >
-          <Text style={styles.settingsTitle}>{t("Language")}</Text>
-          <View style={styles.settingsTrailing}>
-            <Text style={styles.settingsValue}>{UI_LOCALE_LABELS[locale]}</Text>
-            <Text style={styles.chevron}>›</Text>
-          </View>
-        </Pressable>
-        {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
+        <SettingsGroup>
+          <SettingsRow
+            accessibilityRole="button"
+            accessibilityLabel={t("Language")}
+            accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
+            accessibilityState={{ disabled: localeSaving }}
+            chevron="right"
+            dimmed={localeSaving}
+            disabled={localeSaving}
+            onPress={openLanguagePicker}
+            title={t("Language")}
+            value={UI_LOCALE_LABELS[locale]}
+          />
+          {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
+        </SettingsGroup>
 
         {Platform.OS === "android" ? (
-          <View accessibilityLabel={t("Notifications")} style={styles.profile}>
-            <Text style={styles.settingsTitle}>{t("Notifications")}</Text>
-            <NotificationSwitch
+          <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
+            <SettingsSwitch
               label={t("Live working status")}
               detail={t("While agents are working")}
               value={notifications.liveConnection}
@@ -381,14 +458,14 @@ export default function Account() {
                 void updateNotifications({ ...notifications, liveConnection })
               }
             />
-            <NotificationSwitch
+            <SettingsSwitch
               label={t("Agent messages")}
               detail={t("Replies and completed work")}
               value={notifications.messages}
               disabled={notificationPending || !notificationsReady}
               onChange={(messages) => void updateNotifications({ ...notifications, messages })}
             />
-            <NotificationSwitch
+            <SettingsSwitch
               label={t("Scheduled tasks")}
               detail={t("Alerts from routines")}
               value={notifications.scheduledTasks}
@@ -397,7 +474,7 @@ export default function Account() {
                 void updateNotifications({ ...notifications, scheduledTasks })
               }
             />
-            <NotificationSwitch
+            <SettingsSwitch
               label={t("Needs attention")}
               detail={t("Questions, approvals, takeover")}
               value={notifications.needsAttention}
@@ -406,222 +483,248 @@ export default function Account() {
                 void updateNotifications({ ...notifications, needsAttention })
               }
             />
-            <Pressable
+            <SettingsRow
               accessibilityRole="button"
               onPress={() => void openPromotedNotificationSettings()}
-              style={{ minHeight: 44, justifyContent: "center" }}
-            >
-              <Text style={{ color: native.label, fontSize: 14 }}>{t("Live update settings")}</Text>
-            </Pressable>
-            <Pressable
+              title={t("Live update settings")}
+            />
+            <SettingsRow
               accessibilityRole="button"
               onPress={() => void openLiveNotificationSettings()}
-              style={{ minHeight: 44, justifyContent: "center" }}
-            >
-              <Text style={{ color: native.label, fontSize: 14 }}>
-                {t("Notification settings")}
-              </Text>
-            </Pressable>
+              title={t("Notification settings")}
+            />
             {notificationError ? <Text style={styles.error}>{notificationError}</Text> : null}
-          </View>
+          </SettingsGroup>
         ) : null}
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => router.push("/models")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Models")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => router.push("/voice")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Voice")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => router.push("/integrations")}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Integrations")}</Text>
-          <Text style={styles.chevron}>›</Text>
-        </Pressable>
-
-        {me?.isDeploymentOwner ? (
-          <Pressable
+        <SettingsGroup>
+          <SettingsRow
             accessibilityRole="button"
-            onPress={() => router.push("/integration-setup")}
-            style={styles.settingsButton}
-          >
-            <Text style={styles.settingsTitle}>{t("Server integrations")}</Text>
-          </Pressable>
-        ) : null}
+            chevron="right"
+            disabled={pending}
+            onPress={() => router.push("/models")}
+            title={t("Models")}
+          />
+          <SettingsRow
+            accessibilityRole="button"
+            chevron="right"
+            disabled={pending}
+            onPress={() => router.push("/voice")}
+            title={t("Voice")}
+          />
+          <SettingsRow
+            accessibilityRole="button"
+            chevron="right"
+            disabled={pending}
+            onPress={() => router.push("/integrations")}
+            title={t("Integrations")}
+          />
+          <SettingsRow
+            accessibilityRole="button"
+            chevron="right"
+            disabled={pending}
+            onPress={() => router.push("/ai-data-sharing")}
+            title={t("AI data sharing")}
+          />
+          {me?.isDeploymentOwner ? (
+            <SettingsRow
+              accessibilityRole="button"
+              chevron="right"
+              onPress={() => router.push("/integration-setup")}
+              title={t("Server integrations")}
+            />
+          ) : null}
+        </SettingsGroup>
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t("Advanced")}
-          accessibilityState={{ expanded: advancedOpen }}
-          onPress={() => setAdvancedOpen((open) => !open)}
-          style={({ pressed }) => [styles.settingsButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.settingsTitle}>{t("Advanced")}</Text>
-          <Text style={styles.chevron}>{advancedOpen ? "⌃" : "›"}</Text>
-        </Pressable>
-        {advancedOpen ? (
-          <View style={styles.avatarSection}>
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>{t("Stream replies")}</Text>
-              <Switch
-                accessibilityLabel={t("Stream replies")}
-                value={streamReplies}
-                onValueChange={(checked) =>
-                  void setResponseStreamingPreference(checked ? "on" : "off")
-                }
-              />
-            </View>
-            <View style={styles.switchRow}>
-              <Text style={styles.switchLabel}>{loadRemoteImagesLabel}</Text>
-              <Switch
-                accessibilityLabel={loadRemoteImagesLabel}
-                value={loadRemoteImages}
-                onValueChange={(checked) => void setRemoteImagesPreference(checked ? "on" : "off")}
-              />
-            </View>
-          </View>
-        ) : null}
+        <SettingsGroup>
+          <SettingsRow
+            accessibilityRole="button"
+            accessibilityLabel={t("Advanced")}
+            accessibilityState={{ expanded: advancedOpen }}
+            chevron={advancedOpen ? "down" : "right"}
+            onPress={() => setAdvancedOpen((open) => !open)}
+            title={t("Advanced")}
+          />
+          {advancedOpen ? (
+            <SettingsSwitch
+              label={t("Stream replies")}
+              value={streamReplies}
+              onChange={(checked) => void setResponseStreamingPreference(checked ? "on" : "off")}
+            />
+          ) : null}
+          {advancedOpen ? (
+            <SettingsSwitch
+              label={loadRemoteImagesLabel}
+              value={loadRemoteImages}
+              onChange={(checked) => void setRemoteImagesPreference(checked ? "on" : "off")}
+            />
+          ) : null}
+        </SettingsGroup>
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={pending}
-          onPress={() => void handleSignOut()}
-          style={({ pressed }) => [styles.button, pressed && styles.pressed]}
-        >
-          <Text style={styles.buttonLabel}>{t("Sign out")}</Text>
-        </Pressable>
+        <View style={styles.section}>
+          <NativeActionButton
+            disabled={pending}
+            fill
+            label={t("Sign out")}
+            onPress={() => void handleSignOut()}
+            prominence="secondary"
+          />
+          <SettingsGroup>
+            {signOutError ? (
+              <Text accessibilityRole="alert" style={styles.error}>
+                {signOutError}
+              </Text>
+            ) : null}
+          </SettingsGroup>
+        </View>
 
         {archivedBots.length > 0 ? (
-          <View style={styles.archivedSection}>
-            <Text style={styles.sectionTitle}>{t("Archived bots")}</Text>
-            {archivedBots.map((bot) => (
-              <View key={bot.id} style={styles.archivedRow}>
-                <Text numberOfLines={1} style={styles.archivedName}>
-                  {bot.name}
+          <SettingsGroup>
+            <SettingsRow
+              accessibilityRole="button"
+              chevron="right"
+              onPress={() => router.push("/archived-bots")}
+              title={t("Archived bots")}
+              value={String(archivedBots.length)}
+            />
+          </SettingsGroup>
+        ) : null}
+
+        <View style={styles.about}>
+          <AppMark />
+          {versionInfo.nativeLabel || updateLabel ? (
+            <View
+              accessibilityLabel={versionAccessibility}
+              accessibilityRole="summary"
+              style={styles.versionFooter}
+            >
+              {versionInfo.nativeLabel ? (
+                <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
+              ) : null}
+              {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
+            </View>
+          ) : null}
+        </View>
+
+        <SettingsGroup>
+          <SettingsRow
+            accessibilityRole="button"
+            destructive
+            dimmed={pending}
+            disabled={pending}
+            onPress={requestDeletion}
+            title={t("Delete account")}
+            trailing={
+              pending ? <ActivityIndicator color={mobileTokens().destructive} /> : undefined
+            }
+          />
+          {!deleteOpen && deleteError ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {deleteError}
+            </Text>
+          ) : null}
+        </SettingsGroup>
+      </ScrollView>
+      {deleteOpen ? (
+        <Modal transparent animationType="fade" onRequestClose={closeDeletePrompt}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.dialogOverlay}
+          >
+            <Pressable
+              accessibilityLabel={t("Cancel")}
+              style={StyleSheet.absoluteFill}
+              onPress={closeDeletePrompt}
+            />
+            <ScrollView
+              bounces={false}
+              contentContainerStyle={styles.dialog}
+              keyboardShouldPersistTaps="handled"
+              style={styles.dialogScroll}
+            >
+              <Text style={styles.dialogTitle}>{t("Delete your account?")}</Text>
+              <Text style={styles.dialogBody}>
+                {t(
+                  "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
+                )}
+              </Text>
+              {!security?.hasPassword ? (
+                <>
+                  {security?.sso ? (
+                    <NativeActionButton
+                      label={t("Sign in again")}
+                      disabled={pending}
+                      onPress={() =>
+                        void securityAction(async () => {
+                          setSsoReauthenticated(await continueWithSso("reauthenticate"));
+                        })
+                      }
+                    />
+                  ) : null}
+                  {security?.emailDeletion ? (
+                    <NativeActionButton
+                      label={t("Send deletion code")}
+                      disabled={pending}
+                      onPress={() =>
+                        void securityAction(async () => {
+                          await requestAccountDeletionCode();
+                          setDeletionCodeSent(true);
+                        })
+                      }
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              {security?.hasPassword || deletionCodeSent ? (
+                <TextInput
+                  accessibilityLabel={
+                    security?.hasPassword ? t("Current password") : t("Deletion code")
+                  }
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  editable={!pending}
+                  onChangeText={(value) => {
+                    setDeletePassword(value);
+                    setDeleteError(null);
+                  }}
+                  placeholder={security?.hasPassword ? t("Current password") : t("Deletion code")}
+                  placeholderTextColor={native.tertiaryLabel}
+                  secureTextEntry={security?.hasPassword}
+                  style={styles.dialogInput}
+                  textContentType={security?.hasPassword ? "password" : "oneTimeCode"}
+                  value={deletePassword}
+                />
+              ) : null}
+              {deleteError ? (
+                <Text accessibilityRole="alert" style={styles.dialogError}>
+                  {deleteError}
                 </Text>
-                <Pressable onPress={() => void restoreBot(bot.id)} hitSlop={8}>
-                  <Text style={styles.restoreLabel}>{t("Restore")}</Text>
+              ) : null}
+              <View style={styles.dialogActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={closeDeletePrompt}
+                  style={styles.dialogAction}
+                >
+                  <Text style={styles.dialogCancel}>{t("Cancel")}</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() =>
-                    confirmDeleteBot(bot, () =>
-                      setArchivedBots((bots) => bots.filter((item) => item.id !== bot.id)),
-                    )
-                  }
-                  hitSlop={8}
+                  accessibilityRole="button"
+                  disabled={deletionDisabled}
+                  onPress={() => void handleDeletion(deletePassword)}
+                  style={styles.dialogAction}
                 >
-                  <Text style={styles.archivedDeleteLabel}>{t("Delete")}</Text>
+                  <Text style={[styles.dialogDelete, deletionDisabled && styles.disabled]}>
+                    {t("Delete")}
+                  </Text>
                 </Pressable>
               </View>
-            ))}
-          </View>
-        ) : null}
-
-        {versionInfo.nativeLabel || updateLabel ? (
-          <View
-            accessibilityLabel={versionAccessibility}
-            accessibilityRole="summary"
-            style={styles.versionFooter}
-          >
-            {versionInfo.nativeLabel ? (
-              <Text style={styles.versionLine}>{versionInfo.nativeLabel}</Text>
-            ) : null}
-            {updateLabel ? <Text style={styles.versionLine}>{updateLabel}</Text> : null}
-          </View>
-        ) : null}
-
-        <View style={styles.dangerZone}>
-          <Text style={styles.dangerTitle}>{t("Delete account")}</Text>
-          <TextInput
-            accessibilityLabel={t("Current password")}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!pending}
-            onChangeText={(value) => {
-              setPassword(value);
-              setError(null);
-            }}
-            placeholder={t("Current password")}
-            placeholderTextColor={native.tertiaryLabel}
-            secureTextEntry
-            style={styles.password}
-            textContentType="password"
-            value={password}
-          />
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Pressable
-            accessibilityRole="button"
-            disabled={pending || !password}
-            onPress={confirmDeletion}
-            style={({ pressed }) => [
-              styles.deleteButton,
-              (pending || !password) && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            {pending ? (
-              <ActivityIndicator color={mobileTokens().destructiveForeground} />
-            ) : (
-              <Text style={styles.deleteLabel}>{t("Delete account")}</Text>
-            )}
-          </Pressable>
-        </View>
-      </ScrollView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Modal>
+      ) : null}
     </SafeAreaView>
-  );
-}
-
-function NotificationSwitch({
-  label,
-  detail,
-  value,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  detail: string;
-  value: boolean;
-  disabled: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <View
-      style={{
-        minHeight: 54,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: native.label, fontSize: 15 }}>{label}</Text>
-        <Text style={{ color: native.secondaryLabel, fontSize: 12.5, marginTop: 2 }}>{detail}</Text>
-      </View>
-      <Switch
-        accessibilityLabel={label}
-        accessibilityHint={detail}
-        disabled={disabled}
-        value={value}
-        onValueChange={onChange}
-      />
-    </View>
   );
 }
 
@@ -630,216 +733,138 @@ function createAccountStyles() {
   return StyleSheet.create({
     screen: {
       flex: 1,
-      backgroundColor: native.page,
+      backgroundColor: native.groupedPage,
     },
     content: {
       flexGrow: 1,
-      padding: 20,
-      gap: 20,
-    },
-    profile: {
-      borderRadius: 16,
-      backgroundColor: native.fill,
-      padding: 18,
-      gap: 4,
-    },
-    name: {
-      color: native.label,
-      fontSize: 20,
-      fontWeight: "600",
-    },
-    email: {
-      color: native.secondaryLabel,
-      fontSize: 15,
-    },
-    button: {
-      minHeight: 50,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: native.fill,
-    },
-    buttonLabel: {
-      color: native.label,
-      fontSize: 17,
-      fontWeight: "600",
-    },
-    archivedSection: {
-      borderRadius: 16,
-      backgroundColor: native.fill,
-      padding: 18,
-      gap: 14,
-    },
-    sectionTitle: {
-      color: native.secondaryLabel,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    archivedRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-    },
-    archivedName: {
-      flex: 1,
-      color: native.label,
-      fontSize: 16,
-    },
-    restoreLabel: {
-      color: native.label,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    archivedDeleteLabel: {
-      color: tokens.destructive,
-      fontSize: 14,
-    },
-    settingsButton: {
-      minHeight: 62,
-      borderRadius: 14,
-      backgroundColor: native.fill,
       paddingHorizontal: 16,
-      paddingVertical: 12,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
+      paddingTop: 16,
+      paddingBottom: 32,
+      gap: 28,
     },
-    avatarSection: {
-      borderRadius: 16,
-      backgroundColor: native.fill,
-      padding: 18,
-      gap: 14,
+    compactContent: {
+      paddingHorizontal: 8,
     },
-    appearanceOptions: {
+    section: {
+      gap: 7,
+    },
+    options: {
       flexDirection: "row",
       gap: 8,
     },
-    appearanceOption: {
-      flex: 1,
-      minHeight: 44,
-      borderRadius: 12,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.tertiaryLabel,
+    optionsStacked: {
+      flexDirection: "column",
+    },
+    option: {
+      minHeight: 48,
+      borderRadius: 14,
+      borderCurve: "continuous",
+      borderWidth: 2,
+      borderColor: "transparent",
+      backgroundColor: native.groupedCell,
+      paddingHorizontal: 12,
+      paddingVertical: 12,
       alignItems: "center",
       justifyContent: "center",
     },
-    appearanceOptionSelected: {
-      borderColor: native.label,
-      backgroundColor: native.fillPressed,
-    },
-    appearanceLabel: {
-      color: native.label,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    avatarOptions: {
-      flexDirection: "row",
-      gap: 12,
+    optionSideBySide: {
+      flex: 1,
     },
     avatarOption: {
-      flex: 1,
-      minHeight: 86,
-      borderRadius: 14,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: native.tertiaryLabel,
-      alignItems: "center",
-      justifyContent: "center",
+      minHeight: 96,
       gap: 8,
     },
-    avatarOptionSelected: {
-      borderColor: native.label,
-      backgroundColor: native.fillPressed,
-    },
-    avatarLabel: {
-      color: native.label,
-      fontSize: 14,
-      fontWeight: "600",
-    },
-    settingsTitle: {
-      color: native.label,
-      fontSize: 17,
-      fontWeight: "600",
-    },
-    switchRow: {
-      minHeight: 44,
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 12,
-    },
-    switchLabel: {
-      flex: 1,
+    optionLabel: {
       color: native.label,
       fontSize: 15,
-    },
-    settingsTrailing: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      minWidth: 0,
-    },
-    settingsValue: {
-      color: native.secondaryLabel,
-      fontSize: 15,
-    },
-    chevron: {
-      color: native.secondaryLabel,
-      fontSize: 28,
-      fontWeight: "300",
-    },
-    versionFooter: {
-      marginTop: 4,
-      alignItems: "center",
-      gap: 2,
-    },
-    versionLine: {
-      color: native.tertiaryLabel,
-      fontSize: 12,
+      fontWeight: "600",
       textAlign: "center",
     },
-    dangerZone: {
-      marginTop: 12,
-      borderRadius: 16,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.destructive,
-      padding: 18,
+    about: {
+      alignItems: "center",
+      gap: 16,
+      paddingTop: 8,
+      paddingBottom: 22,
     },
-    dangerTitle: {
+    versionFooter: {
+      alignItems: "center",
+    },
+    versionLine: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      textAlign: "center",
+    },
+    error: {
       color: tokens.destructive,
+      fontSize: 15,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+    },
+    dialogOverlay: {
+      flex: 1,
+      justifyContent: "center",
+      padding: 24,
+      backgroundColor: "rgba(0, 0, 0, 0.62)",
+    },
+    dialogScroll: {
+      flexGrow: 0,
+      flexShrink: 1,
+      maxHeight: "100%",
+      borderRadius: 14,
+      backgroundColor: native.page,
+    },
+    dialog: {
+      padding: 18,
+      gap: 12,
+    },
+    dialogTitle: {
+      color: native.label,
       fontSize: 17,
       fontWeight: "600",
     },
-    password: {
+    dialogBody: {
+      color: native.secondaryLabel,
+      fontSize: 14,
+      lineHeight: 20,
+    },
+    dialogInput: {
       height: 48,
       borderRadius: 12,
       backgroundColor: native.fill,
       color: native.label,
       paddingHorizontal: 14,
-      marginTop: 16,
       fontSize: 16,
     },
-    error: {
+    dialogError: {
       color: tokens.destructive,
       fontSize: 14,
-      marginTop: 10,
     },
-    deleteButton: {
-      minHeight: 50,
-      borderRadius: 12,
+    dialogActions: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
       alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: tokens.destructive,
-      marginTop: 14,
+      gap: 12,
     },
-    deleteLabel: {
-      color: tokens.destructiveForeground,
+    dialogAction: {
+      minHeight: 48,
+      justifyContent: "center",
+      paddingHorizontal: 8,
+    },
+    dialogCancel: {
+      color: native.label,
       fontSize: 16,
-      fontWeight: "700",
+      fontWeight: "600",
+    },
+    dialogDelete: {
+      color: tokens.destructive,
+      fontSize: 16,
+      fontWeight: "600",
     },
     disabled: {
       opacity: 0.45,
     },
     pressed: {
-      opacity: 0.7,
+      backgroundColor: native.fillPressed,
     },
   });
 }

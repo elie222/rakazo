@@ -1,20 +1,13 @@
 import type { IntegrationSetupState } from "@rakazo/contracts";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Linking, ScrollView, StyleSheet, Text, TextInput } from "react-native";
+import { NativeActionButton } from "../components/native-action-button";
+import { NativeSegmentedControl } from "../components/native-segmented-control";
 import { rpc } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
-import { useThemedStyles } from "../lib/native";
+import { native, useThemedStyles } from "../lib/native";
 
 export default function IntegrationSetup() {
   const router = useRouter();
@@ -39,10 +32,10 @@ export default function IntegrationSetup() {
       .catch(() => setError(t("Could not load integrations")));
   }, []);
   const choices = [
-    { id: "direct", label: t("Direct MCP") },
-    { id: "composio", label: "Composio" },
-    { id: "pipedream", label: "Pipedream" },
-    { id: "executor", label: "Executor" },
+    { value: "direct", label: t("Direct MCP") },
+    { value: "composio", label: "Composio" },
+    { value: "pipedream", label: "Pipedream" },
+    { value: "executor", label: "Executor" },
   ];
   const managed = choice === "composio" || choice === "pipedream";
   const configured = state?.providers.find((provider) => provider.id === choice)?.configured;
@@ -72,38 +65,46 @@ export default function IntegrationSetup() {
   }
   function button(label: string, onPress: () => void, disabled = false) {
     return (
-      <Pressable
-        accessibilityRole="button"
+      <NativeActionButton
         disabled={disabled}
+        fill
+        label={label}
         onPress={onPress}
-        style={[styles.button, disabled && { opacity: 0.5 }]}
-      >
-        <Text style={styles.buttonText}>{label}</Text>
-      </Pressable>
+        prominence="secondary"
+      />
     );
   }
-  if (!state) return error ? <Text accessibilityRole="alert">{error}</Text> : <ActivityIndicator />;
+  if (!state) {
+    return (
+      <ScrollView contentContainerStyle={styles.content} contentInsetAdjustmentBehavior="automatic">
+        {error ? (
+          <Text accessibilityRole="alert" style={styles.text}>
+            {error}
+          </Text>
+        ) : (
+          <ActivityIndicator />
+        )}
+      </ScrollView>
+    );
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <View style={styles.choices}>
-        {choices.map(({ id, label }) => (
-          <Pressable
-            key={id}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: choice === id, disabled: busy }}
-            disabled={busy}
-            onPress={() => {
-              setChoice(id);
-              setKey("");
-              setError(null);
-            }}
-            style={[styles.choice, choice === id && styles.selected]}
-          >
-            <Text style={styles.text}>{label}</Text>
-          </Pressable>
-        ))}
-      </View>
+    <ScrollView
+      contentContainerStyle={styles.content}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardShouldPersistTaps="handled"
+    >
+      <NativeSegmentedControl
+        accessibilityLabel={t("Server integrations")}
+        disabled={busy}
+        onChange={(next) => {
+          setChoice(next);
+          setKey("");
+          setError(null);
+        }}
+        options={choices}
+        value={choice}
+      />
       {choice === "composio" || choice === "pipedream" ? (
         <>
           {configured ? <Text style={styles.text}>{t("Connected")}</Text> : null}
@@ -199,19 +200,13 @@ function createStyles() {
   const tokens = mobileTokens();
   return StyleSheet.create({
     content: { padding: 20, gap: 16 },
-    choices: { borderWidth: 1, borderColor: tokens.border, borderRadius: 12, overflow: "hidden" },
-    choice: { padding: 16 },
-    selected: { backgroundColor: tokens.muted },
     text: { color: tokens.foreground, fontSize: 16 },
     input: {
-      borderWidth: 1,
-      borderColor: tokens.border,
+      backgroundColor: native.fill,
       borderRadius: 10,
       padding: 12,
       color: tokens.foreground,
     },
-    button: { padding: 14, borderRadius: 10, backgroundColor: tokens.muted },
-    buttonText: { color: tokens.foreground, textAlign: "center", fontSize: 16 },
     error: { color: tokens.destructive },
   });
 }

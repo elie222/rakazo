@@ -6,14 +6,14 @@ import {
 } from "./agent-environment.js";
 
 describe("agent-environment", () => {
-  it("decrypts named agent secrets", () => {
-    const env = decryptAgentEnvironment(
+  it("decrypts named agent secrets", async () => {
+    const env = await decryptAgentEnvironment(
       [
         { name: "API_TOKEN", secret: { id: "sec-1", ciphertext: "cipher-1" } },
         { name: "DB_URL", secret: { id: "sec-2", ciphertext: "cipher-2" } },
       ],
       {
-        load: (ciphertext, recordId) => `${recordId}:${ciphertext}`,
+        load: async (ciphertext, recordId) => `${recordId}:${ciphertext}`,
       },
     );
     expect(env).toEqual({
@@ -22,12 +22,12 @@ describe("agent-environment", () => {
     });
   });
 
-  it("rejects invalid secret names", () => {
-    expect(() =>
+  it("rejects invalid secret names", async () => {
+    await expect(
       decryptAgentEnvironment([{ name: "lowercase", secret: { id: "sec", ciphertext: "x" } }], {
-        load: () => "x",
+        load: async () => "x",
       }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
 
   it("formats an instruction only when secrets exist", () => {

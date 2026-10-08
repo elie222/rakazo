@@ -1,26 +1,117 @@
 ---
-import { ALTERNATIVES_HUB, COMPARED_ON, GET_STARTED, HUB_CARDS } from "../alternatives";
+import { COMPARED_ON, GET_STARTED } from "../alternatives";
+import { ogPublicPath } from "../og-pages";
 import { DOCS_URL, GITHUB_URL } from "../site";
+import {
+  ROUNDUP_CARDS,
+  ROUNDUP_CHANGELOG,
+  ROUNDUP_COLUMNS,
+  ROUNDUP_DESCRIPTION,
+  ROUNDUP_FAQ,
+  ROUNDUP_H1,
+  ROUNDUP_HOWTO,
+  ROUNDUP_ROWS,
+  ROUNDUP_TIMELINE,
+  ROUNDUP_TITLE,
+  ROUNDUP_TLDR,
+  roundupStructuredData,
+} from "../roundup";
 import Button from "./Button.astro";
 import SiteFrame from "./SiteFrame.astro";
+
+const columns = ROUNDUP_COLUMNS;
 ---
 
-<SiteFrame title={ALTERNATIVES_HUB.title} description={ALTERNATIVES_HUB.description}>
-  <h1>{ALTERNATIVES_HUB.h1}</h1>
-  <p>{ALTERNATIVES_HUB.intro}</p>
-  <p class="alt-note">Public descriptions as of {COMPARED_ON}.</p>
+<SiteFrame
+  title={ROUNDUP_TITLE}
+  description={ROUNDUP_DESCRIPTION}
+  structuredData={roundupStructuredData()}
+  ogImage={ogPublicPath("alternatives")}
+>
+  <h1>{ROUNDUP_H1}</h1>
+  <p class="alt-note">Updated {COMPARED_ON}.</p>
+  <ul>
+    {ROUNDUP_CHANGELOG.map((line) => <li>{line}</li>)}
+  </ul>
+
+  <h2>TL;DR</h2>
+  {ROUNDUP_TLDR.map((paragraph) => <p>{paragraph}</p>)}
+
+  <h2>Comparison</h2>
+  <div class="alt-table-wrap">
+    <table class="alt-table">
+      <caption class="sr-only">Personal AI agents compared from public descriptions</caption>
+      <thead>
+        <tr>
+          <th scope="col">Product</th>
+          {columns.map((column) => <th scope="col">{column}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {
+          ROUNDUP_ROWS.map((row) => (
+            <tr>
+              <th scope="row">
+                <a href={row.href}>{row.product}</a>
+              </th>
+              <td>{row.license}</td>
+              <td>{row.selfHost}</td>
+              <td>{row.model}</td>
+              <td>{row.price}</td>
+              <td>{row.setup}</td>
+              <td>{row.chat}</td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>The agents</h2>
   <ul class="alt-index">
     {
-      HUB_CARDS.map((card) => (
+      ROUNDUP_CARDS.map((card) => (
         <li>
-          <a class="alt-card" href={card.href}>
-            <h2>{card.h1}</h2>
-            <p>{card.summary}</p>
-          </a>
+          <article class="alt-card">
+            <h3>
+              <a href={card.href}>{card.name}</a>
+            </h3>
+            {card.paragraphs.map((paragraph) => (
+              <p>{paragraph}</p>
+            ))}
+            <p>
+              <a href={card.href}>{card.heading}</a>
+            </p>
+          </article>
         </li>
       ))
     }
   </ul>
+
+  <h2>Launch timeline</h2>
+  <ul>
+    {
+      ROUNDUP_TIMELINE.map((item) => (
+        <li>
+          <strong>{item.when}.</strong> {item.what}
+        </li>
+      ))
+    }
+  </ul>
+
+  <h2>How to choose</h2>
+  {ROUNDUP_HOWTO.map((paragraph) => <p>{paragraph}</p>)}
+
+  <h2 id="faq">FAQ</h2>
+  {
+    ROUNDUP_FAQ.map((item, index) => (
+      <section aria-labelledby={`roundup-faq-${index}`}>
+        <h3 id={`roundup-faq-${index}`}>{item.question}</h3>
+        <p>{item.answer}</p>
+      </section>
+    ))
+  }
+
   <h2>{GET_STARTED.heading}</h2>
   <p>{GET_STARTED.copy}</p>
   <div class="alt-actions">

@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { CallCard } from "../components/CallCard";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
+import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
   currentApiBase,
@@ -121,6 +122,7 @@ export default function Layout() {
                   <Stack
                     screenOptions={{
                       headerStyle: { backgroundColor: navigationTheme.colors.background },
+                      ...floatingHeaderOptions(),
                       headerTintColor: navigationTheme.colors.text,
                       headerShadowVisible: false,
                       headerBackButtonDisplayMode: "minimal",
@@ -131,10 +133,13 @@ export default function Layout() {
                     <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                     <Stack.Screen
                       name="integration-setup"
-                      options={{ title: t("Server integrations") }}
+                      options={glassHeaderOptions(t("Server integrations"))}
                     />
-                    <Stack.Screen name="ai-data-sharing" options={{ title: "AI data sharing" }} />
-                    <Stack.Screen name="account" options={{ title: t("Account") }} />
+                    <Stack.Screen
+                      name="ai-data-sharing"
+                      options={glassHeaderOptions(t("AI data sharing"))}
+                    />
+                    <Stack.Screen name="account" options={glassHeaderOptions(t("Account"))} />
                     <Stack.Screen
                       name="change-password"
                       options={{
@@ -142,14 +147,24 @@ export default function Layout() {
                         presentation: "formSheet",
                         sheetAllowedDetents: [0.6, 1],
                         sheetGrabberVisible: true,
-                        // Expo Router makes formSheet headers transparent on Liquid Glass, which
-                        // puts the first field under the bar; keep it opaque so the form starts below.
-                        headerTransparent: false,
                       }}
                     />
-                    <Stack.Screen name="models" options={{ title: t("Models") }} />
-                    <Stack.Screen name="voice" options={{ title: t("Voice") }} />
-                    <Stack.Screen name="integrations" options={{ title: t("Integrations") }} />
+                    <Stack.Screen
+                      name="server"
+                      options={{
+                        title: t("Server"),
+                        presentation: "formSheet",
+                        sheetAllowedDetents: [0.6, 1],
+                        sheetGrabberVisible: true,
+                      }}
+                    />
+                    <Stack.Screen name="archived-bots" options={{ title: t("Archived bots") }} />
+                    <Stack.Screen name="models" options={glassHeaderOptions(t("Models"))} />
+                    <Stack.Screen name="voice" options={glassHeaderOptions(t("Voice"))} />
+                    <Stack.Screen
+                      name="integrations"
+                      options={glassHeaderOptions(t("Integrations"))}
+                    />
                     <Stack.Screen
                       name="new"
                       options={{
@@ -176,13 +191,19 @@ export default function Layout() {
                         headerBackVisible: false,
                       }}
                     />
-                    <Stack.Screen name="artifacts" options={{ title: t("Artifacts") }} />
+                    <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                     <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
                     <Stack.Screen name="group-thread" options={{ title: t("Group") }} />
-                    <Stack.Screen name="group-settings" options={{ title: t("Group settings") }} />
-                    <Stack.Screen name="bot-settings" options={{ title: t("Chat settings") }} />
+                    <Stack.Screen
+                      name="group-settings"
+                      options={glassHeaderOptions(t("Group settings"))}
+                    />
+                    <Stack.Screen
+                      name="bot-settings"
+                      options={glassHeaderOptions(t("Chat settings"))}
+                    />
                     <Stack.Screen name="thread" options={{ title: t("Thread") }} />
-                    <Stack.Screen name="routine" options={{ title: t("Routine") }} />
+                    <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                     <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                     <Stack.Screen
                       name="image"

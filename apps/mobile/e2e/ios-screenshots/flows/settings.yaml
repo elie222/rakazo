@@ -1,0 +1,119 @@
+appId: com.rakazo.app
+name: Settings
+---
+- runFlow:
+    file: ../subflows/sign-in.yaml
+    env:
+      RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: ".*Change password.*"
+    timeout: 15000
+- takeScreenshot: 01-account
+- tapOn: "Dark"
+- takeScreenshot: 02-account-dark
+- tapOn: "System"
+- scrollUntilVisible:
+    element: "Advanced"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Advanced"
+- extendedWaitUntil:
+    visible: "Stream replies"
+    timeout: 10000
+- takeScreenshot: 03-account-advanced
+- openLink: "rakazo:///change-password"
+- extendedWaitUntil:
+    visible: "Current password"
+    timeout: 15000
+- takeScreenshot: 04-change-password
+- tapOn: "Current password"
+- inputText: "wrong-current"
+- tapOn: "New password"
+- inputText: "replacement-1"
+- tapOn: "Confirm password"
+- inputText: "replacement-2"
+- hideKeyboard
+- tapOn:
+    text: "Change password"
+    index: 1
+- extendedWaitUntil:
+    visible: "Passwords do not match"
+    timeout: 10000
+- takeScreenshot: 05-password-mismatch
+- tapOn: "Cancel"
+- openLink: "rakazo:///models"
+- extendedWaitUntil:
+    visible: "Active model"
+    timeout: 15000
+- takeScreenshot: 06-models
+- openLink: "rakazo:///integrations"
+- extendedWaitUntil:
+    visible: "Search apps"
+    timeout: 15000
+- takeScreenshot: 07-integrations
+- tapOn:
+    id: "integrations-advanced"
+- extendedWaitUntil:
+    visible: "Add MCP server"
+    timeout: 10000
+- takeScreenshot: 08-integrations-advanced
+- openLink: "rakazo:///voice"
+- extendedWaitUntil:
+    visible: ".*This device.*"
+    timeout: 15000
+- takeScreenshot: 09-voice
+- openLink: "rakazo:///ai-data-sharing"
+- extendedWaitUntil:
+    visible: "AI data sharing"
+    timeout: 15000
+- takeScreenshot: 10-ai-data-sharing
+- openLink: "rakazo:///routine?botId=${RAKAZO_SCREENSHOT_BOT_ID}&botName=Researcher&routineId=${RAKAZO_SCREENSHOT_ROUTINE_ID}"
+- extendedWaitUntil:
+    visible: ".*Weekly fixture review.*"
+    timeout: 15000
+- takeScreenshot: 11-routine
+- openLink: "rakazo:///bot-settings?botId=${RAKAZO_SCREENSHOT_BOT_ID}"
+- extendedWaitUntil:
+    visible: "Advanced"
+    timeout: 15000
+- tapOn: "Advanced"
+- takeScreenshot: 12-bot-settings
+- openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
+- extendedWaitUntil:
+    visible: ".*Delete group.*"
+    timeout: 15000
+- takeScreenshot: 13-group-settings
+- openLink: "rakazo:///computer?botId=${RAKAZO_SCREENSHOT_BOT_ID}&name=Researcher"
+- extendedWaitUntil:
+    visible: ".*Take control.*|.*Open computer.*"
+    timeout: 20000
+- takeScreenshot: 14-computer
+- openLink: "rakazo:///account"
+- scrollUntilVisible:
+    element: ".*Delete account.*"
+    direction: DOWN
+    timeout: 20000
+    visibilityPercentage: 50
+- tapOn: "Delete account"
+- extendedWaitUntil:
+    visible: ".*Delete your account.*"
+    timeout: 10000
+- takeScreenshot: 15-delete-prompt
+- tapOn: "Cancel"
+- openLink: "rakazo:///account"
+- extendedWaitUntil:
+    visible: ".*Language.*"
+    timeout: 15000
+- scrollUntilVisible:
+    element: "Language"
+    direction: UP
+    timeout: 15000
+    visibilityPercentage: 100
+    centerElement: true
+- tapOn: "Language"
+- extendedWaitUntil:
+    visible: ".*English.*|.*Cancel.*"
+    timeout: 10000
+- takeScreenshot: 16-language
+- tapOn: "Cancel"

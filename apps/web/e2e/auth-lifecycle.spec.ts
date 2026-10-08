@@ -5,7 +5,7 @@ test("restricted signup waits for mailbox verification", async ({ page }, testIn
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/capabilities", (route) =>
     route.fulfill({
-      json: { passwordReset: false, resetUrl: null },
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
     }),
   );
   await page.route("**/api/auth/sign-up/email", (route) =>
@@ -31,7 +31,7 @@ test("signed-out welcome fits a narrow phone and offers sign in", async ({ page 
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/capabilities", (route) =>
     route.fulfill({
-      json: { passwordReset: false, resetUrl: null },
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
     }),
   );
   await page.setViewportSize({ width: 320, height: 640 });
@@ -246,4 +246,36 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await page.getByLabel("Password", { exact: true }).fill(resetPassword);
   await page.getByRole("button", { name: "Continue with email" }).click();
   await page.waitForURL(/\/app(?:\/|$)/);
+});
+
+test("password-off account settings hide password changes and retain password deletion", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `password-off-${Date.now()}@rakazo.test`, "password12", "Password Off");
+  await completeOnboarding(page);
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await page.route("**/api/auth/account-security", (route) =>
+    route.fulfill({
+      json: {
+        hasPassword: true,
+        passwordChangeEnabled: false,
+        freshOidcAuth: false,
+        ssoLinked: true,
+        emailDeletion: true,
+        sso: { name: "Example" },
+      },
+    }),
+  );
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Change password", exact: true })).toHaveCount(
+    0,
+  );
+  await settings.getByRole("button", { name: "Delete account", exact: true }).click();
+  await expect(settings.getByLabel("Current password", { exact: true })).toBeVisible();
+  await expect(settings.getByLabel("New password", { exact: true })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Send deletion code" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "password-off-account-settings");
 });

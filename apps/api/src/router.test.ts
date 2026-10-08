@@ -1,9 +1,13 @@
 import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
+import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
   CodexCatalogCache,
   ComputerScreenUnavailableError,
+  EncryptedSecretStore,
+  IntegrationProviderSettings,
   screenLeaseIdForRun,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
@@ -49,6 +53,26 @@ describe("account preferences", () => {
     } satisfies Actor;
     return { update, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
+
+  it("reports model credential store outages as service unavailable", async () => {
+    const { deps, actor } = preferencesDeps("robot");
+    Object.assign(deps.prisma, {
+      userModelCredential: {
+        findMany: vi.fn(async () => [{ secretId: "secret", preferences: [] }]),
+      },
+      secret: { findMany: vi.fn(async () => [{ id: "secret", ciphertext: "ref" }]) },
+    });
+    deps.secrets = {
+      load: vi.fn(async () => {
+        throw new SecretStoreUnavailableError();
+      }),
+    } as never;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(client.models.credentials()).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+      status: 503,
+    });
+  });
 
   it("keeps an unconfigured catalog offline unless explicitly requested", async () => {
     const { actor, deps } = preferencesDeps("robot");
@@ -593,6 +617,136 @@ describe("MCP server deletion", () => {
   });
 });
 
+describe("MCP prepared credential updates", () => {
+  it("keeps slow secret I/O outside transactions and retries a concurrent OAuth edit", async () => {
+    let clock = 0;
+    let active = false;
+    let writes = 0;
+    const server = {
+      id: "server",
+      spaceId: "space",
+      userId: "user",
+      slug: "demo",
+      name: "Demo",
+      description: "",
+      enabled: true,
+      transport: "streamable_http",
+      endpoint: "https://mcp.example.test/mcp",
+      secretId: "old",
+      revision: 1,
+      args: [],
+      env: {},
+      headers: {},
+      command: null,
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    };
+    const rows = new Map([["old", { id: "old", ciphertext: "old-ref" }]]);
+    const values = new Map([
+      [
+        "old-ref",
+        JSON.stringify({ oauth: { tokens: { access_token: "old", token_type: "bearer" } } }),
+      ],
+    ]);
+    const prisma = {
+      mcpServer: {
+        findFirst: async () => ({ ...server }),
+        update: async ({
+          data,
+        }: {
+          data: { secretId: string; revision: { increment: number } };
+        }) => {
+          Object.assign(server, data, { revision: server.revision + data.revision.increment });
+          return { ...server };
+        },
+      },
+      secret: {
+        findFirst: async ({ where }: { where: { id: string } }) => rows.get(where.id) ?? null,
+        create: async ({ data }: { data: { id: string; ciphertext: string } }) => {
+          rows.set(data.id, data);
+          return data;
+        },
+        deleteMany: async ({ where }: { where: { id: string } }) => {
+          rows.delete(where.id);
+          return { count: 1 };
+        },
+        count: async ({ where }: { where: { ciphertext: string } }) =>
+          [...rows.values()].filter((row) => row.ciphertext === where.ciphertext).length,
+      },
+      botSecret: { count: async () => 0 },
+      integrationProviderConfig: { count: async () => 0 },
+      $executeRaw: async () => 1,
+      $queryRaw: async () => [],
+      async $transaction(callback: (tx: typeof prisma) => Promise<unknown>) {
+        active = true;
+        const start = clock;
+        try {
+          const result = await callback(prisma);
+          if (clock - start > 5000) throw new Error("Transaction expired");
+          return result;
+        } finally {
+          active = false;
+        }
+      },
+    };
+    const secrets = {
+      load: async (ref: string) => {
+        expect(active).toBe(false);
+        clock += 15000;
+        return values.get(ref)!;
+      },
+      put: async (plaintext: string) => {
+        expect(active).toBe(false);
+        clock += 15000;
+        const id = `write-${++writes}`;
+        values.set(id, plaintext);
+        if (writes === 1) {
+          rows.set("concurrent", { id: "concurrent", ciphertext: "concurrent-ref" });
+          values.set(
+            "concurrent-ref",
+            JSON.stringify({
+              oauth: { tokens: { access_token: "concurrent", token_type: "bearer" } },
+            }),
+          );
+          server.secretId = "concurrent";
+          server.revision++;
+        }
+        return { id, ref: id, ciphertext: id };
+      },
+      delete: vi.fn(async (ref: string) => {
+        expect(active).toBe(false);
+        values.delete(ref);
+      }),
+    };
+    const deps = {
+      prisma,
+      secrets,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "space",
+      userId: "user",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await client.mcp.servers.update({ id: "server", secret: "updated-key" });
+    expect(writes).toBe(2);
+    expect(values.has("write-1")).toBe(false);
+    expect(JSON.parse(values.get(server.secretId)!)).toMatchObject({
+      secret: "updated-key",
+      oauth: { tokens: { access_token: "concurrent" } },
+    });
+  });
+});
+
 describe("MCP loopback endpoints", () => {
   const LOOPBACK = "http://localhost:3100/api/auth/get-session";
 
@@ -868,6 +1022,132 @@ describe("connections.begin", () => {
 });
 
 describe("connections.complete", () => {
+  it.each([
+    ["complete", false],
+    ["complete", true],
+    ["revoke", false],
+    ["revoke", true],
+  ] as const)(
+    "prepares slow configured credentials for %s (changed: %s)",
+    async (operation, changed) => {
+      const secrets = new EncryptedSecretStore("test-encryption-key");
+      const stored = await secrets.put(
+        JSON.stringify({ provider: "composio", apiKey: "fake-key" }),
+        {
+          operationId: "test",
+          traceId: "test",
+          spaceId: "workspace-1",
+          userId: "user-1",
+          signal: new AbortController().signal,
+        },
+        { recordId: "integration-provider:composio" },
+      );
+      let ref = stored.ref;
+      let inTransaction = false;
+      let elapsed = 0;
+      const originalLoad = EncryptedSecretStore.prototype.load.bind(secrets);
+      const load = vi.spyOn(secrets, "load").mockImplementation(async (...args) => {
+        expect(inTransaction).toBe(false);
+        elapsed += 15_000;
+        return originalLoad(...args);
+      });
+      const row = {
+        id: "conn-1",
+        connectorId: "composio",
+        provider: "gmail",
+        providerRef: "gmail",
+        displayName: "Gmail",
+        status: "pending",
+        createdAt: new Date(0),
+      };
+      const client = {
+        integrationProviderConfig: {
+          findUnique: vi.fn(async () => ({ id: "composio", ciphertext: ref })),
+        },
+        connection: {
+          findFirst: vi.fn(async () => row),
+          findMany: vi.fn(async () => []),
+          count: vi.fn(async () => 0),
+          updateMany: vi.fn(async () => ({ count: 1 })),
+        },
+        $executeRaw: vi.fn(),
+        $queryRaw: vi.fn(async () => []),
+      };
+      const prisma = {
+        ...client,
+        $transaction: vi.fn(async (fn: (tx: typeof client) => Promise<unknown>) => {
+          const started = elapsed;
+          if (changed) ref = "replacement-ref";
+          inTransaction = true;
+          try {
+            const result = await fn(client);
+            expect(elapsed - started).toBeLessThan(5_000);
+            return result;
+          } finally {
+            inTransaction = false;
+          }
+        }),
+      };
+      const complete = vi.fn(async () => ({ connectionRef: "gmail" }));
+      const revoke = vi.fn(async () => undefined);
+      const adapter = {
+        complete,
+        revoke,
+        connectionReady: vi.fn(async () => false),
+      } as unknown as ManagedConnectorProvider;
+      const settings = new IntegrationProviderSettings(
+        prisma as unknown as PrismaClient,
+        secrets,
+        "fake-identity",
+        {},
+        () => adapter,
+      );
+      const connector = settings
+        .providers()
+        .find((provider) => provider.describe().id === "composio");
+      const handler = new RPCHandler(
+        createRouter({
+          prisma,
+          connectors: { managed: () => connector },
+          env: {
+            defaultProvider: "fake",
+            defaultModel: "fake-model",
+            webOrigin: "http://127.0.0.1:5173",
+            screenProxySecret: "fake-test-secret",
+            sandboxProvider: "fake",
+          },
+        } as unknown as RouterDeps),
+      );
+      const { response } = await handler.handle(
+        new Request(`http://127.0.0.1/rpc/connections/${operation}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            json: {
+              connectionId: row.id,
+              ...(operation === "complete" ? { code: "fake-code" } : {}),
+            },
+          }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "workspace-1",
+              userId: "user-1",
+              email: "user@rakazo.test",
+              isDeploymentOwner: true,
+            },
+          },
+        },
+      );
+      expect(response.status).toBe(changed ? 409 : 200);
+      expect(elapsed).toBe(15_000);
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(operation === "complete" ? complete : revoke).toHaveBeenCalledTimes(changed ? 0 : 1);
+    },
+  );
+
   it("forwards an optional code to the managed connector", async () => {
     const complete = vi.fn().mockResolvedValue({ connectionRef: "gmail" });
     const connectionReady = vi.fn().mockResolvedValue(true);
@@ -2227,7 +2507,7 @@ describe("codex live catalog", () => {
       },
     };
     const deps = {
-      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
       secrets: { load: vi.fn(() => oauth("acct-live-test")) },
       env: {
         defaultProvider: "fake",
@@ -2283,7 +2563,7 @@ describe("codex live catalog", () => {
       },
     };
     const deps = {
-      prisma: { $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
+      prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) },
       secrets: { load: vi.fn(() => oauth("acct-live-test")) },
       env: {
         defaultProvider: "fake",
@@ -2310,83 +2590,105 @@ describe("codex live catalog", () => {
     });
   });
 
-  it("warms the live catalog before setDefault's transaction and reads zero-wait inside it", async () => {
-    const stamp = new Date("2026-01-01T00:00:00.000Z");
-    const oauthCredential = {
-      id: "cred-oauth",
-      userId: actor.userId,
-      provider: "openai-codex",
-      label: "ChatGPT",
-      secretId: "secret-oauth",
-      createdAt: stamp,
-      updatedAt: stamp,
-    };
-    const upsert = vi.fn(async () => ({ id: "pref-spark" }));
-    const tx = {
-      userModelCredential: { findMany: vi.fn().mockResolvedValue([oauthCredential]) },
-      spaceModelPreference: {
-        findMany: vi.fn().mockResolvedValue([]),
-        updateMany: vi.fn(async () => ({ count: 0 })),
-        upsert,
-      },
-      secret: {
-        findFirst: vi.fn(async () => ({ id: "secret-oauth", ciphertext: "cipher-oauth" })),
-      },
-    };
-    const transaction = vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx));
-    // The same delegates serve the pre-transaction warm read on deps.prisma.
-    const prisma = {
-      $transaction: transaction,
-      userModelCredential: tx.userModelCredential,
-      spaceModelPreference: { findMany: tx.spaceModelPreference.findMany },
-      secret: tx.secret,
-    };
-    const read = vi.fn(
-      async (_userId: string, _account: { accountId: string }, _opts?: { waitMs?: number }) => [
-        liveModel(spark),
-      ],
-    );
-    const refreshExpiredModelCredential = vi.fn();
-    const deps = {
-      prisma,
-      secrets: { load: vi.fn(() => oauth("acct-live-test")), put: vi.fn() },
-      env: {
-        defaultProvider: "fake",
-        defaultModel: "fake-model",
-        webOrigin: "http://127.0.0.1:5173",
-        screenProxySecret: "fake-test-secret",
-        sandboxProvider: "fake",
-      },
-      codexCatalog: { read },
-      refreshExpiredModelCredential,
-    } as unknown as RouterDeps;
-    const handler = new RPCHandler(createRouter(deps));
+  it.each(["unchanged", "rotated", "reconnected", "unavailable"] as const)(
+    "prepares slow model secrets before the transaction: %s",
+    async (change) => {
+      const stamp = new Date("2026-01-01T00:00:00.000Z");
+      const oauthCredential = {
+        id: "cred-oauth",
+        userId: actor.userId,
+        provider: "openai-codex",
+        label: "ChatGPT",
+        secretId: "secret-oauth",
+        createdAt: stamp,
+        updatedAt: stamp,
+      };
+      const upsert = vi.fn(async () => ({ id: "pref-spark" }));
+      const tx = {
+        userModelCredential: { findMany: vi.fn().mockResolvedValue([oauthCredential]) },
+        spaceModelPreference: {
+          findMany: vi.fn().mockResolvedValue([]),
+          updateMany: vi.fn(async () => ({ count: 0 })),
+          upsert,
+        },
+        secret: {
+          findFirst: vi.fn(async () => ({ id: "secret-oauth", ciphertext: "cipher-oauth" })),
+        },
+      };
+      let elapsed = 0;
+      let inTransaction = false;
+      const transaction = vi.fn(async (fn: (client: typeof tx) => unknown) => {
+        if (change === "rotated")
+          tx.secret.findFirst.mockResolvedValue({ id: "secret-oauth", ciphertext: "rotated" });
+        if (change === "reconnected")
+          tx.userModelCredential.findMany.mockResolvedValue([
+            { ...oauthCredential, secretId: "replacement" },
+          ]);
+        const started = elapsed;
+        inTransaction = true;
+        try {
+          const result = await fn(tx);
+          expect(elapsed - started).toBeLessThan(5_000);
+          return result;
+        } finally {
+          inTransaction = false;
+        }
+      });
+      const prisma = {
+        $transaction: transaction,
+        userModelCredential: tx.userModelCredential,
+        spaceModelPreference: { findMany: tx.spaceModelPreference.findMany },
+        secret: tx.secret,
+      };
+      const read = vi.fn(
+        async (_userId: string, _account: { accountId: string }, _opts?: { waitMs?: number }) => [
+          liveModel(spark),
+        ],
+      );
+      const refreshExpiredModelCredential = vi.fn();
+      const deps = {
+        prisma,
+        secrets: {
+          load: vi.fn(async () => {
+            expect(inTransaction).toBe(false);
+            elapsed += 15_000;
+            if (change === "unavailable") throw new SecretStoreUnavailableError();
+            return oauth("acct-live-test");
+          }),
+          put: vi.fn(),
+        },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+        },
+        codexCatalog: { read },
+        refreshExpiredModelCredential,
+      } as unknown as RouterDeps;
+      const handler = new RPCHandler(createRouter(deps));
 
-    const response = await call(handler, "models/setDefault", {
-      provider: "openai-codex",
-      modelId: spark,
-    });
+      const response = await call(handler, "models/setDefault", {
+        provider: "openai-codex",
+        modelId: spark,
+      });
 
-    expect(response.status).toBe(200);
-    const warmCall = read.mock.calls.find((call) => call[2]?.waitMs !== 0);
-    const txCall = read.mock.calls.find((call) => call[2]?.waitMs === 0);
-    expect(warmCall).toBeDefined();
-    expect(txCall).toBeDefined();
-    // The unbounded-wait read happens before the transaction opens; inside it
-    // the catalog is only consulted from settled cache state.
-    const txOpenedAt = transaction.mock.invocationCallOrder[0]!;
-    expect(read.mock.invocationCallOrder[read.mock.calls.indexOf(warmCall!)]!).toBeLessThan(
-      txOpenedAt,
-    );
-    // Every catalog read issued after the transaction opened is zero-wait — a
-    // cold cache can never stall the serializable transaction on the network.
-    const inTxCalls = read.mock.calls.filter(
-      (_, index) => read.mock.invocationCallOrder[index]! > txOpenedAt,
-    );
-    expect(inTxCalls.length).toBeGreaterThan(0);
-    for (const call of inTxCalls) expect(call[2]?.waitMs).toBe(0);
-    expect(upsert).toHaveBeenCalled();
-  });
+      expect(elapsed).toBe(15_000);
+      expect(response.status).toBe(
+        change === "unchanged" ? 200 : change === "unavailable" ? 503 : 409,
+      );
+      if (change === "unchanged") {
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(read.mock.invocationCallOrder[0]).toBeLessThan(
+          transaction.mock.invocationCallOrder[0]!,
+        );
+        expect(upsert).toHaveBeenCalled();
+      } else {
+        expect(upsert).not.toHaveBeenCalled();
+      }
+    },
+  );
 });
 
 describe("model set default auth", () => {
@@ -2477,6 +2779,7 @@ describe("model set default auth", () => {
     const handler = new RPCHandler(
       createRouter({
         prisma: {
+          ...tx,
           $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
         },
         secrets: { load },
@@ -2571,6 +2874,7 @@ describe("model set default auth", () => {
     const handler = new RPCHandler(
       createRouter({
         prisma: {
+          ...tx,
           $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
         },
         secrets: { load },
@@ -2673,6 +2977,7 @@ describe("model set default auth", () => {
     const handler = new RPCHandler(
       createRouter({
         prisma: {
+          ...tx,
           $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
         },
         secrets: { load },

@@ -1,10 +1,14 @@
 import type { Routine } from "@rakazo/contracts";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, ScrollView, Text, View } from "react-native";
+import { glassHeaderOptions } from "../components/glass-title";
+import { NativeActionButton } from "../components/native-action-button";
 import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { routineStatusLine } from "../lib/routine";
+import { errorText } from "../lib/user-error";
 
 export default function RoutineDetail() {
   const tokens = useMobileTokens();
@@ -36,7 +40,7 @@ export default function RoutineDetail() {
       })
       .catch((loadError) => {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : t("Could not load routine"));
+          setError(errorText(loadError, t("Could not load routine")));
         }
       })
       .finally(() => {
@@ -51,8 +55,9 @@ export default function RoutineDetail() {
     <ScrollView
       style={{ flex: 1, backgroundColor: tokens.background }}
       contentContainerStyle={{ padding: 24, gap: 18 }}
+      contentInsetAdjustmentBehavior="automatic"
     >
-      <Stack.Screen options={{ title: routine?.name ?? t("Routine") }} />
+      <Stack.Screen options={glassHeaderOptions(routine?.name ?? t("Routine"))} />
       {loading ? <ActivityIndicator color={tokens.mutedForeground} /> : null}
       {error ? <Text style={{ color: tokens.destructive, fontSize: 15 }}>{error}</Text> : null}
       {routine ? (
@@ -60,38 +65,12 @@ export default function RoutineDetail() {
           <View
             style={{
               borderRadius: 16,
-              borderWidth: 1,
-              borderColor: tokens.border,
-              backgroundColor: tokens.card,
+              backgroundColor: native.fill,
               padding: 18,
-              gap: 8,
             }}
           >
-            <Text style={{ color: tokens.foreground, fontSize: 20, fontWeight: "600" }}>
-              {routine.name}
-            </Text>
-            <Text
-              style={{
-                color: routine.active ? tokens.success : tokens.mutedForeground,
-                fontSize: 14,
-              }}
-            >
-              {[
-                routine.active ? t("Active") : t("Paused"),
-                [
-                  ...routine.crons,
-                  ...(routine.webhookEnabled ? [t("Webhook")] : []),
-                  ...(routine.githubEnabled ? [t("Git event")] : []),
-                  ...(routine.messageProvider === "slack"
-                    ? [t("Slack message")]
-                    : routine.messageProvider === "teams"
-                      ? [t("Teams message")]
-                      : routine.messageProvider
-                        ? [t("Message event")]
-                        : []),
-                ].join(", "),
-                routine.timezone,
-              ].join(" · ")}
+            <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>
+              {routineStatusLine(routine)}
             </Text>
           </View>
           <View style={{ gap: 8 }}>
@@ -107,32 +86,22 @@ export default function RoutineDetail() {
                 fontSize: 15,
                 lineHeight: 23,
                 borderRadius: 16,
-                backgroundColor: tokens.card,
+                backgroundColor: native.fill,
                 padding: 18,
               }}
             >
               {routine.prompt}
             </Text>
           </View>
-          <Pressable
-            accessibilityRole="button"
+          <NativeActionButton
+            label={t("Open conversation")}
             onPress={() =>
               router.push({
                 pathname: "/thread",
                 params: { botId: botId ?? "", name: botName ?? t("Bot") },
               })
             }
-            style={{
-              alignItems: "center",
-              borderRadius: 12,
-              backgroundColor: tokens.primary,
-              padding: 14,
-            }}
-          >
-            <Text style={{ color: tokens.primaryForeground, fontSize: 15, fontWeight: "600" }}>
-              {t("Open conversation")}
-            </Text>
-          </Pressable>
+          />
         </>
       ) : null}
     </ScrollView>

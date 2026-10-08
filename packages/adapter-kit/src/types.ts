@@ -592,8 +592,17 @@ export type BackgroundJobHandlers = {
 
 export interface SecretRecord {
   id: string;
+  /** Opaque reference; persisted in the existing ciphertext column. */
+  ref: string;
   ciphertext: string;
 }
+
+export type SecretContext = string | { recordId: string; signal?: AbortSignal };
+export interface SecretPutOptions {
+  recordId?: string;
+  ephemeral?: boolean;
+}
+export type SecretChangeListener = (ref: string) => void;
 
 export interface ArtifactPut {
   name: string;

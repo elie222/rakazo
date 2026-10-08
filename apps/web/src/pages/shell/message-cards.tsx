@@ -9,6 +9,7 @@ import { type ArtifactTarget, decodeArtifactBase64 } from "../../lib/artifact-op
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 
 export function ChoiceCard({
   botId,
@@ -32,7 +33,7 @@ export function ChoiceCard({
       await rpc.onboarding.choose({ botId, optionId });
       await onBotChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save this choice`);
+      setError(errorText(err, t`Could not save this choice`));
       setPending(false);
     }
   }
@@ -45,7 +46,7 @@ export function ChoiceCard({
       setLocallyDismissed(true);
       void onBotChanged().catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not dismiss`);
+      setError(errorText(err, t`Could not dismiss`));
       setPending(false);
     }
   }
@@ -188,7 +189,7 @@ export function AppConnectCard({
       if (!controller.signal.aborted) setError(t`Authorization timed out. Please try again.`);
     } catch (error) {
       if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : t`Could not authorize this app`);
+        setError(errorText(error, t`Could not authorize this app`));
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -283,7 +284,7 @@ function ChartCanvas({
         setError(null);
         ref.current.replaceChildren(parts.plotted);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : t`Could not render chart`);
+        if (!cancelled) setError(errorText(err, t`Could not render chart`));
       }
     })();
     return () => {
@@ -374,7 +375,7 @@ export function McpApprovalCard({
       await rpc.mcp.assignments.approve({ botId, serverId, threadId });
       setLocalStatus("connected");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not approve this server`);
+      setError(errorText(err, t`Could not approve this server`));
       setLocalStatus("pending");
     } finally {
       setBusy(false);
@@ -392,7 +393,7 @@ export function McpApprovalCard({
       setLocalStatus("dismissed");
     } catch (err) {
       setLocalStatus("pending");
-      setError(err instanceof Error ? err.message : t`Could not dismiss this server`);
+      setError(errorText(err, t`Could not dismiss this server`));
     } finally {
       setBusy(false);
     }

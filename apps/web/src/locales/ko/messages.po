@@ -1132,6 +1132,11 @@ msgstr "계속"
 msgid "Continue in Background"
 msgstr ""
 
+#. placeholder {0}: reset.sso.name
+#: src/pages/Auth.tsx
+msgid "Continue with {0}"
+msgstr "{0}(으)로 계속"
+
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "이메일로 계속하기"
@@ -1218,6 +1223,10 @@ msgstr "음성 서비스에 연결하지 못했습니다."
 msgid "Could not connect to the computer screen"
 msgstr ""
 
+#: src/components/AccountAccess.tsx
+#: src/lib/account-security.ts
+#: src/lib/sso-flow.ts
+#: src/lib/user-error.ts
 #: src/pages/Auth.tsx
 #: src/pages/Shell.tsx
 msgid "Could not continue"
@@ -1361,6 +1370,11 @@ msgstr "AI 모델 설정을 불러오지 못했습니다."
 msgid "Could not load run history"
 msgstr "실행 기록을 불러오지 못했습니다"
 
+#: src/lib/account-security.ts
+#: src/pages/Auth.tsx
+msgid "Could not load sign-in options"
+msgstr "로그인 옵션을 불러올 수 없습니다"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "스킬을 불러오지 못했습니다"
@@ -1406,6 +1420,8 @@ msgstr "터미널을 열 수 없습니다"
 msgid "Could not play a test clip"
 msgstr "샘플 음성을 재생하지 못했습니다."
 
+#: src/lib/computer-sandbox.ts
+#: src/lib/user-error.ts
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 msgid "Could not reach the server"
@@ -1658,6 +1674,7 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron 표현식"
 
+#: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "현재 비밀번호"
@@ -1747,6 +1764,10 @@ msgstr "{0} 삭제"
 msgid "Delete {0}?"
 msgstr "{0}을 삭제할까요?"
 
+#: src/components/AccountAccess.tsx
+msgid "Delete account"
+msgstr "계정 삭제"
+
 #: src/pages/GroupPanel.tsx
 msgid "Delete group"
 msgstr "그룹 삭제"
@@ -1768,6 +1789,10 @@ msgstr "삭제됨"
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "삭제 중…"
+
+#: src/components/AccountAccess.tsx
+msgid "Deletion code"
+msgstr "삭제 코드"
 
 #: src/components/AskCard.tsx
 msgid "Denied"
@@ -1922,6 +1947,14 @@ msgstr "Bot 정보 수정"
 msgid "Email"
 msgstr "이메일"
 
+#: src/lib/user-error.ts
+msgid "Email is not allowed to register"
+msgstr "이 이메일은 가입이 허용되지 않습니다"
+
+#: src/lib/user-error.ts
+msgid "Email verification required"
+msgstr "이메일 인증이 필요합니다"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -1930,9 +1963,17 @@ msgstr ""
 msgid "Engage when... Ignore..."
 msgstr ""
 
+#: src/lib/user-error.ts
+msgid "Enter a password"
+msgstr "비밀번호를 입력하세요"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Enter a username and password"
 msgstr ""
+
+#: src/lib/user-error.ts
+msgid "Enter a valid email"
+msgstr "올바른 이메일을 입력하세요"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -2374,6 +2415,10 @@ msgstr "Linear 이슈"
 msgid "Link a chat app"
 msgstr "채팅 앱 연결"
 
+#: src/components/AccountAccess.tsx
+msgid "Link SSO"
+msgstr "SSO 연결"
+
 #: src/pages/Artifacts.tsx
 msgid "List view"
 msgstr ""
@@ -2436,6 +2481,7 @@ msgstr "음성 서비스를 불러오는 중…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3220,6 +3266,10 @@ msgstr "녹화 중: {0}"
 msgid "Recover computer"
 msgstr "컴퓨터 복구"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recover computer?"
+msgstr "컴퓨터를 복구할까요?"
+
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
@@ -3241,9 +3291,14 @@ msgstr ""
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
-msgstr ""
+msgstr "복구하면 마지막으로 저장된 작업 공간이 복원됩니다. 저장하지 않은 작업은 손실될 수 있습니다."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recreate a computer that is not working."
+msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
@@ -3260,6 +3315,10 @@ msgstr "화면 새로고침"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr "새로고침 중…"
+
+#: src/lib/user-error.ts
+msgid "Registration is closed"
+msgstr "가입이 마감되었습니다"
 
 #: src/pages/Shell.tsx
 msgid "Release"
@@ -3416,12 +3475,21 @@ msgid "Restore"
 msgstr "복원"
 
 #: src/components/ComputerMaintenanceActions.tsx
+msgid "Restore the last saved workspace."
+msgstr "마지막으로 저장한 작업 공간을 복원합니다."
+
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "마지막으로 저장된 작업 공간을 복원합니다. 컴퓨터에서 저장하지 않은 작업은 사라집니다."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+#: src/pages/Auth.tsx
+msgid "Retry"
+msgstr "다시 시도"
 
 #: src/App.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3526,6 +3594,10 @@ msgstr ""
 msgid "Save new value"
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Save the workspace and install current software."
+msgstr "작업 공간을 저장하고 최신 소프트웨어를 설치합니다."
+
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
@@ -3623,6 +3695,10 @@ msgstr "10분 안에 채팅 앱에서 연결할 회선으로 <0>{linkCode}</0>�
 #: src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "답변 보내기"
+
+#: src/components/AccountAccess.tsx
+msgid "Send deletion code"
+msgstr "삭제 코드 보내기"
 
 #: src/components/AskCard.tsx
 msgid "Send it"
@@ -3746,6 +3822,8 @@ msgstr "대화 기록 표시"
 msgid "Sign in"
 msgstr "로그인"
 
+#: src/components/AccountAccess.tsx
+#: src/lib/user-error.ts
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Sign in again"
 msgstr ""
@@ -3753,6 +3831,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Rakazo 로그인"
+
+#: src/lib/user-error.ts
+msgid "Sign in to your existing account to link SSO"
+msgstr "SSO를 연결하려면 기존 계정에 로그인하세요"
 
 #: src/pages/Auth.tsx
 #: src/pages/Welcome.tsx
@@ -3794,6 +3876,10 @@ msgstr ""
 msgid "Software update"
 msgstr "소프트웨어 업데이트"
 
+#: src/lib/user-error.ts
+msgid "Something went wrong. Try again."
+msgstr "문제가 발생했습니다. 다시 시도하세요."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "스페이스 기본값"
@@ -3821,6 +3907,10 @@ msgstr "이 답변 읽기"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "음성 모델"
+
+#: src/lib/user-error.ts
+msgid "SSO is temporarily unavailable. Try again."
+msgstr "SSO를 일시적으로 사용할 수 없습니다. 다시 시도하세요."
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -4011,6 +4101,10 @@ msgstr "이 Mac"
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+msgid "This permanently deletes your account and data."
+msgstr "계정과 데이터가 영구적으로 삭제됩니다."
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."

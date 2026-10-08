@@ -7,7 +7,16 @@ import {
   scrypt,
   scryptSync,
 } from "node:crypto";
-import type { AdapterContext, SecretRecord, SecretStore } from "@rakazo/adapter-kit";
+import type {
+  AdapterContext,
+  SecretContext,
+  SecretPutOptions,
+  SecretRecord,
+  SecretStore,
+} from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
+import { SecretChanges } from "./secret-changes.js";
 
 const VERSION_PREFIX = "v2:";
 const SALT_BYTES = 16;
@@ -54,8 +63,12 @@ function openSealed(sealed: SealedSecret, key: Buffer, recordId: string): string
   return Buffer.concat([decipher.update(sealed.enc), decipher.final()]).toString("utf8");
 }
 
-export class EncryptedSecretStore implements SecretStore {
-  constructor(private readonly encryptionKey: string) {}
+export class EncryptedSecretStore extends SecretChanges implements SecretStore {
+  private warnedRemoteRef = false;
+
+  constructor(private readonly encryptionKey: string) {
+    super();
+  }
 
   describe() {
     return {
@@ -68,10 +81,14 @@ export class EncryptedSecretStore implements SecretStore {
 
   async put(
     plaintext: string,
-    _context: AdapterContext,
-    recordId = randomBytes(12).toString("hex"),
+    context: AdapterContext,
+    options: SecretPutOptions = {},
   ): Promise<SecretRecord> {
-    return { id: recordId, ciphertext: this.seal(plaintext, recordId) };
+    context.signal.throwIfAborted();
+    const recordId = options.recordId ?? randomBytes(12).toString("hex");
+    const ref = this.seal(plaintext, recordId);
+    this.changed(ref);
+    return { id: recordId, ref, ciphertext: ref };
   }
 
   private seal(plaintext: string, recordId: string): string {
@@ -84,16 +101,7 @@ export class EncryptedSecretStore implements SecretStore {
     return `${VERSION_PREFIX}${Buffer.concat([salt, iv, tag, enc]).toString("base64")}`;
   }
 
-  async get(id: string, _context: AdapterContext): Promise<string> {
-    throw new Error(`SecretStore.get requires persistence; use load(${id})`);
-  }
-
-  load(ciphertext: string, recordId: string): string {
-    if (ciphertext.startsWith(VERSION_PREFIX)) {
-      const sealed = parseSealed(ciphertext);
-      return openSealed(sealed, keyFrom(this.encryptionKey, sealed.salt), recordId);
-    }
-
+  private loadLegacy(ciphertext: string): string {
     // Ciphertexts written before v2 used a single SHA-256 key derivation and
     // no AAD. Keep them readable so an upgrade does not strand credentials;
     // every subsequent write uses the stronger versioned format above.
@@ -106,11 +114,32 @@ export class EncryptedSecretStore implements SecretStore {
     return Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
   }
 
-  /** Like load, but derives the v2 key in the libuv threadpool so the event loop stays free. */
-  async loadAsync(ciphertext: string, recordId: string): Promise<string> {
-    if (!ciphertext.startsWith(VERSION_PREFIX)) return this.load(ciphertext, recordId);
+  /** Derive the v2 key in the threadpool so reads leave the event loop free. */
+  async load(ciphertext: string, context: SecretContext): Promise<string> {
+    const recordId = typeof context === "string" ? context : context.recordId;
+    if (typeof context !== "string") context.signal?.throwIfAborted();
+    if (ciphertext.startsWith("infisical:")) {
+      const message =
+        "Infisical secret references require SECRET_STORE=infisical; run the reverse migration before switching to encrypted storage (docs/infisical-secrets.md)";
+      if (!this.warnedRemoteRef) {
+        this.warnedRemoteRef = true;
+        getLogger().warn(message);
+      }
+      throw new SecretStoreUnavailableError(undefined, message);
+    }
+    if (!ciphertext.startsWith(VERSION_PREFIX)) return this.loadLegacy(ciphertext);
     const sealed = parseSealed(ciphertext);
-    return openSealed(sealed, await keyFromAsync(this.encryptionKey, sealed.salt), recordId);
+    const key = await keyFromAsync(this.encryptionKey, sealed.salt);
+    if (typeof context !== "string") context.signal?.throwIfAborted();
+    return openSealed(sealed, key, recordId);
+  }
+
+  async start(): Promise<void> {}
+  async close(): Promise<void> {
+    this.clearListeners();
+  }
+  async delete(ref: string, _context: SecretContext): Promise<void> {
+    this.changed(ref);
   }
 
   redact(value: string): string {

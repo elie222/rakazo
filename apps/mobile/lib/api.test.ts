@@ -13,6 +13,7 @@ import {
   changePassword,
   currentApiBase,
   deleteAccount,
+  fetchAccountSecurity,
   IDLE_TIMEOUT_MS,
   loadApiBase,
   MAX_MOBILE_AUTH_RESPONSE_BYTES,
@@ -21,6 +22,7 @@ import {
   mobileThreadRefreshResult,
   passwordResetCapabilities,
   prependMobileMessagePage,
+  requestAccountDeletionCode,
   requestPasswordReset,
   resetApiBase,
   rpc,
@@ -117,12 +119,19 @@ describe("mobile API authentication", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
-        jsonResponse({ passwordReset: true, resetUrl: "https://rakazo.test/reset-password" }),
+        jsonResponse({
+          passwordAuth: true,
+          sso: null,
+          passwordReset: true,
+          resetUrl: "https://rakazo.test/reset-password",
+        }),
       )
       .mockResolvedValueOnce(jsonResponse({ status: true }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(passwordResetCapabilities()).resolves.toEqual({
+      passwordAuth: true,
+      sso: null,
       passwordReset: true,
       resetUrl: "https://rakazo.test/reset-password",
     });
@@ -141,16 +150,88 @@ describe("mobile API authentication", () => {
     );
   });
 
-  it("treats a malformed capabilities response as password recovery being unavailable", async () => {
+  it("accepts complete pre-SSO capabilities as password-only", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          passwordReset: true,
+          resetUrl: "https://rakazo.test/reset-password",
+          billing: false,
+        }),
+      ),
+    );
+    await expect(passwordResetCapabilities()).resolves.toEqual({
+      passwordAuth: true,
+      sso: null,
+      passwordReset: true,
+      resetUrl: "https://rakazo.test/reset-password",
+      billing: false,
+    });
+  });
+
+  it("uses original password change and deletion endpoints after account-security 404", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("Not found", { status: 404 }))
+      .mockResolvedValueOnce(jsonResponse({ status: true }))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ success: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(fetchAccountSecurity()).resolves.toEqual({
+      hasPassword: true,
+      passwordChangeEnabled: true,
+      freshOidcAuth: false,
+      ssoLinked: false,
+      emailDeletion: false,
+      sso: null,
+    });
+    await changePassword("old-password", "new-password");
+    await deleteAccount("new-password");
+    expect(fetchMock.mock.calls[1]?.[0]).toContain("/api/auth/change-password");
+    expect(fetchMock.mock.calls[3]?.[0]).toContain("/api/auth/delete-user");
+    expect(JSON.parse(fetchMock.mock.calls[3]?.[1]?.body)).toEqual({ password: "new-password" });
+  });
+
+  it.each([401, 500])("does not fall back for account-security HTTP %s", async (status) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({}, { status })),
+    );
+    await expect(fetchAccountSecurity()).rejects.toThrow();
+  });
+
+  it("rejects malformed account-security responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ hasPassword: true })),
+    );
+    await expect(fetchAccountSecurity()).rejects.toThrow();
+  });
+
+  it("rejects a malformed capabilities response", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("not-json", { status: 200 })),
     );
 
-    await expect(passwordResetCapabilities()).resolves.toEqual({
-      passwordReset: false,
-      resetUrl: null,
-    });
+    await expect(passwordResetCapabilities()).rejects.toThrow();
+  });
+
+  it.each([
+    {},
+    { passwordReset: false, resetUrl: null, sso: null },
+    { passwordReset: "false", resetUrl: null },
+    { passwordReset: false, resetUrl: "invalid" },
+    { passwordReset: false, resetUrl: null, billing: "false" },
+    { passwordAuth: "false", sso: null, passwordReset: false, resetUrl: null },
+    { passwordAuth: true, passwordReset: false, resetUrl: null, sso: {} },
+  ])("rejects malformed successful capability shapes", async (body) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(body)),
+    );
+    await expect(passwordResetCapabilities()).rejects.toThrow();
   });
 
   it("changes a password with the bearer session and revokes other sessions", async () => {
@@ -362,9 +443,43 @@ describe("mobile API authentication", () => {
     );
 
     await expect(signIn("ada@example.com", "correct horse")).rejects.toThrow(
-      `exceeds ${MAX_MOBILE_AUTH_RESPONSE_BYTES} bytes`,
+      new Error("Something went wrong. Try again."),
     );
     expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it("maps a sign-up validation dump to field copy", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            code: "VALIDATION_ERROR",
+            message:
+              "[body.email] Invalid email address; [body.password] Too small: expected string to have >=1 characters",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    await expect(signUp("ada", "", "Ada")).rejects.toThrow(new Error("Enter a valid email"));
+  });
+
+  it("says the server is unreachable instead of the native fetch failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError(
+          "fetch failed: UnexpectedException: Could not connect to the server. (at ExpoModulesCore/Promise.swift:56)",
+        );
+      }),
+    );
+
+    await expect(signIn("ada@example.com", "correct horse")).rejects.toThrow(
+      new Error("Could not reach the server"),
+    );
+    await expect(rpc("bots/list")).rejects.toThrow(new Error("Could not reach the server"));
   });
 
   it("times out and cancels a stalled sign-in response body", async () => {
@@ -597,7 +712,7 @@ describe("mobile API authentication", () => {
     );
 
     await expect(rpc("bots/create", { name: "Ada" })).rejects.toThrow(
-      new Error("rpc bots/create failed"),
+      new Error("Something went wrong. Try again."),
     );
   });
 
@@ -792,7 +907,7 @@ describe("mobile API authentication", () => {
       ),
     );
 
-    await expect(rpc("bots/get")).rejects.toThrow(`exceeds ${MAX_MOBILE_RPC_RESPONSE_BYTES} bytes`);
+    await expect(rpc("bots/get")).rejects.toThrow(new Error("Something went wrong. Try again."));
   });
 
   it("shares the selected space with direct API requests", async () => {
@@ -2960,4 +3075,20 @@ describe("mobile clipboard text", () => {
     expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
     expect(copyableMobileMessageText(message)).toBe("indented\nnext");
   });
+});
+
+it.each([502, 429])("localizes non-JSON deletion-code HTTP %s", async (status) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("<html>Gateway error</html>", { status })),
+  );
+  await expect(requestAccountDeletionCode()).rejects.toThrow("Could not continue");
+});
+
+it("localizes non-JSON successful account-security responses", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("<html>Gateway error</html>")),
+  );
+  await expect(fetchAccountSecurity()).rejects.toThrow("Could not load sign-in options");
 });

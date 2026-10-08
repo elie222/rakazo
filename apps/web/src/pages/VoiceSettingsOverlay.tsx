@@ -15,6 +15,7 @@ import {
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 
 export function VoiceSettingsOverlay({
   onClose,
@@ -81,9 +82,7 @@ export function VoiceSettingsOverlay({
 
   useEffect(() => {
     void refresh()
-      .catch((err: unknown) =>
-        setError(err instanceof Error ? err.message : t`Could not load voice settings`),
-      )
+      .catch((err: unknown) => setError(errorText(err, t`Could not load voice settings`)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -110,7 +109,7 @@ export function VoiceSettingsOverlay({
       await refresh(selected.id);
       setNotice(t`Connected ${selected.name}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not connect this voice provider`);
+      setError(errorText(err, t`Could not connect this voice provider`));
     } finally {
       markPending(null);
     }
@@ -126,7 +125,7 @@ export function VoiceSettingsOverlay({
       setApiKey("");
       await refresh(credential.provider);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not disconnect this voice provider`);
+      setError(errorText(err, t`Could not disconnect this voice provider`));
     } finally {
       markPending(null);
     }
@@ -141,7 +140,7 @@ export function VoiceSettingsOverlay({
       await rpc.voice.setVoice({ voiceId: nextVoiceId, provider: selected?.id });
       await refresh(selected?.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save that voice`);
+      setError(errorText(err, t`Could not save that voice`));
     } finally {
       markPending(null);
     }
@@ -160,7 +159,7 @@ export function VoiceSettingsOverlay({
       setSpeechModel(saved.speechModel);
       setCredentials((current) => current.map((entry) => (entry.id === saved.id ? saved : entry)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save that speech model`);
+      setError(errorText(err, t`Could not save that speech model`));
     } finally {
       speechModelSave.current = null;
       markPending(null);
@@ -180,7 +179,7 @@ export function VoiceSettingsOverlay({
       }
       setNotice(t`If you heard that, voice is ready.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not play a test clip`);
+      setError(errorText(err, t`Could not play a test clip`));
     } finally {
       markPending(null);
     }
@@ -226,9 +225,7 @@ export function VoiceSettingsOverlay({
                     markPending("voice");
                     void refresh(entry.id)
                       .catch((err: unknown) =>
-                        setError(
-                          err instanceof Error ? err.message : t`Could not load voice settings`,
-                        ),
+                        setError(errorText(err, t`Could not load voice settings`)),
                       )
                       .finally(() => markPending(null));
                   }}

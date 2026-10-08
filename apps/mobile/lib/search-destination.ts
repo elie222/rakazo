@@ -1,5 +1,14 @@
 import type { SearchHit } from "@rakazo/contracts";
 
+/**
+ * Message id to open, if the hit is a row inside a thread.
+ * A conversation hit is the thread itself and opens on the newest message.
+ */
+export function searchHitMessageId(hit: SearchHit): string | undefined {
+  if (hit.kind === "conversation") return undefined;
+  return hit.messageId;
+}
+
 export function mobileSearchDestination(hit: SearchHit):
   | {
       pathname: "/routine";
@@ -19,13 +28,14 @@ export function mobileSearchDestination(hit: SearchHit):
       params: { botId: hit.botId!, botName: hit.botName!, routineId: hit.routineId },
     };
   }
+  const messageId = searchHitMessageId(hit);
   if (hit.groupId) {
     return {
       pathname: "/group-thread",
       params: {
         groupId: hit.groupId,
         name: hit.groupName ?? hit.title,
-        ...(hit.messageId ? { messageId: hit.messageId } : {}),
+        ...(messageId ? { messageId } : {}),
       },
     };
   }
@@ -34,7 +44,7 @@ export function mobileSearchDestination(hit: SearchHit):
     params: {
       botId: hit.botId!,
       name: hit.botName ?? hit.title,
-      ...(hit.messageId ? { messageId: hit.messageId } : {}),
+      ...(messageId ? { messageId } : {}),
     },
   };
 }

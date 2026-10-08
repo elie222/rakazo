@@ -31,6 +31,7 @@ import {
 } from "./call-sounds";
 import * as dictation from "./dictation";
 import { getActiveUiLocale, t } from "./i18n";
+import { errorText } from "./user-error";
 import { speakText, stopSpeaking } from "./voice";
 
 export type CallPhase = "listening" | "thinking" | "speaking";
@@ -590,10 +591,6 @@ function onCallEnded(ended: CallEnded): void {
   speakAndListen(farewell);
 }
 
-function errorText(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
-}
-
 function productionDeps(): CallDeps {
   return {
     dictate: dictateTurn,
@@ -684,7 +681,7 @@ async function transcribeClip(clip: CallClip, signal: AbortSignal): Promise<stri
     signal,
   });
   const body = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
-  if (!res.ok) throw new Error(body.error ?? t("Could not transcribe that."));
+  if (!res.ok) throw new Error(errorText(body.error ?? "", t("Could not transcribe that.")));
   return body.text ?? "";
 }
 

@@ -513,7 +513,8 @@ describe("resolveModelAuth account-change guard", () => {
       failed?: ModelCredentialFailedState,
     ) => {
       const matches = failed ? matchesFailedOAuthSecret(() => row(), failed) : undefined;
-      if (matches && !matches({ id: "secret-codex", ciphertext: "cipher-codex" })) return false;
+      if (matches && !(await matches({ id: "secret-codex", ciphertext: "cipher-codex" })))
+        return false;
       deleteCredential();
       return true;
     };
@@ -886,29 +887,35 @@ describe("matchesFailedOAuthSecret", () => {
     ciphertext: serializeModelSecret({ kind: "oauth", credential }),
   });
 
-  it("matches only when the stored credential is still the one that failed", () => {
-    expect(predicate()(row(oauthCred(failed)))).toBe(true);
+  it("matches only when the stored credential is still the one that failed", async () => {
+    expect(await predicate()(row(oauthCred(failed)))).toBe(true);
   });
 
-  it("skips a secret another worker refreshed in place", () => {
+  it("skips a secret another worker refreshed in place", async () => {
     // A successful refresh can rotate only the access token and keep the same
     // refresh token and expiry. Any of the three fields changing means the
     // stored row is no longer the failed attempt.
     expect(
-      predicate()(row(oauthCred({ access: "new-access", refresh: "old-refresh", expires: 1 }))),
+      await predicate()(
+        row(oauthCred({ access: "new-access", refresh: "old-refresh", expires: 1 })),
+      ),
     ).toBe(false);
     expect(
-      predicate()(row(oauthCred({ access: "old-access", refresh: "new-refresh", expires: 1 }))),
+      await predicate()(
+        row(oauthCred({ access: "old-access", refresh: "new-refresh", expires: 1 })),
+      ),
     ).toBe(false);
     expect(
-      predicate()(row(oauthCred({ access: "old-access", refresh: "old-refresh", expires: 2 }))),
+      await predicate()(
+        row(oauthCred({ access: "old-access", refresh: "old-refresh", expires: 2 })),
+      ),
     ).toBe(false);
   });
 
-  it("skips material it cannot prove is the failed credential", () => {
-    expect(predicate()({ id: "secret-1", ciphertext: "not-json" })).toBe(false);
+  it("skips material it cannot prove is the failed credential", async () => {
+    expect(await predicate()({ id: "secret-1", ciphertext: "not-json" })).toBe(false);
     expect(
-      predicate()({
+      await predicate()({
         id: "secret-1",
         ciphertext: serializeModelSecret({ kind: "api_key", key: "sk-test" }),
       }),
@@ -916,7 +923,7 @@ describe("matchesFailedOAuthSecret", () => {
     const broken = matchesFailedOAuthSecret(() => {
       throw new Error("decrypt failed");
     }, failed);
-    expect(broken({ id: "secret-1", ciphertext: "cipher" })).toBe(false);
+    expect(await broken({ id: "secret-1", ciphertext: "cipher" })).toBe(false);
   });
 });
 
@@ -932,10 +939,14 @@ describe("refreshExpiredModelCredential", () => {
       },
     } as unknown as PrismaClient;
     const secretStore = {
-      load: vi.fn(() => current),
+      load: vi.fn(async () => current),
       put: vi.fn(async (next: string) => {
         current = next;
-        return { id: "secret-1", ciphertext: `cipher:${next.length}` };
+        return {
+          id: "secret-1",
+          ref: `cipher:${next.length}`,
+          ciphertext: `cipher:${next.length}`,
+        };
       }),
     };
     return {
@@ -1077,10 +1088,10 @@ describe("kickModelCredentialRefresh", () => {
       },
     } as unknown as PrismaClient;
     const secretStore = {
-      load: vi.fn(() => current),
+      load: vi.fn(async () => current),
       put: vi.fn(async (next: string) => {
         current = next;
-        return { id: "secret-1", ciphertext: "next" };
+        return { id: "secret-1", ref: "next", ciphertext: "next" };
       }),
     };
     let release!: () => void;

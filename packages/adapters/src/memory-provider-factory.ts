@@ -1,6 +1,5 @@
-import type { DurableMemoryScope, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import type { EncryptedSecretStore } from "./secrets.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
@@ -153,7 +152,7 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   constructor(
     private readonly prisma: Pick<PrismaClient, "spaceMemoryConfig" | "deploymentSettings">,
-    private readonly secrets: EncryptedSecretStore,
+    private readonly secrets: SecretStore,
   ) {}
 
   async resolve(spaceId: string): Promise<ConfiguredMemoryProvider | null> {
@@ -180,7 +179,7 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
     }
     const credentials = decodeCredentials(
       config.provider,
-      this.secrets.load(config.secret.ciphertext, config.secret.id),
+      await this.secrets.load(config.secret.ciphertext, config.secret.id),
     );
     return {
       provider: createMemoryProvider(config.provider, settings, credentials),

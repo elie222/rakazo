@@ -2,7 +2,9 @@ import {
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
+  secretStoreOptionsFromEnv,
 } from "@rakazo/adapters";
+import type { OidcConfig } from "@rakazo/auth";
 import {
   resolveAuthSecret,
   resolveEncryptionKey,
@@ -13,6 +15,8 @@ import {
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
 export interface AppEnv {
+  passwordAuth?: boolean;
+  oidc?: OidcConfig;
   nodeEnv: string;
   desktopStackToken?: string;
   databaseUrl: string;
@@ -100,6 +104,46 @@ export interface AppEnv {
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
+  secretStoreOptionsFromEnv(source);
+  const issuer = optional(source.OIDC_ISSUER);
+  const clientId = optional(source.OIDC_CLIENT_ID);
+  const clientSecret = optional(source.OIDC_CLIENT_SECRET);
+  const credentials = [issuer, clientId, clientSecret];
+  if (credentials.some(Boolean) && !credentials.every(Boolean)) {
+    throw new Error(
+      "OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET must be configured together",
+    );
+  }
+  if (issuer) {
+    try {
+      const url = new URL(issuer);
+      if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
+        throw new Error();
+    } catch {
+      throw new Error("OIDC_ISSUER must be an HTTPS issuer URL");
+    }
+  }
+  for (const key of ["AUTH_PASSWORD_ENABLED", "OIDC_ALLOW_SIGNUP_BYPASS"]) {
+    const value = source[key];
+    if (value && !["true", "false"].includes(value))
+      throw new Error(`${key} must be true or false`);
+  }
+  const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
+  if (!passwordAuth && !issuer)
+    throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");
+  const oidc =
+    issuer && clientId && clientSecret
+      ? {
+          issuer,
+          clientId,
+          clientSecret,
+          name: optional(source.OIDC_NAME) ?? "SSO",
+          scopes: (optional(source.OIDC_SCOPES) ?? "openid email profile")
+            .split(/[\s,]+/)
+            .filter(Boolean),
+          allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
+        }
+      : undefined;
   const authSecret = resolveAuthSecret(source);
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
@@ -107,6 +151,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
   return {
+    passwordAuth,
+    oidc,
     nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),

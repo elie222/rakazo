@@ -1,0 +1,37 @@
+[
+  {
+    "id": "auth",
+    "title": "Auth",
+    "flow": "flows/auth.yaml"
+  },
+  {
+    "id": "onboarding",
+    "title": "Onboarding",
+    "flow": "flows/onboarding.yaml"
+  },
+  {
+    "id": "inbox",
+    "title": "Inbox",
+    "flow": "flows/inbox.yaml"
+  },
+  {
+    "id": "thread",
+    "title": "Thread",
+    "flow": "flows/thread.yaml"
+  },
+  {
+    "id": "search",
+    "title": "Search",
+    "flow": "flows/search.yaml"
+  },
+  {
+    "id": "compose",
+    "title": "Compose",
+    "flow": "flows/compose.yaml"
+  },
+  {
+    "id": "settings",
+    "title": "Settings",
+    "flow": "flows/settings.yaml"
+  }
+]

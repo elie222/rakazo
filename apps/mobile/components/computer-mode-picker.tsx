@@ -1,7 +1,8 @@
 import type { ComputerMode } from "@rakazo/contracts";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useI18n } from "../lib/i18n";
-import { useMobileTokens } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { NativeSegmentedControl } from "./native-segmented-control";
 
 export function ComputerModePicker({
   value,
@@ -15,35 +16,20 @@ export function ComputerModePicker({
   const { t } = useI18n();
   const tokens = useMobileTokens();
   return (
-    <View style={{ marginTop: 16 }}>
-      <Text style={{ color: tokens.mutedForeground, marginBottom: 8, fontSize: 14 }}>
+    <View style={{ marginTop: 16, padding: 16, borderRadius: 14, backgroundColor: native.fill }}>
+      <Text style={{ color: tokens.foreground, marginBottom: 12, fontSize: 16, fontWeight: "600" }}>
         {t("Computer")}
       </Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        {(["team", "dedicated"] as const).map((mode) => (
-          <Pressable
-            key={mode}
-            accessibilityRole="button"
-            accessibilityState={{ selected: value === mode }}
-            disabled={disabled}
-            onPress={() => onChange(mode)}
-            style={{
-              flex: 1,
-              alignItems: "center",
-              borderWidth: 1,
-              borderColor: value === mode ? tokens.mutedForeground : tokens.border,
-              backgroundColor: value === mode ? tokens.muted : "transparent",
-              borderRadius: 11,
-              paddingVertical: 12,
-              opacity: disabled ? 0.5 : 1,
-            }}
-          >
-            <Text style={{ color: value === mode ? tokens.foreground : tokens.mutedForeground }}>
-              {mode === "team" ? t("Team") : t("Private")}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <NativeSegmentedControl
+        accessibilityLabel={t("Computer")}
+        disabled={disabled}
+        onChange={onChange}
+        options={[
+          { value: "team", label: t("Team") },
+          { value: "dedicated", label: t("Private") },
+        ]}
+        value={value}
+      />
     </View>
   );
 }

@@ -1132,6 +1132,11 @@ msgstr "Continuer"
 msgid "Continue in Background"
 msgstr "Continuer en arrière-plan"
 
+#. placeholder {0}: reset.sso.name
+#: src/pages/Auth.tsx
+msgid "Continue with {0}"
+msgstr "Continuer avec {0}"
+
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "Continuer avec l'e-mail"
@@ -1218,6 +1223,10 @@ msgstr "Impossible de se connecter à ce fournisseur vocal"
 msgid "Could not connect to the computer screen"
 msgstr "Impossible de se connecter à l'écran de l'ordinateur"
 
+#: src/components/AccountAccess.tsx
+#: src/lib/account-security.ts
+#: src/lib/sso-flow.ts
+#: src/lib/user-error.ts
 #: src/pages/Auth.tsx
 #: src/pages/Shell.tsx
 msgid "Could not continue"
@@ -1361,6 +1370,11 @@ msgstr "Impossible de charger les paramètres du modèle"
 msgid "Could not load run history"
 msgstr "Impossible de charger l’historique des exécutions"
 
+#: src/lib/account-security.ts
+#: src/pages/Auth.tsx
+msgid "Could not load sign-in options"
+msgstr "Impossible de charger les options de connexion"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
 msgstr "Impossible de charger la compétence"
@@ -1406,6 +1420,8 @@ msgstr "Impossible d'ouvrir le terminal"
 msgid "Could not play a test clip"
 msgstr "Impossible de lire un extrait de test"
 
+#: src/lib/computer-sandbox.ts
+#: src/lib/user-error.ts
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
 msgid "Could not reach the server"
@@ -1658,6 +1674,7 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Expression Cron"
 
+#: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "Mot de passe actuel"
@@ -1747,6 +1764,10 @@ msgstr "Supprimer {0}"
 msgid "Delete {0}?"
 msgstr "Supprimer {0} ?"
 
+#: src/components/AccountAccess.tsx
+msgid "Delete account"
+msgstr "Supprimer le compte"
+
 #: src/pages/GroupPanel.tsx
 msgid "Delete group"
 msgstr "Supprimer le groupe"
@@ -1768,6 +1789,10 @@ msgstr "supprimé"
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Suppression en cours…"
+
+#: src/components/AccountAccess.tsx
+msgid "Deletion code"
+msgstr "Code de suppression"
 
 #: src/components/AskCard.tsx
 msgid "Denied"
@@ -1922,6 +1947,14 @@ msgstr "Modifier le profil"
 msgid "Email"
 msgstr "E-mail"
 
+#: src/lib/user-error.ts
+msgid "Email is not allowed to register"
+msgstr "Cette adresse e-mail ne peut pas s’inscrire"
+
+#: src/lib/user-error.ts
+msgid "Email verification required"
+msgstr "Vérification de l’e-mail requise"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -1930,9 +1963,17 @@ msgstr ""
 msgid "Engage when... Ignore..."
 msgstr "Répondre quand... Ignorer..."
 
+#: src/lib/user-error.ts
+msgid "Enter a password"
+msgstr "Saisissez un mot de passe"
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Enter a username and password"
 msgstr ""
+
+#: src/lib/user-error.ts
+msgid "Enter a valid email"
+msgstr "Saisissez une adresse e-mail valide"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -2374,6 +2415,10 @@ msgstr "Incident Linear"
 msgid "Link a chat app"
 msgstr "Connecter une application de discussion"
 
+#: src/components/AccountAccess.tsx
+msgid "Link SSO"
+msgstr "Associer SSO"
+
 #: src/pages/Artifacts.tsx
 msgid "List view"
 msgstr "Vue en liste"
@@ -2436,6 +2481,7 @@ msgstr "Chargement des fournisseurs vocaux…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3220,6 +3266,10 @@ msgstr "Enregistrement : {0}"
 msgid "Recover computer"
 msgstr "Récupérer l'ordinateur"
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recover computer?"
+msgstr "Récupérer l’ordinateur ?"
+
 #. placeholder {0}: update.name
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovering {0}’s Computer"
@@ -3241,9 +3291,14 @@ msgstr "Échec de la récupération"
 msgid "Recovery is unavailable until the previous operation has stopped."
 msgstr "La récupération n'est pas disponible tant que l'opération précédente n'est pas arrêtée."
 
+#: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recovery restores the last saved workspace. Unsaved work may be lost."
 msgstr "La récupération restaure le dernier espace de travail enregistré. Les travaux non enregistrés peuvent être perdus."
+
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Recreate a computer that is not working."
+msgstr "Recréer un ordinateur qui ne fonctionne pas."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
@@ -3260,6 +3315,10 @@ msgstr "Actualiser la vue"
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Refreshing…"
 msgstr "Actualisation en cours…"
+
+#: src/lib/user-error.ts
+msgid "Registration is closed"
+msgstr "Les inscriptions sont fermées"
 
 #: src/pages/Shell.tsx
 msgid "Release"
@@ -3416,12 +3475,21 @@ msgid "Restore"
 msgstr "Restaurer"
 
 #: src/components/ComputerMaintenanceActions.tsx
+msgid "Restore the last saved workspace."
+msgstr "Restaurer le dernier espace de travail enregistré."
+
+#: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Restaurez le dernier espace de travail enregistré. Les travaux non enregistrés sur l'ordinateur seront perdus."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr "Restauration de votre espace de travail"
+
+#: src/components/AccountAccess.tsx
+#: src/pages/Auth.tsx
+msgid "Retry"
+msgstr "Réessayer"
 
 #: src/App.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3526,6 +3594,10 @@ msgstr ""
 msgid "Save new value"
 msgstr ""
 
+#: src/components/ComputerMaintenanceActions.tsx
+msgid "Save the workspace and install current software."
+msgstr "Enregistrer l’espace de travail et installer les logiciels actuels."
+
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
@@ -3623,6 +3695,10 @@ msgstr "Envoyez <0>{linkCode}</0> au numéro depuis votre application de discuss
 #: src/components/AskCard.tsx
 msgid "Send answer"
 msgstr "Envoyer la réponse"
+
+#: src/components/AccountAccess.tsx
+msgid "Send deletion code"
+msgstr "Envoyer le code de suppression"
 
 #: src/components/AskCard.tsx
 msgid "Send it"
@@ -3746,6 +3822,8 @@ msgstr "Afficher la transcription"
 msgid "Sign in"
 msgstr "Se connecter"
 
+#: src/components/AccountAccess.tsx
+#: src/lib/user-error.ts
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Sign in again"
 msgstr ""
@@ -3753,6 +3831,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Connectez-vous à Rakazo"
+
+#: src/lib/user-error.ts
+msgid "Sign in to your existing account to link SSO"
+msgstr "Connectez-vous à votre compte existant pour associer SSO"
 
 #: src/pages/Auth.tsx
 #: src/pages/Welcome.tsx
@@ -3794,6 +3876,10 @@ msgstr "Slack non activé"
 msgid "Software update"
 msgstr "Mise à jour logicielle"
 
+#: src/lib/user-error.ts
+msgid "Something went wrong. Try again."
+msgstr "Un problème est survenu. Réessayez."
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Space default"
 msgstr "Défaut de l'espace"
@@ -3821,6 +3907,10 @@ msgstr "Lire cette réponse à voix haute"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Modèle de parole"
+
+#: src/lib/user-error.ts
+msgid "SSO is temporarily unavailable. Try again."
+msgstr "SSO est temporairement indisponible. Réessayez."
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -4011,6 +4101,10 @@ msgstr "ce Mac"
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr "Ce mois-ci"
+
+#: src/components/AccountAccess.tsx
+msgid "This permanently deletes your account and data."
+msgstr "Cela supprime définitivement votre compte et vos données."
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."

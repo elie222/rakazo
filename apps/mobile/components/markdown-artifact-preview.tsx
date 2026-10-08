@@ -1,6 +1,6 @@
 import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import { useEffect, useState } from "react";
-import { Alert, Modal, Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { Alert, Modal, SafeAreaView, ScrollView, Text, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import {
   type MobileArtifactTarget,
@@ -9,7 +9,9 @@ import {
 } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
 import { useResolvedAppearance } from "../lib/native";
-import { NativeSymbol } from "./native-symbol";
+import { iosAtLeast } from "../lib/native-controls";
+import { errorText } from "../lib/user-error";
+import { GlassIconButton } from "./glass-icon-button";
 
 export type MarkdownArtifactPreviewTarget = {
   artifactId: string;
@@ -49,7 +51,7 @@ export function MarkdownArtifactPreview({
         if (cancelled) return;
         setState({
           status: "error",
-          message: error instanceof Error ? error.message : t("Could not load this file."),
+          message: errorText(error, t("Could not load this file.")),
         });
       });
     return () => {
@@ -65,7 +67,7 @@ export function MarkdownArtifactPreview({
             height: 54,
             flexDirection: "row",
             alignItems: "center",
-            borderBottomWidth: 1,
+            borderBottomWidth: iosAtLeast(26) ? 0 : 1,
             borderBottomColor: tokens.border,
             paddingHorizontal: 12,
           }}
@@ -76,39 +78,29 @@ export function MarkdownArtifactPreview({
           >
             {target.name}
           </Text>
-          <Pressable
-            accessibilityLabel={t("Share {name}", { name: target.name })}
-            hitSlop={8}
-            onPress={() =>
-              void openMobileArtifact(
-                threadTarget,
-                target.artifactId,
-                target.name,
-                target.mimeType,
-              ).catch((error) =>
-                Alert.alert(
-                  t("Could not share file"),
-                  error instanceof Error ? error.message : t("Try again."),
-                ),
-              )
-            }
-            style={{ padding: 10 }}
-          >
-            <NativeSymbol
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <GlassIconButton
+              accessibilityLabel={t("Share {name}", { name: target.name })}
               ios="square.and.arrow.up"
               android="share-social-outline"
-              size={19}
-              color={tokens.mutedForeground}
+              onPress={() =>
+                void openMobileArtifact(
+                  threadTarget,
+                  target.artifactId,
+                  target.name,
+                  target.mimeType,
+                ).catch((error) =>
+                  Alert.alert(t("Could not share file"), errorText(error, t("Try again."))),
+                )
+              }
             />
-          </Pressable>
-          <Pressable
-            accessibilityLabel={t("Close preview")}
-            hitSlop={8}
-            onPress={onClose}
-            style={{ padding: 10 }}
-          >
-            <NativeSymbol ios="xmark" android="close" size={19} color={tokens.mutedForeground} />
-          </Pressable>
+            <GlassIconButton
+              accessibilityLabel={t("Close preview")}
+              ios="xmark"
+              android="close"
+              onPress={onClose}
+            />
+          </View>
         </View>
         <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 28 }}>
           {state.status === "loading" ? (

@@ -1,3 +1,4 @@
+import type { SecretStore } from "@rakazo/adapter-kit";
 import { AgentSecretInputSchema } from "@rakazo/contracts";
 import { redactSecrets } from "@rakazo/core";
 
@@ -6,19 +7,17 @@ type EncryptedAgentSecret = {
   secret: { id: string; ciphertext: string };
 };
 
-type SecretLoader = {
-  load(ciphertext: string, recordId: string): string;
-};
-
-export function decryptAgentEnvironment(
+export async function decryptAgentEnvironment(
   rows: EncryptedAgentSecret[],
-  secrets: SecretLoader,
-): Record<string, string> {
+  secrets: Pick<SecretStore, "load">,
+): Promise<Record<string, string>> {
   return Object.fromEntries(
-    rows.map((row) => {
-      AgentSecretInputSchema.shape.name.parse(row.name);
-      return [row.name, secrets.load(row.secret.ciphertext, row.secret.id)];
-    }),
+    await Promise.all(
+      rows.map(async (row) => {
+        AgentSecretInputSchema.shape.name.parse(row.name);
+        return [row.name, await secrets.load(row.secret.ciphertext, row.secret.id)];
+      }),
+    ),
   );
 }
 
