@@ -93,3 +93,27 @@ it("dismisses a composer reply with Escape", () => {
   );
   expect(onDismiss).toHaveBeenCalledOnce();
 });
+
+it("keeps internal peer receipt replies out of the transcript", () => {
+  act(() =>
+    root.render(
+      <ReplyLine
+        message={{
+          ...message,
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "peer",
+              fromBotName: "Researcher",
+              text: "peer response",
+              hop: 1,
+            },
+          ],
+          replyPreview: { role: "bot", botId: "bot", text: "peer-exchange-alpha" },
+        }}
+        author="Bot"
+      />,
+    ),
+  );
+  expect(container.textContent).toBe("");
+});

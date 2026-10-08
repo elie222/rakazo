@@ -4139,7 +4139,7 @@ msgstr "प्रति:"
 
 #: src/pages/Artifacts.tsx
 msgid "Today"
-msgstr ""
+msgstr "आज"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"

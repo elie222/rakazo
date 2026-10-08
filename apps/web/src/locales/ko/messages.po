@@ -4139,7 +4139,7 @@ msgstr "받는 사람:"
 
 #: src/pages/Artifacts.tsx
 msgid "Today"
-msgstr ""
+msgstr "오늘"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"

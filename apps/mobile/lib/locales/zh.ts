@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Today: "今天",
+  Yesterday: "昨天",
   You: "你",
   "Original message unavailable": "原消息不可用",
   "No archived bots": "没有已归档的机器人",

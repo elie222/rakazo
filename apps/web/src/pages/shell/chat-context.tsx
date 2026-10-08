@@ -1,16 +1,17 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { formatTimeSeparator, replyLineText } from "@rakazo/core";
+import { formatTimeSeparator, isPeerReceiptBlocks, replyLineText } from "@rakazo/core";
 import { X } from "lucide-react";
 import { useEffect } from "react";
 
 export function TimeSeparator({ createdAt, locale }: { createdAt: string; locale: string }) {
+  const { t } = useLingui();
   return (
     <h3
       data-testid="time-separator"
       className="my-3 select-none text-center text-xs font-normal text-muted-foreground"
     >
-      {formatTimeSeparator(createdAt, locale)}
+      {formatTimeSeparator(createdAt, locale, { today: t`Today`, yesterday: t`Yesterday` })}
     </h3>
   );
 }
@@ -67,6 +68,8 @@ export function ReplyLine({
   onJump?: (id: string) => void;
 }) {
   const { t } = useLingui();
+  // Peer receipts use internal reply links for routing; their bodies belong in the peer view.
+  if (isPeerReceiptBlocks(message.blocks)) return null;
   if (!message.replyToMessageId && message.replyQuote == null) return null;
   const unavailable = message.replyPreview === null || !message.replyToMessageId;
   if (unavailable)

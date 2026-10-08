@@ -22,6 +22,7 @@ import {
   forwardProbeAfterPage,
   groupVoiceChats,
   isApprovalAskBlock,
+  isPeerReceiptBlocks,
   isRunTerminalEvent,
   isSecretAskBlock,
   latestAnswerableAskMessageId,
@@ -2077,16 +2078,18 @@ function Thread() {
               flexShrink: 1,
             }}
           >
-            <ReplyLine
-              targetId={message.replyToMessageId}
-              quote={message.replyQuote}
-              preview={message.replyPreview}
-              author={replyAuthor}
-              fallbackText={parent ? previewMessageText(parent) : undefined}
-              onJump={(messageId) => {
-                void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
-              }}
-            />
+            {isPeerReceiptBlocks(message.blocks) ? null : (
+              <ReplyLine
+                targetId={message.replyToMessageId}
+                quote={message.replyQuote}
+                preview={message.replyPreview}
+                author={replyAuthor}
+                fallbackText={parent ? previewMessageText(parent) : undefined}
+                onJump={(messageId) => {
+                  void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
+                }}
+              />
+            )}
             <MessageContextMenu
               actions={menu}
               maxWidth={

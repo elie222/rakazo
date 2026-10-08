@@ -4139,7 +4139,7 @@ msgstr "К:"
 
 #: src/pages/Artifacts.tsx
 msgid "Today"
-msgstr ""
+msgstr "Сегодня"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"

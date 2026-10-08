@@ -17,29 +17,39 @@ export function needsTimeSeparator(current: string | Date, previous?: string | D
 export function formatTimeSeparator(
   createdAt: string | Date,
   locale: string,
+  labels: { today: string; yesterday: string },
   now: Date = new Date(),
 ): string {
   const date = new Date(createdAt);
   if (Number.isNaN(date.getTime())) return "";
   const daysAgo = dayNumber(now) - dayNumber(date);
-  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(date);
+  const timeFallback = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  const format = (options: Intl.DateTimeFormatOptions, fallback: string): string => {
+    try {
+      return new Intl.DateTimeFormat(locale, options).format(date);
+    } catch {
+      // Hermes builds and invalid/unsupported locales must never prevent opening a thread.
+      return fallback;
+    }
+  };
+  const time = format({ hour: "numeric", minute: "2-digit" }, timeFallback);
   if (daysAgo === 0 || daysAgo === 1) {
-    const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(
-      -daysAgo,
-      "day",
-    );
-    return `${relative.charAt(0).toLocaleUpperCase(locale)}${relative.slice(1)} ${time}`;
+    return `${daysAgo === 0 ? labels.today : labels.yesterday} ${time}`;
   }
+  const dateFallback = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   if (daysAgo > 1 && daysAgo < 7) {
-    return `${new Intl.DateTimeFormat(locale, { weekday: "long" }).format(date)} ${time}`;
+    return `${format({ weekday: "long" }, dateFallback)} ${time}`;
   }
-  return new Intl.DateTimeFormat(locale, {
-    month: "short",
-    day: "numeric",
-    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  return format(
+    {
+      month: "short",
+      day: "numeric",
+      ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+      hour: "numeric",
+      minute: "2-digit",
+    },
+    `${dateFallback} ${timeFallback}`,
+  );
 }
 
 /** Compute before reversing a native inverted list; hidden rows must be removed by the caller. */

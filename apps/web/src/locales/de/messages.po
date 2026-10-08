@@ -4139,7 +4139,7 @@ msgstr "An:"
 
 #: src/pages/Artifacts.tsx
 msgid "Today"
-msgstr ""
+msgstr "Heute"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"

@@ -4139,7 +4139,7 @@ msgstr "至:"
 
 #: src/pages/Artifacts.tsx
 msgid "Today"
-msgstr ""
+msgstr "今天"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
