@@ -9,35 +9,35 @@ export const WAIT_SOUND_KEY = "rakazo.wait-sound";
 export type CallCue = "start" | "end";
 
 const CUE_ASSETS: Record<CallCue, number> = {
-  start: require("../assets/sounds/warm-start.wav"),
-  end: require("../assets/sounds/warm-end.wav"),
+  start: require("../assets/sounds/warm-start.m4a"),
+  end: require("../assets/sounds/warm-end.m4a"),
 };
 
 /** Ten patterns in two tones; pattern N is the same tune in both. */
 const WAIT_ASSETS = {
   wood: [
-    require("../assets/sounds/wait-wood-01.wav"),
-    require("../assets/sounds/wait-wood-02.wav"),
-    require("../assets/sounds/wait-wood-03.wav"),
-    require("../assets/sounds/wait-wood-04.wav"),
-    require("../assets/sounds/wait-wood-05.wav"),
-    require("../assets/sounds/wait-wood-06.wav"),
-    require("../assets/sounds/wait-wood-07.wav"),
-    require("../assets/sounds/wait-wood-08.wav"),
-    require("../assets/sounds/wait-wood-09.wav"),
-    require("../assets/sounds/wait-wood-10.wav"),
+    require("../assets/sounds/wait-wood-01.m4a"),
+    require("../assets/sounds/wait-wood-02.m4a"),
+    require("../assets/sounds/wait-wood-03.m4a"),
+    require("../assets/sounds/wait-wood-04.m4a"),
+    require("../assets/sounds/wait-wood-05.m4a"),
+    require("../assets/sounds/wait-wood-06.m4a"),
+    require("../assets/sounds/wait-wood-07.m4a"),
+    require("../assets/sounds/wait-wood-08.m4a"),
+    require("../assets/sounds/wait-wood-09.m4a"),
+    require("../assets/sounds/wait-wood-10.m4a"),
   ],
   hollow: [
-    require("../assets/sounds/wait-hollow-01.wav"),
-    require("../assets/sounds/wait-hollow-02.wav"),
-    require("../assets/sounds/wait-hollow-03.wav"),
-    require("../assets/sounds/wait-hollow-04.wav"),
-    require("../assets/sounds/wait-hollow-05.wav"),
-    require("../assets/sounds/wait-hollow-06.wav"),
-    require("../assets/sounds/wait-hollow-07.wav"),
-    require("../assets/sounds/wait-hollow-08.wav"),
-    require("../assets/sounds/wait-hollow-09.wav"),
-    require("../assets/sounds/wait-hollow-10.wav"),
+    require("../assets/sounds/wait-hollow-01.m4a"),
+    require("../assets/sounds/wait-hollow-02.m4a"),
+    require("../assets/sounds/wait-hollow-03.m4a"),
+    require("../assets/sounds/wait-hollow-04.m4a"),
+    require("../assets/sounds/wait-hollow-05.m4a"),
+    require("../assets/sounds/wait-hollow-06.m4a"),
+    require("../assets/sounds/wait-hollow-07.m4a"),
+    require("../assets/sounds/wait-hollow-08.m4a"),
+    require("../assets/sounds/wait-hollow-09.m4a"),
+    require("../assets/sounds/wait-hollow-10.m4a"),
   ],
 } as const;
 
