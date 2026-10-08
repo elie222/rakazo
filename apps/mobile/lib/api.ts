@@ -1,4 +1,6 @@
 import type {
+  AccountSecurity,
+  AuthCapabilities,
   AvatarStyle,
   Bot,
   BotSection,
@@ -10,6 +12,12 @@ import type {
   ModelCredential,
   Space,
   SpaceNavigation,
+} from "@rakazo/contracts";
+import {
+  accountSecuritySchema,
+  authCapabilitiesSchema,
+  legacyAccountSecurity,
+  legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
 import type { ThreadHistory } from "@rakazo/core";
 import {
@@ -193,7 +201,7 @@ export async function selectInitialSpace(id: string) {
   return selectSpace(id);
 }
 
-async function clearSpace(): Promise<boolean> {
+export async function clearSpace(): Promise<boolean> {
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   const rollbackCleared = await clearStoredValue(SPACE_ROLLBACK_KEY);
   if (!spaceCleared || !rollbackCleared) return false;
@@ -473,16 +481,15 @@ export function signUp(email: string, password: string, name: string) {
   return authenticateWithEmail("sign-up", { email, password, name });
 }
 
-export type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
+export type PasswordResetCapabilities = AuthCapabilities;
 
 export async function passwordResetCapabilities(): Promise<PasswordResetCapabilities> {
-  const { response, body } = await fetchMobileJson<PasswordResetCapabilities>(
+  const { response, body } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/capabilities`,
     { headers: { origin: "rakazo://" } },
-    { passwordReset: false, resetUrl: null },
   );
-  if (!response.ok) throw new Error("Could not load password recovery settings");
-  return body;
+  if (!response.ok) throw new Error(t("Could not load sign-in options"));
+  return authCapabilitiesSchema.or(legacyAuthCapabilitiesSchema).parse(body);
 }
 
 export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
@@ -550,7 +557,7 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
   await maybeResume();
 }
 
-async function fetchMobileJson<T>(
+export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
@@ -622,7 +629,7 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-export async function deleteAccount(password: string) {
+export async function deleteAccount(password?: string, token?: string) {
   await rpc("notifications/unregisterPush").catch(() => undefined);
   const { response, body } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/delete-user`,
@@ -633,7 +640,7 @@ export async function deleteAccount(password: string) {
         origin: "rakazo://",
         ...(await authHeaders()),
       },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, token }),
     },
     {},
   );
@@ -1331,3 +1338,28 @@ export {
   usesCustomApiBase,
 } from "./endpoint";
 export { loadSessionToken };
+
+export async function fetchAccountSecurity(): Promise<AccountSecurity> {
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/account-security`,
+    { headers: { origin: "rakazo://", ...(await authHeaders()) } },
+    null,
+  );
+  // Older servers support password accounts and the original change/delete endpoints.
+  if (response.status === 404) return legacyAccountSecurity;
+  if (!response.ok) throw new Error(t("Could not load sign-in options"));
+  try {
+    return accountSecuritySchema.parse(body);
+  } catch {
+    throw new Error(t("Could not load sign-in options"));
+  }
+}
+
+export async function requestAccountDeletionCode(): Promise<void> {
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/request-account-deletion`,
+    { method: "POST", headers: { origin: "rakazo://", ...(await authHeaders()) } },
+    null,
+  );
+  if (!response.ok) throw new Error(authErrorText(body, t("Could not continue")));
+}

@@ -16,6 +16,16 @@ export function credentialIssueText(field: CredentialField): string {
 
 /** Text for a failed auth response body. */
 export function authErrorText(body: unknown, fallback: string): string {
+  const code = body && typeof body === "object" && "code" in body ? body.code : undefined;
+  if (code === "SSO_UNAVAILABLE") return t("SSO is temporarily unavailable. Try again.");
+  if (code === "account_not_linked") return t("Sign in to your existing account to link SSO");
+  if (code === "REGISTRATION_CLOSED") return t("Registration is closed");
+  if (code === "EMAIL_NOT_ALLOWED") return t("Email is not allowed to register");
+  if (code === "EMAIL_VERIFICATION_REQUIRED" || code === "unable_to_link_account")
+    return t("Email verification required");
+  if (code === "REAUTHENTICATION_REQUIRED") return t("Sign in again");
+  if (code === "PASSWORD_AUTH_DISABLED" || code === "EMAIL_DELETION_UNAVAILABLE")
+    return t("Could not continue");
   return authErrorMessage(body, {
     fallback,
     email: credentialIssueText("email"),

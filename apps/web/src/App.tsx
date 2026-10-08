@@ -23,6 +23,7 @@ import {
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { LocalSettingsPage } from "./pages/LocalSettings";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
@@ -44,6 +45,13 @@ const ArtifactsPage = lazy(() =>
   import("./pages/Artifacts").then((module) => ({ default: module.ArtifactsPage })),
 );
 
+function SsoCallbackPage() {
+  useEffect(() => {
+    completeSsoCallback();
+  }, []);
+  return null;
+}
+
 export function App() {
   const loadRemoteImages = useSyncExternalStore(
     subscribeRemoteImages,
@@ -52,7 +60,13 @@ export function App() {
   );
   return (
     <RemoteImagesContext.Provider value={loadRemoteImages}>
-      {window.location.pathname === LOCAL_SETTINGS_PAGE ? <LocalSettingsPage /> : <SessionApp />}
+      {window.location.pathname === SSO_CALLBACK_PATH ? (
+        <SsoCallbackPage />
+      ) : window.location.pathname === LOCAL_SETTINGS_PAGE ? (
+        <LocalSettingsPage />
+      ) : (
+        <SessionApp />
+      )}
     </RemoteImagesContext.Provider>
   );
 }

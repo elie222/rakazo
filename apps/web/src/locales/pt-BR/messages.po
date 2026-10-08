@@ -1132,6 +1132,11 @@ msgstr "Continuar"
 msgid "Continue in Background"
 msgstr ""
 
+#. placeholder {0}: reset.sso.name
+#: src/pages/Auth.tsx
+msgid "Continue with {0}"
+msgstr "Continuar com {0}"
+
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "Continuar com e-mail"
@@ -1218,6 +1223,10 @@ msgstr "Não foi possível conectar este provedor de voz"
 msgid "Could not connect to the computer screen"
 msgstr ""
 
+#: src/components/AccountAccess.tsx
+#: src/lib/account-security.ts
+#: src/lib/sso-flow.ts
+#: src/lib/user-error.ts
 #: src/pages/Auth.tsx
 #: src/pages/Shell.tsx
 msgid "Could not continue"
@@ -1360,6 +1369,11 @@ msgstr "Não foi possível carregar as configurações do modelo"
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "Não foi possível carregar o histórico de execuções"
+
+#: src/lib/account-security.ts
+#: src/pages/Auth.tsx
+msgid "Could not load sign-in options"
+msgstr "Não foi possível carregar as opções de login"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -1660,6 +1674,7 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Expressão cron"
 
+#: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "Senha atual"
@@ -1749,6 +1764,10 @@ msgstr "Excluir {0}"
 msgid "Delete {0}?"
 msgstr "Excluir {0}?"
 
+#: src/components/AccountAccess.tsx
+msgid "Delete account"
+msgstr "Excluir conta"
+
 #: src/pages/GroupPanel.tsx
 msgid "Delete group"
 msgstr "Excluir o grupo"
@@ -1770,6 +1789,10 @@ msgstr "excluído"
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Excluindo…"
+
+#: src/components/AccountAccess.tsx
+msgid "Deletion code"
+msgstr "Código de exclusão"
 
 #: src/components/AskCard.tsx
 msgid "Denied"
@@ -1923,6 +1946,14 @@ msgstr "Editar Perfil"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "E-mail"
+
+#: src/lib/user-error.ts
+msgid "Email is not allowed to register"
+msgstr "Este e-mail não tem permissão para se cadastrar"
+
+#: src/lib/user-error.ts
+msgid "Email verification required"
+msgstr "É necessário verificar o e-mail"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2384,6 +2415,10 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
+#: src/components/AccountAccess.tsx
+msgid "Link SSO"
+msgstr "Vincular SSO"
+
 #: src/pages/Artifacts.tsx
 msgid "List view"
 msgstr ""
@@ -2446,6 +2481,7 @@ msgstr "Carregando provedores de voz..."
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3280,6 +3316,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/lib/user-error.ts
+msgid "Registration is closed"
+msgstr "O cadastro está fechado"
+
 #: src/pages/Shell.tsx
 msgid "Release"
 msgstr "Libere"
@@ -3445,6 +3485,11 @@ msgstr "Restaure o último espaço de trabalho salvo. O trabalho não salvo no c
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+#: src/pages/Auth.tsx
+msgid "Retry"
+msgstr "Tentar novamente"
 
 #: src/App.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3651,6 +3696,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "Enviar resposta"
 
+#: src/components/AccountAccess.tsx
+msgid "Send deletion code"
+msgstr "Enviar código de exclusão"
+
 #: src/components/AskCard.tsx
 msgid "Send it"
 msgstr "Enviar"
@@ -3773,6 +3822,8 @@ msgstr "Mostrar transcrição"
 msgid "Sign in"
 msgstr "Entrar"
 
+#: src/components/AccountAccess.tsx
+#: src/lib/user-error.ts
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Sign in again"
 msgstr ""
@@ -3780,6 +3831,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Entrar no Rakazo"
+
+#: src/lib/user-error.ts
+msgid "Sign in to your existing account to link SSO"
+msgstr "Entre na sua conta existente para vincular SSO"
 
 #: src/pages/Auth.tsx
 #: src/pages/Welcome.tsx
@@ -3852,6 +3907,10 @@ msgstr "Fale esta resposta"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Modelo de fala"
+
+#: src/lib/user-error.ts
+msgid "SSO is temporarily unavailable. Try again."
+msgstr "SSO está temporariamente indisponível. Tente novamente."
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -4042,6 +4101,10 @@ msgstr "esse Mac"
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+msgid "This permanently deletes your account and data."
+msgstr "Isso exclui permanentemente sua conta e seus dados."
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."

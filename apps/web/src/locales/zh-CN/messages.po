@@ -1132,6 +1132,11 @@ msgstr "继续"
 msgid "Continue in Background"
 msgstr ""
 
+#. placeholder {0}: reset.sso.name
+#: src/pages/Auth.tsx
+msgid "Continue with {0}"
+msgstr "通过 {0} 继续"
+
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "使用邮箱继续"
@@ -1218,6 +1223,10 @@ msgstr "无法连接此语音提供方"
 msgid "Could not connect to the computer screen"
 msgstr ""
 
+#: src/components/AccountAccess.tsx
+#: src/lib/account-security.ts
+#: src/lib/sso-flow.ts
+#: src/lib/user-error.ts
 #: src/pages/Auth.tsx
 #: src/pages/Shell.tsx
 msgid "Could not continue"
@@ -1360,6 +1369,11 @@ msgstr "无法加载模型设置"
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "无法加载运行历史记录"
+
+#: src/lib/account-security.ts
+#: src/pages/Auth.tsx
+msgid "Could not load sign-in options"
+msgstr "无法加载登录选项"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -1660,6 +1674,7 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron 表达式"
 
+#: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "当前密码"
@@ -1749,6 +1764,10 @@ msgstr "删除 {0}"
 msgid "Delete {0}?"
 msgstr "删除 {0}？"
 
+#: src/components/AccountAccess.tsx
+msgid "Delete account"
+msgstr "删除账户"
+
 #: src/pages/GroupPanel.tsx
 msgid "Delete group"
 msgstr "删除群组"
@@ -1770,6 +1789,10 @@ msgstr "已删除"
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "正在删除…"
+
+#: src/components/AccountAccess.tsx
+msgid "Deletion code"
+msgstr "删除验证码"
 
 #: src/components/AskCard.tsx
 msgid "Denied"
@@ -1923,6 +1946,14 @@ msgstr "编辑资料"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "邮箱"
+
+#: src/lib/user-error.ts
+msgid "Email is not allowed to register"
+msgstr "该邮箱不允许注册"
+
+#: src/lib/user-error.ts
+msgid "Email verification required"
+msgstr "需要验证邮箱"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2384,6 +2415,10 @@ msgstr "Linear 工单"
 msgid "Link a chat app"
 msgstr "关联聊天应用"
 
+#: src/components/AccountAccess.tsx
+msgid "Link SSO"
+msgstr "关联 SSO"
+
 #: src/pages/Artifacts.tsx
 msgid "List view"
 msgstr ""
@@ -2446,6 +2481,7 @@ msgstr "正在加载语音提供方…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3280,6 +3316,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/lib/user-error.ts
+msgid "Registration is closed"
+msgstr "注册已关闭"
+
 #: src/pages/Shell.tsx
 msgid "Release"
 msgstr "释放"
@@ -3445,6 +3485,11 @@ msgstr "还原上次保存的工作区。电脑上未保存的工作会丢失。
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+#: src/pages/Auth.tsx
+msgid "Retry"
+msgstr "重试"
 
 #: src/App.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3651,6 +3696,10 @@ msgstr "请在 10 分钟内从聊天应用向该线路发送 <0>{linkCode}</0>�
 msgid "Send answer"
 msgstr "发送回答"
 
+#: src/components/AccountAccess.tsx
+msgid "Send deletion code"
+msgstr "发送删除验证码"
+
 #: src/components/AskCard.tsx
 msgid "Send it"
 msgstr "发送"
@@ -3773,6 +3822,8 @@ msgstr "显示文字记录"
 msgid "Sign in"
 msgstr "登录"
 
+#: src/components/AccountAccess.tsx
+#: src/lib/user-error.ts
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Sign in again"
 msgstr ""
@@ -3780,6 +3831,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "登录 Rakazo"
+
+#: src/lib/user-error.ts
+msgid "Sign in to your existing account to link SSO"
+msgstr "请登录现有账户以关联 SSO"
 
 #: src/pages/Auth.tsx
 #: src/pages/Welcome.tsx
@@ -3852,6 +3907,10 @@ msgstr "朗读这条回复"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "语音模型"
+
+#: src/lib/user-error.ts
+msgid "SSO is temporarily unavailable. Try again."
+msgstr "SSO 暂时不可用，请重试。"
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -4042,6 +4101,10 @@ msgstr "这台 Mac"
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+msgid "This permanently deletes your account and data."
+msgstr "此操作将永久删除您的账户和数据。"
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."

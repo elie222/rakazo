@@ -711,4 +711,16 @@ export const RU_MESSAGES: Record<string, string> = {
   "Withdraw all mobile permissions": "Отозвать все мобильные разрешения",
   "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
     "Отзыв применяется к новым действиям с телефона. Остановите текущие запуски и отключите рутины отдельно.",
+  "Continue with {name}": "Продолжить с {name}",
+  "Could not load sign-in options": "Не удалось загрузить способы входа",
+  "Deletion code": "Код удаления",
+  "Email is not allowed to register": "Регистрация с этим адресом электронной почты запрещена",
+  "Email verification required": "Требуется подтверждение электронной почты",
+  "Link SSO": "Привязать SSO",
+  "Registration is closed": "Регистрация закрыта",
+  Retry: "Повторить",
+  "Send deletion code": "Отправить код удаления",
+  "Sign in to your existing account to link SSO":
+    "Войдите в существующий аккаунт, чтобы привязать SSO",
+  "SSO is temporarily unavailable. Try again.": "SSO временно недоступен. Попробуйте снова.",
 };

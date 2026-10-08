@@ -1,6 +1,7 @@
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
 
@@ -18,7 +19,6 @@ import {
   createRunSecretWriter,
   createWebProvider,
   databaseCapacityBackoffMs,
-  EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -45,6 +45,7 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
+  withSecretPersistence,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import {
@@ -68,15 +69,20 @@ async function main() {
   // of four separate ones. Keep this modest: graphile holds a LISTEN client and
   // leadership holds an advisory-lock client for the process lifetime, and a
   // larger max just competes for Postgres max_connections (53300).
-  const { prisma, pool } = createDb(databaseUrl, {
+  const created = createDb(databaseUrl, {
     poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 8),
     applicationName: "rakazo-worker",
   });
+  const { pool } = created;
+  let { prisma } = created;
   const realtime = new PostgresRealtimeFanout({
     connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
     publisher: pool,
   });
-  const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
+  const secrets = await createWorkerSecretStore(process.env, realtime);
+  if (secrets.describe().capabilities.degraded)
+    logger.warn("Secret storage degraded; encrypted credentials remain available");
+  prisma = withSecretPersistence(prisma, secrets);
   const events = createThreadEvents(prisma, realtime, {
     runSecretWriter: createRunSecretWriter(secrets),
   });
@@ -261,6 +267,7 @@ async function main() {
       await reconciler.stop();
       await jobHost.stop();
       await jobs.close();
+      await secrets.close();
       await realtime.close();
       await connector.stop();
       await mcp.close();
@@ -288,7 +295,7 @@ async function main() {
     void stop().finally(() => process.exit(1));
   });
 
-  logger.info("worker ready");
+  logger.info("worker ready", { degraded: secrets.describe().capabilities.degraded ?? false });
 }
 
 main().catch(async (error) => {

@@ -97,6 +97,13 @@ services:
       no_proxy: ${no_proxy:-${NO_PROXY:-}}
       API_PORT: "3100"
       API_HOST: "0.0.0.0"
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_NAME: ${OIDC_NAME:-SSO}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
+      OIDC_ALLOW_SIGNUP_BYPASS: ${OIDC_ALLOW_SIGNUP_BYPASS:-false}
+      AUTH_PASSWORD_ENABLED: ${AUTH_PASSWORD_ENABLED:-true}
     ports:
       - "127.0.0.1:${TOPOLOGY_API_PORT:-3199}:3100"
     volumes:

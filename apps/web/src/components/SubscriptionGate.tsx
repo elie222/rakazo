@@ -14,16 +14,6 @@ type GateState =
   | { kind: "open" }
   | { kind: "paywall"; status: BillingStatus };
 
-let billingCapability: Promise<boolean> | undefined;
-
-/** Public and DB-free, so a deployment without billing opens without waiting on bootstrap. */
-function deploymentBills(): Promise<boolean> {
-  billingCapability ??= fetchAuthCapabilities()
-    .then((capabilities) => capabilities.billing === true)
-    .catch(() => false);
-  return billingCapability;
-}
-
 function loadMe(): Promise<Me> {
   const primed = peekInitialBootstrap();
   if (!primed) return rpc.me();
@@ -53,9 +43,9 @@ export function SubscriptionGate({
 
   useEffect(() => {
     let active = true;
-    deploymentBills()
-      .then(async (bills): Promise<GateState> => {
-        if (!bills || !(await loadMe()).billingEnabled) return { kind: "open" };
+    fetchAuthCapabilities()
+      .then(async (capabilities): Promise<GateState> => {
+        if (!capabilities.billing || !(await loadMe()).billingEnabled) return { kind: "open" };
         return gateFor(await rpc.billing.status());
       })
       .catch((): GateState => ({ kind: "open" }))

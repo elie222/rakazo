@@ -1,6 +1,6 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { MenuView } from "@expo/ui/community/menu";
-import { ChatMarkdown, LinkifiedText } from "@rakazo/chat-ui/native";
+import { ChatMarkdown } from "@rakazo/chat-ui/native";
 import type {
   AgentSkillCatalogEntry,
   Connection,
@@ -92,6 +92,7 @@ import { InlineImageAttachment } from "../components/inline-image-attachment";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
+import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
@@ -3685,14 +3686,13 @@ const MessageBubble = memo(function MessageBubble({
           </Text>
         ) : null}
         {caption ? (
-          <Text
-            style={{
-              color: message.role === "user" ? tokens.secondaryForeground : tokens.foreground,
-              fontSize: 15,
-            }}
-          >
-            {caption}
-          </Text>
+          <MessageCaption
+            role={message.role}
+            text={caption}
+            tokens={tokens}
+            colorScheme={colorScheme}
+            streaming={message.id.startsWith("progress:")}
+          />
         ) : null}
         {attachments.map((attachment, index) =>
           attachment.kind === "image" ? (
@@ -3924,24 +3924,13 @@ function MessageTextCard({
               : ""}
         </Text>
       ) : null}
-      {
-        // User bubbles stay literal text on web and mobile. Only explicit URLs
-        // and email addresses are links, so a sent address is tappable without
-        // formatting bold or headings.
-        message.role === "user" ? (
-          <LinkifiedText color={tokens.secondaryForeground} linkColor={tokens.link}>
-            {contentText}
-          </LinkifiedText>
-        ) : (
-          <ChatMarkdown
-            palette={tokens}
-            colorScheme={colorScheme}
-            streaming={message.id.startsWith("progress:")}
-          >
-            {contentText}
-          </ChatMarkdown>
-        )
-      }
+      <MessageCaption
+        role={message.role}
+        text={contentText}
+        tokens={tokens}
+        colorScheme={colorScheme}
+        streaming={message.id.startsWith("progress:")}
+      />
     </Pressable>
   );
 }

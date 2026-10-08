@@ -1132,6 +1132,11 @@ msgstr "Devam"
 msgid "Continue in Background"
 msgstr ""
 
+#. placeholder {0}: reset.sso.name
+#: src/pages/Auth.tsx
+msgid "Continue with {0}"
+msgstr "{0} ile devam et"
+
 #: src/pages/Auth.tsx
 msgid "Continue with email"
 msgstr "E-posta ile devam et"
@@ -1218,6 +1223,10 @@ msgstr "Bu ses sağlayıcısı bağlanamadı"
 msgid "Could not connect to the computer screen"
 msgstr ""
 
+#: src/components/AccountAccess.tsx
+#: src/lib/account-security.ts
+#: src/lib/sso-flow.ts
+#: src/lib/user-error.ts
 #: src/pages/Auth.tsx
 #: src/pages/Shell.tsx
 msgid "Could not continue"
@@ -1360,6 +1369,11 @@ msgstr "Model ayarları yüklenemedi"
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "Çalıştırma geçmişi yüklenemedi"
+
+#: src/lib/account-security.ts
+#: src/pages/Auth.tsx
+msgid "Could not load sign-in options"
+msgstr "Giriş seçenekleri yüklenemedi"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -1660,6 +1674,7 @@ msgstr "Cron"
 msgid "Cron expression"
 msgstr "Cron ifadesi"
 
+#: src/components/AccountAccess.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Current password"
 msgstr "Mevcut parola"
@@ -1749,6 +1764,10 @@ msgstr "{0} sil"
 msgid "Delete {0}?"
 msgstr "{0} silinsin mi?"
 
+#: src/components/AccountAccess.tsx
+msgid "Delete account"
+msgstr "Hesabı sil"
+
 #: src/pages/GroupPanel.tsx
 msgid "Delete group"
 msgstr "Grubu sil"
@@ -1770,6 +1789,10 @@ msgstr "silindi"
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Siliniyor…"
+
+#: src/components/AccountAccess.tsx
+msgid "Deletion code"
+msgstr "Silme kodu"
 
 #: src/components/AskCard.tsx
 msgid "Denied"
@@ -1923,6 +1946,14 @@ msgstr "Profili Düzenle"
 #: src/pages/Auth.tsx
 msgid "Email"
 msgstr "E-posta"
+
+#: src/lib/user-error.ts
+msgid "Email is not allowed to register"
+msgstr "Bu e-posta adresinin kaydolmasına izin verilmiyor"
+
+#: src/lib/user-error.ts
+msgid "Email verification required"
+msgstr "E-posta doğrulaması gerekiyor"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2384,6 +2415,10 @@ msgstr ""
 msgid "Link a chat app"
 msgstr ""
 
+#: src/components/AccountAccess.tsx
+msgid "Link SSO"
+msgstr "SSO bağla"
+
 #: src/pages/Artifacts.tsx
 msgid "List view"
 msgstr ""
@@ -2446,6 +2481,7 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
+#: src/pages/Auth.tsx
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3280,6 +3316,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/lib/user-error.ts
+msgid "Registration is closed"
+msgstr "Kayıt kapalı"
+
 #: src/pages/Shell.tsx
 msgid "Release"
 msgstr "Bırak"
@@ -3445,6 +3485,11 @@ msgstr ""
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+#: src/pages/Auth.tsx
+msgid "Retry"
+msgstr "Yeniden dene"
 
 #: src/App.tsx
 #: src/pages/PeerMessagesOverlay.tsx
@@ -3651,6 +3696,10 @@ msgstr ""
 msgid "Send answer"
 msgstr "Yanıtı gönder"
 
+#: src/components/AccountAccess.tsx
+msgid "Send deletion code"
+msgstr "Silme kodu gönder"
+
 #: src/components/AskCard.tsx
 msgid "Send it"
 msgstr "Gönder"
@@ -3773,6 +3822,8 @@ msgstr "Dökümü göster"
 msgid "Sign in"
 msgstr "Oturum aç"
 
+#: src/components/AccountAccess.tsx
+#: src/lib/user-error.ts
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Sign in again"
 msgstr ""
@@ -3780,6 +3831,10 @@ msgstr ""
 #: src/pages/Auth.tsx
 msgid "Sign in to Rakazo"
 msgstr "Rakazo'da oturum aç"
+
+#: src/lib/user-error.ts
+msgid "Sign in to your existing account to link SSO"
+msgstr "SSO bağlamak için mevcut hesabınıza giriş yapın"
 
 #: src/pages/Auth.tsx
 #: src/pages/Welcome.tsx
@@ -3852,6 +3907,10 @@ msgstr "Bu yanıtı seslendir"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
 msgstr "Konuşma modeli"
+
+#: src/lib/user-error.ts
+msgid "SSO is temporarily unavailable. Try again."
+msgstr "SSO geçici olarak kullanılamıyor. Yeniden deneyin."
 
 #: src/pages/Paywall.tsx
 msgid "Start {trialDays}-day free trial"
@@ -4042,6 +4101,10 @@ msgstr "bu Mac"
 #: src/pages/Artifacts.tsx
 msgid "This month"
 msgstr ""
+
+#: src/components/AccountAccess.tsx
+msgid "This permanently deletes your account and data."
+msgstr "Bu işlem hesabınızı ve verilerinizi kalıcı olarak siler."
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."

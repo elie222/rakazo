@@ -690,4 +690,15 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Withdraw all mobile permissions": "撤销所有手机端权限",
   "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
     "撤销仅适用于新的手机端操作。请另行停止正在进行的运行并停用例程。",
+  "Continue with {name}": "通过 {name} 继续",
+  "Could not load sign-in options": "无法加载登录选项",
+  "Deletion code": "删除验证码",
+  "Email is not allowed to register": "该邮箱不允许注册",
+  "Email verification required": "需要验证邮箱",
+  "Link SSO": "关联 SSO",
+  "Registration is closed": "注册已关闭",
+  Retry: "重试",
+  "Send deletion code": "发送删除验证码",
+  "Sign in to your existing account to link SSO": "请登录现有账户以关联 SSO",
+  "SSO is temporarily unavailable. Try again.": "SSO 暂时不可用，请重试。",
 };

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const screen = readFileSync(resolve(mobileRoot, "app/account.tsx"), "utf8");
@@ -22,7 +22,7 @@ describe("Account delete", () => {
     const row = sliceBetween(screen, "function requestDeletion(", "function applyLocale(");
     expect(row).toContain("promptAccountDeletion({");
     expect(row).toContain('deleteLabel: t("Delete")');
-    expect(row).toContain("onSubmit: (password) => void handleDeletion(password)");
+    expect(row).toContain("onSubmit: (password) => void handleDeletion(password, true)");
     expect(row).toContain("setDeleteOpen(true)");
     const press = screen.indexOf("onPress={requestDeletion}");
     expect(screen.slice(screen.lastIndexOf("<SettingsRow", press), press)).toContain("destructive");
@@ -73,3 +73,89 @@ describe("Account delete", () => {
     expect(scroll).toContain("flexShrink: 1");
   });
 });
+
+// Execute the screen's submit handler with native/session dependencies replaced.
+// This exercises expiry during the open dialog without loading native modules.
+const deletionHandler = sliceBetween(
+  screen,
+  "  async function handleDeletion(",
+  "\n  return (",
+).replace("password: string", "password");
+const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor;
+function deletionHarness(freshOidcAuth: boolean, codeSent = false) {
+  const fetchAccountSecurity = vi.fn(async () => ({ hasPassword: false, freshOidcAuth }));
+  const deleteAccount = vi.fn();
+  const setSecurity = vi.fn();
+  const setSsoReauthenticated = vi.fn();
+  const setPending = vi.fn();
+  const setDeleteOpen = vi.fn();
+  const router = { dismissAll: vi.fn(), replace: vi.fn() };
+  const dependencies = {
+    security: { hasPassword: false },
+    ssoReauthenticated: true,
+    pending: false,
+    deletionCodeSent: codeSent,
+    fetchAccountSecurity,
+    deleteAccount,
+    setSecurity,
+    setSsoReauthenticated,
+    setPending,
+    setDeleteOpen,
+    setDeleteError: vi.fn(),
+    router,
+    errorText: vi.fn(),
+    t: (value: string) => value,
+  };
+  const run = new AsyncFunction(
+    ...Object.keys(dependencies),
+    "password",
+    `${deletionHandler}; await handleDeletion(password);`,
+  );
+  return {
+    ...dependencies,
+    submit: (password = "") => run(...Object.values(dependencies), password),
+  };
+}
+it("refreshes an expired proof and keeps the deletion dialog open", async () => {
+  const h = deletionHarness(false);
+  await h.submit();
+  expect(h.fetchAccountSecurity).toHaveBeenCalledOnce();
+  expect(h.setSsoReauthenticated).toHaveBeenCalledWith(false);
+  expect(h.setSecurity).toHaveBeenCalledWith({ hasPassword: false, freshOidcAuth: false });
+  expect(h.deleteAccount).not.toHaveBeenCalled();
+  expect(h.setDeleteOpen).not.toHaveBeenCalled();
+  expect(h.router.replace).not.toHaveBeenCalled();
+  expect(h.setPending).toHaveBeenLastCalledWith(false);
+});
+it.each([true, false])(
+  "submits only a refreshed proof or deletion code (fresh: %s)",
+  async (fresh) => {
+    const h = deletionHarness(fresh, !fresh);
+    await h.submit(fresh ? "" : " 123456 ");
+    expect(h.fetchAccountSecurity).toHaveBeenCalledOnce();
+    expect(h.deleteAccount).toHaveBeenCalledWith(undefined, fresh ? undefined : "123456");
+    expect(h.router.replace).toHaveBeenCalledWith("/sign-in");
+  },
+);
+it("does not submit whitespace as a deletion code after expiry", async () => {
+  const h = deletionHarness(false, true);
+  await h.submit("   ");
+  expect(h.deleteAccount).not.toHaveBeenCalled();
+});
+
+it.each([undefined, true, false])(
+  "mobile respects password-change policy (%s) while retaining password deletion",
+  (enabled) => {
+    const expression = screen.match(/const canChangePassword = ([^;]+);/)![1]!;
+    const canChange = new Function("security", `return ${expression}`);
+    expect(canChange({ hasPassword: true, passwordChangeEnabled: enabled })).toBe(
+      enabled !== false,
+    );
+    expect(canChange({ hasPassword: false, passwordChangeEnabled: enabled })).toBe(false);
+    const action = screen.indexOf('title={t("Change password")}');
+    expect(
+      screen.slice(screen.lastIndexOf("{", screen.lastIndexOf("<SettingsRow", action)), action),
+    ).toContain("canChangePassword");
+    expect(deletionHandler).toContain("hasPassword = security?.hasPassword === true");
+  },
+);

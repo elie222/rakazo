@@ -79,8 +79,10 @@ function botSecretDeps(seed: Row[] = []) {
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => fn(prisma));
   const secrets = {
-    put: vi.fn(async (_plaintext: string, _context: unknown, id: string) => ({
-      ciphertext: `enc:${id}`,
+    put: vi.fn(async (_plaintext: string, _context: unknown, options: { recordId: string }) => ({
+      id: options.recordId,
+      ref: `enc:${options.recordId}`,
+      ciphertext: `enc:${options.recordId}`,
     })),
     load: vi.fn(),
   };
@@ -126,6 +128,32 @@ afterEach(() => {
 });
 
 describe("botSecrets router", () => {
+  it("prepares a slow credential before opening the five-second transaction", async () => {
+    const { prisma, secrets, call } = botSecretDeps();
+    let clock = 0;
+    let active = false;
+    prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => {
+      const start = clock;
+      active = true;
+      try {
+        const result = await fn(prisma);
+        if (clock - start > 5000) throw new Error("Transaction expired");
+        return result;
+      } finally {
+        active = false;
+      }
+    });
+    const put = secrets.put.getMockImplementation()!;
+    secrets.put.mockImplementation(async (...args) => {
+      expect(active).toBe(false);
+      clock += 15000;
+      return put(...args);
+    });
+    expect((await call("put", putInput("https://api.example.test"))).status).toBe(200);
+    expect(secrets.put).toHaveBeenCalledOnce();
+    expect(prisma.botSecret.create).toHaveBeenCalledOnce();
+  });
+
   it("rejects another user's bot and a missing bot before any secret access", async () => {
     vi.stubEnv("RAKAZO_SECRETS_ALLOW_PRIVATE_HTTP", "1");
     const { prisma, secrets, call } = botSecretDeps();
@@ -208,7 +236,7 @@ describe("botSecrets router", () => {
     expect(allowed.secrets.put).toHaveBeenCalledWith(
       FAKE_VALUE,
       expect.anything(),
-      expect.any(String),
+      expect.objectContaining({ recordId: expect.any(String) }),
     );
     expect(allowed.rows).toHaveLength(1);
     expect(allowed.rows[0]).toMatchObject({ userId: "user-1", spaceId: "space-1", botId: "bot-1" });

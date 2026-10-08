@@ -5,6 +5,7 @@ import type {
   JobPublisher,
   MessagingSurface,
   SandboxProvider,
+  SecretStore,
 } from "@rakazo/adapter-kit";
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -18,7 +19,6 @@ import type { createRunExecutor } from "./executor.js";
 import { compactHistory } from "./history-compaction.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { deliverMessagingOutbound, mirrorMessagingOutbound } from "./messaging-delivery.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 import { expireTaughtSkillTeaching } from "./teaching-session.js";
 
 export function createBackgroundJobHandlers(deps: {
@@ -30,7 +30,7 @@ export function createBackgroundJobHandlers(deps: {
   events: ThreadEvents;
   workerId: string;
   runtime: AgentRuntime;
-  secretStore: EncryptedSecretStore;
+  secretStore: SecretStore;
   memoryProviders: MemoryProviderResolver;
   deploymentModelKey?: string;
   messaging?: MessagingSurface;

@@ -1,4 +1,4 @@
-import type { AvatarStyle } from "@rakazo/contracts";
+import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
@@ -31,7 +31,9 @@ import type { MobileBot, MobileMe } from "../lib/api";
 import {
   currentApiBase,
   deleteAccount,
+  fetchAccountSecurity,
   loadSessionToken,
+  requestAccountDeletionCode,
   rpc,
   selectedSpaceId,
   signOut,
@@ -67,6 +69,7 @@ import {
   setResponseStreamingPreference,
   subscribeResponseStreaming,
 } from "../lib/response-streaming";
+import { continueWithSso } from "../lib/sso";
 import type { AccountUiLocale } from "../lib/ui-locale";
 import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../lib/ui-locale";
 import { errorText } from "../lib/user-error";
@@ -79,10 +82,19 @@ export default function Account() {
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [security, setSecurity] = useState<AccountSecurity | null>(null);
+  const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
+  const [deletionCodeSent, setDeletionCodeSent] = useState(false);
+  const [ssoReauthenticated, setSsoReauthenticated] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
   const [localeSaving, setLocaleSaving] = useState(false);
   const [localeError, setLocaleError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const deletionDisabled =
+    pending ||
+    (security?.hasPassword
+      ? !deletePassword
+      : !ssoReauthenticated && (!deletionCodeSent || !deletePassword.trim()));
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<LiveNotificationSettings>(
@@ -219,15 +231,47 @@ export default function Account() {
     }
   }
 
+  async function securityAction(run: () => Promise<void>) {
+    setPending(true);
+    setDeleteError(null);
+    try {
+      await run();
+    } catch (err) {
+      setDeleteError(errorText(err, t("Could not continue")));
+    } finally {
+      setPending(false);
+    }
+  }
+  useEffect(() => {
+    void fetchAccountSecurity()
+      .then(setSecurity)
+      .catch(() => undefined);
+  }, []);
+
   function closeDeletePrompt() {
     if (pending) return;
     setDeleteOpen(false);
     setDeletePassword("");
   }
 
-  function requestDeletion() {
+  async function requestDeletion() {
     if (pending) return;
     setDeleteError(null);
+    try {
+      const value = await fetchAccountSecurity();
+      setSecurity(value);
+      if (!value.hasPassword) {
+        setDeletePassword("");
+        setDeletionCodeSent(false);
+        setSsoReauthenticated(value.freshOidcAuth);
+        setDeleteOpen(true);
+        return;
+      }
+    } catch (err) {
+      setDeleteError(errorText(err, t("Could not continue")));
+      return;
+    }
+
     const prompted = promptAccountDeletion({
       title: t("Delete your account?"),
       message: t(
@@ -235,7 +279,7 @@ export default function Account() {
       ),
       cancelLabel: t("Cancel"),
       deleteLabel: t("Delete"),
-      onSubmit: (password) => void handleDeletion(password),
+      onSubmit: (password) => void handleDeletion(password, true),
     });
     if (!prompted) {
       setDeletePassword("");
@@ -268,12 +312,20 @@ export default function Account() {
     });
   }
 
-  async function handleDeletion(password: string) {
-    if (!password || pending) return;
+  async function handleDeletion(password: string, hasPassword = security?.hasPassword === true) {
+    if ((!password && !ssoReauthenticated) || pending) return;
     setPending(true);
     setDeleteError(null);
     try {
-      await deleteAccount(password);
+      if (hasPassword) await deleteAccount(password);
+      else {
+        const current = await fetchAccountSecurity();
+        setSecurity(current);
+        setSsoReauthenticated(current.freshOidcAuth);
+        const token = deletionCodeSent ? password.trim() : undefined;
+        if (current.hasPassword || (!current.freshOidcAuth && !token)) return;
+        await deleteAccount(undefined, token);
+      }
       setDeleteOpen(false);
       router.dismissAll();
       router.replace("/sign-in");
@@ -301,14 +353,32 @@ export default function Account() {
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
 
-        <SettingsGroup>
-          <SettingsRow
-            accessibilityRole="button"
-            chevron="right"
-            onPress={() => router.push("/change-password")}
-            title={t("Change password")}
-          />
-        </SettingsGroup>
+        {(security?.sso && !security.ssoLinked) || canChangePassword ? (
+          <SettingsGroup>
+            {security?.sso && !security.ssoLinked ? (
+              <SettingsRow
+                accessibilityRole="button"
+                chevron="right"
+                disabled={pending}
+                dimmed={pending}
+                title={t("Link SSO")}
+                onPress={() =>
+                  void securityAction(async () => {
+                    if (await continueWithSso("link")) setSecurity(await fetchAccountSecurity());
+                  })
+                }
+              />
+            ) : null}
+            {canChangePassword ? (
+              <SettingsRow
+                accessibilityRole="button"
+                chevron="right"
+                onPress={() => router.push("/change-password")}
+                title={t("Change password")}
+              />
+            ) : null}
+          </SettingsGroup>
+        ) : null}
 
         <View accessibilityLabel={t("Appearance")} style={styles.section}>
           <SettingsLabel>{t("Appearance")}</SettingsLabel>
@@ -584,23 +654,54 @@ export default function Account() {
                   "This permanently deletes your account, bots, conversations, memories, files, and saved connections. This cannot be undone.",
                 )}
               </Text>
-              <TextInput
-                accessibilityLabel={t("Current password")}
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoFocus
-                editable={!pending}
-                onChangeText={(value) => {
-                  setDeletePassword(value);
-                  setDeleteError(null);
-                }}
-                placeholder={t("Current password")}
-                placeholderTextColor={native.tertiaryLabel}
-                secureTextEntry
-                style={styles.dialogInput}
-                textContentType="password"
-                value={deletePassword}
-              />
+              {!security?.hasPassword ? (
+                <>
+                  {security?.sso ? (
+                    <NativeActionButton
+                      label={t("Sign in again")}
+                      disabled={pending}
+                      onPress={() =>
+                        void securityAction(async () => {
+                          setSsoReauthenticated(await continueWithSso("reauthenticate"));
+                        })
+                      }
+                    />
+                  ) : null}
+                  {security?.emailDeletion ? (
+                    <NativeActionButton
+                      label={t("Send deletion code")}
+                      disabled={pending}
+                      onPress={() =>
+                        void securityAction(async () => {
+                          await requestAccountDeletionCode();
+                          setDeletionCodeSent(true);
+                        })
+                      }
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              {security?.hasPassword || deletionCodeSent ? (
+                <TextInput
+                  accessibilityLabel={
+                    security?.hasPassword ? t("Current password") : t("Deletion code")
+                  }
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  autoFocus
+                  editable={!pending}
+                  onChangeText={(value) => {
+                    setDeletePassword(value);
+                    setDeleteError(null);
+                  }}
+                  placeholder={security?.hasPassword ? t("Current password") : t("Deletion code")}
+                  placeholderTextColor={native.tertiaryLabel}
+                  secureTextEntry={security?.hasPassword}
+                  style={styles.dialogInput}
+                  textContentType={security?.hasPassword ? "password" : "oneTimeCode"}
+                  value={deletePassword}
+                />
+              ) : null}
               {deleteError ? (
                 <Text accessibilityRole="alert" style={styles.dialogError}>
                   {deleteError}
@@ -616,13 +717,11 @@ export default function Account() {
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
-                  disabled={pending || !deletePassword}
+                  disabled={deletionDisabled}
                   onPress={() => void handleDeletion(deletePassword)}
                   style={styles.dialogAction}
                 >
-                  <Text
-                    style={[styles.dialogDelete, (pending || !deletePassword) && styles.disabled]}
-                  >
+                  <Text style={[styles.dialogDelete, deletionDisabled && styles.disabled]}>
                     {t("Delete")}
                   </Text>
                 </Pressable>

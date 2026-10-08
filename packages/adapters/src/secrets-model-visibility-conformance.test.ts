@@ -191,7 +191,7 @@ describe("secrets model-visibility conformance", () => {
           traceId: "test",
           signal: new AbortController().signal,
         },
-        "secret-1",
+        { recordId: "secret-1" },
       );
       const row = { ...scope, ...destination, ...encrypted };
       const prisma = {

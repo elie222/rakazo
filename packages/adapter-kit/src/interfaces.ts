@@ -58,6 +58,9 @@ import type {
   SandboxCapabilities,
   ScreenRequest,
   ScreenSession,
+  SecretChangeListener,
+  SecretContext,
+  SecretPutOptions,
   SecretRecord,
   SemanticMemoryCapabilities,
   SemanticMemoryForgetRequest,
@@ -292,11 +295,19 @@ export interface ArtifactStore {
 }
 
 export interface SecretStore {
-  describe(): AdapterDescriptor<{ rotate: boolean }>;
-  /** Optional recordId binds ciphertext AAD to the persisted secret/session row id. */
-  put(plaintext: string, context: AdapterContext, recordId?: string): Promise<SecretRecord>;
-  get(id: string, context: AdapterContext): Promise<string>;
+  describe(): AdapterDescriptor<{ rotate: boolean; degraded?: boolean }>;
+  put(
+    plaintext: string,
+    context: AdapterContext,
+    options?: SecretPutOptions,
+  ): Promise<SecretRecord>;
+  load(ref: string, context: SecretContext): Promise<string>;
+  /** Inline encrypted refs have no remote resource; removal is owned by persistence. */
+  delete(ref: string, context: SecretContext): Promise<void>;
   redact(value: string): string;
+  onChange(listener: SecretChangeListener): () => void;
+  start(): Promise<void>;
+  close(): Promise<void>;
 }
 
 export interface RealtimeFanout {

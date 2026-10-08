@@ -707,4 +707,17 @@ export const DE_MESSAGES: Record<string, string> = {
   "Withdraw all mobile permissions": "Alle mobilen Berechtigungen widerrufen",
   "Withdrawal applies to new mobile actions. Stop existing runs and disable routines separately.":
     "Der Widerruf gilt für neue mobile Aktionen. Beende laufende Ausführungen und deaktiviere Routinen separat.",
+  "Continue with {name}": "Mit {name} fortfahren",
+  "Could not load sign-in options": "Anmeldeoptionen konnten nicht geladen werden",
+  "Deletion code": "Löschcode",
+  "Email is not allowed to register": "Diese E-Mail-Adresse ist nicht zur Registrierung zugelassen",
+  "Email verification required": "E-Mail-Verifizierung erforderlich",
+  "Link SSO": "SSO verknüpfen",
+  "Registration is closed": "Registrierung ist geschlossen",
+  Retry: "Erneut versuchen",
+  "Send deletion code": "Löschcode senden",
+  "Sign in to your existing account to link SSO":
+    "Melde dich bei deinem bestehenden Konto an, um SSO zu verknüpfen",
+  "SSO is temporarily unavailable. Try again.":
+    "SSO ist vorübergehend nicht verfügbar. Versuche es erneut.",
 };

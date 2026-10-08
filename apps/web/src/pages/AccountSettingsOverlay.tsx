@@ -1,16 +1,11 @@
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { AvatarStyle } from "@rakazo/contracts";
+import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
 import { BotAvatar, Button, Field, FieldLabel, Input, Label, Switch, Toggle } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
-import {
-  type KeyboardEvent as ReactKeyboardEvent,
-  type RefObject,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { AccountAccess } from "../components/AccountAccess";
 import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
@@ -30,12 +25,10 @@ import {
   getToolActivityPreference,
   setToolActivityPreference,
 } from "../lib/tool-activity-preference";
-import {
-  type AppearancePreference,
-  getUiAppearancePreference,
-  setUiAppearance,
-} from "../lib/ui-appearance";
-import { UI_LOCALE_LABELS, UI_LOCALES, type UiLocale } from "../lib/ui-locale";
+import type { AppearancePreference } from "../lib/ui-appearance";
+import { getUiAppearancePreference, setUiAppearance } from "../lib/ui-appearance";
+import type { UiLocale } from "../lib/ui-locale";
+import { UI_LOCALE_LABELS, UI_LOCALES } from "../lib/ui-locale";
 import { authErrorText } from "../lib/user-error";
 
 export type SettingsGeneralProps = {
@@ -58,6 +51,7 @@ export function GeneralSettingsPanels({
   isDeploymentOwner = false,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
+  const [accountSecurity, setAccountSecurity] = useState<AccountSecurity | null>(null);
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
   const localeRequestRef = useRef(0);
   const [appearance, setAppearance] = useState<AppearancePreference>(() =>
@@ -109,9 +103,12 @@ export function GeneralSettingsPanels({
         </h3>
         <p className="mt-3 text-[14px] text-foreground/75">{name}</p>
         {email ? <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p> : null}
+        <AccountAccess onSecurity={setAccountSecurity} />
       </section>
 
-      <ChangePasswordSection email={email} />
+      {accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false ? (
+        <ChangePasswordSection email={email} />
+      ) : null}
 
       {messagingEnabled && onOpenMessaging ? (
         <section className="rounded-xl border border-border px-4 py-4">

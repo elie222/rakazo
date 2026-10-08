@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
+import type { AccountSecurity } from "@rakazo/contracts";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -58,6 +59,27 @@ vi.mock("@rakazo/ui-web", () => ({
     </button>
   ),
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
+}));
+
+const accountPolicy = vi.hoisted(() => ({
+  passwordChangeEnabled: undefined as boolean | undefined,
+}));
+vi.mock("../components/AccountAccess", () => ({
+  AccountAccess: ({ onSecurity }: { onSecurity: (value: AccountSecurity) => void }) => {
+    useEffect(
+      () =>
+        onSecurity({
+          hasPassword: true,
+          passwordChangeEnabled: accountPolicy.passwordChangeEnabled,
+          freshOidcAuth: false,
+          ssoLinked: false,
+          emailDeletion: false,
+          sso: null,
+        }),
+      [onSecurity],
+    );
+    return null;
+  },
 }));
 
 vi.mock("../components/ApprovalRulesSettings", () => ({ ApprovalRulesSettings: () => null }));
@@ -165,6 +187,29 @@ it("turns loading web images on and off from the settings toggle", async () => {
   } finally {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([undefined, true, false])("respects the password-change policy (%s)", async (enabled) => {
+  accountPolicy.passwordChangeEnabled = enabled;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <GeneralSettingsPanels
+          name="Test"
+          avatarStyle="robot"
+          onAvatarStyleChange={async () => undefined}
+        />,
+      ),
+    );
+    expect(container.textContent?.includes("Change password")).toBe(enabled !== false);
+  } finally {
+    await act(async () => root.unmount());
+    accountPolicy.passwordChangeEnabled = undefined;
     vi.unstubAllGlobals();
   }
 });
