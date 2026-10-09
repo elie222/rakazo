@@ -73,10 +73,18 @@ describe("attachment helpers", () => {
     expect(inferAttachmentMimeType("notes.md", "")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.markdown", "text/plain")).toBe("text/markdown");
     expect(inferAttachmentMimeType("notes.md", "application/pdf")).toBe("application/pdf");
-    expect(inferAttachmentMimeType("archive.zip", "")).toBe("application/zip");
-    expect(inferAttachmentMimeType("archive.ZIP", "application/x-zip-compressed")).toBe(
-      "application/zip",
-    );
+  });
+
+  it.each([
+    "",
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-zip",
+    "multipart/x-zip",
+    "application/octet-stream",
+  ])("infers zip attachments reported as %s", (reportedType) => {
+    expect(inferAttachmentMimeType("archive.zip", reportedType)).toBe("application/zip");
+    expect(inferAttachmentMimeType("archive.ZIP", reportedType)).toBe("application/zip");
     expect(attachmentExtensionForMimeType("application/zip")).toBe(".zip");
   });
 

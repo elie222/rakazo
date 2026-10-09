@@ -24,9 +24,9 @@ describe("filterPickedAttachments", () => {
         contentBase64: "aGVsbG8=",
       },
       {
-        name: "big.bin",
-        mimeType: "text/plain",
-        size: 11 * 1024 * 1024,
+        name: "big.zip",
+        mimeType: "application/zip",
+        size: 10 * 1024 * 1024 + 1,
         contentBase64: "aGVsbG8=",
       },
     ]);
@@ -35,7 +35,7 @@ describe("filterPickedAttachments", () => {
       name: "bundle.zip",
       mimeType: "application/zip",
     });
-    expect(result.skipped.map((item) => item.name)).toEqual(["payload.exe", "big.bin"]);
+    expect(result.skipped.map((item) => item.name)).toEqual(["payload.exe", "big.zip"]);
   });
 
   it("assigns distinct ids to duplicate files", () => {

@@ -5,6 +5,7 @@ import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   decodeAttachmentBase64,
+  inferAttachmentMimeType,
   messageBlockForArtifact,
   promptTextForAttachments,
   validateAttachmentMimeType,
@@ -38,13 +39,14 @@ export async function createOwnedArtifact(
     contentBase64: string;
   },
 ) {
-  validateAttachmentMimeType(input.mimeType);
+  const mimeType =
+    inferAttachmentMimeType(input.name, input.mimeType) === "application/zip"
+      ? "application/zip"
+      : input.mimeType;
+  validateAttachmentMimeType(mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64);
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
-  const stored = await deps.artifacts.put(
-    { name: input.name, mimeType: input.mimeType, bytes },
-    context,
-  );
+  const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");
   const row = await withResolvedArtifactVersion(
     deps.prisma,
@@ -64,7 +66,7 @@ export async function createOwnedArtifact(
           groupId: input.groupId,
           name: input.name,
           description: input.description?.trim() || null,
-          mimeType: input.mimeType,
+          mimeType,
           size: bytes.byteLength,
           hash,
           storageKey: stored.id,

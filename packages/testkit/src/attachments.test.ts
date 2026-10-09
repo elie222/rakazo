@@ -97,17 +97,26 @@ describeAttachments("chat attachments", () => {
     expect(fetched.contentBase64).toBe(tinyPng.toString("base64"));
 
     const zipBytes = Buffer.from("PK\x03\x04zip");
-    const zip = await rpc<{ id: string; mimeType: string }>(app, cookie, "artifacts/create", {
-      botId: bot.id,
-      name: "bundle.zip",
-      mimeType: "application/zip",
-      contentBase64: zipBytes.toString("base64"),
-    });
-    expect(zip.mimeType).toBe("application/zip");
+    let zip!: { id: string; mimeType: string };
+    for (const mimeType of [
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/x-zip",
+      "multipart/x-zip",
+      "application/octet-stream",
+    ]) {
+      zip = await rpc(app, cookie, "artifacts/create", {
+        botId: bot.id,
+        name: "bundle.ZIP",
+        mimeType,
+        contentBase64: zipBytes.toString("base64"),
+      });
+      expect(zip.mimeType).toBe("application/zip");
+    }
     await sendAndWait(app, cookie, bot.id, { artifactIds: [zip.id] });
     snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
     const zipMessage = snapshot.messages.find((message) =>
-      message.blocks.some((block) => block.kind === "file" && block.name === "bundle.zip"),
+      message.blocks.some((block) => block.kind === "file" && block.name === "bundle.ZIP"),
     );
     expect(zipMessage?.blocks).toEqual(
       expect.arrayContaining([
@@ -115,7 +124,7 @@ describeAttachments("chat attachments", () => {
           kind: "file",
           artifactId: zip.id,
           mimeType: "application/zip",
-          name: "bundle.zip",
+          name: "bundle.ZIP",
         }),
       ]),
     );
@@ -135,8 +144,8 @@ describeAttachments("chat attachments", () => {
 
     const oversize = await raw(app, cookie, "artifacts/create", {
       botId: bot.id,
-      name: "big.bin",
-      mimeType: "text/plain",
+      name: "big.zip",
+      mimeType: "application/zip",
       contentBase64: Buffer.alloc(10 * 1024 * 1024 + 1, 1).toString("base64"),
     });
     expect(oversize.status).toBeGreaterThanOrEqual(400);

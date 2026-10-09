@@ -1,10 +1,9 @@
+import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
 import {
   ATTACHMENT_MAX_BASE64_LENGTH,
   ATTACHMENT_MAX_BYTES,
-  type AttachmentMimeType,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
-  type MessageBlock,
 } from "@rakazo/contracts";
 
 export class AttachmentValidationError extends Error {
@@ -160,6 +159,13 @@ export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
 ): AttachmentMimeType | null {
+  if (
+    reportedType === "application/x-zip-compressed" ||
+    reportedType === "application/x-zip" ||
+    reportedType === "multipart/x-zip"
+  ) {
+    return "application/zip";
+  }
   const dot = name.lastIndexOf(".");
   const extensionType = dot < 0 ? undefined : EXTENSION_MIME_TYPES[name.slice(dot).toLowerCase()];
   // Some browsers and native document pickers report Markdown as text/plain.
