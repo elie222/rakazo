@@ -1225,26 +1225,26 @@ function Thread() {
         // Group thread focus: prior bot screen may stay mounted, so clear any delayed setup.
         cancelFocusPrompt();
       }
+      void refreshMentionBots();
+      markReadIfVisible();
+      if (!readOnly) speakFinishedReply();
+    }, [botId, readOnly, markReadIfVisible, refreshMentionBots, speakFinishedReply]),
+  );
+
+  // Kept apart from the effect above: its callbacks change with every streamed message, and
+  // each re-run would close and reopen the thread, restarting the Android notification poller.
+  useFocusEffect(
+    useCallback(() => {
       if (AppState.currentState === "active" && notificationThreadId) {
         void setOpenNotificationThread({
           botId,
           threadId: notificationThreadId,
         }).catch(() => undefined);
       }
-      void refreshMentionBots();
-      markReadIfVisible();
-      if (!readOnly) speakFinishedReply();
       return () => {
         void setOpenNotificationThread(null).catch(() => undefined);
       };
-    }, [
-      botId,
-      readOnly,
-      markReadIfVisible,
-      notificationThreadId,
-      refreshMentionBots,
-      speakFinishedReply,
-    ]),
+    }, [botId, notificationThreadId]),
   );
 
   useEffect(() => {

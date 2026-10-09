@@ -113,6 +113,8 @@ export async function stopLiveNotifications(clearSession = false): Promise<void>
 export async function setOpenNotificationThread(
   target: NotificationThreadTarget | null,
 ): Promise<void> {
+  // Each native call restarts the Android poller, which re-posts live notifications.
+  if (openThread?.botId === target?.botId && openThread?.threadId === target?.threadId) return;
   openThread = target;
   await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
 }
