@@ -47,6 +47,44 @@ describe("Android open thread", () => {
     ]);
   });
 
+  it("retries thread A after overlapping reports both reject", async () => {
+    const { setOpenNotificationThread } = await openThread();
+    const threadA = { botId: "bot-a", threadId: "thread-a" };
+    const threadB = { botId: "bot-b", threadId: "thread-b" };
+    let rejectA!: (error: Error) => void;
+    let rejectB!: (error: Error) => void;
+    native.setOpenThread
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            rejectA = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            rejectB = reject;
+          }),
+      );
+
+    const reportA = setOpenNotificationThread(threadA);
+    const reportB = setOpenNotificationThread(threadB);
+    const asserted = Promise.all([
+      expect(reportA).rejects.toThrow("a failed"),
+      expect(reportB).rejects.toThrow("b failed"),
+    ]);
+    rejectA(new Error("a failed"));
+    rejectB(new Error("b failed"));
+    await asserted;
+
+    await setOpenNotificationThread(threadA);
+    expect(native.setOpenThread.mock.calls).toEqual([
+      ["bot-a", "thread-a"],
+      ["bot-b", "thread-b"],
+      ["bot-a", "thread-a"],
+    ]);
+  });
+
   it("reports the initial closed thread once", async () => {
     const { setOpenNotificationThread } = await openThread();
     await setOpenNotificationThread(null);
