@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { native } = vi.hoisted(() => ({ native: { setOpenThread: vi.fn(async () => undefined) } }));
 
@@ -6,10 +6,19 @@ vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 
-import { setOpenNotificationThread } from "./live-notifications";
-
 describe("Android open thread", () => {
+  beforeEach(() => {
+    native.setOpenThread.mockReset();
+    native.setOpenThread.mockImplementation(async () => undefined);
+    vi.resetModules();
+  });
+
+  async function openThread() {
+    return import("./live-notifications");
+  }
+
   it("tells the native poller only when the open thread changes", async () => {
+    const { setOpenNotificationThread } = await openThread();
     const thread = { botId: "bot-1", threadId: "thread-1" };
     await setOpenNotificationThread(thread);
     await setOpenNotificationThread({ ...thread });
@@ -24,5 +33,25 @@ describe("Android open thread", () => {
       [null, null],
       ["bot-2", "thread-2"],
     ]);
+  });
+
+  it("retries an identical report after the native update rejects", async () => {
+    const { setOpenNotificationThread } = await openThread();
+    const thread = { botId: "bot-1", threadId: "thread-1" };
+    native.setOpenThread.mockRejectedValueOnce(new Error("poller failed"));
+    await expect(setOpenNotificationThread(thread)).rejects.toThrow("poller failed");
+    await setOpenNotificationThread(thread);
+    expect(native.setOpenThread.mock.calls).toEqual([
+      ["bot-1", "thread-1"],
+      ["bot-1", "thread-1"],
+    ]);
+  });
+
+  it("reports the initial closed thread once", async () => {
+    const { setOpenNotificationThread } = await openThread();
+    await setOpenNotificationThread(null);
+    await setOpenNotificationThread(null);
+    expect(native.setOpenThread).toHaveBeenCalledTimes(1);
+    expect(native.setOpenThread).toHaveBeenCalledWith(null, null);
   });
 });

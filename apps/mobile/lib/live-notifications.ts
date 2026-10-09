@@ -42,6 +42,7 @@ const nativeNotifications =
 export type NotificationThreadTarget = { botId?: string; threadId?: string };
 
 let openThread: NotificationThreadTarget | null = null;
+let openThreadReported = false;
 let foregroundHandlerConfigured = false;
 
 export function notificationTargetsThread(
@@ -114,9 +115,27 @@ export async function setOpenNotificationThread(
   target: NotificationThreadTarget | null,
 ): Promise<void> {
   // Each native call restarts the Android poller, which re-posts live notifications.
-  if (openThread?.botId === target?.botId && openThread?.threadId === target?.threadId) return;
+  // The cache starts null, so the first closed-thread report still has to reach native.
+  if (
+    openThreadReported &&
+    openThread?.botId === target?.botId &&
+    openThread?.threadId === target?.threadId
+  ) {
+    return;
+  }
+  const previous = openThread;
+  const previousReported = openThreadReported;
   openThread = target;
-  await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
+  openThreadReported = true;
+  try {
+    await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
+  } catch (error) {
+    if (openThread?.botId === target?.botId && openThread?.threadId === target?.threadId) {
+      openThread = previous;
+      openThreadReported = previousReported;
+    }
+    throw error;
+  }
 }
 
 export async function dismissThreadNotifications(target: {
