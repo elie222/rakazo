@@ -10,14 +10,19 @@ const change: TicketChange = {
   assigneeBotId: "bot-1",
   wakeAssignee: true,
 };
-function setup(ticketBoardEnabled: boolean) {
+function setup(ticketBoardEnabled: boolean, status = "todo") {
   const notify = vi.fn(async () => {});
   const enqueue = vi.fn(async () => {});
   const createRun = vi.fn(async () => ({ id: "run-1" }));
   const createTask = vi.fn(async () => ({ id: "task-1" }));
   const tx = {
     ticket: {
-      findFirst: vi.fn(async () => ({ id: "ticket-1", number: 1, board: { ticketPrefix: "RAK" } })),
+      findFirst: vi.fn(async () => ({
+        id: "ticket-1",
+        status,
+        number: 1,
+        board: { ticketPrefix: "RAK" },
+      })),
     },
     bot: {
       findFirst: vi.fn(async () => ({ id: "bot-1", userId: "user-1", thread: { id: "thread-1" } })),
@@ -43,19 +48,36 @@ describe("ticket changes", () => {
     expect(s.transaction).not.toHaveBeenCalled();
     expect(s.enqueue).not.toHaveBeenCalled();
   });
-  it("wakes an assigned bot once using a hidden run", async () => {
-    const s = setup(true);
-    await s.changes(change);
-    expect(s.createRun).toHaveBeenCalledTimes(1);
-    expect(s.createRun).toHaveBeenCalledWith({
-      data: expect.objectContaining({ trigger: "tickets", status: "queued" }),
-    });
-    expect(s.enqueue).toHaveBeenCalledTimes(1);
-    expect(s.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
-    );
-    expect(s.notify).toHaveBeenCalledWith("space-1", { boardId: "board-1", ticketId: "ticket-1" });
-  });
+  it.each(["todo", "doing", "review", "blocked"])(
+    "wakes an assigned %s ticket once using a hidden run",
+    async (status) => {
+      const s = setup(true, status);
+      await s.changes(change);
+      expect(s.createRun).toHaveBeenCalledTimes(1);
+      expect(s.createRun).toHaveBeenCalledWith({
+        data: expect.objectContaining({ trigger: "tickets", status: "queued" }),
+      });
+      expect(s.enqueue).toHaveBeenCalledTimes(1);
+      expect(s.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
+      );
+      expect(s.notify).toHaveBeenCalledWith("space-1", {
+        boardId: "board-1",
+        ticketId: "ticket-1",
+      });
+    },
+  );
+  it.each(["done", "closed", "cancelled"])(
+    "does not wake a reassigned %s ticket",
+    async (status) => {
+      const s = setup(true, status);
+      await s.changes(change);
+      expect(s.notify).toHaveBeenCalledTimes(1);
+      expect(s.createTask).not.toHaveBeenCalled();
+      expect(s.createRun).not.toHaveBeenCalled();
+      expect(s.enqueue).not.toHaveBeenCalled();
+    },
+  );
   it("only publishes changes for comments or status edits", async () => {
     const s = setup(true);
     await s.changes({ ...change, wakeAssignee: false });

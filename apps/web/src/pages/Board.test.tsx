@@ -77,11 +77,13 @@ function ticket(
   };
 }
 
-async function renderBoard() {
+async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>) {
   api.boards.subscribe.mockReset();
-  api.boards.subscribe.mockResolvedValue({
-    [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
-  });
+  api.boards.subscribe.mockResolvedValue(
+    stream ?? {
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+    },
+  );
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -168,3 +170,99 @@ it("creates a ticket without a status picker", async () => {
     await page.cleanup();
   }
 });
+
+function liveStream() {
+  let deliver: ((result: IteratorResult<{ ticketId?: string }>) => void) | undefined;
+  let fail: ((cause: Error) => void) | undefined;
+  return {
+    stream: {
+      [Symbol.asyncIterator]: () => ({
+        next: () =>
+          new Promise<IteratorResult<{ ticketId?: string }>>((resolve, reject) => {
+            deliver = resolve;
+            fail = reject;
+          }),
+      }),
+    },
+    event: (ticketId: string) => deliver?.({ done: false, value: { ticketId } }),
+    end: () => deliver?.({ done: true, value: undefined }),
+    error: () => fail?.(new Error("Disconnected")),
+  };
+}
+
+it("saves only edits and refreshes comments for the open ticket", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper"), bot("bot-2", "Other")]);
+  api.tickets.list.mockResolvedValue({
+    tickets: [ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1", "Details")],
+  });
+  api.tickets.comments.mockReset().mockResolvedValue([{ id: "comment-1", body: "Ready" }]);
+  api.tickets.update.mockReset().mockResolvedValue({});
+  const live = liveStream();
+  const page = await renderBoard(live.stream);
+  try {
+    await act(async () =>
+      (
+        page.container.querySelector('[data-testid="board-card-ticket-1"]') as HTMLButtonElement
+      ).click(),
+    );
+    const calls = api.tickets.comments.mock.calls.length;
+    await act(async () => live.event("ticket-2"));
+    expect(api.tickets.comments).toHaveBeenCalledTimes(calls);
+    api.tickets.comments.mockResolvedValue([{ id: "comment-2", body: "Bot progress" }]);
+    api.tickets.list.mockResolvedValue({
+      tickets: [ticket("Ship", "ticket-1", "doing", "RAK-1", "bot-2", "Details")],
+    });
+    await act(async () => live.event("ticket-1"));
+    expect(page.container.querySelector('[data-testid="ticket-comments"]')?.textContent).toContain(
+      "Bot progress",
+    );
+    const input = page.container.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Ship today",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () =>
+      page.container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(api.tickets.update).toHaveBeenCalledWith({ id: "ticket-1", title: "Ship today" });
+  } finally {
+    await page.cleanup();
+  }
+});
+
+it.each(["end", "error"] as const)(
+  "reconnects after subscription %s and stops on unmount",
+  async (failure) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.useFakeTimers();
+    api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+    api.tickets.list.mockReset().mockResolvedValue({ tickets: [] });
+    const live = liveStream();
+    const page = await renderBoard(live.stream);
+    try {
+      const reconnected = liveStream();
+      api.boards.subscribe.mockResolvedValue(reconnected.stream);
+      await act(async () => live[failure]());
+      const calls = api.tickets.list.mock.calls.length;
+      api.tickets.list.mockResolvedValue({ tickets: [ticket("After reconnect", "ticket-1")] });
+      await act(async () => vi.advanceTimersByTimeAsync(1_000));
+      expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
+      expect(api.tickets.list).toHaveBeenCalledTimes(calls + 1);
+      expect(page.container.textContent).toContain("After reconnect");
+      await act(async () => reconnected.end());
+      await page.cleanup();
+      await act(async () => vi.advanceTimersByTimeAsync(5_000));
+      expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
+      expect(api.boards.subscribe.mock.calls[1]![1].signal.aborted).toBe(true);
+    } finally {
+      if (page.container.isConnected) await page.cleanup();
+      vi.useRealTimers();
+    }
+  },
+);

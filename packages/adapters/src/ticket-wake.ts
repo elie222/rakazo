@@ -1,5 +1,6 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
 import { runContinueJob } from "@rakazo/adapter-kit";
+import { isTicketCompletedStatus, TicketStatusSchema } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
@@ -15,6 +16,8 @@ export async function wakeTicketAssignee(
       include: { board: { select: { ticketPrefix: true } } },
     });
     if (!ticket) return null;
+    const status = TicketStatusSchema.safeParse(ticket.status);
+    if (!status.success || isTicketCompletedStatus(status.data)) return null;
     const bot = await tx.bot.findFirst({
       where: { id: input.botId, spaceId: input.spaceId, archivedAt: null },
       select: { id: true, userId: true, thread: { select: { id: true } } },

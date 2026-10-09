@@ -2,6 +2,7 @@ import { createCipheriv, createHash } from "node:crypto";
 import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
+import { selectBuiltinToolsForRun } from "./executor.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -202,6 +203,38 @@ describe("builtin tools", () => {
         "browser_act",
       ]),
     );
+    const options = {
+      graphicalToolsAllowed: true,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: true,
+      cloudAgentEnabled: true,
+      historyRetrievalEnabled: true,
+      messagingChannelRun: false,
+      voiceCall: true,
+    };
+    const ticketNames = [
+      "board_tickets",
+      "ticket_get",
+      "ticket_create",
+      "ticket_update",
+      "ticket_comment",
+    ];
+    const enabled = selectBuiltinToolsForRun({ ...options, ticketBoardEnabled: true }).map(
+      (tool) => tool.name,
+    );
+    const disabled = selectBuiltinToolsForRun({ ...options, ticketBoardEnabled: false }).map(
+      (tool) => tool.name,
+    );
+    expect(enabled.filter((name) => ticketNames.includes(name))).toEqual(ticketNames);
+    expect(disabled).toEqual(enabled.filter((name) => !ticketNames.includes(name)));
+    expect(
+      selectBuiltinToolsForRun({
+        ...options,
+        ticketBoardEnabled: true,
+        disabledBuiltinTools: ticketNames,
+      }).map((tool) => tool.name),
+    ).toEqual(disabled);
     const updateBot = builtinAgentTools.find((tool) => tool.name === "update_bot");
     expect(updateBot?.inputSchema).toEqual(
       expect.objectContaining({

@@ -3,6 +3,7 @@ import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
+  isBackgroundInputBlock,
   isBackgroundRunTrigger,
   isPeerReceiptBlocks,
 } from "@rakazo/core";
@@ -138,7 +139,7 @@ async function withoutPeerRunMessages<
     const blocks = row.blocks as MessageBlock[];
     if (backgroundRunIds.has(row.runId)) {
       // Ticket work stays off the transcript except existing user-input cards.
-      return blocks.some((block) => block.kind === "ask" || block.kind === "computer");
+      return blocks.some(isBackgroundInputBlock);
     }
     if (!peerRunIds.has(row.runId)) return true;
     // Keep peer receipts (chips), ask cards, and the bot's own text reply.
@@ -221,7 +222,7 @@ export function shouldForwardPeerThreadEvent(event: {
  * A background run's chatter stays off the transcript: no starts, progress, steps,
  * or final text. An open thread still receives the state it needs to answer without
  * a reload — waiting input, computer takeover, and terminal run events — plus the
- * existing ask cards and computer blocks.
+ * existing user-input cards.
  */
 export function shouldForwardBackgroundThreadEvent(event: {
   type: string;
@@ -240,16 +241,7 @@ export function shouldForwardBackgroundThreadEvent(event: {
     return false;
   }
   const blocks = event.payload.blocks;
-  return (
-    Array.isArray(blocks) &&
-    blocks.some(
-      (block) =>
-        !!block &&
-        typeof block === "object" &&
-        "kind" in block &&
-        (block.kind === "ask" || block.kind === "computer"),
-    )
-  );
+  return Array.isArray(blocks) && blocks.some(isBackgroundInputBlock);
 }
 
 function toThreadMessage(row: {

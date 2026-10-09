@@ -74,6 +74,14 @@ describe("thread message pages", () => {
         payload: { blocks: [{ kind: "computer", text: "Needs you" }] },
       }),
     ).toBe(true);
+    for (const type of ["thread.message.created", "thread.message.updated"]) {
+      expect(
+        shouldForwardBackgroundThreadEvent({
+          type,
+          payload: { blocks: [{ kind: "mcp_approval" }] },
+        }),
+      ).toBe(true);
+    }
     expect(shouldForwardBackgroundThreadEvent({ type: "run.started", payload: {} })).toBe(false);
     expect(shouldForwardBackgroundThreadEvent({ type: "run.waiting_input", payload: {} })).toBe(
       true,
@@ -95,6 +103,7 @@ describe("thread message pages", () => {
         id: "message-computer",
         blocks: [{ kind: "computer", state: "Needs you", text: "Sign in" }],
       },
+      { id: "message-approval", blocks: [{ kind: "mcp_approval" }] },
       { id: "message-final", blocks: [{ kind: "text", text: "Closed the ticket." }] },
       {
         id: "message-steps",
@@ -118,10 +127,11 @@ describe("thread message pages", () => {
       run: { findMany: vi.fn(async () => [{ id: "run-ticket", trigger: "tickets" }]) },
     } as unknown as PrismaClient;
 
-    const page = await loadMessagePage(prisma, "thread-1", undefined, 5);
+    const page = await loadMessagePage(prisma, "thread-1", undefined, 6);
 
     expect(page.messages.map((message) => message.id)).toEqual([
       "message-user",
+      "message-approval",
       "message-computer",
     ]);
   });

@@ -15,7 +15,7 @@ export type UserVisibleMessagesOptions = {
   knownPeerRunIds?: Iterable<string>;
   /**
    * Run ids for background triggers (e.g. `tickets`). Their messages are hidden
-   * except existing ask and computer cards that need user input.
+   * except cards that need user input.
    */
   backgroundRunIds?: Iterable<string>;
   /**
@@ -29,6 +29,16 @@ export type UserVisibleMessagesOptions = {
 export function isPeerReceiptBlocks(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
     (block) => block.kind === "bot_message_sent" || block.kind === "bot_message_received",
+  );
+}
+
+/** User-input cards remain visible when their run otherwise stays in the background. */
+export function isBackgroundInputBlock(block: unknown): boolean {
+  return (
+    !!block &&
+    typeof block === "object" &&
+    "kind" in block &&
+    (block.kind === "ask" || block.kind === "computer" || block.kind === "mcp_approval")
   );
 }
 
@@ -49,7 +59,7 @@ export function userVisibleMessages<T extends PresentableMessage>(
   return messages.filter((message) => {
     if (message.runId && backgroundRunIds.has(message.runId)) {
       // Background work stays out of the transcript except existing user-input cards.
-      return message.blocks.some((block) => block.kind === "ask" || block.kind === "computer");
+      return message.blocks.some(isBackgroundInputBlock);
     }
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
     if (!message.runId || !peerRunIds.has(message.runId)) return true;

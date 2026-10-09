@@ -35,6 +35,7 @@ export function BoardPage() {
   const [bots, setBots] = useState<Bot[]>([]);
   const [selected, setSelected] = useState<Ticket | "new" | null>(null);
   const [error, setError] = useState("");
+  const [commentRefresh, setCommentRefresh] = useState<Record<string, number>>({});
   const reload = useCallback(async () => {
     const result = await rpc.tickets.list({});
     setTickets(result.tickets);
@@ -52,20 +53,47 @@ export function BoardPage() {
       .catch((cause) => {
         if (active) setError(errorText(cause));
       });
+    let cancelRetry: (() => void) | undefined;
     void (async () => {
-      try {
-        const stream = await rpc.boards.subscribe(undefined, { signal: controller.signal });
-        for await (const _ of stream) {
+      while (active) {
+        try {
+          const stream = await rpc.boards.subscribe(undefined, { signal: controller.signal });
+          if (!active) return;
           const result = await rpc.tickets.list({});
-          if (active) setTickets(result.tickets);
+          if (!active) return;
+          setTickets(result.tickets);
+          setCommentRefresh((previous) => ({
+            ...previous,
+            "*": (previous["*"] ?? 0) + 1,
+          }));
+          setError("");
+          for await (const event of stream) {
+            if (!active) return;
+            setCommentRefresh((previous) => ({
+              ...previous,
+              [event.ticketId ?? "*"]: (previous[event.ticketId ?? "*"] ?? 0) + 1,
+            }));
+            const result = await rpc.tickets.list({});
+            if (active) setTickets(result.tickets);
+          }
+        } catch (cause) {
+          if (active) setError(errorText(cause));
         }
-      } catch (cause) {
-        if (active) setError(errorText(cause));
+        if (!active) return;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 1_000);
+          cancelRetry = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        cancelRetry = undefined;
       }
     })();
     return () => {
       active = false;
       controller.abort();
+      cancelRetry?.();
     };
   }, []);
 
@@ -117,6 +145,10 @@ export function BoardPage() {
           key={selected === "new" ? "new" : selected.id}
           ticket={selected === "new" ? null : selected}
           bots={bots}
+          commentRevision={
+            (commentRefresh["*"] ?? 0) +
+            (selected === "new" ? 0 : (commentRefresh[selected.id] ?? 0))
+          }
           onClose={() => setSelected(null)}
           onSaved={reload}
         />
@@ -130,7 +162,9 @@ function TicketDialog({
   bots,
   onClose,
   onSaved,
+  commentRevision,
 }: {
+  commentRevision?: number;
   ticket: Ticket | null;
   bots: Bot[];
   onClose: () => void;
@@ -164,7 +198,7 @@ function TicketDialog({
     return () => {
       active = false;
     };
-  }, [ticket]);
+  }, [ticket, commentRevision]);
 
   async function save() {
     setBusy(true);
@@ -173,11 +207,13 @@ function TicketDialog({
       if (ticket)
         await rpc.tickets.update({
           id: ticket.id,
-          title,
-          description,
-          assigneeBotId: owner,
-          status,
-          priority,
+          ...(title !== ticket.title ? { title } : {}),
+          ...(description !== (ticket.description ?? "") ? { description } : {}),
+          ...(owner !== (ticket.assigneeBotId ?? bots[0]?.id ?? "")
+            ? { assigneeBotId: owner }
+            : {}),
+          ...(status !== ticket.status ? { status } : {}),
+          ...(priority !== ticket.priority ? { priority } : {}),
         });
       else await rpc.tickets.create({ title, description, assigneeBotId: owner, priority });
       await onSaved();

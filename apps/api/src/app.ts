@@ -558,6 +558,7 @@ export async function createApp(
       openSignup: env.messagingOpenSignup,
     },
     env: {
+      ticketBoardEnabled,
       agentRuntime: env.agentRuntime,
       defaultProvider: env.defaultProvider,
       defaultModel: env.defaultModel,

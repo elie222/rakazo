@@ -95,12 +95,23 @@ describe("user-visible messages", () => {
       message("computer", "run-ticket", [
         { kind: "computer", state: "Needs you", text: "Sign in" },
       ]),
+      message("approval", "run-ticket", [
+        {
+          kind: "mcp_approval",
+          serverId: "server-1",
+          name: "Test",
+          transport: "streamable_http",
+          endpoint: "https://example.com/mcp",
+          needsOAuth: true,
+          status: "pending",
+        },
+      ]),
       message("final", "run-ticket", [{ kind: "text", text: "Done, closed the ticket." }]),
       message("user", "run-user", [{ kind: "text", text: "Visible answer" }]),
     ];
 
     expect(
       userVisibleMessages(background, { backgroundRunIds: ["run-ticket"] }).map((m) => m.id),
-    ).toEqual(["ask", "computer", "user"]);
+    ).toEqual(["ask", "computer", "approval", "user"]);
   });
 });
