@@ -687,21 +687,17 @@ function resolveExecuteCwd(requestCwd: string | undefined, home: string) {
   return path.resolve(home, requestCwd);
 }
 
-/** Shell metacharacters in the program itself. Arguments are a separate array and may contain them. */
-const SHELL_SYNTAX = /[\r\n;&|`$<>"']/;
-/** Windows runs these through cmd.exe, which re-parses the argument vector. */
-const WINDOWS_SHELL_SCRIPT = /\.(?:bat|cmd|com)$/i;
+/** Batch files require cmd.exe and cannot be executed directly. */
+const WINDOWS_SHELL_SCRIPT = /\.(?:bat|cmd)$/i;
 
 /**
- * Argv for `spawn` with `shell: false`. The program is executed directly, so a value that
- * would be syntax to a shell is refused instead of being joined into a command line.
+ * Argv for `spawn` with `shell: false`. Punctuation in paths and arguments is literal.
  */
 function directCommandArgv(argv: readonly string[]): string[] | undefined {
   if (!Array.isArray(argv) || argv.length === 0) return undefined;
   if (argv.some((arg) => typeof arg !== "string" || arg.includes("\0"))) return undefined;
   const command = argv[0];
-  if (!command || SHELL_SYNTAX.test(command) || WINDOWS_SHELL_SCRIPT.test(command))
-    return undefined;
+  if (!command || WINDOWS_SHELL_SCRIPT.test(command)) return undefined;
   return [...argv];
 }
 
@@ -769,19 +765,13 @@ async function* streamLocalCommand(
   });
   child.on("error", (error) => {
     if (settled) return;
-    settled = true;
-    clearTimeout(timeout);
-    signal.removeEventListener("abort", abort);
     if (argv[0] === "echo") {
       push({ type: "stdout", data: `${argv.slice(1).join(" ")}\n` });
+      finish(0);
     } else {
       push({ type: "stderr", data: error.message });
+      finish(1);
     }
-    push({ type: "exit", code: argv[0] === "echo" ? 0 : 1 });
-    ended = true;
-    const notify = wake;
-    wake = undefined;
-    notify?.();
   });
   child.on("close", (code) => {
     finish(code ?? 0);

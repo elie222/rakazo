@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
@@ -44,8 +44,14 @@ describe("desktop command execution", () => {
     const injected = await collect(
       desktop.execute(computer, { argv: [`${process.execPath}; touch ${marker}`] }, ctx),
     );
-    expect(injected).toMatchObject({ code: 1, stderr: "command rejected\n" });
+    expect(injected.code).toBe(1);
+    expect(injected.stderr).toContain("ENOENT");
     expect(existsSync(marker)).toBe(false);
+
+    const binaryNul = await collect(
+      desktop.execute(computer, { argv: [`${process.execPath}\0`] }, ctx),
+    );
+    expect(binaryNul).toMatchObject({ code: 1, stderr: "command rejected\n" });
 
     const nul = await collect(desktop.execute(computer, { argv: [process.execPath, "a\0b"] }, ctx));
     expect(nul).toMatchObject({ code: 1, stderr: "command rejected\n" });
@@ -57,6 +63,29 @@ describe("desktop command execution", () => {
 
     await desktop.destroy(computer, ctx);
   });
+
+  it.skipIf(process.platform === "win32")(
+    "runs executable paths containing punctuation and .com",
+    async () => {
+      const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-command-"));
+      roots.push(root);
+      const binary = path.join(root, "node$&';.com");
+      symlinkSync(process.execPath, binary);
+      const desktop = new DesktopSandboxProvider({ root });
+      const computer = await desktop.provision({ botId: "cmd", homePath: "/unused" }, ctx);
+      const result = await collect(
+        desktop.execute(
+          computer,
+          {
+            argv: [binary, "-e", "process.stdout.write('ok')"],
+          },
+          ctx,
+        ),
+      );
+      expect(result).toEqual({ code: 0, stdout: "ok", stderr: "" });
+      await desktop.destroy(computer, ctx);
+    },
+  );
 });
 
 async function collect(events: AsyncIterable<ProcessEvent>) {

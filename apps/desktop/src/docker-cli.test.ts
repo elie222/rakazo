@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   classifyDockerFailure,
   composeSupportsWaitTimeout,
@@ -161,6 +164,10 @@ describe("composeSupportsWaitTimeout", () => {
 });
 
 describe("runDocker", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
   const node = process.execPath;
   const options = { cwd: process.cwd(), env: { PATH: process.env.PATH ?? "" }, timeoutMs: 10_000 };
 
@@ -221,9 +228,33 @@ describe("runDocker", () => {
     expect(result).toEqual({ code: 0, stdout: payload, stderr: "" });
   });
 
-  it("refuses a program path or argument that a shell would parse", async () => {
-    const injected = await runDocker(`${node}; touch pwned`, ["-e", "process.exit(0)"], options);
-    expect(injected).toEqual({ code: 1, stdout: "", stderr: "command rejected\n" });
+  it("treats shell syntax in a missing program path literally", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-docker-command-"));
+    roots.push(root);
+    const injected = await runDocker(`${node}; touch pwned`, [], { ...options, cwd: root });
+    expect(injected.code).toBe(1);
+    expect(injected.stderr).toContain("ENOENT");
+    expect(existsSync(path.join(root, "pwned"))).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "runs executable paths containing punctuation and .com",
+    async () => {
+      const root = mkdtempSync(path.join(tmpdir(), "rakazo-docker-command-"));
+      roots.push(root);
+      const binary = path.join(root, "node$&';.com");
+      symlinkSync(node, binary);
+      expect(await runDocker(binary, ["-e", "process.stdout.write('ok')"], options)).toEqual({
+        code: 0,
+        stdout: "ok",
+        stderr: "",
+      });
+    },
+  );
+
+  it("refuses NUL characters and batch files", async () => {
+    const binaryNul = await runDocker(`${node}\0`, [], options);
+    expect(binaryNul).toEqual({ code: 1, stdout: "", stderr: "command rejected\n" });
     const nul = await runDocker(node, ["a\0b"], options);
     expect(nul).toEqual({ code: 1, stdout: "", stderr: "command rejected\n" });
     const batch = await runDocker("C:\\Windows\\tool.cmd", ["/c", "echo hi"], options);

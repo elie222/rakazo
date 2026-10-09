@@ -1,12 +1,13 @@
-import { type ExecFileException, execFile } from "node:child_process";
+import type { ExecFileException } from "node:child_process";
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, lstat, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import type { ServerUpdateRun } from "@rakazo/contracts";
+import type { ComposeUpdateStep } from "@rakazo/core";
 import {
-  type ComposeUpdateStep,
   chooseUpdateStrategy,
   commitImageTag,
   composeUpArgv,
@@ -33,16 +34,18 @@ import {
   upsertEnvAssignments,
   validateUpdateRequest,
 } from "@rakazo/core";
-import { type Logger, SERVICE_NAMES } from "@rakazo/logging";
+import type { Logger } from "@rakazo/logging";
+import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
-import { type Context, Hono } from "hono";
+import type { Context } from "hono";
+import { Hono } from "hono";
+import type { UpdaterConfig } from "./updater-logic.js";
 import {
   readTagState,
   resolveUpdaterConfig,
   truncateOutput,
   UpdateRefused,
-  type UpdaterConfig,
 } from "./updater-logic.js";
 
 const STEP_TIMEOUT_MS: Record<string, number> = {

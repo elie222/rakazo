@@ -120,14 +120,12 @@ export type RunDocker = (
   options: RunDockerOptions,
 ) => Promise<RunDockerResult>;
 
-/** Shell metacharacters in the program path. Arguments stay a separate array and may contain them. */
-const SHELL_SYNTAX = /[\r\n;&|`$<>"']/;
-/** Windows runs these through cmd.exe, which re-parses the argument vector. */
-const WINDOWS_SHELL_SCRIPT = /\.(?:bat|cmd|com)$/i;
+/** Batch files require cmd.exe and cannot be executed directly. */
+const WINDOWS_SHELL_SCRIPT = /\.(?:bat|cmd)$/i;
 
 function directExecutable(binary: string): string | undefined {
   if (typeof binary !== "string" || binary.length === 0 || binary.includes("\0")) return undefined;
-  if (SHELL_SYNTAX.test(binary) || WINDOWS_SHELL_SCRIPT.test(binary)) return undefined;
+  if (WINDOWS_SHELL_SCRIPT.test(binary)) return undefined;
   return binary;
 }
 
