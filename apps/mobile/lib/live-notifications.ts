@@ -138,6 +138,10 @@ export async function setOpenNotificationThread(
       lastConfirmed = target;
       hasConfirmed = true;
     }
+  } catch (error) {
+    // An overlapping report may still change native state after this failure.
+    hasConfirmed = false;
+    throw error;
   } finally {
     pendingReports -= 1;
   }
