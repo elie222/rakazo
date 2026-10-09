@@ -1340,6 +1340,7 @@ export const ServerUpdateRequestSchema = z.object({
 export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 
 export const MeSchema = z.object({
+  ticketBoardEnabled: z.boolean(),
   userId: Id,
   email: z.string().email(),
   name: z.string(),

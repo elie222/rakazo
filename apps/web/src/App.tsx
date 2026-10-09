@@ -17,6 +17,7 @@ import { LoadingState } from "./components/ai/primitives";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
+import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
 import { rpc } from "./lib/rpc";
@@ -90,6 +91,11 @@ function SessionApp() {
   const [searchParams] = useSearchParams();
   const signInDestination =
     searchParams.get("next") === "/integrations/setup" ? "/integrations/setup" : "/app";
+  const ticketBoardEnabled = useSyncExternalStore(
+    subscribeTicketBoardEnabled,
+    getTicketBoardEnabled,
+    () => false,
+  );
   const session = authClient.useSession();
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
@@ -171,8 +177,7 @@ function SessionApp() {
             <Route path="/app/g/:groupId" element={<ShellPage />} />
             <Route path="/app/artifacts" element={<ArtifactsPage />} />
             <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
-            <Route path="/app/board" element={<BoardPage />} />
-            <Route path="/app/boards" element={<BoardPage />} />
+            {ticketBoardEnabled ? <Route path="/app/board" element={<BoardPage />} /> : null}
             <Route path="/app/:botId" element={<ShellPage />} />
           </Route>
         </Routes>

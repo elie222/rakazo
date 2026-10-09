@@ -129,7 +129,6 @@ export * from "./teaching-session.js";
 export * from "./team-chat-messaging.js";
 export * from "./third-party-connector-emulator.js";
 export * from "./ticket-changes.js";
-export * from "./ticket-checks.js";
 export * from "./ticket-context.js";
 export * from "./ticket-tools.js";
 export * from "./ticket-wake.js";

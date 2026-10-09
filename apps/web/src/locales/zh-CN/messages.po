@@ -665,6 +665,7 @@ msgid "Avatars"
 msgstr "头像"
 
 #: src/components/computer/FilesApp.tsx
+#: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Back"
@@ -706,6 +707,15 @@ msgstr "Bearer token"
 
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr ""
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Board"
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -1050,6 +1060,10 @@ msgstr "命令"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Command variable"
 msgstr "命令变量"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr ""
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
@@ -1697,6 +1711,7 @@ msgstr "无法更新头像"
 msgid "Couldn't update messaging settings"
 msgstr "无法更新消息设置"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1914,6 +1929,7 @@ msgstr "部署默认"
 msgid "Describe what this bot does"
 msgstr "描述这个 Bot 做什么"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "描述"
@@ -1990,6 +2006,7 @@ msgstr "Docker 限制对你电脑的访问，以提高安全性。使用{hostLab
 msgid "Don’t have an account?"
 msgstr "还没有账户？"
 
+#: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
@@ -2359,6 +2376,7 @@ msgstr "隐藏密码"
 msgid "Hide transcript"
 msgstr "隐藏文字记录"
 
+#: src/lib/ticket-priority.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "High"
@@ -2405,6 +2423,14 @@ msgstr "图片上传区域"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "导入 OpenAPI JSON"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -2615,6 +2641,7 @@ msgstr ""
 msgid "Log out"
 msgstr "退出登录"
 
+#: src/lib/ticket-priority.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Low"
@@ -2956,6 +2983,10 @@ msgstr "新建技能"
 msgid "New space"
 msgstr "新建工作区"
 
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr ""
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr "还没有 Agent 连接。"
@@ -3076,6 +3107,10 @@ msgstr "无触发器"
 #: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "暂无"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr ""
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
@@ -3247,6 +3282,10 @@ msgstr "原消息不可用"
 msgid "Other model…"
 msgstr "其他模型…"
 
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty 事件"
@@ -3337,6 +3376,10 @@ msgstr "预览 {0}"
 
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
+msgstr ""
+
+#: src/pages/Board.tsx
+msgid "Priority"
 msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
@@ -3752,6 +3795,7 @@ msgstr ""
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -4147,6 +4191,7 @@ msgid "Starting…"
 msgstr "正在开始…"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/Board.tsx
 msgid "Status"
 msgstr ""
 
@@ -4390,6 +4435,7 @@ msgstr ""
 msgid "Time of day"
 msgstr "时间"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "标题"
@@ -4401,6 +4447,10 @@ msgstr ""
 #. placeholder {0}: filters.dateRange.to
 #: src/pages/ActivityList.tsx
 msgid "To {0}"
+msgstr ""
+
+#: src/lib/ticket-status.ts
+msgid "To do"
 msgstr ""
 
 #: src/pages/shell/bot-picker.tsx
@@ -4554,6 +4604,10 @@ msgstr "正在更新…"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "上传"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4710,6 +4764,10 @@ msgstr "何时使用"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Bot 应在哪里运行？"
+
+#: src/lib/ticket-status.ts
+msgid "Won't do"
+msgstr ""
 
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx

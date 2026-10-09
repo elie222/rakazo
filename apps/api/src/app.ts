@@ -32,8 +32,8 @@ import {
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
-  createTicketChangeNotifier,
   createSecretStore,
+  createTicketChangeNotifier,
   createWebProvider,
   deletePushToken,
   destroyBot,
@@ -61,7 +61,6 @@ import {
   piSessionsRoot,
   reconcileCloudAgents,
   reconcileComputerUpdates,
-  reconcileTicketChecks,
   removePiUserSessions,
   ScriptedAgentRuntime,
   SmtpEmailProvider,
@@ -212,6 +211,7 @@ export async function createApp(
   const events = createThreadEvents(prisma, realtime, {
     runSecretWriter: createRunSecretWriter(secrets),
   });
+  const ticketBoardEnabled = env.ticketBoardEnabled;
   const boardEvents = createBoardEvents(realtime);
   const environmentSignupPolicy = signupPolicyFromEnv(env);
   const deploymentSettings = await prisma.deploymentSettings.upsert({
@@ -273,7 +273,12 @@ export async function createApp(
             throw new Error("Graphile job publisher requires a PostgreSQL pool");
           })(),
       );
-  const ticketChanges = createTicketChangeNotifier({ boardEvents, jobs });
+  const ticketChanges = createTicketChangeNotifier({
+    boardEvents,
+    jobs,
+    prisma,
+    ticketBoardEnabled,
+  });
   const sandbox: SandboxProvider =
     sandboxOverride ??
     createRunSandbox(env.sandboxProvider, {
@@ -486,6 +491,7 @@ export async function createApp(
     jobs,
     events,
     onTicketChange: ticketChanges,
+    ticketBoardEnabled,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
@@ -507,7 +513,6 @@ export async function createApp(
     deploymentModelConfigured: env.deploymentModelConfigured,
     messaging,
     cloudAgent,
-    boardEvents,
   });
   if (inMemoryJobs) {
     await inMemoryJobs.start(jobHandlers);
@@ -520,7 +525,6 @@ export async function createApp(
         notifications,
         reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
         reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
-        reconcileTicketChecks: () => reconcileTicketChecks({ prisma, jobs }),
       })
     : undefined;
   reconciler?.start();
@@ -530,8 +534,8 @@ export async function createApp(
     codexCatalog,
     prisma,
     events,
-    boardEvents,
     ticketChanges,
+    boardEvents,
     auth,
     jobs,
     sandbox,

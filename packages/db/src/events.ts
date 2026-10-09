@@ -11,7 +11,6 @@ import {
   blocksToAgentHistoryText,
   callIdFromClientNonce,
   isApprovalAskBlock,
-  isBackgroundRunTrigger,
   isConversationalRun,
   isSecretAskBlock,
   messagingChannelId,
@@ -19,7 +18,6 @@ import {
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
-import { boardEventTopic } from "./board-events.js";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -1086,16 +1084,6 @@ export async function finalizeRun(
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
-  // A finished background run (ticket work) clears the board's working indicator;
-  // publish so subscribed boards reload without waiting for the heartbeat.
-  if (isBackgroundRunTrigger(committed.trigger)) {
-    await realtime
-      ?.publish(
-        boardEventTopic(committed.spaceId),
-        JSON.stringify({ spaceId: committed.spaceId, createdAt: new Date().toISOString() }),
-      )
-      .catch(() => undefined);
-  }
   return { continuationRunId: committed.continuationRunId };
 }
 
@@ -1120,16 +1108,10 @@ export function completedRunBlocks(
 async function finalizeRunOnce(
   prisma: PrismaClient,
   input: FinalizeRunInput,
-): Promise<{
-  threadId: string;
-  seq: number;
-  continuationRunId: string | null;
-  spaceId: string;
-  trigger: string;
-} | null> {
+): Promise<{ threadId: string; seq: number; continuationRunId: string | null } | null> {
   return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
-    let writableRun: { startedAt: Date | null; trigger: string } | undefined;
+    let writableRun: { startedAt: Date | null } | undefined;
     try {
       writableRun = await assertRunCanWriteHistory(tx, input.runId);
     } catch (error) {
@@ -1239,13 +1221,7 @@ async function finalizeRunOnce(
     }
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
-    return {
-      threadId: lastEvent.threadId,
-      seq: lastEvent.seq,
-      continuationRunId,
-      spaceId: input.spaceId,
-      trigger: writableRun?.trigger ?? "",
-    };
+    return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId };
   });
 }
 

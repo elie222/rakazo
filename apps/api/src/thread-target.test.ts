@@ -4,12 +4,12 @@ import { callClientNonce } from "@rakazo/core";
 import type * as MessageQuoteModule from "@rakazo/core/message-quote";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
+import type { ThreadTarget } from "./thread-target.js";
 import {
   cancelSupersededQueuedRuns,
   reactToThreadMessage,
   sendThreadMessage,
   stopThreadRuns,
-  type ThreadTarget,
   threadHead,
   threadSnapshot,
 } from "./thread-target.js";

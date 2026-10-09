@@ -50,10 +50,12 @@ import {
   clearInactiveUserComputerControl,
   codexLiveCatalogsForSpace,
   codexLiveListsModel,
+  commentTicket,
   computerSupportsTerminal,
   computerSupportsUpdate,
   computerUpdateView,
   createFaviconResolver,
+  createTicket,
   createVoiceProvider,
   defaultCatalogModelId,
   deletePushToken,
@@ -113,6 +115,7 @@ import {
   toComputerRef,
   touchRunningComputer,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
+  updateTicket,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
   validateStoredModelAuth,
@@ -134,20 +137,14 @@ import type {
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
-  ACTIONABLE_TICKET_STATUSES,
   ATTACHMENT_MAX_BYTES,
   appContract,
   BotSecretAuth,
   ComputerCommandSchema,
-  checkTicketTransition,
   foldComputerCommands,
   IntegrationProviderIdSchema,
-  isTicketCompletedStatus,
   OPENAI_COMPATIBLE_PROVIDER_ID,
-  parseCriteria,
   parseTicketRef,
-  resolveCriteria,
-  TICKET_RUN_ACTIVITY_STALE_MS,
   usableModelId,
 } from "@rakazo/contracts";
 import {
@@ -223,25 +220,16 @@ import {
   listArtifactVersions,
   listSpaceArtifacts,
 } from "./artifacts.js";
+import type { BillingService } from "./billing.js";
 import {
-  allocateTicketNumber,
-  coerceTicketStatus,
   ensureBoard,
   findTicket,
   listBoards,
   listTicketComments,
-  listTicketEvents,
-  recordTicketEvents,
-  recordTransitionReason,
-  statusChangeData,
-  ticketChangeEvents,
-  ticketEditorStamp,
   toBoardDto,
   toTicketCommentDto,
   toTicketDto,
-  toTicketEventDto,
 } from "./board.js";
-import type { BillingService } from "./billing.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,
@@ -596,6 +584,7 @@ export interface RouterDeps {
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
   billing?: BillingService;
   env: {
+    ticketBoardEnabled?: boolean;
     agentRuntime: string;
     teamChatJudgeProvider?: string;
     teamChatJudgeModel?: string;
@@ -796,6 +785,21 @@ export function createRouter(deps: RouterDeps) {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
     return next({ context: { ...context, actor: context.actor } });
   });
+
+  const boardEnabled = os
+    .use(async ({ next }) => {
+      if (!deps.env?.ticketBoardEnabled) throw new ORPCError("NOT_FOUND");
+      return next();
+    })
+    .use(async ({ context, next }) => {
+      if (!context.actor) throw new ORPCError("UNAUTHORIZED");
+      return next({ context: { ...context, actor: context.actor } });
+    });
+  const ticketDeps = {
+    prisma: deps.prisma,
+    ticketBoardEnabled: deps.env?.ticketBoardEnabled,
+    onTicketChange: deps.ticketChanges,
+  };
 
   return os.router({
     aiConsent: {
@@ -3623,16 +3627,16 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     boards: {
-      list: authed.boards.list.handler(async ({ context }) => {
+      list: boardEnabled.boards.list.handler(async ({ context }) => {
         await ensureBoard(deps.prisma, context.actor.spaceId);
         const rows = await listBoards(deps.prisma, context.actor.spaceId);
         return rows.map(toBoardDto);
       }),
-      get: authed.boards.get.handler(async ({ context }) => {
+      get: boardEnabled.boards.get.handler(async ({ context }) => {
         const board = await ensureBoard(deps.prisma, context.actor.spaceId);
         return toBoardDto(board);
       }),
-      rename: authed.boards.rename.handler(async ({ context, input }) => {
+      rename: boardEnabled.boards.rename.handler(async ({ context, input }) => {
         const board = await ensureBoard(deps.prisma, context.actor.spaceId);
         const nextPrefix = input.ticketPrefix?.toUpperCase();
         if (nextPrefix !== undefined && nextPrefix !== board.ticketPrefix) {
@@ -3654,12 +3658,18 @@ export function createRouter(deps: RouterDeps) {
         });
         return toBoardDto(row);
       }),
-      subscribe: authed.boards.subscribe.handler(async function* ({ context }) {
+      subscribe: boardEnabled.boards.subscribe.handler(async function* ({ context }) {
         const spaceId = context.actor.spaceId;
         const follow = deps.boardEvents.follow(spaceId, context.signal);
         // Board signals are transient, so a heartbeat stands in for liveness and
         // gives the client a periodic catch-up reload if a push was missed.
         let pending: Promise<IteratorResult<BoardEvent>> | undefined;
+        let authorizedAt = Date.now();
+        const assertStillAuthorized = async () => {
+          if (!context.stillAuthorized || Date.now() - authorizedAt < SESSION_RECHECK_MS) return;
+          if (!(await context.stillAuthorized())) throw new ORPCError("UNAUTHORIZED");
+          authorizedAt = Date.now();
+        };
         try {
           while (!context.signal?.aborted) {
             pending ??= follow.next();
@@ -3670,6 +3680,7 @@ export function createRouter(deps: RouterDeps) {
                 timer = setTimeout(() => resolve("silent"), HEARTBEAT_MS);
               }),
             ]).finally(() => clearTimeout(timer));
+            await assertStillAuthorized();
             if (next === "silent") {
               yield { spaceId, createdAt: new Date().toISOString() };
               continue;
@@ -3684,7 +3695,7 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     tickets: {
-      list: authed.tickets.list.handler(async ({ context, input }) => {
+      list: boardEnabled.tickets.list.handler(async ({ context, input }) => {
         const board = await resolveSpaceBoard(deps.prisma, context.actor.spaceId, input.boardId);
         const q = input.q?.trim();
         const where: Prisma.TicketWhereInput = {
@@ -3705,96 +3716,9 @@ export function createRouter(deps: RouterDeps) {
           where,
           orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         });
-        const assigneeBotIds = [
-          ...new Set(rows.flatMap((row) => (row.assigneeBotId ? [row.assigneeBotId] : []))),
-        ];
-        // Working is per ticket: a ticket wake records the tickets it covers and the one
-        // the bot touched last. Runs parked on a human (waiting_*) are not doing work, and
-        // a run that stopped renewing ages out so a crashed worker cannot leave a card spinning.
-        const workingRuns = assigneeBotIds.length
-          ? await deps.prisma.run.findMany({
-              where: {
-                spaceId: context.actor.spaceId,
-                trigger: "tickets",
-                status: { in: ["queued", "leased", "running"] },
-                botId: { in: assigneeBotIds },
-                updatedAt: { gte: new Date(Date.now() - TICKET_RUN_ACTIVITY_STALE_MS) },
-              },
-              select: { botId: true, ticketIds: true, currentTicketId: true },
-            })
-          : [];
-        const actionable = new Set<string>(ACTIONABLE_TICKET_STATUSES);
-        const workable = new Map(
-          rows
-            .filter((row) => actionable.has(row.status) && row.assigneeBotId)
-            .map((row) => [row.id, row.assigneeBotId]),
-        );
-        const workingTicketIds = new Set<string>();
-        for (const run of workingRuns) {
-          const focus =
-            run.currentTicketId && workable.get(run.currentTicketId) === run.botId
-              ? [run.currentTicketId]
-              : run.ticketIds;
-          for (const id of focus) {
-            if (workable.get(id) === run.botId) workingTicketIds.add(id);
-          }
-        }
-        // Surface a wake that failed or keeps failing to start (e.g. the sandbox image is
-        // missing) so a silently stuck bot is visible on its cards.
-        const latestRuns = assigneeBotIds.length
-          ? await deps.prisma.run.findMany({
-              where: {
-                spaceId: context.actor.spaceId,
-                trigger: "tickets",
-                botId: { in: assigneeBotIds },
-              },
-              orderBy: [{ botId: "asc" }, { createdAt: "desc" }],
-              distinct: ["botId"],
-              select: {
-                botId: true,
-                status: true,
-                error: true,
-                updatedAt: true,
-                attempts: {
-                  orderBy: { startedAt: "desc" },
-                  take: 1,
-                  select: { status: true, error: true },
-                },
-              },
-            })
-          : [];
-        const botIssues = latestRuns.flatMap((run) => {
-          const attempt = run.attempts[0];
-          if (run.status === "failed") {
-            return [
-              {
-                botId: run.botId,
-                message: run.error?.trim() || "The last ticket run failed.",
-                at: run.updatedAt.toISOString(),
-              },
-            ];
-          }
-          if (
-            (run.status === "queued" || run.status === "leased") &&
-            attempt?.status === "setup_failed"
-          ) {
-            return [
-              {
-                botId: run.botId,
-                message: attempt.error?.trim() || "The bot's computer keeps failing to start.",
-                at: run.updatedAt.toISOString(),
-              },
-            ];
-          }
-          return [];
-        });
-        return {
-          tickets: rows.map((row) => toTicketDto(row, board.ticketPrefix)),
-          workingTicketIds: [...workingTicketIds],
-          botIssues,
-        };
+        return { tickets: rows.map((row) => toTicketDto(row, board.ticketPrefix)) };
       }),
-      get: authed.tickets.get.handler(async ({ context, input }) => {
+      get: boardEnabled.tickets.get.handler(async ({ context, input }) => {
         const board = await ensureBoard(deps.prisma, context.actor.spaceId);
         const row = await findTicket(deps.prisma, context.actor.spaceId, board, input);
         if (!row) {
@@ -3805,234 +3729,44 @@ export function createRouter(deps: RouterDeps) {
         }
         return toTicketDto(row, board.ticketPrefix);
       }),
-      create: authed.tickets.create.handler(async ({ context, input }) => {
-        const board = await resolveSpaceBoard(deps.prisma, context.actor.spaceId, input.boardId);
+      create: boardEnabled.tickets.create.handler(async ({ context, input }) => {
+        await resolveSpaceBoard(deps.prisma, context.actor.spaceId, input.boardId);
         await repos.getBot(context.actor, input.assigneeBotId);
-        const row = await deps.prisma.$transaction(async (tx) => {
-          const number = await allocateTicketNumber(tx, board.id);
-          const created = await tx.ticket.create({
-            data: {
-              boardId: board.id,
-              spaceId: context.actor.spaceId,
-              number,
-              title: input.title,
-              description: input.description ?? null,
-              acceptanceCriteria: resolveCriteria(input.acceptanceCriteria ?? [], []),
-              priority: input.priority,
-              status: "todo",
-              assigneeBotId: input.assigneeBotId,
-              createdByUserId: context.actor.userId,
-              completedAt: null,
-              ...ticketEditorStamp(null, input.assigneeBotId),
-            },
-          });
-          await recordTicketEvents(tx, {
-            ticketId: created.id,
-            spaceId: context.actor.spaceId,
-            actor: { userId: context.actor.userId },
-            events: [{ type: "created", data: { assigneeBotId: input.assigneeBotId } }],
-          });
-          return created;
-        });
-        await deps.ticketChanges({
+        const result = await createTicket(ticketDeps, {
+          ...input,
           spaceId: context.actor.spaceId,
-          boardId: board.id,
-          ticketId: row.id,
-          assigneeBotId: row.assigneeBotId,
-          actorBotId: null,
-          wakeAssignee: true,
+          userId: context.actor.userId,
+          ownerBotId: input.assigneeBotId,
         });
-        return toTicketDto(row, board.ticketPrefix);
+        if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
+        return result.ticket;
       }),
-      update: authed.tickets.update.handler(async ({ context, input }) => {
-        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
-        const existing = await deps.prisma.ticket.findFirst({
-          where: { id: input.id, spaceId: context.actor.spaceId, boardId: board.id },
-        });
-        if (!existing) throw new IsolationError();
-        if (input.assigneeBotId !== undefined) {
-          await repos.getBot(context.actor, input.assigneeBotId);
-        }
-        const actor = { userId: context.actor.userId };
-        const row = await deps.prisma.$transaction(async (tx) => {
-          // Lock the row before the checklist is read. The transition gate and
-          // the write must both see the checklist that this update replaces:
-          // without the lock an uncheck can land in between, and the ticket can
-          // move to review or done with an open criterion and no reason.
-          await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${existing.id} FOR UPDATE`;
-          const current = await tx.ticket.findFirst({
-            where: { id: existing.id, spaceId: context.actor.spaceId, boardId: board.id },
-          });
-          if (!current) throw new IsolationError();
-          // A criterion that arrives as plain text keeps its stored state, so a
-          // write that flips one box cannot drop a check made meanwhile.
-          const existingCriteria = parseCriteria(current.acceptanceCriteria);
-          const nextCriteria =
-            input.acceptanceCriteria !== undefined
-              ? resolveCriteria(input.acceptanceCriteria, existingCriteria)
-              : existingCriteria;
-          const nextAssignee = input.assigneeBotId ?? current.assigneeBotId;
-          if (input.status !== undefined) {
-            const blocked = checkTicketTransition({
-              from: coerceTicketStatus(current.status),
-              to: input.status,
-              criteria: nextCriteria,
-              hasAssignee: nextAssignee !== null,
-              reason: input.reason,
-            });
-            if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
-          }
-          const data: Prisma.TicketUncheckedUpdateInput = {
-            ...(input.title !== undefined ? { title: input.title } : {}),
-            ...(input.description !== undefined ? { description: input.description } : {}),
-            ...(input.acceptanceCriteria !== undefined ? { acceptanceCriteria: nextCriteria } : {}),
-            ...(input.priority !== undefined ? { priority: input.priority ?? "normal" } : {}),
-            ...(input.assigneeBotId !== undefined ? { assigneeBotId: input.assigneeBotId } : {}),
-          };
-          if (input.status !== undefined) {
-            data.status = input.status;
-            Object.assign(data, statusChangeData(current.status, input.status));
-            data.completedAt = isTicketCompletedStatus(input.status)
-              ? (current.completedAt ?? new Date())
-              : null;
-          }
-          const updated = await tx.ticket.update({
-            where: { id: current.id },
-            data: {
-              ...data,
-              ...ticketEditorStamp(null, input.assigneeBotId ?? current.assigneeBotId),
-            },
-          });
-          await recordTicketEvents(tx, {
-            ticketId: current.id,
-            spaceId: context.actor.spaceId,
-            actor,
-            events: ticketChangeEvents(current, updated),
-          });
-          if (input.status !== undefined) {
-            await recordTransitionReason(tx, {
-              ticketId: current.id,
-              spaceId: context.actor.spaceId,
-              actor,
-              to: input.status,
-              reason: input.reason,
-              criteria: nextCriteria,
-            });
-          }
-          return updated;
-        });
-        await deps.ticketChanges({
+      update: boardEnabled.tickets.update.handler(async ({ context, input }) => {
+        if (input.assigneeBotId) await repos.getBot(context.actor, input.assigneeBotId);
+        const result = await updateTicket(ticketDeps, {
+          ...input,
           spaceId: context.actor.spaceId,
-          boardId: board.id,
-          ticketId: row.id,
-          assigneeBotId: row.assigneeBotId,
-          actorBotId: null,
-          wakeAssignee:
-            input.assigneeBotId !== undefined && input.assigneeBotId !== existing.assigneeBotId,
+          ownerBotId: input.assigneeBotId,
         });
-        return toTicketDto(row, board.ticketPrefix);
+        if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
+        return result.ticket;
       }),
-      move: authed.tickets.move.handler(async ({ context, input }) => {
-        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
-        const existing = await deps.prisma.ticket.findFirst({
-          where: { id: input.id, spaceId: context.actor.spaceId, boardId: board.id },
-        });
-        if (!existing) throw new IsolationError();
-        const actor = { userId: context.actor.userId };
-        const row = await deps.prisma.$transaction(async (tx) => {
-          // Lock the row before the checklist is read. The transition gate and
-          // the write must see the same criteria: without the lock an uncheck
-          // can land in between, and the move can finish in review or done with
-          // an open criterion and no reason.
-          await tx.$queryRaw`SELECT id FROM tickets WHERE id = ${existing.id} FOR UPDATE`;
-          const current = await tx.ticket.findFirst({
-            where: { id: existing.id, spaceId: context.actor.spaceId, boardId: board.id },
-          });
-          if (!current) throw new IsolationError();
-          const criteria = parseCriteria(current.acceptanceCriteria);
-          const blocked = checkTicketTransition({
-            from: coerceTicketStatus(current.status),
-            to: input.status,
-            criteria,
-            hasAssignee: current.assigneeBotId !== null,
-            reason: input.reason,
-          });
-          if (blocked) throw new ORPCError("BAD_REQUEST", { message: blocked });
-          const updated = await tx.ticket.update({
-            where: { id: current.id },
-            data: {
-              status: input.status,
-              ...statusChangeData(current.status, input.status),
-              ...ticketEditorStamp(null, current.assigneeBotId),
-              completedAt: isTicketCompletedStatus(input.status)
-                ? (current.completedAt ?? new Date())
-                : null,
-            },
-          });
-          await recordTicketEvents(tx, {
-            ticketId: current.id,
-            spaceId: context.actor.spaceId,
-            actor,
-            events: ticketChangeEvents(current, updated),
-          });
-          await recordTransitionReason(tx, {
-            ticketId: current.id,
-            spaceId: context.actor.spaceId,
-            actor,
-            to: input.status,
-            reason: input.reason,
-            criteria,
-          });
-          return updated;
-        });
-        await deps.ticketChanges({
+      move: boardEnabled.tickets.move.handler(async ({ context, input }) => {
+        const result = await updateTicket(ticketDeps, { ...input, spaceId: context.actor.spaceId });
+        if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
+        return result.ticket;
+      }),
+      comment: boardEnabled.tickets.comment.handler(async ({ context, input }) => {
+        const result = await commentTicket(ticketDeps, {
+          id: input.ticketId,
+          body: input.body,
           spaceId: context.actor.spaceId,
-          boardId: board.id,
-          ticketId: row.id,
-          assigneeBotId: row.assigneeBotId,
-          actorBotId: null,
-          wakeAssignee: false,
+          userId: context.actor.userId,
         });
-        return toTicketDto(row, board.ticketPrefix);
+        if ("error" in result) throw new ORPCError("BAD_REQUEST", { message: result.error });
+        return result.comment;
       }),
-      comment: authed.tickets.comment.handler(async ({ context, input }) => {
-        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
-        const ticket = await deps.prisma.ticket.findFirst({
-          where: { id: input.ticketId, spaceId: context.actor.spaceId, boardId: board.id },
-        });
-        if (!ticket) throw new IsolationError();
-        const row = await deps.prisma.$transaction(async (tx) => {
-          const comment = await tx.ticketComment.create({
-            data: {
-              ticketId: ticket.id,
-              spaceId: context.actor.spaceId,
-              authorUserId: context.actor.userId,
-              body: input.body,
-            },
-          });
-          await tx.ticket.update({
-            where: { id: ticket.id },
-            data: { updatedAt: new Date(), ...ticketEditorStamp(null, ticket.assigneeBotId) },
-          });
-          await recordTicketEvents(tx, {
-            ticketId: ticket.id,
-            spaceId: context.actor.spaceId,
-            actor: { userId: context.actor.userId },
-            events: [{ type: "commented", data: {} }],
-          });
-          return comment;
-        });
-        await deps.ticketChanges({
-          spaceId: context.actor.spaceId,
-          boardId: board.id,
-          ticketId: ticket.id,
-          assigneeBotId: ticket.assigneeBotId,
-          actorBotId: null,
-          wakeAssignee: false,
-        });
-        return toTicketCommentDto(row);
-      }),
-      comments: authed.tickets.comments.handler(async ({ context, input }) => {
+      comments: boardEnabled.tickets.comments.handler(async ({ context, input }) => {
         const board = await ensureBoard(deps.prisma, context.actor.spaceId);
         const ticket = await deps.prisma.ticket.findFirst({
           where: { id: input.ticketId, spaceId: context.actor.spaceId, boardId: board.id },
@@ -4040,15 +3774,6 @@ export function createRouter(deps: RouterDeps) {
         if (!ticket) throw new IsolationError();
         const rows = await listTicketComments(deps.prisma, context.actor.spaceId, ticket.id);
         return rows.map(toTicketCommentDto);
-      }),
-      events: authed.tickets.events.handler(async ({ context, input }) => {
-        const board = await ensureBoard(deps.prisma, context.actor.spaceId);
-        const ticket = await deps.prisma.ticket.findFirst({
-          where: { id: input.ticketId, spaceId: context.actor.spaceId, boardId: board.id },
-        });
-        if (!ticket) throw new IsolationError();
-        const rows = await listTicketEvents(deps.prisma, context.actor.spaceId, ticket.id);
-        return rows.map(toTicketEventDto);
       }),
     },
     skills: {
@@ -6575,6 +6300,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     modelSetup(deps, actor),
   ]);
   return {
+    ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
     userId: actor.userId,
     email: user.email,
     name: user.name,

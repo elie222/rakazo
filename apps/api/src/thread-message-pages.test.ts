@@ -59,9 +59,9 @@ describe("thread message pages", () => {
     expect(
       shouldForwardBackgroundThreadEvent({
         type: "thread.message.created",
-        payload: { userProgress: true },
+        payload: { blocks: [{ kind: "text", text: "Working" }] },
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       shouldForwardBackgroundThreadEvent({
         type: "thread.message.created",
@@ -95,7 +95,7 @@ describe("thread message pages", () => {
     );
   });
 
-  it("hides ticket-run output from the transcript but keeps message_user updates", async () => {
+  it("hides ticket-run output from the transcript but keeps user-input cards", async () => {
     const findMany = vi.fn(async () => [
       {
         id: "message-computer",
@@ -167,7 +167,6 @@ describe("thread message pages", () => {
 
     expect(page.messages.map((message) => message.id)).toEqual([
       "message-user",
-      "message-progress",
       "message-computer",
     ]);
   });

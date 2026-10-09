@@ -138,6 +138,7 @@ function account(provider: string, modelId: string) {
     sandboxProvider: "docker",
     avatarStyle: "robot" as const,
     billingEnabled: false,
+    ticketBoardEnabled: false,
   };
 }
 

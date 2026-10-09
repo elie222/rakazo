@@ -6,7 +6,8 @@ export function initialBootstrapTarget(pathname: string, desktop: boolean) {
 
 function botIdFromPath(pathname: string) {
   const segments = pathname.split("/");
-  if (segments[2] === "g" || segments[2] === "artifacts") return undefined;
+  if (segments[2] === "g" || segments[2] === "artifacts" || segments[2] === "board")
+    return undefined;
   const encoded = segments[2];
   if (!encoded) return undefined;
   try {

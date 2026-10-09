@@ -1,36 +1,36 @@
 import type { JobPublisher } from "@rakazo/adapter-kit";
-import { ticketsCheckJob } from "@rakazo/adapter-kit";
-import type { BoardEvents } from "@rakazo/db";
+import type { BoardEvents, PrismaClient } from "@rakazo/db";
+import { wakeTicketAssignee } from "./ticket-wake.js";
 
 export type TicketChange = {
   spaceId: string;
   boardId: string;
   ticketId: string;
   assigneeBotId: string | null;
-  /** The bot that made the change, when a bot did; humans leave this null. */
-  actorBotId?: string | null;
-  /** A create or reassignment may need to wake the new owner. */
   wakeAssignee: boolean;
 };
-
 export type TicketChangeNotifier = (change: TicketChange) => Promise<void>;
 
-/**
- * The single seam every ticket mutation funnels through: it publishes the
- * board-change signal and wakes the owner when someone else created or handed
- * over a ticket. Self-actions never wake the actor.
- */
 export function createTicketChangeNotifier(deps: {
   boardEvents: BoardEvents;
+  prisma: PrismaClient;
   jobs: JobPublisher;
+  ticketBoardEnabled?: boolean;
 }): TicketChangeNotifier {
   return async (change) => {
+    if (!deps.ticketBoardEnabled) return;
     await deps.boardEvents
-      .notify(change.spaceId, { boardId: change.boardId, ticketId: change.ticketId })
+      .notify(change.spaceId, {
+        boardId: change.boardId,
+        ticketId: change.ticketId,
+      })
       .catch(() => undefined);
-    const assignee = change.assigneeBotId;
-    if (!change.wakeAssignee || !assignee) return;
-    if (change.actorBotId && change.actorBotId === assignee) return;
-    await deps.jobs.enqueue(ticketsCheckJob(assignee)).catch(() => undefined);
+    if (change.wakeAssignee && change.assigneeBotId) {
+      await wakeTicketAssignee(deps, {
+        spaceId: change.spaceId,
+        ticketId: change.ticketId,
+        botId: change.assigneeBotId,
+      });
+    }
   };
 }

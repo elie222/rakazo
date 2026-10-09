@@ -19,8 +19,7 @@ const NON_CONVERSATIONAL_RUN_TRIGGERS = new Set(["routine", "webhook", "created"
  * Background triggers do internal work that must not leak into the chat: the
  * sidebar must not show them as activity and the bot transcript must not render
  * their steps/text. Ticket work reports through board comments and its status.
- * The only exception is an explicit `message_user` call, which is a deliberate
- * request for the user (see `message-visibility`).
+ * Existing ask and approval cards can still request user input.
  */
 export const BACKGROUND_RUN_TRIGGERS = ["tickets"] as const;
 const BACKGROUND_RUN_TRIGGER_SET = new Set<string>(BACKGROUND_RUN_TRIGGERS);

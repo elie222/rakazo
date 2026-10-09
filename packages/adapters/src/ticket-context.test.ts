@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { extractTicketRefs, renderTicketContext } from "./ticket-context.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  extractTicketRefs,
+  loadAgentTicketContext,
+  renderTicketContext,
+} from "./ticket-context.js";
 
 describe("extractTicketRefs", () => {
   it("extracts every occurrence and dedupes without reordering", () => {
@@ -64,4 +68,18 @@ describe("renderTicketContext", () => {
     expect(Buffer.byteLength(block ?? "", "utf8")).toBeLessThanOrEqual(220);
     expect(block?.endsWith("</tickets_referenced>")).toBe(true);
   });
+});
+
+it("skips ticket reference lookup completely when disabled", async () => {
+  const findUnique = vi.fn();
+  const prisma = { board: { findUnique } } as never;
+  for (const ticketBoardEnabled of [undefined, false]) {
+    await expect(
+      loadAgentTicketContext(
+        { prisma, ticketBoardEnabled },
+        { spaceId: "space-1", text: "Work RAK-42" },
+      ),
+    ).resolves.toBeUndefined();
+  }
+  expect(findUnique).not.toHaveBeenCalled();
 });

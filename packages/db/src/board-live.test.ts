@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardEventTopic, createBoardEvents } from "./board-events.js";
+import { boardEventTopic, createBoardEvents } from "./board-live.js";
 
 function fakeFanout() {
   const subscribers = new Map<string, Set<(payload: string) => void>>();

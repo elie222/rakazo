@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, createNamedBot, signup } from "./helpers";
 
-test("boards kanban creates a ticket and opens it", async ({ page }, testInfo) => {
+test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   const stamp = Date.now();
   const title = "Ship the board";
   const description = "Track the kanban launch.";
@@ -9,11 +9,9 @@ test("boards kanban creates a ticket and opens it", async ({ page }, testInfo) =
   await completeOnboarding(page);
   await createNamedBot(page, "Planner");
 
-  await page
-    .getByTestId("bots-sidebar")
-    .getByRole("button", { name: "Boards", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/app\/boards?$/);
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Board", exact: true }).click();
+  await expect(page).toHaveURL(/\/app\/board$/);
   await expect(page.getByTestId("board-columns")).toBeVisible();
   await captureScreenshot(page, testInfo, "board-kanban");
 
@@ -35,8 +33,7 @@ test("boards kanban creates a ticket and opens it", async ({ page }, testInfo) =
   await card.click();
   const detail = page.getByRole("dialog", { name: title });
   await expect(detail.getByLabel("Title")).toHaveValue(title);
-  await expect(detail.getByTestId("ticket-description")).toContainText(description);
+  await expect(detail.getByTestId("ticket-description")).toHaveValue(description);
   await expect(detail.getByTestId("ticket-comments")).toBeVisible();
-  await expect(detail.getByTestId("ticket-comments").getByText("Loading…")).toHaveCount(0);
   await captureScreenshot(page, testInfo, "board-ticket-detail");
 });

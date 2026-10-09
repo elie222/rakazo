@@ -3,6 +3,18 @@ import { initialBootstrapTarget } from "./bootstrap-target";
 import { markOnce } from "./performance";
 import { rpc } from "./rpc";
 
+let ticketBoardEnabled = false;
+const capabilityListeners = new Set<() => void>();
+export function getTicketBoardEnabled() {
+  return ticketBoardEnabled;
+}
+export function subscribeTicketBoardEnabled(listener: () => void) {
+  capabilityListeners.add(listener);
+  return () => {
+    capabilityListeners.delete(listener);
+  };
+}
+
 let primedBootstrap: { botId?: string; promise: Promise<AppBootstrap> } | null = null;
 
 const initialTarget = initialBootstrapTarget(
@@ -34,6 +46,8 @@ function requestBootstrap(botId?: string) {
   markOnce("rk:renderer:bootstrap-request-start");
   return rpc.bootstrap(botId ? { botId } : {}).then((bootstrap) => {
     markOnce("rk:renderer:bootstrap-response");
+    ticketBoardEnabled = bootstrap.me.ticketBoardEnabled;
+    for (const listener of capabilityListeners) listener();
     return bootstrap;
   });
 }

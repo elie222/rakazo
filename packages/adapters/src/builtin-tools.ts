@@ -801,8 +801,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "board_tickets",
-    description:
-      "List one page of tickets on this space's board, newest first, optionally filtered by status or owner bot. Each ticket shows when it last changed. When the result includes nextCursor, call again with that cursor to list older matches. The order is stable, so a ticket that changes while you page is not skipped. Check here before claiming work is already tracked.",
+    description: "List tickets. Continue with nextCursor when returned.",
     inputSchema: {
       type: "object",
       properties: {
@@ -818,8 +817,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "ticket_get",
-    description:
-      "Read one ticket by its reference (e.g. RAK-42) or id, including status, assignee, and recent comments.",
+    description: "Read a ticket by reference or id, with comments.",
     inputSchema: {
       type: "object",
       properties: {
@@ -831,18 +829,12 @@ export const builtinAgentTools: ConnectorTool[] = [
   },
   {
     name: "ticket_create",
-    description:
-      "Create a ticket for documented, plannable work. The owner defaults to you; pass ownerBotId to hand it to another bot in this space. Returns the reference (e.g. RAK-42) to share with other bots.",
+    description: "Create a ticket. Owner defaults to you.",
     inputSchema: {
       type: "object",
       properties: {
         title: { type: "string", description: "Short ticket title." },
         description: { type: "string", description: "Optional detail." },
-        acceptanceCriteria: {
-          type: "array",
-          items: { type: "string" },
-          description: "Checklist of conditions that make the ticket done, one per item.",
-        },
         priority: {
           type: "string",
           enum: TICKET_PRIORITIES,
@@ -857,72 +849,24 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
-    name: "ticket_move",
-    description:
-      "Move a ticket to any status. Moving to blocked requires a reason; moving to done or closed with unchecked acceptance criteria requires a reason that overrides them. The reason is saved as a ticket comment.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Ticket id from board_tickets or ticket_get." },
-        status: { type: "string", enum: TICKET_STATUSES },
-        reason: {
-          type: "string",
-          description: "What the ticket is blocked on, or why it is done despite open criteria.",
-        },
-      },
-      required: ["id", "status"],
-    },
-  },
-  {
-    name: "ticket_close",
-    description:
-      "Mark a ticket as won't do (status closed): work that is abandoned or cancelled, not finished work. A comment saying why is required. For finished work, check off its acceptance criteria and move it to review (or done) with ticket_move instead.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Ticket id." },
-        comment: { type: "string", description: "Why this will not be done." },
-      },
-      required: ["id", "comment"],
-    },
-  },
-  {
     name: "ticket_update",
-    description: "Update a ticket's title, description, acceptance criteria, or priority.",
+    description: "Update a ticket, including status and owner.",
     inputSchema: {
       type: "object",
       properties: {
         id: { type: "string", description: "Ticket id." },
         title: { type: "string" },
         description: { type: "string" },
-        acceptanceCriteria: {
-          type: "array",
-          items: { type: "string" },
-          description: "Checklist of conditions that make the ticket done, one per item.",
-        },
         priority: { type: "string", enum: TICKET_PRIORITIES },
+        status: { type: "string", enum: TICKET_STATUSES },
+        ownerBotId: { type: "string" },
       },
       required: ["id"],
     },
   },
   {
-    name: "ticket_criterion",
-    description:
-      "Check or uncheck one acceptance criterion of a ticket by its 1-based position. Check criteria off as you verify them; a ticket cannot move to done with open criteria unless you give a reason.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Ticket id." },
-        index: { type: "number", description: "1-based position of the criterion." },
-        done: { type: "boolean", description: "true to check it (default), false to uncheck." },
-      },
-      required: ["id", "index"],
-    },
-  },
-  {
     name: "ticket_comment",
-    description:
-      "Add a comment to a ticket. Record progress or hand off context that other bots can read by reference (e.g. RAK-42).",
+    description: "Add a ticket comment.",
     inputSchema: {
       type: "object",
       properties: {
@@ -930,19 +874,6 @@ export const builtinAgentTools: ConnectorTool[] = [
         body: { type: "string", description: "Comment text." },
       },
       required: ["id", "body"],
-    },
-  },
-  {
-    name: "ticket_assign",
-    description:
-      "Give a ticket to a bot in this space. A ticket always has an owner, so pass a bot id, never null.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        id: { type: "string", description: "Ticket id." },
-        ownerBotId: { type: "string", description: "Bot in this space to own it." },
-      },
-      required: ["id", "ownerBotId"],
     },
   },
   {

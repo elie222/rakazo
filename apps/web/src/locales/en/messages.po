@@ -665,6 +665,7 @@ msgid "Avatars"
 msgstr "Avatars"
 
 #: src/components/computer/FilesApp.tsx
+#: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Back"
@@ -707,6 +708,15 @@ msgstr "Bearer token"
 #: src/pages/SettingsOverlay.tsx
 msgid "Billing"
 msgstr "Billing"
+
+#: src/lib/ticket-status.ts
+msgid "Blocked"
+msgstr "Blocked"
+
+#: src/pages/Board.tsx
+#: src/pages/Shell.tsx
+msgid "Board"
+msgstr "Board"
 
 #: src/pages/Shell.tsx
 msgid "Booting live desktop…"
@@ -1050,6 +1060,10 @@ msgstr "Command"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Command variable"
 msgstr "Command variable"
+
+#: src/pages/Board.tsx
+msgid "Comment"
+msgstr "Comment"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Complete"
@@ -1697,6 +1711,7 @@ msgstr "Couldn't update avatars"
 msgid "Couldn't update messaging settings"
 msgstr "Couldn't update messaging settings"
 
+#: src/pages/Board.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/shell/dialogs.tsx
@@ -1914,6 +1929,7 @@ msgstr "Deployment default"
 msgid "Describe what this bot does"
 msgstr "Describe what this bot does"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Description"
 msgstr "Description"
@@ -1990,6 +2006,7 @@ msgstr "Docker limits access to your computer for added security. Using {hostLab
 msgid "Don’t have an account?"
 msgstr "Don’t have an account?"
 
+#: src/lib/ticket-status.ts
 #: src/pages/ActivityList.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Done"
@@ -2359,6 +2376,7 @@ msgstr "Hide password"
 msgid "Hide transcript"
 msgstr "Hide transcript"
 
+#: src/lib/ticket-priority.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "High"
@@ -2405,6 +2423,14 @@ msgstr "Image upload area"
 #: src/pages/PluginsOverlay.tsx
 msgid "Import OpenAPI JSON"
 msgstr "Import OpenAPI JSON"
+
+#: src/lib/ticket-status.ts
+msgid "In progress"
+msgstr "In progress"
+
+#: src/lib/ticket-status.ts
+msgid "In review"
+msgstr "In review"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Inactive"
@@ -2615,6 +2641,7 @@ msgstr "Local Server Settings"
 msgid "Log out"
 msgstr "Log out"
 
+#: src/lib/ticket-priority.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Low"
@@ -2956,6 +2983,10 @@ msgstr "New skill"
 msgid "New space"
 msgstr "New space"
 
+#: src/pages/Board.tsx
+msgid "New ticket"
+msgstr "New ticket"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr "No agent connections yet."
@@ -3076,6 +3107,10 @@ msgstr "No trigger"
 #: src/pages/ScratchpadSection.tsx
 msgid "None yet"
 msgstr "None yet"
+
+#: src/lib/ticket-priority.ts
+msgid "Normal"
+msgstr "Normal"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
@@ -3247,6 +3282,10 @@ msgstr "Original message unavailable"
 msgid "Other model…"
 msgstr "Other model…"
 
+#: src/pages/Board.tsx
+msgid "Owner"
+msgstr "Owner"
+
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
 msgstr "PagerDuty incident"
@@ -3338,6 +3377,10 @@ msgstr "Preview {0}"
 #: src/pages/Artifacts.tsx
 msgid "Preview isn't available for this file type — download it to view it."
 msgstr "Preview isn't available for this file type — download it to view it."
+
+#: src/pages/Board.tsx
+msgid "Priority"
+msgstr "Priority"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Private"
@@ -3752,6 +3795,7 @@ msgstr "Runs when this bot receives a verified message from this provider."
 
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
+#: src/pages/Board.tsx
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/GroupPanel.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -4147,6 +4191,7 @@ msgid "Starting…"
 msgstr "Starting…"
 
 #: src/pages/ActivityList.tsx
+#: src/pages/Board.tsx
 msgid "Status"
 msgstr "Status"
 
@@ -4390,6 +4435,7 @@ msgstr "This week"
 msgid "Time of day"
 msgstr "Time of day"
 
+#: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
 msgstr "Title"
@@ -4402,6 +4448,10 @@ msgstr "To"
 #: src/pages/ActivityList.tsx
 msgid "To {0}"
 msgstr "To {0}"
+
+#: src/lib/ticket-status.ts
+msgid "To do"
+msgstr "To do"
 
 #: src/pages/shell/bot-picker.tsx
 msgid "To:"
@@ -4554,6 +4604,10 @@ msgstr "Updating…"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "Upload"
+
+#: src/lib/ticket-priority.ts
+msgid "Urgent"
+msgstr "Urgent"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
@@ -4710,6 +4764,10 @@ msgstr "When to use"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Where should bots run?"
 msgstr "Where should bots run?"
+
+#: src/lib/ticket-status.ts
+msgid "Won't do"
+msgstr "Won't do"
 
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx

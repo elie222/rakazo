@@ -13,6 +13,7 @@ import type {
   ConnectionCatalogItem,
   Group,
   Me,
+  MessageReaction,
   ProductEvent,
   Routine,
   SearchHit,
@@ -30,13 +31,12 @@ import {
   ATTACHMENT_MAX_COUNT,
   canReactToThreadMessage,
   MESSAGE_REACTIONS,
-  type MessageReaction,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
+import type { ComposerMention, SlashActionId } from "@rakazo/core";
 import {
   attachmentsForThread,
   buildComposerMentionOptions,
-  type ComposerMention,
   clampMentionHighlightIndex,
   cronFromPreset,
   formatMessageTime,
@@ -57,7 +57,6 @@ import {
   resolveMentionPickerKey,
   runThreadSubscription,
   SLASH_ACTIONS,
-  type SlashActionId,
   searchHitThreadTarget,
   serializeComposerPrompt,
   speechFromBlocks,
@@ -66,6 +65,7 @@ import {
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
+import type { GroupAvatarMember } from "@rakazo/ui-web";
 import {
   AvatarStyleProvider,
   BotAvatar,
@@ -76,7 +76,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   GroupAvatar,
-  type GroupAvatarMember,
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
@@ -119,13 +118,10 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import type { ClipboardEvent, DragEvent, MutableRefObject, RefObject } from "react";
 import {
-  type ClipboardEvent,
-  type DragEvent,
   Fragment,
-  type MutableRefObject,
   memo,
-  type RefObject,
   Suspense,
   useCallback,
   useEffect,
@@ -248,10 +244,10 @@ import type { ContextMenuPosition } from "./BotContextMenu";
 import { CreateGroupForm, GroupSettings, memberName } from "./GroupPanel";
 import { HostComputerPrompt } from "./HostComputerPrompt";
 import { ResizableSidePanel } from "./ResizableSidePanel";
+import type { RoutineDraftState } from "./RoutineEditor";
 import {
   draftFromRoutine,
   emptyRoutineDraft,
-  type RoutineDraftState,
   RoutineEditor,
   RoutineListHeader,
   RoutineListRow,
@@ -3360,21 +3356,6 @@ export function ShellPage() {
         </div>
         <button
           type="button"
-          onClick={() => {
-            setMobileSidebarOpen(false);
-            navigate("/app/board");
-          }}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
-        >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
-            <SquareKanban size={15} strokeWidth={1.8} />
-          </span>
-          <span className="text-[14px] font-medium text-foreground/90">
-            <Trans>Boards</Trans>
-          </span>
-        </button>
-        <button
-          type="button"
           onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
         >
@@ -3401,6 +3382,20 @@ export function ShellPage() {
               align="start"
               className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
             >
+              {bootstrapMe?.ticketBoardEnabled ? (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start font-normal"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setMobileSidebarOpen(false);
+                    navigate("/app/board");
+                  }}
+                >
+                  <SquareKanban className="text-muted-foreground" strokeWidth={1.75} />
+                  <Trans>Board</Trans>
+                </Button>
+              ) : null}
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"

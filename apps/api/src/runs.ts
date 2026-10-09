@@ -1,4 +1,5 @@
-import { type Actor, MessageBlock, type RunActivityRow } from "@rakazo/contracts";
+import type { Actor, RunActivityRow } from "@rakazo/contracts";
+import { MessageBlock } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 

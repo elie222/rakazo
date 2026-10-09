@@ -1,15 +1,7 @@
 import type { MessageBlock } from "@rakazo/contracts";
 
-/** clientNonce prefix for durable mid-turn `message_user` progress messages. */
-export const USER_PROGRESS_CLIENT_NONCE_PREFIX = "user-progress:";
-
-export function isUserProgressClientNonce(clientNonce: string | null | undefined): boolean {
-  return Boolean(clientNonce?.startsWith(USER_PROGRESS_CLIENT_NONCE_PREFIX));
-}
-
 type PresentableMessage = {
   runId?: string;
-  clientNonce?: string | null;
   blocks: readonly MessageBlock[];
 };
 
@@ -23,8 +15,7 @@ export type UserVisibleMessagesOptions = {
   knownPeerRunIds?: Iterable<string>;
   /**
    * Run ids for background triggers (e.g. `tickets`). Their messages are hidden
-   * except an explicit `message_user` progress update, an `ask` card, or a
-   * `computer` block, which are the bot's deliberate ways to reach the user.
+   * except existing ask and computer cards that need user input.
    */
   backgroundRunIds?: Iterable<string>;
   /**
@@ -56,15 +47,11 @@ export function userVisibleMessages<T extends PresentableMessage>(
   const backgroundRunIds = new Set(options.backgroundRunIds ?? []);
 
   return messages.filter((message) => {
-    if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
     if (message.runId && backgroundRunIds.has(message.runId)) {
-      // Background work stays out of the transcript. The bot's own `message_user`
-      // progress update, an ask card, and a computer block are the exceptions.
-      return (
-        isUserProgressClientNonce(message.clientNonce) ||
-        message.blocks.some((block) => block.kind === "ask" || block.kind === "computer")
-      );
+      // Background work stays out of the transcript except existing user-input cards.
+      return message.blocks.some((block) => block.kind === "ask" || block.kind === "computer");
     }
+    if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
     // Keep peer-run ask cards, and (unless the caller opts out) the bot's own text reply.
     const includeText = options.includeDelegatedReplyText !== false;

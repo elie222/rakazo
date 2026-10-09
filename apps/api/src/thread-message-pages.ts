@@ -1,12 +1,11 @@
 import type { MessageBlock, ThreadMessage, ThreadMessagePage } from "@rakazo/contracts";
+import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
   isBackgroundRunTrigger,
   isPeerReceiptBlocks,
-  isUserProgressClientNonce,
 } from "@rakazo/core";
-import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
 import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
@@ -139,12 +138,8 @@ async function withoutPeerRunMessages<
     if (!row.runId) return true;
     const blocks = row.blocks as MessageBlock[];
     if (backgroundRunIds.has(row.runId)) {
-      // Ticket work stays off the transcript. An explicit `message_user` update,
-      // an ask card, or a computer block is the bot deliberately reaching the user.
-      return (
-        isUserProgressClientNonce(row.clientNonce) ||
-        blocks.some((block) => block.kind === "ask" || block.kind === "computer")
-      );
+      // Ticket work stays off the transcript except existing user-input cards.
+      return blocks.some((block) => block.kind === "ask" || block.kind === "computer");
     }
     if (!peerRunIds.has(row.runId)) return true;
     // Keep peer receipts (chips), ask cards, and the bot's own text reply.
@@ -227,11 +222,11 @@ export function shouldForwardPeerThreadEvent(event: {
  * A background run's chatter stays off the transcript: no starts, progress, steps,
  * or final text. An open thread still receives the state it needs to answer without
  * a reload — waiting input, computer takeover, and terminal run events — plus the
- * bot's explicit `message_user` updates, ask cards, and computer blocks.
+ * existing ask cards and computer blocks.
  */
 export function shouldForwardBackgroundThreadEvent(event: {
   type: string;
-  payload: { blocks?: unknown; userProgress?: unknown };
+  payload: { blocks?: unknown };
 }): boolean {
   if (
     event.type === "run.completed" ||
@@ -245,7 +240,6 @@ export function shouldForwardBackgroundThreadEvent(event: {
   if (event.type !== "thread.message.created" && event.type !== "thread.message.updated") {
     return false;
   }
-  if (event.payload.userProgress === true) return true;
   const blocks = event.payload.blocks;
   return (
     Array.isArray(blocks) &&

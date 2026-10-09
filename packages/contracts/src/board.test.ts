@@ -1,13 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CreateTicketInput,
-  checkTicketTransition,
   GetTicketInput,
   isTicketCompletedStatus,
-  parseCriteria,
   parseTicketRef,
   reservedTicketNumber,
-  resolveCriteria,
   TICKET_PRIORITIES,
   TICKET_STATUSES,
   TicketSchema,
@@ -68,8 +65,6 @@ describe("ticket contracts", () => {
     ref: "RAK-1",
     title: "Ship the board",
     description: null,
-    acceptanceCriteria: [{ text: "Board renders", done: false }],
-    statusChangedAt: "2026-01-01T00:00:00.000Z",
     status: "todo",
     priority: "normal",
     assigneeBotId: null,
@@ -84,19 +79,6 @@ describe("ticket contracts", () => {
     expect(TicketSchema.parse(ticket).status).toBe("todo");
     expect(TicketSchema.parse({ ...ticket, status: "closed" }).status).toBe("closed");
     expect(() => TicketSchema.parse({ ...ticket, status: "archived" })).toThrow();
-  });
-
-  it("trims acceptance criteria and rejects blank items", () => {
-    expect(
-      CreateTicketInput.parse({
-        title: "Ship",
-        assigneeBotId: "bot-1",
-        acceptanceCriteria: ["  Works  "],
-      }).acceptanceCriteria,
-    ).toEqual(["Works"]);
-    expect(() =>
-      CreateTicketInput.parse({ title: "Ship", assigneeBotId: "bot-1", acceptanceCriteria: [" "] }),
-    ).toThrow();
   });
 
   it("orders statuses with closed last and treats done and closed as completed", () => {
@@ -158,92 +140,5 @@ describe("ticket contracts", () => {
       "bot-2",
     );
     expect(() => UpdateTicketInput.parse({ id: "ticket-1", assigneeBotId: null })).toThrow();
-  });
-});
-
-describe("acceptance criteria helpers", () => {
-  it("keeps checked state for unchanged text and resets new or edited items", () => {
-    const existing = [
-      { text: "Works", done: true },
-      { text: "Documented", done: false },
-    ];
-    expect(resolveCriteria(["Works", "Documented", "Tested"], existing)).toEqual([
-      { text: "Works", done: true },
-      { text: "Documented", done: false },
-      { text: "Tested", done: false },
-    ]);
-    expect(resolveCriteria([{ text: "Documented", done: true }], existing)).toEqual([
-      { text: "Documented", done: true },
-    ]);
-  });
-
-  it("keeps the state of a repeated text apart by position", () => {
-    // The second box of a repeated text is checked. The first box keeps its own
-    // state instead of borrowing the one of its twin.
-    expect(
-      resolveCriteria(
-        ["Deploy", { text: "Deploy", done: true }],
-        [
-          { text: "Deploy", done: true },
-          { text: "Deploy", done: false },
-        ],
-      ),
-    ).toEqual([
-      { text: "Deploy", done: true },
-      { text: "Deploy", done: true },
-    ]);
-    // The first box of a repeated text is unchecked. The second one stays as it
-    // was, and the row above it does not turn checked.
-    expect(
-      resolveCriteria(
-        ["Deploy", { text: "Deploy", done: false }],
-        [
-          { text: "Deploy", done: false },
-          { text: "Deploy", done: true },
-        ],
-      ),
-    ).toEqual([
-      { text: "Deploy", done: false },
-      { text: "Deploy", done: false },
-    ]);
-  });
-
-  it("reads legacy strings and drops malformed stored items", () => {
-    expect(parseCriteria(["  A ", { text: "B", done: true }, 4, { text: " " }, null])).toEqual([
-      { text: "A", done: false },
-      { text: "B", done: true },
-    ]);
-    expect(parseCriteria("nope")).toEqual([]);
-  });
-});
-
-describe("checkTicketTransition", () => {
-  const open = [
-    { text: "A", done: true },
-    { text: "B", done: false },
-  ];
-  const base = { from: "doing", to: "review", criteria: open, hasAssignee: true } as const;
-
-  it("asks for a reason to hand off with open criteria, and accepts one", () => {
-    expect(checkTicketTransition(base)).toMatch(/1 acceptance criterion is not checked/);
-    expect(checkTicketTransition({ ...base, reason: "Verified manually" })).toBeNull();
-    expect(checkTicketTransition({ ...base, to: "done" })).not.toBeNull();
-    expect(checkTicketTransition({ ...base, criteria: [{ text: "A", done: true }] })).toBeNull();
-  });
-
-  it("requires a reason for blocked and won't do, and an owner for doing", () => {
-    expect(checkTicketTransition({ ...base, to: "blocked" })).toMatch(/blocked on/);
-    expect(checkTicketTransition({ ...base, to: "blocked", reason: "API down" })).toBeNull();
-    expect(checkTicketTransition({ ...base, to: "closed" })).toMatch(/will not be done/);
-    expect(checkTicketTransition({ ...base, to: "closed", reason: "Dropped" })).toBeNull();
-    expect(
-      checkTicketTransition({ ...base, from: "todo", to: "doing", hasAssignee: false }),
-    ).toMatch(/owner/);
-  });
-
-  it("never blocks moving back or staying put", () => {
-    expect(checkTicketTransition({ ...base, from: "review", to: "doing" })).toBeNull();
-    expect(checkTicketTransition({ ...base, from: "done", to: "todo" })).toBeNull();
-    expect(checkTicketTransition({ ...base, from: "review", to: "review" })).toBeNull();
   });
 });

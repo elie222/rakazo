@@ -7,6 +7,12 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("keeps the ticket board off unless explicitly enabled", () => {
+    expect(loadEnv(base).ticketBoardEnabled).toBe(false);
+    for (const value of ["false", "1", ""])
+      expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: value }).ticketBoardEnabled).toBe(false);
+    expect(loadEnv({ ...base, TICKET_BOARD_ENABLED: "true" }).ticketBoardEnabled).toBe(true);
+  });
   it("defaults the product path to Pi, Docker, and Graphile Worker", () => {
     const env = loadEnv(base);
     expect(env.agentRuntime).toBe("pi");

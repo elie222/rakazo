@@ -1,57 +1,71 @@
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { TicketChange } from "./ticket-changes.js";
 import { createTicketChangeNotifier } from "./ticket-changes.js";
 
-function notifier() {
-  const notify = vi.fn(async () => undefined);
-  const enqueue = vi.fn(async () => undefined);
-  return {
-    notify,
-    enqueue,
-    changes: createTicketChangeNotifier({
-      boardEvents: { notify, follow: vi.fn() } as never,
-      jobs: { enqueue, cancel: vi.fn(), close: vi.fn() } as never,
-    }),
-  };
-}
-
-const base: TicketChange = {
+const change: TicketChange = {
   spaceId: "space-1",
   boardId: "board-1",
   ticketId: "ticket-1",
-  assigneeBotId: "bot-2",
-  actorBotId: null,
+  assigneeBotId: "bot-1",
   wakeAssignee: true,
 };
+function setup(ticketBoardEnabled: boolean) {
+  const notify = vi.fn(async () => {});
+  const enqueue = vi.fn(async () => {});
+  const createRun = vi.fn(async () => ({ id: "run-1" }));
+  const createTask = vi.fn(async () => ({ id: "task-1" }));
+  const tx = {
+    ticket: {
+      findFirst: vi.fn(async () => ({ id: "ticket-1", number: 1, board: { ticketPrefix: "RAK" } })),
+    },
+    bot: {
+      findFirst: vi.fn(async () => ({ id: "bot-1", userId: "user-1", thread: { id: "thread-1" } })),
+    },
+    task: { create: createTask },
+    run: { create: createRun },
+  };
+  const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => fn(tx));
+  const changes = createTicketChangeNotifier({
+    ticketBoardEnabled,
+    prisma: { $transaction: transaction } as unknown as PrismaClient,
+    jobs: { enqueue } as never,
+    boardEvents: { notify } as never,
+  });
+  return { changes, notify, enqueue, createRun, createTask, transaction };
+}
 
-describe("createTicketChangeNotifier", () => {
-  it("always publishes the board change signal", async () => {
-    const { changes, notify, enqueue } = notifier();
-    await changes(base);
-    expect(notify).toHaveBeenCalledWith("space-1", {
-      boardId: "board-1",
-      ticketId: "ticket-1",
+describe("ticket changes", () => {
+  it("does nothing when disabled, including creation and assignment", async () => {
+    const s = setup(false);
+    await s.changes(change);
+    expect(s.notify).not.toHaveBeenCalled();
+    expect(s.transaction).not.toHaveBeenCalled();
+    expect(s.enqueue).not.toHaveBeenCalled();
+  });
+  it("wakes an assigned bot once using a hidden run", async () => {
+    const s = setup(true);
+    await s.changes(change);
+    expect(s.createRun).toHaveBeenCalledTimes(1);
+    expect(s.createRun).toHaveBeenCalledWith({
+      data: expect.objectContaining({ trigger: "tickets", status: "queued" }),
     });
-    expect(enqueue).toHaveBeenCalledTimes(1);
-  });
-
-  it("wakes the new owner when a human or another bot assigns the ticket", async () => {
-    const { changes, enqueue } = notifier();
-    await changes({ ...base, actorBotId: "bot-1" });
-    expect(enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "tickets.check", payload: { botId: "bot-2" } }),
+    expect(s.enqueue).toHaveBeenCalledTimes(1);
+    expect(s.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "run.continue", payload: { runId: "run-1" } }),
     );
+    expect(s.notify).toHaveBeenCalledWith("space-1", { boardId: "board-1", ticketId: "ticket-1" });
   });
-
-  it("does not wake a bot that assigned the ticket to itself", async () => {
-    const { changes, enqueue } = notifier();
-    await changes({ ...base, actorBotId: "bot-2" });
-    expect(enqueue).not.toHaveBeenCalled();
+  it("only publishes changes for comments or status edits", async () => {
+    const s = setup(true);
+    await s.changes({ ...change, wakeAssignee: false });
+    expect(s.notify).toHaveBeenCalledTimes(1);
+    expect(s.transaction).not.toHaveBeenCalled();
+    expect(s.enqueue).not.toHaveBeenCalled();
   });
-
-  it("does not wake anyone for a plain update", async () => {
-    const { changes, enqueue } = notifier();
-    await changes({ ...base, wakeAssignee: false });
-    expect(enqueue).not.toHaveBeenCalled();
+  it("does not wake an unassigned ticket", async () => {
+    const s = setup(true);
+    await s.changes({ ...change, assigneeBotId: null });
+    expect(s.transaction).not.toHaveBeenCalled();
   });
 });

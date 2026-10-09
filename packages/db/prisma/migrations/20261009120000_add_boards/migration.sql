@@ -22,7 +22,6 @@ CREATE TABLE "tickets" (
     "status" TEXT NOT NULL DEFAULT 'todo',
     "priority" TEXT,
     "assigneeBotId" TEXT,
-    "assigneeUserId" TEXT,
     "createdByBotId" TEXT,
     "createdByUserId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -72,9 +71,6 @@ ALTER TABLE "tickets" ADD CONSTRAINT "tickets_spaceId_fkey" FOREIGN KEY ("spaceI
 
 -- AddForeignKey
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_assigneeBotId_fkey" FOREIGN KEY ("assigneeBotId") REFERENCES "bots"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "tickets" ADD CONSTRAINT "tickets_assigneeUserId_fkey" FOREIGN KEY ("assigneeUserId") REFERENCES "user"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "tickets" ADD CONSTRAINT "tickets_createdByBotId_fkey" FOREIGN KEY ("createdByBotId") REFERENCES "bots"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -3835,7 +3835,7 @@ describe("boards.rename", () => {
       },
       ticket: { count },
     } as unknown as PrismaClient;
-    const deps = { prisma } as unknown as RouterDeps;
+    const deps = { prisma, env: { ticketBoardEnabled: true } } as unknown as RouterDeps;
     return { count, update, handler: new RPCHandler(createRouter(deps)) };
   }
 
@@ -3895,120 +3895,13 @@ describe("boards.rename", () => {
   });
 });
 
-describe("tickets.move", () => {
+describe("export.bot", () => {
   const actor = {
     spaceId: "workspace-1",
     userId: "user-1",
     email: "user@rakazo.test",
     isDeploymentOwner: true,
   } satisfies Actor;
-
-  const board = {
-    id: "board-1",
-    spaceId: "workspace-1",
-    name: "Personal",
-    ticketPrefix: "RAK",
-    nextNumber: 4,
-    createdAt: new Date("2026-06-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-06-01T00:00:00.000Z"),
-  };
-
-  function ticketRow(criteria: { text: string; done: boolean }[]) {
-    return {
-      id: "ticket-1",
-      boardId: "board-1",
-      spaceId: "workspace-1",
-      number: 3,
-      title: "Ship it",
-      description: null,
-      acceptanceCriteria: criteria,
-      status: "doing",
-      statusChangedAt: new Date("2026-06-02T00:00:00.000Z"),
-      priority: "normal",
-      assigneeBotId: "bot-1",
-      assigneeUserId: null,
-      createdByBotId: null,
-      createdByUserId: "user-1",
-      createdAt: new Date("2026-06-02T00:00:00.000Z"),
-      updatedAt: new Date("2026-06-02T00:00:00.000Z"),
-      completedAt: null,
-    };
-  }
-
-  // The row read before the transaction is stale; the row read under the lock is
-  // the current one, as if a person unchecked a criterion in between.
-  function moveDeps(stale: ReturnType<typeof ticketRow>, current: ReturnType<typeof ticketRow>) {
-    const lock = vi.fn(async () => []);
-    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-      ...current,
-      ...data,
-    }));
-    const tx = {
-      $queryRaw: lock,
-      ticket: { findFirst: vi.fn(async () => current), update },
-      ticketEvent: { createMany: vi.fn(async () => ({ count: 1 })) },
-      ticketComment: { create: vi.fn(async () => ({})) },
-    };
-    const prisma = {
-      board: { findUnique: vi.fn(async () => board) },
-      ticket: { findFirst: vi.fn(async () => stale) },
-      $transaction: vi.fn(async (cb: (client: typeof tx) => Promise<unknown>) => cb(tx)),
-    } as unknown as PrismaClient;
-    const ticketChanges = vi.fn(async () => undefined);
-    const deps = { prisma, ticketChanges } as unknown as RouterDeps;
-    return { lock, update, ticketChanges, handler: new RPCHandler(createRouter(deps)) };
-  }
-
-  async function move(handler: RPCHandler<never>, body: unknown) {
-    const { response } = await handler.handle(
-      new Request("http://127.0.0.1/rpc/tickets/move", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: body }),
-      }),
-      { prefix: "/rpc", context: { actor } },
-    );
-    return response;
-  }
-
-  it("gates on the checklist it read under the row lock", async () => {
-    const { lock, update, handler } = moveDeps(
-      ticketRow([
-        { text: "Deployed", done: true },
-        { text: "Documented", done: true },
-      ]),
-      ticketRow([
-        { text: "Deployed", done: true },
-        { text: "Documented", done: false },
-      ]),
-    );
-    const response = await move(handler, { id: "ticket-1", status: "done" });
-    expect(response?.status).toBe(400);
-    await expect(response?.json()).resolves.toEqual({
-      json: expect.objectContaining({
-        code: "BAD_REQUEST",
-        message:
-          "1 acceptance criterion is not checked yet. Check them off, or give a reason to override.",
-      }),
-    });
-    expect(lock).toHaveBeenCalledTimes(1);
-    expect(update).not.toHaveBeenCalled();
-  });
-
-  it("moves the ticket when the locked checklist is complete", async () => {
-    const complete = ticketRow([
-      { text: "Deployed", done: true },
-      { text: "Documented", done: true },
-    ]);
-    const { update, handler } = moveDeps(complete, complete);
-    const response = await move(handler, { id: "ticket-1", status: "done" });
-    expect(response?.status).toBe(200);
-    expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "ticket-1" } }));
-  });
-});
-
-describe("export.bot", () => {
-  const actor = { spaceId: "workspace-1", userId: "user-1", email: "user@rakazo.test", isDeploymentOwner: true } satisfies Actor;
   const roots: string[] = [];
 
   afterEach(async () => {

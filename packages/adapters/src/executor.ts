@@ -51,8 +51,8 @@ import {
   isAttachmentImageMimeType,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
+import type { ActionApprovalRule, ToolCallStreak } from "@rakazo/core";
 import {
-  type ActionApprovalRule,
   appendTextSegment,
   appendToolCallSegment,
   applyJudgeDecision,
@@ -86,7 +86,6 @@ import {
   renderBotDirectory,
   resolveActionApprovalDetail,
   sandboxCommandTimeoutMs,
-  type ToolCallStreak,
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   truncatedPlainText,
@@ -100,6 +99,7 @@ import {
   stableJsonValue,
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
+import type { McpServer, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createSpaceForMember,
@@ -110,16 +110,12 @@ import {
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
-  type McpServer,
-  type Prisma,
-  type PrismaClient,
   parseComputerMode,
   readHistory,
   recordUsage,
   retireModelCredential,
   SpaceLimitError,
   searchHistory,
-  type ThreadEvents,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { parse as parseShellCommand } from "shell-quote";
@@ -196,23 +192,24 @@ import {
 } from "./browser-tools.js";
 import { agentConnectionTools, builtinAgentTools, sharedMemorySaveError } from "./builtin-tools.js";
 import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
-import { type CloudAgentConnection, cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import type { CloudAgentConnection } from "./cloud-agent-factory.js";
+import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
 import { validCloudAgentArgs } from "./cloud-agent-tools.js";
 import { selectCloudAgentTools } from "./cloud-agent-tools-select.js";
 import { cloudflareGatewayProviderEnv } from "./cloudflare-ai-gateway.js";
+import type { PluginConnectionRow } from "./composio-connector.js";
 import {
   collectLogIds,
   mergeConnectedPlugins,
   needsLivePluginSync,
-  type PluginConnectionRow,
   planLiveConnectionSync,
 } from "./composio-connector.js";
 import { BACKGROUND_WORK_LAUNCH, scheduleComputerSleep } from "./computer-idle.js";
+import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
   acquireComputerExecutionLease,
   ComputerBusyError,
-  type ComputerExecutionLease,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
   releaseComputerExecutionLease,
@@ -295,10 +292,10 @@ import {
   serializeModelSecret,
   withModelCredentialLock,
 } from "./pi-oauth.js";
+import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
   PLOT_TOOL_GUIDE,
-  type PlotSpec,
   parsePlotData,
   plotSvgToPng,
   renderPlotSpecToSvg,
@@ -349,12 +346,12 @@ import {
   skillReadFromTool,
   skillUpdateFromTool,
 } from "./skill-tools.js";
+import type { TakeoverResumeCheckpoint } from "./takeover-resume.js";
 import {
   continueRunClaimFence,
   DESKTOP_HELD_FOR_TAKEOVER_MESSAGE,
   refreshTakeoverContinuePlan,
   TAKEOVER_RESUME_CHECKPOINTS,
-  type TakeoverResumeCheckpoint,
   takeoverCheckpointOf,
   takeoverContinuePlan,
 } from "./takeover-resume.js";
@@ -368,14 +365,10 @@ import {
 import type { TicketChangeNotifier } from "./ticket-changes.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
 import {
-  assignTicket,
-  closeTicket,
   commentTicket,
   createTicket,
   getTicket,
   listBoardTickets,
-  moveTicket,
-  setTicketCriterion,
   updateTicket,
 } from "./ticket-tools.js";
 import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
@@ -2663,6 +2656,7 @@ export interface ExecutorDeps {
   jobs: JobPublisher;
   /** Publishes board-change signals and wakes ticket owners; absent disables both. */
   onTicketChange?: TicketChangeNotifier;
+  ticketBoardEnabled?: boolean;
   /** Messaging surface; absent means zero identity queries and no chat prompts. */
   messaging?: { hasIdentity(botId: string): Promise<boolean> };
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
@@ -3606,7 +3600,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 spaceId: run.spaceId,
                 botId: bot.id,
               }),
-          messagingChannelRun
+          messagingChannelRun || !deps.ticketBoardEnabled
             ? Promise.resolve(undefined)
             : loadAgentTicketContext(deps, {
                 spaceId: run.spaceId,
@@ -3825,6 +3819,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const disabledBuiltinTools = disabledBuiltinToolSet(bot.disabledBuiltinTools);
         const builtins = [
           ...selectBuiltinToolsForRun({
+            ticketBoardEnabled: deps.ticketBoardEnabled,
             historyRetrievalEnabled: contextStrategy !== "current",
             graphicalToolsAllowed,
             pageBrowserAllowed,
@@ -3837,7 +3832,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             disabledBuiltinTools: bot.disabledBuiltinTools,
           }),
           // Cross-owner agent connections only exist for chat-linked bots.
-          ...(hasMessagingIdentity
+          ...(hasMessagingIdentity && !isBackgroundRunTrigger(run.trigger)
             ? agentConnectionTools.filter((tool) => !disabledBuiltinTools.has(tool.name))
             : []),
         ];
@@ -5308,15 +5303,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             });
             return finish(removed);
           }
-          if (name.startsWith("ticket_") && typeof args.id === "string" && args.id) {
-            // Remember which ticket the bot is on so the board spins only that card.
-            await deps.prisma.run
-              .updateMany({
-                where: { id: run.id, spaceId: run.spaceId },
-                data: { currentTicketId: args.id },
-              })
-              .catch(() => undefined);
-          }
           if (name === "board_tickets") {
             return finish(
               await listBoardTickets(deps, {
@@ -5343,31 +5329,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
                 title: String(args.title ?? ""),
                 description: args.description !== undefined ? String(args.description) : undefined,
-                acceptanceCriteria: args.acceptanceCriteria,
                 priority: args.priority !== undefined ? String(args.priority) : undefined,
                 ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
-              }),
-            );
-          }
-          if (name === "ticket_move") {
-            return finish(
-              await moveTicket(deps, {
-                spaceId: run.spaceId,
-                botId: bot.id,
-                id: String(args.id ?? ""),
-                status: String(args.status ?? ""),
-                reason: args.reason !== undefined ? String(args.reason) : undefined,
-              }),
-            );
-          }
-          if (name === "ticket_close") {
-            return finish(
-              await closeTicket(deps, {
-                spaceId: run.spaceId,
-                botId: bot.id,
-                userId: run.userId,
-                id: String(args.id ?? ""),
-                comment: args.comment !== undefined ? String(args.comment) : undefined,
               }),
             );
           }
@@ -5379,19 +5342,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 id: String(args.id ?? ""),
                 title: args.title !== undefined ? String(args.title) : undefined,
                 description: args.description !== undefined ? String(args.description) : undefined,
-                acceptanceCriteria: args.acceptanceCriteria,
                 priority: args.priority !== undefined ? String(args.priority) : undefined,
-              }),
-            );
-          }
-          if (name === "ticket_criterion") {
-            return finish(
-              await setTicketCriterion(deps, {
-                spaceId: run.spaceId,
-                botId: bot.id,
-                id: String(args.id ?? ""),
-                index: Number(args.index),
-                done: args.done !== false,
+                status: args.status !== undefined ? String(args.status) : undefined,
+                ownerBotId: args.ownerBotId !== undefined ? String(args.ownerBotId) : undefined,
               }),
             );
           }
@@ -5403,16 +5356,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 userId: run.userId,
                 id: String(args.id ?? ""),
                 body: String(args.body ?? ""),
-              }),
-            );
-          }
-          if (name === "ticket_assign") {
-            return finish(
-              await assignTicket(deps, {
-                spaceId: run.spaceId,
-                botId: bot.id,
-                id: String(args.id ?? ""),
-                ownerBotId: String(args.ownerBotId ?? ""),
               }),
             );
           }
@@ -7505,6 +7448,7 @@ function computerRetryDelay(fence: number): number {
 }
 
 export function selectBuiltinToolsForRun(options: {
+  ticketBoardEnabled?: boolean;
   historyRetrievalEnabled?: boolean;
   graphicalToolsAllowed: boolean;
   /** Page browser tools need a graphical computer (Chrome), not model vision. */
@@ -7538,6 +7482,10 @@ export function selectBuiltinToolsForRun(options: {
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
+      (options.ticketBoardEnabled ||
+        (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
+      (!isBackgroundRunTrigger(options.trigger) ||
+        !["message_user", "message_bot", "handoff_to_bot", "message_agent"].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&
@@ -7955,7 +7903,7 @@ export function runPromotesMidTurnNarration(trigger: string): boolean {
 }
 
 export const TICKET_SILENT_REPLY_GUIDANCE =
-  "Ticket work is reported on the board, not in chat. Put updates and results in ticket_comment and keep the ticket status current with ticket_move or ticket_close. Use message_user only when a decision or input from the user is genuinely needed. Leave the final reply empty.";
+  "Ticket work is reported on the board, not in chat. Put updates and results in ticket_comment and keep the ticket status current with ticket_update. Use the existing ask or approval mechanism when user input is needed. Leave the final reply empty.";
 
 export function runReplyGuidance(trigger: string): string {
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
@@ -8243,8 +8191,6 @@ async function persistMessageInTransaction(
       role,
       blocks,
       callId: callIdFromClientNonce(clientNonce),
-      // Marks an explicit message_user beat so background-run filtering can forward it.
-      ...(isUserProgressClientNonce(clientNonce) ? { userProgress: true } : {}),
     },
   });
   return { message, eventSeq: event.seq };
