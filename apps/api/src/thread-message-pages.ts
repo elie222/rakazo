@@ -116,7 +116,6 @@ async function withoutPeerRunMessages<
   T extends {
     runId: string | null;
     blocks: Prisma.JsonValue;
-    clientNonce?: string | null;
   },
 >(prisma: MessageDb, rows: T[]): Promise<T[]> {
   const runIds = [...new Set(rows.flatMap((row) => (row.runId ? [row.runId] : [])))];

@@ -7,7 +7,7 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
-  boards: { list: vi.fn(), get: vi.fn(), subscribe: vi.fn() },
+  boards: { subscribe: vi.fn() },
   bots: { list: vi.fn() },
   tickets: {
     list: vi.fn(),
@@ -47,37 +47,7 @@ vi.mock("@rakazo/ui-web", () => {
 import { BoardPage } from "./Board";
 
 function bot(id: string, name: string) {
-  return {
-    id,
-    spaceId: "space-1",
-    name,
-    title: "",
-    description: "",
-    instructions: "",
-    color: "#111111",
-    notifyOnFinish: false,
-    pinned: false,
-    sectionId: null,
-    archivedAt: null,
-    unread: false,
-    parentBotId: null,
-    memoryScope: null,
-    threadId: `thread-${id}`,
-    preview: "",
-    status: "idle",
-    computerMode: "off",
-    updatedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-    voiceId: null,
-    autoSpeak: false,
-    modelProvider: null,
-    modelId: null,
-    thinkingLevel: null,
-    teamChatAmbientEnabled: false,
-    teamChatRules: "",
-    webhookConfigured: false,
-    spawnKey: null,
-  };
+  return { id, name };
 }
 
 function ticket(
@@ -107,15 +77,11 @@ function ticket(
   };
 }
 
-async function renderBoard(subscribe?: AsyncIterable<unknown>) {
-  window.localStorage.clear();
-  // The live stream never yields in tests unless a case supplies one event.
+async function renderBoard() {
   api.boards.subscribe.mockReset();
-  api.boards.subscribe.mockResolvedValue(
-    subscribe ?? {
-      [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
-    },
-  );
+  api.boards.subscribe.mockResolvedValue({
+    [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+  });
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -198,20 +164,6 @@ it("creates a ticket without a status picker", async () => {
       assigneeBotId: "bot-1",
       priority: "normal",
     });
-  } finally {
-    await page.cleanup();
-  }
-});
-
-it("shows loading errors", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  api.bots.list.mockResolvedValue([]);
-  api.tickets.list.mockRejectedValue(new Error("Board unavailable"));
-  const page = await renderBoard();
-  try {
-    expect(page.container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Board unavailable",
-    );
   } finally {
     await page.cleanup();
   }

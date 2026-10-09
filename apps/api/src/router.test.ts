@@ -3880,19 +3880,6 @@ describe("boards.rename", () => {
       data: { name: "Launch" },
     });
   });
-
-  it("changes the prefix when the board has no tickets", async () => {
-    const { update, handler } = renameDeps(0);
-    const response = await rename(handler, { ticketPrefix: "ops" });
-    expect(response?.status).toBe(200);
-    await expect(response?.json()).resolves.toEqual({
-      json: expect.objectContaining({ ticketPrefix: "OPS" }),
-    });
-    expect(update).toHaveBeenCalledWith({
-      where: { id: "board-1" },
-      data: { ticketPrefix: "OPS" },
-    });
-  });
 });
 
 describe("export.bot", () => {

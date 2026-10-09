@@ -70,10 +70,6 @@ function truncateDescription(value: string | null | undefined) {
   return `${value.slice(0, LIST_DESCRIPTION_CHARS - 1)}…`;
 }
 
-/**
- * List one page of the space's tickets, newest first, with a cursor for the next
- * page. Each ticket carries its own `updatedAt`, so callers can sort by recency.
- */
 export async function listBoardTickets(
   deps: TicketToolDeps,
   input: {
@@ -104,8 +100,6 @@ export async function listBoardTickets(
       // Closed tickets are history; they only show up when asked for by status.
       ...(status ? { status } : { status: { not: "closed" } }),
       ...(input.assigneeBotId ? { assigneeBotId: input.assigneeBotId } : {}),
-      // A stable order: an edit changes `updatedAt`, not the page key, so no
-      // ticket can slip past the cursor of a scan that is already in flight.
       ...(pageCursor
         ? {
             OR: [
@@ -190,7 +184,7 @@ export async function createTicket(
     boardId: board.id,
     ticketId: row.id,
     assigneeBotId: row.assigneeBotId,
-    wakeAssignee: true,
+    wakeAssignee: row.assigneeBotId !== input.botId,
   });
   return { ticket: toTicketDto(row, board.ticketPrefix) };
 }
@@ -249,7 +243,7 @@ export async function updateTicket(
     boardId: board.id,
     ticketId: result.row.id,
     assigneeBotId: result.row.assigneeBotId,
-    wakeAssignee: result.reassigned,
+    wakeAssignee: result.reassigned && result.row.assigneeBotId !== input.botId,
   });
   return { ticket: toTicketDto(result.row, board.ticketPrefix) };
 }

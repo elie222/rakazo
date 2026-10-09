@@ -1,12 +1,6 @@
 import * as z from "zod";
 import { Id, IsoDate, RunStatus } from "./ids.js";
 
-/**
- * The single source of truth for run triggers. Schemas, adapters, and clients
- * must derive their lists from here so a new trigger cannot be added in one
- * place and rejected in another (Phase 9: `tickets` was missing from the output
- * schemas, which made `/rpc/*` fail output validation during ticket runs).
- */
 export const RUN_TRIGGERS = [
   "user",
   "routine",

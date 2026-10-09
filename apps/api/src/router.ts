@@ -159,7 +159,7 @@ import {
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
 } from "@rakazo/core";
-import type { BoardEvents, BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   BotSectionNameConflictError,
@@ -177,15 +177,19 @@ import {
   defaultModelCredentialCandidates,
   deleteEmptySpaceForMember,
   deleteUnreferencedCredentialSecret,
+  ensureBoard,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findModelCredential,
   findSpaceMemoryConfig,
+  findTicket,
   formatMessagingLinkCode,
   InvalidSpaceNameError,
   IsolationError,
   issueMessagingLinkCode,
+  listBoards,
   listSpaceBackupModels,
+  listTicketComments,
   lockOwnedGroup,
   newestModelCredentialOrder,
   newestVoiceCredentialOrder,
@@ -204,6 +208,9 @@ import {
   SpaceNotFoundError,
   selectSpaceModelPreference,
   selectSpaceVoicePreference,
+  toBoardDto,
+  toTicketCommentDto,
+  toTicketDto,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -221,15 +228,6 @@ import {
   listSpaceArtifacts,
 } from "./artifacts.js";
 import type { BillingService } from "./billing.js";
-import {
-  ensureBoard,
-  findTicket,
-  listBoards,
-  listTicketComments,
-  toBoardDto,
-  toTicketCommentDto,
-  toTicketDto,
-} from "./board.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,

@@ -13,11 +13,11 @@ export function isTicketCompletedStatus(status: TicketStatus): boolean {
 export const TICKET_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 export const TicketPrioritySchema = z.enum(TICKET_PRIORITIES);
 export type TicketPriority = z.infer<typeof TicketPrioritySchema>;
-export const DEFAULT_TICKET_PRIORITY: TicketPriority = "normal";
+const DEFAULT_TICKET_PRIORITY: TicketPriority = "normal";
 
 export const TICKET_TITLE_MAX_LENGTH = 200;
 export const TICKET_DESCRIPTION_MAX_LENGTH = 20_000;
-export const TICKET_PREFIX_MAX_LENGTH = 12;
+const TICKET_PREFIX_MAX_LENGTH = 12;
 export const TICKET_COMMENT_MAX_LENGTH = 10_000;
 
 const TicketPrefixSchema = z
@@ -47,15 +47,6 @@ export function parseTicketRef(
   const prefix = rawPrefix.toUpperCase();
   if (expectedPrefix !== undefined && prefix !== expectedPrefix.trim().toUpperCase()) return null;
   return { prefix, number: Number(rawNumber) };
-}
-
-/**
- * `board.nextNumber` holds the number the next ticket should get. A race-safe
- * allocation atomically increments it and returns the post-increment value, so
- * the reserved number is one less than what the database returned.
- */
-export function reservedTicketNumber(incrementedNextNumber: number): number {
-  return incrementedNextNumber - 1;
 }
 
 export const BoardSchema = z.object({

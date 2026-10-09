@@ -1,75 +1,31 @@
 import type { Board, Ticket, TicketComment, TicketPriority, TicketStatus } from "@rakazo/contracts";
 import {
   parseTicketRef,
-  reservedTicketNumber,
   TicketPrioritySchema,
   TicketStatusSchema,
   ticketRef,
 } from "@rakazo/contracts";
-import type { Prisma, PrismaClient } from "./client.js";
+import type {
+  Board as BoardRow,
+  Prisma,
+  PrismaClient,
+  TicketComment as TicketCommentRow,
+  Ticket as TicketRow,
+} from "./client.js";
 
-export type BoardRow = {
-  id: string;
-  spaceId: string;
-  name: string;
-  ticketPrefix: string;
-  nextNumber: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type TicketRow = {
-  id: string;
-  boardId: string;
-  spaceId: string;
-  number: number;
-  title: string;
-  description: string | null;
-  status: string;
-  priority: string | null;
-  assigneeBotId: string | null;
-  createdByBotId: string | null;
-  createdByUserId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  completedAt: Date | null;
-};
-
-export type TicketCommentRow = {
-  id: string;
-  ticketId: string;
-  body: string;
-  authorBotId: string | null;
-  authorUserId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-/** New boards inherit the space name; this placeholder is replaced on first touch. */
-const BOARD_PLACEHOLDER_NAME = "Board";
-
-/**
- * Every space has exactly one board; create it on first touch. A board still
- * carrying the placeholder name adopts the space name, so existing live boards
- * pick up the change without a migration.
- */
+/** skipDuplicates tolerates concurrent first opens without aborting their transactions. */
 export async function ensureBoard(prisma: PrismaClient, spaceId: string): Promise<BoardRow> {
   const existing = await prisma.board.findUnique({ where: { spaceId } });
-  if (existing && existing.name !== BOARD_PLACEHOLDER_NAME) return existing;
+  if (existing) return existing;
   const space = await prisma.space.findUnique({
     where: { id: spaceId },
     select: { name: true },
   });
-  const name = space?.name.trim() || BOARD_PLACEHOLDER_NAME;
+  const name = space?.name.trim() || "Board";
   await prisma.board.createMany({ data: [{ spaceId, name }], skipDuplicates: true });
-  const board = await prisma.board.findUniqueOrThrow({ where: { spaceId } });
-  if (board.name === BOARD_PLACEHOLDER_NAME && board.name !== name) {
-    return prisma.board.update({ where: { id: board.id }, data: { name } });
-  }
-  return board;
+  return prisma.board.findUniqueOrThrow({ where: { spaceId } });
 }
 
-/** All boards in a space, oldest first. */
 export async function listBoards(prisma: PrismaClient, spaceId: string): Promise<BoardRow[]> {
   return prisma.board.findMany({
     where: { spaceId },
@@ -91,10 +47,9 @@ export async function allocateTicketNumber(
     data: { nextNumber: { increment: 1 } },
     select: { nextNumber: true },
   });
-  return reservedTicketNumber(incremented.nextNumber);
+  return incremented.nextNumber - 1;
 }
 
-/** Find a ticket in a board by database id or by human reference such as `RAK-42`. */
 export async function findTicket(
   prisma: PrismaClient,
   spaceId: string,
@@ -113,7 +68,6 @@ export async function findTicket(
   });
 }
 
-/** Map a board row to its API shape, with ISO timestamps. */
 export function toBoardDto(row: BoardRow): Board {
   return {
     id: row.id,
@@ -137,10 +91,6 @@ export function coerceTicketPriority(value: string | null | undefined): TicketPr
   return parsed.success ? parsed.data : "normal";
 }
 
-/**
- * Map a ticket row to its API shape: the human reference, the coerced status and
- * priority, and ISO timestamps.
- */
 export function toTicketDto(row: TicketRow, ticketPrefix: string): Ticket {
   return {
     id: row.id,
@@ -161,7 +111,6 @@ export function toTicketDto(row: TicketRow, ticketPrefix: string): Ticket {
   };
 }
 
-/** Comments for a ticket, oldest first, scoped to the space. */
 export async function listTicketComments(
   prisma: Pick<PrismaClient, "ticketComment">,
   spaceId: string,
@@ -173,7 +122,6 @@ export async function listTicketComments(
   });
 }
 
-/** Map a comment row to its API shape, with ISO timestamps. */
 export function toTicketCommentDto(row: TicketCommentRow): TicketComment {
   return {
     id: row.id,

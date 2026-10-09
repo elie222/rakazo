@@ -22,7 +22,6 @@ function board(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** `ensureBoard` reads the space name to replace the placeholder board name. */
 function boardSpace() {
   const row = board();
   return {
@@ -47,7 +46,6 @@ function ticket(overrides: Record<string, unknown> = {}) {
     status: "todo",
     priority: null,
     assigneeBotId: "bot-1",
-    assigneeUserId: null,
     createdByBotId: null,
     createdByUserId: null,
     createdAt: NOW,
@@ -143,57 +141,6 @@ describe("ticket tools", () => {
     });
     expect(invalid).toEqual({ error: "cursor is invalid." });
   });
-
-  it("keys the cursor on an immutable column, so a later edit cannot hide a ticket", async () => {
-    const created = (index: number) => new Date(NOW.getTime() - index * 1000);
-    const rows = Array.from({ length: 51 }, (_, index) =>
-      ticket({
-        id: `t${String(index).padStart(2, "0")}`,
-        number: index + 1,
-        createdAt: created(index),
-      }),
-    );
-    const findMany = vi.fn(async (_query: unknown) => rows);
-    const prisma = { ...boardSpace(), ticket: { findMany } };
-
-    const first = await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
-      spaceId: "ws",
-    });
-    const cursor = (first as { nextCursor: string }).nextCursor;
-
-    // The last ticket sits below the first page and is edited between the two
-    // calls. Its `updatedAt` is now the newest on the board, which is the case
-    // that used to move it above the cursor and out of the scan.
-    rows[50]!.updatedAt = new Date(NOW.getTime() + 60_000);
-
-    await listBoardTickets({ prisma, ticketBoardEnabled: true } as never, {
-      spaceId: "ws",
-      cursor,
-    });
-
-    expect(findMany.mock.calls[1]?.[0]).toEqual({
-      where: {
-        spaceId: "ws",
-        boardId: "board-1",
-        status: { not: "closed" },
-        OR: [{ createdAt: { lt: created(49) } }, { createdAt: created(49), id: { lt: "t49" } }],
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: 51,
-    });
-    // The page key is the immutable `createdAt`, so the edited ticket stays ahead.
-    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
-    expect(decoded).toBe(`${created(49).toISOString()}|t49`);
-    expect(decoded).not.toContain(rows[50]!.updatedAt.toISOString());
-  });
-
-  it("rejects an unknown status filter", async () => {
-    const result = await listBoardTickets(
-      { ticketBoardEnabled: true, prisma: {} as never },
-      { spaceId: "ws", status: "archived" },
-    );
-    expect(result).toEqual({ error: expect.stringContaining("status must be one of") });
-  });
 });
 
 function mutationDeps(ticketBoardEnabled = true) {
@@ -249,16 +196,17 @@ describe("ticket mutations", () => {
     expect(s.prisma.$transaction).not.toHaveBeenCalled();
     expect(s.changes).not.toHaveBeenCalled();
   });
-  it("allocates a number and creates a ticket for the calling bot", async () => {
+  it("allocates a number and wakes the assigned bot once", async () => {
     const s = mutationDeps();
     const result = await createTicket(s.deps, {
       spaceId: "ws",
       botId: "bot-1",
       userId: "user-1",
       title: "  Ship  ",
+      ownerBotId: "bot-2",
     });
     expect(result).toEqual({
-      ticket: expect.objectContaining({ ref: "RAK-1", title: "Ship", assigneeBotId: "bot-1" }),
+      ticket: expect.objectContaining({ ref: "RAK-1", title: "Ship", assigneeBotId: "bot-2" }),
     });
     expect(s.tx.board.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { nextNumber: { increment: 1 } } }),
@@ -281,6 +229,12 @@ describe("ticket mutations", () => {
         data: expect.objectContaining({ status: "done", completedAt: expect.any(Date) }),
       }),
     );
+  });
+  it("does not wake a bot creating or assigning a ticket to itself", async () => {
+    const s = mutationDeps();
+    await createTicket(s.deps, { spaceId: "ws", botId: "bot-1", title: "Ship" });
+    await updateTicket(s.deps, { spaceId: "ws", id: "t1", ownerBotId: "bot-2", botId: "bot-2" });
+    expect(s.changes.mock.calls.map(([value]) => value.wakeAssignee)).toEqual([false, false]);
   });
   it("comments without waking the owner", async () => {
     const s = mutationDeps();

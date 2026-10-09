@@ -3964,7 +3964,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const scripted = deps.runtime.describe().capabilities.scripted;
         const script = scripted ? inferScript(task.prompt, takeoverResume?.checkpoint) : undefined;
         const flushProgress = async () => {
-          if (scripted || !pendingProgress) return;
+          if (scripted || !pendingProgress || isBackgroundRunTrigger(run.trigger)) return;
           await deps.events.append({
             spaceId: run.spaceId,
             threadId: thread.id,
@@ -5683,7 +5683,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   true,
                   nonce,
                 );
-                markerId = marker.id;
+                markerId = marker?.id ?? "";
               } catch (error) {
                 if (!isUniqueViolation(error)) throw error;
                 existing = await findMarker();
@@ -6714,6 +6714,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             } else if (event.type === "progress") {
               toolCallStreak = { key: undefined, count: 0 };
+              if (isBackgroundRunTrigger(run.trigger)) continue;
               // Flush batched text deltas first so an activity line cannot land
               // ahead of text the model streamed before the tool call.
               if (pendingProgress) {
@@ -6881,7 +6882,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   leaseOwner: workerId,
                   leaseFence: fence,
                   outcome: "completed",
-                  blocks: [{ kind: "text", text: stuckText }],
+                  blocks: isBackgroundRunTrigger(run.trigger)
+                    ? []
+                    : [{ kind: "text", text: stuckText }],
                 });
                 if (!stopped) return;
                 if (stopped.continuationRunId) {
@@ -7067,7 +7070,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ? stripNoResponseReply(assembled, messageSegments)
             : { assembled, blocks: messageSegments };
           let completionBlocks = silentReply.blocks;
-          if (!silentReply.assembled) {
+          if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
             // Mid-turn progress already posted durable chat messages; skip the empty
             // "…" fallback so we do not add a junk final bubble. Delegated bot_message
             // runs still return via botMessageOutcomeFromMidTurn below (status when
@@ -7076,7 +7079,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             completionBlocks = completionMessageSegments(completionBlocks, {
               allowSilentEmpty: allowSilentEmptyRun || publishedMidTurnUserMessage,
               emptyResponseText,
-              suppressOutput: handedOff,
+              suppressOutput: handedOff || isBackgroundRunTrigger(run.trigger),
               skipEmptyFallback: publishedTerminalSubagent || publishedMidTurnUserMessage,
             });
           }
@@ -7402,10 +7405,14 @@ async function runNotice(
 
 async function notifyRun(
   deps: ExecutorDeps,
-  run: { spaceId: string; userId: string; botId: string; threadId: string },
+  run: { spaceId: string; userId: string; botId: string; threadId: string; trigger: string },
   message: NotificationMessage,
 ) {
-  if (!deps.notifications) return;
+  if (
+    !deps.notifications ||
+    (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
+  )
+    return;
   const notice = await runNotice(deps.prisma, run).catch((error) => {
     getLogger().error("notification preference lookup", error);
     return null;
@@ -8154,6 +8161,10 @@ async function publishMessage(
   markUnread: boolean | undefined = run.trigger === "bot_message" ? false : undefined,
   clientNonce?: string,
 ) {
+  if (isBackgroundRunTrigger(run.trigger)) {
+    blocks = blocks.filter((block) => block.kind === "ask" || block.kind === "computer");
+    if (blocks.length === 0) return null;
+  }
   const committed = await deps.prisma.$transaction((tx) =>
     persistMessageInTransaction(tx, run, role, blocks, markUnread, clientNonce),
   );

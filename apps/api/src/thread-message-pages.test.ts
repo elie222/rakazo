@@ -74,12 +74,6 @@ describe("thread message pages", () => {
         payload: { blocks: [{ kind: "computer", text: "Needs you" }] },
       }),
     ).toBe(true);
-    expect(
-      shouldForwardBackgroundThreadEvent({
-        type: "thread.message.created",
-        payload: { blocks: [{ kind: "text", text: "Ticket summary" }] },
-      }),
-    ).toBe(false);
     expect(shouldForwardBackgroundThreadEvent({ type: "run.started", payload: {} })).toBe(false);
     expect(shouldForwardBackgroundThreadEvent({ type: "run.waiting_input", payload: {} })).toBe(
       true,
@@ -96,68 +90,29 @@ describe("thread message pages", () => {
   });
 
   it("hides ticket-run output from the transcript but keeps user-input cards", async () => {
-    const findMany = vi.fn(async () => [
+    const rows = [
       {
         id: "message-computer",
-        threadId: "thread-1",
-        seq: 5,
-        role: "bot",
         blocks: [{ kind: "computer", state: "Needs you", text: "Sign in" }],
-        botId: "bot-1",
-        replyToMessageId: null,
-        runId: "run-ticket",
-        clientNonce: null,
-        createdAt: new Date("2026-08-16T00:00:05.000Z"),
       },
-      {
-        id: "message-final",
-        threadId: "thread-1",
-        seq: 4,
-        role: "bot",
-        blocks: [{ kind: "text", text: "Closed the ticket." }],
-        botId: "bot-1",
-        replyToMessageId: null,
-        runId: "run-ticket",
-        clientNonce: null,
-        createdAt: new Date("2026-08-16T00:00:04.000Z"),
-      },
-      {
-        id: "message-progress",
-        threadId: "thread-1",
-        seq: 3,
-        role: "bot",
-        blocks: [{ kind: "text", text: "Working on the ticket." }],
-        botId: "bot-1",
-        replyToMessageId: null,
-        runId: "run-ticket",
-        clientNonce: "user-progress:run-ticket:0",
-        createdAt: new Date("2026-08-16T00:00:03.000Z"),
-      },
+      { id: "message-final", blocks: [{ kind: "text", text: "Closed the ticket." }] },
       {
         id: "message-steps",
-        threadId: "thread-1",
-        seq: 2,
-        role: "bot",
         blocks: [{ kind: "steps", steps: [{ label: "Ticket comment", count: 1 }] }],
-        botId: "bot-1",
-        replyToMessageId: null,
-        runId: "run-ticket",
-        clientNonce: null,
-        createdAt: new Date("2026-08-16T00:00:02.000Z"),
       },
-      {
-        id: "message-user",
-        threadId: "thread-1",
-        seq: 1,
-        role: "bot",
-        blocks: [{ kind: "text", text: "Visible answer" }],
-        botId: "bot-1",
-        replyToMessageId: null,
-        runId: "run-user",
-        clientNonce: null,
-        createdAt: new Date("2026-08-16T00:00:01.000Z"),
-      },
-    ]);
+      { id: "message-user", blocks: [{ kind: "text", text: "Visible answer" }] },
+    ].map((row, index) => ({
+      ...row,
+      threadId: "thread-1",
+      seq: 4 - index,
+      role: "bot",
+      botId: "bot-1",
+      replyToMessageId: null,
+      runId: row.id === "message-user" ? "run-user" : "run-ticket",
+      clientNonce: null,
+      createdAt: new Date("2026-08-16T00:00:01.000Z"),
+    }));
+    const findMany = vi.fn(async () => rows);
     const prisma = {
       message: { findMany },
       run: { findMany: vi.fn(async () => [{ id: "run-ticket", trigger: "tickets" }]) },

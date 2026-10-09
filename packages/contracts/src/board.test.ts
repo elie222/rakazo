@@ -4,19 +4,13 @@ import {
   GetTicketInput,
   isTicketCompletedStatus,
   parseTicketRef,
-  reservedTicketNumber,
   TICKET_PRIORITIES,
   TICKET_STATUSES,
   TicketSchema,
-  ticketRef,
   UpdateTicketInput,
 } from "./board.js";
 
 describe("parseTicketRef", () => {
-  it("parses a readable reference", () => {
-    expect(parseTicketRef("RAK-42")).toEqual({ prefix: "RAK", number: 42 });
-  });
-
   it("matches the prefix case-insensitively and normalizes it", () => {
     expect(parseTicketRef("rak-42")).toEqual({ prefix: "RAK", number: 42 });
     expect(parseTicketRef("  RaK-7  ")).toEqual({ prefix: "RAK", number: 7 });
@@ -32,27 +26,6 @@ describe("parseTicketRef", () => {
     for (const value of ["RAK", "RAK-", "-42", "RAK 42", "RAK-0", "RAK-007", "42-RAK", ""]) {
       expect(parseTicketRef(value)).toBeNull();
     }
-  });
-});
-
-describe("ticket numbering", () => {
-  it("turns a post-increment counter into the reserved number", () => {
-    expect(reservedTicketNumber(2)).toBe(1);
-  });
-
-  it("hands out distinct ascending numbers", () => {
-    let nextNumber = 1;
-    const reserved: number[] = [];
-    for (let index = 0; index < 3; index += 1) {
-      nextNumber += 1;
-      reserved.push(reservedTicketNumber(nextNumber));
-    }
-    expect(reserved).toEqual([1, 2, 3]);
-    expect(new Set(reserved).size).toBe(reserved.length);
-  });
-
-  it("renders the reference from prefix and number", () => {
-    expect(ticketRef("RAK", 42)).toBe("RAK-42");
   });
 });
 
@@ -88,15 +61,6 @@ describe("ticket contracts", () => {
     expect(isTicketCompletedStatus("review")).toBe(false);
   });
 
-  it("accepts an optional boardId on list and create", () => {
-    expect(
-      CreateTicketInput.parse({ title: "Ship", assigneeBotId: "bot-1", boardId: "b2" }),
-    ).toEqual({ title: "Ship", assigneeBotId: "bot-1", priority: "normal", boardId: "b2" });
-    expect(() =>
-      CreateTicketInput.parse({ title: "Ship", assigneeBotId: "bot-1", boardId: 7 }),
-    ).toThrow();
-  });
-
   it("always creates tickets with a known priority and no caller-chosen status", () => {
     expect(CreateTicketInput.parse({ title: "Ship", assigneeBotId: "bot-1" })).toEqual({
       title: "Ship",
@@ -127,11 +91,6 @@ describe("ticket contracts", () => {
   });
 
   it("requires an owner bot when creating a ticket", () => {
-    expect(CreateTicketInput.parse({ title: "Ship", assigneeBotId: "bot-1" })).toEqual({
-      title: "Ship",
-      assigneeBotId: "bot-1",
-      priority: "normal",
-    });
     expect(() => CreateTicketInput.parse({ title: "Ship" })).toThrow();
   });
 

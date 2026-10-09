@@ -374,91 +374,54 @@ describe("threadSnapshot", () => {
     );
   });
 
-  it("keeps a waiting ticket ask in the snapshot", async () => {
-    const waitingTicket = {
-      id: "run-ticket-waiting",
-      botId: "bot-1",
-      threadId: "thread-1",
-      taskId: "task-ticket",
-      status: "waiting_input",
-      trigger: "tickets",
-      modelProvider: null,
-      modelId: null,
-      error: null,
-      startedAt: new Date("2026-08-23T00:00:02.000Z"),
-      completedAt: null,
-      createdAt: new Date("2026-08-23T00:00:02.000Z"),
-    };
-    const snapshot = await threadSnapshot(
-      {
-        prisma: {
-          $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
-            callback({
-              $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
-              message: { findMany: vi.fn().mockResolvedValue([]) },
-              event: {
-                findFirst: vi.fn().mockResolvedValue(null),
-                findMany: vi.fn().mockResolvedValue([]),
-              },
-              run: { findFirst: botRunFindFirst([waitingTicket]) },
-            }),
-          ),
-        } as unknown as PrismaClient,
-      },
-      {
-        kind: "bot",
+  it.each(["waiting_input", "running"])(
+    "only exposes ticket runs waiting for input (%s)",
+    async (status) => {
+      const waitingTicket = {
+        id: "run-ticket-waiting",
         botId: "bot-1",
         threadId: "thread-1",
-        bot: { computer: null },
-      } as ThreadTarget,
-    );
+        taskId: "task-ticket",
+        status,
+        trigger: "tickets",
+        modelProvider: null,
+        modelId: null,
+        error: null,
+        startedAt: new Date("2026-08-23T00:00:02.000Z"),
+        completedAt: null,
+        createdAt: new Date("2026-08-23T00:00:02.000Z"),
+      };
+      const snapshot = await threadSnapshot(
+        {
+          prisma: {
+            $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
+              callback({
+                $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+                message: { findMany: vi.fn().mockResolvedValue([]) },
+                event: {
+                  findFirst: vi.fn().mockResolvedValue(null),
+                  findMany: vi.fn().mockResolvedValue([]),
+                },
+                run: { findFirst: botRunFindFirst([waitingTicket]) },
+              }),
+            ),
+          } as unknown as PrismaClient,
+        },
+        {
+          kind: "bot",
+          botId: "bot-1",
+          threadId: "thread-1",
+          bot: { computer: null },
+        } as ThreadTarget,
+      );
 
-    expect(snapshot.run).toEqual(
-      expect.objectContaining({ id: "run-ticket-waiting", status: "waiting_input" }),
-    );
-  });
-
-  it("omits a busy ticket run from the snapshot", async () => {
-    const busyTicket = {
-      id: "run-ticket-busy",
-      botId: "bot-1",
-      threadId: "thread-1",
-      taskId: "task-ticket",
-      status: "running",
-      trigger: "tickets",
-      modelProvider: null,
-      modelId: null,
-      error: null,
-      startedAt: new Date("2026-08-23T00:00:02.000Z"),
-      completedAt: null,
-      createdAt: new Date("2026-08-23T00:00:02.000Z"),
-    };
-    const snapshot = await threadSnapshot(
-      {
-        prisma: {
-          $transaction: vi.fn(async (callback: (client: unknown) => unknown) =>
-            callback({
-              $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
-              message: { findMany: vi.fn().mockResolvedValue([]) },
-              event: {
-                findFirst: vi.fn().mockResolvedValue(null),
-                findMany: vi.fn(),
-              },
-              run: { findFirst: botRunFindFirst([busyTicket]) },
-            }),
-          ),
-        } as unknown as PrismaClient,
-      },
-      {
-        kind: "bot",
-        botId: "bot-1",
-        threadId: "thread-1",
-        bot: { computer: null },
-      } as ThreadTarget,
-    );
-
-    expect(snapshot.run).toBeNull();
-  });
+      if (status === "waiting_input") {
+        expect(snapshot.run).toEqual(expect.objectContaining({ id: "run-ticket-waiting", status }));
+      } else {
+        expect(snapshot.run).toBeNull();
+      }
+    },
+  );
 
   it("drops a failed run once a newer run has finished", async () => {
     const failed = {
@@ -689,29 +652,6 @@ describe("threadSnapshot", () => {
 
     expect(snapshot.activeRuns).toEqual([
       expect.objectContaining({ id: "run-peer-waiting", status: "waiting_input" }),
-    ]);
-  });
-
-  it("includes a waiting ticket run in group activeRuns", async () => {
-    const ticketWaiting = {
-      id: "run-ticket-waiting",
-      botId: "bot-a",
-      threadId: "thread-1",
-      taskId: "task-ticket",
-      status: "waiting_input",
-      trigger: "tickets",
-      modelProvider: null,
-      modelId: null,
-      error: null,
-      startedAt: new Date("2026-08-23T00:00:05.000Z"),
-      completedAt: null,
-      createdAt: new Date("2026-08-23T00:00:05.000Z"),
-    };
-    const findManyRuns = groupRunFindMany({ active: [ticketWaiting] });
-    const snapshot = await threadSnapshot({ prisma: groupPrisma(findManyRuns) }, groupTarget());
-
-    expect(snapshot.activeRuns).toEqual([
-      expect.objectContaining({ id: "run-ticket-waiting", status: "waiting_input" }),
     ]);
   });
 

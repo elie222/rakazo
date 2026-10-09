@@ -196,8 +196,9 @@ describe("background ticket runs", () => {
   it("stay silent, drop mid-turn narration, and never mark unread or notify", () => {
     expect(runAllowsSilentEmpty("tickets")).toBe(true);
     expect(runPromotesMidTurnNarration("tickets")).toBe(false);
-    const segments = completionMessageSegments([], {
+    const segments = completionMessageSegments([{ kind: "text", text: "Closed the ticket." }], {
       allowSilentEmpty: runAllowsSilentEmpty("tickets"),
+      suppressOutput: true,
     });
     expect(segments).toEqual([]);
     expect(completionMarksUnread("tickets", "")).toBe(false);
