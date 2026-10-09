@@ -687,6 +687,24 @@ function resolveExecuteCwd(requestCwd: string | undefined, home: string) {
   return path.resolve(home, requestCwd);
 }
 
+/** Shell metacharacters in the program itself. Arguments are a separate array and may contain them. */
+const SHELL_SYNTAX = /[\r\n;&|`$<>"']/;
+/** Windows runs these through cmd.exe, which re-parses the argument vector. */
+const WINDOWS_SHELL_SCRIPT = /\.(?:bat|cmd|com)$/i;
+
+/**
+ * Argv for `spawn` with `shell: false`. The program is executed directly, so a value that
+ * would be syntax to a shell is refused instead of being joined into a command line.
+ */
+function directCommandArgv(argv: readonly string[]): string[] | undefined {
+  if (!Array.isArray(argv) || argv.length === 0) return undefined;
+  if (argv.some((arg) => typeof arg !== "string" || arg.includes("\0"))) return undefined;
+  const command = argv[0];
+  if (!command || SHELL_SYNTAX.test(command) || WINDOWS_SHELL_SCRIPT.test(command))
+    return undefined;
+  return [...argv];
+}
+
 async function* streamLocalCommand(
   argv: string[],
   cwd: string,
@@ -694,10 +712,17 @@ async function* streamLocalCommand(
   signal: AbortSignal,
   request: CommandRequest,
 ): AsyncIterable<ProcessEvent> {
-  const child = spawn(argv[0]!, argv.slice(1), {
+  const direct = directCommandArgv(argv);
+  if (!direct) {
+    yield { type: "stderr", data: "command rejected\n" };
+    yield { type: "exit", code: 1 };
+    return;
+  }
+  const child = spawn(direct[0]!, direct.slice(1), {
     cwd,
     env: sandboxCommandEnvironment(request, process.env),
     detached: process.platform !== "win32",
+    shell: false,
   });
   const queue: ProcessEvent[] = [];
   let ended = false;
@@ -787,7 +812,10 @@ async function* streamLocalCommand(
 function killProcessTree(pid: number | undefined) {
   if (!pid) return;
   if (process.platform === "win32") {
-    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" });
+    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+      shell: false,
+    });
     killer.unref();
     return;
   }

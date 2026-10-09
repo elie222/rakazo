@@ -7,6 +7,7 @@ import {
   commandEnvironment,
   createUpdaterApp,
   restoreCheckoutArgv,
+  runHostCommand,
   type UpdaterCommandRunner,
 } from "./index.js";
 import { resolveUpdaterConfig } from "./updater-logic.js";
@@ -476,5 +477,55 @@ describe("child process environment", () => {
       "deploy",
       currentCommit,
     ]);
+  });
+});
+
+describe("runHostCommand", () => {
+  it("passes shell syntax to git as one argument and refuses any other program", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "rakazo-host-command-"));
+    temporaryDirectories.push(dir);
+    const bin = path.join(dir, "bin");
+    await mkdir(bin);
+    const out = path.join(dir, "argv.json");
+    const git = path.join(bin, "git");
+    await writeFile(
+      git,
+      `#!${process.execPath}\nconst fs = require("node:fs");\nfs.writeFileSync(process.env.ARGV_OUT, JSON.stringify(process.argv.slice(2)));\n`,
+    );
+    await chmod(git, 0o755);
+    const payload = "a; touch pwned $(id)";
+    const result = await runHostCommand("git", ["status", payload], {
+      cwd: dir,
+      timeoutMs: 5_000,
+      env: { PATH: bin, ARGV_OUT: out },
+    });
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(await readFile(out, "utf8"))).toEqual(["status", payload]);
+
+    const marker = path.join(dir, "pwned");
+    const bash = path.join(bin, "bash");
+    await writeFile(
+      bash,
+      `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(marker)}, "ran");\n`,
+    );
+    await chmod(bash, 0o755);
+    const refused = await runHostCommand("bash", ["-c", payload], {
+      cwd: dir,
+      timeoutMs: 1_000,
+      env: { PATH: bin },
+    });
+    expect(refused).toEqual({
+      ok: false,
+      exitCode: null,
+      output: "Refusing to run an unexpected program.",
+    });
+    await expect(readFile(marker, "utf8")).rejects.toThrow();
+
+    const nul = await runHostCommand("docker", ["a\0b"], { cwd: dir, timeoutMs: 1_000 });
+    expect(nul).toEqual({
+      ok: false,
+      exitCode: null,
+      output: "Refusing to run an unexpected program.",
+    });
   });
 });

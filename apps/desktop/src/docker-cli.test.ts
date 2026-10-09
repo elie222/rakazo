@@ -210,4 +210,23 @@ describe("runDocker", () => {
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("ENOENT");
   });
+
+  it("passes shell syntax to the program as one argument", async () => {
+    const payload = "$(touch pwned); echo hi";
+    const result = await runDocker(
+      node,
+      ["-e", "process.stdout.write(process.argv[1] ?? '')", payload],
+      options,
+    );
+    expect(result).toEqual({ code: 0, stdout: payload, stderr: "" });
+  });
+
+  it("refuses a program path or argument that a shell would parse", async () => {
+    const injected = await runDocker(`${node}; touch pwned`, ["-e", "process.exit(0)"], options);
+    expect(injected).toEqual({ code: 1, stdout: "", stderr: "command rejected\n" });
+    const nul = await runDocker(node, ["a\0b"], options);
+    expect(nul).toEqual({ code: 1, stdout: "", stderr: "command rejected\n" });
+    const batch = await runDocker("C:\\Windows\\tool.cmd", ["/c", "echo hi"], options);
+    expect(batch).toEqual({ code: 1, stdout: "", stderr: "command rejected\n" });
+  });
 });
