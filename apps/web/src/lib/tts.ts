@@ -1,5 +1,6 @@
 import { readBoundedResponseBytes } from "@rakazo/core";
 import { rpc, selectedSpaceId, withSpaceHeaders } from "./rpc.js";
+import { errorText } from "./user-error.js";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
@@ -92,7 +93,7 @@ export class Speaker {
       );
     } catch (error) {
       if (live()) {
-        this.set({ ...IDLE, error: error instanceof Error ? error.message : String(error) });
+        this.set({ ...IDLE, error: errorText(error) });
       }
       if (this.request === controller) this.request = null;
       return;
@@ -120,8 +121,7 @@ export class Speaker {
         if (live()) {
           this.set({
             ...IDLE,
-            error:
-              rendered.error instanceof Error ? rendered.error.message : String(rendered.error),
+            error: errorText(rendered.error),
           });
         }
         if (this.request === controller) this.request = null;
@@ -180,7 +180,7 @@ export class Speaker {
       );
       if (!res.ok) {
         const body = await readVoiceError(res, deadline.signal);
-        throw new Error(body.error ?? `the voice service returned ${res.status}`);
+        throw new Error(body.error ?? "");
       }
       const bytes = await readResponseBytes(res, MAX_VOICE_AUDIO_BYTES, deadline.signal);
       return new Blob([new Uint8Array(bytes)], {

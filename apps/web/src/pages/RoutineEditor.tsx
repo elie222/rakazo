@@ -1,6 +1,6 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { Routine } from "@rakazo/contracts";
+import type { ModelCatalogEntry, ModelCredential, Routine } from "@rakazo/contracts";
 import {
   type CronFreq,
   type CronPreset,
@@ -20,10 +20,32 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
+  NativeSelect,
+  NativeSelectOption,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Textarea,
 } from "@rakazo/ui-web";
-import { ChevronLeft, Clock, GitBranch, Globe, MessageSquare, Pause, Plus, X } from "lucide-react";
-import { useId } from "react";
+import {
+  ChevronLeft,
+  Clock,
+  GitBranch,
+  Globe,
+  MessageSquare,
+  Pause,
+  Plus,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
+import { useEffect, useId, useState } from "react";
+import {
+  connectedModelOptions,
+  modelOptionKey,
+  parseModelOptionKey,
+  thinkingLevelLabel,
+} from "../lib/model-catalog";
+import { rpc } from "../lib/rpc";
 import { RoutineRunHistory } from "./RoutineRunHistory";
 import { RoutineSchedule } from "./RoutineSchedule";
 
@@ -69,6 +91,9 @@ export type RoutineDraftState = {
   messageProvider: string | null;
   active: boolean;
   runAtLocal: string;
+  /** Empty runs this routine on the bot's model. */
+  modelKey: string;
+  thinkingLevel: string;
 };
 
 export function emptyRoutineDraft(): RoutineDraftState {
@@ -81,6 +106,8 @@ export function emptyRoutineDraft(): RoutineDraftState {
     messageProvider: null,
     active: true,
     runAtLocal: "",
+    modelKey: "",
+    thinkingLevel: "",
   };
 }
 
@@ -94,6 +121,11 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
     messageProvider: routine.messageProvider,
     active: routine.active,
     runAtLocal: routineNeedsOneShotArm(routine, routine.crons) ? defaultArmRunAtLocal() : "",
+    modelKey:
+      routine.modelProvider && routine.modelId
+        ? modelOptionKey(routine.modelProvider, routine.modelId)
+        : "",
+    thinkingLevel: routine.thinkingLevel ?? "",
   };
 }
 
@@ -161,6 +193,7 @@ export function RoutineListRow({
           </span>
           <span className="block truncate text-[12.5px] text-muted-foreground/80">
             {routineTriggerSummary(routine)}
+            {routine.modelProvider && routine.modelId ? ` · ${routine.modelId}` : ""}
           </span>
         </span>
       </button>
@@ -214,6 +247,33 @@ export function RoutineEditor({
 }) {
   const { t } = useLingui();
   const fieldId = useId();
+  const [credentials, setCredentials] = useState<ModelCredential[]>([]);
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
+  useEffect(() => {
+    void Promise.all([rpc.models.credentials(), rpc.models.list()])
+      .then(([nextCredentials, nextCatalog]) => {
+        setCredentials(nextCredentials);
+        setCatalog(nextCatalog);
+      })
+      .catch(() => undefined);
+  }, []);
+  const modelOptions = connectedModelOptions(credentials, catalog);
+  const selectedModel = draft.modelKey ? parseModelOptionKey(draft.modelKey) : null;
+  const selectedEntry = selectedModel
+    ? catalog.find(
+        (entry) => entry.provider === selectedModel.provider && entry.id === selectedModel.modelId,
+      )
+    : undefined;
+  const selectedCredential = credentials.find(
+    (entry) =>
+      entry.provider === selectedModel?.provider && entry.modelId === selectedModel?.modelId,
+  );
+  const thinkingOptions = (
+    selectedCredential?.thinkingLevels ??
+    selectedEntry?.thinkingLevels ??
+    []
+  ).filter((level) => level !== "off");
+  const defaultThinkingLevel = selectedCredential?.thinkingLevel ?? "medium";
   const slackAvailable = messageProviders.includes("slack");
   const slackDisabledReasonId = `${fieldId}-slack-disabled-reason`;
   const hasTriggers =
@@ -334,6 +394,77 @@ export function RoutineEditor({
         <div className="flex items-baseline gap-2">
           <Trans>When to run</Trans>
           <span className="text-xs text-muted-foreground/70">{timezone}</span>
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="relative ml-auto text-muted-foreground"
+                  aria-label={t`Advanced`}
+                  title={t`Advanced`}
+                />
+              }
+            >
+              <SlidersHorizontal />
+              {draft.modelKey ? (
+                <span
+                  aria-hidden
+                  className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-muted-foreground"
+                />
+              ) : null}
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-96 max-w-[calc(100vw-2rem)] p-4">
+              <label htmlFor={`${fieldId}-model`} className="block text-sm text-muted-foreground">
+                <Trans>Model</Trans>
+                <NativeSelect
+                  id={`${fieldId}-model`}
+                  className="mt-2 w-full"
+                  value={draft.modelKey}
+                  onChange={(event) =>
+                    onChange({ ...draft, modelKey: event.target.value, thinkingLevel: "" })
+                  }
+                >
+                  <NativeSelectOption value="">{t`Bot's model`}</NativeSelectOption>
+                  {draft.modelKey &&
+                  !modelOptions.some((option) => option.key === draft.modelKey) ? (
+                    <NativeSelectOption value={draft.modelKey}>
+                      {selectedModel?.modelId ?? draft.modelKey}
+                    </NativeSelectOption>
+                  ) : null}
+                  {modelOptions.map((option) => (
+                    <NativeSelectOption key={option.key} value={option.key}>
+                      {option.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </label>
+
+              {thinkingOptions.length ? (
+                <label
+                  htmlFor={`${fieldId}-thinking`}
+                  className="mt-5 block text-sm text-muted-foreground"
+                >
+                  <Trans>Thinking</Trans>
+                  <NativeSelect
+                    id={`${fieldId}-thinking`}
+                    className="mt-2 w-full"
+                    value={draft.thinkingLevel}
+                    onChange={(event) => onChange({ ...draft, thinkingLevel: event.target.value })}
+                  >
+                    <NativeSelectOption value="">
+                      {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
+                    </NativeSelectOption>
+                    {thinkingOptions.map((level) => (
+                      <NativeSelectOption key={level} value={level}>
+                        {thinkingLevelLabel(level)}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </label>
+              ) : null}
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="mt-2 space-y-2">

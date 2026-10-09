@@ -16,6 +16,7 @@ import {
   terminalSocketUrl,
 } from "../../lib/computer-workspace";
 import { rpc } from "../../lib/rpc";
+import { errorText } from "../../lib/user-error";
 
 const COMMANDS_REFRESH_MS = 3_000;
 /** Longer than the poll, so a slow page still lands. A hung request cannot block the next one. */
@@ -164,7 +165,7 @@ function ActivityTerminal({ botId, hidden }: { botId: string; hidden: boolean })
         })
         .catch((cause: unknown) => {
           if (!cancelled && commands.length === 0) {
-            setError(errorMessage(cause, t`Could not load commands`));
+            setError(errorText(cause, t`Could not load commands`));
           }
         })
         .finally(() => {
@@ -240,7 +241,7 @@ function ShellTerminal({ botId, hidden }: { botId: string; hidden: boolean }) {
           };
         })
         .catch((cause: unknown) => {
-          if (!cancelled) setError(errorMessage(cause, t`Could not open terminal`));
+          if (!cancelled) setError(errorText(cause, t`Could not open terminal`));
         });
     };
     connect();
@@ -320,8 +321,4 @@ function terminalTheme() {
     cursor: token("--foreground"),
     selectionBackground: token("--accent"),
   };
-}
-
-function errorMessage(cause: unknown, fallback: string) {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
 }

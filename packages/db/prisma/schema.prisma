@@ -122,9 +122,31 @@ model Organization {
   members     Member[]
   invitations Invitation[]
   spaces      Space[]
+  billing     BillingAccount?
 
   @@unique([slug])
   @@map("organization")
+}
+
+model BillingAccount {
+  organizationId      String       @id
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerId          String       @unique
+  subscriptionId      String?
+  subscriptionItemId  String?
+  priceId             String?
+  status              String?
+  seats               Int?
+  trialEndsAt         DateTime?
+  currentPeriodEndsAt DateTime?
+  cancelAtPeriodEnd   Boolean      @default(false)
+  endedAt             DateTime?
+  subscribedAt        DateTime?
+  syncedAt            DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@map("billing_accounts")
 }
 
 model ActionApprovalRule {
@@ -241,6 +263,7 @@ model SpaceMember {
   modelPreferences SpaceModelPreference[]
   voicePreferences SpaceVoicePreference[]
   aiDataConsents AiDataConsent[]
+  backupModels SpaceBackupModel[]
 
   @@unique([spaceId, userId])
   @@index([organizationId, userId])
@@ -333,6 +356,19 @@ model SpaceModelPreference {
   @@map("space_model_preferences")
 }
 
+model SpaceBackupModel {
+  spaceId     String
+  userId      String
+  spaceMember SpaceMember @relation(fields: [spaceId, userId], references: [spaceId, userId], onDelete: Cascade)
+  provider    String
+  modelId     String
+  position    Int
+
+  @@id([spaceId, userId, position])
+  @@unique([spaceId, userId, provider, modelId])
+  @@map("space_backup_models")
+}
+
 model SpaceVoicePreference {
   id           String              @id @default(cuid())
   spaceId      String
@@ -387,6 +423,7 @@ model Bot {
   modelProvider     String?
   modelId           String?
   thinkingLevel     String?
+  disabledBuiltinTools String[] @default([])
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
@@ -597,6 +634,10 @@ model Run {
   currentTicketId      String?
   modelProvider        String?
   modelId              String?
+  thinkingLevel        String?
+  // True when these columns are the model the run must keep. A later attempt
+  // may record the model it used in the same columns without setting this.
+  modelPinned          Boolean          @default(false)
   error                String?
   leaseOwner           String?
   leaseFence           Int              @default(0)
@@ -644,6 +685,10 @@ model SteeringMessage {
   run       Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   /// Set when a pending row must resume as this trigger so its reply can be delivered.
   originTrigger String?
+  /// Model agreed for an inbound delivery that had to wait. Empty follows the bot.
+  modelProvider String?
+  modelId       String?
+  thinkingLevel String?
   claimedAt DateTime?
   createdAt DateTime @default(now())
 
@@ -744,6 +789,9 @@ model Routine {
   webhookEnabled Boolean   @default(false)
   githubEnabled  Boolean   @default(false)
   messageProvider String?
+  modelProvider  String?
+  modelId        String?
+  thinkingLevel  String?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())
@@ -1035,11 +1083,25 @@ model UsageRecord {
   run              Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   provider         String
   model            String
-  inputTokens      Int
-  outputTokens     Int
-  cacheReadTokens  Int      @default(0)
-  cacheWriteTokens Int      @default(0)
-  createdAt        DateTime @default(now())
+  /// Uncached input; cache buckets are additional, reasoning is a subset of output.
+  inputTokens       Int?
+  outputTokens      Int?
+  cacheReadTokens   Int?
+  cacheWriteTokens  Int?
+  cacheWrite1hTokens Int?
+  reasoningTokens   Int?
+  totalTokens       Int?
+  costUsd           Float?
+  costSource        String?
+  pricingVersion    String?
+  usageSource       String?
+  callId            String? @unique
+  operationId       String?
+  operationKind     String  @default("answer")
+  /// Durable attribution, deliberately without lifecycle foreign keys.
+  parentRunId       String?
+  agentId           String?
+  createdAt         DateTime @default(now())
 
   @@index([spaceId, userId, createdAt])
   @@map("usage_records")

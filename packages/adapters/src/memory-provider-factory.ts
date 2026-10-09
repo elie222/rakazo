@@ -1,6 +1,5 @@
-import type { DurableMemoryScope, SemanticMemoryProvider } from "@rakazo/adapter-kit";
+import type { DurableMemoryScope, SecretStore, SemanticMemoryProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import type { EncryptedSecretStore } from "./secrets.js";
 import {
   classifySerenityConnectionSettings,
   createSerenityProvider,
@@ -12,6 +11,7 @@ import {
 export { MemoryProviderDeploymentOwnerRequiredError } from "./serenity-memory-provider.js";
 
 import {
+  assertSupermemoryLocalBaseUrl,
   createSupermemoryProvider,
   decodeLegacySupermemoryCredentials,
   prepareSupermemoryConnection,
@@ -152,7 +152,7 @@ function decodeCredentials(provider: string, plaintext: string): Record<string, 
 export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
   constructor(
     private readonly prisma: Pick<PrismaClient, "spaceMemoryConfig" | "deploymentSettings">,
-    private readonly secrets: EncryptedSecretStore,
+    private readonly secrets: SecretStore,
   ) {}
 
   async resolve(spaceId: string): Promise<ConfiguredMemoryProvider | null> {
@@ -170,9 +170,16 @@ export class SpaceMemoryProviderResolver implements MemoryProviderResolver {
       // Also disable pre-existing local configurations authored outside the deployment boundary.
       if (!deployment?.ownerUserId || deployment.ownerUserId !== config.userId) return null;
     }
+    if (
+      config.provider === SUPERMEMORY_PROVIDER_ID &&
+      settings.mode === "local" &&
+      settings.baseUrl
+    ) {
+      await assertSupermemoryLocalBaseUrl(settings.baseUrl, { allowPrivateEndpoint: true });
+    }
     const credentials = decodeCredentials(
       config.provider,
-      this.secrets.load(config.secret.ciphertext, config.secret.id),
+      await this.secrets.load(config.secret.ciphertext, config.secret.id),
     );
     return {
       provider: createMemoryProvider(config.provider, settings, credentials),

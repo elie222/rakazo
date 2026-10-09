@@ -1,0 +1,201 @@
+---
+import Button from "../components/Button.astro";
+import FaqSection from "../components/FaqSection.astro";
+import InlineCode from "../components/InlineCode.astro";
+import Footer from "../components/Footer.astro";
+import GetStartedDialog from "../components/GetStartedDialog.astro";
+import Header from "../components/Header.astro";
+import SetupSteps from "../components/SetupSteps.astro";
+import VsCard from "../components/VsCard.astro";
+import {
+  COMPARISON_ROWS,
+  faqPageStructuredData,
+  OPENCLAW_DAY_TO_DAY_PARAGRAPHS,
+  OPENCLAW_DESCRIPTION,
+  OPENCLAW_DOCS_URL,
+  OPENCLAW_FAQS,
+  OPENCLAW_FEATURES_URL,
+  OPENCLAW_GETTING_STARTED_URL,
+  OPENCLAW_H1,
+  OPENCLAW_GITHUB_URL,
+  OPENCLAW_RELATED,
+  OPENCLAW_SANDBOX_URL,
+  OPENCLAW_SETUP_PARAGRAPHS,
+  OPENCLAW_TITLE,
+  OPENCLAW_UPDATED,
+} from "../guide";
+import { fetchGithubStars, formatStarCount } from "../github";
+import { getHomeCopy } from "../i18n/home";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { ogPublicPath } from "../og-pages";
+import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { vsCard } from "../vs-points";
+
+const home = getHomeCopy("en");
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const structuredData = faqPageStructuredData(OPENCLAW_FAQS);
+const card = vsCard("openclaw-alternative");
+---
+
+<BaseLayout
+  title={OPENCLAW_TITLE}
+  description={OPENCLAW_DESCRIPTION}
+  {structuredData}
+  localeAlternates={false}
+  ogImage={ogPublicPath("openclaw-alternative")}
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <GetStartedDialog copy={home.getStartedDialog} waitlist={home.waitlist} />
+    <main id="main" class="privacy-copy guide">
+      <h1>{OPENCLAW_H1}</h1>
+      <p class="alt-note">Updated {OPENCLAW_UPDATED}.</p>
+      {
+        card && (
+          <VsCard otherName="OpenClaw" rakazo={card.rakazo} other={card.other} />
+        )
+      }
+      <SetupSteps />
+      <p>
+        The main difference is simplicity. Like Grok Bot, Rakazo is just chat: you set up the bot
+        and manage it from that chat. OpenClaw is also
+        open source and self-hosted. Its{" "}
+        <a href={OPENCLAW_GETTING_STARTED_URL}>getting-started guide</a> is a longer path: a CLI
+        installer, an onboarding wizard, a Gateway you run in the terminal or install as a background
+        service, and a config file.
+      </p>
+      <p>
+        They are not the same product, and Rakazo does not import an OpenClaw setup. OpenClaw details
+        below follow <a href={OPENCLAW_DOCS_URL}>OpenClaw's documentation</a>. Rakazo details follow
+        this project. Both change. The linked docs are the place to confirm a detail.
+      </p>
+
+      <h2>Setup</h2>
+      {OPENCLAW_SETUP_PARAGRAPHS.map((paragraph) => (
+        <p>
+          <InlineCode text={paragraph} />
+        </p>
+      ))}
+
+      <h2>Day-to-day management</h2>
+      {OPENCLAW_DAY_TO_DAY_PARAGRAPHS.map((paragraph) => (
+        <p>
+          <InlineCode text={paragraph} />
+        </p>
+      ))}
+
+      <h2>Comparison</h2>
+      <div class="guide-table-wrap">
+        <table>
+          <caption>Rakazo and OpenClaw, from each project's public documentation.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Topic</th>
+              <th scope="col">Rakazo</th>
+              <th scope="col">OpenClaw</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              COMPARISON_ROWS.map((row) => (
+                <tr>
+                  <th scope="row">{row.aspect}</th>
+                  <td><InlineCode text={row.rakazo} /></td>
+                  <td><InlineCode text={row.openclaw} /></td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Key differences</h2>
+      <h3>Teammates in an app, or an assistant in your chats</h3>
+      <p>
+        Rakazo is a web, desktop, and mobile app. A bot has a job, a computer, and routines saved as
+        Markdown you can read and edit. OpenClaw is a Gateway you message from the chat apps you
+        already use, with a browser Control UI and mobile nodes around that gateway.
+      </p>
+      <p>
+        Rakazo can attach optional Slack, WhatsApp, Telegram, iMessage (Sendblue), and Feishu/Lark
+        connectors. Those are extras. Chat apps are OpenClaw's main surface, including Discord, Signal,
+        iMessage, Slack, Telegram, WhatsApp, and other channel plugins.
+      </p>
+      <h3>Where the computer runs</h3>
+      <p>
+        Rakazo runs browser and shell work on a computer. Local Docker is the default. E2B, Daytona,
+        CreateOS, and Box are optional remote computers. An explicit desktop provider can run on the
+        host, and it is not the default.
+      </p>
+      <p>
+        OpenClaw can sandbox tool execution. Its docs say sandboxing is off by default, and that the
+        Gateway process stays on the host. Documented sandbox backends include Docker, Podman, SSH,
+        OpenShell, and Crabbox.
+      </p>
+      <h3>Models and what you pay</h3>
+      <p>
+        Both let you bring a model provider, including a server you host. Rakazo connects OpenAI,
+        Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, or a
+        local model server, and each bot can use a different model. OpenClaw documents Anthropic,
+        OpenAI, Google, and others, including self-hosted OpenAI-compatible and Anthropic-compatible
+        endpoints, with failover.
+      </p>
+      <p>
+        Neither project charges a seat fee for the software. OpenClaw's docs say it has no paid tier
+        and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is not generally
+        available. You pay for the models, machines, and optional computer providers you use.
+      </p>
+      <h3>License</h3>
+      <p>
+        Rakazo is Apache-2.0, maintained by Inbox Zero Inc. OpenClaw is MIT, stewarded by the OpenClaw
+        Foundation, which the project describes as an independent 501(c)(3).
+      </p>
+
+      <h2>Which shape fits</h2>
+      <h3>Rakazo</h3>
+      <p>
+        Repeated browser and shell work, scheduled operational routines, an audit log, and approval
+        boundaries, with the same bots on the web, desktop, and mobile clients. <a href={SELF_HOST_GUIDE_PATH}>Self-host it from the guide</a>.
+      </p>
+      <h3>OpenClaw</h3>
+      <p>
+        An assistant that lives in chat apps you already use, with channel plugins, skills, and a
+        gateway on your machine. Start from the <a href={OPENCLAW_DOCS_URL}>OpenClaw docs</a>.
+      </p>
+
+      <h2>Sources</h2>
+      <ul class="source-list">
+        <li><a href={OPENCLAW_DOCS_URL}>OpenClaw docs</a></li>
+        <li><a href={OPENCLAW_GETTING_STARTED_URL}>OpenClaw getting started</a></li>
+        <li><a href={OPENCLAW_FEATURES_URL}>OpenClaw features</a></li>
+        <li><a href={OPENCLAW_SANDBOX_URL}>OpenClaw sandboxing</a></li>
+        <li><a href={OPENCLAW_GITHUB_URL}>OpenClaw source</a></li>
+        <li><a href={SELF_HOST_GUIDE_PATH}>Rakazo self-host guide</a></li>
+        <li><a href={GITHUB_URL}>Rakazo source</a></li>
+      </ul>
+
+      <FaqSection items={OPENCLAW_FAQS} />
+
+      <h2>Related</h2>
+      <ul>
+        <li><a href="/">Rakazo home</a></li>
+        <li><a href={SELF_HOST_GUIDE_PATH}>Self-hosted AI agent guide</a></li>
+        {OPENCLAW_RELATED.map((item) => (
+          <li>
+            <a href={item.href}>{item.label}</a>
+          </li>
+        ))}
+      </ul>
+
+      <h2 id="selfhost">Get started</h2>
+      <p>Self-host Rakazo on your machine, or leave an email for hosted Rakazo Cloud.</p>
+      <div class="cta-actions">
+        <Button href={SELF_HOST_GUIDE_PATH}>Self-host guide</Button>
+        <button class="button button--primary" type="button" data-get-started-open>Get started</button>
+        <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+      </div>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

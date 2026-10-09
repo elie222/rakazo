@@ -1,4 +1,5 @@
 {
+  "Today": "今天",
   " (unread)": "（未读）",
   "macOS will not ask for extra permission if you let bots run on this Mac. They run as you.": "若让 Bot 在这台 Mac 上运行，它们会使用你的账户权限，macOS 不会再逐项询问。",
   "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you.": "若让 Bot 在 {hostLabel} 上运行，它们会使用你的账户权限，系统不会再逐项询问。",

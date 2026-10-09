@@ -6,19 +6,26 @@ import type {
   OAuthCredential,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelCredentialFailedState, ModelCredentialRetireReason } from "@rakazo/adapter-kit";
+import type {
+  ModelCredentialFailedState,
+  ModelCredentialRetireReason,
+  SecretStore,
+} from "@rakazo/adapter-kit";
+import type {
+  ModelContextLimits,
+  ModelOAuthBegin,
+  ModelOAuthSignInMode,
+  ThinkingLevel,
+} from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
-  type ModelOAuthBegin,
-  type ModelOAuthSignInMode,
-  type ThinkingLevel,
+  ModelContextLimitsSchema,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { createManualAnthropicOAuthLogin } from "./pi-anthropic-oauth.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 
 export const CHATGPT_OAUTH_PROVIDER = "openai-codex";
 export const COPILOT_OAUTH_PROVIDER = "github-copilot";
@@ -27,7 +34,12 @@ export const ANTHROPIC_OAUTH_PROVIDER = "anthropic";
 
 export const SUBSCRIPTION_SIGN_IN_PROVIDERS: Record<
   string,
-  { mode: ModelOAuthSignInMode; loginLabel: string; hint: string; billing: string }
+  {
+    mode: ModelOAuthSignInMode;
+    loginLabel: string;
+    hint: string;
+    billing: string;
+  }
 > = {
   [CHATGPT_OAUTH_PROVIDER]: {
     mode: "device-code",
@@ -241,10 +253,27 @@ export function isRetiredModelCredentialError(error: unknown): boolean {
   );
 }
 
+export type StoredModelLimits = ModelContextLimits;
+
+function modelLimits(value: Record<string, unknown>): StoredModelLimits {
+  const cache = ModelContextLimitsSchema.shape.cacheCapabilities.safeParse(value.cacheCapabilities);
+  const window = ModelContextLimitsSchema.shape.contextWindow.safeParse(value.contextWindow);
+  return {
+    ...(cache.success && cache.data !== undefined ? { cacheCapabilities: cache.data } : {}),
+    ...(window.success && window.data !== undefined ? { contextWindow: window.data } : {}),
+  };
+}
+
 export type StoredModelSecret =
-  | { kind: "api_key"; key: string; maxTokens?: number }
+  | ({
+      kind: "api_key";
+      key: string;
+      maxTokens?: number;
+      accountId?: string;
+      gatewayId?: string;
+    } & StoredModelLimits)
   | { kind: "oauth"; credential: OAuthCredential; maxTokens?: number }
-  | {
+  | ({
       kind: "openai_compatible";
       baseUrl: string;
       apiKey?: string;
@@ -254,7 +283,7 @@ export type StoredModelSecret =
       contextWindow?: number;
       visionModelIds?: string[];
       maxImagesPerPrompt?: number;
-    };
+    } & StoredModelLimits);
 
 export type PiOAuthConnected = {
   status: "connected";
@@ -329,6 +358,12 @@ function readOAuthCredential(value: unknown): OAuthCredential | undefined {
   return undefined;
 }
 
+function parsedRoutingId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
 function parsedMaxTokens(value: unknown): number | undefined {
   return typeof value === "number" &&
     Number.isInteger(value) &&
@@ -385,6 +420,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(visionModelIds ? { visionModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
+      ...modelLimits(parsed),
     };
   }
   if (parsed.kind === "api_key") {
@@ -392,10 +428,15 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
     }
     const maxTokens = parsedMaxTokens(parsed.maxTokens);
+    const accountId = parsedRoutingId(parsed.accountId);
+    const gatewayId = parsedRoutingId(parsed.gatewayId);
     return {
       kind: "api_key",
       key: parsed.key,
       ...(maxTokens !== undefined ? { maxTokens } : {}),
+      ...(accountId ? { accountId } : {}),
+      ...(gatewayId ? { gatewayId } : {}),
+      ...modelLimits(parsed),
     };
   }
   if (parsed.kind === "oauth") {
@@ -429,6 +470,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
   if (secret.kind === "openai_compatible") {
     return JSON.stringify({
       kind: "openai_compatible",
+      ...modelLimits(secret as unknown as Record<string, unknown>),
       baseUrl: secret.baseUrl,
       ...(secret.apiKey ? { apiKey: secret.apiKey } : {}),
       ...(secret.reasoning !== undefined ? { reasoning: secret.reasoning } : {}),
@@ -441,11 +483,22 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
         : {}),
     });
   }
-  if (secret.maxTokens === undefined) return secret.key;
+  if (
+    secret.maxTokens === undefined &&
+    secret.accountId === undefined &&
+    secret.gatewayId === undefined &&
+    secret.contextWindow === undefined &&
+    secret.cacheCapabilities === undefined
+  ) {
+    return secret.key;
+  }
   return JSON.stringify({
     kind: "api_key",
     key: secret.key,
-    maxTokens: secret.maxTokens,
+    ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
+    ...(secret.accountId ? { accountId: secret.accountId } : {}),
+    ...(secret.gatewayId ? { gatewayId: secret.gatewayId } : {}),
+    ...modelLimits(secret as unknown as Record<string, unknown>),
   });
 }
 
@@ -466,12 +519,12 @@ export function secretValuesToRedact(secret: StoredModelSecret): string[] {
  * credential it cannot prove stale.
  */
 export function matchesFailedOAuthSecret(
-  load: (ciphertext: string, secretId: string) => string,
+  load: (ciphertext: string, secretId: string) => string | Promise<string>,
   failed: ModelCredentialFailedState,
-): (secret: { id: string; ciphertext: string }) => boolean {
-  return (secret) => {
+): (secret: { id: string; ciphertext: string }) => Promise<boolean> {
+  return async (secret) => {
     try {
-      const stored = parseModelSecret(load(secret.ciphertext, secret.id));
+      const stored = parseModelSecret(await load(secret.ciphertext, secret.id));
       return (
         stored.kind === "oauth" &&
         stored.credential.access === failed.access &&
@@ -611,7 +664,11 @@ export async function resolveModelAuth(
     throw new Error("Subscription sign-in did not produce a usable token. Sign in again.");
   }
   return {
-    secret: { kind: "oauth", credential, ...(maxTokens !== undefined ? { maxTokens } : {}) },
+    secret: {
+      kind: "oauth",
+      credential,
+      ...(maxTokens !== undefined ? { maxTokens } : {}),
+    },
     apiKey: auth.apiKey,
   };
 }
@@ -659,7 +716,7 @@ export async function withModelCredentialLock<T>(key: string, fn: () => Promise<
  */
 export function persistStoredModelSecret(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "put">,
+  secretStore: Pick<SecretStore, "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
 ): (next: string) => Promise<void> {
@@ -673,7 +730,7 @@ export function persistStoredModelSecret(
         userId: scope.userId,
         signal: new AbortController().signal,
       },
-      secretId,
+      { recordId: secretId },
     );
     await prisma.secret.update({
       where: { id: secretId },
@@ -691,7 +748,7 @@ export function persistStoredModelSecret(
  */
 export async function refreshExpiredModelCredential(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "load" | "put">,
+  secretStore: Pick<SecretStore, "load" | "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,
@@ -705,7 +762,7 @@ export async function refreshExpiredModelCredential(
     if (!row) return;
     let plaintext: string;
     try {
-      plaintext = secretStore.load(row.ciphertext, row.id);
+      plaintext = await secretStore.load(row.ciphertext, row.id);
       if (parseModelSecret(plaintext).kind !== "oauth") return;
     } catch {
       return;
@@ -727,7 +784,7 @@ const credentialRefreshKicks = new Map<string, Promise<void>>();
  */
 export function kickModelCredentialRefresh(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "load" | "put">,
+  secretStore: Pick<SecretStore, "load" | "put">,
   scope: { userId: string; spaceId: string },
   secretId: string,
   provider: string,
@@ -874,11 +931,20 @@ export class PiOAuthLogins {
         });
 
       if (input.signal?.aborted) abortFromRequest();
-      else input.signal?.addEventListener("abort", abortFromRequest, { once: true });
+      else
+        input.signal?.addEventListener("abort", abortFromRequest, {
+          once: true,
+        });
       void done.catch(() => undefined);
       this.pending.set(loginId, session);
       this.activeByScope.set(scope, session);
-      return { abort, abortFromRequest, signInStarted: signInStarted.promise, loginId, session };
+      return {
+        abort,
+        abortFromRequest,
+        signInStarted: signInStarted.promise,
+        loginId,
+        session,
+      };
     });
 
     const { abort, abortFromRequest, signInStarted, loginId, session } = prepared;
@@ -939,7 +1005,10 @@ export class PiOAuthLogins {
   complete(loginId: string, actor: { userId: string; spaceId: string }): PiOAuthComplete {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.spaceId !== actor.spaceId) {
-      return { status: "error", error: "Sign-in session not found. Start sign-in again." };
+      return {
+        status: "error",
+        error: "Sign-in session not found. Start sign-in again.",
+      };
     }
     if (session.error) {
       this.removeSession(session);
@@ -967,7 +1036,10 @@ export class PiOAuthLogins {
   ): Promise<PiOAuthFinish<T>> {
     const session = this.pending.get(loginId);
     if (!session || session.userId !== actor.userId || session.spaceId !== actor.spaceId) {
-      return { status: "error", error: "Sign-in session not found. Start sign-in again." };
+      return {
+        status: "error",
+        error: "Sign-in session not found. Start sign-in again.",
+      };
     }
     if (session.state === "finalizing") return { status: "pending" };
     const result = this.complete(loginId, actor);

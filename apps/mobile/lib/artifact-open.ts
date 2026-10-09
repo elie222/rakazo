@@ -1,25 +1,43 @@
-import { File, Paths } from "expo-file-system";
+import { Directory, File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { rpc } from "./api";
-import { artifactCacheFileName } from "./artifact-file";
+import { artifactCacheFileName, artifactShareFileName } from "./artifact-file";
 import { t } from "./i18n";
 import { createKeyedPromiseCache } from "./inline-image";
 
 export type MobileArtifactTarget = { botId: string } | { groupId: string };
+
+/**
+ * An artifact travels as base64 inside the RPC body: up to the attachment limit (10 MiB) plus
+ * a third of encoding overhead. The default RPC timeout is sized for small JSON replies and
+ * gives up on a multi-megabyte photo over a relayed cellular link, so downloads get a budget
+ * of their own.
+ */
+export const ARTIFACT_DOWNLOAD_TIMEOUT_MS = 120_000;
+
+/** Writes an artifact's bytes to its cache file; no network call. */
+export function writeArtifactCacheFile(
+  artifactId: string,
+  mimeType: string,
+  contentBase64: string,
+): File {
+  const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
+  file.create({ overwrite: true });
+  file.write(contentBase64, { encoding: "base64" });
+  return file;
+}
 
 async function cacheMobileArtifact(
   target: MobileArtifactTarget,
   artifactId: string,
   mimeType: string,
 ): Promise<File> {
-  const artifact = await rpc<{ contentBase64: string }>("artifacts/get", {
-    ...target,
-    artifactId,
-  });
-  const file = new File(Paths.cache, artifactCacheFileName(artifactId, mimeType));
-  file.create({ overwrite: true });
-  file.write(artifact.contentBase64, { encoding: "base64" });
-  return file;
+  const artifact = await rpc<{ contentBase64: string }>(
+    "artifacts/get",
+    { ...target, artifactId },
+    { timeoutMs: ARTIFACT_DOWNLOAD_TIMEOUT_MS },
+  );
+  return writeArtifactCacheFile(artifactId, mimeType, artifact.contentBase64);
 }
 
 export async function readMobileArtifactText(
@@ -38,11 +56,7 @@ export async function openMobileArtifact(
   mimeType: string,
 ): Promise<void> {
   const file = await cacheMobileArtifact(target, artifactId, mimeType);
-  if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(file.uri, { mimeType });
-    return;
-  }
-  throw new Error(t("Saved {name} locally", { name }));
+  await shareNamedFile(file, mimeType, name);
 }
 
 const imageArtifactUris = createKeyedPromiseCache<string>(async (key) => {
@@ -80,8 +94,18 @@ export async function imageArtifactUri(
 
 /** Share a file already on disk (for example an image the viewer is showing) without downloading it again. */
 export async function shareLocalFile(uri: string, mimeType: string, name: string): Promise<void> {
+  await shareNamedFile(new File(uri), mimeType, name);
+}
+
+async function shareNamedFile(source: File, mimeType: string, name: string): Promise<void> {
+  const root = new Directory(Paths.cache, "artifact-shares");
+  if (!root.exists) root.create();
+  const dir = new Directory(root, source.name || "attachment");
+  if (!dir.exists) dir.create();
+  const shared = new File(dir, artifactShareFileName(name, mimeType));
+  source.copySync(shared, { overwrite: true });
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(uri, { mimeType });
+    await Sharing.shareAsync(shared.uri, { mimeType });
     return;
   }
   throw new Error(t("Saved {name} locally", { name }));

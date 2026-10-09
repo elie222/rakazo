@@ -12,12 +12,78 @@ import { fetch as undiciFetch } from "undici";
  * Global `FormData` fails this package's brand check and is sent as the string
  * "[object FormData]". Serialize it with the implementation that created it so
  * the multipart fields and Content-Type boundary stay paired. Other bodies are
- * passed through unchanged. */
-export const dispatcherFetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
-  undiciFetch(
+ * passed through unchanged.
+ *
+ * The package `Response` fails `instanceof Response` against the global
+ * constructor. Callers such as the MCP SDK then stringify the object
+ * (`"[object Response]"`) instead of reading its status and body. Re-wrap the
+ * payload in the global `Response` after the package fetch returns. The
+ * request still uses this package's fetch and `Agent`, so host pinning is
+ * unchanged. */
+export const dispatcherFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const response = await undiciFetch(
     input as Parameters<typeof undiciFetch>[0],
     (await initForPackageFetch(init)) as Parameters<typeof undiciFetch>[1],
-  )) as unknown as typeof globalThis.fetch;
+  );
+  return responseForGlobalRealm(response as object);
+}) as unknown as typeof globalThis.fetch;
+
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-connection",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
+
+type PackageResponse = {
+  status: number;
+  statusText: string;
+  headers: { forEach(callback: (value: string, key: string) => void): void };
+  body: ReadableStream<Uint8Array> | null;
+};
+
+/** Copy a package `Response` into the global realm.
+ *
+ * Header iteration is a method call, so it works across the two `Headers`
+ * classes. Hop-by-hop headers describe the socket undici already finished and
+ * would mislabel the re-streamed body. The parameter is not typed as the
+ * global `Response`: a failed `instanceof` check would otherwise narrow it
+ * to `never`, which is the mismatch this function exists to repair. */
+function responseForGlobalRealm(input: object): Response {
+  if (input instanceof globalThis.Response) return input;
+  const response = input as PackageResponse;
+  const headers = new Headers();
+  response.headers.forEach((value, key) => {
+    if (!HOP_BY_HOP_HEADERS.has(key.toLowerCase())) headers.append(key, value);
+  });
+  const init = { status: response.status, statusText: response.statusText, headers };
+  if (response.body == null || NULL_BODY_STATUSES.has(response.status)) {
+    return new Response(null, init);
+  }
+  const reader = response.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (next.done) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(next.value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(body, init);
+}
 
 /** Node's fetch as this module loaded it. A later replacement of
  * `globalThis.fetch` is a different function; the original is still paired

@@ -42,6 +42,10 @@ const nativeNotifications =
 export type NotificationThreadTarget = { botId?: string; threadId?: string };
 
 let openThread: NotificationThreadTarget | null = null;
+let lastConfirmed: NotificationThreadTarget | null = null;
+let hasConfirmed = false;
+let pendingReports = 0;
+let reportSeq = 0;
 let foregroundHandlerConfigured = false;
 
 export function notificationTargetsThread(
@@ -113,8 +117,34 @@ export async function stopLiveNotifications(clearSession = false): Promise<void>
 export async function setOpenNotificationThread(
   target: NotificationThreadTarget | null,
 ): Promise<void> {
+  // Each native call restarts the Android poller, which re-posts live notifications.
+  // The foreground handler reads openThread immediately. Native is skipped only
+  // for the last target it accepted when no report is pending, so overlapping
+  // changes reach native and a rejection stays eligible for retry.
   openThread = target;
-  await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
+  if (
+    pendingReports === 0 &&
+    hasConfirmed &&
+    lastConfirmed?.botId === target?.botId &&
+    lastConfirmed?.threadId === target?.threadId
+  ) {
+    return;
+  }
+  const seq = ++reportSeq;
+  pendingReports += 1;
+  try {
+    await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
+    if (seq === reportSeq) {
+      lastConfirmed = target;
+      hasConfirmed = true;
+    }
+  } catch (error) {
+    // An overlapping report may still change native state after this failure.
+    hasConfirmed = false;
+    throw error;
+  } finally {
+    pendingReports -= 1;
+  }
 }
 
 export async function dismissThreadNotifications(target: {

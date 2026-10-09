@@ -31,6 +31,7 @@ export function attachMobileKeyboard(
   options: {
     button: unknown;
     input: unknown;
+    keyBar?: unknown;
     Keyboard: unknown;
     backspaceKeysym: number;
     lookupKeysym: (codePoint: number) => number;

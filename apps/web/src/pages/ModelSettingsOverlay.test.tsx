@@ -7,6 +7,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const models = vi.hoisted(() => ({
   list: vi.fn(),
+  backups: vi.fn(async () => []),
+  setBackups: vi.fn(async () => ({ ok: true })),
   credentials: vi.fn(),
   connect: vi.fn(),
   disconnect: vi.fn(),
@@ -20,6 +22,7 @@ const models = vi.hoisted(() => ({
 }));
 
 vi.mock("../lib/rpc", () => ({
+  selectedSpaceId: () => "space-1",
   rpc: {
     models,
     me: vi.fn(),
@@ -128,10 +131,13 @@ function account(provider: string, modelId: string) {
     needsModel: false,
     defaultProvider: provider,
     defaultModel: modelId,
+    hostCredentialProvider: null,
+    hostCredentialSource: null,
     computerHost: null,
     canChooseHostComputer: false,
     sandboxProvider: "docker",
     avatarStyle: "robot" as const,
+    billingEnabled: false,
   };
 }
 
@@ -268,6 +274,59 @@ it("leaves the key field empty until a key is saved", async () => {
     expect(view.container.textContent).not.toContain(STORED_PLACEHOLDER);
   } finally {
     await view.unmount();
+  }
+});
+
+it("shows Cloudflare account and gateway fields for a new and a saved connection", async () => {
+  const entry = {
+    provider: "cloudflare-ai-gateway",
+    providerName: "Cloudflare AI Gateway",
+    id: "workers-ai/@cf/meta/llama-3.1-8b-instruct",
+    label: "Llama",
+    billing: "API key",
+    auth: "api-key" as const,
+    authHint: "API key",
+  };
+  vi.mocked(rpc.me).mockResolvedValue(account(entry.provider, entry.id));
+  models.list.mockResolvedValue([entry]);
+  models.credentials.mockResolvedValue([]);
+
+  const fresh = await renderSettings();
+  try {
+    const accountId = fresh.container.querySelector("#cloudflare-account-id");
+    const gatewayId = fresh.container.querySelector("#cloudflare-gateway-id");
+    expect(accountId).toBeInstanceOf(HTMLInputElement);
+    expect(gatewayId).toBeInstanceOf(HTMLInputElement);
+    expect((accountId as HTMLInputElement).value).toBe("");
+    expect((gatewayId as HTMLInputElement).value).toBe("");
+    expect(fresh.container.textContent).toContain("Account ID");
+    expect(fresh.container.textContent).toContain("Gateway ID");
+  } finally {
+    await fresh.unmount();
+  }
+
+  models.credentials.mockResolvedValue([
+    {
+      id: "cred-cf",
+      provider: entry.provider,
+      label: "Cloudflare AI Gateway",
+      hasKey: true,
+      isDefault: true,
+      accountId: "acct1234",
+      gatewayId: "gateway-1",
+      modelId: entry.id,
+    },
+  ]);
+  const saved = await renderSettings();
+  try {
+    expect(
+      (saved.container.querySelector("#cloudflare-account-id") as HTMLInputElement).value,
+    ).toBe("acct1234");
+    expect(
+      (saved.container.querySelector("#cloudflare-gateway-id") as HTMLInputElement).value,
+    ).toBe("gateway-1");
+  } finally {
+    await saved.unmount();
   }
 });
 

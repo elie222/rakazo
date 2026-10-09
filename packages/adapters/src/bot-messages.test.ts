@@ -96,7 +96,7 @@ function deps(
 }
 
 describe("messaging another bot", () => {
-  it("delivers into the target's own chat and wakes it", async () => {
+  it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
       bot_id: "bot-target",
@@ -130,8 +130,37 @@ describe("messaging another bot", () => {
       harness.tx.thread.update.mock.calls.filter(
         ([call]) => (call as { data?: { unread?: boolean } }).data?.unread,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
     expect(harness.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a forced failure return unread on both sides", async () => {
+    const harness = deps({
+      hopBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "bot-target",
+          fromBotName: "Coordinator",
+          text: "research this",
+          hop: 1,
+          intent: "request",
+          returnToMessageId: "message-request",
+        },
+      ],
+    });
+    await returnBotMessageOutcome(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      "Could not complete the delegated request.",
+      "status",
+      { forceUnread: true },
+    );
+
+    const unreadWrites = harness.tx.thread.update.mock.calls.filter(
+      ([call]) => (call as { data?: { unread?: boolean } }).data?.unread === true,
+    );
+    expect(unreadWrites).toHaveLength(2);
   });
 
   it("tells the sender to continue independent work", async () => {
@@ -414,26 +443,28 @@ describe("hop lookup", () => {
     expect(await currentBotMessageHop(prisma, "message-1")).toBe(3);
   });
 
-  it("loads peer context directly from the source message", async () => {
+  it("requires the linked request to target the agent that sent the wake-up", async () => {
     const prisma = {
       message: {
         findUnique: vi.fn().mockResolvedValue({
           blocks: [
             {
               kind: "bot_message_received",
-              fromBotId: "b",
-              fromBotName: "B",
-              text: "late FYI",
-              intent: "fyi",
+              fromBotId: "requester",
+              fromBotName: "Requester",
+              text: "work on this",
+              intent: "result",
+              returnToMessageId: "request-message",
             },
           ],
           replyTo: {
+            id: "different-message",
             blocks: [
               {
                 kind: "bot_message_sent",
-                toBotId: "b",
-                toBotName: "B",
-                text: "check Gmail",
+                toBotId: "other-agent",
+                toBotName: "Other agent",
+                text: "work on this",
                 intent: "request",
               },
             ],
@@ -441,13 +472,52 @@ describe("hop lookup", () => {
         }),
       },
     } as unknown as PrismaClient;
-    expect(await loadBotMessageContext(prisma, "message-old")).toMatchObject({
-      intent: "fyi",
-      repliesToRequest: true,
+
+    await expect(loadBotMessageContext(prisma, "message-source")).resolves.toMatchObject({
+      repliesToRequest: false,
     });
-    expect(prisma.message.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "message-old" } }),
-    );
+  });
+
+  it.each([
+    ["result", true],
+    ["status", true],
+    ["fyi", true],
+    ["request", false],
+    ["question", false],
+    [undefined, false],
+  ])("classifies a linked %s message as a returned answer: %s", async (intent, expected) => {
+    const prisma = {
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          blocks: [
+            {
+              kind: "bot_message_received",
+              fromBotId: "requester",
+              fromBotName: "Requester",
+              text: "work on this",
+              intent,
+              returnToMessageId: "return-echo",
+            },
+          ],
+          replyTo: {
+            id: "request-message",
+            blocks: [
+              {
+                kind: "bot_message_sent",
+                toBotId: "requester",
+                toBotName: "Requester",
+                text: "work on this",
+                intent: "request",
+              },
+            ],
+          },
+        }),
+      },
+    } as unknown as PrismaClient;
+
+    await expect(loadBotMessageContext(prisma, "message-source")).resolves.toMatchObject({
+      repliesToRequest: expected,
+    });
   });
 });
 

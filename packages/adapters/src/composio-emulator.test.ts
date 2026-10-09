@@ -289,4 +289,16 @@ describe("ComposioEmulator", () => {
     );
     expect(emulator.listGithubReleases()[0]?.tag).toBe("v0.4.2");
   });
+
+  it("returns a tool error when a Dropbox listing has malformed arguments", async () => {
+    const emulator = new ComposioEmulator();
+    const events = await collectResults(emulator, "COMPOSIO_MULTI_EXECUTE_TOOL", {
+      tools: [{ tool_slug: "DROPBOX_LIST_FOLDERS", arguments: "{not-json" }],
+    });
+
+    expect(events).toEqual([
+      { type: "error", message: "Dropbox folder listing arguments must be a JSON object." },
+    ]);
+    expect(emulator.executions).toEqual([]);
+  });
 });

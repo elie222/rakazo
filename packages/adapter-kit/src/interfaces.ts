@@ -10,6 +10,9 @@ import type {
   AutoReviewResult,
   BackgroundJob,
   BackgroundJobHandlers,
+  BillingCheckoutRequest,
+  BillingPrice,
+  BillingSubscriptionSnapshot,
   BrowserActRequest,
   BrowserActResult,
   BrowserCapabilities,
@@ -55,6 +58,9 @@ import type {
   SandboxCapabilities,
   ScreenRequest,
   ScreenSession,
+  SecretChangeListener,
+  SecretContext,
+  SecretPutOptions,
   SecretRecord,
   SemanticMemoryCapabilities,
   SemanticMemoryForgetRequest,
@@ -98,6 +104,8 @@ export interface SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
+  /** Read-only probe: true only when this exact reference is already running. */
+  isRunning?(computer: ComputerRef, context: AdapterContext): Promise<boolean>;
   /** Perform idempotent provider setup after the lifecycle has captured the reference. */
   prepare(computer: ComputerRef, context: AdapterContext): Promise<void>;
   execute(
@@ -266,7 +274,15 @@ export interface AgentHomeStore {
   checkout(botId: string, dest: string, context: AdapterContext): Promise<string>;
   commit(botId: string, src: string, context: AdapterContext): Promise<string>;
   restore(botId: string, revision: string, dest: string, context: AdapterContext): Promise<void>;
-  exportHome(botId: string, context: AdapterContext): AsyncIterable<PortableFile>;
+  /**
+   * Paths are relative to `directory`; a missing or linked directory exports nothing.
+   * `skipHidden` leaves out hidden entries at the top of the directory, also behind links.
+   */
+  exportHome(
+    botId: string,
+    context: AdapterContext,
+    options?: { directory?: string; skipHidden?: boolean },
+  ): AsyncIterable<PortableFile>;
   readFile(
     botId: string,
     path: string,
@@ -289,11 +305,19 @@ export interface ArtifactStore {
 }
 
 export interface SecretStore {
-  describe(): AdapterDescriptor<{ rotate: boolean }>;
-  /** Optional recordId binds ciphertext AAD to the persisted secret/session row id. */
-  put(plaintext: string, context: AdapterContext, recordId?: string): Promise<SecretRecord>;
-  get(id: string, context: AdapterContext): Promise<string>;
+  describe(): AdapterDescriptor<{ rotate: boolean; degraded?: boolean }>;
+  put(
+    plaintext: string,
+    context: AdapterContext,
+    options?: SecretPutOptions,
+  ): Promise<SecretRecord>;
+  load(ref: string, context: SecretContext): Promise<string>;
+  /** Inline encrypted refs have no remote resource; removal is owned by persistence. */
+  delete(ref: string, context: SecretContext): Promise<void>;
   redact(value: string): string;
+  onChange(listener: SecretChangeListener): () => void;
+  start(): Promise<void>;
+  close(): Promise<void>;
 }
 
 export interface RealtimeFanout {
@@ -314,6 +338,24 @@ export interface TransactionalEmailProvider {
   send(message: TransactionalEmail): Promise<void>;
   /** Wait for accepted in-flight deliveries before a graceful shutdown completes. */
   drain?(): Promise<void>;
+}
+
+/**
+ * Seat-based subscription billing. Product code owns access rules; adapters own the
+ * vendor API. Sync is pull-based: webhooks only say which customer changed.
+ */
+export interface BillingProvider {
+  describe(): AdapterDescriptor<{ trials: boolean; portal: boolean }>;
+  getPrice(): Promise<BillingPrice>;
+  createCustomer(input: { email: string; organizationId: string }): Promise<{ customerId: string }>;
+  createCheckout(input: BillingCheckoutRequest): Promise<{ url: string }>;
+  createPortal(input: { customerId: string; returnUrl: string }): Promise<{ url: string }>;
+  /** Current subscription for the customer, preferring one that grants access. */
+  getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null>;
+  updateSeats(subscriptionItemId: string, seats: number): Promise<void>;
+  cancelCustomerSubscriptions(customerId: string): Promise<void>;
+  /** Verifies the signature. `null` means the request is not authentic. */
+  parseWebhook(rawBody: string, headers: Headers): { customerId: string } | "ignored" | null;
 }
 
 export interface ExecutionRunner {

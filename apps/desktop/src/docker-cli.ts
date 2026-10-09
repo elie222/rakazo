@@ -120,6 +120,21 @@ export type RunDocker = (
   options: RunDockerOptions,
 ) => Promise<RunDockerResult>;
 
+/** Batch files require cmd.exe and cannot be executed directly. */
+const WINDOWS_SHELL_SCRIPT = /\.(?:bat|cmd)$/i;
+
+function directExecutable(binary: string): string | undefined {
+  if (typeof binary !== "string" || binary.length === 0 || binary.includes("\0")) return undefined;
+  if (WINDOWS_SHELL_SCRIPT.test(binary)) return undefined;
+  return binary;
+}
+
+function directArguments(args: readonly string[]): string[] | undefined {
+  if (!Array.isArray(args)) return undefined;
+  if (args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) return undefined;
+  return [...args];
+}
+
 /**
  * Runs the docker CLI with a fixed argv (never a shell), a bounded lifetime, and
  * process-group termination on timeout or abort. Mirrors the sandbox adapter's runCommand.
@@ -129,8 +144,13 @@ export function runDocker(
   args: string[],
   options: RunDockerOptions,
 ): Promise<RunDockerResult> {
+  const executable = directExecutable(binary);
+  const argv = directArguments(args);
+  if (!executable || !argv) {
+    return Promise.resolve({ code: 1, stdout: "", stderr: "command rejected\n" });
+  }
   return new Promise((resolve) => {
-    const child = spawn(binary, args, {
+    const child = spawn(executable, argv, {
       cwd: options.cwd,
       env: options.env,
       shell: false,
@@ -189,7 +209,10 @@ export function runDocker(
 function killProcessTree(pid: number | undefined) {
   if (!pid) return;
   if (process.platform === "win32") {
-    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore" });
+    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      stdio: "ignore",
+      shell: false,
+    });
     killer.unref();
     return;
   }

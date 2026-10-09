@@ -1,6 +1,7 @@
 import type { JobPublisher, JobWorkerHost } from "@rakazo/adapter-kit";
 import { ComposioConnector, IntegrationProviderSettings } from "@rakazo/adapters";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
+import { createWorkerSecretStore } from "./secret-store.js";
 
 loadRootEnv();
 
@@ -19,7 +20,6 @@ import {
   createTicketChangeNotifier,
   createWebProvider,
   databaseCapacityBackoffMs,
-  EncryptedSecretStore,
   ExpoPushProvider,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
@@ -47,6 +47,7 @@ import {
   ScriptedAgentRuntime,
   SpaceMemoryProviderResolver,
   sandboxProviderOptionsFromEnv,
+  withSecretPersistence,
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken } from "@rakazo/core";
 import {
@@ -55,6 +56,7 @@ import {
   createThreadEvents,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
+  pushSessionExpiresAt,
 } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -70,15 +72,20 @@ async function main() {
   // of four separate ones. Keep this modest: graphile holds a LISTEN client and
   // leadership holds an advisory-lock client for the process lifetime, and a
   // larger max just competes for Postgres max_connections (53300).
-  const { prisma, pool } = createDb(databaseUrl, {
+  const created = createDb(databaseUrl, {
     poolMax: parsePositiveInteger(process.env.DB_POOL_MAX, 8),
     applicationName: "rakazo-worker",
   });
+  const { pool } = created;
+  let { prisma } = created;
   const realtime = new PostgresRealtimeFanout({
     connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
     publisher: pool,
   });
-  const secrets = new EncryptedSecretStore(resolveEncryptionKey(process.env));
+  const secrets = await createWorkerSecretStore(process.env, realtime);
+  if (secrets.describe().capabilities.degraded)
+    logger.warn("Secret storage degraded; encrypted credentials remain available");
+  prisma = withSecretPersistence(prisma, secrets);
   const events = createThreadEvents(prisma, realtime, {
     runSecretWriter: createRunSecretWriter(secrets),
   });
@@ -89,7 +96,8 @@ async function main() {
       ? new ScriptedAgentRuntime()
       : new PiAgentRuntime({ sessionRoot: resolvePiSessionRoot(dataDir) });
   // Same resolver the API uses, so both processes agree on provider, model and key.
-  const { key: deploymentModelKey } = resolveDeploymentModel();
+  const { key: deploymentModelKey, configured: deploymentModelConfigured } =
+    resolveDeploymentModel();
   const sandboxProvider = resolveSandboxProvider(process.env);
   const sandbox = createRunSandbox(sandboxProvider, {
     ...sandboxProviderOptionsFromEnv(process.env),
@@ -130,7 +138,7 @@ async function main() {
   // API process, which is the one with the inbound sink actually wired up.
   const messagingPlatforms = messagingPlatformsFromEnv(messagingEnvFromProcess(process.env));
   const messaging = isMessagingSurfaceEnabled(messagingPlatforms, {
-    deploymentModelKey,
+    deploymentModelConfigured,
     openSignup: process.env.MESSAGING_OPEN_SIGNUP === "true",
   })
     ? new ChatSdkMessagingSurface(messagingPlatforms)
@@ -168,7 +176,9 @@ async function main() {
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
-  const notifications = new ExpoPushProvider(dataDir);
+  const notifications = new ExpoPushProvider(dataDir, (sessionId) =>
+    pushSessionExpiresAt(prisma, sessionId),
+  );
   const executor = createRunExecutor({
     prisma,
     runtime,
@@ -201,6 +211,7 @@ async function main() {
     secretStore: secrets,
     mcpAllowPrivateEndpoint: process.env.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
     deploymentModelKey,
+    deploymentModelConfigured,
     dataDir,
     notifications,
     jobs,
@@ -223,6 +234,7 @@ async function main() {
     secretStore: secrets,
     memoryProviders,
     deploymentModelKey,
+    deploymentModelConfigured,
     messaging,
     cloudAgent,
     boardEvents,
@@ -266,6 +278,7 @@ async function main() {
       await reconciler.stop();
       await jobHost.stop();
       await jobs.close();
+      await secrets.close();
       await realtime.close();
       await connector.stop();
       await mcp.close();
@@ -293,7 +306,7 @@ async function main() {
     void stop().finally(() => process.exit(1));
   });
 
-  logger.info("worker ready");
+  logger.info("worker ready", { degraded: secrets.describe().capabilities.degraded ?? false });
 }
 
 main().catch(async (error) => {

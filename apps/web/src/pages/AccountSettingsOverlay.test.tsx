@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
+import type { AccountSecurity } from "@rakazo/contracts";
 import type { ReactNode } from "react";
-import { act } from "react";
+import { act, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -60,6 +61,27 @@ vi.mock("@rakazo/ui-web", () => ({
   cn: (...values: unknown[]) => values.filter(Boolean).join(" "),
 }));
 
+const accountPolicy = vi.hoisted(() => ({
+  passwordChangeEnabled: undefined as boolean | undefined,
+}));
+vi.mock("../components/AccountAccess", () => ({
+  AccountAccess: ({ onSecurity }: { onSecurity: (value: AccountSecurity) => void }) => {
+    useEffect(
+      () =>
+        onSecurity({
+          hasPassword: true,
+          passwordChangeEnabled: accountPolicy.passwordChangeEnabled,
+          freshOidcAuth: false,
+          ssoLinked: false,
+          emailDeletion: false,
+          sso: null,
+        }),
+      [onSecurity],
+    );
+    return null;
+  },
+}));
+
 vi.mock("../components/ApprovalRulesSettings", () => ({ ApprovalRulesSettings: () => null }));
 vi.mock("../components/ai/primitives", () => ({ SuccessPop: () => null }));
 vi.mock("../components/ComputersUnavailableHint", () => ({
@@ -78,6 +100,7 @@ vi.mock("../lib/ui-appearance", () => ({
 }));
 vi.mock("react-router-dom", () => ({ Link: ({ children }: { children?: ReactNode }) => children }));
 
+import { getRemoteImagesEnabled } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
 
@@ -123,6 +146,70 @@ it("flips the stored tool activity preference from the settings toggle", async (
   } finally {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("turns loading web images on and off from the settings toggle", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <GeneralSettingsPanels
+          name="Jamie"
+          avatarStyle="robot"
+          onAvatarStyleChange={async () => undefined}
+        />,
+      );
+    });
+
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="remote-images-toggle"]',
+    );
+    if (!toggle) throw new Error("Missing remote images toggle");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(getRemoteImagesEnabled()).toBe(false);
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(getRemoteImagesEnabled()).toBe(true);
+
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(getRemoteImagesEnabled()).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it.each([undefined, true, false])("respects the password-change policy (%s)", async (enabled) => {
+  accountPolicy.passwordChangeEnabled = enabled;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <GeneralSettingsPanels
+          name="Test"
+          avatarStyle="robot"
+          onAvatarStyleChange={async () => undefined}
+        />,
+      ),
+    );
+    expect(container.textContent?.includes("Change password")).toBe(enabled !== false);
+  } finally {
+    await act(async () => root.unmount());
+    accountPolicy.passwordChangeEnabled = undefined;
     vi.unstubAllGlobals();
   }
 });

@@ -1,3 +1,4 @@
+import type { ExecFileException } from "node:child_process";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, lstat, open, readFile, rename, unlink } from "node:fs/promises";
@@ -5,8 +6,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import type { ServerUpdateRun } from "@rakazo/contracts";
+import type { ComposeUpdateStep } from "@rakazo/core";
 import {
-  type ComposeUpdateStep,
   chooseUpdateStrategy,
   commitImageTag,
   composeUpArgv,
@@ -33,16 +34,18 @@ import {
   upsertEnvAssignments,
   validateUpdateRequest,
 } from "@rakazo/core";
-import { type Logger, SERVICE_NAMES } from "@rakazo/logging";
+import type { Logger } from "@rakazo/logging";
+import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
 import { requestLogging } from "@rakazo/logging/hono";
-import { type Context, Hono } from "hono";
+import type { Context } from "hono";
+import { Hono } from "hono";
+import type { UpdaterConfig } from "./updater-logic.js";
 import {
   readTagState,
   resolveUpdaterConfig,
   truncateOutput,
   UpdateRefused,
-  type UpdaterConfig,
 } from "./updater-logic.js";
 
 const STEP_TIMEOUT_MS: Record<string, number> = {
@@ -124,43 +127,57 @@ export function commandEnvironment(
   };
 }
 
+function directArguments(args: readonly string[]): string[] | undefined {
+  if (!Array.isArray(args)) return undefined;
+  if (args.some((arg) => typeof arg !== "string" || arg.includes("\0"))) return undefined;
+  return [...args];
+}
+
 /**
- * Every command is argv with `shell: false`. A repository URL or a branch reaches git as one
- * argument and reaches Compose not at all, so there is no string a caller can craft that becomes
- * part of a command line, a build argument, or a service definition.
+ * git and docker only, each as argv with `shell: false`. A repository URL or a branch reaches
+ * git as one argument and reaches Compose not at all, so there is no string a caller can craft
+ * that becomes part of a command line, a build argument, or a service definition.
  */
-const runCommand: UpdaterCommandRunner = (
-  command: string,
-  args: string[],
-  options: { cwd: string; timeoutMs: number; env?: Record<string, string> },
-): Promise<CommandResult> =>
-  new Promise((resolve) => {
-    execFile(
-      command,
-      args,
-      {
-        cwd: options.cwd,
-        timeout: options.timeoutMs,
-        maxBuffer: 8 * 1024 * 1024,
-        windowsHide: true,
-        shell: false,
-        env: commandEnvironment(process.env, options.env),
-      },
-      (error, stdout, stderr) => {
-        const output = truncateOutput(`${stdout}${stderr}`);
-        if (!error) {
-          resolve({ ok: true, exitCode: 0, output });
-          return;
-        }
-        const exitCode = typeof error.code === "number" ? error.code : null;
-        const timedOut = "killed" in error && Boolean(error.killed);
-        const reason = timedOut
-          ? `Timed out after ${options.timeoutMs}ms (${"signal" in error && error.signal ? String(error.signal) : "killed"}).`
-          : error.message;
-        resolve({ ok: false, exitCode, output: output ? `${output}\n${reason}` : reason });
-      },
-    );
+export const runHostCommand: UpdaterCommandRunner = (command, args, options) => {
+  const argv = directArguments(args);
+  if ((command !== "git" && command !== "docker") || !argv) {
+    return Promise.resolve({
+      ok: false,
+      exitCode: null,
+      output: "Refusing to run an unexpected program.",
+    });
+  }
+  return new Promise((resolve) => {
+    const execOptions = {
+      cwd: options.cwd,
+      timeout: options.timeoutMs,
+      maxBuffer: 8 * 1024 * 1024,
+      windowsHide: true,
+      shell: false as const,
+      env: commandEnvironment(process.env, options.env),
+    };
+    const done = (
+      error: ExecFileException | null,
+      stdout: string | Buffer,
+      stderr: string | Buffer,
+    ) => {
+      const output = truncateOutput(`${stdout}${stderr}`);
+      if (!error) {
+        resolve({ ok: true, exitCode: 0, output });
+        return;
+      }
+      const exitCode = typeof error.code === "number" ? error.code : null;
+      const timedOut = Boolean(error.killed);
+      const signal = error.signal ? String(error.signal) : "killed";
+      const reason = timedOut
+        ? `Timed out after ${options.timeoutMs}ms (${signal}).`
+        : error.message;
+      resolve({ ok: false, exitCode, output: output ? `${output}\n${reason}` : reason });
+    };
+    if (command === "git") execFile("git", argv, execOptions, done);
+    else execFile("docker", argv, execOptions, done);
   });
+};
 
 export function createUpdaterApp(
   config: UpdaterConfig,
@@ -168,7 +185,7 @@ export function createUpdaterApp(
 ) {
   const app = new Hono();
   app.use("*", requestLogging(options.logger));
-  const run = options.run ?? runCommand;
+  const run = options.run ?? runHostCommand;
   const composeTarget = {
     composeFiles: config.composeFiles,
     envFiles: [config.envFile],

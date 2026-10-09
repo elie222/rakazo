@@ -7,7 +7,9 @@ import {
   localeHomePath,
   type Locale,
 } from "../i18n/locales";
-import { DOCS_URL, GITHUB_URL } from "../site";
+import { HUB_CARDS } from "../alternatives";
+import { GROK_ALTERNATIVE_PATH } from "../grok-alternative";
+import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 import Button from "./Button.astro";
 import Logo from "./Logo.astro";
 
@@ -23,13 +25,30 @@ const locale = Astro.props.locale ?? DEFAULT_LOCALE;
 const copy = Astro.props.copy ?? getHomeCopy(locale).nav;
 const homeHref = Astro.props.homeHref ?? localeHomePath(locale);
 
-const NAV_LINKS = [
+const NAV_LINKS: Array<{ href: string; label: string; external?: boolean }> = [
   { href: localeHashPath(locale, "demo"), label: copy.product },
   { href: localeHashPath(locale, "roster"), label: copy.bots },
   { href: localeHashPath(locale, "selfhost"), label: copy.selfHost },
   { href: localeHashPath(locale, "open-source"), label: copy.openSource },
-  { href: DOCS_URL, label: copy.docs, external: true },
+  { href: SELF_HOST_GUIDE_PATH, label: copy.docs },
+  { href: "/blog/", label: copy.blog },
+  { href: GROK_ALTERNATIVE_PATH, label: copy.grokBot },
 ];
+
+const comparisonLinks = HUB_CARDS.filter((card) => card.href !== GROK_ALTERNATIVE_PATH).map(
+  (card) => ({ href: card.href, label: card.name }),
+);
+const menuLinks = [
+  ...NAV_LINKS,
+  { href: "/alternatives/", label: copy.alternatives, external: false },
+  ...comparisonLinks.map((link) => ({ ...link, external: false })),
+];
+
+const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
+
+function isCurrent(href: string): boolean {
+  return (href.replace(/\/+$/, "") || "/") === currentPath;
+}
 
 const externalAttrs = { target: "_blank", rel: "noreferrer" };
 ---
@@ -40,11 +59,36 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
     <nav class="site-nav" aria-label={copy.primary}>
       {
         NAV_LINKS.map((link) => (
-          <a href={link.href} {...(link.external ? externalAttrs : {})}>
+          <a
+            href={link.href}
+            aria-current={!link.external && isCurrent(link.href) ? "page" : undefined}
+            {...(link.external ? externalAttrs : {})}
+          >
             {link.label}
           </a>
         ))
       }
+      <div class="nav-drop">
+        <a href="/alternatives/" aria-current={isCurrent("/alternatives/") ? "page" : undefined}>
+          {copy.alternatives}
+        </a>
+        <details class="nav-drop__menu">
+          <summary aria-label={copy.alternativesMenu}>
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M5 8l5 5 5-5" />
+            </svg>
+          </summary>
+          <div class="nav-drop__panel">
+            {
+              comparisonLinks.map((link) => (
+                <a href={link.href} aria-current={isCurrent(link.href) ? "page" : undefined}>
+                  {link.label}
+                </a>
+              ))
+            }
+          </div>
+        </details>
+      </div>
     </nav>
   </div>
   <div class="site-header__right">
@@ -66,8 +110,12 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
       </summary>
       <nav class="site-menu__panel" aria-label={copy.primary}>
         {
-          NAV_LINKS.map((link) => (
-            <a href={link.href} {...(link.external ? externalAttrs : {})}>
+          menuLinks.map((link) => (
+            <a
+              href={link.href}
+              aria-current={!link.external && isCurrent(link.href) ? "page" : undefined}
+              {...(link.external ? externalAttrs : {})}
+            >
               {link.label}
             </a>
           ))
@@ -79,6 +127,7 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
 
 <script>
   const menu = document.querySelector<HTMLDetailsElement>("[data-site-menu]");
+  const drops = document.querySelectorAll<HTMLDetailsElement>(".nav-drop__menu");
 
   if (menu) {
     menu.addEventListener("click", (event) => {
@@ -90,7 +139,16 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
     });
 
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") menu.open = false;
+      if (event.key === "Escape") {
+        menu.open = false;
+        for (const drop of drops) drop.open = false;
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      for (const drop of drops) {
+        if (drop.open && !drop.parentElement?.contains(event.target as Node)) drop.open = false;
+      }
     });
   }
 </script>

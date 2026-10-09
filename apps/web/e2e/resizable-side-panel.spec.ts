@@ -57,3 +57,27 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
   await expect(panel).toBeVisible();
   expect((await panel.boundingBox())!.width).toBeLessThanOrEqual(390);
 });
+
+test("phone composer menu and settings panel stay tappable", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signup(page, `phone-settings-${Date.now()}@rakazo.test`, "password12", "Phone Settings");
+  await completeOnboarding(page);
+  await page.getByRole("combobox", { name: /^Message/ }).fill("/");
+  // Tap at the start edge, where the sidebar swipe strip runs beside the chat.
+  await page
+    .getByTestId("slash-picker")
+    .getByRole("button", { name: "Chat Settings" })
+    .click({ position: { x: 4, y: 8 }, timeout: 5_000 });
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings).toBeVisible();
+  await settings.getByTestId("bot-settings-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  // Trial clicks fail when another element, like the composer, would receive the tap.
+  for (const name of ["Export", "Clear conversation"]) {
+    await settings
+      .getByRole("button", { name, exact: true })
+      .click({ trial: true, timeout: 5_000 });
+  }
+  await captureScreenshot(page, testInfo, "bot-settings-mobile");
+});

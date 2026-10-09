@@ -10,14 +10,17 @@ import type {
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { SecretStore } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { isLocalMcpHost } from "@rakazo/contracts";
+import { readBoundedResponseBytes } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { sanitizeConnectorError } from "./connector-safety.js";
 import { secureFetch, validateUrl, withEndpointOriginFallback } from "./mcp-transport.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import type { EncryptedSecretStore } from "./secrets.js";
+import { persistPreparedSecret } from "./secret-persistence.js";
 
 type OAuthState = {
   tokens?: OAuthTokens;
@@ -177,6 +180,7 @@ type ProviderOptions = {
   redirectUri?: string;
   state?: string;
   onAuthorization?: (url: URL) => void;
+  onPersisted?: (record: { id: string; ref: string; material: OAuthMaterial }) => void;
 };
 
 /** One SDK OAuth provider backed by the same encrypted material used at runtime. */
@@ -366,10 +370,18 @@ function oauthFetch(
   // Errors raised by this network layer (URL policy, redirects, unreachable
   // hosts) carry only our own text. Anything else was built by the SDK from an
   // upstream response and may quote its body, so the caller gets `message`.
+  // A structured OAuth error is the protocol's own failure: keep its status,
+  // error code, and description instead of hiding them behind `message`.
   const networkErrors = new WeakSet<Error>();
+  let rejection: OAuthRejection | undefined;
   const recordingFetch: typeof fetch = async (input, init) => {
     try {
-      return await fallbackFetch(input, init);
+      const response = await fallbackFetch(input, init);
+      if (!response.ok) {
+        const next = await readOAuthRejection(response);
+        if (next) rejection = next;
+      }
+      return response;
     } catch (error) {
       if (error instanceof Error) networkErrors.add(error);
       throw error;
@@ -381,12 +393,73 @@ function oauthFetch(
     close: () => safeFetch.close(),
     publicError: (error, message) => {
       if (error instanceof Error && networkErrors.has(error)) return error;
-      getLogger().warn(
-        `${message}: ${sanitizeConnectorError(error, oauthMaterialSecrets(material))}`,
-      );
-      return new Error(message);
+      const secrets = oauthMaterialSecrets(material);
+      const sdk = sanitizeConnectorError(error, secrets);
+      const surfaced = rejection ? formatOAuthRejection(rejection, sdk, secrets) : undefined;
+      getLogger().warn(`${message}: ${surfaced ?? sdk}`);
+      return new Error(surfaced ? `${message}: ${surfaced}` : message);
     },
   };
+}
+
+type OAuthRejection = { status: number; code: string; description: string };
+
+const OAUTH_ERROR_BODY_MAX_CHARS = 8_000;
+// A JavaScript character is at most 3 UTF-8 bytes, so a longer body cannot pass the character cap.
+const OAUTH_ERROR_BODY_MAX_BYTES = OAUTH_ERROR_BODY_MAX_CHARS * 3;
+
+/** Read an RFC 6749 error object without consuming the body the SDK still needs. */
+async function readOAuthRejection(response: Response): Promise<OAuthRejection | undefined> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > OAUTH_ERROR_BODY_MAX_BYTES) {
+    return undefined;
+  }
+  let text: string;
+  try {
+    const bytes = await readBoundedResponseBytes(response.clone(), {
+      maxBytes: OAUTH_ERROR_BODY_MAX_BYTES,
+      tooLargeMessage: "OAuth error response is too large",
+      read: (operation) => operation(),
+    });
+    text = new TextDecoder().decode(bytes);
+  } catch {
+    return undefined;
+  }
+  if (text.length > OAUTH_ERROR_BODY_MAX_CHARS) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+  const record = parsed as Record<string, unknown>;
+  const code = record.error;
+  if (typeof code !== "string" || !/^[\w.-]{1,64}$/.test(code)) return undefined;
+  const description = typeof record.error_description === "string" ? record.error_description : "";
+  return { status: response.status, code, description };
+}
+
+/** Surface a rejection only when it is the error the SDK just threw.
+ *
+ * Earlier challenges (a 401 while discovery continues) must not replace a
+ * later, different failure. The SDK message is already redacted and
+ * length-limited, so the description is cleaned the same way before comparing.
+ * Unstructured bodies stay out of the caller-facing message; the log still
+ * receives the SDK text. */
+function formatOAuthRejection(
+  rejection: OAuthRejection,
+  sdk: string,
+  secrets: string[],
+): string | undefined {
+  if (sdk.includes("Raw body:")) return undefined;
+  // Redact the whole description first. A later cut can land inside a secret, and
+  // the redactor only matches the complete value.
+  const cleaned = sanitizeConnectorError(rejection.description, secrets);
+  if (cleaned.trim() !== sdk.trim()) return undefined;
+  const description = cleaned.replace(/\s+/g, " ").trim().slice(0, 300);
+  const detail = description ? `${rejection.code}: ${description}` : rejection.code;
+  return sanitizeConnectorError(`HTTP ${rejection.status} ${detail}`, secrets);
 }
 
 export class McpOAuthBroker {
@@ -394,7 +467,7 @@ export class McpOAuthBroker {
 
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly secrets: EncryptedSecretStore,
+    private readonly secrets: SecretStore,
     private readonly network: RemoteTransportDependencies = {},
     private readonly allowPrivateEndpoint = false,
   ) {}
@@ -408,11 +481,11 @@ export class McpOAuthBroker {
     return material.oauth ? "reconnect" : "none";
   }
 
-  statusForCiphertext(
+  async statusForCiphertext(
     ciphertext: string | undefined,
     recordId: string | undefined,
-  ): "none" | "connected" | "reconnect" {
-    const material = ciphertext && recordId ? this.read(ciphertext, recordId) : {};
+  ): Promise<"none" | "connected" | "reconnect"> {
+    const material = ciphertext && recordId ? await this.read(ciphertext, recordId) : {};
     if (material.oauth?.tokens) return "connected";
     return material.oauth ? "reconnect" : "none";
   }
@@ -421,10 +494,11 @@ export class McpOAuthBroker {
     server: ServerRef,
     context: ActorRef,
     loaded?: { material: OAuthMaterial; secretId?: string },
+    onPersisted?: ProviderOptions["onPersisted"],
   ): Promise<OAuthClientProvider | undefined> {
     const material = loaded ?? (await this.loadMaterial(server, context));
     if (!material.material.oauth) return undefined;
-    return this.createProvider(server, context, material);
+    return this.createProvider(server, context, material, { onPersisted });
   }
 
   async begin(input: {
@@ -513,7 +587,7 @@ export class McpOAuthBroker {
         botId: "mcp",
         signal: new AbortController().signal,
       },
-      sessionId,
+      { recordId: sessionId, ephemeral: true },
     );
     await this.prisma.mcpOAuthSession.create({
       data: {
@@ -585,7 +659,7 @@ export class McpOAuthBroker {
       if (!server?.endpoint) throw new Error("MCP OAuth session is invalid or expired");
       const context = { spaceId: input.spaceId, userId: input.userId };
       const loaded = {
-        material: this.read(session.oauthCiphertext, session.id),
+        material: await this.read(session.oauthCiphertext, session.id),
         ...(server.secretId ? { secretId: server.secretId } : {}),
       };
       pending = {
@@ -666,7 +740,7 @@ export class McpOAuthBroker {
       where: { id: server.secretId, spaceId: input.spaceId, userId: input.userId },
     });
     if (!row) return;
-    const material = this.read(row.ciphertext, row.id);
+    const material = await this.read(row.ciphertext, row.id);
     delete material.oauth;
     await this.replaceMaterial(server.id, material, input, true);
   }
@@ -680,7 +754,7 @@ export class McpOAuthBroker {
       where: { id: server.secretId, spaceId: context.spaceId, userId: context.userId },
     });
     return row
-      ? { material: this.read(row.ciphertext, row.id), secretId: row.id }
+      ? { material: await this.read(row.ciphertext, row.id), secretId: row.id }
       : { material: {} };
   }
 
@@ -694,7 +768,14 @@ export class McpOAuthBroker {
       server.id,
       loaded.material,
       async (material) => {
-        await this.replaceMaterial(server.id, material, context, false, server.endpoint);
+        await this.replaceMaterial(
+          server.id,
+          material,
+          context,
+          false,
+          server.endpoint,
+          options.onPersisted,
+        );
       },
       options,
     );
@@ -706,35 +787,30 @@ export class McpOAuthBroker {
     context: ActorRef,
     incrementRevision: boolean,
     expectedEndpoint?: string | null,
+    onPersisted?: ProviderOptions["onPersisted"],
   ): Promise<string | undefined> {
-    return this.prisma.$transaction(async (tx) => {
-      // Serialize every credential rotation across API instances. OAuth
-      // providers hold a session snapshot, so merge only their OAuth state
-      // into the latest static material after acquiring the lock.
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
-      const server = await tx.mcpServer.findFirst({
-        where: {
-          id: serverId,
-          spaceId: context.spaceId,
-          userId: context.userId,
-        },
-        select: { endpoint: true, secretId: true },
+    // Take a DB-only snapshot, then do provider I/O with no transaction open.
+    // Recheck both the pointer and ciphertext under the existing advisory lock.
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const snapshot = await this.prisma.$transaction(async (tx) => {
+        const server = await tx.mcpServer.findFirst({
+          where: { id: serverId, spaceId: context.spaceId, userId: context.userId },
+          select: { endpoint: true, secretId: true },
+        });
+        if (!server) throw new Error("MCP server is unavailable");
+        if (expectedEndpoint !== undefined && server.endpoint !== expectedEndpoint)
+          throw new Error(
+            "MCP server endpoint changed during authorization; reconnect this server",
+          );
+        const secret = server.secretId
+          ? await tx.secret.findFirst({
+              where: { id: server.secretId, spaceId: context.spaceId, userId: context.userId },
+            })
+          : null;
+        return { server, secret };
       });
-      if (!server) throw new Error("MCP server is unavailable");
-      if (expectedEndpoint !== undefined && server.endpoint !== expectedEndpoint) {
-        throw new Error("MCP server endpoint changed during authorization; reconnect this server");
-      }
-      const currentSecret = server.secretId
-        ? await tx.secret.findFirst({
-            where: {
-              id: server.secretId,
-              spaceId: context.spaceId,
-              userId: context.userId,
-            },
-          })
-        : null;
-      const nextMaterial = currentSecret
-        ? this.read(currentSecret.ciphertext, currentSecret.id)
+      const nextMaterial = snapshot.secret
+        ? await this.read(snapshot.secret.ciphertext, snapshot.secret.id)
         : {};
       if (material.oauth) nextMaterial.oauth = structuredClone(material.oauth);
       else delete nextMaterial.oauth;
@@ -754,36 +830,68 @@ export class McpOAuthBroker {
             signal: new AbortController().signal,
           })
         : undefined;
-      if (stored) {
-        await tx.secret.create({
-          data: {
-            id: stored.id,
-            spaceId: context.spaceId,
-            userId: context.userId,
-            kind: "mcp",
-            ciphertext: stored.ciphertext,
-          },
-        });
-      }
-      await tx.mcpServer.update({
-        where: { id: serverId },
-        data: {
-          secretId: stored?.id ?? null,
-          ...(incrementRevision ? { revision: { increment: 1 } } : {}),
+      const committed = await persistPreparedSecret(
+        this.prisma,
+        this.secrets,
+        stored,
+        () =>
+          this.prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('mcp-oauth-material'), hashtext(${serverId}))`;
+            const server = await tx.mcpServer.findFirst({
+              where: { id: serverId, spaceId: context.spaceId, userId: context.userId },
+              select: { endpoint: true, secretId: true },
+            });
+            if (!server) throw new Error("MCP server is unavailable");
+            if (
+              server.endpoint !== snapshot.server.endpoint ||
+              server.secretId !== snapshot.server.secretId
+            )
+              return false;
+            if (server.secretId)
+              await tx.$queryRaw`SELECT id FROM secrets WHERE id = ${server.secretId} FOR UPDATE`;
+            const current = server.secretId
+              ? await tx.secret.findFirst({
+                  where: { id: server.secretId, spaceId: context.spaceId, userId: context.userId },
+                })
+              : null;
+            if (current?.ciphertext !== snapshot.secret?.ciphertext) return false;
+            if (stored)
+              await tx.secret.create({
+                data: {
+                  id: stored.id,
+                  spaceId: context.spaceId,
+                  userId: context.userId,
+                  kind: "mcp",
+                  ciphertext: stored.ciphertext,
+                },
+              });
+            await tx.mcpServer.update({
+              where: { id: serverId },
+              data: {
+                secretId: stored?.id ?? null,
+                ...(incrementRevision ? { revision: { increment: 1 } } : {}),
+              },
+            });
+            if (server.secretId && server.secretId !== stored?.id)
+              await tx.secret.deleteMany({ where: { id: server.secretId } });
+            return true;
+          }),
+        (committed) => {
+          if (committed && stored)
+            onPersisted?.({ id: stored.id, ref: stored.ciphertext, material: nextMaterial });
         },
-      });
-      if (server.secretId && server.secretId !== stored?.id) {
-        await tx.secret.deleteMany({ where: { id: server.secretId } });
-      }
-      return stored?.id;
-    });
+      );
+      if (committed) return stored?.id;
+    }
+    throw new Error("MCP credentials changed during authorization; retry");
   }
 
-  private read(ciphertext: string, recordId: string): OAuthMaterial {
+  private async read(ciphertext: string, recordId: string): Promise<OAuthMaterial> {
     try {
-      const value = JSON.parse(this.secrets.load(ciphertext, recordId));
+      const value = JSON.parse(await this.secrets.load(ciphertext, recordId));
       return value && typeof value === "object" ? (value as OAuthMaterial) : {};
-    } catch {
+    } catch (error) {
+      if (error instanceof SecretStoreUnavailableError) throw error;
       return {};
     }
   }

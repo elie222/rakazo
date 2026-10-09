@@ -6,9 +6,18 @@ import {
   isPeerReceiptBlocks,
   isUserProgressClientNonce,
 } from "@rakazo/core";
+import { MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
+import { messageReplyPreview } from "@rakazo/core/message-quote";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 
 type MessageDb = PrismaClient | Prisma.TransactionClient;
+
+const replySelection = {
+  threadId: true,
+  role: true,
+  botId: true,
+  blocks: true,
+} as const;
 
 export async function loadMessagePage(
   prisma: MessageDb,
@@ -36,7 +45,10 @@ export async function loadMessagePage(
         where: { threadId, seq: { gte: minSeq, lte: maxSeq } },
         orderBy: { seq: "asc" },
         take: pageSize,
+        include: { replyTo: { select: replySelection } },
       });
+      const truncated = rows.length >= pageSize;
+      const coveredThroughSeq = truncated ? (rows[rows.length - 1]?.seq ?? maxSeq) : maxSeq;
       const first = rows[0];
       const hasOlder = first
         ? (await prisma.message.count({ where: { threadId, seq: { lt: first.seq } } })) > 0
@@ -49,6 +61,7 @@ export async function loadMessagePage(
         threadId,
         messages: messages.map(toThreadMessage),
         olderCursor: hasOlder ? (first?.seq ?? null) : null,
+        coveredThroughSeq,
       };
     }
   }
@@ -62,6 +75,7 @@ export async function loadMessagePage(
       },
       orderBy: { seq: "desc" },
       take: pageSize + 1,
+      include: { replyTo: { select: replySelection } },
     });
     const hasOlder = rows.length > pageSize;
     const pageRows = rows.slice(0, pageSize).reverse();
@@ -254,10 +268,28 @@ function toThreadMessage(row: {
   botId: string | null;
   replyToMessageId: string | null;
   replyQuote: string | null;
+  replyTo?: {
+    threadId: string;
+    role: string;
+    botId: string | null;
+    blocks: Prisma.JsonValue;
+  } | null;
   runId: string | null;
   clientNonce?: string | null;
   createdAt: Date;
 }): ThreadMessage {
+  const parent = row.replyTo?.threadId === row.threadId ? row.replyTo : null;
+  const parsed = parent ? MessageBlockSchema.array().safeParse(parent.blocks) : undefined;
+  const replyPreview =
+    parent && parsed?.success
+      ? messageReplyPreview(
+          parsed.data,
+          parent.role as ThreadMessage["role"],
+          parent.botId ?? undefined,
+        )
+      : row.replyToMessageId || row.replyQuote != null
+        ? null
+        : undefined;
   return {
     id: row.id,
     threadId: row.threadId,
@@ -267,6 +299,7 @@ function toThreadMessage(row: {
     botId: row.botId ?? undefined,
     replyToMessageId: row.replyToMessageId ?? undefined,
     replyQuote: row.replyQuote ?? undefined,
+    replyPreview,
     runId: row.runId ?? undefined,
     callId: callIdFromClientNonce(row.clientNonce),
     createdAt: row.createdAt.toISOString(),

@@ -6,6 +6,7 @@ import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js
 import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  probeOpenAiCompatibleModels,
   registerOpenAiCompatibleCatalog,
 } from "./pi-openai-compatible-provider.js";
 
@@ -25,7 +26,64 @@ export type PiCatalogEntry = {
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
   placeholder?: boolean;
+  /** Provider models share one pinned HTTPS models-list base URL. */
+  catalogProbe?: boolean;
 };
+
+const catalogProbeBaseUrls = new Map<string, string>();
+
+/** Pinned models-list URL for a catalog provider, taken from the model registry. */
+export function catalogProviderProbeBaseUrl(provider: string): string | null {
+  listPiCatalog();
+  return catalogProbeBaseUrls.get(provider) ?? null;
+}
+
+/**
+ * List models for a catalog provider whose registry base URL is pinned.
+ * Caller-supplied URLs stay on `probeOpenAiCompatibleModels`, which still
+ * rejects public hosts unless the deployment opens that gate.
+ */
+export async function probeCatalogProviderModels(
+  input: { provider: string; apiKey: string },
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const baseUrl = catalogProviderProbeBaseUrl(input.provider);
+  if (!baseUrl) throw new Error("This provider cannot be tested without saving.");
+  return probeOpenAiCompatibleModels({ baseUrl, apiKey: input.apiKey }, fetchImpl, signal, {
+    allowPublic: true,
+    catalogProbe: true,
+  });
+}
+
+/** Wire protocols whose registry base URL also serves GET {base}/models. */
+const CATALOG_PROBE_APIS = new Set(["openai-completions", "openai-responses"]);
+
+function pinnedCatalogProbeBaseUrl(
+  providerId: string,
+  models: ReadonlyArray<{ api: string; baseUrl?: string }>,
+): string | null {
+  if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID || providerId === LOCAL_PROVIDER_ID) {
+    return null;
+  }
+  const urls = new Set<string>();
+  for (const model of models) {
+    if (!CATALOG_PROBE_APIS.has(model.api) || !model.baseUrl) continue;
+    const trimmed = model.baseUrl.replace(/\/+$/, "");
+    // Account-scoped templates such as {CLOUDFLARE_ACCOUNT_ID} are not probe URLs.
+    if (trimmed.includes("{") || trimmed.includes("}")) return null;
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    if (url.protocol !== "https:" || url.username || url.password) return null;
+    urls.add(trimmed);
+  }
+  if (urls.size !== 1) return null;
+  return [...urls][0] ?? null;
+}
 
 export function listPiCatalog(): PiCatalogEntry[] {
   cachedCatalog ??= buildPiCatalog();
@@ -35,6 +93,7 @@ export function listPiCatalog(): PiCatalogEntry[] {
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
 function buildPiCatalog(): PiCatalogEntry[] {
+  catalogProbeBaseUrls.clear();
   const models = registerOpenAiCompatibleCatalog(
     registerLocalProvider(supplementPiModels(builtinModels())),
   );
@@ -52,6 +111,8 @@ function buildPiCatalog(): PiCatalogEntry[] {
       oauth,
     });
     const providerModels = provider.getModels();
+    const probeBaseUrl = pinnedCatalogProbeBaseUrl(provider.id, providerModels);
+    if (probeBaseUrl) catalogProbeBaseUrls.set(provider.id, probeBaseUrl);
     const modelIds = providerModels.map((model) => model.id);
     for (const model of providerModels) {
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
@@ -72,6 +133,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
         // Compatibility metadata does not prove a model is served by a user's
         // endpoint. Keep each custom connection scoped to its entered model ID.
         ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? { placeholder: true } : {}),
+        ...(probeBaseUrl ? { catalogProbe: true } : {}),
       });
     }
   }
@@ -93,6 +155,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       subscription: false,
       reasoning: true,
       thinkingLevels: ["off", "minimal", "low", "medium", "high"],
+      ...(catalogProbeBaseUrls.has("openrouter") ? { catalogProbe: true } : {}),
     });
   }
 

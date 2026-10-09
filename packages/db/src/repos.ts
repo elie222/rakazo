@@ -56,6 +56,7 @@ function mapBot(
     thinkingLevel?: string | null;
     teamChatAmbientEnabled?: boolean;
     teamChatRules?: string;
+    disabledBuiltinTools?: string[];
     webhookSecretId?: string | null;
     spawnKey?: string | null;
   },
@@ -93,6 +94,7 @@ function mapBot(
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
     teamChatAmbientEnabled: bot.teamChatAmbientEnabled ?? false,
     teamChatRules: bot.teamChatRules ?? "",
+    disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
   };
@@ -398,6 +400,7 @@ export function createRepos(prisma: PrismaClient) {
         modelProvider?: string | null;
         modelId?: string | null;
         thinkingLevel?: string | null;
+        disabledBuiltinTools?: string[];
         initialMessage?: {
           role: "user" | "bot" | "system";
           blocks: MessageBlock[];
@@ -415,6 +418,7 @@ export function createRepos(prisma: PrismaClient) {
       let modelProvider = input.modelProvider ?? null;
       let modelId = input.modelId ?? null;
       let thinkingLevel = input.thinkingLevel ?? null;
+      let disabledBuiltinTools = input.disabledBuiltinTools ?? [];
       if (input.parentBotId) {
         const parent = await prisma.bot.findFirst({
           where: {
@@ -429,6 +433,9 @@ export function createRepos(prisma: PrismaClient) {
           modelId = parent.modelId ?? null;
         }
         if (thinkingLevel == null) thinkingLevel = parent.thinkingLevel ?? null;
+        if (input.disabledBuiltinTools === undefined) {
+          disabledBuiltinTools = parent.disabledBuiltinTools;
+        }
       }
       const settings = await prisma.deploymentSettings.findUnique({ where: { id: "default" } });
       const envKind = process.env.SANDBOX_PROVIDER ?? "docker";
@@ -467,6 +474,7 @@ export function createRepos(prisma: PrismaClient) {
               modelProvider,
               modelId,
               thinkingLevel,
+              disabledBuiltinTools,
             },
           });
           const thread = await tx.thread.create({

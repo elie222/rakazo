@@ -1,17 +1,32 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import type { LinkFavicons } from "@rakazo/chat-ui/web";
+import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
 import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts";
 import { Button, Skeleton } from "@rakazo/ui-web";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Navigate, Route, Routes, useSearchParams } from "react-router-dom";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { Navigate, Outlet, Route, Routes, useSearchParams } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
 import { markAfterPaint, markOnce } from "./lib/performance";
+import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
+import { rpc } from "./lib/rpc";
 import {
   holdUnreachableGate,
   sessionGate,
   sessionRetryDelayMs,
   showSessionUnavailable,
 } from "./lib/session-gate";
+import { completeSsoCallback, SSO_CALLBACK_PATH } from "./lib/sso-flow";
 import { IntegrationSetupPage } from "./pages/IntegrationSetup";
 import { LocalSettingsPage } from "./pages/LocalSettings";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
@@ -36,9 +51,39 @@ const BoardPage = lazy(() =>
   import("./pages/Board").then((module) => ({ default: module.BoardPage })),
 );
 
+function SsoCallbackPage() {
+  useEffect(() => {
+    completeSsoCallback();
+  }, []);
+  return null;
+}
+
+// Link icons come from our API, which fetches and caches them; the browser never asks the site.
+const linkFavicons: LinkFavicons = {
+  load: (origin) => rpc.links.favicon({ origin }),
+};
+
 export function App() {
-  if (window.location.pathname === LOCAL_SETTINGS_PAGE) return <LocalSettingsPage />;
-  return <SessionApp />;
+  const loadRemoteImages = useSyncExternalStore(
+    subscribeRemoteImages,
+    getRemoteImagesEnabled,
+    () => false,
+  );
+  return (
+    <RemoteImagesContext.Provider value={loadRemoteImages}>
+      <LinkFaviconsContext.Provider value={linkFavicons}>
+        <ErrorBoundary fallback={<AppFailed />}>
+          {window.location.pathname === SSO_CALLBACK_PATH ? (
+            <SsoCallbackPage />
+          ) : window.location.pathname === LOCAL_SETTINGS_PAGE ? (
+            <LocalSettingsPage />
+          ) : (
+            <SessionApp />
+          )}
+        </ErrorBoundary>
+      </LinkFaviconsContext.Provider>
+    </RemoteImagesContext.Provider>
+  );
 }
 
 function SessionApp() {
@@ -97,10 +142,6 @@ function SessionApp() {
           />
           <Route path="/reset-password" element={<PasswordResetPage />} />
           <Route
-            path="/onboarding"
-            element={user ? <OnboardingPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
             path="/mcp/oauth/callback"
             element={user ? <McpOAuthCallbackPage /> : <Navigate to="/sign-in" replace />}
           />
@@ -114,31 +155,26 @@ function SessionApp() {
               )
             }
           />
-          <Route path="/app" element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />} />
           <Route
-            path="/app/g/:groupId"
-            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/app/artifacts"
-            element={user ? <ArtifactsPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/app/artifacts/:artifactId"
-            element={user ? <ArtifactsPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/app/board"
-            element={user ? <BoardPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/app/boards"
-            element={user ? <BoardPage /> : <Navigate to="/sign-in" replace />}
-          />
-          <Route
-            path="/app/:botId"
-            element={user ? <ShellPage /> : <Navigate to="/sign-in" replace />}
-          />
+            element={
+              user ? (
+                <SubscriptionGate fallback={<GateFallback />}>
+                  <Outlet />
+                </SubscriptionGate>
+              ) : (
+                <Navigate to="/sign-in" replace />
+              )
+            }
+          >
+            <Route path="/onboarding" element={<OnboardingPage />} />
+            <Route path="/app" element={<ShellPage />} />
+            <Route path="/app/g/:groupId" element={<ShellPage />} />
+            <Route path="/app/artifacts" element={<ArtifactsPage />} />
+            <Route path="/app/artifacts/:artifactId" element={<ArtifactsPage />} />
+            <Route path="/app/board" element={<BoardPage />} />
+            <Route path="/app/boards" element={<BoardPage />} />
+            <Route path="/app/:botId" element={<ShellPage />} />
+          </Route>
         </Routes>
       </Suspense>
     </div>
@@ -195,6 +231,39 @@ function SessionUnavailable({ refetch }: { refetch: () => Promise<void> }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** Last resort for a render failure no inner boundary caught: offer a reload instead of a blank page. */
+function AppFailed() {
+  return (
+    <div
+      className="grid h-full place-items-center bg-background px-6 text-center"
+      data-rakazo-app-state="failed"
+    >
+      <div className="flex flex-col items-center">
+        <p className="text-[13.5px] text-muted-foreground/80">
+          <Trans>Something went wrong. Try again.</Trans>
+        </p>
+        <div className="mt-4">
+          <Button
+            variant="secondary"
+            className="rounded-full"
+            onClick={() => window.location.reload()}
+          >
+            <Trans>Refresh</Trans>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GateFallback() {
+  return window.location.pathname.startsWith("/app") ? (
+    <ShellSkeleton />
+  ) : (
+    <div className="h-full bg-background" />
   );
 }
 

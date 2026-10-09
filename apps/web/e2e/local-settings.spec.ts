@@ -53,6 +53,7 @@ test("local settings open and save integrations without an app session", async (
               canChooseHostComputer: true,
               sandboxProvider: "docker",
               avatarStyle: "robot",
+              billingEnabled: false,
             };
           } else throw new Error(`Unexpected procedure: ${procedure}`);
           return { status: 200, body: JSON.stringify({ json }) };

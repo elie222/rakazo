@@ -1,3 +1,4 @@
+import { inferAttachmentMimeType } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
@@ -11,21 +12,30 @@ describe("filterPickedAttachments", () => {
         contentBase64: "aGVsbG8=",
       },
       {
-        name: "evil.zip",
+        name: "bundle.zip",
+        mimeType: inferAttachmentMimeType("bundle.zip", "application/x-zip-compressed"),
+        size: 12,
+        contentBase64: "UEsDBA==",
+      },
+      {
+        name: "payload.exe",
         mimeType: null,
         size: 12,
         contentBase64: "aGVsbG8=",
       },
       {
-        name: "big.bin",
-        mimeType: "text/plain",
-        size: 11 * 1024 * 1024,
+        name: "big.zip",
+        mimeType: "application/zip",
+        size: 10 * 1024 * 1024 + 1,
         contentBase64: "aGVsbG8=",
       },
     ]);
-    expect(result.attachments).toHaveLength(1);
-    expect(result.attachments[0]?.name).toBe("notes.txt");
-    expect(result.skipped.map((item) => item.name)).toEqual(["evil.zip", "big.bin"]);
+    expect(result.attachments.map((item) => item.name)).toEqual(["notes.txt", "bundle.zip"]);
+    expect(result.attachments[1]).toMatchObject({
+      name: "bundle.zip",
+      mimeType: "application/zip",
+    });
+    expect(result.skipped.map((item) => item.name)).toEqual(["payload.exe", "big.zip"]);
   });
 
   it("assigns distinct ids to duplicate files", () => {

@@ -1,0 +1,107 @@
+---
+import type { Alternative } from "../alternatives";
+import { COMPARED_ON, GET_STARTED, OPEN_SOURCE_REASONS } from "../alternatives";
+import { ogPublicPath } from "../og-pages";
+import { DOCS_URL, GITHUB_URL } from "../site";
+import { vsCard } from "../vs-points";
+import Button from "./Button.astro";
+import InlineCode from "./InlineCode.astro";
+import PageUpdated from "./PageUpdated.astro";
+import SetupSteps from "./SetupSteps.astro";
+import SiteFrame from "./SiteFrame.astro";
+import VsCard from "./VsCard.astro";
+
+type Props = {
+  page: Alternative;
+};
+
+const { page } = Astro.props;
+const card = vsCard(page.slug);
+---
+
+<SiteFrame
+  title={page.title}
+  description={page.description}
+  faq={page.faq}
+  ogImage={ogPublicPath(page.slug)}
+>
+  <p class="alt-crumb"><a href="/alternatives/">Alternatives</a></p>
+  <h1>{page.h1}</h1>
+  <PageUpdated />
+  {page.intro.map((paragraph) => <p><InlineCode text={paragraph} /></p>)}
+  {
+    page.sections?.map((section) => (
+      <section>
+        <h2>{section.heading}</h2>
+        {section.paragraphs.map((paragraph) => (
+          <p>
+            <InlineCode text={paragraph} />
+          </p>
+        ))}
+      </section>
+    ))
+  }
+  <p class="alt-note">Public descriptions as of {COMPARED_ON}.</p>
+  {card && <VsCard otherName={page.otherName} rakazo={card.rakazo} other={card.other} />}
+  {page.slug === "hermes-alternative" && <SetupSteps />}
+
+  <div class="alt-table-wrap">
+    <table class="alt-table">
+      <caption class="sr-only">Rakazo compared with {page.otherName}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Topic</th>
+          <th scope="col">Rakazo</th>
+          <th scope="col">{page.otherName}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {
+          page.rows.map((row) => (
+            <tr>
+              <th scope="row">{row.topic}</th>
+              <td><InlineCode text={row.rakazo} /></td>
+              <td><InlineCode text={row.other} /></td>
+            </tr>
+          ))
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Why open source and self-hosted</h2>
+  <ul>
+    {OPEN_SOURCE_REASONS.map((reason) => <li>{reason}</li>)}
+  </ul>
+
+  <h2>{GET_STARTED.heading}</h2>
+  <p>{GET_STARTED.copy}</p>
+  <div class="alt-actions">
+    <Button href={DOCS_URL} external>{GET_STARTED.docsLabel}</Button>
+    <Button href={GITHUB_URL} variant="secondary" external>{GET_STARTED.githubLabel}</Button>
+  </div>
+
+  <h2 id="faq">FAQ</h2>
+  {
+    page.faq.map((item, index) => (
+      <section aria-labelledby={`${page.slug}-faq-${index}`}>
+        <h3 id={`${page.slug}-faq-${index}`}>{item.question}</h3>
+        <p><InlineCode text={item.answer} /></p>
+      </section>
+    ))
+  }
+
+  <h2>Sources</h2>
+  <ul class="source-list">
+    {
+      page.sources.map((source) => (
+        <li>
+          <a href={source.href} target="_blank" rel="noreferrer">
+            {source.label}
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+  <p class="alt-note"><a href="/alternatives/">All alternatives</a></p>
+</SiteFrame>

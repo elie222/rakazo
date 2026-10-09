@@ -35,6 +35,12 @@ Signup and local Docker computers work without an E2B account. Optional remote p
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
+A provider that authenticates from the host needs no key: for Amazon Bedrock with an ECS task,
+IRSA or EC2 instance role, opt in with `PI_DEFAULT_CREDENTIALS=host` and set
+`PI_DEFAULT_PROVIDER=amazon-bedrock`, `PI_DEFAULT_MODEL` and `AWS_REGION`. With an instance
+role, also complete both steps in [Restricted computer egress](#restricted-computer-egress):
+`SANDBOX_COMPUTER_EGRESS=restricted` alone does not stop bot computers reading the role's
+credentials from the metadata endpoint.
 Auto Review uses that LLM checker by default. To use TypeSafe Jev instead, set
 `RAKAZO_AUTO_REVIEW_PROVIDER=jev` and `TYPESAFE_API_KEY`. Core still runs with neither.
 
@@ -182,6 +188,76 @@ account before exposing the service. Further accounts still need SMTP.
 For a public deployment, configure SMTP and an allowlist before the API's first start.
 Keep an installation without email on a trusted local network.
 
+### Optional OpenID Connect SSO
+
+SSO works with a self-hosted or hosted OpenID Connect provider. Leave its settings unset to
+keep password authentication alone. Configure all three credentials together on the API:
+
+```env
+OIDC_ISSUER=https://identity.example.com
+OIDC_CLIENT_ID=replace-with-client-id
+OIDC_CLIENT_SECRET=replace-with-client-secret
+OIDC_NAME=SSO
+OIDC_SCOPES=openid email profile
+AUTH_PASSWORD_ENABLED=true
+OIDC_ALLOW_SIGNUP_BYPASS=false
+```
+
+The issuer must be HTTPS and exactly match the discovery document's issuer. Rakazo loads
+`<issuer>/.well-known/openid-configuration`, verifies ID tokens against discovery JWKS with
+issuer, audience and nonce checks, and uses authorization codes with PKCE. Additional scopes
+may be space- or comma-separated; `openid email profile` are always requested. `OIDC_NAME`
+is the button label, defaulting to “SSO”. Secrets remain on the API; Compose clears the worker's
+OIDC credentials. The capabilities endpoint exposes only the label, discovery availability,
+and enabled authentication methods.
+
+Register this redirect URI at the provider (using your public `BETTER_AUTH_URL` origin):
+
+```text
+https://app.example.com/api/auth/callback/oidc
+```
+
+Web, Electron and mobile use the same provider redirect URI. Electron completes SSO in a
+sandboxed in-app popup sharing the app's session, then returns to the main window. Mobile completes the callback
+on the API, then returns to `rakazo://sign-in` (or `rakazo://account` for linking and reauthentication) through Better Auth's Expo authorization proxy
+and a native auth browser session. The `rakazo` app scheme is trusted by the auth server;
+never register a client secret in the mobile app. Mobile stores the resulting session with
+SecureStore, like password sign-in. Native builds need the Expo WebBrowser module.
+
+Provider emails are verified only when `email_verified` is the boolean `true`. False or missing
+claims stay unverified, including on subsequent sign-ins. Sign-in never links accounts by email.
+If an email belongs to another account, sign in to that existing account and choose **Link SSO**
+in account settings. Linking requires an authenticated session, a verified provider email and
+matching email addresses. The issuer and provider subject identify the linked account thereafter. Changing issuers does
+not reuse an old identity. Old-issuer links remain stored but do not count as linked to the
+current provider, so **Link SSO** becomes available again. Link the new identity from the
+existing signed-in account; authenticated-session, verified-email and matching-email checks
+still apply. Restoring the old issuer makes its existing links usable again.
+
+SSO signup follows closed registration and the deployment allowlist before creating an account.
+Allowlisted provider emails must be verified; the password signup's first-account exemption
+never upgrades an OIDC email. `OIDC_ALLOW_SIGNUP_BYPASS=true` explicitly admits IdP identities
+without applying the allowlist or its email-verification admission requirement. Enable it only
+when the IdP controls who may join this deployment. It does **not** reopen closed registration,
+and does not change email verification claims or linking rules. Existing admitted accounts can
+sign in while registration is closed.
+
+Set `AUTH_PASSWORD_ENABLED=false` for SSO-only operation. Password sign-in, signup, password
+reset and password mutation endpoints are disabled server-side, and sign-in forms are hidden.
+The API refuses to start in this mode unless all OIDC credentials are configured. It can still
+start while discovery is temporarily unavailable: the provider remains registered, sign-in
+returns a temporary error, and background retries recover without restarting. Discovery is lazy
+on first use, refreshed in the background, and failures back off up to one minute. Availability
+reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
+
+Account deletion keeps the existing password confirmation for password users. Users without a
+password may delete after a provider sign-in within five minutes; **Sign in again** starts a fresh
+provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
+deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
+email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
+minutes. Enter it in account settings to confirm deletion. Email-code requests are rate-limited;
+invalid, expired or wrong-account codes fail. No password needs to be created for deletion.
+
 ### Verification and password recovery email
 
 Password changes for signed-in users require no email configuration. Forgotten-password recovery
@@ -212,6 +288,12 @@ loopback host. In `NODE_ENV=development`, captured messages are available from
 `http://127.0.0.1:3100/api/dev/emails` with cache disabled; the API logs only delivery
 metadata, never reset tokens. The inbox route is not registered in test, staging, or production.
 
+### Billing
+
+Billing stays off, with no paywall, unless `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and
+`STRIPE_PRICE_ID` are all set (see `.env.example`). Setting only some of them stops the API at
+startup.
+
 ### Logging
 
 Backend services write structured logs to stdout. `LOG_LEVEL` is `debug`, `info`, `warn`, `error`,
@@ -234,7 +316,9 @@ SIGNUP_ALLOWLIST=you@example.com,@company.com
 SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, box. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
-SANDBOX_IDLE_MS=600000    # pause the bot computer after 10 minutes idle
+SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
+# Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
+# E2B, CreateOS and Box still apply their own timeouts.
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b

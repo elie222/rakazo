@@ -2,7 +2,9 @@ import {
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
+  secretStoreOptionsFromEnv,
 } from "@rakazo/adapters";
+import type { OidcConfig } from "@rakazo/auth";
 import {
   resolveAuthSecret,
   resolveEncryptionKey,
@@ -13,6 +15,8 @@ import {
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
 export interface AppEnv {
+  passwordAuth?: boolean;
+  oidc?: OidcConfig;
   nodeEnv: string;
   desktopStackToken?: string;
   databaseUrl: string;
@@ -38,6 +42,10 @@ export interface AppEnv {
   cursorApiKey: string | undefined;
   agentRuntime: string;
   deploymentModelKey: string | undefined;
+  /** The deployment default model can run; see resolveDeploymentModel. */
+  deploymentModelConfigured: boolean;
+  /** The deployment default model runs on the host's credentials rather than a key. */
+  deploymentModelHostCredentials: boolean;
   e2bApiKey: string | undefined;
   daytonaApiKey: string | undefined;
   daytonaApiUrl: string | undefined;
@@ -57,6 +65,10 @@ export interface AppEnv {
   sendbluePhoneNumber: string | undefined;
   smtpUrl: string | undefined;
   emailFrom: string | undefined;
+  /** Billing turns on only when all three are set; self-hosted installs leave them unset. */
+  stripeSecretKey: string | undefined;
+  stripeWebhookSecret: string | undefined;
+  stripePriceId: string | undefined;
   emailEmulator: boolean;
   slackBotToken: string | undefined;
   slackSigningSecret: string | undefined;
@@ -96,6 +108,46 @@ export interface AppEnv {
 }
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
+  secretStoreOptionsFromEnv(source);
+  const issuer = optional(source.OIDC_ISSUER);
+  const clientId = optional(source.OIDC_CLIENT_ID);
+  const clientSecret = optional(source.OIDC_CLIENT_SECRET);
+  const credentials = [issuer, clientId, clientSecret];
+  if (credentials.some(Boolean) && !credentials.every(Boolean)) {
+    throw new Error(
+      "OIDC_ISSUER, OIDC_CLIENT_ID and OIDC_CLIENT_SECRET must be configured together",
+    );
+  }
+  if (issuer) {
+    try {
+      const url = new URL(issuer);
+      if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
+        throw new Error();
+    } catch {
+      throw new Error("OIDC_ISSUER must be an HTTPS issuer URL");
+    }
+  }
+  for (const key of ["AUTH_PASSWORD_ENABLED", "OIDC_ALLOW_SIGNUP_BYPASS"]) {
+    const value = source[key];
+    if (value && !["true", "false"].includes(value))
+      throw new Error(`${key} must be true or false`);
+  }
+  const passwordAuth = source.AUTH_PASSWORD_ENABLED !== "false";
+  if (!passwordAuth && !issuer)
+    throw new Error("AUTH_PASSWORD_ENABLED=false requires OIDC configuration");
+  const oidc =
+    issuer && clientId && clientSecret
+      ? {
+          issuer,
+          clientId,
+          clientSecret,
+          name: optional(source.OIDC_NAME) ?? "SSO",
+          scopes: (optional(source.OIDC_SCOPES) ?? "openid email profile")
+            .split(/[\s,]+/)
+            .filter(Boolean),
+          allowSignupBypass: source.OIDC_ALLOW_SIGNUP_BYPASS === "true",
+        }
+      : undefined;
   const authSecret = resolveAuthSecret(source);
   const sandboxProvider = resolveSandboxProvider(source);
   const cloudAgentProvider = resolveCloudAgentProvider(source);
@@ -103,6 +155,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
   const updaterUrl = optional(source.RAKAZO_UPDATER_URL);
   const updaterToken = optional(source.RAKAZO_UPDATER_TOKEN);
   return {
+    passwordAuth,
+    oidc,
     nodeEnv: source.NODE_ENV ?? "",
     databaseUrl: required(source, "DATABASE_URL"),
     realtimeDatabaseUrl: source.REALTIME_DATABASE_URL ?? required(source, "DATABASE_URL"),
@@ -129,6 +183,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
     deploymentModelKey: deploymentModel.key,
+    deploymentModelConfigured: deploymentModel.configured,
+    deploymentModelHostCredentials: deploymentModel.hostCredentials,
     e2bApiKey: source.E2B_API_KEY,
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
@@ -148,6 +204,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     sendbluePhoneNumber: optional(source.SENDBLUE_PHONE_NUMBER),
     smtpUrl: optional(source.SMTP_URL),
     emailFrom: optional(source.EMAIL_FROM),
+    stripeSecretKey: optional(source.STRIPE_SECRET_KEY),
+    stripeWebhookSecret: optional(source.STRIPE_WEBHOOK_SECRET),
+    stripePriceId: optional(source.STRIPE_PRICE_ID),
     emailEmulator: source.EMAIL_EMULATOR === "true" && source.NODE_ENV !== "production",
     slackBotToken: optional(source.SLACK_BOT_TOKEN),
     slackSigningSecret: optional(source.SLACK_SIGNING_SECRET),

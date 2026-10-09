@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { plainTextFromMarkdown, truncatedPlainText } from "./markdown-plain.js";
 
 describe("plainTextFromMarkdown", () => {
+  it("reads only a bounded preview of the source unless the caller raises the limit", () => {
+    const long = `${"word ".repeat(2_000)}the end`;
+    expect(plainTextFromMarkdown(long)).not.toContain("the end");
+    expect(plainTextFromMarkdown(long, { maxSource: 20_000 })).toContain("the end");
+  });
+
   it("does not rebuild the placeholder pattern for each escaped character", () => {
     const markerText = "\uE000".repeat(128);
     const source = `${markerText}${"\\*".repeat(128)} <_ops_@example.test>`;

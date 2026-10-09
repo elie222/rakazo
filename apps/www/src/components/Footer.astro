@@ -1,14 +1,21 @@
 ---
 import {
   DEFAULT_LOCALE,
-  LOCALE_HTML_LANG,
+  LOCALE_HREFLANG,
   LOCALE_LABELS,
   LOCALES,
   isLocale,
   localeHomePath,
   type Locale,
 } from "../i18n/locales";
-import { CHANGELOG_URL, DOCS_URL, GITHUB_URL, INBOX_ZERO_URL } from "../site";
+import { GROK_ALTERNATIVE_PATH } from "../grok-alternative";
+import {
+  CHANGELOG_URL,
+  GITHUB_URL,
+  INBOX_ZERO_URL,
+  OPENCLAW_ALTERNATIVE_PATH,
+  SELF_HOST_GUIDE_PATH,
+} from "../site";
 import Logo from "./Logo.astro";
 
 type Props = {
@@ -19,10 +26,15 @@ type Props = {
   homeLabel?: string;
   linkLabels?: {
     docs: string;
+    openClaw: string;
     changelog: string;
+    alternatives: string;
     about: string;
     support: string;
     privacy: string;
+    terms: string;
+    grokAlternative: string;
+    blog: string;
   };
 };
 
@@ -37,12 +49,23 @@ const {
   homeLabel = "Rakazo home",
   linkLabels = {
     docs: "Docs",
+    openClaw: "OpenClaw alternative",
     changelog: "Changelog",
+    alternatives: "Alternatives",
     about: "About",
     support: "Support",
     privacy: "Privacy",
+    terms: "Terms",
+    grokAlternative: "Grok Bot alternative",
+    blog: "Blog",
   },
 } = Astro.props;
+
+const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
+
+function isCurrentPage(href: string): boolean {
+  return (href.replace(/\/+$/, "") || "/") === currentPath;
+}
 ---
 
 <footer class="site-footer">
@@ -60,8 +83,8 @@ const {
         LOCALES.map((locale) => (
           <a
             href={localeHomePath(locale)}
-            hreflang={LOCALE_HTML_LANG[locale]}
-            aria-current={locale === currentLocale ? "page" : undefined}
+            hreflang={LOCALE_HREFLANG[locale]}
+            aria-current={isCurrentPage(localeHomePath(locale)) ? "page" : undefined}
           >
             {LOCALE_LABELS[locale]}
           </a>
@@ -70,11 +93,27 @@ const {
     </nav>
     <nav class="site-footer__links" aria-label={navLabel}>
       <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
-      <a href={DOCS_URL} target="_blank" rel="noreferrer">{linkLabels.docs}</a>
+      <a href={SELF_HOST_GUIDE_PATH} aria-current={isCurrentPage(SELF_HOST_GUIDE_PATH) ? "page" : undefined}>
+        {linkLabels.docs}
+      </a>
+      <a
+        href={OPENCLAW_ALTERNATIVE_PATH}
+        aria-current={isCurrentPage(OPENCLAW_ALTERNATIVE_PATH) ? "page" : undefined}
+      >
+        {linkLabels.openClaw}
+      </a>
       <a href={CHANGELOG_URL} target="_blank" rel="noreferrer">{linkLabels.changelog}</a>
+      <a href="/alternatives/" aria-current={isCurrentPage("/alternatives/") ? "page" : undefined}>
+        {linkLabels.alternatives}
+      </a>
+      <a href={GROK_ALTERNATIVE_PATH} aria-current={isCurrentPage(GROK_ALTERNATIVE_PATH) ? "page" : undefined}>
+        {linkLabels.grokAlternative}
+      </a>
+      <a href="/blog/" aria-current={isCurrentPage("/blog/") ? "page" : undefined}>{linkLabels.blog}</a>
       <a href="/about/">{linkLabels.about}</a>
       <a href="/support/">{linkLabels.support}</a>
       <a href="/privacy/">{linkLabels.privacy}</a>
+      <a href="/terms/">{linkLabels.terms}</a>
     </nav>
   </div>
 </footer>

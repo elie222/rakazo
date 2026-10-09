@@ -15,8 +15,11 @@ function setup() {
     env: { agentRuntime: "scripted" },
     prisma: {
       spaceModelPreference: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+      spaceBackupModel: { findMany: vi.fn(async () => []) },
+      userModelCredential: { findMany: vi.fn(async () => []) },
       secret: { findMany: vi.fn(async () => []) },
       bot: { findMany: vi.fn(async () => []) },
+      routine: { findMany: vi.fn(async () => []) },
       spaceVoicePreference: {
         findFirst: vi.fn(async () => ({ credential: { provider: "openai" }, voiceId: "alloy" })),
         findMany: vi.fn(async () => [{ credential: { provider: "openai" } }]),
@@ -53,6 +56,61 @@ describe("consent grants", () => {
     expect(deps.prisma.bot.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ id: { in: ["bot"] } }) }),
     );
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          botId: { in: ["bot"] },
+          OR: [{ active: true }],
+        }),
+      }),
+    );
+  });
+  it("includes an inactive routine only when the check is for that routine", async () => {
+    const { deps, actor } = setup();
+    deps.env.agentRuntime = "pi";
+    await aiConsentStatus(deps, actor, { routineId: "routine-1", uses: ["model"] });
+    expect(deps.prisma.routine.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [{ active: true }, { id: "routine-1" }],
+        }),
+      }),
+    );
+  });
+  it("includes selected backup models in the provider-sharing disclosure until each is allowed", async () => {
+    const { deps, actor } = setup();
+    deps.env.agentRuntime = "pi";
+    vi.mocked(deps.prisma.spaceBackupModel.findMany).mockResolvedValue([
+      { provider: "anthropic", modelId: "claude-backup" },
+    ] as never);
+    vi.mocked(deps.prisma.userModelCredential.findMany).mockResolvedValue([
+      {
+        id: "backup-credential",
+        userId: actor.userId,
+        provider: "anthropic",
+        label: "fixture",
+        secretId: "backup-secret",
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      },
+    ] as never);
+
+    const status = await aiConsentStatus(deps, actor, { uses: ["model"] });
+
+    expect(status.recipients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "Anthropic",
+          detail: "claude-backup",
+          use: "model",
+          allowed: false,
+        }),
+      ]),
+    );
+    expect(deps.prisma.spaceBackupModel.findMany).toHaveBeenCalledWith({
+      where: { userId: actor.userId, spaceId: actor.spaceId },
+      orderBy: { position: "asc" },
+    });
   });
   it("discloses only the selected voice provider before a voice action", async () => {
     const { deps, actor } = setup();

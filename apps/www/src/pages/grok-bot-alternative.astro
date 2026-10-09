@@ -1,0 +1,128 @@
+---
+import Button from "../components/Button.astro";
+import Footer from "../components/Footer.astro";
+import Header from "../components/Header.astro";
+import VsCard from "../components/VsCard.astro";
+import { fetchGithubStars, formatStarCount } from "../github";
+import {
+  COMPARE_NOTE,
+  COMPARE_ROWS,
+  GROK_ALTERNATIVE_DESCRIPTION,
+  GROK_ALTERNATIVE_FAQ,
+  GROK_ALTERNATIVE_H1,
+  GROK_ALTERNATIVE_TITLE,
+  GROK_INTRO,
+  GROK_OTHER_ALTERNATIVES,
+  GROK_SECTIONS,
+  GROK_SOURCES,
+  GROK_UPDATED,
+  INSTALL_COMMAND,
+  SELF_HOST_AFTER,
+  SELF_HOST_LEAD,
+  grokAlternativeStructuredData,
+} from "../grok-alternative";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { ogPublicPath } from "../og-pages";
+import { DOCS_URL, GITHUB_URL, SITE_URL } from "../site";
+import { vsCard } from "../vs-points";
+
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const pageUrl = new URL(Astro.url.pathname, SITE_URL).toString();
+const structuredData = grokAlternativeStructuredData(pageUrl);
+const card = vsCard("grok-bot-alternative");
+---
+
+<BaseLayout
+  title={GROK_ALTERNATIVE_TITLE}
+  description={GROK_ALTERNATIVE_DESCRIPTION}
+  {structuredData}
+  localeAlternates={false}
+  ogImage={ogPublicPath("grok-bot-alternative")}
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <main id="main" class="guide">
+      <h1>{GROK_ALTERNATIVE_H1}</h1>
+      <p class="alt-note">Updated {GROK_UPDATED}.</p>
+      {card && <VsCard otherName="Grok Bot" rakazo={card.rakazo} other={card.other} />}
+      {GROK_INTRO.map((paragraph) => <p>{paragraph}</p>)}
+      {
+        GROK_SECTIONS.map((section) => (
+          <section>
+            <h2>{section.heading}</h2>
+            {section.paragraphs.map((paragraph) => <p>{paragraph}</p>)}
+          </section>
+        ))
+      }
+
+      <h2>How they compare</h2>
+      <div class="compare-scroll">
+        <table class="compare">
+          <caption class="sr-only">Rakazo compared with Grok Bot</caption>
+          <thead>
+            <tr>
+              <th scope="col">Topic</th>
+              <th scope="col">Rakazo</th>
+              <th scope="col">Grok Bot</th>
+            </tr>
+          </thead>
+          <tbody>
+            {
+              COMPARE_ROWS.map((row) => (
+                <tr>
+                  <th scope="row">{row.topic}</th>
+                  <td>{row.rakazo}</td>
+                  <td>{row.grok}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+      <p>{COMPARE_NOTE}</p>
+      <ul class="source-list">
+        {
+          GROK_SOURCES.map((source) => (
+            <li>
+              <a href={source.href} target="_blank" rel="noreferrer">
+                {source.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+
+      <h2>Self-host Rakazo</h2>
+      <p>{SELF_HOST_LEAD}</p>
+      <pre><code>{INSTALL_COMMAND}</code></pre>
+      {SELF_HOST_AFTER.map((paragraph) => <p>{paragraph}</p>)}
+      <div class="cta-actions">
+        <Button href={DOCS_URL} external>Read the docs</Button>
+        <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+      </div>
+
+      <h2>Other alternatives</h2>
+      <ul>
+        {
+          GROK_OTHER_ALTERNATIVES.map((item) => (
+            <li>
+              <a href={item.href}>{item.label}</a> — {item.note}
+            </li>
+          ))
+        }
+      </ul>
+
+      <h2 id="faq">FAQ</h2>
+      {
+        GROK_ALTERNATIVE_FAQ.map((item) => (
+          <section>
+            <h3>{item.question}</h3>
+            <p>{item.answer}</p>
+          </section>
+        ))
+      }
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

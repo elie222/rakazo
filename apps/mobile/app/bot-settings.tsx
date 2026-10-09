@@ -1,11 +1,10 @@
+import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
-  type ComputerMode,
   normalizeCreateBotProfile,
-  type ThinkingLevel,
 } from "@rakazo/contracts";
 import {
   connectedModelChoices,
@@ -13,35 +12,35 @@ import {
   parseModelOptionKey,
   resolveSelectableModelId,
 } from "@rakazo/core";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, Switch, Text, TextInput, View } from "react-native";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import type { Voice } from "expo-speech";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
-import {
-  type MobileBot,
-  type MobileMe,
-  type MobileModel,
-  type MobileModelCredential,
-  rpc,
-} from "../lib/api";
+import { glassHeaderOptions } from "../components/glass-title";
+import type { MenuPickerChoice } from "../components/menu-picker";
+import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
+import { NativeActionButton } from "../components/native-action-button";
+import { NativeSwitch } from "../components/native-switch";
+import { NativeSymbol } from "../components/native-symbol";
+import { Chevron } from "../components/row-accessories";
+import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
+import { rpc } from "../lib/api";
+import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
+import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
-import { presentMessageActionSheet } from "../lib/message-action-sheet";
-import { useMobileTokens, useResolvedAppearance } from "../lib/native";
+import { native, useMobileTokens } from "../lib/native";
+import { errorText } from "../lib/user-error";
+import { stopVoicePlayback } from "../lib/voice";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
 };
 
-type PickerChoice = {
-  key: string;
-  label: string;
-};
-
 export default function BotSettingsScreen() {
   const tokens = useMobileTokens();
-  const colorScheme = useResolvedAppearance();
   const { t } = useI18n();
   const router = useRouter();
   const { botId } = useLocalSearchParams<{ botId: string }>();
@@ -61,6 +60,12 @@ export default function BotSettingsScreen() {
   const [modelMetaReady, setModelMetaReady] = useState(false);
   const [modelMetaError, setModelMetaError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deviceVoiceEnabled, setDeviceVoiceEnabled] = useState(false);
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [voiceId, setVoiceId] = useState<string | undefined>();
+  const savedVoiceId = useRef<string | undefined>(undefined);
+  const voiceChoice = useRef(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -81,7 +86,7 @@ export default function BotSettingsScreen() {
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : t("Could not load bot")));
+      .catch((err) => setError(errorText(err, t("Could not load bot"))));
   }, [botId]);
 
   useEffect(() => {
@@ -99,7 +104,7 @@ export default function BotSettingsScreen() {
       })
       .catch((err) => {
         setModelMetaReady(false);
-        setModelMetaError(err instanceof Error ? err.message : t("Could not load model settings"));
+        setModelMetaError(errorText(err, t("Could not load model settings")));
       });
   }, [t]);
 
@@ -141,8 +146,8 @@ export default function BotSettingsScreen() {
     ? `${t("Space default")} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
     : t("Space default");
 
-  const modelChoices: PickerChoice[] = useMemo(() => {
-    const choices: PickerChoice[] = [{ key: "", label: spaceDefaultLabel }];
+  const modelChoices: MenuPickerChoice[] = useMemo(() => {
+    const choices: MenuPickerChoice[] = [{ key: "", label: spaceDefaultLabel }];
     if (selectedModelKey && !connectedOptions.some((option) => option.key === selectedModelKey)) {
       choices.push({
         key: selectedModelKey,
@@ -155,7 +160,7 @@ export default function BotSettingsScreen() {
     return choices;
   }, [connectedOptions, selectedModel?.modelId, selectedModelKey, spaceDefaultLabel]);
 
-  const thinkingChoices: PickerChoice[] = useMemo(
+  const thinkingChoices: MenuPickerChoice[] = useMemo(
     () => [
       { key: "", label: t("Default (medium)") },
       ...thinkingOptions.map((level) => ({
@@ -166,41 +171,100 @@ export default function BotSettingsScreen() {
     [t, thinkingOptions],
   );
 
-  const selectedModelLabel =
-    modelChoices.find((choice) => choice.key === selectedModelKey)?.label ?? spaceDefaultLabel;
-  const selectedThinkingLabel =
-    thinkingChoices.find((choice) => choice.key === thinkingLevel)?.label ?? t("Default (medium)");
-
   function selectModel(key: string) {
     if (key === selectedModelKey) return;
     setModelKey(key);
     setThinkingLevel("");
   }
 
-  function openModelPicker() {
-    presentMessageActionSheet({
-      title: t("Model"),
-      actions: modelChoices.map((choice) => ({
-        text: choice.label,
-        onPress: () => selectModel(choice.key),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
+  function applyVoices(available: Voice[], assigned: string | undefined) {
+    setVoices(available);
+    savedVoiceId.current = assigned;
+    setVoiceId(assigned);
+    setVoiceError(null);
   }
 
-  function openThinkingPicker() {
-    presentMessageActionSheet({
-      title: t("Thinking"),
-      actions: thinkingChoices.map((choice) => ({
-        text: choice.label,
-        onPress: () => setThinkingLevel(choice.key),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
+  function failVoices() {
+    setVoices([]);
+    setVoiceError(t("Could not load voices"));
+  }
+
+  useFocusEffect(
+    useCallback(() => {
+      let current = true;
+      void loadDeviceVoiceEnabled()
+        .then((enabled) => {
+          if (current) setDeviceVoiceEnabled(enabled);
+        })
+        .catch(() => {
+          if (current) setDeviceVoiceEnabled(false);
+        });
+      return () => {
+        current = false;
+      };
+    }, []),
+  );
+
+  useEffect(() => {
+    if (!botId || !deviceVoiceEnabled) return;
+    let current = true;
+    void Promise.all([deviceVoices(), voiceForBot(botId)])
+      .then(([available, assigned]) => {
+        if (!current) return;
+        applyVoices(available, assigned);
+      })
+      .catch(() => {
+        if (!current) return;
+        failVoices();
+      });
+    return () => {
+      current = false;
+    };
+  }, [botId, deviceVoiceEnabled, t]);
+
+  async function chooseVoice(voice: Voice) {
+    if (!botId) return;
+    // Picking a voice cuts off a reply in progress before the sample starts.
+    stopVoicePlayback();
+    const choice = ++voiceChoice.current;
+    setVoiceId(voice.identifier);
+    setError(null);
+    try {
+      await setVoiceForBot(botId, voice.identifier);
+      savedVoiceId.current = voice.identifier;
+    } catch {
+      if (choice !== voiceChoice.current) return;
+      setVoiceId(savedVoiceId.current);
+      setError(t("Could not save that voice"));
+      return;
+    }
+    if (choice !== voiceChoice.current) return;
+    try {
+      const Speech = await import("expo-speech");
+      if (choice !== voiceChoice.current) return;
+      await Speech.stop();
+      if (choice !== voiceChoice.current) return;
+      const sampleName = name.trim();
+      Speech.speak(
+        sampleName ? t("Hi, I'm {name}.", { name: sampleName }) : t("Hi, this is how I'll sound."),
+        { voice: voice.identifier },
+      );
+    } catch {
+      // The choice is already saved. A sample that cannot play is not a failed save.
+    }
+  }
+
+  const currentVoice = voices.find((voice) => voice.identifier === voiceId);
+  const currentVoiceLabel = currentVoice ? voiceLabel(currentVoice) : t("Default");
+
+  async function retryDeviceVoices() {
+    if (!botId) return;
+    try {
+      const [available, assigned] = await Promise.all([deviceVoices(), voiceForBot(botId)]);
+      applyVoices(available, assigned);
+    } catch {
+      failVoices();
+    }
   }
 
   async function save() {
@@ -257,18 +321,65 @@ export default function BotSettingsScreen() {
       }
       router.back();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not save bot"));
+      setError(errorText(err, t("Could not save bot")));
     } finally {
       setPending(false);
     }
   }
 
+  const voiceValue = (
+    <Text
+      numberOfLines={1}
+      style={[styles.rowValue, { color: voiceError ? tokens.destructive : tokens.foreground }]}
+    >
+      {voiceError ?? currentVoiceLabel}
+    </Text>
+  );
+  const voiceRow = (
+    <View style={styles.row}>
+      <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>{t("Device voice")}</Text>
+      {!voiceError && voices.length > 1 ? (
+        <MenuPickerMenu
+          choices={voices.map((voice) => ({
+            key: voice.identifier,
+            label: voiceLabel(voice),
+          }))}
+          label={t("Device voice")}
+          onChange={(key) => {
+            const voice = voices.find((candidate) => candidate.identifier === key);
+            if (voice) void chooseVoice(voice);
+          }}
+          value={voiceId ?? ""}
+        >
+          <View
+            accessibilityLabel={t("Device voice")}
+            accessibilityRole="button"
+            accessibilityValue={{ text: currentVoiceLabel }}
+            accessible
+            style={styles.voiceTrigger}
+          >
+            {voiceValue}
+            <NativeSymbol
+              android="chevron-expand"
+              color={native.tertiaryLabel}
+              ios="chevron.up.chevron.down"
+              size={13}
+            />
+          </View>
+        </MenuPickerMenu>
+      ) : (
+        voiceValue
+      )}
+    </View>
+  );
+
   return (
     <>
-      <Stack.Screen options={{ title: t("Chat settings") }} />
+      <Stack.Screen options={glassHeaderOptions(t("Chat settings"))} />
       <ScrollView
         style={{ flex: 1, backgroundColor: tokens.background }}
         contentContainerStyle={{ padding: 24 }}
+        contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
@@ -286,7 +397,7 @@ export default function BotSettingsScreen() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -303,7 +414,7 @@ export default function BotSettingsScreen() {
           placeholderTextColor={tokens.mutedForeground}
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -321,7 +432,7 @@ export default function BotSettingsScreen() {
           multiline
           style={{
             marginTop: 8,
-            backgroundColor: tokens.muted,
+            backgroundColor: native.fill,
             borderRadius: 11,
             padding: 16,
             color: tokens.foreground,
@@ -357,25 +468,30 @@ export default function BotSettingsScreen() {
           ))}
         </ScrollView>
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
-        <View
-          style={{
-            marginTop: 20,
-            minHeight: 44,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <Text style={{ color: tokens.mutedForeground, fontSize: 14, flex: 1 }}>
+        <View style={[styles.row, { marginTop: 20 }]}>
+          <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
             {t("Read replies aloud")}
           </Text>
-          <Switch
+          <NativeSwitch
             accessibilityLabel={t("Read replies aloud")}
-            value={autoSpeak}
             onValueChange={setAutoSpeak}
+            value={autoSpeak}
           />
         </View>
+        {deviceVoiceEnabled ? (
+          voiceError ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Device voice")}
+              accessibilityValue={{ text: voiceError }}
+              onPress={() => void retryDeviceVoices()}
+            >
+              {voiceRow}
+            </Pressable>
+          ) : (
+            voiceRow
+          )
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t("Advanced")}
@@ -390,66 +506,34 @@ export default function BotSettingsScreen() {
           }}
         >
           <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Advanced")}</Text>
-          <Text style={{ color: tokens.mutedForeground, fontSize: 18 }}>
-            {advancedOpen ? "⌃" : "⌄"}
-          </Text>
+          <Chevron expanded={advancedOpen} />
         </Pressable>
         {advancedOpen ? (
           <View>
-            <Text
+            <View
               style={{
-                color: tokens.mutedForeground,
                 marginTop: 8,
-                marginBottom: 8,
-                fontSize: 14,
+                borderRadius: 14,
+                backgroundColor: native.fill,
+                overflow: "hidden",
               }}
             >
-              {t("Model")}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t("Model")}
-              onPress={openModelPicker}
-              style={{
-                borderWidth: 1,
-                borderColor: tokens.border,
-                backgroundColor: tokens.muted,
-                borderRadius: 11,
-                paddingVertical: 12,
-                paddingHorizontal: 16,
-              }}
-            >
-              <Text style={{ color: tokens.foreground }}>{selectedModelLabel}</Text>
-            </Pressable>
-            {thinkingOptions.length ? (
-              <>
-                <Text
-                  style={{
-                    color: tokens.mutedForeground,
-                    marginTop: 16,
-                    marginBottom: 8,
-                    fontSize: 14,
-                  }}
-                >
-                  {t("Thinking")}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={t("Thinking")}
-                  onPress={openThinkingPicker}
-                  style={{
-                    borderWidth: 1,
-                    borderColor: tokens.border,
-                    backgroundColor: tokens.muted,
-                    borderRadius: 11,
-                    paddingVertical: 12,
-                    paddingHorizontal: 16,
-                  }}
-                >
-                  <Text style={{ color: tokens.foreground }}>{selectedThinkingLabel}</Text>
-                </Pressable>
-              </>
-            ) : null}
+              <MenuPicker
+                choices={modelChoices}
+                label={t("Model")}
+                onChange={selectModel}
+                value={selectedModelKey}
+              />
+              {thinkingOptions.length ? (
+                <MenuPicker
+                  choices={thinkingChoices}
+                  divider
+                  label={t("Thinking")}
+                  onChange={setThinkingLevel}
+                  value={thinkingLevel}
+                />
+              ) : null}
+            </View>
             {modelMetaError ? (
               <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
                 {modelMetaError}
@@ -458,22 +542,12 @@ export default function BotSettingsScreen() {
           </View>
         ) : null}
         {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
-        <Pressable
-          onPress={() => void save()}
+        <NativeActionButton
           disabled={!name.trim() || pending || !bot}
-          style={{
-            marginTop: 24,
-            backgroundColor: tokens.primary,
-            borderRadius: 11,
-            padding: 16,
-            alignItems: "center",
-            opacity: !name.trim() || pending || !bot ? 0.4 : 1,
-          }}
-        >
-          <Text style={{ color: tokens.primaryForeground, fontSize: 16 }}>
-            {pending ? t("Saving…") : t("Save")}
-          </Text>
-        </Pressable>
+          label={pending ? t("Saving…") : t("Save")}
+          onPress={() => void save()}
+          style={{ marginTop: 24 }}
+        />
       </ScrollView>
     </>
   );
@@ -497,3 +571,21 @@ function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string
   if (level === "max") return t("Max");
   return `${level.slice(0, 1).toUpperCase()}${level.slice(1)}`;
 }
+
+const styles = StyleSheet.create({
+  row: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  rowLabel: { fontSize: 14, flex: 1 },
+  voiceTrigger: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  rowValue: { fontSize: 14, flexShrink: 1, textAlign: "right" },
+});

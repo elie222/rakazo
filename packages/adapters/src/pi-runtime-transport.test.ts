@@ -412,4 +412,19 @@ describe("Pi runtime transport", () => {
     expect(conversationSessionId("thread-1", "bot-1")).toBe("thread-1:bot-1");
     expect(conversationSessionId("thread-1", "bot-1", "sub-1")).toBe("thread-1:bot-1:sub-1");
   });
+
+  it.each(["none", "short", "long"] as const)(
+    "forwards configured %s cache retention without changing caller options",
+    (cacheRetention) => {
+      const model = { provider: "openrouter", api: "openai-completions" } as Model<Api>;
+      const options = { transport: "auto" as const, maxRetries: 2 };
+      expect(
+        reliableStreamOptions(model, options, undefined, undefined, cacheRetention),
+      ).toMatchObject({
+        ...options,
+        cacheRetention,
+      });
+      expect(options).not.toHaveProperty("cacheRetention");
+    },
+  );
 });

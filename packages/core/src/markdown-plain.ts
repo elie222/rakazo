@@ -6,8 +6,15 @@ const PAYLOAD_MARK = "\uE000";
  */
 const MAX_PREVIEW_SOURCE = 4_096;
 
-/** Markdown source → a single plain line for previews and notifications. */
-export function plainTextFromMarkdown(markdown: string): string {
+/**
+ * Markdown source → a single plain line for previews and notifications.
+ * `maxSource` caps how much source is read; a caller that converts content the
+ * user explicitly asked for, one line at a time, can raise it.
+ */
+export function plainTextFromMarkdown(
+  markdown: string,
+  { maxSource = MAX_PREVIEW_SOURCE }: { maxSource?: number } = {},
+): string {
   // Fixed one-char tokens: literal mark characters are stashed first so tokens
   // never collide, and token length stays constant regardless of input — an
   // adversarial reply cannot inflate the intermediate string. Payload count
@@ -28,7 +35,7 @@ export function plainTextFromMarkdown(markdown: string): string {
     return `${PAYLOAD_MARK}${payloads.length - 1}${PAYLOAD_MARK}`;
   };
 
-  const source = boundedPreviewSource(markdown);
+  const source = boundedPreviewSource(markdown, maxSource);
   let text = source.text.replaceAll(PAYLOAD_MARK, markToken);
   text = takeFencedCode(text, stash, source.truncated);
   text = takeInlineCode(text, stash);
@@ -258,12 +265,15 @@ const OPEN_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
  * so a normal reply is unchanged. Past the cap, leading whitespace is skipped
  * first — otherwise a pad of spaces consumes the window and the body vanishes.
  */
-function boundedPreviewSource(markdown: string): { text: string; truncated: boolean } {
+function boundedPreviewSource(
+  markdown: string,
+  maxSource: number,
+): { text: string; truncated: boolean } {
   const normalized = markdown.replace(/\r\n/g, "\n");
-  if (normalized.length <= MAX_PREVIEW_SOURCE) return { text: normalized, truncated: false };
+  if (normalized.length <= maxSource) return { text: normalized, truncated: false };
   const body = normalized.trimStart();
-  if (body.length <= MAX_PREVIEW_SOURCE) return { text: body, truncated: false };
-  let end = MAX_PREVIEW_SOURCE;
+  if (body.length <= maxSource) return { text: body, truncated: false };
+  let end = maxSource;
   // Don't split a surrogate pair at the cut.
   if ((body.charCodeAt(end - 1) & 0xfc00) === 0xd800) end -= 1;
   return { text: body.slice(0, end), truncated: true };

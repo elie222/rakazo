@@ -1,14 +1,11 @@
-import {
-  normalizeCreateBotProfile,
-  type RunActivityRow,
-  type SearchHit,
-  type SpaceBot,
-  type SpaceGroup,
-} from "@rakazo/contracts";
+import { MenuView } from "@expo/ui/community/menu";
+import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import { normalizeCreateBotProfile } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
-import { Redirect, useFocusEffect, useRouter } from "expo-router";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Redirect, useFocusEffect, useNavigation, useRouter } from "expo-router";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +18,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { KeyboardController } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
@@ -33,15 +31,17 @@ import {
   formatActivityRelativeTime,
 } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
+import type {
+  MobileBot,
+  MobileBotSection,
+  MobileGroup,
+  MobileMe,
+  MobileSpace,
+  MobileSpaceNavigation,
+} from "../lib/api";
 import {
   currentApiBase,
   loadSessionToken,
-  type MobileBot,
-  type MobileBotSection,
-  type MobileGroup,
-  type MobileMe,
-  type MobileSpace,
-  type MobileSpaceNavigation,
   rpc,
   selectedSpaceId,
   selectInitialSpace,
@@ -52,10 +52,10 @@ import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
+import type { InboxSpace, InboxSpaceItem } from "../lib/inbox-spaces";
 import {
   canDeleteInboxSpace,
-  type InboxSpace,
-  type InboxSpaceItem,
+  inboxNeedsCreateHint,
   removeInboxSpace,
   retryInboxSpaceFallback,
   selectInboxSpace,
@@ -63,10 +63,13 @@ import {
 } from "../lib/inbox-spaces";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
+import { iosAtLeast } from "../lib/native-controls";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
+import { dedupeSearchHits, searchHitListKey, searchHitRowPreview } from "../lib/search-list";
+import { errorText } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
 
@@ -159,7 +162,7 @@ export default function Home() {
       setMe(nextMe);
     } catch (err) {
       if (requestId !== inboxRequestId.current) return;
-      setError(err instanceof Error ? err.message : t("Could not load bots"));
+      setError(errorText(err, t("Could not load bots")));
     }
   }, []);
 
@@ -278,7 +281,7 @@ export default function Home() {
   }, [groups, query]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
-      return searchHits.map((hit) => ({ type: "search", hit }));
+      return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
     }
     const sidebarSpaces =
       spaces.length > 0
@@ -328,6 +331,9 @@ export default function Home() {
       : groups.find((group) => group.id === organizeTarget.id)
     : null;
   const insets = useSafeAreaInsets();
+  // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
+  const nativeHeader = iosAtLeast(26);
+  const navigation = useNavigation();
   const router = useRouter();
 
   async function chooseInboxSpace(spaceId: string) {
@@ -351,7 +357,7 @@ export default function Home() {
           : await selectInboxSpace(spaceId, refresh);
       if (!selected) throw new Error(t("Could not switch spaces"));
     } catch (err) {
-      const message = err instanceof Error ? err.message : t("Could not switch spaces");
+      const message = errorText(err, t("Could not switch spaces"));
       setError(message);
       Alert.alert(message, t("Try again."));
     } finally {
@@ -384,43 +390,32 @@ export default function Home() {
         setError(t("Could not switch spaces"));
       }
     } catch (err) {
-      Alert.alert(
-        t("Could not delete space"),
-        err instanceof Error ? err.message : t("Try again."),
-      );
+      Alert.alert(t("Could not delete space"), errorText(err, t("Try again.")));
     } finally {
       spaceActionRef.current.busy = false;
       setSpaceBusy(false);
     }
   }
 
-  function showSpaceActions(space: InboxSpace) {
+  function confirmDeleteSpace(space: InboxSpace) {
     if (
       !canDeleteInboxSpace(space) ||
       spaceActionRef.current.busy ||
       spaceActionRef.current.recoveryId
     )
       return;
-    Alert.alert(space.name, undefined, [
-      { text: t("Cancel"), style: "cancel" },
-      {
-        text: t("Delete space"),
-        style: "destructive",
-        onPress: () =>
-          Alert.alert(
-            t("Delete {name}?", { name: space.name }),
-            t("This removes the empty space for everyone."),
-            [
-              { text: t("Cancel"), style: "cancel" },
-              {
-                text: t("Delete"),
-                style: "destructive",
-                onPress: () => void deleteInboxSpace(space),
-              },
-            ],
-          ),
-      },
-    ]);
+    Alert.alert(
+      t("Delete {name}?", { name: space.name }),
+      t("This removes the empty space for everyone."),
+      [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Delete"),
+          style: "destructive",
+          onPress: () => void deleteInboxSpace(space),
+        },
+      ],
+    );
   }
 
   const createQuickBot = useCallback(async () => {
@@ -448,11 +443,107 @@ export default function Home() {
         scheduleFocusPrompt(bot.id, isFirstBot);
       })();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("Could not create bot"));
+      setError(errorText(err, t("Could not create bot")));
     } finally {
       creatingBotRef.current = false;
     }
   }, [refreshBots, router, t]);
+
+  const runCreateAction = useCallback(
+    (action: "bot" | "group" | "space") => {
+      if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
+      if (action === "bot") void createQuickBot();
+      else if (action === "group") router.push("/new-group");
+      else router.push("/new-space");
+    },
+    [createQuickBot, router],
+  );
+
+  useLayoutEffect(() => {
+    if (!nativeHeader) return;
+    const signedIn = ready && hasSession;
+    navigation.setOptions({
+      headerShown: signedIn,
+      headerTransparent: true,
+      headerStyle: { backgroundColor: "transparent" },
+      title: "",
+      unstable_headerLeftItems: () => [
+        {
+          type: "button" as const,
+          label: initials,
+          labelStyle: { fontSize: 15, fontWeight: "600" },
+          accessibilityLabel: t("Account"),
+          onPress: () => router.push("/account"),
+        },
+      ],
+      unstable_headerRightItems: () => [
+        {
+          type: "button" as const,
+          accessibilityLabel: t("Activity"),
+          icon: { type: "sfSymbol" as const, name: activityMode ? "bell.fill" : "bell" },
+          selected: activityMode,
+          onPress: toggleActivityMode,
+        },
+        {
+          type: "button" as const,
+          accessibilityLabel: t("Artifacts"),
+          icon: { type: "sfSymbol" as const, name: "square.stack.3d.up" },
+          onPress: () => router.push("/artifacts"),
+        },
+        {
+          type: "menu" as const,
+          accessibilityLabel: t("Create"),
+          icon: { type: "sfSymbol" as const, name: "plus" },
+          menu: {
+            items: [
+              {
+                type: "action" as const,
+                label: t("New bot"),
+                icon: { type: "sfSymbol" as const, name: "person.crop.circle.badge.plus" },
+                onPress: () => runCreateAction("bot"),
+              },
+              {
+                type: "action" as const,
+                label: t("New group"),
+                icon: { type: "sfSymbol" as const, name: "person.2" },
+                onPress: () => runCreateAction("group"),
+              },
+              {
+                type: "action" as const,
+                label: t("New space"),
+                icon: { type: "sfSymbol" as const, name: "square.grid.2x2" },
+                onPress: () => runCreateAction("space"),
+              },
+            ],
+          },
+        },
+      ],
+      headerSearchBarOptions: {
+        placeholder: t("Search"),
+        hideWhenScrolling: false,
+        autoCapitalize: "none",
+        onFocus: () => setSearching(true),
+        onChangeText: (event: { nativeEvent: { text: string } }) =>
+          setQuery(event.nativeEvent.text),
+        onCancelButtonPress: () => {
+          setSearching(false);
+          setQuery("");
+        },
+      },
+    });
+  }, [
+    nativeHeader,
+    navigation,
+    ready,
+    hasSession,
+    initials,
+    activityMode,
+    toggleActivityMode,
+    runCreateAction,
+    router,
+    t,
+    locale,
+  ]);
 
   if (!ready) {
     return (
@@ -464,95 +555,90 @@ export default function Home() {
   if (!hasSession) return <Redirect href="/sign-in" />;
 
   return (
-    <View style={[styles.screen, { paddingTop: Math.max(insets.top, 20) }]}>
-      <View style={styles.header}>
-        <CircleButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
-          <Text style={styles.profileInitials}>{initials}</Text>
-        </CircleButton>
-        <View style={styles.headerActions}>
-          <CircleButton
-            accessibilityLabel={t("Activity")}
-            active={activityMode}
-            accent
-            onPress={toggleActivityMode}
-          >
-            <NativeSymbol
-              ios={activityMode ? "bell.fill" : "bell"}
-              android={activityMode ? "notifications" : "notifications-outline"}
-              size={17}
-              color={activityMode ? tokens.primaryForeground : tokens.foreground}
-            />
-          </CircleButton>
-          <CircleButton
-            accessibilityLabel={t("Search")}
-            active={searching}
-            onPress={() =>
-              setSearching((open) => {
-                if (open) setQuery("");
-                return !open;
-              })
-            }
-          >
-            <NativeSymbol ios="magnifyingglass" android="search" size={17} />
-          </CircleButton>
-          <CircleButton
-            accessibilityLabel={t("Create")}
-            onPress={() => {
-              if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-              Alert.alert(t("Create"), undefined, [
-                { text: t("New bot"), onPress: () => void createQuickBot() },
-                { text: t("New group"), onPress: () => router.push("/new-group") },
-                { text: t("New space"), onPress: () => router.push("/new-space") },
-                { text: t("Cancel"), style: "cancel" },
-              ]);
-            }}
-          >
-            <NativeSymbol ios="plus" android="add" size={18} />
-          </CircleButton>
+    <View style={styles.screen}>
+      {nativeHeader ? null : (
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 8 }]}>
+          <View style={styles.circleButton}>
+            <HeaderButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
+              <Text style={styles.profileInitials}>{initials}</Text>
+            </HeaderButton>
+          </View>
+          <View style={styles.headerActions}>
+            <HeaderButton
+              accessibilityLabel={t("Activity")}
+              active={activityMode}
+              accent
+              onPress={toggleActivityMode}
+            >
+              <NativeSymbol
+                ios={activityMode ? "bell.fill" : "bell"}
+                android={activityMode ? "notifications" : "notifications-outline"}
+                size={17}
+                color={activityMode ? tokens.primaryForeground : tokens.foreground}
+              />
+            </HeaderButton>
+            <HeaderButton
+              accessibilityLabel={t("Search")}
+              active={searching}
+              onPress={() =>
+                setSearching((open) => {
+                  if (open) setQuery("");
+                  return !open;
+                })
+              }
+            >
+              <NativeSymbol ios="magnifyingglass" android="search" size={17} />
+            </HeaderButton>
+            <HeaderButton
+              accessibilityLabel={t("Artifacts")}
+              onPress={() => router.push("/artifacts")}
+            >
+              <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
+            </HeaderButton>
+            <MenuView
+              actions={[
+                { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
+                { id: "group", title: t("New group"), image: "person.2" },
+                { id: "space", title: t("New space"), image: "square.grid.2x2" },
+              ]}
+              colorScheme={appearance}
+              onPressAction={({ nativeEvent }) => {
+                const action = nativeEvent.event;
+                if (action === "bot" || action === "group" || action === "space") {
+                  runCreateAction(action);
+                }
+              }}
+            >
+              <View
+                accessibilityLabel={t("Create")}
+                accessibilityRole="button"
+                style={styles.headerButton}
+              >
+                <NativeSymbol ios="plus" android="add" size={18} />
+              </View>
+            </MenuView>
+          </View>
         </View>
-      </View>
-
-      {searching ? (
-        <TextInput
-          autoFocus
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t("Search")}
-          placeholderTextColor={tokens.mutedForeground}
-          autoCorrect={false}
-          autoCapitalize="none"
-          returnKeyType="search"
-          keyboardAppearance={appearance}
-          clearButtonMode="while-editing"
-          style={styles.searchField}
-        />
-      ) : null}
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {spaceRecoveryId ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={spaceBusy}
-          onPress={() => void chooseInboxSpace(spaceRecoveryId)}
-          style={styles.recoveryAction}
-        >
-          <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
-        </Pressable>
-      ) : null}
+      )}
 
       <FlatList<InboxItem>
+        style={{ flex: 1 }}
         data={listData}
         keyExtractor={(item) => {
           if (item.type === "heading") return `heading-${item.key}`;
           if (item.type === "bot") return item.bot.id;
           if (item.type === "group") return `group-${item.group.id}`;
-          const hit = item.hit;
-          return `${hit.kind}-${hit.botId ?? hit.groupId}-${hit.messageId ?? hit.artifactId ?? hit.routineId ?? hit.url}`;
+          return searchHitListKey(item.hit);
         }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
         indicatorStyle={appearance === "dark" ? "white" : "black"}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          // iOS moves the active search bar to the bottom and removes the navigation inset.
+          nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
+        ]}
+        contentInsetAdjustmentBehavior="automatic"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -566,12 +652,41 @@ export default function Home() {
           />
         }
         ListHeaderComponent={
-          activityMode &&
-          !searching &&
-          !query.trim() &&
-          (activity.active.length > 0 || activity.recent.length > 0) ? (
-            <ActivitySection activity={activity} bots={bots} />
-          ) : null
+          <>
+            {searching && !nativeHeader ? (
+              <TextInput
+                autoFocus
+                value={query}
+                onChangeText={setQuery}
+                placeholder={t("Search")}
+                placeholderTextColor={tokens.mutedForeground}
+                autoCorrect={false}
+                autoCapitalize="none"
+                returnKeyType="search"
+                keyboardAppearance={appearance}
+                clearButtonMode="while-editing"
+                style={styles.searchField}
+              />
+            ) : null}
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {spaceRecoveryId ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={spaceBusy}
+                onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+                style={styles.recoveryAction}
+              >
+                <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+              </Pressable>
+            ) : null}
+            {activityMode &&
+            !searching &&
+            !query.trim() &&
+            (activity.active.length > 0 || activity.recent.length > 0) ? (
+              <ActivitySection activity={activity} bots={bots} />
+            ) : null}
+          </>
         }
         ListEmptyComponent={
           <Text style={styles.empty}>
@@ -586,6 +701,11 @@ export default function Home() {
                   : t("Tap + to create a bot")}
           </Text>
         }
+        ListFooterComponent={
+          inboxNeedsCreateHint(listData) ? (
+            <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+          ) : null
+        }
         renderItem={({ item }) =>
           item.type === "search" ? (
             <SearchRow
@@ -593,7 +713,11 @@ export default function Home() {
               onPress={() => {
                 setQuery("");
                 setSearchHits([]);
-                router.push(mobileSearchDestination(item.hit));
+                // A thread that opens while the search keyboard is still up or closing sizes
+                // itself against that keyboard and can leave its composer off screen.
+                void KeyboardController.dismiss().then(() =>
+                  router.push(mobileSearchDestination(item.hit)),
+                );
               }}
             />
           ) : item.type === "heading" ? (
@@ -615,17 +739,28 @@ export default function Home() {
                   <Text style={styles.spaceTitle}>{item.title}</Text>
                 </Pressable>
                 {canDeleteInboxSpace(item.space) ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t("Space actions for {name}", { name: item.title })}
-                    disabled={spaceBusy || !!spaceRecoveryId}
-                    onPress={() => {
-                      if (item.space) showSpaceActions(item.space);
+                  <MenuView
+                    actions={[
+                      {
+                        id: "delete",
+                        title: t("Delete space"),
+                        image: "trash",
+                        attributes: { destructive: true, disabled: spaceBusy || !!spaceRecoveryId },
+                      },
+                    ]}
+                    colorScheme={appearance}
+                    onPressAction={() => {
+                      if (item.space) confirmDeleteSpace(item.space);
                     }}
-                    style={({ pressed }) => [styles.spaceActions, pressed && styles.rowPressed]}
                   >
-                    <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
-                  </Pressable>
+                    <View
+                      accessibilityLabel={t("Space actions for {name}", { name: item.title })}
+                      accessibilityRole="button"
+                      style={styles.spaceActions}
+                    >
+                      <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
+                    </View>
+                  </MenuView>
                 ) : null}
               </View>
             ) : (
@@ -900,7 +1035,7 @@ function ConversationRow({
   );
 }
 
-function CircleButton({
+function HeaderButton({
   children,
   onPress,
   accessibilityLabel,
@@ -922,8 +1057,10 @@ function CircleButton({
       onPress={onPress}
       hitSlop={4}
       style={({ pressed }) => [
-        styles.circleButton,
-        accent && active ? styles.circleAccent : (active || pressed) && styles.circlePressed,
+        styles.headerButton,
+        accent && active
+          ? styles.headerButtonAccent
+          : (active || pressed) && styles.headerButtonActive,
       ]}
     >
       {children}
@@ -946,7 +1083,7 @@ function SearchRow({ hit, onPress }: { hit: SearchHit; onPress: () => void }) {
           <Text style={styles.time}>{hit.kind}</Text>
         </View>
         <Text style={styles.preview} numberOfLines={2}>
-          {hit.groupName ?? hit.botName} · {hit.snippet}
+          {searchHitRowPreview(hit)}
         </Text>
       </View>
     </Pressable>
@@ -1073,21 +1210,30 @@ function createHomeStyles() {
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 12,
+      padding: 2,
+      borderRadius: 22,
+      backgroundColor: native.fillPressed,
     },
     circleButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: native.fillPressed,
+    },
+    headerButton: {
       width: 40,
       height: 40,
       borderRadius: 20,
-      backgroundColor: native.fillPressed,
       alignItems: "center",
       justifyContent: "center",
       overflow: "hidden",
     },
-    circlePressed: {
+    headerButtonActive: {
       backgroundColor: native.fill,
     },
-    circleAccent: {
+    headerButtonAccent: {
       backgroundColor: tokens.primary,
     },
     profileInitials: {

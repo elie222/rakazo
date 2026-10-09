@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldOpenInAppPopup } from "./window-open.js";
+import { oauthPopupSessionPreferences, shouldOpenInAppPopup } from "./window-open.js";
 
 const appOrigin = "https://rakazo.example.com";
 
@@ -17,6 +17,7 @@ describe("desktop child windows", () => {
   it.each([
     "rakazo-model-oauth",
     "rakazo-mcp-oauth",
+    "rakazo-sso-oauth",
     "rakazo-app-connect",
     "rakazo-plugin-connect",
   ])("keeps the intentional %s flow in an Electron popup", (frameName) => {
@@ -31,4 +32,25 @@ describe("desktop child windows", () => {
       shouldOpenInAppPopup(appOrigin, "http://provider.example.com", "rakazo-model-oauth"),
     ).toBe(false);
   });
+});
+
+it("keeps SSO popups sandboxed in the parent session without a privileged preload", () => {
+  expect(oauthPopupSessionPreferences("persist:test-server")).toEqual({
+    partition: "persist:test-server",
+    preload: "",
+    nodeIntegration: false,
+    contextIsolation: true,
+    sandbox: true,
+  });
+  expect(oauthPopupSessionPreferences(null)).not.toHaveProperty("partition");
+  expect(shouldOpenInAppPopup(appOrigin, "http://provider.example.com", "rakazo-sso-oauth")).toBe(
+    false,
+  );
+});
+
+it("allows only the named SSO blank popup before provider navigation", () => {
+  expect(shouldOpenInAppPopup(appOrigin, "about:blank", "rakazo-sso-oauth")).toBe(true);
+  for (const name of ["_blank", "rakazo-mcp-oauth", ""])
+    expect(shouldOpenInAppPopup(appOrigin, "about:blank", name)).toBe(false);
+  expect(shouldOpenInAppPopup(appOrigin, "about:blank#unsafe", "rakazo-sso-oauth")).toBe(false);
 });

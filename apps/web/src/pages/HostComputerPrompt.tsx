@@ -9,14 +9,23 @@ import {
   DialogTitle,
 } from "@rakazo/ui-web";
 import { useEffect, useState } from "react";
+import { sandboxCheckFailureMessage } from "../lib/computer-sandbox";
 import { desktopBridge } from "../lib/desktop";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 
-export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
+export function HostComputerPrompt({
+  initialMe,
+  onMeUpdated,
+}: {
+  initialMe?: Me;
+  onMeUpdated?: (me: Me) => void;
+}) {
   const { t } = useLingui();
   const desktop = desktopBridge();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mac = desktop?.platform === "darwin";
   const hostLabel = mac ? t`this Mac` : t`this computer`;
@@ -37,18 +46,43 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
 
   if (!open) return null;
 
+  async function refreshChoiceState() {
+    setChecking(true);
+    setError(null);
+    try {
+      const me = await rpc.me();
+      onMeUpdated?.(me);
+      if (!me.canChooseHostComputer || me.computerHost != null) {
+        setOpen(false);
+      }
+    } catch (err) {
+      setError(sandboxCheckFailureMessage(err));
+    } finally {
+      setChecking(false);
+    }
+  }
+
   async function choose(computerHost: "docker" | "this-mac") {
     setPending(true);
     setError(null);
     try {
       await rpc.deployment.update({ computerHost });
-      setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save that choice`);
-    } finally {
+      setError(errorText(err, t`Could not save that choice`));
       setPending(false);
+      return;
     }
+    try {
+      const me = await rpc.me();
+      onMeUpdated?.(me);
+    } catch {
+      // The choice is already saved. A failed refresh must not look like a failed save.
+    }
+    setOpen(false);
+    setPending(false);
   }
+
+  const busy = pending || checking;
 
   // The choice is required, so the dialog stays open until one is saved.
   return (
@@ -73,25 +107,38 @@ export function HostComputerPrompt({ initialMe }: { initialMe?: Me }) {
             </span>
           </DialogDescription>
         </DialogHeader>
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
         <div className="flex flex-col gap-2">
-          <Button
-            variant="outline"
-            size="lg"
-            disabled={pending}
-            onClick={() => void choose("docker")}
-          >
+          <Button variant="outline" size="lg" disabled={busy} onClick={() => void choose("docker")}>
             <Trans>Docker</Trans>
           </Button>
           <Button
             variant="outline"
             size="lg"
-            disabled={pending}
+            disabled={busy}
             onClick={() => void choose("this-mac")}
           >
             <Trans>Use {hostLabel}</Trans>
           </Button>
         </div>
+        {error ? (
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="rounded-full"
+              disabled={busy}
+              onClick={() => void refreshChoiceState()}
+            >
+              {checking ? <Trans>Checking…</Trans> : <Trans>Check again</Trans>}
+            </Button>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

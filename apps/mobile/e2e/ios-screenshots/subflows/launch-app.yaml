@@ -1,0 +1,21 @@
+appId: com.rakazo.app
+---
+# Restart without clearing app data, so a dev client's bundler URL stays put.
+- launchApp:
+    stopApp: true
+- extendedWaitUntil:
+    visible: "Account|Sign up for Rakazo|Sign in to Rakazo"
+    timeout: 40000
+- runFlow:
+    when:
+      visible: "Account"
+    commands:
+      - tapOn: "Account"
+      - scrollUntilVisible:
+          element: "Sign out"
+          direction: DOWN
+          timeout: 15000
+      - tapOn: "Sign out"
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo|Sign in to Rakazo"
+    timeout: 20000

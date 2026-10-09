@@ -1,10 +1,11 @@
 import { tokensForAppearance } from "@rakazo/ui-tokens";
 import { useMemo, useSyncExternalStore } from "react";
-import { type ColorValue, Platform, PlatformColor } from "react-native";
+import type { ColorValue } from "react-native";
+import { Platform, PlatformColor } from "react-native";
+import type { ResolvedAppearance } from "./appearance";
 import {
   getCachedAppearancePreference,
   mobileTokens,
-  type ResolvedAppearance,
   resolveMobileAppearance,
   subscribeAppearance,
 } from "./appearance";
@@ -28,6 +29,10 @@ export const native = {
   get fillPressed() {
     return systemColor("secondarySystemFill", mobileTokens().accent);
   },
+  get separator() {
+    // The page color reads as a gap between rows on a fill in either palette.
+    return systemColor("separator", mobileTokens().background);
+  },
   get label() {
     return systemColor("label", mobileTokens().foreground);
   },
@@ -36,6 +41,16 @@ export const native = {
   },
   get tertiaryLabel() {
     return systemColor("tertiaryLabel", mobileTokens().mutedForeground);
+  },
+  // Dark grouped colours always come from the tokens: iOS lifts the system ones inside sheets
+  // and with Increase Contrast until destructive text drops below 4.5:1.
+  get groupedPage() {
+    if (resolveMobileAppearance() === "dark") return mobileTokens().background;
+    return systemColor("systemGroupedBackground", mobileTokens().muted);
+  },
+  get groupedCell() {
+    if (resolveMobileAppearance() === "dark") return mobileTokens().card;
+    return systemColor("secondarySystemGroupedBackground", mobileTokens().card);
   },
 } as const;
 

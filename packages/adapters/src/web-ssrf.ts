@@ -24,6 +24,11 @@ export interface SafeWebFetchOptions {
   userAgent?: string;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  maxRedirects?: number;
+  /** Keep the first `maxBytes` of a longer body instead of rejecting it. */
+  truncate?: boolean;
+  /** Refuse any hop, redirects included, whose port is not listed. */
+  allowedPorts?: readonly number[];
   /**
    * Test seam for dispatcher teardown. Defaults to `Agent.close()`.
    * Always raced against the shared operation deadline.
@@ -44,6 +49,7 @@ export async function assertSafeWebUrl(
   value: string,
   resolve: ResolveHostname = defaultResolveHostname,
   signal?: AbortSignal,
+  allowedPorts?: readonly number[],
 ): Promise<URL> {
   let url: URL;
   try {
@@ -56,6 +62,10 @@ export async function assertSafeWebUrl(
   }
   if (url.username || url.password) {
     throw new Error("URL must not contain credentials");
+  }
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  if (allowedPorts && !allowedPorts.includes(port)) {
+    throw new Error("URL port is not allowed");
   }
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isBlockedHostname(hostname)) {
@@ -81,10 +91,20 @@ export function isBlockedHostname(hostname: string): boolean {
   return false;
 }
 
+type SafeWebResponse<Body> = { url: string; body: Body; contentType: string | null };
+
 export async function fetchSafeWebText(
   url: string,
   options: SafeWebFetchOptions = {},
-): Promise<{ url: string; body: string; contentType: string | null }> {
+): Promise<SafeWebResponse<string>> {
+  const response = await fetchSafeWebBytes(url, options);
+  return { ...response, body: new TextDecoder().decode(response.body) };
+}
+
+export async function fetchSafeWebBytes(
+  url: string,
+  options: SafeWebFetchOptions = {},
+): Promise<SafeWebResponse<Uint8Array>> {
   const resolve = options.resolveHostname ?? defaultResolveHostname;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -112,7 +132,9 @@ export async function fetchSafeWebText(
       userAgent: options.userAgent ?? "Rakazo/0.1 (+https://github.com/elie222/rakazo)",
       headers: options.headers,
       signal,
-      redirectsRemaining: MAX_REDIRECTS,
+      redirectsRemaining: options.maxRedirects ?? MAX_REDIRECTS,
+      truncate: options.truncate ?? false,
+      allowedPorts: options.allowedPorts,
     });
   } finally {
     // Race graceful close against the shared deadline. Do not wait unbounded on close().
@@ -141,12 +163,14 @@ async function followRedirects(
     headers?: Record<string, string>;
     signal: AbortSignal;
     redirectsRemaining: number;
+    truncate: boolean;
+    allowedPorts?: readonly number[];
   },
-): Promise<{ url: string; body: string; contentType: string | null }> {
+): Promise<SafeWebResponse<Uint8Array>> {
   if (state.signal.aborted) {
     throw abortError(state.signal);
   }
-  const validated = await assertSafeWebUrl(rawUrl, state.resolve, state.signal);
+  const validated = await assertSafeWebUrl(rawUrl, state.resolve, state.signal, state.allowedPorts);
   // Race fetch against the deadline — injected fetch may ignore init.signal.
   const response = await withAbort(
     state.baseFetch(validated.href, {
@@ -190,18 +214,16 @@ async function followRedirects(
   }
 
   const contentLength = response.headers.get("content-length");
-  if (contentLength && Number(contentLength) > state.maxBytes) {
+  if (!state.truncate && contentLength && Number(contentLength) > state.maxBytes) {
     await cancelResponseBody(response, state.signal);
     throw new Error("Response is too large");
   }
 
-  const buffer = await readBodyCapped(response, state.maxBytes, state.signal);
+  const body = state.truncate
+    ? await readBodyPrefix(response, state.maxBytes, state.signal)
+    : await readBodyCapped(response, state.maxBytes, state.signal);
 
-  return {
-    url: validated.href,
-    body: new TextDecoder().decode(buffer),
-    contentType: response.headers.get("content-type"),
-  };
+  return { url: validated.href, body, contentType: response.headers.get("content-type") };
 }
 
 async function cancelResponseBody(response: Response, signal: AbortSignal): Promise<void> {
@@ -227,6 +249,33 @@ export async function readBodyCapped(
       return withAbort(operation(), signal);
     },
   });
+}
+
+/** Read at most maxBytes and release the rest of the stream unread. */
+async function readBodyPrefix(
+  response: Response,
+  maxBytes: number,
+  signal: AbortSignal,
+): Promise<Uint8Array> {
+  if (!response.body) {
+    const buffer = await withAbort(response.arrayBuffer(), signal);
+    return new Uint8Array(buffer).slice(0, maxBytes);
+  }
+  const reader = response.body.getReader();
+  const prefix = new Uint8Array(maxBytes);
+  let total = 0;
+  try {
+    while (total < maxBytes) {
+      const { done, value } = await withAbort(reader.read(), signal);
+      if (done) break;
+      const take = Math.min(value.byteLength, maxBytes - total);
+      prefix.set(value.subarray(0, take), total);
+      total += take;
+    }
+  } finally {
+    void Promise.resolve(reader.cancel()).catch(() => undefined);
+  }
+  return prefix.slice(0, total);
 }
 
 function assertPublicAddresses(addresses: ResolvedAddress[]): void {

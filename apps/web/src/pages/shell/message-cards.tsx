@@ -5,10 +5,12 @@ import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BuiCard, SuccessPop } from "../../components/ai/primitives";
-import { type ArtifactTarget, decodeArtifactBase64 } from "../../lib/artifact-open";
+import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
 import { rpc } from "../../lib/rpc";
+import { useArtifactImage } from "../../lib/use-artifact-image";
+import { errorText } from "../../lib/user-error";
 
 export function ChoiceCard({
   botId,
@@ -32,7 +34,7 @@ export function ChoiceCard({
       await rpc.onboarding.choose({ botId, optionId });
       await onBotChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save this choice`);
+      setError(errorText(err, t`Could not save this choice`));
       setPending(false);
     }
   }
@@ -45,7 +47,7 @@ export function ChoiceCard({
       setLocallyDismissed(true);
       void onBotChanged().catch(() => undefined);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not dismiss`);
+      setError(errorText(err, t`Could not dismiss`));
       setPending(false);
     }
   }
@@ -188,7 +190,7 @@ export function AppConnectCard({
       if (!controller.signal.aborted) setError(t`Authorization timed out. Please try again.`);
     } catch (error) {
       if (!controller.signal.aborted) {
-        setError(error instanceof Error ? error.message : t`Could not authorize this app`);
+        setError(errorText(error, t`Could not authorize this app`));
       }
     } finally {
       if (connectionAttempt.current === controller) {
@@ -283,7 +285,7 @@ function ChartCanvas({
         setError(null);
         ref.current.replaceChildren(parts.plotted);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : t`Could not render chart`);
+        if (!cancelled) setError(errorText(err, t`Could not render chart`));
       }
     })();
     return () => {
@@ -374,7 +376,7 @@ export function McpApprovalCard({
       await rpc.mcp.assignments.approve({ botId, serverId, threadId });
       setLocalStatus("connected");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not approve this server`);
+      setError(errorText(err, t`Could not approve this server`));
       setLocalStatus("pending");
     } finally {
       setBusy(false);
@@ -392,7 +394,7 @@ export function McpApprovalCard({
       setLocalStatus("dismissed");
     } catch (err) {
       setLocalStatus("pending");
-      setError(err instanceof Error ? err.message : t`Could not dismiss this server`);
+      setError(errorText(err, t`Could not dismiss this server`));
     } finally {
       setBusy(false);
     }
@@ -525,12 +527,10 @@ export function ArtifactImage({
   name: string;
 }) {
   const { t } = useLingui();
-  const [src, setSrc] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const container = useRef<HTMLDivElement>(null);
-  const targetBotId = "botId" in target ? target.botId : undefined;
-  const targetGroupId = "groupId" in target ? target.groupId : undefined;
+  const src = useArtifactImage(target, artifactId, visible);
 
   useEffect(() => {
     const element = container.current;
@@ -550,32 +550,6 @@ export function ArtifactImage({
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!visible) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    setSrc(null);
-    void rpc.artifacts
-      .get(
-        targetBotId
-          ? { botId: targetBotId, artifactId }
-          : { groupId: targetGroupId ?? "", artifactId },
-      )
-      .then((artifact) => {
-        const bytes = decodeArtifactBase64(artifact.contentBase64);
-        objectUrl = URL.createObjectURL(
-          new Blob([new Uint8Array(bytes)], { type: artifact.mimeType }),
-        );
-        if (cancelled) URL.revokeObjectURL(objectUrl);
-        else setSrc(objectUrl);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [artifactId, targetBotId, targetGroupId, visible]);
 
   return (
     <div ref={container}>

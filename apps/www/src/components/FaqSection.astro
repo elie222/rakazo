@@ -1,0 +1,24 @@
+---
+import type { FaqItem } from "../guide";
+import InlineCode from "./InlineCode.astro";
+
+type Props = {
+  items: readonly FaqItem[];
+};
+
+const { items } = Astro.props;
+---
+
+<section aria-labelledby="faq-heading">
+  <h2 id="faq-heading">FAQ</h2>
+  {
+    items.map((item) => (
+      <div>
+        <h3>{item.question}</h3>
+        <p>
+          <InlineCode text={item.answer} />
+        </p>
+      </div>
+    ))
+  }
+</section>

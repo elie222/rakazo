@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
-import { Agent } from "undici";
+import { parseErrorResponse } from "@modelcontextprotocol/sdk/client/auth.js";
+import { Agent, Response as UndiciResponse } from "undici";
 import { describe, expect, it } from "vitest";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
@@ -66,6 +67,78 @@ describe("fetchPairedWithDispatcher", () => {
     expect(seen).toBe(form);
   });
 });
+
+describe("dispatcherFetch OAuth responses", () => {
+  it("lets the MCP SDK read an undici error response", async () => {
+    const body = JSON.stringify({
+      error: "registration_not_supported",
+      error_description: "Dynamic client registration is not supported",
+    });
+    const foreign = new UndiciResponse(body, {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+    expect(foreign instanceof Response).toBe(false);
+    const masked = await parseErrorResponse(foreign as unknown as Response);
+    expect(masked.message).toContain("[object Response]");
+    expect(masked.message).not.toContain("HTTP 403");
+
+    const served = await withPackageResponse(
+      body,
+      403,
+      {
+        "content-type": "application/json",
+        "www-authenticate": 'Bearer error="invalid_token"',
+      },
+      async (response) => {
+        expect(response instanceof Response).toBe(true);
+        expect(response.status).toBe(403);
+        expect(response.headers.get("www-authenticate")).toBe('Bearer error="invalid_token"');
+        return parseErrorResponse(response);
+      },
+    );
+    expect(served.message).toBe("Dynamic client registration is not supported");
+    expect(served.message).not.toContain("[object Response]");
+
+    const fallback = await withPackageResponse(
+      "missing bearer token",
+      401,
+      { "content-type": "text/plain" },
+      (response) => parseErrorResponse(response),
+    );
+    expect(fallback.message).toContain("HTTP 401");
+    expect(fallback.message).toContain("missing bearer token");
+    expect(fallback.message).not.toContain("[object Response]");
+  });
+});
+
+async function withPackageResponse<T>(
+  body: string,
+  status: number,
+  headers: Record<string, string>,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
+  const server = createServer((_request, response) => {
+    response.writeHead(status, headers);
+    response.end(body);
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const address = server.address();
+  if (address == null || typeof address === "string") {
+    throw new Error("Missing test server address");
+  }
+  try {
+    const response = await dispatcherFetch(`http://127.0.0.1:${address.port}/oauth-error`);
+    return await read(response);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+}
 
 function boundaryOf(contentType: string | undefined): string {
   const match = /boundary="?([^";]+)"?/i.exec(contentType ?? "");

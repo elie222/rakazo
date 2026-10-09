@@ -12,6 +12,7 @@ import {
 
 vi.mock("expo-file-system", () => ({ File: class {}, Paths: {} }));
 vi.mock("./voice", () => ({ speakText: vi.fn(), stopSpeaking: vi.fn() }));
+vi.mock("./call-sounds", () => ({ playCallCue: vi.fn() }));
 vi.mock("./api", () => ({
   applyMobileThreadEvent: vi.fn(),
   blockText: vi.fn(),
@@ -55,7 +56,15 @@ function fakes(opts: { onDevice?: boolean } = {}) {
   const stopSpeaking = vi.fn(() => {
     speeches[speeches.length - 1]?.resolve();
   });
+  const cues: string[] = [];
+  const waits: string[] = [];
   const deps: CallDeps = {
+    cue: async (cue) => {
+      cues.push(cue);
+    },
+    waitSound: (action) => {
+      waits.push(action);
+    },
     dictate: async (next, signal) => {
       signals.push(signal);
       if (!opts.onDevice) return false;
@@ -87,6 +96,8 @@ function fakes(opts: { onDevice?: boolean } = {}) {
   };
   return {
     deps,
+    cues,
+    waits,
     stopSpeaking,
     interim: (text: string) => handlers?.onInterim(text),
     hear: (text: string) => handlers?.onFinal(text),
@@ -182,6 +193,230 @@ describe("mobile call session", () => {
     await flush();
     expect(getSnapshot()?.phase).toBe("listening");
     expect(fake.recordings).toHaveLength(2);
+  });
+
+  it("plays the opening cue, speaks the greeting, then listens", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada", greeting: "Hello Riley, Ada here." }, fake.deps);
+    await flush();
+    expect(fake.cues).toEqual(["start"]);
+    expect(fake.spoken).toEqual(["Hello Riley, Ada here."]);
+    expect(getSnapshot()?.phase).toBe("speaking");
+    expect(fake.recordings).toHaveLength(0);
+
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(getSnapshot()?.phase).toBe("listening");
+    expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("says it is switching, hangs up, then rings the bot the caller asked for", async () => {
+    const fake = fakes();
+    const ring = vi.fn();
+    const switchBot = vi.fn((text: string) =>
+      text === "switch to Max" ? { name: "Max", ring } : undefined,
+    );
+    startCall({ botId: "bot-1", botName: "Ada", switchBot }, fake.deps);
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    expect(switchBot).toHaveBeenCalledWith("switch to Max");
+    expect(fake.send).not.toHaveBeenCalled();
+    expect(fake.cues).toEqual(["start", "end"]);
+    expect(fake.spoken).toEqual(["OK, switching to Max."]);
+    expect(ring).not.toHaveBeenCalled();
+
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(ring).toHaveBeenCalledOnce();
+    expect(getSnapshot()).toBeNull();
+  });
+
+  it("ignores replies throughout the hand-over cue and speech", async () => {
+    const endCue = deferred<void>();
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      {
+        ...fake.deps,
+        cue: (cue) => (cue === "end" ? endCue.promise : Promise.resolve()),
+      },
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    fake.replyWith("late-1", "An earlier reply.");
+    expect(fake.spoken).toEqual([]);
+    endCue.resolve();
+    await flush();
+    fake.replyWith("late-2", "Another earlier reply.");
+    expect(fake.spoken).toEqual(["OK, switching to Max."]);
+    expect(fake.recordings).toHaveLength(1);
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(ring).toHaveBeenCalledOnce();
+    expect(getSnapshot()).toBeNull();
+
+    startCall({ botId: "bot-2", botName: "Max" }, fake.deps);
+    await flush();
+    fake.replyWith("new-1", "Hello from Max.");
+    expect(fake.spoken.at(-1)).toBe("Hello from Max.");
+  });
+
+  it.each([undefined, "Talk soon."])(
+    "ignores an old bot's end event throughout hand-over with farewell %j",
+    async (farewell) => {
+      const endCue = deferred<void>();
+      const fake = fakes();
+      const ring = vi.fn();
+      const id = startCall(
+        { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+        { ...fake.deps, cue: (cue) => (cue === "end" ? endCue.promise : Promise.resolve()) },
+      );
+      await flush();
+      fake.say("switch to Max");
+      await flush();
+      fake.endedCall(id, farewell);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      expect(fake.spoken).toEqual([]);
+      endCue.resolve();
+      await flush();
+      fake.endedCall(id, farewell);
+      expect(fake.spoken).toEqual(["OK, switching to Max."]);
+      expect(getSnapshot()?.phase).toBe("speaking");
+      fake.speeches[0]?.resolve();
+      await flush();
+      expect(ring).toHaveBeenCalledOnce();
+      expect(fake.closeCall).toHaveBeenCalledWith("bot-1", id);
+      expect(getSnapshot()).toBeNull();
+    },
+  );
+
+  it("plays the waiting sound after the closing cue, until the reply starts", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(fake.waits).toEqual(["preload"]);
+    fake.say("status please");
+    await flush();
+    expect(fake.waits).toEqual(["preload", "start"]);
+    fake.replyWith("message-1", "It is green.");
+    expect(fake.waits).toEqual(["preload", "start", "stop"]);
+    endCall();
+    expect(fake.waits).toEqual(["preload", "start", "stop", "release"]);
+  });
+
+  it("does not ring the other bot when the caller hangs up during the hand-over", async () => {
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      fake.deps,
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    endCall();
+    fake.speeches[0]?.resolve();
+    await flush();
+    expect(ring).not.toHaveBeenCalled();
+  });
+
+  it("mutes instead of ringing when the hand-over line is refused for consent", async () => {
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      fake.deps,
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    fake.speeches[0]?.reject(new AiConsentBlocked("consent denied"));
+    await flush();
+    expect(ring).not.toHaveBeenCalled();
+    expect(fake.closeCall).not.toHaveBeenCalled();
+    expect(getSnapshot()).toMatchObject({ muted: true, caption: "consent denied" });
+    toggleMute();
+    await flush();
+    fake.replyWith("new-reply", "Back on the line.");
+    expect(fake.spoken.at(-1)).toBe("Back on the line.");
+  });
+
+  it("does not ring the other bot when the caller hangs up before the hand-over is spoken", async () => {
+    const endCue = deferred<void>();
+    const fake = fakes();
+    const ring = vi.fn();
+    startCall(
+      { botId: "bot-1", botName: "Ada", switchBot: () => ({ name: "Max", ring }) },
+      {
+        ...fake.deps,
+        cue: async (cue) => {
+          fake.cues.push(cue);
+          if (cue === "end") await endCue.promise;
+        },
+      },
+    );
+    await flush();
+    fake.say("switch to Max");
+    await flush();
+    endCall();
+    endCue.resolve();
+    await flush();
+    expect(fake.spoken).toEqual([]);
+    expect(ring).not.toHaveBeenCalled();
+  });
+
+  it("does not let an earlier closing cue start the waiting sound for a later turn", async () => {
+    const fake = fakes({ onDevice: true });
+    const endCues: Array<Deferred<void>> = [];
+    startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false },
+      {
+        ...fake.deps,
+        cue: async (cue) => {
+          fake.cues.push(cue);
+          if (cue !== "end") return;
+          const pending = deferred<void>();
+          endCues.push(pending);
+          await pending.promise;
+        },
+      },
+    );
+    await flush();
+    fake.hear("status please");
+    await flush();
+    expect(fake.waits).toEqual(["preload"]);
+
+    fake.replyWith("message-1", "It is green.");
+    expect(fake.waits).toEqual(["preload", "stop"]);
+    fake.speeches[0]?.resolve();
+    await flush();
+
+    fake.hear("and the tests");
+    await flush();
+    expect(getSnapshot()?.phase).toBe("thinking");
+    expect(endCues).toHaveLength(2);
+
+    endCues[0]?.resolve();
+    await flush();
+    expect(fake.waits).toEqual(["preload", "stop"]);
+
+    endCues[1]?.resolve();
+    await flush();
+    expect(fake.waits).toEqual(["preload", "stop", "start"]);
+  });
+
+  it("plays the closing cue once the caller's turn is heard", async () => {
+    const fake = fakes();
+    startCall({ botId: "bot-1", botName: "Ada" }, fake.deps);
+    await flush();
+    expect(fake.cues).toEqual(["start"]);
+    fake.say("status please");
+    await flush();
+    expect(fake.cues).toEqual(["start", "end"]);
+    expect(fake.send).toHaveBeenCalledOnce();
   });
 
   it("mutes after a speech-provider consent refusal without recording another turn", async () => {
@@ -453,6 +688,27 @@ describe("mobile call session", () => {
     gate.resolve();
     await flush();
     expect(fake.recordings).toHaveLength(1);
+  });
+
+  it("keeps the microphone closed until the opening cue ends and the greeting starts", async () => {
+    const cue = deferred<void>();
+    const fake = fakes();
+    const startedCallId = startCall(
+      { botId: "bot-1", botName: "Ada", transcribe: false, greeting: "Hello, Ada here." },
+      { ...fake.deps, cue: () => cue.promise },
+    );
+    await flush();
+
+    setCallProviderTranscribe(true, startedCallId);
+    toggleMute();
+    toggleMute();
+    await flush();
+    expect(fake.recordings).toHaveLength(0);
+    expect(fake.spoken).toEqual([]);
+
+    cue.resolve();
+    await flush();
+    expect(fake.spoken).toEqual(["Hello, Ada here."]);
   });
 
   it("ignores a transcribe probe for another call and resumes listening for this one", async () => {

@@ -4,13 +4,17 @@ import Footer from "../components/Footer.astro";
 import Header from "../components/Header.astro";
 import { fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { DOCS_URL } from "../site";
+import { SELF_HOST_GUIDE_PATH } from "../site";
 
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
 ---
 
-<BaseLayout title="Page not found · Rakazo" description="The requested Rakazo page does not exist.">
+<BaseLayout
+  title="Page not found · Rakazo"
+  description="The requested Rakazo page does not exist."
+  index={false}
+>
   <div class="container">
     <Header starsLabel={starsLabel} />
     <main id="main" class="privacy-copy">
@@ -18,7 +22,7 @@ const starsLabel = stars === null ? "Star" : formatStarCount(stars);
       <p>The page you requested does not exist. Return home or continue with the self-hosting guide.</p>
       <div class="cta-actions">
         <Button href="/">Home</Button>
-        <Button href={DOCS_URL} variant="secondary" external>Read the docs</Button>
+        <Button href={SELF_HOST_GUIDE_PATH} variant="secondary">Read the docs</Button>
       </div>
     </main>
     <Footer />

@@ -1,0 +1,14 @@
+---
+import { splitInlineCode } from "../inline-code";
+
+type Props = {
+  text: string;
+};
+
+const { text } = Astro.props;
+const parts = splitInlineCode(text);
+---
+
+{
+  parts.map((part) => (part.kind === "code" ? <code>{part.value}</code> : part.value))
+}

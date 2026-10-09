@@ -40,6 +40,7 @@ import { desktopBridge } from "../lib/desktop";
 import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useObjectUrl } from "../lib/use-object-url";
+import { errorText } from "../lib/user-error";
 import { WindowChrome } from "./WindowChrome";
 
 type ViewMode = "grid" | "list";
@@ -120,7 +121,7 @@ export function ArtifactsPage() {
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : t`Could not load artifacts.`);
+          setLoadError(errorText(error, t`Could not load artifacts.`));
         }
       });
     return () => {
@@ -204,7 +205,7 @@ export function ArtifactsPage() {
       if (artifactId === pendingDelete.id) navigate("/app/artifacts");
       setPendingDelete(null);
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : t`Could not delete this artifact.`);
+      setDeleteError(errorText(error, t`Could not delete this artifact.`));
     } finally {
       setDeleteBusy(false);
     }
@@ -854,7 +855,7 @@ function PreviewPane({
         if (!cancelled) {
           setState({
             status: "error",
-            message: error instanceof Error ? error.message : t`Could not load this artifact.`,
+            message: errorText(error, t`Could not load this artifact.`),
           });
         }
       });

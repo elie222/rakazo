@@ -27,6 +27,7 @@ import { toComputerRef } from "./computer-support.js";
 import {
   checkpointComputerWorkspace,
   ensureComputerWorkspaceLayout,
+  removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
 } from "./computer-workspace.js";
 import { isSandboxGoneError } from "./e2b-sandbox.js";
@@ -174,6 +175,37 @@ export async function provisionComputer(
   const homePath = resolveAgentHomePath(deps.home, existing.homeKey, deps.dataDir ?? "./data");
   await mkdir(homePath, { recursive: true });
 
+  // Re-provisioning a live computer enters booting and revokes its screen URLs.
+  // A provider-confirmed live reference needs setup, not a new lifecycle claim.
+  if (existing.state === "running" && existing.providerRef && deps.sandbox.isRunning) {
+    const ref = toComputerRef(existing);
+    if (await deps.sandbox.isRunning(ref, context)) {
+      context.signal.throwIfAborted();
+      const retained = await deps.prisma.computer.updateMany({
+        where: {
+          id: computerId,
+          state: "running",
+          providerRef: existing.providerRef,
+          kind: existing.kind,
+          screenGeneration: existing.screenGeneration,
+          maintenanceId: existing.maintenanceId ?? null,
+          ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
+        },
+        data: { updatedAt: new Date() },
+      });
+      if (retained.count !== 1) throw new ComputerBusyError();
+      await deps.sandbox.prepare(ref, context);
+      await ensureComputerWorkspaceLayout(
+        deps.sandbox,
+        ref,
+        parseComputerMode(existing.scope),
+        context.botId,
+        context,
+      );
+      return ref;
+    }
+  }
+
   // If we first observe abandoned "booting", remember that stamp before waiting. A concurrent
   // reclaim bumps updatedAt while state stays "booting"; fencing the claim on the pre-wait
   // stamp keeps those callers mutually exclusive. After the wait, a finished boot returns
@@ -313,6 +345,13 @@ export async function provisionComputer(
       context.botId,
       context,
     );
+    // Bots deleted while this computer was not running could not remove their folders then.
+    // Skip only plain reconnects; a provider may start or replace the computer during one.
+    if (existing.scope === "team" && (!reconnecting || replacement || ref.started === true)) {
+      await removeDeletedBotWorkspaces(deps, ref, existing.spaceId, context).catch((error) => {
+        getLogger().error("team bot folder cleanup", error);
+      });
+    }
     const activeControl = hasActiveComputerControl(existing);
     const activated = await deps.prisma.computer.updateMany({
       where: {

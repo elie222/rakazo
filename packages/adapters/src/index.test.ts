@@ -1,5 +1,7 @@
 import { createCipheriv, createHash } from "node:crypto";
+import { BUILTIN_TOOL_NAMES } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { agentConnectionTools, builtinAgentTools } from "./builtin-tools.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 import { EncryptedSecretStore } from "./secrets.js";
@@ -16,18 +18,25 @@ describe("secret store", () => {
     });
     expect(record.ciphertext).not.toContain("sk-or-v1-secretvalue");
     expect(record.ciphertext).toMatch(/^v2:/);
-    expect(store.load(record.ciphertext, record.id)).toBe("sk-or-v1-secretvalue");
-    expect(() => store.load(record.ciphertext, "another-row")).toThrow();
+    await expect(store.load(record.ciphertext, record.id)).resolves.toBe("sk-or-v1-secretvalue");
+    await expect(store.load(record.ciphertext, "another-row")).rejects.toThrow();
   });
 
-  it("keeps legacy ciphertext readable without rewriting it at startup", () => {
+  it("keeps legacy ciphertext readable without rewriting it at startup", async () => {
     const key = "legacy-test-key";
     const iv = Buffer.alloc(12, 7);
     const cipher = createCipheriv("aes-256-gcm", createHash("sha256").update(key).digest(), iv);
     const encrypted = Buffer.concat([cipher.update("legacy-secret", "utf8"), cipher.final()]);
     const legacy = Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64");
     const store = new EncryptedSecretStore(key);
-    expect(store.load(legacy, "secret-row")).toBe("legacy-secret");
+    expect(await store.load(legacy, "secret-row")).toBe("legacy-secret");
+  });
+
+  it("rejects malformed v2 ciphertext when loading asynchronously", async () => {
+    const store = new EncryptedSecretStore("test-key");
+    await expect(store.load("v2:AAAA", "secret-row")).rejects.toThrow(
+      "Encrypted secret is malformed",
+    );
   });
 });
 
@@ -163,7 +172,9 @@ describe("scripted runtime", () => {
 
 describe("builtin tools", () => {
   it("exposes the tools the executor actually applies", async () => {
-    const { builtinAgentTools } = await import("./builtin-tools.js");
+    expect([...BUILTIN_TOOL_NAMES].sort()).toEqual(
+      [...builtinAgentTools, ...agentConnectionTools].map((tool) => tool.name).sort(),
+    );
     expect(builtinAgentTools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "write_file",

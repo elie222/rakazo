@@ -1,4 +1,6 @@
 import type {
+  AccountSecurity,
+  AuthCapabilities,
   AvatarStyle,
   Bot,
   BotSection,
@@ -8,8 +10,15 @@ import type {
   MessageBlock,
   ModelCatalogEntry,
   ModelCredential,
+  ReplyPreview,
   Space,
   SpaceNavigation,
+} from "@rakazo/contracts";
+import {
+  accountSecuritySchema,
+  authCapabilitiesSchema,
+  legacyAccountSecurity,
+  legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
 import type { ThreadHistory } from "@rakazo/core";
 import {
@@ -23,6 +32,7 @@ import {
   progressMessageId,
   readBoundedJsonResponse,
   reduceLiveMessageBlocks,
+  replyMetadata,
   runFailureError,
   signupRequiresEmailVerification,
   takeLiveMessage,
@@ -46,6 +56,7 @@ import {
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session";
+import { authErrorText, errorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -57,6 +68,19 @@ export const MAX_MOBILE_RPC_RESPONSE_BYTES = 16 * 1024 * 1024;
 const SPACE_AUTH_RECOVERY_SAFE_PROCS = new Set(["spaces/list", "me"]);
 
 let cachedApiBase: string | undefined;
+const apiBaseListeners = new Set<() => void>();
+
+export function subscribeApiBase(listener: () => void): () => void {
+  apiBaseListeners.add(listener);
+  return () => {
+    apiBaseListeners.delete(listener);
+  };
+}
+
+function setCachedApiBase(url: string): void {
+  cachedApiBase = url;
+  for (const listener of apiBaseListeners) listener();
+}
 let cachedSpaceId = "";
 /** Bumped on every in-memory Space selection change so a delayed response
  * cannot treat a later reselection of the same Space id as its own. */
@@ -69,10 +93,9 @@ function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
 }
 
-function responseErrorMessage(body: unknown, fallback: string): string {
-  return typeof body === "object" && body && "message" in body
-    ? String((body as { message?: string }).message ?? fallback)
-    : fallback;
+/** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
+function requestError(error: unknown, signal: AbortSignal): unknown {
+  return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error));
 }
 
 export function currentApiBase() {
@@ -94,18 +117,18 @@ export async function loadApiBase() {
   } catch {
     // SecureStore is unavailable in some test / web hosts.
   }
-  cachedApiBase = apiBase;
+  setCachedApiBase(apiBase);
   try {
     const storedSpace = (await SecureStore.getItemAsync(SPACE_KEY)) ?? "";
     cachedSpaceId = storedSpace;
     bumpSpaceSelectionGeneration();
     // A deletion fallback must override the now-invalid saved Space even when
     // the device failed to replace that value before the previous process exited.
-    await recoverSpaceRollback(cachedApiBase);
+    await recoverSpaceRollback(apiBase);
   } catch {
     // Keep any in-memory selection when SecureStore is temporarily unavailable.
   }
-  return cachedApiBase;
+  return currentApiBase();
 }
 
 export async function selectSpace(id: string) {
@@ -193,7 +216,7 @@ export async function selectInitialSpace(id: string) {
   return selectSpace(id);
 }
 
-async function clearSpace(): Promise<boolean> {
+export async function clearSpace(): Promise<boolean> {
   const spaceCleared = await clearStoredValue(SPACE_KEY);
   const rollbackCleared = await clearStoredValue(SPACE_ROLLBACK_KEY);
   if (!spaceCleared || !rollbackCleared) return false;
@@ -367,7 +390,7 @@ export async function saveApiBase(input: string): Promise<EndpointResult> {
     }
     return { ok: false, error: t("Could not save the server URL") };
   }
-  cachedApiBase = parsed.url;
+  setCachedApiBase(parsed.url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return parsed;
 }
@@ -399,7 +422,7 @@ export async function resetApiBase(): Promise<EndpointResult> {
       return { ok: false, error: t("Could not clear the custom server URL") };
     }
   }
-  cachedApiBase = url;
+  setCachedApiBase(url);
   await clearStoredValue(SPACE_ROLLBACK_KEY);
   return { ok: true, url };
 }
@@ -447,7 +470,7 @@ async function authenticateWithEmail(
     {},
   );
   if (!response.ok) {
-    throw new Error(responseErrorMessage(body, `Could not ${action.replace("-", " ")}`));
+    throw new Error(authErrorText(body, t("Could not continue")));
   }
   const token = tokenFromAuthResponse(response, body);
   if (action === "sign-up" && signupRequiresEmailVerification(body))
@@ -473,16 +496,15 @@ export function signUp(email: string, password: string, name: string) {
   return authenticateWithEmail("sign-up", { email, password, name });
 }
 
-export type PasswordResetCapabilities = { passwordReset: boolean; resetUrl: string | null };
+export type PasswordResetCapabilities = AuthCapabilities;
 
 export async function passwordResetCapabilities(): Promise<PasswordResetCapabilities> {
-  const { response, body } = await fetchMobileJson<PasswordResetCapabilities>(
+  const { response, body } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/capabilities`,
     { headers: { origin: "rakazo://" } },
-    { passwordReset: false, resetUrl: null },
   );
-  if (!response.ok) throw new Error("Could not load password recovery settings");
-  return body;
+  if (!response.ok) throw new Error(t("Could not load sign-in options"));
+  return authCapabilitiesSchema.or(legacyAuthCapabilitiesSchema).parse(body);
 }
 
 export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
@@ -495,10 +517,22 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     },
     {},
   );
-  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not send reset email")));
+  if (!response.ok) throw new Error(authErrorText(body, t("Could not send reset email")));
 }
 
+/** Revoking other sessions also refuses this one until the replacement is saved. */
+let passwordChangesInFlight = 0;
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  passwordChangesInFlight += 1;
+  try {
+    await replaceSessionAfterPasswordChange(currentPassword, newPassword);
+  } finally {
+    passwordChangesInFlight -= 1;
+  }
+}
+
+async function replaceSessionAfterPasswordChange(currentPassword: string, newPassword: string) {
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
   const headers = await authHeaders();
@@ -515,7 +549,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
     },
     {},
   );
-  if (!response.ok) throw new Error(responseErrorMessage(body, t("Could not change password")));
+  if (!response.ok) throw new Error(authErrorText(body, t("Could not change password")));
   // Revoking other sessions also revokes this one; keep the replacement the server issued.
   const token = tokenFromAuthResponse(response, body);
   if (!token) return;
@@ -538,7 +572,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
   await maybeResume();
 }
 
-async function fetchMobileJson<T>(
+export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
@@ -549,7 +583,9 @@ async function fetchMobileJson<T>(
     const response = await withAbort(
       fetch(input, { ...init, signal: controller.signal }),
       controller.signal,
-    );
+    ).catch((error: unknown) => {
+      throw requestError(error, controller.signal);
+    });
     try {
       const body = await readBoundedJsonResponse<T>(
         response,
@@ -561,7 +597,7 @@ async function fetchMobileJson<T>(
       if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
         return { response, body: invalidJsonFallback };
       }
-      throw error;
+      throw requestError(error, controller.signal);
     }
   } finally {
     clearTimeout(timer);
@@ -608,7 +644,7 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-export async function deleteAccount(password: string) {
+export async function deleteAccount(password?: string, token?: string) {
   await rpc("notifications/unregisterPush").catch(() => undefined);
   const { response, body } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/delete-user`,
@@ -619,15 +655,30 @@ export async function deleteAccount(password: string) {
         origin: "rakazo://",
         ...(await authHeaders()),
       },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ password, token }),
     },
     {},
   );
   if (!response.ok) {
-    throw new Error(responseErrorMessage(body, t("Could not delete account")));
+    throw new Error(authErrorText(body, t("Could not delete account")));
   }
   await clearSessionToken();
   await clearSpace();
+}
+
+const sessionRejectedListeners = new Set<() => void>();
+
+/** Runs after the server rejected the stored session and it was cleared. */
+export function subscribeSessionRejected(listener: () => void): () => void {
+  sessionRejectedListeners.add(listener);
+  return () => {
+    sessionRejectedListeners.delete(listener);
+  };
+}
+
+async function rejectSession() {
+  await clearSessionToken();
+  for (const listener of sessionRejectedListeners) listener();
 }
 
 export async function rpc<T>(
@@ -641,6 +692,7 @@ export async function rpc<T>(
   } = {},
 ): Promise<T> {
   const requestSpaceGeneration = spaceSelectionGeneration;
+  const requestSessionGeneration = currentSessionGeneration();
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
@@ -669,8 +721,6 @@ export async function rpc<T>(
           () => controller.abort(new Error("Request timed out")),
           options.timeoutMs ?? RPC_TIMEOUT_MS,
         );
-  const abortReason = (error: unknown) =>
-    controller.signal.aborted ? (controller.signal.reason ?? error) : error;
   // Bind recovery to the Space + selection epoch this request was sent with:
   // a 401 arriving after the user switched Spaces — including A → B → A —
   // belongs to a stale request and must not touch the current selection.
@@ -691,28 +741,49 @@ export async function rpc<T>(
       });
     } catch (error) {
       // The native fetch reports an aborted request with an implementation detail
-      // ("FetchRequestCanceledException"); say what happened instead.
-      throw abortReason(error);
+      // ("FetchRequestCanceledException") and an unreachable server with a native stack
+      // location; say what happened instead.
+      throw requestError(error, controller.signal);
     }
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
       throw new Error(t("Update your server to use AI data sharing in this mobile version."));
     }
-    const parsed = await readBoundedJsonResponse<{ json?: T; error?: { message?: string } }>(
+    const parsed: { json?: T } = await readBoundedJsonResponse<{ json?: T }>(
       res,
       MAX_MOBILE_RPC_RESPONSE_BYTES,
       controller.signal,
     ).catch((error: unknown) => {
-      throw abortReason(error);
+      // A proxy, or a server without this procedure, can fail with a body that is not JSON.
+      if (!res.ok && error instanceof SyntaxError) return {};
+      throw requestError(error, controller.signal);
     });
-    if (!res.ok || parsed.error) {
-      const message = parsed.error?.message ?? `rpc ${proc} failed`;
-      const unauthorized = res.status === 401 || /unauthorized/i.test(message);
+    if (!res.ok) {
+      // oRPC sends a failure as `{ json: { code, status, message } }`; the message is the
+      // server's user-facing copy.
+      const error = parsed.json as { message?: unknown } | undefined;
+      const message = errorText(typeof error?.message === "string" ? error.message : "");
+      const unauthorized = res.status === 401;
+      // Without a Space header a 401 means the server no longer accepts the
+      // session itself; Space recovery below probes the same way. Clearing it
+      // bumps the session generation, so only the first rejection of a session
+      // acts, and a 401 sent before a newer sign-in or a password change on
+      // this device cannot clear the session that replaced it.
+      if (
+        unauthorized &&
+        !requestSpaceId &&
+        requestHeaders.authorization &&
+        !options.requestContext &&
+        !passwordChangesInFlight &&
+        requestSessionGeneration === currentSessionGeneration()
+      ) {
+        await rejectSession();
+      }
       // After a delete where SecureStore could not clear the stale id, restart
       // reloads it and the first RPCs 401. Probe once without a Space header:
       // success means the selection was inaccessible (clear it); failure means
-      // the session itself is bad (restore the selection so a later sign-in
-      // keeps the user's Space). Never replay a mutation against the default
+      // the session itself is bad (restore the selection; it stays until
+      // sign-in resets it). Never replay a mutation against the default
       // Space — only safe reads may retry as themselves; other procs probe
       // with spaces/list, then fail the original call.
       const previousSpaceId = selectedSpaceId();
@@ -814,11 +885,14 @@ export type MobileBotSection = BotSection;
 
 export type MobileMe = Pick<
   Me,
+  | "userId"
   | "name"
   | "email"
   | "spaceId"
   | "defaultProvider"
   | "defaultModel"
+  | "hostCredentialProvider"
+  | "hostCredentialSource"
   | "needsModel"
   | "avatarStyle"
   | "isDeploymentOwner"
@@ -839,6 +913,7 @@ export type MobileMessage = {
   botId?: string;
   replyToMessageId?: string;
   replyQuote?: string;
+  replyPreview?: ReplyPreview | null;
   createdAt?: string;
   blocks: MessageBlock[];
 };
@@ -948,7 +1023,8 @@ export function messagingProviderLabel(provider: string, transport?: string): st
   return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
 }
 
-export function copyableMobileMessageText(message: MobileMessage): string {
+/** The message's text exactly as written, for a view that selects part of it. */
+export function selectableMobileMessageText(message: MobileMessage): string {
   return message.blocks
     .map((block) => {
       if (block.kind === "channel_message") {
@@ -959,8 +1035,11 @@ export function copyableMobileMessageText(message: MobileMessage): string {
       return "";
     })
     .filter(Boolean)
-    .join("\n")
-    .trim();
+    .join("\n");
+}
+
+export function copyableMobileMessageText(message: MobileMessage): string {
+  return selectableMobileMessageText(message).trim();
 }
 
 export function blockText(message: MobileMessage) {
@@ -995,6 +1074,7 @@ export function blockText(message: MobileMessage) {
 
 type ThreadEvent = {
   id?: string;
+  createdAt?: string;
   botId?: string;
   type: string;
   seq?: number;
@@ -1232,22 +1312,18 @@ export function applyMobileThreadEvent(
   if (event.type === "thread.message.created" || event.type === "thread.message.updated") {
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
+    const known = prev.messages.find((message) => message.id === id);
     const next: MobileMessage = {
       id,
+      createdAt: known?.createdAt ?? event.createdAt,
       runId: event.runId ? String(event.runId) : undefined,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
       // An update can leave the call id out — the `end_call` marker does — so keep the one
       // the message already carries instead of dropping it out of its call.
-      callId:
-        typeof event.payload?.callId === "string"
-          ? event.payload.callId
-          : prev.messages.find((message) => message.id === id)?.callId,
+      callId: typeof event.payload?.callId === "string" ? event.payload.callId : known?.callId,
       blocks: (event.payload?.blocks as MobileMessage["blocks"]) ?? [],
       botId: event.botId ?? (event.payload?.botId ? String(event.payload.botId) : undefined),
-      replyToMessageId: event.payload?.replyToMessageId
-        ? String(event.payload.replyToMessageId)
-        : undefined,
-      replyQuote: event.payload?.replyQuote ? String(event.payload.replyQuote) : undefined,
+      ...replyMetadata(event.payload ?? {}, known),
     };
     return {
       ...prev,
@@ -1278,3 +1354,28 @@ export {
   usesCustomApiBase,
 } from "./endpoint";
 export { loadSessionToken };
+
+export async function fetchAccountSecurity(): Promise<AccountSecurity> {
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/account-security`,
+    { headers: { origin: "rakazo://", ...(await authHeaders()) } },
+    null,
+  );
+  // Older servers support password accounts and the original change/delete endpoints.
+  if (response.status === 404) return legacyAccountSecurity;
+  if (!response.ok) throw new Error(t("Could not load sign-in options"));
+  try {
+    return accountSecuritySchema.parse(body);
+  } catch {
+    throw new Error(t("Could not load sign-in options"));
+  }
+}
+
+export async function requestAccountDeletionCode(): Promise<void> {
+  const { response, body } = await fetchMobileJson<unknown>(
+    `${currentApiBase()}/api/auth/request-account-deletion`,
+    { method: "POST", headers: { origin: "rakazo://", ...(await authHeaders()) } },
+    null,
+  );
+  if (!response.ok) throw new Error(authErrorText(body, t("Could not continue")));
+}

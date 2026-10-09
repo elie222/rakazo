@@ -8,6 +8,7 @@ import {
   createPostgresReconciliationLeadership,
   type ReconciliationLeadership,
 } from "./job-reconciler.js";
+import { loopGuardStopText } from "./tool-loop.js";
 
 vi.mock("./bot-messages.js", () => ({ returnBotMessageOutcome: vi.fn() }));
 
@@ -430,6 +431,7 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Finished.",
       "result",
+      { forceUnread: false },
     );
     expect(prisma.run.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -488,6 +490,53 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Tuesday afternoon works.",
       "result",
+      { forceUnread: false },
+    );
+  });
+
+  it("recovers a completed loop-guard stop as an unread result", async () => {
+    const terminalRun = {
+      id: "run-loop-guard",
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      botId: "bot-1",
+      userId: "user-1",
+      sourceMessageId: "message-1",
+      status: "completed",
+      error: null,
+      bot: { name: "Researcher" },
+    };
+    const stuckText = loopGuardStopText("search", 8);
+    const prisma = {
+      run: {
+        findMany: vi.fn(async (args: { where?: Record<string, unknown> } = {}) =>
+          args.where?.trigger === "bot_message" ? [terminalRun] : [],
+        ),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+      },
+      routine: { findMany: vi.fn(async () => []) },
+      computer: { findMany: vi.fn(async () => []) },
+      messagingOutbound: { findFirst: vi.fn(async () => null) },
+      message: {
+        findMany: vi.fn(async () => [
+          { blocks: [{ kind: "text", text: "Searching…" }], clientNonce: null },
+          { blocks: [{ kind: "text", text: stuckText }], clientNonce: null },
+        ]),
+      },
+    } as unknown as PrismaClient;
+    const { jobs } = publisher();
+    const events = { notify: vi.fn() } as unknown as ThreadEvents;
+    vi.mocked(returnBotMessageOutcome).mockResolvedValue(true);
+
+    await createJobReconciler({ prisma, jobs, events }).reconcileOnce();
+
+    expect(returnBotMessageOutcome).toHaveBeenCalledWith(
+      { prisma, jobs, events },
+      terminalRun,
+      { id: "bot-1", name: "Researcher" },
+      stuckText,
+      "result",
+      { forceUnread: true },
     );
   });
 
@@ -539,6 +588,7 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Tuesday afternoon works.",
       "result",
+      { forceUnread: false },
     );
   });
 
@@ -586,10 +636,11 @@ describe("createJobReconciler", () => {
       { id: "bot-1", name: "Researcher" },
       "Checking calendars…",
       "status",
+      { forceUnread: false },
     );
   });
 
-  it("returns a stuck cancellation to the delegating bot as status", async () => {
+  it.each(["cancelled", "failed"])("returns a %s peer run as unread status", async (status) => {
     const terminalRun = {
       id: "run-stuck",
       spaceId: "workspace-1",
@@ -597,7 +648,7 @@ describe("createJobReconciler", () => {
       botId: "bot-1",
       userId: "user-1",
       sourceMessageId: "message-1",
-      status: "cancelled",
+      status,
       error: stuckWorkStatusMessages()[0],
       bot: { name: "Researcher" },
     };
@@ -623,8 +674,11 @@ describe("createJobReconciler", () => {
       { prisma, jobs, events },
       terminalRun,
       { id: "bot-1", name: "Researcher" },
-      stuckWorkStatusMessages()[0],
+      status === "failed"
+        ? `Could not complete the delegated request: ${stuckWorkStatusMessages()[0]}`
+        : stuckWorkStatusMessages()[0],
       "status",
+      { forceUnread: true },
     );
     expect(prisma.message.findMany).not.toHaveBeenCalled();
   });

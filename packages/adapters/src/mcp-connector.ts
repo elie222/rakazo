@@ -4,12 +4,15 @@ import type {
   ConnectorEvent,
   ConnectorProvider,
   ConnectorTool,
+  SecretStore,
 } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import { isLocalMcpHost } from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
+import { credentialDigest } from "./credential-digest.js";
 import { appendToolCompletionAudit } from "./executor.js";
 import {
   CATALOG_EXECUTE,
@@ -25,10 +28,21 @@ import { oauthMaterialSecrets } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 
-type SessionEntry = { session: McpSession; revision: number; material: OAuthMaterial };
-type PendingSession = { revision: number; promise: Promise<McpSession> };
+type SessionEntry = {
+  session: McpSession;
+  revision: number;
+  material: OAuthMaterial;
+  digest?: string;
+  ref?: string;
+  recordId?: string;
+};
+type PendingSession = {
+  revision: number;
+  promise: Promise<McpSession>;
+  invalidated?: boolean;
+  ref?: string;
+};
 
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 /**
@@ -75,9 +89,10 @@ export class McpConnector implements ConnectorProvider {
   // Discovery runs more than once per run: once up front, then again on every lazy
   // catalog access. Each attempt needs its own executionId.
   private discoverySeq = 0;
+  private readonly unsubscribe: () => void;
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly secrets: EncryptedSecretStore,
+    private readonly secrets: SecretStore,
     private readonly options: {
       stdioEnabled?: boolean;
       allowedCommands?: string[];
@@ -87,7 +102,15 @@ export class McpConnector implements ConnectorProvider {
       allowPrivateEndpoint?: boolean;
     } = {},
     private readonly oauth?: McpOAuthBroker,
-  ) {}
+  ) {
+    this.unsubscribe =
+      this.secrets.onChange?.((ref) => {
+        for (const [key, entry] of this.sessions)
+          if (entry.ref === ref) void this.evict(key).catch(() => undefined);
+        for (const entry of this.connecting.values())
+          if (entry.ref === ref) entry.invalidated = true;
+      }) ?? (() => {});
+  }
 
   describe() {
     return {
@@ -281,6 +304,7 @@ export class McpConnector implements ConnectorProvider {
   }
 
   async close(): Promise<void> {
+    this.unsubscribe();
     await Promise.allSettled([...this.connecting.values()].map(({ promise }) => promise));
     await Promise.all([...this.sessions.values()].map(({ session }) => session.close()));
     this.sessions.clear();
@@ -303,7 +327,29 @@ export class McpConnector implements ConnectorProvider {
   private async sessionFor(server: McpServer, context: AdapterContext): Promise<McpSession> {
     const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
-    if (existing && existing.revision === server.revision) return existing.session;
+    if (existing && existing.revision === server.revision) {
+      if (existing.ref && server.secretId) {
+        try {
+          const plaintext = await this.secrets.load(existing.ref, {
+            recordId: existing.recordId ?? server.secretId,
+            signal: context.signal,
+          });
+          if (credentialDigest(plaintext) !== existing.digest) await this.evict(sessionKey);
+        } catch (error) {
+          context.signal.throwIfAborted();
+          if (!(error instanceof SecretStoreUnavailableError)) {
+            await this.evict(sessionKey);
+            throw error;
+          }
+          // Keep live sessions usable during a store outage. Never log the error:
+          // provider errors can contain credential values or private response data.
+          getLogger().warn("MCP secret revalidation failed; retaining the live session");
+        }
+      }
+      // A fresh read can detect rotation and synchronously evict this entry.
+      if (this.sessions.get(sessionKey) === existing) return existing.session;
+      return this.sessionFor(server, context);
+    }
     const pending = this.connecting.get(sessionKey);
     if (pending?.revision === server.revision) return pending.promise;
     if (pending) {
@@ -313,8 +359,30 @@ export class McpConnector implements ConnectorProvider {
     }
     if (existing) await this.evict(sessionKey);
 
-    const promise = this.connectSession(server, context).then(({ session, material }) => {
-      this.sessions.set(sessionKey, { session, revision: server.revision, material });
+    let connected: SessionEntry | undefined;
+    const promise = this.connectSession(server, context, (ref, recordId, digest) => {
+      const entry = this.connecting.get(sessionKey);
+      if (entry?.promise === promise) entry.ref = ref;
+      const live = this.sessions.get(sessionKey);
+      if (live && live === connected) {
+        live.ref = ref;
+        live.recordId = recordId;
+        live.digest = digest;
+      }
+    }).then(async ({ session, material, ref, digest, recordId }) => {
+      if (this.connecting.get(sessionKey)?.invalidated) {
+        await session.close();
+        throw new Error("Secret changed during MCP connection; retry");
+      }
+      connected = {
+        session,
+        revision: server.revision,
+        material,
+        ref,
+        digest,
+        recordId,
+      };
+      this.sessions.set(sessionKey, connected);
       return session;
     });
     this.connecting.set(sessionKey, { revision: server.revision, promise });
@@ -328,7 +396,14 @@ export class McpConnector implements ConnectorProvider {
   private async connectSession(
     server: McpServer,
     context: AdapterContext,
-  ): Promise<{ session: McpSession; material: OAuthMaterial }> {
+    onRef: (ref: string, recordId: string, digest?: string) => void,
+  ): Promise<{
+    session: McpSession;
+    material: OAuthMaterial;
+    ref?: string;
+    digest?: string;
+    recordId?: string;
+  }> {
     const session = new McpSession({ name: `rakazo-${server.slug}` });
     // Hoisted so a throw after the secret is decoded can still hand the material out.
     let material: OAuthMaterial | undefined;
@@ -342,9 +417,17 @@ export class McpConnector implements ConnectorProvider {
             },
           })
         : null;
-      material = secret
-        ? (JSON.parse(this.secrets.load(secret.ciphertext, secret.id)) as OAuthMaterial)
-        : {};
+      let ref = secret?.ciphertext;
+      let recordId = secret?.id;
+      if (secret) onRef(secret.ciphertext, secret.id);
+      const plaintext = secret
+        ? await this.secrets.load(secret.ciphertext, {
+            recordId: secret.id,
+            signal: context.signal,
+          })
+        : undefined;
+      let digest = plaintext === undefined ? undefined : credentialDigest(plaintext);
+      material = plaintext === undefined ? {} : (JSON.parse(plaintext) as OAuthMaterial);
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
       const env = { ...(material.env ?? {}) };
@@ -368,7 +451,12 @@ export class McpConnector implements ConnectorProvider {
         );
         const authProvider =
           !localHttp && this.oauth
-            ? await this.oauth.providerFor(server, context, loaded)
+            ? await this.oauth.providerFor(server, context, loaded, (record) => {
+                ref = record.ref;
+                recordId = record.id;
+                digest = credentialDigest(JSON.stringify(record.material));
+                onRef(ref, recordId, digest);
+              })
             : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
@@ -395,7 +483,7 @@ export class McpConnector implements ConnectorProvider {
           signal: context.signal,
         });
       }
-      return { session, material };
+      return { session, material, ref, digest, recordId };
     } catch (error) {
       await session.close().catch(() => undefined);
       // Redact here, while the material is still in hand. This one rejection is handed

@@ -1,5 +1,5 @@
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { fetch as undiciFetch } from "undici";
 import { describe, expect, it } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
@@ -16,6 +16,82 @@ import {
 } from "./pi-openai-compatible-provider.js";
 
 describe("model connect", () => {
+  it("round-trips generic cache capabilities and preserves them when rotating credentials", () => {
+    const cacheCapabilities = {
+      scope: "connection" as const,
+      retentionMode: "short" as const,
+      retentionMs: 300000,
+      minimumTokens: 1024,
+      inputCostPerMillion: 1,
+      readCostPerMillion: 0.1,
+      writeCostPerMillion: 1.25,
+    };
+    const encoded = buildModelConnectPlaintext({
+      provider: "fixture",
+      apiKey: "fake-api-key",
+      cacheCapabilities,
+    });
+    expect(parseModelSecret(encoded)).toMatchObject({
+      kind: "api_key",
+      cacheCapabilities,
+    });
+    const rotated = buildModelConnectPlaintext(
+      { provider: "fixture", apiKey: "fake-next-key" },
+      encoded,
+    );
+    expect(parseModelSecret(rotated)).toMatchObject({
+      kind: "api_key",
+      cacheCapabilities,
+    });
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider: "fixture",
+        apiKey: "fake-api-key",
+        cacheCapabilities: { ...cacheCapabilities, retentionMode: "forever" },
+      }).success,
+    ).toBe(false);
+  });
+  it("stores generic limits with hosted credentials and preserves them when rotating the key", () => {
+    const plaintext = buildModelConnectPlaintext({
+      provider: "openrouter",
+      apiKey: "fake-api-key",
+      contextWindow: 1000000,
+      maxTokens: 4096,
+    });
+    expect(parseModelSecret(plaintext)).toEqual({
+      kind: "api_key",
+      key: "fake-api-key",
+      contextWindow: 1000000,
+      maxTokens: 4096,
+    });
+    expect(
+      parseModelSecret(
+        buildModelConnectPlaintext({ provider: "openrouter", apiKey: "fake-new-key" }, plaintext),
+      ),
+    ).toEqual({
+      kind: "api_key",
+      key: "fake-new-key",
+      contextWindow: 1000000,
+      maxTokens: 4096,
+    });
+  });
+  it("rejects invalid configured limits at the shared contract", () => {
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider: "fixture",
+        apiKey: "fake-api-key",
+        contextWindow: 2048,
+        maxTokens: 2048,
+      }).success,
+    ).toBe(false);
+    expect(
+      ModelConnectInputSchema.safeParse({
+        provider: "fixture",
+        apiKey: "fake-api-key",
+        contextWindow: -1,
+      }).success,
+    ).toBe(false);
+  });
   it("serializes keyless openai-compatible credentials", () => {
     const plaintext = buildModelConnectPlaintext({
       provider: OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -270,7 +346,9 @@ describe("openai-compatible provider", () => {
 
   it("still accepts legacy models[] probe responses", async () => {
     const fetchImpl = async () =>
-      new Response(JSON.stringify({ models: [{ id: "legacy" }] }), { status: 200 });
+      new Response(JSON.stringify({ models: [{ id: "legacy" }] }), {
+        status: 200,
+      });
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
     ).resolves.toEqual(["legacy"]);

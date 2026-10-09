@@ -31,6 +31,15 @@ export type ServiceCall = {
 
 /** State belongs to one trial. Reads observe state; invalid actions never advance it. */
 export class EvalServices extends ComposioEmulator {
+  private diagnosticChain: Array<{ cursor: string; nextCursor: string | null }> = [];
+  enableDiagnosticChain(length = 12) {
+    if (!Number.isSafeInteger(length) || length < 2 || length > 50)
+      throw new Error("Invalid diagnostic chain length");
+    this.diagnosticChain = Array.from({ length }, (_, i) => ({
+      cursor: i ? `segment-${Math.imul(i + 73, 48271) >>> 0}` : "start",
+      nextCursor: i + 1 < length ? `segment-${Math.imul(i + 74, 48271) >>> 0}` : null,
+    }));
+  }
   readonly calls: ServiceCall[] = [];
   readonly notes: Array<{ recordId: string; text: string }> = [];
   readonly records = [
@@ -96,6 +105,17 @@ export class EvalServices extends ComposioEmulator {
               "Read inbox messages, with urgency and full body.",
               {},
               [],
+              true,
+            ),
+          ]
+        : []),
+      ...(connected.includes("CRM") && this.diagnosticChain.length
+        ? [
+            tool(
+              "CRM_READ_DIAGNOSTIC",
+              "Read one Aurora diagnostic segment by cursor. Begin with start, then follow nextCursor until null. Only the last segment has the verified component.",
+              { cursor: { type: "string" } },
+              ["cursor"],
               true,
             ),
           ]
@@ -183,6 +203,25 @@ export class EvalServices extends ComposioEmulator {
       outcome: "rejected",
     };
     this.calls.push(entry);
+    if (call.tool === "CRM_READ_DIAGNOSTIC") {
+      const index = this.diagnosticChain.findIndex(
+        (segment) => segment.cursor === call.args.cursor,
+      );
+      if (index < 0) throw new Error("Unknown diagnostic cursor");
+      const segment = this.diagnosticChain[index]!;
+      entry.outcome = "read";
+      yield {
+        type: "result",
+        data: {
+          segment: index + 1,
+          nextCursor: segment.nextCursor,
+          diagnostic: segment.nextCursor
+            ? "Synthetic detailed observation. ".repeat(800)
+            : "Verified Aurora component: ledger-indexer. Approval pending; no deployment.",
+        },
+      };
+      return;
+    }
     if (call.tool === "GMAIL_LIST_MESSAGES") {
       entry.outcome = "read";
       yield { type: "result", data: { messages: structuredClone(this.inbox) } };

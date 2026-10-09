@@ -1,0 +1,29 @@
+appId: com.rakazo.app
+---
+- runFlow: launch-app.yaml
+- runFlow:
+    when:
+      visible: "Sign up for Rakazo"
+    commands:
+      - tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Sign in to Rakazo"
+    timeout: 15000
+- tapOn: "Email"
+- inputText: ${RAKAZO_ACTIVE_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- hideKeyboard
+- tapOn: "Sign in"
+- tapOn:
+    text: "Not Now"
+    optional: true
+- tapOn:
+    text: "Don’t allow"
+    optional: true
+- tapOn:
+    text: "Don't allow"
+    optional: true
+- extendedWaitUntil:
+    visible: "Account"
+    timeout: 40000

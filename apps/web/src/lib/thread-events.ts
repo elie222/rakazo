@@ -17,6 +17,7 @@ import {
   prependThreadHistoryPage,
   progressMessageId,
   reduceLiveMessageBlocks,
+  replyMetadata,
   runFailureError,
   subagentBlockFromPayload,
   takeLiveMessage,
@@ -485,13 +486,8 @@ export function reduceThreadSnapshot(
       botId: event.botId,
       runId: event.runId,
       callId: typeof event.payload.callId === "string" ? event.payload.callId : known?.callId,
-      replyToMessageId:
-        typeof event.payload.replyToMessageId === "string"
-          ? event.payload.replyToMessageId
-          : undefined,
-      replyQuote:
-        typeof event.payload.replyQuote === "string" ? event.payload.replyQuote : undefined,
-      createdAt: event.createdAt,
+      ...replyMetadata(event.payload, known),
+      createdAt: known?.createdAt ?? event.createdAt,
     };
     const replacedSubagentIds = new Set(
       blocks.filter((block) => block.kind === "subagent").map((block) => block.agentId),

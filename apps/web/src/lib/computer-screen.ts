@@ -1,3 +1,5 @@
+import { errorText } from "./user-error";
+
 export interface ComputerScreenResult {
   url: string | null;
   error: string | null;
@@ -17,7 +19,7 @@ export async function loadComputerScreen(options: {
   } catch (error) {
     result = {
       url: null,
-      error: error instanceof Error && error.message ? error.message : options.fallbackError,
+      error: errorText(error, options.fallbackError),
     };
   }
   if (!options.isCurrent()) return null;

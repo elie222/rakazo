@@ -1,4 +1,5 @@
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { usableModelId } from "@rakazo/contracts";
 import {
@@ -19,7 +20,6 @@ import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
-import type { EncryptedSecretStore } from "./secrets.js";
 
 type ModelCredential = Awaited<ReturnType<typeof findDefaultModelCredential>>;
 
@@ -72,7 +72,7 @@ export type SpaceCatalogAuth = {
  */
 export async function modelCredentialAuthKindsForSpace(
   prisma: PrismaClient,
-  secretStore: Pick<EncryptedSecretStore, "load">,
+  secretStore: Pick<SecretStore, "load">,
   scope: Pick<Actor, "userId" | "spaceId">,
 ): Promise<SpaceCatalogAuth> {
   const [credentials, preferences] = await Promise.all([
@@ -157,21 +157,21 @@ export async function modelCredentialAuthKindsForSpace(
     select: { id: true, ciphertext: true },
   });
   const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
-  // Every catalog model of a connected provider shares one secret, and each decrypt runs a
-  // synchronous scrypt, so decrypt each secret once rather than once per model.
-  const kindBySecretId = new Map<string, ModelCredentialAuthKind | undefined>();
-  const decryptKind = (secretId: string): ModelCredentialAuthKind | undefined => {
+  // Every catalog model of a provider shares one secret; load each once per operation.
+  const kindBySecretId = new Map<string, Promise<ModelCredentialAuthKind | undefined>>();
+  const decryptKind = async (secretId: string): Promise<ModelCredentialAuthKind | undefined> => {
     const ciphertext = ciphertextById.get(secretId);
     if (!ciphertext) return undefined;
     try {
-      return modelCredentialAuthKindFromPlaintext(secretStore.load(ciphertext, secretId));
-    } catch {
+      return modelCredentialAuthKindFromPlaintext(await secretStore.load(ciphertext, secretId));
+    } catch (error) {
+      if (error instanceof SecretStoreUnavailableError) throw error;
       return undefined;
     }
   };
-  const readKind = (secretId: string): ModelCredentialAuthKind | undefined => {
+  const readKind = (secretId: string): Promise<ModelCredentialAuthKind | undefined> => {
     if (!kindBySecretId.has(secretId)) kindBySecretId.set(secretId, decryptKind(secretId));
-    return kindBySecretId.get(secretId);
+    return kindBySecretId.get(secretId)!;
   };
 
   const auth: SpaceCatalogAuth = {
@@ -181,7 +181,7 @@ export async function modelCredentialAuthKindsForSpace(
     secretIdByModel: {},
   };
   for (const selection of selections) {
-    const kind = readKind(selection.secretId);
+    const kind = await readKind(selection.secretId);
     if (selection.modelSpecific) {
       const models = auth.byModel[selection.provider] ?? {};
       models[selection.modelId] = kind ?? "disconnected";
@@ -249,56 +249,59 @@ export type StoredModelAuthRead =
   | { status: "unreadable" }
   | { status: "rejected"; message: string };
 
-/**
- * Load a stored credential and check whether it can call this catalog model.
- * When `live` is given, the backend's per-account catalog can lift a static
- * OAuth exclusion for the credential's own account (e.g. Codex Spark). Pass
- * `liveOpts.waitMs: 0` where a catalog fetch must not block (inside a
- * transaction) and `liveOpts.onExpiredToken` to kick a detached refresh when
- * the stored bearer has expired.
- */
-export async function readStoredModelAuth(
+/** Load credential auth outside transactions; retain the ref for a transactional recheck. */
+export async function prepareStoredModelAuth(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "load">,
+  secretStore: Pick<SecretStore, "load">,
   userId: string,
   secretId: string,
   provider: string,
   modelId: string,
   live?: CodexLiveCatalog,
   liveOpts?: CodexLiveReadOptions,
-): Promise<StoredModelAuthRead> {
+): Promise<{ ref: string | null; auth: StoredModelAuthRead }> {
   const secret = await prisma.secret.findFirst({
     where: { id: secretId, userId, spaceId: null },
     select: { id: true, ciphertext: true },
   });
-  if (!secret) return { status: "unreadable" };
+  if (!secret) return { ref: null, auth: { status: "unreadable" } };
   let plaintext: string;
   try {
-    plaintext = secretStore.load(secret.ciphertext, secret.id);
-  } catch {
-    return { status: "unreadable" };
+    plaintext = await secretStore.load(secret.ciphertext, secret.id);
+  } catch (error) {
+    if (error instanceof SecretStoreUnavailableError) throw error;
+    return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
   let message: string | undefined;
   try {
     message = validateModelAuthAvailability(provider, modelId, plaintext);
   } catch {
     // A secret that decrypts but does not parse is as unreadable as a corrupt one.
-    return { status: "unreadable" };
+    return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
   // validateModelAuthAvailability already parsed the secret without throwing.
   if (
     message &&
     (await codexLiveListsModel(live, userId, parseModelSecret(plaintext), modelId, liveOpts))
   ) {
-    return { status: "ready" };
+    return { ref: secret.ciphertext, auth: { status: "ready" } };
   }
-  return message ? { status: "rejected", message } : { status: "ready" };
+  return {
+    ref: secret.ciphertext,
+    auth: message ? { status: "rejected", message } : { status: "ready" },
+  };
+}
+
+export async function readStoredModelAuth(
+  ...args: Parameters<typeof prepareStoredModelAuth>
+): Promise<StoredModelAuthRead> {
+  return (await prepareStoredModelAuth(...args)).auth;
 }
 
 /** Readable rejection when a stored credential cannot call this catalog model. */
 export async function validateStoredModelAuth(
   prisma: Pick<PrismaClient, "secret">,
-  secretStore: Pick<EncryptedSecretStore, "load">,
+  secretStore: Pick<SecretStore, "load">,
   userId: string,
   secretId: string,
   provider: string,
@@ -346,19 +349,97 @@ export async function validateConnectedModelChoice(
   return savedChoice ? undefined : "Unknown model for that provider";
 }
 
+export type ModelChoice = {
+  modelProvider: string | null;
+  modelId: string | null;
+  thinkingLevel: string | null;
+};
+
+/**
+ * The model a queued run will use. `modelPinned` is the choice captured when the
+ * run was created. Model columns written later only record the attempt, so a
+ * routine that follows its bot still follows the bot after a resume.
+ */
+export function runModelChoice(
+  run: ModelChoice & { modelPinned?: boolean },
+  bot: ModelChoice,
+): ModelChoice {
+  if (run.modelPinned && run.modelProvider && usableModelId(run.modelId)) {
+    return {
+      modelProvider: run.modelProvider,
+      modelId: run.modelId,
+      thinkingLevel: run.thinkingLevel,
+    };
+  }
+  return {
+    modelProvider: bot.modelProvider,
+    modelId: bot.modelId,
+    thinkingLevel: bot.thinkingLevel,
+  };
+}
+
+/** The model columns a routine's run starts with; empty when it follows the bot. */
+export function routineRunModelPin(routine: ModelChoice): {
+  modelProvider?: string;
+  modelId?: string;
+  thinkingLevel?: string | null;
+  modelPinned?: true;
+} {
+  if (!routine.modelProvider || !routine.modelId) return {};
+  return {
+    modelProvider: routine.modelProvider,
+    modelId: routine.modelId,
+    thinkingLevel: routine.thinkingLevel,
+    modelPinned: true,
+  };
+}
+
+/**
+ * One inbound delivery is one turn. Pin a model only when every routine in that
+ * delivery chose the same one; mixed choices stay on the bot's model.
+ */
+export function inboundRoutineModelPin(routines: readonly ModelChoice[]) {
+  const pins = routines.map((routine) => routineRunModelPin(routine));
+  const first = pins[0];
+  if (!first) return {};
+  const agreed = pins.every(
+    (pin) =>
+      pin.modelPinned === first.modelPinned &&
+      pin.modelProvider === first.modelProvider &&
+      pin.modelId === first.modelId &&
+      (pin.thinkingLevel ?? null) === (first.thinkingLevel ?? null),
+  );
+  return agreed ? first : {};
+}
+
+/** Why a pinned model cannot run on the credential that was found for it. */
+export function pinnedModelCredentialError(
+  choice: ModelChoice,
+  credential: { defaultModel: string | null } | null,
+): string | undefined {
+  if (!choice.modelProvider || !usableModelId(choice.modelId)) return undefined;
+  if (!credential) return "Connect that model provider first";
+  const modelId = usableModelId(choice.modelId);
+  if (
+    modelId &&
+    !isCatalogModelChoice(choice.modelProvider, modelId) &&
+    credential.defaultModel !== modelId
+  ) {
+    return "Unknown model for that provider";
+  }
+  return undefined;
+}
+
 /** Select configuration without loading secrets or applying a runtime-specific fallback. */
 export function selectConfiguredModel(input: {
-  bot: {
-    modelProvider: string | null;
-    modelId: string | null;
-    thinkingLevel: string | null;
-  } | null;
+  /** The bot's or the run's own model; null follows the space default. */
+  override: ModelChoice | null;
   overrideCredential: ModelCredential;
   defaultCredential: ModelCredential;
   settings: { defaultModelProvider: string | null; defaultModelId: string | null } | null;
   deployment: { provider: string; model: string } | null;
 }) {
-  const { bot, overrideCredential, defaultCredential, settings, deployment } = input;
+  const { override: bot, overrideCredential, defaultCredential, settings, deployment } = input;
   const hasOverride = Boolean(bot?.modelProvider && usableModelId(bot.modelId));
   // The override provider, model and credential must win together.
   const useOverride = Boolean(hasOverride && overrideCredential);

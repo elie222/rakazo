@@ -1,8 +1,9 @@
 import { GROUP_MEMBER_MAX } from "@rakazo/contracts";
-import { StyleSheet, Switch, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import type { MobileBot } from "../lib/api";
 import { useMobileTokens } from "../lib/native";
 import { BotAvatar } from "./bot-avatar";
+import { NativeSwitch } from "./native-switch";
 
 export function BotMemberPicker({
   bots,
@@ -22,16 +23,17 @@ export function BotMemberPicker({
       <View key={bot.id} style={styles.row}>
         <BotAvatar color={bot.color} identity={bot.id} size={34} status={bot.status} />
         <Text style={[styles.name, { color: tokens.foreground }]}>{bot.name}</Text>
-        <Switch
+        <NativeSwitch
           accessibilityLabel={bot.name}
-          value={checked}
           disabled={disabled || (!checked && selected.length >= GROUP_MEMBER_MAX)}
-          trackColor={{ false: tokens.border, true: tokens.primary }}
-          thumbColor={checked ? tokens.primaryForeground : tokens.foreground}
           onValueChange={(next) => {
             if (next && selected.length >= GROUP_MEMBER_MAX) return;
             onChange(next ? [...selected, bot.id] : selected.filter((id) => id !== bot.id));
           }}
+          thumbColor={checked ? tokens.primaryForeground : tokens.foreground}
+          tintColor={tokens.primary}
+          trackColor={{ false: tokens.border, true: tokens.primary }}
+          value={checked}
         />
       </View>
     );

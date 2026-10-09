@@ -1,0 +1,217 @@
+---
+import ArchitectureDiagram from "../components/ArchitectureDiagram.astro";
+import Button from "../components/Button.astro";
+import CaptionedImage from "../components/CaptionedImage.astro";
+import FaqSection from "../components/FaqSection.astro";
+import Footer from "../components/Footer.astro";
+import GetStartedDialog from "../components/GetStartedDialog.astro";
+import Header from "../components/Header.astro";
+import {
+  CADDY_SNIPPET,
+  faqPageStructuredData,
+  PUBLISHED_IMAGES_INSTALL,
+  PUBLISHED_IMAGES_SERVER,
+  RUN_ON_YOUR_MAC,
+  SELF_HOST_DESCRIPTION,
+  SELF_HOST_FAQS,
+  SELF_HOST_TITLE,
+  SOURCE_CHECKOUT,
+  SOURCE_DEV,
+} from "../guide";
+import { fetchGithubStars, formatStarCount } from "../github";
+import { getHomeCopy } from "../i18n/home";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { ogPublicPath } from "../og-pages";
+import {
+  DOCS_URL,
+  GITHUB_URL,
+  OPENCLAW_ALTERNATIVE_PATH,
+  SELF_HOST_RESTRICTED_URL,
+  SELF_HOST_SECRETS_URL,
+  SETUP_PROMPT_URL,
+} from "../site";
+
+const home = getHomeCopy("en");
+const stars = await fetchGithubStars();
+const starsLabel = stars === null ? "Star" : formatStarCount(stars);
+const structuredData = faqPageStructuredData(SELF_HOST_FAQS);
+---
+
+<BaseLayout
+  title={SELF_HOST_TITLE}
+  description={SELF_HOST_DESCRIPTION}
+  {structuredData}
+  localeAlternates={false}
+  ogImage={ogPublicPath("self-hosted-ai-agent")}
+>
+  <div class="container">
+    <Header starsLabel={starsLabel} />
+    <GetStartedDialog copy={home.getStartedDialog} waitlist={home.waitlist} />
+    <main id="main" class="privacy-copy guide">
+      <h1>Self-hosted AI agent</h1>
+      <p>
+        Rakazo is an open source AI agent for persistent teammates. Each bot can use a browser and a
+        shell, keep routines as Markdown, and pause for approval when work crosses a boundary you set.
+        Self-hosting means that stack runs on a machine you control.
+      </p>
+      <p>
+        The software is <a href={`${GITHUB_URL}/blob/main/LICENSE`}>Apache-2.0</a>. Hosted Rakazo Cloud is not generally available. This page is the setup you need
+        to run it. The <a href={DOCS_URL}>full self-hosting guide</a> on GitHub covers backups, upgrades,
+        secrets, restricted networks, and production Compose.
+      </p>
+
+      <ArchitectureDiagram />
+
+      <h2>What self-hosting gives you</h2>
+      <h3>Data ownership</h3>
+      <p>
+        Postgres, bot files, browser profiles, and the audit log stay on the deployment you run.
+        Content you send to a model provider is processed by that provider under its terms. You choose
+        the provider and the keys.
+      </p>
+      <h3>Model choice</h3>
+      <p>
+        Connect OpenAI, Anthropic, Google, OpenRouter, or Vercel AI Gateway. You can also use
+        an OpenAI-compatible endpoint or a local model server such as Ollama, LM Studio, llama.cpp, or
+        MLX. Each bot can use a different model.
+      </p>
+      <h3>Cost control</h3>
+      <p>
+        There is no seat fee for the open source software. You pay the model provider you connect and
+        any remote computer provider you choose. Local Docker computers are the default, so a single
+        machine does not need an E2B, Daytona, CreateOS, or Box account.
+      </p>
+
+      <h2>Requirements</h2>
+      <ul>
+        <li>
+          <strong>Published images.</strong> Docker Engine 26 or newer (API 1.45 or newer, for bot home
+          volume subpaths), the Compose plugin, curl, and OpenSSL. No Node.js install.
+        </li>
+        <li>
+          <strong>Source checkout.</strong> Node.js 22.22.2 or newer on the 22.x line, Node.js 24.x, or
+          Node.js 26 or newer, plus pnpm 9 and Docker. Node.js 23.x and 25.x are not supported.
+        </li>
+      </ul>
+
+      <h2 id="selfhost">Install with published images</h2>
+      <p>From an empty directory on the machine that should run Rakazo:</p>
+      <pre><code>{PUBLISHED_IMAGES_INSTALL}</code></pre>
+      <p>
+        The installer downloads the Compose file and <code>.env.images.example</code>, creates <code>.env</code> with random secrets, and starts Rakazo. It keeps an existing <code>.env</code> when you run it again. The default image tag is <code>edge</code> (builds
+        from the main branch, <code>linux/amd64</code> and <code>linux/arm64</code>).
+      </p>
+      <p>
+        Open <a href="http://127.0.0.1:5173">http://127.0.0.1:5173</a> and create an account. The first
+        registered user becomes the deployment owner. Connect a model in the app, or set <code>OPENROUTER_API_KEY</code> before startup. Local Docker computers are on by default.
+      </p>
+      <CaptionedImage
+        src="/graphics/chat/create-bot.png"
+        width={1200}
+        height={800}
+        alt="The new bot form in Rakazo, filled with a demo bot named Inbox."
+        caption="Creating a bot in the Rakazo app. The name, title, and description here are demo data."
+      />
+      <CaptionedImage
+        src="/graphics/chat/model.png"
+        width={1200}
+        height={800}
+        alt="Bot settings with the model menu open on a demo Inbox bot."
+        caption="Each bot can use a different model. This menu lists models for the credentials connected on that deployment."
+      />
+      <CaptionedImage
+        src="/graphics/chat/routine.png"
+        width={1200}
+        height={800}
+        alt="A routine editor for a weekday inbox check, with the instruction written as text."
+        caption="A routine is readable text with a schedule. You can edit it in the app."
+      />
+      <CaptionedImage
+        src="/graphics/chat/approval.png"
+        width={1200}
+        height={800}
+        alt="An approval card asking whether a demo bot may send an email, with allow once, always allow, and deny."
+        caption="When work crosses a boundary you set, the bot stops on an approval card. The action is also written to the audit log."
+      />
+      <p>
+        For an agent-assisted install, use the <a href={SETUP_PROMPT_URL}>setup prompt</a>.
+      </p>
+
+      <h2>Run it on a server</h2>
+      <p>
+        Use the same installer on a VPS when bots should stay running. Images Compose binds the web
+        app to loopback <code>127.0.0.1:5173</code>. Terminate TLS on the host and proxy there. Do not
+        publish port 3100. The web server proxies <code>/api</code>.
+      </p>
+      <pre><code>{PUBLISHED_IMAGES_SERVER}</code></pre>
+      <p>
+        Before the second command, set <code>RAKAZO_HOST</code> to the hostname and set <code>BETTER_AUTH_URL</code>, <code>WEB_ORIGIN</code>, and <code>API_URL</code> to that same <code>https://</code> origin. For a remote computer instead of local Docker, set <code>SANDBOX_PROVIDER</code> to <code>e2b</code>, <code>daytona</code>, <code>createos</code>,
+        or <code>box</code> and add that provider's API key.
+      </p>
+      <pre><code>{CADDY_SNIPPET}</code></pre>
+      <p>
+        Replace <code>app.example.com</code> with your host. Desktop clients should use <strong>Existing instance</strong> with the <code>https://</code> address. The <a href={`${DOCS_URL}#public-single-vm-deployment`}>public single-VM section</a> covers
+        production Compose, host hardening, signup allowlists, and SMTP.
+      </p>
+      <p>
+        If downloads are blocked, use the <a href={SELF_HOST_RESTRICTED_URL}>restricted-network guide</a>. Secret names and recovery are
+        in the <a href={SELF_HOST_SECRETS_URL}>secrets checklist</a>.
+      </p>
+
+      <h2>Install from source</h2>
+      <p>Use this path to develop Rakazo. The published images above are enough to run it.</p>
+      <pre><code>{SOURCE_CHECKOUT}</code></pre>
+      <p>
+        Set <code>POSTGRES_PASSWORD</code> to a URI-safe random value (for example <code>openssl rand -hex 16</code>) and put the same value in <code>DATABASE_URL</code>. Set <code>BETTER_AUTH_SECRET</code>, <code>ENCRYPTION_KEY</code>, and <code>SCREEN_PROXY_SECRET</code> to independent long random values. Docker sandboxes also need
+        a dedicated <code>SANDBOX_SUPERVISOR_TOKEN</code>. Keep these in <code>.env</code>, not in git.
+      </p>
+      <p>
+        For host-side development with Docker Desktop, set <code>SANDBOX_CONTROL_VIA_LOOPBACK=true</code> in <code>.env</code>. The supervisor then
+        publishes its control service on a loopback port, because Docker Desktop container addresses
+        are not reachable from the host. Leave this unset when the supervisor runs inside Compose.
+      </p>
+      <pre><code>{SOURCE_DEV}</code></pre>
+      <p>
+        The Postgres overlay publishes loopback <code>127.0.0.1:5433</code> for host-side tools. Open <a href="http://127.0.0.1:5173">http://127.0.0.1:5173</a>. <code>docker compose down -v</code> deletes Postgres data.
+      </p>
+
+      <h2>Desktop and mobile</h2>
+      <p>
+        With a server already running, the Electron app's <strong>Existing instance</strong> option
+        takes its <code>https://</code> address. HTTP is accepted only for loopback and private LAN
+        addresses. <strong>This computer</strong> installs the published images with Docker Compose on
+        that machine.
+      </p>
+      <p>{RUN_ON_YOUR_MAC}</p>
+      <p>
+        In the mobile app, tap <strong>Use a custom server</strong> on the sign-in screen and enter
+        the same HTTPS origin as <code>WEB_ORIGIN</code>.
+      </p>
+
+      <h2>Full reference</h2>
+      <ul class="source-list">
+        <li><a href={DOCS_URL}>Self-hosting guide</a> on GitHub</li>
+        <li><a href={SELF_HOST_SECRETS_URL}>Secrets checklist</a></li>
+        <li><a href={SELF_HOST_RESTRICTED_URL}>Restricted networks</a></li>
+        <li><a href={SETUP_PROMPT_URL}>Setup prompt</a></li>
+        <li><a href={GITHUB_URL}>Source</a></li>
+      </ul>
+
+      <FaqSection items={SELF_HOST_FAQS} />
+
+      <h2>Related</h2>
+      <ul>
+        <li><a href="/">Rakazo home</a></li>
+        <li><a href={OPENCLAW_ALTERNATIVE_PATH}>OpenClaw comparison</a></li>
+      </ul>
+
+      <h2>Get started</h2>
+      <p>Self-host with the steps above, or leave an email for hosted Rakazo Cloud.</p>
+      <div class="cta-actions">
+        <button class="button button--primary" type="button" data-get-started-open>Get started</button>
+        <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
+      </div>
+    </main>
+    <Footer />
+  </div>
+</BaseLayout>

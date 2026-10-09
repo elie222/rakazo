@@ -1,6 +1,7 @@
 import { Alert } from "react-native";
 import { rpc } from "./api";
 import { t } from "./i18n";
+import { errorText } from "./user-error";
 
 export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: () => void) {
   const remove = async (deleteMemories: boolean) => {
@@ -8,10 +9,7 @@ export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: (
       await rpc("bots/remove", { botId: bot.id, deleteMemories });
       onDeleted();
     } catch (error) {
-      Alert.alert(
-        t("Could not delete bot"),
-        error instanceof Error ? error.message : t("Try again."),
-      );
+      Alert.alert(t("Could not delete bot"), errorText(error, t("Try again.")));
     }
   };
 
@@ -22,7 +20,7 @@ export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: (
     ),
     [
       { text: t("Cancel"), style: "cancel" },
-      { text: t("Keep memories"), onPress: () => void remove(false) },
+      { text: t("Keep memories"), style: "destructive", onPress: () => void remove(false) },
       {
         text: t("Delete memories too"),
         style: "destructive",
@@ -30,4 +28,8 @@ export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: (
       },
     ],
   );
+}
+
+export async function restoreArchivedBot(botId: string): Promise<void> {
+  await rpc("bots/restore", { botId });
 }

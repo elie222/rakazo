@@ -4,6 +4,7 @@ import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contr
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
 import { rpc } from "../lib/rpc";
+import { errorText } from "../lib/user-error";
 
 function describeRule(rule: ActionApprovalRule): string {
   if (rule.effect === "require_approval") {
@@ -45,7 +46,7 @@ export function ApprovalRulesSettings() {
       setRules(nextRules);
       setAutoReview(nextAutoReview);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not load approval rules`);
+      setError(errorText(err, t`Could not load approval rules`));
     } finally {
       setLoading(false);
     }
@@ -77,7 +78,7 @@ export function ApprovalRulesSettings() {
       });
       setRules((current) => [...current, saved]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save rule`);
+      setError(errorText(err, t`Could not save rule`));
     } finally {
       setSavingPreset(null);
     }
@@ -89,7 +90,7 @@ export function ApprovalRulesSettings() {
       await rpc.approvalRules.remove({ id });
       setRules((current) => current.filter((rule) => rule.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not remove rule`);
+      setError(errorText(err, t`Could not remove rule`));
     }
   }
 
@@ -100,7 +101,7 @@ export function ApprovalRulesSettings() {
     try {
       setAutoReview(await rpc.autoReview.set({ enabled }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : t`Could not save Auto Review`);
+      setError(errorText(err, t`Could not save Auto Review`));
     } finally {
       setSavingAutoReview(false);
     }

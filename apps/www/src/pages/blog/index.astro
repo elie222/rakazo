@@ -1,0 +1,39 @@
+---
+import { getCollection } from "astro:content";
+import type { BlogCategory } from "../../blog/categories";
+import { BLOG_CATEGORIES, CATEGORY_LABEL, categoryPath } from "../../blog/categories";
+import { formatPostDate } from "../../blog/format";
+import SiteFrame from "../../components/SiteFrame.astro";
+
+const posts = (await getCollection("blog")).sort(
+  (a, b) => b.data.updated.getTime() - a.data.updated.getTime(),
+);
+---
+
+<SiteFrame
+  title="Blog – Rakazo"
+  description="Notes on running an open source AI agent yourself, including setup and how Rakazo compares with other projects."
+>
+  <h1>Blog</h1>
+  <nav class="blog-cats" aria-label="Categories">
+    {
+      BLOG_CATEGORIES.map((category) => (
+        <a href={categoryPath(category)}>{CATEGORY_LABEL[category]}</a>
+      ))
+    }
+  </nav>
+  <ul class="blog-index">
+    {
+      posts.map((post) => (
+        <li>
+          <a class="alt-card" href={`/blog/${post.id}/`}>
+            <p class="blog-kicker">{CATEGORY_LABEL[post.data.category as BlogCategory]}</p>
+            <h2>{post.data.title}</h2>
+            <p>{post.data.description}</p>
+            <p class="page-updated">Updated {formatPostDate(post.data.updated)}</p>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+</SiteFrame>

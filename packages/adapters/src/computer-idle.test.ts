@@ -2,29 +2,77 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import type { AgentHomeStore, JobPublisher, SandboxProvider } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BACKGROUND_WORK_LAUNCH,
   BACKGROUND_WORK_PROBE,
   CANCEL_COMPUTER_RUN_WORK,
   CANCEL_PRIMARY_BROWSER_WORK,
+  computerIdleSleepEnabled,
   DEFAULT_SANDBOX_IDLE_MS,
   sandboxIdleMs,
+  scheduleComputerSleep,
   sleepComputerIfIdle,
 } from "./computer-idle.js";
 import { e2bCreateOptions } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
+  beforeEach(() => {
+    vi.stubEnv("SANDBOX_IDLE_MS", undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
   it("defaults to ten minutes when SANDBOX_IDLE_MS is unset", () => {
-    const previous = process.env.SANDBOX_IDLE_MS;
-    delete process.env.SANDBOX_IDLE_MS;
-    try {
+    expect(computerIdleSleepEnabled()).toBe(true);
+    expect(sandboxIdleMs()).toBe(DEFAULT_SANDBOX_IDLE_MS);
+    expect(DEFAULT_SANDBOX_IDLE_MS).toBe(10 * 60 * 1000);
+  });
+
+  it.each(["0", " \t0\n"])("disables idle sleep for %j", async (value) => {
+    vi.stubEnv("SANDBOX_IDLE_MS", value);
+    const harness = idleHarness();
+
+    expect(computerIdleSleepEnabled()).toBe(false);
+    expect(sandboxIdleMs()).toBe(DEFAULT_SANDBOX_IDLE_MS);
+    scheduleComputerSleep(harness.deps.jobs, harness.computer.id);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+    expect(harness.computer.state).toBe("running");
+    expect(harness.prisma.computer.findUnique).not.toHaveBeenCalled();
+    expect(harness.prisma.computer.updateMany).not.toHaveBeenCalled();
+    expect(harness.prisma.computer.update).not.toHaveBeenCalled();
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+  });
+
+  it.each(["", "invalid", "NaN", "Infinity", "-1", "29999", "00", "0.0"])(
+    "keeps idle sleep enabled with the default timeout for %j",
+    (value) => {
+      vi.stubEnv("SANDBOX_IDLE_MS", value);
+
+      expect(computerIdleSleepEnabled()).toBe(true);
       expect(sandboxIdleMs()).toBe(DEFAULT_SANDBOX_IDLE_MS);
-      expect(DEFAULT_SANDBOX_IDLE_MS).toBe(10 * 60 * 1000);
-    } finally {
-      if (previous === undefined) delete process.env.SANDBOX_IDLE_MS;
-      else process.env.SANDBOX_IDLE_MS = previous;
-    }
+    },
+  );
+
+  it.each(["30000", "900000"])("schedules idle sleep using %s ms", (value) => {
+    vi.stubEnv("SANDBOX_IDLE_MS", value);
+    const harness = idleHarness();
+    const now = new Date("2026-01-01T00:00:00.000Z").getTime();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    expect(computerIdleSleepEnabled()).toBe(true);
+    expect(sandboxIdleMs()).toBe(Number(value));
+    scheduleComputerSleep(harness.deps.jobs, harness.computer.id);
+
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + Number(value)) }),
+    );
   });
 
   it("does not suspend a computer while a run is active", async () => {

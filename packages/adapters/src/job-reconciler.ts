@@ -8,6 +8,7 @@ import type { PoolClient } from "pg";
 import { returnBotMessageOutcome } from "./bot-messages.js";
 import { scheduleComputerControlExpiry } from "./computer-control.js";
 import { reconcileStuckWork } from "./stuck-work.js";
+import { isLoopGuardStopText } from "./tool-loop.js";
 import { isUserProgressClientNonce } from "./user-progress.js";
 
 const DEFAULT_INTERVAL_MS = 30_000;
@@ -292,6 +293,9 @@ export function createJobReconciler(
                 ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
                 : transcript.text ||
                   "The delegated bot completed its turn without a written summary.";
+            // Loop-guard stops complete without an error; their persisted final text
+            // is the only marker available when the executor's outcome delivery fails.
+            const loopGuardStop = isLoopGuardStopText(transcript.text);
             // Same stable delivery key as the executor path (auto-outcome:<runId>), so a
             // concurrent or earlier return is replayed instead of double-posted. Progress-only
             // transcripts (all mid-turn user-progress messages) return as status.
@@ -308,6 +312,7 @@ export function createJobReconciler(
               { id: run.botId, name: run.bot.name },
               text,
               intent,
+              { forceUnread: run.status === "failed" || stuckCancel || loopGuardStop },
             ).catch((error) => {
               getLogger().error("bot message outcome reconciliation", error);
               return false;

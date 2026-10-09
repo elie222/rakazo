@@ -1,11 +1,43 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+for (const mode of ["sign-in", "sign-up", "sso-only"] as const) {
+  test(`SSO is ${mode === "sso-only" ? "primary" : "secondary"} on ${mode}`, async ({
+    page,
+  }, testInfo) => {
+    await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+    await page.route("**/api/auth/capabilities", (route) =>
+      route.fulfill({
+        json: {
+          passwordAuth: mode !== "sso-only",
+          sso: { name: "Example", availability: "available" },
+          passwordReset: false,
+          resetUrl: null,
+        },
+      }),
+    );
+    await page.goto(mode === "sign-up" ? "/sign-up" : "/sign-in");
+    const sso = page.getByRole("button", { name: "Continue with Example" });
+    await expect(sso).toBeVisible();
+    if (mode === "sso-only") {
+      await expect(page.getByLabel("Email", { exact: true })).toHaveCount(0);
+      await expect(sso).toHaveClass(/w-full/);
+    } else {
+      const submit = page.locator('button[type="submit"]');
+      const primaryBounds = await submit.boundingBox();
+      const ssoBounds = await sso.boundingBox();
+      expect(ssoBounds!.y).toBeGreaterThan(primaryBounds!.y + primaryBounds!.height);
+      await expect(sso).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    }
+    await captureScreenshot(page, testInfo, `auth-${mode}-sso`);
+  });
+}
+
 test("restricted signup waits for mailbox verification", async ({ page }, testInfo) => {
   await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
   await page.route("**/api/auth/capabilities", (route) =>
     route.fulfill({
-      json: { passwordReset: false, resetUrl: null },
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
     }),
   );
   await page.route("**/api/auth/sign-up/email", (route) =>
@@ -24,6 +56,25 @@ test("restricted signup waits for mailbox verification", async ({ page }, testIn
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
   await captureScreenshot(page, testInfo, "signup-verification-required");
   await page.getByRole("link", { name: "Back to sign in" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+});
+
+test("signed-out welcome fits a narrow phone and offers sign in", async ({ page }, testInfo) => {
+  await page.route("**/api/auth/get-session**", (route) => route.fulfill({ json: null }));
+  await page.route("**/api/auth/capabilities", (route) =>
+    route.fulfill({
+      json: { passwordAuth: true, sso: null, passwordReset: false, resetUrl: null },
+    }),
+  );
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto("/");
+  const main = page.getByRole("main");
+  await expect(main.getByRole("heading", { name: "Rakazo", level: 1 })).toBeVisible();
+  await expect(main.getByRole("button", { name: "Sign up", exact: true })).toBeVisible();
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth", 320);
+  await captureScreenshot(page, testInfo, "logged-out-welcome-phone");
+  await main.getByRole("link", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/\/sign-in$/);
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
 });
 
@@ -227,4 +278,36 @@ test("changes and recovers an email password", async ({ page }, testInfo) => {
   await page.getByLabel("Password", { exact: true }).fill(resetPassword);
   await page.getByRole("button", { name: "Continue with email" }).click();
   await page.waitForURL(/\/app(?:\/|$)/);
+});
+
+test("password-off account settings hide password changes and retain password deletion", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `password-off-${Date.now()}@rakazo.test`, "password12", "Password Off");
+  await completeOnboarding(page);
+  await page.waitForURL(/\/app\/[^/]+$/);
+  await page.route("**/api/auth/account-security", (route) =>
+    route.fulfill({
+      json: {
+        hasPassword: true,
+        passwordChangeEnabled: false,
+        freshOidcAuth: false,
+        ssoLinked: true,
+        emailDeletion: true,
+        sso: { name: "Example" },
+      },
+    }),
+  );
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Change password", exact: true })).toHaveCount(
+    0,
+  );
+  await settings.getByRole("button", { name: "Delete account", exact: true }).click();
+  await expect(settings.getByLabel("Current password", { exact: true })).toBeVisible();
+  await expect(settings.getByLabel("New password", { exact: true })).toHaveCount(0);
+  await expect(settings.getByRole("button", { name: "Send deletion code" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "password-off-account-settings");
 });

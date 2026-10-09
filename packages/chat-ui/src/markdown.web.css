@@ -86,6 +86,48 @@
   text-underline-offset: 0.15em;
 }
 
+.rk-chat-markdown .rk-chat-markdown-image {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.4em;
+  border: 1px solid var(--border);
+  border-radius: 0.5em;
+  background: var(--muted);
+  color: var(--foreground);
+  padding: 0.25em 0.6em;
+  font: inherit;
+  font-size: 0.92em;
+  line-height: 1.4;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.rk-chat-markdown .rk-chat-markdown-linked-image {
+  display: flex;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25em;
+  margin: 0.65em 0;
+}
+
+.rk-chat-markdown .rk-chat-markdown-image:hover {
+  background: var(--accent);
+}
+
+.rk-chat-markdown .rk-chat-markdown-image:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.rk-chat-markdown .rk-chat-markdown-image-host {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .rk-chat-markdown code {
   border: 1px solid var(--border);
   border-radius: 0.35em;
@@ -223,4 +265,56 @@
   50% {
     opacity: 0;
   }
+}
+
+/* A website link: its site icon, then the label. The icon never ends a line on its own. */
+a.rk-chat-link {
+  color: inherit;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.rk-chat-link-tile {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  margin-inline-end: 4px;
+  overflow: hidden;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  padding: 1px;
+  /* Centred on the capitals of the surrounding text. */
+  vertical-align: calc((1cap - 18px) / 2);
+}
+
+.rk-chat-link-tile-icon {
+  background: var(--favicon-plate);
+  padding: 2px;
+}
+
+/* Outranks the block layout that markdown images get inside a reply. */
+a.rk-chat-link .rk-chat-link-tile > img,
+a.rk-chat-link .rk-chat-link-tile > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 0;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.rk-chat-link-label {
+  white-space: normal;
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+a.rk-chat-link:hover .rk-chat-link-label {
+  text-decoration-color: currentColor;
 }

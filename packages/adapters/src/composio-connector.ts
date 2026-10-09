@@ -125,6 +125,93 @@ export function executeSessionKey(
   return accountKey ? `${toolkitKey}|${accountKey}` : toolkitKey;
 }
 
+const COMPOSIO_MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL";
+/** Folder listings treat a missing path as the account root. */
+const DROPBOX_FOLDER_LIST_TOOLS = new Set(["DROPBOX_LIST_FILES_IN_FOLDER", "DROPBOX_LIST_FOLDERS"]);
+
+export type ComposioExecutionCall = {
+  tool: string;
+  args: Record<string, unknown>;
+  account?: string;
+};
+
+/**
+ * `COMPOSIO_MULTI_EXECUTE_TOOL` nests each tool under `tools[]`. Dropbox folder
+ * listing reads `arguments.path` and otherwise returns the account root, so a
+ * path passed beside `arguments` or as a JSON string never selects the folder.
+ * Those listing tools run directly with the folder path on the listing call.
+ */
+export function expandComposioMultiExecute(
+  tool: string,
+  args: Record<string, unknown>,
+): ComposioExecutionCall[] {
+  if (tool !== COMPOSIO_MULTI_EXECUTE_TOOL || !Array.isArray(args.tools)) {
+    return [{ tool, args }];
+  }
+  const calls: ComposioExecutionCall[] = [];
+  let pending: unknown[] = [];
+  const flushPending = () => {
+    if (pending.length === 0) return;
+    calls.push({ tool, args: { ...args, tools: pending } });
+    pending = [];
+  };
+  for (const item of args.tools) {
+    const listing = dropboxFolderListCall(item);
+    if (listing) {
+      flushPending();
+      calls.push(listing);
+    } else {
+      pending.push(item);
+    }
+  }
+  flushPending();
+  if (calls.length === 0 || (calls.length === 1 && calls[0]?.tool === tool)) {
+    return [{ tool, args }];
+  }
+  return calls;
+}
+
+function dropboxFolderListCall(item: unknown): ComposioExecutionCall | undefined {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return undefined;
+  const record = item as Record<string, unknown>;
+  const slug = typeof record.tool_slug === "string" ? record.tool_slug.trim() : "";
+  if (!slug || !DROPBOX_FOLDER_LIST_TOOLS.has(slug.toUpperCase())) return undefined;
+  const toolArgs = objectArguments(record.arguments);
+  if (!toolArgs) {
+    throw new Error("Dropbox folder listing arguments must be a JSON object.");
+  }
+  const path = nonEmptyPath(record.path);
+  if (path && !nonEmptyPath(toolArgs.path)) toolArgs.path = path;
+  const account = typeof record.account === "string" ? record.account.trim() : "";
+  return account ? { tool: slug, args: toolArgs, account } : { tool: slug, args: toolArgs };
+}
+
+function objectArguments(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return { ...(parsed as Record<string, unknown>) };
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) };
+  }
+  return {};
+}
+
+function nonEmptyPath(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export type PluginConnectionRow = {
   id: string;
   provider: string;
@@ -376,29 +463,51 @@ export class ComposioConnector implements ComposioProvider {
   }
 
   async *execute(call: ConnectorCall, context: AdapterContext): AsyncIterable<ConnectorEvent> {
+    const executed = [];
     try {
       const session = await this.sessionForExecute(
         context.userId,
         connectedComposioConnections(context),
       );
-      const result = await session.execute(call.tool, call.args ?? {});
-      if (result.error) {
-        yield {
-          type: "error",
-          message: sanitizeComposioError(composioResultError(result.error, result.data)),
-        };
-        return;
+      const planned = expandComposioMultiExecute(call.tool, call.args ?? {});
+      for (const item of planned) {
+        const result = await session.execute(
+          item.tool,
+          item.args,
+          item.account ? { account: item.account } : undefined,
+        );
+        if (result.error) {
+          const logIds = collectLogIds(executed);
+          yield {
+            type: "error",
+            message: sanitizeComposioError(composioResultError(result.error, result.data)),
+            ...(logIds.length > 0 ? { logIds } : {}),
+          };
+          return;
+        }
+        executed.push(result);
       }
-      const logId = collectLogIds(result)[0] ?? "";
+      const result =
+        executed.length === 1
+          ? executed[0]!
+          : { data: executed.map((item) => item.data), error: null };
+      const logIds = collectLogIds(executed.length === 1 ? result : executed);
+      const logId = logIds[0] ?? "";
       yield {
         type: "result",
         data: {
           data: sanitizePayload(result.data),
           logId,
+          ...(logIds.length > 1 ? { logIds: logIds.slice(1).map((id) => ({ logId: id })) } : {}),
         },
       };
     } catch (error) {
-      yield { type: "error", message: sanitizeComposioError(error) };
+      const logIds = collectLogIds(executed);
+      yield {
+        type: "error",
+        message: sanitizeComposioError(error),
+        ...(logIds.length > 0 ? { logIds } : {}),
+      };
     }
   }
 
