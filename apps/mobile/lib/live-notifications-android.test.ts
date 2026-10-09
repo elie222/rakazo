@@ -87,6 +87,31 @@ describe("Android open thread", () => {
     ]);
   });
 
+  it("ignores an older confirmation that resolves after a newer report", async () => {
+    const { setOpenNotificationThread } = await openThread();
+    const threadA = { botId: "bot-a", threadId: "thread-a" };
+    const threadB = { botId: "bot-b", threadId: "thread-b" };
+    let resolveA!: () => void;
+    native.setOpenThread.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveA = resolve;
+        }),
+    );
+
+    const reportA = setOpenNotificationThread(threadA);
+    await setOpenNotificationThread(threadB);
+    resolveA();
+    await reportA;
+
+    await setOpenNotificationThread(threadA);
+    expect(native.setOpenThread.mock.calls).toEqual([
+      ["bot-a", "thread-a"],
+      ["bot-b", "thread-b"],
+      ["bot-a", "thread-a"],
+    ]);
+  });
+
   it("reports the initial closed thread once", async () => {
     const { setOpenNotificationThread } = await openThread();
     await setOpenNotificationThread(null);

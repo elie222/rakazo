@@ -45,6 +45,7 @@ let openThread: NotificationThreadTarget | null = null;
 let lastConfirmed: NotificationThreadTarget | null = null;
 let hasConfirmed = false;
 let pendingReports = 0;
+let reportSeq = 0;
 let foregroundHandlerConfigured = false;
 
 export function notificationTargetsThread(
@@ -129,11 +130,14 @@ export async function setOpenNotificationThread(
   ) {
     return;
   }
+  const seq = ++reportSeq;
   pendingReports += 1;
   try {
     await nativeNotifications?.setOpenThread(target?.botId ?? null, target?.threadId ?? null);
-    lastConfirmed = target;
-    hasConfirmed = true;
+    if (seq === reportSeq) {
+      lastConfirmed = target;
+      hasConfirmed = true;
+    }
   } finally {
     pendingReports -= 1;
   }
