@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { native } = vi.hoisted(() => ({ native: { setOpenThread: vi.fn(async () => undefined) } }));
+const { native } = vi.hoisted(() => ({
+  native: { setOpenThread: vi.fn(async (): Promise<void> => undefined) },
+}));
 
 vi.mock("expo-modules-core", () => ({ requireNativeModule: () => native }));
 vi.mock("expo-notifications", () => ({ setNotificationHandler: vi.fn() }));
@@ -91,5 +93,28 @@ describe("Android open thread", () => {
     await setOpenNotificationThread(null);
     expect(native.setOpenThread).toHaveBeenCalledTimes(1);
     expect(native.setOpenThread).toHaveBeenCalledWith(null, null);
+  });
+
+  it("reports a close while an open report is still pending after a confirmed close", async () => {
+    const { setOpenNotificationThread } = await openThread();
+    await setOpenNotificationThread(null);
+    let resolveOpen!: () => void;
+    native.setOpenThread.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveOpen = resolve;
+        }),
+    );
+
+    const opening = setOpenNotificationThread({ botId: "bot-a", threadId: "thread-a" });
+    await setOpenNotificationThread(null);
+    expect(native.setOpenThread.mock.calls).toEqual([
+      [null, null],
+      ["bot-a", "thread-a"],
+      [null, null],
+    ]);
+
+    resolveOpen();
+    await opening;
   });
 });
