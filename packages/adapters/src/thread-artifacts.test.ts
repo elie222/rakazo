@@ -186,4 +186,68 @@ describe("current-turn thread files", () => {
       { name: "photo.png", mimeType: "image/png", size: 4, path: "attachments/image-1.png" },
     ]);
   });
+
+  it("writes a zip attachment into the bot workspace like other documents", async () => {
+    const bytes = new Uint8Array([0x50, 0x4b, 0x03, 0x04]);
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "zip-1",
+        spaceId: "workspace-1",
+        botId: "bot-1",
+        name: "bundle.zip",
+        mimeType: "application/zip",
+        size: bytes.byteLength,
+        storageKey: "stored-zip-1",
+      },
+    ]);
+    const get = vi.fn().mockResolvedValue(bytes);
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const context: AdapterContext & { botId: string } = {
+      operationId: "run-1",
+      traceId: "run-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    };
+    const computer: ComputerRef = {
+      id: "computer-1",
+      botId: "bot-1",
+      kind: "fake",
+      providerRef: "fake-1",
+    };
+
+    const files = await materializeCurrentTurnFiles(
+      {
+        prisma: { artifact: { findMany } } as unknown as PrismaClient,
+        artifacts: { get } as unknown as ArtifactStore,
+        sandbox: { writeFile } as unknown as SandboxProvider,
+      },
+      [
+        {
+          kind: "file",
+          artifactId: "zip-1",
+          name: "bundle.zip",
+          mimeType: "application/zip",
+          size: bytes.byteLength,
+        },
+      ],
+      { context, computer, computerMode: "team" },
+    );
+
+    expect(writeFile).toHaveBeenCalledWith(
+      computer,
+      { path: "bots/bot-1/attachments/zip-1.zip", content: bytes },
+      context,
+    );
+    expect(files).toEqual([
+      {
+        name: "bundle.zip",
+        mimeType: "application/zip",
+        size: bytes.byteLength,
+        path: "attachments/zip-1.zip",
+      },
+    ]);
+    expect(currentTurnFilesInstruction(files)).toContain('"attachments/zip-1.zip"');
+  });
 });

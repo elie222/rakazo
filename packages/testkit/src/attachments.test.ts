@@ -96,11 +96,40 @@ describeAttachments("chat attachments", () => {
     });
     expect(fetched.contentBase64).toBe(tinyPng.toString("base64"));
 
+    const zipBytes = Buffer.from("PK\x03\x04zip");
+    const zip = await rpc<{ id: string; mimeType: string }>(app, cookie, "artifacts/create", {
+      botId: bot.id,
+      name: "bundle.zip",
+      mimeType: "application/zip",
+      contentBase64: zipBytes.toString("base64"),
+    });
+    expect(zip.mimeType).toBe("application/zip");
+    await sendAndWait(app, cookie, bot.id, { artifactIds: [zip.id] });
+    snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
+    const zipMessage = snapshot.messages.find((message) =>
+      message.blocks.some((block) => block.kind === "file" && block.name === "bundle.zip"),
+    );
+    expect(zipMessage?.blocks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "file",
+          artifactId: zip.id,
+          mimeType: "application/zip",
+          name: "bundle.zip",
+        }),
+      ]),
+    );
+    const fetchedZip = await rpc<{ contentBase64: string }>(app, cookie, "artifacts/get", {
+      botId: bot.id,
+      artifactId: zip.id,
+    });
+    expect(Buffer.from(fetchedZip.contentBase64, "base64")).toEqual(zipBytes);
+
     const badMime = await raw(app, cookie, "artifacts/create", {
       botId: bot.id,
-      name: "evil.zip",
-      mimeType: "application/zip",
-      contentBase64: Buffer.from("zip").toString("base64"),
+      name: "payload.exe",
+      mimeType: "application/octet-stream",
+      contentBase64: Buffer.from("nope").toString("base64"),
     });
     expect(badMime.status).toBeGreaterThanOrEqual(400);
 

@@ -139,6 +139,7 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".html": "text/html",
   ".htm": "text/html",
   ".json": "application/json",
+  ".zip": "application/zip",
 };
 
 const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
@@ -152,6 +153,7 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "text/csv": ".csv",
   "text/html": ".html",
   "application/json": ".json",
+  "application/zip": ".zip",
 };
 
 export function inferAttachmentMimeType(
