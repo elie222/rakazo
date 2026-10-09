@@ -42,7 +42,7 @@ export function BoardPage() {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let currentController: AbortController | undefined;
     let active = true;
     void Promise.all([rpc.tickets.list({}), rpc.bots.list()])
       .then(([result, owners]) => {
@@ -56,6 +56,8 @@ export function BoardPage() {
     let cancelRetry: (() => void) | undefined;
     void (async () => {
       while (active) {
+        const controller = new AbortController();
+        currentController = controller;
         try {
           const stream = await rpc.boards.subscribe(undefined, { signal: controller.signal });
           if (!active) return;
@@ -78,6 +80,8 @@ export function BoardPage() {
           }
         } catch (cause) {
           if (active) setError(errorText(cause));
+        } finally {
+          controller.abort();
         }
         if (!active) return;
         await new Promise<void>((resolve) => {
@@ -92,7 +96,7 @@ export function BoardPage() {
     })();
     return () => {
       active = false;
-      controller.abort();
+      currentController?.abort();
       cancelRetry?.();
     };
   }, []);

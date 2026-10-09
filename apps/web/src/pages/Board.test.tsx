@@ -236,6 +236,40 @@ it("saves only edits and refreshes comments for the open ticket", async () => {
   }
 });
 
+it("closes the subscription before retrying a failed ticket refresh", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  api.bots.list.mockResolvedValue([bot("bot-1", "Helper")]);
+  api.tickets.list
+    .mockReset()
+    .mockResolvedValueOnce({ tickets: [] })
+    .mockRejectedValueOnce(new Error("Refresh failed"))
+    .mockResolvedValue({ tickets: [ticket("After retry", "ticket-1")] });
+  const next = vi.fn(() => new Promise<IteratorResult<{ ticketId?: string }>>(() => {}));
+  const page = await renderBoard({ [Symbol.asyncIterator]: () => ({ next }) });
+  try {
+    const firstSignal = api.boards.subscribe.mock.calls[0]![1].signal as AbortSignal;
+    expect(firstSignal.aborted).toBe(true);
+    expect(next).not.toHaveBeenCalled();
+    expect(api.boards.subscribe).toHaveBeenCalledTimes(1);
+
+    await act(async () => vi.advanceTimersByTimeAsync(1_000));
+    expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
+    const retrySignal = api.boards.subscribe.mock.calls[1]![1].signal as AbortSignal;
+    expect(retrySignal).not.toBe(firstSignal);
+    expect(retrySignal.aborted).toBe(false);
+    expect(page.container.textContent).toContain("After retry");
+
+    await page.cleanup();
+    expect(retrySignal.aborted).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(api.boards.subscribe).toHaveBeenCalledTimes(2);
+  } finally {
+    if (page.container.isConnected) await page.cleanup();
+    vi.useRealTimers();
+  }
+});
+
 it.each(["end", "error"] as const)(
   "reconnects after subscription %s and stops on unmount",
   async (failure) => {
