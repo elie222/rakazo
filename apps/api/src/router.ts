@@ -212,6 +212,7 @@ import {
   toTicketCommentDto,
   toTicketDto,
   touchGroupUpdatedAt,
+  writeBotInstructions,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { deleteAgentSecret, listAgentSecrets, putAgentSecret } from "./agent-secrets.js";
@@ -1750,6 +1751,7 @@ export function createRouter(deps: RouterDeps) {
             title: input.title,
             description: input.description,
             instructions: input.instructions,
+            selfUpdateInstructions: input.selfUpdateInstructions,
             notifyOnFinish: input.notifyOnFinish,
             color: input.color,
             pinned: input.pinned,
@@ -1774,6 +1776,19 @@ export function createRouter(deps: RouterDeps) {
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
         return bot;
+      }),
+      restoreInstructions: authed.bots.restoreInstructions.handler(async ({ context, input }) => {
+        await repos.getBot(context.actor, input.botId);
+        try {
+          await deps.prisma.$transaction((tx) =>
+            writeBotInstructions(tx, { ...input, reason: "Restore" }),
+          );
+        } catch (error) {
+          throw new ORPCError("CONFLICT", {
+            message: error instanceof Error ? error.message : "Could not restore instructions",
+          });
+        }
+        return (await repos.listBots(context.actor)).find((bot) => bot.id === input.botId)!;
       }),
       setComputer: authed.bots.setComputer.handler(async ({ context, input }) => {
         const bot = await repos.getBot(context.actor, input.botId);

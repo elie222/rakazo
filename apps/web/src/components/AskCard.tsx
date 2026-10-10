@@ -2,10 +2,11 @@ import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ThreadMessage } from "@rakazo/contracts";
-import { commandVariableName } from "@rakazo/contracts";
+import { BOT_INSTRUCTIONS_MAX_LENGTH, commandVariableName } from "@rakazo/contracts";
 import { isApprovalAskBlock, isSecretAskBlock, selectedAskActionLabel } from "@rakazo/core";
-import { Button, Input } from "@rakazo/ui-web";
+import { Button, Input, Textarea } from "@rakazo/ui-web";
 import { useState } from "react";
+import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
 export type AskBlock = Extract<ThreadMessage["blocks"][number], { kind: "ask" }>;
@@ -58,13 +59,19 @@ export function AskCard({
 }) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState(block.instructionUpdate?.after ?? "");
+  const [undone, setUndone] = useState(false);
   const [username, setUsername] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const submitting = pendingAction !== null;
   const approvalActions = isApprovalAskBlock(block) ? block.actions : undefined;
   const askActions = block.actions;
+  const displayActions = block.instructionUpdate
+    ? askActions?.flatMap((action) =>
+        action.id === "allow" ? [action, { id: "edit", label: t`Edit` }] : [action],
+      )
+    : askActions;
   const secretInput = isSecretAskBlock(block);
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const secretLabel = loginInput ? t`Password` : secretFieldLabel(block.purpose);
@@ -95,13 +102,55 @@ export function AskCard({
     }
   }
 
+  if (block.instructionUpdate?.undoVersionId)
+    return (
+      <div className="rounded-2xl border border-border bg-card px-5 py-4">
+        <div className="flex items-center gap-2 text-sm">
+          <Trans>Instructions updated</Trans> ·{" "}
+          <Button
+            variant="link"
+            disabled={undone || submitting}
+            onClick={async () => {
+              setPendingAction("undo");
+              setError(null);
+              try {
+                await rpc.bots.restoreInstructions({
+                  botId: block.instructionUpdate!.botId,
+                  versionId: block.instructionUpdate!.undoVersionId!,
+                  expectedInstructions: block.instructionUpdate!.after,
+                });
+                setUndone(true);
+              } catch (err) {
+                setError(errorText(err));
+              } finally {
+                setPendingAction(null);
+              }
+            }}
+          >
+            {undone ? <Trans>Restored</Trans> : <Trans>Undo</Trans>}
+          </Button>
+          {error ? <span className="text-destructive">{error}</span> : null}
+        </div>
+      </div>
+    );
+
   return (
     <div
-      data-testid={secretInput ? "secret-ask-card" : undefined}
+      data-testid={
+        secretInput
+          ? "secret-ask-card"
+          : block.instructionUpdate
+            ? "instruction-approval-card"
+            : undefined
+      }
       className="max-w-[74%] rounded-2xl border border-border bg-card px-5 py-4"
     >
       <div className="text-[15.5px] leading-[1.5] text-foreground">
-        <ChatMarkdown>{block.text}</ChatMarkdown>
+        {block.instructionUpdate ? (
+          <Trans>Update instructions?</Trans>
+        ) : (
+          <ChatMarkdown>{block.text}</ChatMarkdown>
+        )}
       </div>
       {secretInput && block.credential ? (
         <div
@@ -118,15 +167,40 @@ export function AskCard({
           {block.detail}
         </pre>
       ) : null}
-      {block.status === "answered" ? (
+      {block.instructionUpdate && editing && canAnswer && block.status !== "answered" ? (
+        <form
+          className="mt-3 space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitAnswer(JSON.stringify({ instructions: answer }));
+          }}
+        >
+          <Textarea
+            aria-label={t`Instructions`}
+            maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+            value={answer}
+            onChange={(event) => setAnswer(event.target.value)}
+          />
+          <Button type="submit" disabled={submitting}>
+            <Trans>Apply</Trans>
+          </Button>
+          <Button variant="outline" onClick={() => setEditing(false)}>
+            <Trans>Cancel</Trans>
+          </Button>
+        </form>
+      ) : block.status === "answered" ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-success">
-          {formatAnsweredState(
-            block.answer,
-            Boolean(approvalActions),
-            secretInput,
-            approvalActions?.find((action) => action.id === block.answer)?.outcome,
-            askActions,
-          )}
+          {block.instructionUpdate
+            ? block.answer === "deny"
+              ? t`Dismissed`
+              : t`Applied`
+            : formatAnsweredState(
+                block.answer,
+                Boolean(approvalActions),
+                secretInput,
+                approvalActions?.find((action) => action.id === block.answer)?.outcome,
+                askActions,
+              )}
         </div>
       ) : !canAnswer ? (
         <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
@@ -134,18 +208,32 @@ export function AskCard({
         </div>
       ) : askActions?.length ? (
         <div className="mt-3.5 space-y-1.5">
-          {askActions.map((action) => (
+          {displayActions?.map((action) => (
             <Button
               key={action.id}
               variant={approvalActions && action.id === "allow" ? "default" : "outline"}
               className="h-auto w-full justify-start whitespace-normal px-3.5 py-3 text-start font-normal"
               disabled={submitting}
-              onClick={() => void submitAnswer(action.id)}
+              onClick={() =>
+                action.id === "edit" && block.instructionUpdate
+                  ? setEditing(true)
+                  : void submitAnswer(action.id)
+              }
             >
               {pendingAction === action.id ? (
                 <Trans>Sending…</Trans>
+              ) : action.id === "edit" && block.instructionUpdate ? (
+                action.label
               ) : approvalActions ? (
-                approvalActionLabel(action.id, action.label, action.outcome)
+                block.instructionUpdate ? (
+                  action.id === "allow" ? (
+                    t`Apply`
+                  ) : (
+                    t`Dismiss`
+                  )
+                ) : (
+                  approvalActionLabel(action.id, action.label, action.outcome)
+                )
               ) : (
                 action.label
               )}

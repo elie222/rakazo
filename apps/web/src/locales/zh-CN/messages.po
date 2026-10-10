@@ -524,6 +524,14 @@ msgstr "API 密钥请求头"
 msgid "Appearance"
 msgstr "外观"
 
+#: src/components/AskCard.tsx
+msgid "Applied"
+msgstr "已应用"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "应用"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "审批边界"
@@ -1968,15 +1976,20 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "正在断开…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
-msgstr ""
+msgstr "忽略"
 
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "关闭错误"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "已忽略"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2051,6 +2064,10 @@ msgstr "复制"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "例如 Hivenet Agent、Presales、工时表机器人"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "编辑"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2452,6 +2469,19 @@ msgstr "实例 API 密钥"
 msgid "Instruction"
 msgstr "指令"
 
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "指令历史"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "指令"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "指令已更新"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr ""
@@ -2531,6 +2561,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "退出"
+
+#: src/components/InstructionSettings.tsx
+msgid "Let this bot update its own instructions"
+msgstr "允许此机器人更新自己的指令"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3688,6 +3722,7 @@ msgstr "调整面板大小"
 msgid "Restart to update"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "恢复"
@@ -3699,6 +3734,10 @@ msgstr "恢复上次保存的工作区。"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "还原上次保存的工作区。电脑上未保存的工作会丢失。"
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "已恢复"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4519,6 +4558,10 @@ msgstr "未分配"
 msgid "Unavailable"
 msgstr "不可用"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "撤销"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4569,6 +4612,10 @@ msgstr "更新失败"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "更新完成但有错误"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "更新指令？"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"

@@ -1,5 +1,7 @@
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { useState } from "react";
-import { Alert, Pressable, Text, View, type ViewProps } from "react-native";
+import type { ViewProps } from "react-native";
+import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
@@ -15,12 +17,14 @@ const KNOWN_ASK_ACTION_LABELS: Record<string, string> = {
 
 export function AskActions({
   actions,
+  instructions,
   disabled,
   onAnswer,
   accessibilityActions,
   onAccessibilityAction,
 }: {
   actions: AskAction[];
+  instructions?: string;
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
   accessibilityActions?: ViewProps["accessibilityActions"];
@@ -29,7 +33,17 @@ export function AskActions({
   const { t } = useI18n();
   const tokens = mobileTokens();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(instructions ?? "");
   const submitting = pendingAction !== null;
+  const displayActions =
+    instructions !== undefined
+      ? actions.flatMap((action) =>
+          action.id === "allow"
+            ? [action, { id: "edit", label: t(editing ? "Cancel" : "Edit") }]
+            : [action],
+        )
+      : actions;
 
   async function submit(answer: string) {
     if (disabled || submitting) return;
@@ -45,7 +59,17 @@ export function AskActions({
 
   return (
     <View style={{ marginTop: 12, gap: 6 }}>
-      {actions.map((action) => {
+      {editing ? (
+        <TextInput
+          accessibilityLabel={t("Instructions")}
+          multiline
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+          value={draft}
+          onChangeText={setDraft}
+          style={{ color: tokens.foreground, backgroundColor: native.fill, padding: 12 }}
+        />
+      ) : null}
+      {displayActions.map((action) => {
         const emphasized = action.id === "allow" || action.id === "always";
         return (
           <Pressable
@@ -53,7 +77,15 @@ export function AskActions({
             accessibilityActions={accessibilityActions}
             onAccessibilityAction={onAccessibilityAction}
             disabled={disabled || submitting}
-            onPress={() => void submit(action.id)}
+            onPress={() =>
+              action.id === "edit" && instructions !== undefined
+                ? setEditing((value) => !value)
+                : void submit(
+                    editing && action.id === "allow"
+                      ? JSON.stringify({ instructions: draft })
+                      : action.id,
+                  )
+            }
             style={{
               alignSelf: "stretch",
               borderRadius: 12,
@@ -72,9 +104,13 @@ export function AskActions({
             >
               {pendingAction === action.id
                 ? t("Sending…")
-                : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
-                  ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
-                  : action.label}
+                : action.id === "edit" && instructions !== undefined
+                  ? action.label
+                  : instructions !== undefined
+                    ? t(action.id === "allow" ? "Apply" : "Dismiss")
+                    : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
+                      ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
+                      : action.label}
             </Text>
           </Pressable>
         );

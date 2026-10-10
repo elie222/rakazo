@@ -1,4 +1,5 @@
-import { appendEventInTransaction, type Prisma, type PrismaClient } from "@rakazo/db";
+import type { Prisma, PrismaClient } from "@rakazo/db";
+import { appendEventInTransaction, writeBotInstructions } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 
 type AppendEvent = typeof appendEventInTransaction;
@@ -20,7 +21,7 @@ export async function commitBotUpdate(
   },
   appendEvent: AppendEvent = appendEventInTransaction,
 ): Promise<{ id: string; name: string; title: string; description: string }> {
-  if (!options.emitBotUpdated) {
+  if (!options.emitBotUpdated && options.data.instructions === undefined) {
     return options.prisma.bot.update({
       where: { id: options.botId },
       data: options.data,
@@ -29,6 +30,14 @@ export async function commitBotUpdate(
   }
 
   const committed = await options.prisma.$transaction(async (tx) => {
+    if (typeof options.data.instructions === "string") {
+      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
+      await writeBotInstructions(tx, {
+        botId: options.botId,
+        instructions: options.data.instructions,
+        reason: "Manual edit",
+      });
+    }
     const updated = await tx.bot.update({
       where: { id: options.botId },
       data: options.data,

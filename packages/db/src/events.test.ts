@@ -3042,3 +3042,132 @@ describe("appendEvent", () => {
     expect(tx.event.create).not.toHaveBeenCalled();
   });
 });
+
+describe("instruction proposal answers", () => {
+  function fixture() {
+    const request = {
+      instructions: "Draft only",
+      reason: "Learned preference",
+      previousInstructions: "Original",
+    };
+    const block = {
+      kind: "ask",
+      approvalEffectId: "effect-1",
+      text: "Update instructions?",
+      status: "pending",
+      instructionUpdate: {
+        botId: "bot-1",
+        before: "Original",
+        after: "Draft only",
+        reason: "Learned preference",
+      },
+      actions: [
+        { id: "allow", label: "Apply" },
+        { id: "deny", label: "Dismiss" },
+      ],
+    };
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      run: {
+        findFirst: vi.fn(async () => ({ botId: "bot-1", userId: "owner" })),
+        updateMany: vi.fn(async () => ({ count: 1 })),
+        findUnique: vi.fn(async () => ({ status: "queued" })),
+      },
+      message: {
+        findFirst: vi.fn(async () => ({ id: "message-1", blocks: [block] })),
+        update: vi.fn(async () => ({ id: "message-1" })),
+      },
+      externalEffect: {
+        findFirst: vi.fn(async () => ({
+          id: "effect-1",
+          kind: "propose_instructions_update",
+          request,
+        })),
+        findUniqueOrThrow: vi.fn(async () => ({ request })),
+        update: vi.fn(),
+      },
+      bot: { updateMany: vi.fn() },
+      task: { updateMany: vi.fn() },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 10 })) },
+      event: {
+        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+          ...event(data.seq),
+          type: data.type,
+        })),
+      },
+    };
+    const prisma = { $transaction: async (action: (client: typeof tx) => unknown) => action(tx) };
+    const answer = (value: string, userId = "owner") =>
+      answerRunInput(
+        prisma as never,
+        {
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          runId: "run-1",
+          messageId: "message-1",
+          answeredByUserId: userId,
+          answer: value,
+        },
+        new TestFanout(),
+      );
+    return { tx, answer };
+  }
+  it("stores edited text as the approved request without replacing the user's task", async () => {
+    const f = fixture();
+    expect(await f.answer(JSON.stringify({ instructions: "Never send" }))).toBe(true);
+    expect(f.tx.externalEffect.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          request: {
+            instructions: "Never send",
+            reason: "Learned preference",
+            previousInstructions: "Original",
+          },
+          idempotencyKey: expect.any(String),
+        }),
+      }),
+    );
+    expect(f.tx.externalEffect.update).toHaveBeenCalledWith({
+      where: { id: "effect-1" },
+      data: { status: "approved" },
+    });
+    expect(f.tx.task.updateMany).not.toHaveBeenCalled();
+    expect(f.tx.message.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          blocks: [
+            expect.objectContaining({
+              instructionUpdate: expect.objectContaining({ after: "Never send" }),
+              detail: "Learned preference\n\n- Original\n+ Never send",
+            }),
+          ],
+        },
+      }),
+    );
+  });
+  it("rejects edits from another user, invalid payloads, and generic always-allow", async () => {
+    const f = fixture();
+    for (const value of [
+      '{"instructions":42}',
+      '{"instructions":"new","botId":"other"}',
+      JSON.stringify({ instructions: "x".repeat(20001) }),
+      "always",
+    ])
+      expect(await f.answer(value)).toBe(false);
+    expect(await f.answer('{"instructions":"new"}', "other-user")).toBe(false);
+    expect(f.tx.externalEffect.update).not.toHaveBeenCalled();
+    expect(f.tx.run.updateMany).not.toHaveBeenCalled();
+  });
+  it("dismisses and frees the bot reservation", async () => {
+    const f = fixture();
+    expect(await f.answer("deny")).toBe(true);
+    expect(f.tx.bot.updateMany).toHaveBeenCalledWith({
+      where: { id: "bot-1", pendingInstructionsRunId: "run-1" },
+      data: { pendingInstructionsRunId: null },
+    });
+    expect(f.tx.externalEffect.update).toHaveBeenCalledWith({
+      where: { id: "effect-1" },
+      data: { status: "denied" },
+    });
+  });
+});

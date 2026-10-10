@@ -524,6 +524,14 @@ msgstr "API 키 헤더"
 msgid "Appearance"
 msgstr "모양"
 
+#: src/components/AskCard.tsx
+msgid "Applied"
+msgstr "적용됨"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "적용"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "승인이 필요한 범위"
@@ -1968,6 +1976,7 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "연결 해제 중…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1977,6 +1986,10 @@ msgstr "닫기"
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "오류 닫기"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "닫힘"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2051,6 +2064,10 @@ msgstr "복제"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "예: Hivenet Agent, Presales, 근무표 봇"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "편집"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2452,6 +2469,19 @@ msgstr "인스턴스 API 키"
 msgid "Instruction"
 msgstr "실행할 내용"
 
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "지침 기록"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "지침"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "지침 업데이트됨"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr ""
@@ -2531,6 +2561,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "나가기"
+
+#: src/components/InstructionSettings.tsx
+msgid "Let this bot update its own instructions"
+msgstr "이 봇이 자신의 지침을 업데이트하도록 허용"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3688,6 +3722,7 @@ msgstr "패널 크기 조절"
 msgid "Restart to update"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "복원"
@@ -3699,6 +3734,10 @@ msgstr "마지막으로 저장한 작업 공간을 복원합니다."
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "마지막으로 저장된 작업 공간을 복원합니다. 컴퓨터에서 저장하지 않은 작업은 사라집니다."
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "복원됨"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4519,6 +4558,10 @@ msgstr "섹션 없음"
 msgid "Unavailable"
 msgstr "사용할 수 없음"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "실행 취소"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4569,6 +4612,10 @@ msgstr "업데이트 실패"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "오류와 함께 업데이트가 완료되었습니다"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "지침을 업데이트할까요?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"

@@ -524,6 +524,14 @@ msgstr "Заголовок ключа API"
 msgid "Appearance"
 msgstr "Внешний вид"
 
+#: src/components/AskCard.tsx
+msgid "Applied"
+msgstr "Применено"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "Применить"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "Границы одобрения"
@@ -1968,6 +1976,7 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Отключение…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1977,6 +1986,10 @@ msgstr "Закрыть"
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Закрыть ошибку"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "Отклонено"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2051,6 +2064,10 @@ msgstr "Дублировать"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "напр. Hivenet Agent, Presales, бот табелей"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "Изменить"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2452,6 +2469,19 @@ msgstr "Ключ API экземпляра"
 msgid "Instruction"
 msgstr "Инструкция"
 
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "История инструкций"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "Инструкции"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "Инструкции обновлены"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr "Домен интеграции"
@@ -2531,6 +2561,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "Выйти"
+
+#: src/components/InstructionSettings.tsx
+msgid "Let this bot update its own instructions"
+msgstr "Разрешить этому боту обновлять свои инструкции"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3688,6 +3722,7 @@ msgstr "Изменить размер панели"
 msgid "Restart to update"
 msgstr "Перезапустить для обновления"
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Восстановить"
@@ -3699,6 +3734,10 @@ msgstr "Восстановить последнее сохранённое ра�
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Восстановите последнее сохраненное рабочее пространство. Несохраненная работа на компьютере теряется."
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "Восстановлено"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4519,6 +4558,10 @@ msgstr "Без раздела"
 msgid "Unavailable"
 msgstr "Недоступно"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "Отменить"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr "Удалить"
@@ -4569,6 +4612,10 @@ msgstr "Обновление не выполнено"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Обновление завершено с ошибками"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "Обновить инструкции?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"

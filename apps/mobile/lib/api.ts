@@ -865,6 +865,8 @@ export type MobileBot = Pick<
   | "preview"
   | "title"
   | "color"
+  | "instructionHistory"
+  | "selfUpdateInstructions"
   | "notifyOnFinish"
   | "threadId"
   | "pinned"
@@ -879,7 +881,7 @@ export type MobileBot = Pick<
   | "thinkingLevel"
   | "autoSpeak"
 > &
-  Partial<Pick<Bot, "parentBotId" | "spaceId">>;
+  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 
 export type MobileBotSection = BotSection;
 

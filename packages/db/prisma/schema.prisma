@@ -399,6 +399,9 @@ model Bot {
   title             String            @default("")
   description       String            @default("")
   instructions      String            @default("")
+  selfUpdateInstructions Boolean @default(false)
+  instructionHistory Json @default("[]")
+  pendingInstructionsRunId String?
   color             String
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)

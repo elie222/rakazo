@@ -2,6 +2,7 @@ import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   normalizeCreateBotProfile,
@@ -15,7 +16,7 @@ import {
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { Voice } from "expo-speech";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
@@ -48,6 +49,8 @@ export default function BotSettingsScreen() {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [selfUpdateInstructions, setSelfUpdateInstructions] = useState(false);
   const [color, setColor] = useState<string>(BOT_COLORS[0]);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -76,6 +79,8 @@ export default function BotSettingsScreen() {
         setName(next.name);
         setTitle(next.title);
         setDescription(next.description ?? "");
+        setInstructions(next.instructions ?? "");
+        setSelfUpdateInstructions(next.selfUpdateInstructions ?? false);
         setColor(next.color);
         setComputerMode(next.computerMode);
         setModelKey(
@@ -280,6 +285,7 @@ export default function BotSettingsScreen() {
         title?: string;
         description?: string;
         instructions?: string;
+        selfUpdateInstructions?: boolean;
         color?: string;
         modelProvider?: string | null;
         modelId?: string | null;
@@ -290,9 +296,10 @@ export default function BotSettingsScreen() {
       if (profile.title !== bot.title) input.title = profile.title;
       if (profile.description !== (bot.description ?? "")) {
         input.description = profile.description;
-        // Keep instructions in sync with description (same as web BotSettings).
-        input.instructions = profile.instructions;
       }
+      if (instructions !== bot.instructions) input.instructions = instructions;
+      if (selfUpdateInstructions !== (bot.selfUpdateInstructions ?? false))
+        input.selfUpdateInstructions = selfUpdateInstructions;
       if (color !== bot.color) input.color = color;
       const modelChanged =
         (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
@@ -510,6 +517,63 @@ export default function BotSettingsScreen() {
         </Pressable>
         {advancedOpen ? (
           <View>
+            <Text style={{ color: tokens.mutedForeground, marginTop: 12 }}>
+              {t("Instructions")}
+            </Text>
+            <TextInput
+              accessibilityLabel={t("Instructions")}
+              multiline
+              maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+              value={instructions}
+              onChangeText={setInstructions}
+              style={{
+                color: tokens.foreground,
+                backgroundColor: native.fill,
+                padding: 12,
+                marginTop: 8,
+              }}
+            />
+            <View style={styles.row}>
+              <Text style={{ color: tokens.foreground, flex: 1 }}>
+                {t("Let this bot update its own instructions")}
+              </Text>
+              <NativeSwitch
+                accessibilityLabel={t("Let this bot update its own instructions")}
+                value={selfUpdateInstructions}
+                onValueChange={setSelfUpdateInstructions}
+              />
+            </View>
+            {bot?.instructionHistory?.length ? (
+              <MenuPicker
+                label={t("Instruction history")}
+                value=""
+                choices={bot.instructionHistory.map((version) => ({
+                  key: version.id,
+                  label: `${new Date(version.createdAt).toLocaleString()} · ${version.reason}`,
+                }))}
+                onChange={(versionId) => {
+                  const version = bot.instructionHistory?.find((item) => item.id === versionId);
+                  if (version)
+                    Alert.alert(t("Restore"), version.instructions, [
+                      { text: t("Cancel"), style: "cancel" },
+                      {
+                        text: t("Restore"),
+                        onPress: () => {
+                          void rpc<MobileBot>("bots/restoreInstructions", {
+                            botId: bot.id,
+                            versionId,
+                          })
+                            .then((updated) => {
+                              setBot(updated);
+                              setInstructions(updated.instructions ?? "");
+                            })
+                            .catch((err) => setError(errorText(err)));
+                        },
+                      },
+                    ]);
+                }}
+              />
+            ) : null}
             <View
               style={{
                 marginTop: 8,

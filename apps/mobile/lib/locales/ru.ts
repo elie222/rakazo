@@ -788,4 +788,16 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in to your existing account to link SSO":
     "Войдите в существующий аккаунт, чтобы привязать SSO",
   "SSO is temporarily unavailable. Try again.": "SSO временно недоступен. Попробуйте снова.",
+  Applied: "Применено",
+  Apply: "Применить",
+  Dismissed: "Отклонено",
+  Edit: "Изменить",
+  "Instruction history": "История инструкций",
+  Instructions: "Инструкции",
+  "Instructions updated": "Инструкции обновлены",
+  "Let this bot update its own instructions": "Разрешить этому боту обновлять свои инструкции",
+  Restored: "Восстановлено",
+  Undo: "Отменить",
+  "Update instructions?": "Обновить инструкции?",
+  "Could not restore instructions": "Не удалось восстановить инструкции",
 };

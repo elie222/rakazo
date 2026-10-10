@@ -59,9 +59,11 @@ function fixture({
   shutdownSignal,
   builtin = false,
   disabledBuiltinTools = [],
+  selfUpdateInstructions = false,
   existingSharedMemory,
   advanceRevisionAfterRead = false,
 }: {
+  selfUpdateInstructions?: boolean;
   builtin?: boolean;
   disabledBuiltinTools?: string[];
   existingSharedMemory?: string;
@@ -164,6 +166,12 @@ function fixture({
       },
     ),
   };
+  const instructionState = {
+    instructions: "Draft only",
+    instructionHistory: [],
+    pendingInstructionsRunId: null,
+    selfUpdateInstructions,
+  };
   const prisma = {
     run: {
       findUnique: vi.fn(async () => run),
@@ -175,6 +183,7 @@ function fixture({
     },
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
+        ...instructionState,
         id: run.botId,
         name: bot.name,
         title: bot.title,
@@ -183,6 +192,9 @@ function fixture({
         computerId: "computer-1",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
+      update: vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+        Object.assign(instructionState, data),
+      ),
       findMany: vi.fn(async () => []),
     },
     attempt: {
@@ -190,8 +202,24 @@ function fixture({
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    thread: { findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })) },
-    message: { findMany: vi.fn(async () => []) },
+    thread: {
+      findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),
+      update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
+    },
+    message: {
+      findMany: vi.fn(async () => []),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "message-1",
+        createdAt: new Date(),
+        ...data,
+      })),
+    },
+    event: {
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "event-1",
+        ...data,
+      })),
+    },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
@@ -211,6 +239,10 @@ function fixture({
     actionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: autoReview })) },
     externalEffect,
   };
+  const transactionalPrisma = Object.assign(prisma, {
+    $queryRaw: vi.fn(async () => []),
+    $transaction: async (action: (tx: typeof prisma) => unknown) => action(prisma),
+  });
   const pauseRunForInput = vi.fn(async () => {
     run.status = "waiting_input";
     return true;
@@ -235,7 +267,7 @@ function fixture({
     yield { type: "done" as const, text: "Done" };
   });
   const executor = createRunExecutor({
-    prisma,
+    prisma: transactionalPrisma,
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     connector: {
       discoverTools: async () =>
@@ -281,7 +313,12 @@ function fixture({
       commit,
     },
     memoryProviders: { resolve: async () => null },
-    events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      notify: vi.fn(async () => undefined),
+      pauseRunForInput,
+      finalizeRun,
+    },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
     autoReview: autoReviewProvider,
@@ -289,6 +326,7 @@ function fixture({
   } as unknown as Parameters<typeof createRunExecutor>[0]);
   return {
     effects,
+    instructionState,
     results,
     execute,
     commit,
@@ -694,4 +732,66 @@ describe("connector read-only metadata and approval enforcement", () => {
       expect(f.pauseRunForInput).not.toHaveBeenCalled();
     });
   });
+});
+
+describe("self instruction proposals", () => {
+  const args = { instructions: "Draft only. Ask before sending.", reason: "Learned a preference" };
+  it("asks even when general rules and auto review allow it, then applies the persisted approved text", async () => {
+    const f = fixture({
+      name: "propose_instructions_update",
+      builtin: true,
+      autoReview: true,
+      rules: [
+        { effect: "always_allow", matchKind: "tool", matchValue: "propose_instructions_update" },
+      ],
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe("Draft only");
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects[0]).toMatchObject({
+      status: "intended",
+      request: { ...args, previousInstructions: "Draft only" },
+    });
+    f.effects[0]!.status = "approved";
+    f.setCalls([
+      { args: { instructions: "Forged replacement", reason: "different" }, executionId: "call-2" },
+    ]);
+    await f.run();
+    expect(f.instructionState.instructions).toBe(args.instructions);
+    expect(f.instructionState.instructionHistory).toHaveLength(1);
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]!.status).toBe("completed");
+  });
+  it("auto-applies only with the per-bot setting and keeps an undo version", async () => {
+    const f = fixture({
+      name: "propose_instructions_update",
+      builtin: true,
+      selfUpdateInstructions: true,
+    });
+    f.setCalls([{ args, executionId: "call-1" }]);
+    await f.run();
+    expect(f.pauseRunForInput).not.toHaveBeenCalled();
+    expect(f.instructionState.instructions).toBe(args.instructions);
+    expect(f.instructionState.instructionHistory).toHaveLength(1);
+    expect(f.instructionState.pendingInstructionsRunId).toBeNull();
+  });
+  it.each(["webhook", "messaging", "bot_message"])(
+    "blocks %s even with self updates enabled",
+    async (trigger) => {
+      const f = fixture({
+        name: "propose_instructions_update",
+        builtin: true,
+        trigger,
+        selfUpdateInstructions: true,
+      });
+      f.setCalls([{ args, executionId: "call-1" }]);
+      await f.run();
+      expect(f.results[0]).toMatchObject({
+        error: expect.stringContaining("externally triggered"),
+      });
+      expect(f.effects).toEqual([]);
+      expect(f.instructionState.instructions).toBe("Draft only");
+    },
+  );
 });

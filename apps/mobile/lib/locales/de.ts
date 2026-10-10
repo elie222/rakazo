@@ -785,4 +785,17 @@ export const DE_MESSAGES: Record<string, string> = {
     "Melde dich bei deinem bestehenden Konto an, um SSO zu verknüpfen",
   "SSO is temporarily unavailable. Try again.":
     "SSO ist vorübergehend nicht verfügbar. Versuche es erneut.",
+  Applied: "Angewendet",
+  Apply: "Anwenden",
+  Dismissed: "Verworfen",
+  Edit: "Bearbeiten",
+  "Instruction history": "Anweisungsverlauf",
+  Instructions: "Anweisungen",
+  "Instructions updated": "Anweisungen aktualisiert",
+  "Let this bot update its own instructions":
+    "Dieser Bot darf seine eigenen Anweisungen aktualisieren",
+  Restored: "Wiederhergestellt",
+  Undo: "Rückgängig",
+  "Update instructions?": "Anweisungen aktualisieren?",
+  "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
 };
