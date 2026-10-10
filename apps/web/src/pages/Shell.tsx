@@ -2637,8 +2637,8 @@ export function ShellPage() {
     return () => window.clearInterval(timer);
   }, [panel, computerOpen, computerBot?.id, active?.id, computer?.state]);
 
-  /** Open the computer view, taking control when possible. Resolves false if booting failed. */
-  async function openComputer(botId?: string) {
+  /** Open the computer view. Only an explicit Take control asks for the lease. */
+  async function openComputer(botId?: string, takeControl = false) {
     const id = botId ?? active?.id;
     if (!id) return false;
     const bot = botsRef.current.find((candidate) => candidate.id === id);
@@ -2654,7 +2654,7 @@ export function ShellPage() {
     }
     setComputerOpen(true);
     computerVisible.current = true;
-    const needsTakeover = !userHoldsComputerControl(targetComputer, id);
+    const needsTakeover = takeControl && !userHoldsComputerControl(targetComputer, id);
     const blocked = computerTakeoverBlocked(targetComputer, snapshot?.run?.status);
     try {
       await bootComputer({
@@ -2674,28 +2674,23 @@ export function ShellPage() {
     void openComputerRef.current(botId);
   }, []);
 
-  const releaseComputer = useCallback(
-    async (reason?: ComputerReleaseReason) => {
-      const botId = computerBotIdRef.current ?? activeBotId.current;
-      if (!botId) return;
-      try {
-        await rpc.computer.release({ botId, reason });
-        if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
-        setComputerOpen(false);
-        const groupId = activeGroupId.current;
-        if (groupId) {
-          await refreshGroupThreadRef.current(groupId).catch(() => undefined);
-        } else {
-          await refreshThreadRef.current(botId).catch(() => undefined);
-        }
-      } catch {
-        if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
-        setComputerError(t`Could not continue`);
-        setComputerErrorFromScreen(false);
+  async function releaseComputer(reason?: ComputerReleaseReason) {
+    const botId = computerBotIdRef.current ?? activeBotId.current;
+    if (!botId) return;
+    try {
+      await rpc.computer.release({ botId, reason });
+      if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
+      await refreshComputerFor(botId).catch(() => undefined);
+      const groupId = activeGroupId.current;
+      if (groupId) {
+        await refreshGroupThreadRef.current(groupId).catch(() => undefined);
       }
-    },
-    [t],
-  );
+    } catch {
+      if (computerBotIdRef.current !== botId && activeBotId.current !== botId) return;
+      setComputerError(t`Could not continue`);
+      setComputerErrorFromScreen(false);
+    }
+  }
 
   function dismissComposerError() {
     // The strip shows one message at a time, so only dismiss the run failure when it is the
@@ -4637,6 +4632,17 @@ export function ShellPage() {
                     takeoverRequested={Boolean(computer?.takeoverRequested)}
                     onRelease={releaseComputer}
                   />
+                ) : computer?.state === "running" &&
+                  !computerTakeoverBlocked(computer, snapshot?.run?.status) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={booting}
+                    onClick={() => void openComputer(computerBot.id, true)}
+                  >
+                    <Trans>Take control</Trans>
+                  </Button>
                 ) : null}
                 {computerBot && !recordingSkill ? (
                   <TeachComputerOverlayControl
@@ -4685,7 +4691,7 @@ export function ShellPage() {
                   computer?.state === "running" &&
                   !hasControl &&
                   !computerTakeoverBlocked(computer, snapshot?.run?.status)
-                    ? () => openComputer(computerBot.id)
+                    ? () => openComputer(computerBot.id, true)
                     : undefined
                 }
               >
@@ -6454,7 +6460,7 @@ function ComputerReleaseActions({
   if (!takeoverRequested) {
     return (
       <Button type="button" variant="outline" size="sm" onClick={() => void onRelease()}>
-        <Trans>Release</Trans>
+        <Trans>Release control</Trans>
       </Button>
     );
   }
