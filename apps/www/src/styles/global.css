@@ -586,6 +586,57 @@ button.button--secondary:focus-visible {
   line-height: 1.6;
 }
 
+.testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 44px;
+}
+
+.testimonial-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: 26px;
+  box-shadow: var(--shadow-soft);
+}
+
+.testimonial-card blockquote {
+  margin: 0;
+  quotes: "“" "”";
+}
+
+.testimonial-card p {
+  margin: 0;
+  color: var(--body);
+  font-size: 15px;
+  line-height: 1.6;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+.testimonial-card p::before {
+  content: open-quote;
+}
+
+.testimonial-card p::after {
+  content: close-quote;
+}
+
+.testimonial-card figcaption {
+  margin-top: auto;
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+
 .comparison-grid {
   grid-template-columns: 1.15fr 1fr;
   align-items: stretch;
@@ -2625,6 +2676,10 @@ button.button--secondary:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .testimonial-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .stats-band {
     display: grid;
     padding: 38px 28px;
@@ -2761,7 +2816,8 @@ button.button--secondary:focus-visible {
 
   .card-grid-3,
   .card-grid-4,
-  .stats-grid {
+  .stats-grid,
+  .testimonial-grid {
     grid-template-columns: 1fr;
   }
 

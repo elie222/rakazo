@@ -169,6 +169,24 @@ const structuredData = homeStructuredData({
         </div>
       </section>
 
+      <section id="testimonials" class="section" aria-labelledby="testimonials-heading">
+        <div class="section-intro">
+          <h2 id="testimonials-heading" class="section-heading">{copy.testimonials.heading}</h2>
+        </div>
+        <div class="testimonial-grid">
+          {
+            copy.testimonials.items.map((item) => (
+              <figure class="testimonial-card">
+                <blockquote>
+                  <p>{item.quote}</p>
+                </blockquote>
+                <figcaption>{item.attribution}</figcaption>
+              </figure>
+            ))
+          }
+        </div>
+      </section>
+
       <section id="open-source" class="section">
         <div class="section-intro">
           <div class="eyebrow">{copy.openSource.eyebrow}</div>
