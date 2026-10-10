@@ -1,9 +1,12 @@
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
 import { useState } from "react";
-import { Alert, Pressable, Text, View, type ViewProps } from "react-native";
+import type { ViewProps } from "react-native";
+import { Alert, Pressable, Text, TextInput, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "./native-action-button";
 
 type AskAction = { id: string; label: string };
 
@@ -15,12 +18,14 @@ const KNOWN_ASK_ACTION_LABELS: Record<string, string> = {
 
 export function AskActions({
   actions,
+  instructions,
   disabled,
   onAnswer,
   accessibilityActions,
   onAccessibilityAction,
 }: {
   actions: AskAction[];
+  instructions?: string;
   disabled?: boolean;
   onAnswer: (answer: string) => Promise<void>;
   accessibilityActions?: ViewProps["accessibilityActions"];
@@ -29,7 +34,17 @@ export function AskActions({
   const { t } = useI18n();
   const tokens = mobileTokens();
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(instructions ?? "");
   const submitting = pendingAction !== null;
+  const displayActions =
+    instructions !== undefined
+      ? actions.flatMap((action) =>
+          action.id === "allow"
+            ? [action, { id: "edit", label: t(editing ? "Cancel" : "Edit") }]
+            : [action],
+        )
+      : actions;
 
   async function submit(answer: string) {
     if (disabled || submitting) return;
@@ -45,8 +60,47 @@ export function AskActions({
 
   return (
     <View style={{ marginTop: 12, gap: 6 }}>
-      {actions.map((action) => {
+      {editing ? (
+        <TextInput
+          accessibilityLabel={t("Instructions")}
+          multiline
+          maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+          value={draft}
+          onChangeText={setDraft}
+          style={{ color: tokens.foreground, backgroundColor: native.fill, padding: 12 }}
+        />
+      ) : null}
+      {displayActions.map((action) => {
         const emphasized = action.id === "allow" || action.id === "always";
+        if (instructions !== undefined)
+          return (
+            <View
+              key={action.id}
+              accessibilityActions={accessibilityActions}
+              onAccessibilityAction={onAccessibilityAction}
+            >
+              <NativeActionButton
+                label={
+                  action.id === "edit"
+                    ? action.label
+                    : t(action.id === "allow" ? "Apply" : "Dismiss")
+                }
+                prominence={emphasized ? "primary" : "secondary"}
+                fill
+                disabled={disabled || submitting}
+                busy={pendingAction === action.id || (action.id === "allow" && submitting)}
+                onPress={() =>
+                  action.id === "edit"
+                    ? setEditing((value) => !value)
+                    : void submit(
+                        editing && action.id === "allow"
+                          ? JSON.stringify({ instructions: draft })
+                          : action.id,
+                      )
+                }
+              />
+            </View>
+          );
         return (
           <Pressable
             key={action.id}

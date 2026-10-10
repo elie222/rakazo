@@ -14,19 +14,19 @@ describe("bot profile patch", () => {
     expect(botProfilePatch(" Billing questions ", "Billing questions")).toEqual({});
   });
 
-  it("sends both fields when the description is edited", () => {
+  it("preserves instructions when the description is edited", () => {
     const patch = botProfilePatch("Billing questions", "Invoices");
-    expect(patch).toEqual({ description: "Invoices", instructions: "Invoices" });
+    expect(patch).toEqual({ description: "Invoices" });
   });
 
-  it("clamps an edited value to each field's own limit", () => {
+  it("clamps an edited description", () => {
     const patch = botProfilePatch("short", "D".repeat(BOT_INSTRUCTIONS_MAX_LENGTH + 100));
     expect(patch.description).toHaveLength(BOT_DESCRIPTION_MAX_LENGTH);
-    expect(patch.instructions).toHaveLength(BOT_INSTRUCTIONS_MAX_LENGTH);
+    expect(patch).not.toHaveProperty("instructions");
   });
 
   it("still sends a cleared description", () => {
     const patch = botProfilePatch("Invoices", "");
-    expect(patch).toEqual({ description: "", instructions: "" });
+    expect(patch).toEqual({ description: "" });
   });
 });

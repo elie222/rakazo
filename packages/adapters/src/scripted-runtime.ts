@@ -369,6 +369,20 @@ code-b
       },
     ];
   }
+  if (lower.includes("propose an instruction update")) {
+    return [
+      {
+        assistant: "",
+        toolCalls: [
+          {
+            name: "propose_instructions_update",
+            args: { instructions: "Draft only. Ask before sending.", reason: "Learned preference" },
+          },
+        ],
+        complete: true,
+      },
+    ];
+  }
   if (
     lower.includes("create a space") ||
     lower.includes("create space") ||

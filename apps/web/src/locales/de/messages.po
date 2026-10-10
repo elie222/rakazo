@@ -524,6 +524,14 @@ msgstr "API-Schlüssel-Header"
 msgid "Appearance"
 msgstr "Erscheinungsbild"
 
+#: src/components/AskCard.tsx
+msgid "Applied"
+msgstr "Angewendet"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "Anwenden"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "Bestätigungsgrenzen"
@@ -1968,15 +1976,20 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Verbindung wird getrennt…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
-msgstr ""
+msgstr "Verwerfen"
 
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "Verworfen"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2051,6 +2064,10 @@ msgstr "Duplizieren"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "z. B. Hivenet Agent, Presales, Zeiterfassungs-Bot"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "Bearbeiten"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2452,6 +2469,19 @@ msgstr "Instanz-API-Schlüssel"
 msgid "Instruction"
 msgstr "Anweisung"
 
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "Anweisungsverlauf"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "Anweisungen"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "Anweisungen aktualisiert"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr ""
@@ -2531,6 +2561,10 @@ msgstr "{app} gestartet"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr ""
+
+#: src/components/InstructionSettings.tsx
+msgid "Let this bot update its own instructions"
+msgstr "Dieser Bot darf seine eigenen Anweisungen aktualisieren"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3688,6 +3722,7 @@ msgstr "Panelgröße ändern"
 msgid "Restart to update"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Wiederherstellen"
@@ -3699,6 +3734,10 @@ msgstr "Den zuletzt gespeicherten Arbeitsbereich wiederherstellen."
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "Wiederhergestellt"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4519,6 +4558,10 @@ msgstr "Nicht zugewiesen"
 msgid "Unavailable"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "Rückgängig"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4569,6 +4612,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "Anweisungen aktualisieren?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"

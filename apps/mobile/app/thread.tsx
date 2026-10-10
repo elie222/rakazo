@@ -96,6 +96,7 @@ import { FailedSendBubble } from "../components/failed-send-bubble";
 import { GlassSurface } from "../components/glass-surface";
 import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
+import { InstructionUndo } from "../components/instruction-undo";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
@@ -3297,58 +3298,71 @@ const MessageBubble = memo(function MessageBubble({
             paddingVertical: 14,
           }}
         >
-          {askBlock.text ? (
-            <Text
-              {...actionProps}
-              style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
-            >
-              {askBlock.text}
-            </Text>
-          ) : null}
-          {askBlock.detail ? (
-            <Text
-              {...(askBlock.text ? {} : actionProps)}
-              style={{
-                color: tokens.mutedForeground,
-                marginTop: askBlock.text ? 8 : 0,
-                fontSize: 12.5,
-                fontFamily: "Menlo",
-                lineHeight: 20,
-              }}
-            >
-              {askBlock.detail}
-            </Text>
-          ) : null}
-          {askBlock.status === "answered" ? (
-            <Text
-              {...actionProps}
-              style={{
-                color: tokens.success,
-                marginTop: 12,
-                fontSize: 13.5,
-                fontWeight: "600",
-              }}
-            >
-              {formatApprovalAnswer(
-                askBlock.answer,
-                askBlock.actions,
-                isApprovalAskBlock(askBlock),
-              )}
-            </Text>
-          ) : canAnswer && onAnswer ? (
-            <AskActions
-              actions={askBlock.actions}
-              accessibilityActions={actionProps.accessibilityActions}
-              onAccessibilityAction={actionProps.onAccessibilityAction}
-              onAnswer={(answer) => onAnswer(message, answer)}
+          {askBlock.instructionUpdate?.undoVersionId ? (
+            <InstructionUndo
+              botId={askBlock.instructionUpdate.botId}
+              versionId={askBlock.instructionUpdate.undoVersionId}
+              instructions={askBlock.instructionUpdate.after}
             />
           ) : (
-            <Text
-              {...actionProps}
-              style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
-            >
-              {t("No longer active")}
-            </Text>
+            <>
+              {askBlock.text ? (
+                <Text
+                  {...actionProps}
+                  style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
+                >
+                  {askBlock.instructionUpdate ? t("Update instructions?") : askBlock.text}
+                </Text>
+              ) : null}
+              {askBlock.detail ? (
+                <Text
+                  {...(askBlock.text ? {} : actionProps)}
+                  style={{
+                    color: tokens.mutedForeground,
+                    marginTop: askBlock.text ? 8 : 0,
+                    fontSize: 12.5,
+                    fontFamily: "Menlo",
+                    lineHeight: 20,
+                  }}
+                >
+                  {askBlock.detail}
+                </Text>
+              ) : null}
+              {askBlock.status === "answered" ? (
+                <Text
+                  {...actionProps}
+                  style={{
+                    color: tokens.success,
+                    marginTop: 12,
+                    fontSize: 13.5,
+                    fontWeight: "600",
+                  }}
+                >
+                  {askBlock.instructionUpdate
+                    ? t(askBlock.answer === "deny" ? "Dismissed" : "Applied")
+                    : formatApprovalAnswer(
+                        askBlock.answer,
+                        askBlock.actions,
+                        isApprovalAskBlock(askBlock),
+                      )}
+                </Text>
+              ) : canAnswer && onAnswer ? (
+                <AskActions
+                  actions={askBlock.actions}
+                  instructions={askBlock.instructionUpdate?.after}
+                  accessibilityActions={actionProps.accessibilityActions}
+                  onAccessibilityAction={actionProps.onAccessibilityAction}
+                  onAnswer={(answer) => onAnswer(message, answer)}
+                />
+              ) : (
+                <Text
+                  {...actionProps}
+                  style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
+                >
+                  {t("No longer active")}
+                </Text>
+              )}
+            </>
           )}
         </View>
         {appConnectBlocks.map((block, index) => (

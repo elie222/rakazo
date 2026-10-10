@@ -524,6 +524,14 @@ msgstr "API anahtarı üstbilgisi"
 msgid "Appearance"
 msgstr "Görünüm"
 
+#: src/components/AskCard.tsx
+msgid "Applied"
+msgstr "Uygulandı"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "Uygula"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "Onay sınırları"
@@ -1968,15 +1976,20 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Bağlantı kesiliyor…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
-msgstr ""
+msgstr "Reddet"
 
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "Reddedildi"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2051,6 +2064,10 @@ msgstr "Çoğalt"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "örn. Hivenet Agent, Presales, puantaj botu"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "Düzenle"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2452,6 +2469,19 @@ msgstr "Instance API anahtarı"
 msgid "Instruction"
 msgstr "Talimat"
 
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "Talimat geçmişi"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "Talimatlar"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "Talimatlar güncellendi"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr ""
@@ -2531,6 +2561,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr ""
+
+#: src/components/InstructionSettings.tsx
+msgid "Let this bot update its own instructions"
+msgstr "Bu botun kendi talimatlarını güncellemesine izin ver"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3688,6 +3722,7 @@ msgstr "Paneli yeniden boyutlandır"
 msgid "Restart to update"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Geri yükle"
@@ -3699,6 +3734,10 @@ msgstr "Son kaydedilen çalışma alanını geri yükleyin."
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "Geri yüklendi"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4519,6 +4558,10 @@ msgstr "Atanmamış"
 msgid "Unavailable"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "Geri al"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4569,6 +4612,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "Talimatlar güncellensin mi?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"

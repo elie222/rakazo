@@ -524,6 +524,14 @@ msgstr "En-tête de clé API"
 msgid "Appearance"
 msgstr "Apparence"
 
+#: src/components/AskCard.tsx
+msgid "Applied"
+msgstr "Appliqué"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "Appliquer"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
 msgstr "Limites d'approbation"
@@ -1968,6 +1976,7 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Déconnexion en cours…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1977,6 +1986,10 @@ msgstr "Fermer"
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Fermer l'erreur"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "Ignoré"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2051,6 +2064,10 @@ msgstr "Dupliquer"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "ex. Agent Hivenet, Préventes, bot de feuilles de temps"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "Modifier"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2452,6 +2469,19 @@ msgstr "Clé API de l'instance"
 msgid "Instruction"
 msgstr "Instruction"
 
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "Historique des instructions"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "Instructions"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "Instructions mises à jour"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr "Domaine d'intégration"
@@ -2531,6 +2561,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "Quitter"
+
+#: src/components/InstructionSettings.tsx
+msgid "Let this bot update its own instructions"
+msgstr "Autoriser ce bot à modifier ses propres instructions"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
@@ -3688,6 +3722,7 @@ msgstr "Redimensionner le panneau"
 msgid "Restart to update"
 msgstr "Redémarrez pour mettre à jour"
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Restaurer"
@@ -3699,6 +3734,10 @@ msgstr "Restaurer le dernier espace de travail enregistré."
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Restaurez le dernier espace de travail enregistré. Les travaux non enregistrés sur l'ordinateur seront perdus."
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "Restauré"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4519,6 +4558,10 @@ msgstr "Non assigné"
 msgid "Unavailable"
 msgstr "Indisponible"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "Annuler"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr "Désinstaller"
@@ -4569,6 +4612,10 @@ msgstr "Échec de la mise à jour"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Mise à jour terminée avec des erreurs"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "Mettre à jour les instructions ?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"

@@ -1,5 +1,5 @@
 import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
-import { BOT_COLORS } from "@rakazo/contracts";
+import { BOT_COLORS, InstructionVersionSchema } from "@rakazo/contracts";
 import { BACKGROUND_RUN_TRIGGERS, isBackgroundRunTrigger, userVisibleMessages } from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
@@ -33,6 +33,8 @@ function mapBot(
     title: string;
     description: string;
     instructions: string;
+    selfUpdateInstructions?: boolean;
+    instructionHistory?: unknown;
     color: string;
     notifyOnFinish: boolean;
     pinned: boolean;
@@ -68,6 +70,8 @@ function mapBot(
     title: bot.title,
     description: bot.description,
     instructions: bot.instructions,
+    selfUpdateInstructions: bot.selfUpdateInstructions ?? false,
+    instructionHistory: InstructionVersionSchema.array().parse(bot.instructionHistory ?? []),
     color: bot.color,
     notifyOnFinish: bot.notifyOnFinish,
     pinned: bot.pinned,

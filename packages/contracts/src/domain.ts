@@ -48,6 +48,13 @@ export const AgentSecretInputSchema = z.object({
 });
 export type AgentSecretInput = z.infer<typeof AgentSecretInputSchema>;
 
+export const InstructionVersionSchema = z.object({
+  id: Id,
+  instructions: z.string(),
+  reason: z.string(),
+  createdAt: z.string(),
+});
+
 export const BotSchema = z.object({
   id: Id,
   spaceId: Id,
@@ -55,6 +62,8 @@ export const BotSchema = z.object({
   title: z.string(),
   description: z.string(),
   instructions: z.string(),
+  selfUpdateInstructions: z.boolean().optional(),
+  instructionHistory: z.array(InstructionVersionSchema).optional(),
   color: z.string(),
   notifyOnFinish: z.boolean(),
   pinned: z.boolean(),
@@ -331,6 +340,7 @@ export const UpdateBotInput = z
     title: z.string().trim().max(BOT_TITLE_MAX_LENGTH).optional(),
     description: z.string().trim().max(BOT_DESCRIPTION_MAX_LENGTH).optional(),
     instructions: z.string().trim().max(BOT_INSTRUCTIONS_MAX_LENGTH).optional(),
+    selfUpdateInstructions: z.boolean().optional(),
     notifyOnFinish: z.boolean().optional(),
     color: BotAvatarValueSchema.optional(),
     pinned: z.boolean().optional(),
