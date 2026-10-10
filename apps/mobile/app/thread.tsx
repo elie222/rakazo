@@ -185,6 +185,7 @@ import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
 import { ThreadScrollBehavior } from "../lib/thread-scroll";
+import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { errorText } from "../lib/user-error";
 import { speakQueue, speakText } from "../lib/voice";
 import {
@@ -485,11 +486,13 @@ function Thread() {
 
   function commitSnap(next: MobileSnapshot | null) {
     snapRef.current = next;
-    setSnap(withLiveStreamingProgress(next, streamResponsesRef.current));
+    const visible = withLiveStreamingProgress(next, streamResponsesRef.current);
+    setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
   }
 
   useEffect(() => {
-    setSnap(withLiveStreamingProgress(snapRef.current, streamResponses));
+    const visible = withLiveStreamingProgress(snapRef.current, streamResponses);
+    setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
   }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
