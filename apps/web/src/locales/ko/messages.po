@@ -4814,3 +4814,15 @@ msgstr "이름"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
+
+#: src/pages/shell/bot-templates.tsx
+msgid "Start from a template"
+msgstr "템플릿으로 시작"
+
+#: src/pages/shell/bot-templates.tsx
+msgid "Browse all"
+msgstr "모두 보기"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Instructions"
+msgstr "지침"

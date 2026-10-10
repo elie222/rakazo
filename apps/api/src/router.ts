@@ -228,6 +228,7 @@ import {
   listSpaceArtifacts,
 } from "./artifacts.js";
 import type { BillingService } from "./billing.js";
+import { createBotTemplateCatalog } from "./bot-templates.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,
@@ -702,7 +703,12 @@ const BOT_INTRO_PROMPT =
  * message states how it read its own instructions. The executor gives the
  * "created" trigger no tools (see executor.ts), so this turn can only speak.
  */
-export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bot): Promise<void> {
+export async function enqueueBotIntroRun(
+  deps: RouterDeps,
+  actor: Actor,
+  bot: Bot,
+  templateSlug?: string,
+): Promise<void> {
   const threadId = bot.threadId;
   if (!threadId) return;
   // Scripted is the deterministic test/eval runtime, not a real deployment: an
@@ -717,7 +723,9 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
         botId: bot.id,
         threadId,
         userId: actor.userId,
-        prompt: BOT_INTRO_PROMPT,
+        prompt: templateSlug
+          ? "You were just created from a template. In your first reply, ask the setup questions specified in your instructions. Keep the interview short and wait for answers before starting work. After the user answers, save the agreed setup in your instructions."
+          : BOT_INTRO_PROMPT,
         status: "queued",
       },
     });
@@ -759,6 +767,7 @@ export function createRouter(deps: RouterDeps) {
     stillAuthorized?: () => Promise<boolean>;
   }>();
   const repos = createRepos(deps.prisma);
+  const botTemplates = createBotTemplateCatalog();
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
@@ -1569,6 +1578,7 @@ export function createRouter(deps: RouterDeps) {
       }),
     },
     bots: {
+      templates: authed.bots.templates.handler(() => botTemplates()),
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
       listArchived: authed.bots.listArchived.handler(async ({ context }) =>
         repos.listBots(context.actor, { archived: true }),
@@ -1585,7 +1595,7 @@ export function createRouter(deps: RouterDeps) {
         } catch (error) {
           throw mapSpaceLifecycleError(error);
         }
-        await enqueueBotIntroRun(deps, context.actor, bot).catch((error) => {
+        await enqueueBotIntroRun(deps, context.actor, bot, input.templateSlug).catch((error) => {
           getLogger().error("bot intro run enqueue", error);
         });
         return bot;
