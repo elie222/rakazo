@@ -31,6 +31,7 @@ import {
   openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
+  reconcileThreadScrollState,
   replyAttachment,
   resolveComposerSendPlan,
   resolvePersonaColorDef,
@@ -452,6 +453,9 @@ function Thread() {
   const [threadScrollState, setThreadScrollState] = useState<ThreadScrollState>(() =>
     scrollBehavior.current.state(),
   );
+  const publishThreadScrollState = useCallback((next: ThreadScrollState) => {
+    setThreadScrollState((previous) => reconcileThreadScrollState(previous, next));
+  }, []);
   useLayoutEffect(() => {
     scrollBehavior.current.openThread(threadKey ?? "");
     expandedHistoryThread.current = null;
@@ -460,8 +464,8 @@ function Thread() {
     jumpAnchor.current.release();
     joinPinnedAfterLayout.current = null;
     loadingOlderContent.current = false;
-    setThreadScrollState(scrollBehavior.current.state());
-  }, [threadKey]);
+    publishThreadScrollState(scrollBehavior.current.state());
+  }, [threadKey, publishThreadScrollState]);
   const reducedMotion = useReducedMotion();
   const artifactTarget: MobileArtifactTarget | undefined = groupId
     ? { groupId }
@@ -677,8 +681,8 @@ function Thread() {
   }, []);
 
   useEffect(() => {
-    setThreadScrollState(scrollBehavior.current.state());
-  }, [threadKey]);
+    publishThreadScrollState(scrollBehavior.current.state());
+  }, [threadKey, publishThreadScrollState]);
 
   const refreshMentionBots = useCallback(async () => {
     if (!botId && !groupId) return;
@@ -1144,7 +1148,7 @@ function Thread() {
     expandedHistoryThread.current = null;
     // The live list mounts at the latest message.
     scrollBehavior.current.jumpToLatest();
-    setThreadScrollState(scrollBehavior.current.state());
+    publishThreadScrollState(scrollBehavior.current.state());
     commitSnap(
       snapRef.current && pinned
         ? leaveThreadWindow(snapRef.current, pinned.newerCursor)
@@ -1555,7 +1559,7 @@ function Thread() {
       if (attempt.payload.originThreadKey === (activeGroupId.current ?? activeBotId.current)) {
         if (pinnedAroundRef.current) showLatest();
         performScroll(scrollBehavior.current.jumpToLatest());
-        setThreadScrollState(scrollBehavior.current.state());
+        publishThreadScrollState(scrollBehavior.current.state());
       }
       return;
     } finally {
@@ -1884,7 +1888,7 @@ function Thread() {
 
   function updateUserScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     // Inverted FlatList: contentOffset.y is distance from the latest messages.
-    setThreadScrollState(
+    publishThreadScrollState(
       scrollBehavior.current.onUserScroll(Math.max(0, event.nativeEvent.contentOffset.y)),
     );
   }
@@ -2397,7 +2401,7 @@ function Thread() {
                   expandedHistoryThread.current === snap?.threadId,
               );
               performScroll(scrollBehavior.current.onContentChanged(blocked, latestMessageId));
-              setThreadScrollState(scrollBehavior.current.state());
+              publishThreadScrollState(scrollBehavior.current.state());
             }}
             ListFooterComponent={loadEarlierControl}
             ListHeaderComponent={
@@ -2432,7 +2436,7 @@ function Thread() {
                 return;
               }
               performScroll(scrollBehavior.current.jumpToLatest());
-              setThreadScrollState(scrollBehavior.current.state());
+              publishThreadScrollState(scrollBehavior.current.state());
             }}
             style={{
               position: "absolute",
