@@ -12,6 +12,7 @@ const swiftButton = vi.hoisted(() => vi.fn());
 const swiftLabel = vi.hoisted(() => vi.fn());
 const appearance = vi.hoisted(() => ({ value: "light" as "light" | "dark" }));
 const swiftHost = vi.hoisted(() => vi.fn());
+const swiftText = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
   Platform: platform,
@@ -61,7 +62,10 @@ vi.mock("@expo/ui/swift-ui", () => ({
     return null;
   },
   ProgressView: () => null,
-  Text: () => null,
+  Text: (props: unknown) => {
+    swiftText(props);
+    return null;
+  },
 }));
 vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
@@ -88,6 +92,7 @@ beforeEach(() => {
   swiftButton.mockClear();
   swiftLabel.mockClear();
   swiftHost.mockClear();
+  swiftText.mockClear();
 });
 
 describe("iOS action styling", () => {
@@ -121,6 +126,40 @@ describe("iOS action styling", () => {
     expect(modifiers).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "foregroundStyle" })]),
     );
+  });
+
+  it.each(["light", "dark"] as const)(
+    "draws the filled foreground on compact primary actions in %s mode",
+    (scheme) => {
+      // In dark mode the system's white label sat on the light primary at about 1.1:1.
+      appearance.value = scheme;
+      renderToStaticMarkup(
+        <IosButton label="Done" prominence="primary" fill={false} onPress={() => {}} />,
+      );
+      expect(swiftButton.mock.lastCall?.[0].label).toBeUndefined();
+      expect(swiftText.mock.lastCall?.[0]).toEqual({
+        children: "Done",
+        modifiers: [
+          { name: "foregroundStyle", value: tokensForAppearance(scheme).primaryForeground },
+        ],
+      });
+
+      swiftText.mockClear();
+      renderToStaticMarkup(
+        <IosButton label="Done" prominence="primary" fill={false} disabled onPress={() => {}} />,
+      );
+      expect(swiftButton.mock.lastCall?.[0].label).toBe("Done");
+      expect(swiftText).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the system label on compact secondary actions", () => {
+    appearance.value = "dark";
+    renderToStaticMarkup(
+      <IosButton label="Take control" prominence="secondary" fill={false} onPress={() => {}} />,
+    );
+    expect(swiftButton.mock.lastCall?.[0].label).toBe("Take control");
+    expect(swiftText).not.toHaveBeenCalled();
   });
 
   it("honours explicit fill on quiet actions", () => {
@@ -197,8 +236,15 @@ describe("compact native actions", () => {
       />,
     );
     expect(swiftButton.mock.lastCall?.[0]).toMatchObject({
-      label: "Keyboard",
+      label: undefined,
       systemImage: "keyboard",
+    });
+    expect(swiftLabel.mock.lastCall?.[0]).toMatchObject({
+      title: "Keyboard",
+      systemImage: "keyboard",
+      modifiers: [
+        { name: "foregroundStyle", value: tokensForAppearance("light").primaryForeground },
+      ],
     });
     renderToStaticMarkup(
       <IosButton label="Ctrl" size="compact" fill selected={false} onPress={() => {}} />,

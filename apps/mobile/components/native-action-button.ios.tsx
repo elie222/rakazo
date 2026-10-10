@@ -38,6 +38,13 @@ export function NativeActionButton({
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
   const role = prominence === "destructive" ? "destructive" : "default";
+  // The prominent styles draw a white label, which disappears on the light dark-mode primary.
+  const filled = !inactive && effectiveProminence === "primary";
+  const ownLabel = stretches || filled;
+  const labelModifiers = [
+    ...(stretches ? [frame({ maxWidth: Infinity, ...(small ? { minHeight: 16 } : {}) })] : []),
+    ...(filled ? [foregroundStyle(tokens.primaryForeground)] : []),
+  ];
   const color =
     effectiveProminence === "destructive"
       ? tokens.destructive
@@ -57,7 +64,7 @@ export function NativeActionButton({
       ]}
     >
       <Button
-        label={busy || stretches ? undefined : (label ?? accessibilityLabel)}
+        label={busy || ownLabel ? undefined : (label ?? accessibilityLabel)}
         systemImage={icon?.ios as never}
         onPress={inactive ? undefined : onPress}
         role={role}
@@ -92,28 +99,14 @@ export function NativeActionButton({
               ...(stretches ? [frame({ maxWidth: Infinity })] : []),
             ]}
           />
-        ) : stretches && icon ? (
+        ) : ownLabel && icon ? (
           <Label
             title={label ?? accessibilityLabel}
             systemImage={icon.ios as never}
-            modifiers={[
-              frame({ maxWidth: Infinity, ...(small ? { minHeight: 16 } : {}) }),
-              ...(!inactive && effectiveProminence === "primary"
-                ? [foregroundStyle(tokens.primaryForeground)]
-                : []),
-            ]}
+            modifiers={labelModifiers}
           />
-        ) : stretches ? (
-          <Text
-            modifiers={[
-              frame({ maxWidth: Infinity, ...(small ? { minHeight: 16 } : {}) }),
-              ...(!inactive && effectiveProminence === "primary"
-                ? [foregroundStyle(tokens.primaryForeground)]
-                : []),
-            ]}
-          >
-            {label}
-          </Text>
+        ) : ownLabel ? (
+          <Text modifiers={labelModifiers}>{label}</Text>
         ) : undefined}
       </Button>
     </Host>
