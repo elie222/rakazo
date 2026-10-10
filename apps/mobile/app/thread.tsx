@@ -2267,7 +2267,11 @@ function Thread() {
         style={{
           display: readOnly ? "none" : "flex",
           flexShrink: 1,
-          paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24),
+          paddingBottom: keyboardVisible
+            ? 12
+            : Platform.OS === "ios"
+              ? insets.bottom
+              : Math.max(insets.bottom + 12, 24),
         }}
       >
         {/* Fades messages out above the composer, like the header fade. */}
