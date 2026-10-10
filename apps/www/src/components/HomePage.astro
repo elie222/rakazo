@@ -176,8 +176,18 @@ const structuredData = homeStructuredData({
       </section>
 
       <section id="testimonials" class="section testimonials" aria-labelledby="testimonials-heading">
-        <div class="section-intro">
+        <div class="section-intro testimonials__heading">
           <h2 id="testimonials-heading" class="section-heading">{copy.testimonials.heading}</h2>
+          <button
+            class="testimonial-pause"
+            type="button"
+            data-testimonial-pause
+            data-pause-label={copy.testimonials.pause}
+            data-play-label={copy.testimonials.play}
+            aria-pressed="false"
+          >
+            {copy.testimonials.pause}
+          </button>
         </div>
         <div
           class="testimonial-viewport"
@@ -329,12 +339,17 @@ const structuredData = homeStructuredData({
     let frame = 0;
     let last = 0;
     let offset = 0;
+    const pauseButton = document.querySelector<HTMLButtonElement>("[data-testimonial-pause]");
+    const pauseLabel = pauseButton?.dataset.pauseLabel ?? "Pause";
+    const playLabel = pauseButton?.dataset.playLabel ?? "Play";
     let hovering = false;
     let focused = false;
     let touching = false;
+    let held = false;
+    let onScreen = typeof IntersectionObserver === "undefined";
 
     const reduced = () => motion.matches;
-    const paused = () => reduced() || hovering || focused || touching;
+    const paused = () => reduced() || held || !onScreen || hovering || focused || touching;
 
     const loopWidth = () => marqueeGroup.offsetWidth;
 
@@ -419,7 +434,23 @@ const structuredData = homeStructuredData({
       focused = false;
       resume();
     });
+    pauseButton?.addEventListener("click", () => {
+      held = !held;
+      pauseButton.setAttribute("aria-pressed", held ? "true" : "false");
+      pauseButton.textContent = held ? playLabel : pauseLabel;
+      if (held) stop();
+      else resume();
+    });
     motion.addEventListener("change", sync);
+    const section = document.getElementById("testimonials");
+    if (section && typeof IntersectionObserver !== "undefined") {
+      const observer = new IntersectionObserver((entries) => {
+        onScreen = entries.some((entry) => entry.isIntersecting);
+        if (onScreen) resume();
+        else stop();
+      });
+      observer.observe(section);
+    }
     sync();
   }
 </script>

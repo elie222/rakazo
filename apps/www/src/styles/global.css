@@ -591,6 +591,31 @@ button.button--secondary:focus-visible {
   max-width: 100%;
 }
 
+.testimonials__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  max-width: none;
+}
+
+.testimonial-pause {
+  flex: none;
+  border: 1px solid var(--blue-line);
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.testimonial-pause[aria-pressed="true"] {
+  background: var(--surface);
+}
+
 .testimonial-viewport {
   margin-top: 32px;
   max-width: 100%;
@@ -705,6 +730,10 @@ button.button--secondary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .testimonial-pause {
+    display: none;
+  }
+
   .testimonial-viewport.is-animated [data-testimonial-clone] {
     display: none;
   }

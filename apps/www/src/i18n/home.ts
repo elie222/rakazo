@@ -50,6 +50,8 @@ export type HomeCopy = {
   };
   testimonials: {
     heading: string;
+    pause: string;
+    play: string;
     items: ReadonlyArray<{ quote: string; attribution: string }>;
   };
   faq: {
@@ -371,6 +373,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     testimonials: {
       heading: "Testimonials",
+      pause: "Pause",
+      play: "Play",
       items: TESTIMONIALS,
     },
     faq: {
@@ -532,6 +536,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     testimonials: {
       heading: "Kundenstimmen",
+      pause: "Pause",
+      play: "Weiter",
       items: TESTIMONIALS,
     },
     faq: {
@@ -696,6 +702,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     testimonials: {
       heading: "후기",
+      pause: "일시정지",
+      play: "재생",
       items: TESTIMONIALS,
     },
     faq: {
@@ -860,6 +868,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     testimonials: {
       heading: "用户评价",
+      pause: "暂停",
+      play: "播放",
       items: TESTIMONIALS,
     },
     faq: {
