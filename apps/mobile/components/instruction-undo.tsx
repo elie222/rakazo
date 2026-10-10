@@ -23,6 +23,8 @@ export function InstructionUndo({
       <Text style={{ color: tokens.foreground }}>{t("Instructions updated")} ·</Text>
       <NativeActionButton
         label={t(restored ? "Restored" : "Undo")}
+        prominence="plain"
+        size="compact"
         disabled={pending || restored}
         onPress={async () => {
           setPending(true);

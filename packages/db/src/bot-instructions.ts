@@ -76,14 +76,11 @@ export async function writeBotInstructions(
     throw new Error("Instruction version is unavailable or too large.");
   }
   if (instructions === bot.instructions) {
-    await tx.bot.update({
-      where: { id: bot.id },
-      data: {
-        ...(input.proposalRunId === bot.pendingInstructionsRunId
-          ? { pendingInstructionsRunId: null }
-          : {}),
-      },
-    });
+    if (input.proposalRunId === bot.pendingInstructionsRunId)
+      await tx.bot.update({
+        where: { id: bot.id },
+        data: { pendingInstructionsRunId: null },
+      });
     return null;
   }
   const version = {

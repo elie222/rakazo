@@ -4048,7 +4048,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           return occurrence;
         };
 
-        const applyTool = async (
+        const dispatchTool = async (
           name: string,
           args: Record<string, unknown>,
           executionId: string,
@@ -4277,7 +4277,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               instructionProposalBot = await reserveInstructionProposal(deps.prisma, bot.id, runId);
               if (!nextApprovedTool) {
                 args = { ...args, previousInstructions: instructionProposalBot.instructions };
-                effectRequest = args;
               }
             } catch (error) {
               return {
@@ -6405,6 +6404,20 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return finish(result);
           }
           return finish({ error: `unknown tool ${name}` });
+        };
+
+        // Runtimes may dispatch parallel calls; a run can open only one proposal at a time.
+        let instructionProposalInFlight = false;
+        const applyTool = async (...params: Parameters<typeof dispatchTool>) => {
+          if (params[0] !== "propose_instructions_update") return dispatchTool(...params);
+          if (instructionProposalInFlight)
+            return { error: "This bot already has a pending instruction proposal." };
+          instructionProposalInFlight = true;
+          try {
+            return await dispatchTool(...params);
+          } finally {
+            instructionProposalInFlight = false;
+          }
         };
 
         const pluginLine =

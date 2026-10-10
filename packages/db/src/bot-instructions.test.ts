@@ -41,8 +41,10 @@ describe("instruction guardrails", () => {
     "spawn",
     "cloud_agent",
     "resume",
-    "email",
-    "web",
+    "reaction",
+    "skill",
+    "created",
+    "tickets",
   ])("blocks %s runs", (trigger) => {
     expect(() =>
       validateInstructionProposal(

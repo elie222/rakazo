@@ -2258,6 +2258,7 @@ describe("sendUserMessage", () => {
         botId: "bot-1",
         userId: "user-1",
         runId: null,
+        originTrigger: "webhook",
         modelProvider: "openai-compatible",
         modelId: "private-model",
         thinkingLevel: "low",
@@ -2619,6 +2620,44 @@ describe("claimSteering", () => {
       }),
     );
   });
+
+  it.each(["user", "follow_up", "messaging"])(
+    "keeps held webhook deliveries out of a %s turn",
+    async (trigger) => {
+      const tx = {
+        $queryRaw: vi.fn(),
+        run: {
+          findFirst: vi.fn(async () => ({
+            id: "run-1",
+            trigger,
+            sourceMessage: { blocks: [{ kind: "channel_message", channelId: "channel-1" }] },
+          })),
+        },
+        steeringMessage: { findMany: vi.fn(async () => []), updateMany: vi.fn() },
+      };
+      const prisma = {
+        $transaction: async (action: (client: typeof tx) => unknown) => action(tx),
+      } as unknown as PrismaClient;
+      await claimSteering(prisma, {
+        threadId: "thread-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseOwner: "worker-1",
+        leaseFence: 1,
+        seenIds: [],
+      });
+      expect(tx.steeringMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              { runId: null, originTrigger: trigger === "messaging" ? "messaging" : null },
+              { runId: "run-1" },
+            ],
+          }),
+        }),
+      );
+    },
+  );
 
   it("leaves channel and in-app pending rows for a direct-message run", async () => {
     const tx = {

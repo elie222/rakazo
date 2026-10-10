@@ -6,6 +6,7 @@ import { mobileTokens } from "../lib/appearance";
 import { useI18n } from "../lib/i18n";
 import { native } from "../lib/native";
 import { errorText } from "../lib/user-error";
+import { NativeActionButton } from "./native-action-button";
 
 type AskAction = { id: string; label: string };
 
@@ -71,21 +72,42 @@ export function AskActions({
       ) : null}
       {displayActions.map((action) => {
         const emphasized = action.id === "allow" || action.id === "always";
+        if (instructions !== undefined)
+          return (
+            <View
+              key={action.id}
+              accessibilityActions={accessibilityActions}
+              onAccessibilityAction={onAccessibilityAction}
+            >
+              <NativeActionButton
+                label={
+                  action.id === "edit"
+                    ? action.label
+                    : t(action.id === "allow" ? "Apply" : "Dismiss")
+                }
+                prominence={emphasized ? "primary" : "secondary"}
+                fill
+                disabled={disabled || submitting}
+                busy={pendingAction === action.id || (action.id === "allow" && submitting)}
+                onPress={() =>
+                  action.id === "edit"
+                    ? setEditing((value) => !value)
+                    : void submit(
+                        editing && action.id === "allow"
+                          ? JSON.stringify({ instructions: draft })
+                          : action.id,
+                      )
+                }
+              />
+            </View>
+          );
         return (
           <Pressable
             key={action.id}
             accessibilityActions={accessibilityActions}
             onAccessibilityAction={onAccessibilityAction}
             disabled={disabled || submitting}
-            onPress={() =>
-              action.id === "edit" && instructions !== undefined
-                ? setEditing((value) => !value)
-                : void submit(
-                    editing && action.id === "allow"
-                      ? JSON.stringify({ instructions: draft })
-                      : action.id,
-                  )
-            }
+            onPress={() => void submit(action.id)}
             style={{
               alignSelf: "stretch",
               borderRadius: 12,
@@ -104,13 +126,9 @@ export function AskActions({
             >
               {pendingAction === action.id
                 ? t("Sending…")
-                : action.id === "edit" && instructions !== undefined
-                  ? action.label
-                  : instructions !== undefined
-                    ? t(action.id === "allow" ? "Apply" : "Dismiss")
-                    : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
-                      ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
-                      : action.label}
+                : Object.hasOwn(KNOWN_ASK_ACTION_LABELS, action.id)
+                  ? t(KNOWN_ASK_ACTION_LABELS[action.id]!)
+                  : action.label}
             </Text>
           </Pressable>
         );

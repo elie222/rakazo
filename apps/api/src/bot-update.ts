@@ -16,7 +16,7 @@ export async function commitBotUpdate(
     spaceId: string;
     threadId: string;
     botId: string;
-    data: Prisma.BotUncheckedUpdateInput;
+    data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> & { instructions?: string };
     emitBotUpdated: boolean;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
@@ -29,18 +29,19 @@ export async function commitBotUpdate(
     });
   }
 
+  const { instructions, ...data } = options.data;
   const committed = await options.prisma.$transaction(async (tx) => {
-    if (typeof options.data.instructions === "string") {
+    if (typeof instructions === "string") {
       await tx.$queryRaw`SELECT id FROM threads WHERE id = ${options.threadId} FOR UPDATE`;
       await writeBotInstructions(tx, {
         botId: options.botId,
-        instructions: options.data.instructions,
+        instructions,
         reason: "Manual edit",
       });
     }
     const updated = await tx.bot.update({
       where: { id: options.botId },
-      data: options.data,
+      data,
       select: { id: true, name: true, title: true, description: true },
     });
     const event = await appendEvent(tx, {

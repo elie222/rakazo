@@ -184,7 +184,7 @@ export function AskCard({
           <Button type="submit" disabled={submitting}>
             <Trans>Apply</Trans>
           </Button>
-          <Button variant="outline" onClick={() => setEditing(false)}>
+          <Button type="button" variant="outline" onClick={() => setEditing(false)}>
             <Trans>Cancel</Trans>
           </Button>
         </form>
