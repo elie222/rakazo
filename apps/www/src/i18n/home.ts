@@ -62,6 +62,7 @@ export type HomeCopy = {
     selfHostItems: string[];
     starOnGithub: string;
     readTheDocs: string;
+    openClawAlternative: string;
     cloudTitle: string;
     cloudBadge: string;
     cloudMeta: string;
@@ -368,6 +369,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "Star on GitHub",
       readTheDocs: "Read the docs",
+      openClawAlternative: "OpenClaw alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Coming soon",
       cloudMeta: "Bring your own keys, we run the computers",
@@ -532,6 +534,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
+      openClawAlternative: "OpenClaw-Alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Demnächst",
       cloudMeta: "Deine Keys, wir betreiben die Computer",
@@ -695,6 +698,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "GitHub에서 Star",
       readTheDocs: "문서 읽기",
+      openClawAlternative: "OpenClaw 대안",
       cloudTitle: "Cloud",
       cloudBadge: "곧 출시",
       cloudMeta: "키는 당신 것, 컴퓨터는 우리가 운영",
@@ -858,6 +862,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "在 GitHub 上点星",
       readTheDocs: "阅读文档",
+      openClawAlternative: "OpenClaw 替代方案",
       cloudTitle: "云端",
       cloudBadge: "即将推出",
       cloudMeta: "密钥归你，电脑由我们运行",
