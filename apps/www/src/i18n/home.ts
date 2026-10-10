@@ -118,6 +118,7 @@ export type HomeCopy = {
       company: string;
       blog: string;
       iosApp: string;
+      androidApp: string;
     };
   };
 };
@@ -435,6 +436,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         company: "Company",
         blog: "Blog",
         iosApp: "iPhone app",
+        androidApp: "Android app",
       },
     },
   },
@@ -600,6 +602,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         company: "Unternehmen",
         blog: "Blog",
         iosApp: "iPhone-App",
+        androidApp: "Android-App",
       },
     },
   },
@@ -764,6 +767,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         company: "회사",
         blog: "블로그",
         iosApp: "iPhone 앱",
+        androidApp: "Android 앱",
       },
     },
   },
@@ -928,6 +932,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         company: "公司",
         blog: "博客",
         iosApp: "iPhone 应用",
+        androidApp: "Android 应用",
       },
     },
   },
