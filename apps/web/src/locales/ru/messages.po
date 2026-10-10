@@ -1009,6 +1009,7 @@ msgstr "Закрыть настройки модели"
 msgid "Close navigation"
 msgstr "Закрыть навигацию"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "Закрыть панель"
@@ -1549,10 +1550,6 @@ msgstr "Не удалось удалить"
 msgid "Could not remove connector"
 msgstr "Не удалось удалить коннектор"
 
-#: src/pages/GroupPanel.tsx
-msgid "Could not remove group"
-msgstr "Не удалось удалить группу"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "Не удалось удалить правило"
@@ -1904,7 +1901,6 @@ msgid "deleted"
 msgstr "удалено"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/GroupPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Удаление…"

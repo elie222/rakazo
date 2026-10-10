@@ -2,8 +2,9 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { type Bot, GROUP_MEMBER_MAX, GROUP_MEMBER_MIN, type Group } from "@rakazo/contracts";
 import { BotAvatar, Button, Input } from "@rakazo/ui-web";
 import { Check, X } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { errorText } from "../lib/user-error";
+import { DeleteItemDialog } from "./shell/dialogs";
 
 function validSelection(name: string, selected: readonly string[]) {
   return (
@@ -153,44 +154,71 @@ export function GroupSettings({
   bots,
   onSave,
   onRemove,
+  onClose,
+  covered = false,
 }: {
   group: Group;
   bots: Bot[];
   onSave: (input: { name?: string; botIds?: string[] }) => Promise<void>;
   onRemove: () => Promise<void>;
+  onClose: () => void;
+  /** A full-screen overlay is on top, so Escape belongs to it. */
+  covered?: boolean;
 }) {
   const { t } = useLingui();
   const nameId = useId();
   const [name, setName] = useState(group.name);
   const [selected, setSelected] = useState(group.members.map((member) => member.botId));
-  const [pending, setPending] = useState<"save" | "remove" | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(false);
 
-  async function mutate(kind: "save" | "remove", action: () => Promise<void>) {
-    if (pending) return;
-    setPending(kind);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // Closing while a save is in flight would let its completion close the panel
+  // again after a reopen. While the delete confirmation or an overlay is open,
+  // Escape belongs to it.
+  useEffect(() => {
+    if (saving || confirmingDelete || covered) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !event.isComposing) {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [saving, confirmingDelete, covered, onClose]);
+
+  async function save() {
+    if (saving) return;
+    setSaving(true);
     setError(null);
     try {
-      await action();
+      await onSave({
+        name: name.trim() !== group.name ? name.trim() : undefined,
+        botIds: sameMembers(
+          selected,
+          group.members.map((member) => member.botId),
+        )
+          ? undefined
+          : selected,
+      });
     } catch (cause) {
-      setError(
-        errorText(cause, kind === "save" ? t`Could not save group` : t`Could not remove group`),
-      );
+      setError(errorText(cause, t`Could not save group`));
+      return;
     } finally {
-      setPending(null);
+      setSaving(false);
     }
-  }
-
-  function save() {
-    return onSave({
-      name: name.trim() !== group.name ? name.trim() : undefined,
-      botIds: sameMembers(
-        selected,
-        group.members.map((member) => member.botId),
-      )
-        ? undefined
-        : selected,
-    });
+    // A save that finishes after the user switched chats must not close
+    // whatever panel is open there.
+    if (mounted.current) onClose();
   }
 
   return (
@@ -199,6 +227,15 @@ export function GroupSettings({
         <span className="text-[13.5px] text-muted-foreground">
           <Trans>Group settings</Trans>
         </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t`Close panel`}
+          disabled={saving}
+          onClick={onClose}
+        >
+          <X size={16} strokeWidth={1.8} />
+        </Button>
       </div>
       {error ? (
         <p role="alert" className="mb-3 text-[13px] text-destructive">
@@ -227,19 +264,27 @@ export function GroupSettings({
       />
       <Button
         className="mt-5 w-full"
-        disabled={pending !== null || !validSelection(name, selected)}
-        onClick={() => void mutate("save", save)}
+        disabled={saving || !validSelection(name, selected)}
+        onClick={() => void save()}
       >
-        {pending === "save" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
+        {saving ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
       </Button>
       <Button
         variant="destructive"
         className="mt-4 w-full"
-        disabled={pending !== null}
-        onClick={() => void mutate("remove", onRemove)}
+        disabled={saving}
+        onClick={() => setConfirmingDelete(true)}
       >
-        {pending === "remove" ? <Trans>Deleting…</Trans> : <Trans>Delete group</Trans>}
+        <Trans>Delete group</Trans>
       </Button>
+      {confirmingDelete ? (
+        <DeleteItemDialog
+          item={group}
+          noun="group"
+          onCancel={() => setConfirmingDelete(false)}
+          onConfirm={onRemove}
+        />
+      ) : null}
     </div>
   );
 }

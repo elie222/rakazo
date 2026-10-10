@@ -1009,6 +1009,7 @@ msgstr "AI 모델 설정 닫기"
 msgid "Close navigation"
 msgstr "메뉴 닫기"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "패널 닫기"
@@ -1549,10 +1550,6 @@ msgstr "삭제하지 못했습니다."
 msgid "Could not remove connector"
 msgstr "도구 연결을 삭제하지 못했습니다."
 
-#: src/pages/GroupPanel.tsx
-msgid "Could not remove group"
-msgstr "그룹을 삭제하지 못했습니다."
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "확인 규칙을 삭제하지 못했습니다."
@@ -1904,7 +1901,6 @@ msgid "deleted"
 msgstr "삭제됨"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/GroupPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "삭제 중…"

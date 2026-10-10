@@ -3870,8 +3870,7 @@ export function ShellPage() {
                   setGroups((current) =>
                     current.map((group) => (group.id === updated.id ? updated : group)),
                   );
-                  setPanel(null);
-                  await Promise.all([refreshBots(), refreshGroupThread(activeGroup.id)]).catch(
+                  void Promise.all([refreshBots(), refreshGroupThread(activeGroup.id)]).catch(
                     () => undefined,
                   );
                 }}
@@ -3883,6 +3882,8 @@ export function ShellPage() {
                   navigate(firstThreadRoute(bots, remainingGroups), { replace: true });
                   await refreshBots().catch(() => undefined);
                 }}
+                onClose={() => setPanel(null)}
+                covered={computerOpen}
               />
             ) : null}
             {panel === "create" ? (

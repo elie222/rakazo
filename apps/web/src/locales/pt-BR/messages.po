@@ -1009,6 +1009,7 @@ msgstr "Fechar configurações do modelo"
 msgid "Close navigation"
 msgstr "Fechar navegação"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "Fechar painel"
@@ -1549,10 +1550,6 @@ msgstr "Não foi possível remover."
 msgid "Could not remove connector"
 msgstr "Não foi possível remover o conector"
 
-#: src/pages/GroupPanel.tsx
-msgid "Could not remove group"
-msgstr "Não foi possível remover o grupo"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "Não foi possível remover."
@@ -1904,7 +1901,6 @@ msgid "deleted"
 msgstr "excluído"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/GroupPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Excluindo…"

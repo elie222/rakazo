@@ -1009,6 +1009,7 @@ msgstr "मॉडल सेटिंग्स बंद करें"
 msgid "Close navigation"
 msgstr "नेविगेशन बंद करें"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "पैनल बंद करें"
@@ -1549,10 +1550,6 @@ msgstr "हटाया नहीं जा सका"
 msgid "Could not remove connector"
 msgstr "कनेक्टर हटाया नहीं जा सका"
 
-#: src/pages/GroupPanel.tsx
-msgid "Could not remove group"
-msgstr "समूह हटाया नहीं जा सका"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "नियम हटाया नहीं जा सका"
@@ -1904,7 +1901,6 @@ msgid "deleted"
 msgstr "डिलीट किया गया"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/GroupPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "डिलीट किया जा रहा है…"

@@ -1009,6 +1009,7 @@ msgstr "关闭模型设置"
 msgid "Close navigation"
 msgstr "关闭导航"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "关闭面板"
@@ -1549,10 +1550,6 @@ msgstr "无法移除"
 msgid "Could not remove connector"
 msgstr "无法移除连接器"
 
-#: src/pages/GroupPanel.tsx
-msgid "Could not remove group"
-msgstr "无法移除群组"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "无法移除规则"
@@ -1904,7 +1901,6 @@ msgid "deleted"
 msgstr "已删除"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/GroupPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "正在删除…"

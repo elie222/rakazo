@@ -1009,6 +1009,7 @@ msgstr "Model ayarlarını kapat"
 msgid "Close navigation"
 msgstr "Gezinmeyi kapat"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/Shell.tsx
 msgid "Close panel"
 msgstr "Paneli kapat"
@@ -1549,10 +1550,6 @@ msgstr "Kaldırılamadı"
 msgid "Could not remove connector"
 msgstr "Bağlayıcı kaldırılamadı"
 
-#: src/pages/GroupPanel.tsx
-msgid "Could not remove group"
-msgstr "Grup kaldırılamadı"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
 msgstr "Kural kaldırılamadı"
@@ -1904,7 +1901,6 @@ msgid "deleted"
 msgstr "silindi"
 
 #: src/pages/Artifacts.tsx
-#: src/pages/GroupPanel.tsx
 #: src/pages/shell/dialogs.tsx
 msgid "Deleting…"
 msgstr "Siliniyor…"
