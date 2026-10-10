@@ -1,3 +1,5 @@
+import type { ThreadScrollState } from "@rakazo/core";
+import { reconcileThreadScrollState } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { ThreadScrollBehavior } from "./thread-scroll.js";
 
@@ -59,5 +61,47 @@ describe("mobile thread initial scroll", () => {
     expect(behavior.state()).toEqual({ detached: true, unread: true });
     expect(behavior.jumpToLatest()).toBe("smooth");
     expect(behavior.state()).toEqual({ detached: false, unread: false });
+  });
+
+  it("skips state commits during a 2 s detached drag of 120 scroll events", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout();
+    behavior.onContentChanged(false, "m1");
+    const initial = behavior.onUserScroll(120);
+    let before = initial;
+    let after = initial;
+    let beforeCommits = 0;
+    let afterCommits = 0;
+    const publish = (next: ThreadScrollState) => {
+      if (!Object.is(before, next)) beforeCommits += 1;
+      before = next;
+      const reconciled = reconcileThreadScrollState(after, next);
+      if (!Object.is(after, reconciled)) afterCommits += 1;
+      after = reconciled;
+      expect(after).toEqual(before);
+    };
+
+    // 60 events/s for 2 s, with every offset above the detach threshold.
+    for (let event = 0; event < 120; event += 1) {
+      publish(behavior.onUserScroll(120 + event));
+    }
+    expect({ beforeCommits, afterCommits }).toEqual({ beforeCommits: 120, afterCommits: 0 });
+    expect(after).toBe(initial);
+
+    // Layout and unchanged content must preserve the same visible state too.
+    expect(behavior.onLayout()).toBe(null);
+    expect(behavior.onContentChanged(false, "m1")).toBe(null);
+    publish(behavior.state());
+    expect(afterCommits).toBe(0);
+
+    // Unread arrival and reattachment still publish their visible transitions.
+    expect(behavior.onContentChanged(false, "m2")).toBe(null);
+    publish(behavior.state());
+    expect(afterCommits).toBe(1);
+    expect(after).toEqual({ detached: true, unread: true });
+    publish(behavior.onUserScroll(80));
+    expect(afterCommits).toBe(2);
+    expect(after).toEqual({ detached: false, unread: false });
   });
 });

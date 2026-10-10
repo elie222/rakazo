@@ -29,7 +29,7 @@ export function createKeyedPromiseCache<T>(load: (key: string) => Promise<T>) {
       const existing = entries.get(key);
       if (existing) return existing;
       const next = load(key).catch((error: unknown) => {
-        entries.delete(key);
+        if (entries.get(key) === next) entries.delete(key);
         throw error;
       });
       entries.set(key, next);
@@ -38,6 +38,9 @@ export function createKeyedPromiseCache<T>(load: (key: string) => Promise<T>) {
     /** Drop a key; with `entry`, only when that promise is still the one stored (single-flight retries). */
     forget(key: string, entry?: Promise<T>): void {
       if (entry === undefined || entries.get(key) === entry) entries.delete(key);
+    },
+    clear(): void {
+      entries.clear();
     },
     size(): number {
       return entries.size;

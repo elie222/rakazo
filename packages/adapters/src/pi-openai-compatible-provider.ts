@@ -26,6 +26,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
+import { guardToolCallNames } from "./pi-tool-call-guard.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 export { OPENAI_COMPATIBLE_PROVIDER_ID };
@@ -297,7 +298,7 @@ export function openAiCompatibleCatalogProvider(): Provider {
 
 export function registerOpenAiCompatibleCatalog(models: MutableModels): MutableModels {
   models.setProvider(openAiCompatibleCatalogProvider());
-  return models;
+  return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
 }
 
 /** Register a concrete model + base URL for an agent run. */
@@ -327,7 +328,7 @@ export function registerOpenAiCompatibleRuntime(
       ),
     ]),
   );
-  return models;
+  return guardToolCallNames(models, OPENAI_COMPATIBLE_PROVIDER_ID);
 }
 
 export type OpenAiCompatibleConnectInput = {

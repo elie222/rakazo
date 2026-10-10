@@ -415,3 +415,76 @@ describe("archiveGroup", () => {
     expect(groupUpdate).not.toHaveBeenCalled();
   });
 });
+
+describe("createGroup", () => {
+  it("keeps the caller's member order instead of the insert order", async () => {
+    const createMany = vi.fn();
+    const groupRow = {
+      id: "group-1",
+      spaceId: "workspace-1",
+      userId: "user-1",
+      name: "Support crew",
+      pinned: false,
+      sectionId: null,
+      archivedAt: null,
+      createdAt: new Date("2026-10-10T00:00:00.000Z"),
+      updatedAt: new Date("2026-10-10T00:00:00.000Z"),
+      thread: { id: "thread-1", unread: false, messages: [] },
+      members: [
+        { bot: { id: "lead", name: "Lead", color: "#111", runs: [] } },
+        { bot: { id: "build", name: "Build", color: "#222", runs: [] } },
+      ],
+    };
+    const tx = {
+      $queryRaw: vi.fn(),
+      spaceMember: {
+        findUnique: vi.fn(async () => ({
+          organizationId: "org-1",
+          space: { deletingAt: null },
+        })),
+      },
+      chatGroup: {
+        create: vi.fn(async () => ({ id: "group-1" })),
+        findFirstOrThrow: vi.fn(async () => groupRow),
+      },
+      chatGroupMember: { createMany },
+      thread: { create: vi.fn() },
+    };
+    // The bots come back in a different order than the caller asked for, so the recorded
+    // order has to come from the input, not from the lookup.
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      bot: {
+        findMany: vi.fn(async () => [
+          { id: "build", name: "Build", color: "#222" },
+          { id: "lead", name: "Lead", color: "#111" },
+        ]),
+      },
+    } as unknown as PrismaClient;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@example.com",
+      isDeploymentOwner: false,
+    };
+
+    const group = await createGroupRepos(prisma).createGroup(actor, {
+      name: "Support crew",
+      botIds: ["lead", "build"],
+    });
+
+    const rows = createMany.mock.calls[0]![0].data as Array<{ botId: string; createdAt: Date }>;
+    expect(rows.map((row) => row.botId)).toEqual(["lead", "build"]);
+    expect(rows[0]!.createdAt.getTime()).toBeLessThan(rows[1]!.createdAt.getTime());
+    expect(tx.chatGroup.findFirstOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          members: expect.objectContaining({
+            orderBy: [{ createdAt: "asc" }, { botId: "asc" }],
+          }),
+        }),
+      }),
+    );
+    expect(group.members.map((member) => member.botId)).toEqual(["lead", "build"]);
+  });
+});

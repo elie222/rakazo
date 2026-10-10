@@ -1,5 +1,6 @@
 import type { AvatarStyle } from "@rakazo/contracts";
 import * as SecureStore from "expo-secure-store";
+import { invalidateArtifactCacheSession } from "./artifact-cache-session";
 import { clearAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import { stopLiveNotifications } from "./live-notifications";
 
@@ -21,9 +22,11 @@ function enqueueScopeWrite(task: () => Promise<void>): Promise<void> {
   return next;
 }
 
-function invalidateIntegrationsScope(): Promise<void> {
+function invalidateSessionCaches(): Promise<void> {
   scopeInvalidated = true;
+  const clearingArtifacts = invalidateArtifactCacheSession();
   return enqueueScopeWrite(async () => {
+    await clearingArtifacts;
     try {
       await SecureStore.deleteItemAsync(INTEGRATIONS_SCOPE_KEY);
     } catch {
@@ -110,7 +113,7 @@ export async function loadSessionToken() {
 
 export async function saveSessionToken(token: string) {
   sessionGeneration += 1;
-  const clearingScope = invalidateIntegrationsScope();
+  const clearingScope = invalidateSessionCaches();
   await SecureStore.setItemAsync(SESSION_KEY, token);
   await clearingScope;
   sessionInvalidated = false;
@@ -120,7 +123,7 @@ export async function saveSessionToken(token: string) {
 /** Clears the session. Returns false only when SecureStore could neither delete nor overwrite. */
 export async function clearSessionToken(): Promise<boolean> {
   sessionGeneration += 1;
-  const clearingScope = invalidateIntegrationsScope();
+  const clearingScope = invalidateSessionCaches();
   await stopLiveNotifications(true).catch(() => undefined);
   const tokenCleared = await clearStoredSessionToken();
   await clearingScope;
@@ -158,7 +161,7 @@ async function clearStoredSessionToken(): Promise<boolean> {
 /** Restores the current-server session in memory even when persistence is unavailable. */
 export async function restoreSessionToken(token: string) {
   sessionGeneration += 1;
-  const clearingScope = invalidateIntegrationsScope();
+  const clearingScope = invalidateSessionCaches();
   if (!token) {
     await clearingScope;
     sessionInvalidated = false;

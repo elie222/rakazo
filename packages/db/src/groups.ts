@@ -124,6 +124,22 @@ async function assertOwnedBots(
   });
 }
 
+/**
+ * Members enter a group in the order the caller lists them, and a group send without a
+ * mention wakes the first one. `createMany` stamps every row with the transaction's
+ * timestamp, so ties would come back in whatever order Postgres happens to return them:
+ * one millisecond per member keeps the caller's order authoritative.
+ */
+function memberRowsInOrder(groupId: string, botIds: string[], base = Date.now()) {
+  return botIds.map((botId, index) => ({
+    groupId,
+    botId,
+    createdAt: new Date(base + index),
+  }));
+}
+
+const groupMemberOrder = [{ createdAt: "asc" as const }, { botId: "asc" as const }];
+
 const groupInclude = {
   thread: {
     include: {
@@ -142,7 +158,7 @@ const groupInclude = {
         },
       },
     },
-    orderBy: { createdAt: "asc" as const },
+    orderBy: groupMemberOrder,
   },
 } as const;
 
@@ -160,7 +176,7 @@ const groupTargetInclude = {
         },
       },
     },
-    orderBy: { createdAt: "asc" as const },
+    orderBy: groupMemberOrder,
   },
 } as const;
 
@@ -339,7 +355,10 @@ export function createGroupRepos(prisma: PrismaClient) {
           },
         });
         await tx.chatGroupMember.createMany({
-          data: members.map((member) => ({ groupId: group.id, botId: member.botId })),
+          data: memberRowsInOrder(
+            group.id,
+            members.map((member) => member.botId),
+          ),
         });
         await tx.thread.create({
           data: {
@@ -421,7 +440,10 @@ export function createGroupRepos(prisma: PrismaClient) {
         if (members) {
           await tx.chatGroupMember.deleteMany({ where: { groupId: input.groupId } });
           await tx.chatGroupMember.createMany({
-            data: members.map((member) => ({ groupId: input.groupId, botId: member.botId })),
+            data: memberRowsInOrder(
+              input.groupId,
+              members.map((member) => member.botId),
+            ),
           });
         }
         await tx.chatGroup.update({
@@ -518,7 +540,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           where: { id: groupId },
           select: {
             artifacts: { select: { storageKey: true } },
-            members: { orderBy: { createdAt: "asc" }, take: 1, select: { botId: true } },
+            members: { orderBy: groupMemberOrder, take: 1, select: { botId: true } },
           },
         });
         const contextBotId = group?.members[0]?.botId;
