@@ -17,7 +17,7 @@ import {
 } from "@rakazo/db";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
 
-export type TicketToolDeps = {
+type TicketToolDeps = {
   prisma: PrismaClient;
   ticketBoardEnabled?: boolean;
   onTicketChange?: TicketChangeNotifier;
@@ -124,7 +124,6 @@ export async function listBoardTickets(
   };
 }
 
-/** Read one ticket with its comments, by database id or by reference such as `RAK-42`. */
 export async function getTicket(deps: TicketToolDeps, input: { spaceId: string; ref: string }) {
   if (!deps.ticketBoardEnabled) return { error: "Board unavailable." };
   const ref = input.ref.trim();
@@ -266,6 +265,7 @@ export async function commentTicket(
   if (!ticket) return { error: "Ticket not found." };
   const row = await deps.prisma.$transaction(async (tx) => {
     const comment = await tx.ticketComment.create({
+      include: { authorBot: { select: { name: true } }, authorUser: { select: { name: true } } },
       data: {
         ticketId: ticket.id,
         spaceId: input.spaceId,

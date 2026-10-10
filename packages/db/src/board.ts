@@ -86,7 +86,7 @@ export function coerceTicketStatus(value: string): TicketStatus {
 }
 
 /** Legacy free-text priorities fall back to `normal` so old rows keep rendering. */
-export function coerceTicketPriority(value: string | null | undefined): TicketPriority {
+function coerceTicketPriority(value: string | null | undefined): TicketPriority {
   const parsed = TicketPrioritySchema.safeParse(typeof value === "string" ? value.trim() : value);
   return parsed.success ? parsed.data : "normal";
 }
@@ -115,20 +115,27 @@ export async function listTicketComments(
   prisma: Pick<PrismaClient, "ticketComment">,
   spaceId: string,
   ticketId: string,
-): Promise<TicketCommentRow[]> {
+) {
   return prisma.ticketComment.findMany({
     where: { ticketId, spaceId },
+    include: { authorBot: { select: { name: true } }, authorUser: { select: { name: true } } },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
 }
 
-export function toTicketCommentDto(row: TicketCommentRow): TicketComment {
+export function toTicketCommentDto(
+  row: TicketCommentRow & {
+    authorBot: { name: string } | null;
+    authorUser: { name: string } | null;
+  },
+): TicketComment {
   return {
     id: row.id,
     ticketId: row.ticketId,
     body: row.body,
     authorBotId: row.authorBotId,
     authorUserId: row.authorUserId,
+    authorName: row.authorBot?.name ?? row.authorUser?.name ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

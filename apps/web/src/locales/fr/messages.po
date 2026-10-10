@@ -3096,6 +3096,10 @@ msgstr "Aucune compétence pour le moment"
 msgid "No team conversations yet."
 msgstr "Aucune conversation d'équipe pour le moment."
 
+#: src/pages/Board.tsx
+msgid "No tickets yet"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "No tools available."
 msgstr "Aucun outil disponible."

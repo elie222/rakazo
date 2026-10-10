@@ -164,6 +164,8 @@ function mutationDeps(ticketBoardEnabled = true) {
         id: "comment-1",
         createdAt: NOW,
         updatedAt: NOW,
+        authorBot: { name: "Planner" },
+        authorUser: null,
         ...data,
       })),
     },
@@ -238,8 +240,15 @@ describe("ticket mutations", () => {
   });
   it("comments without waking the owner", async () => {
     const s = mutationDeps();
-    await commentTicket(s.deps, { spaceId: "ws", botId: "bot-1", id: "t1", body: " Ready " });
+    const result = await commentTicket(s.deps, {
+      spaceId: "ws",
+      botId: "bot-1",
+      id: "t1",
+      body: " Ready ",
+    });
+    expect(result).toHaveProperty("comment.authorName", "Planner");
     expect(s.tx.ticketComment.create).toHaveBeenCalledWith({
+      include: { authorBot: { select: { name: true } }, authorUser: { select: { name: true } } },
       data: expect.objectContaining({ body: "Ready", ticketId: "t1" }),
     });
     expect(s.changes).toHaveBeenCalledWith(expect.objectContaining({ wakeAssignee: false }));

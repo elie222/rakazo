@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, createNamedBot, signup } from "./helpers";
 
 test("board creates a ticket and opens it", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   const stamp = Date.now();
   const title = "Ship the board";
   const description = "Track the kanban launch.";
@@ -13,6 +14,20 @@ test("board creates a ticket and opens it", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: "Board", exact: true }).click();
   await expect(page).toHaveURL(/\/app\/board$/);
   await expect(page.getByTestId("board-columns")).toBeVisible();
+  await expect(page.getByText("No tickets yet", { exact: true })).toBeVisible();
+  const board = page.getByTestId("board-columns");
+  expect(await board.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  await expect(page.getByRole("heading", { name: "Won't do", exact: true })).toBeInViewport();
+  await page.setViewportSize({ width: 800, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  expect(
+    await board.evaluate(
+      (node) => node.parentElement!.scrollWidth > node.parentElement!.clientWidth,
+    ),
+  ).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await captureScreenshot(page, testInfo, "board-kanban");
 
   await page.getByRole("button", { name: "New ticket", exact: true }).click();

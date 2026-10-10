@@ -7,7 +7,6 @@ export interface BoardEvents {
   follow(spaceId: string, signal?: AbortSignal): AsyncGenerator<BoardEvent>;
 }
 
-/** Realtime topic that carries the board changes of one space. */
 export function boardEventTopic(spaceId: string): string {
   return `board:${spaceId}`;
 }

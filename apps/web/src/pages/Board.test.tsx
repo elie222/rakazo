@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   },
 }));
 vi.mock("../lib/rpc", () => ({ rpc: api }));
+vi.mock("../lib/relative-time", () => ({ formatRelativeTime: () => "5m ago" }));
 vi.mock("./WindowChrome", () => ({ WindowChrome: () => null }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -109,7 +110,15 @@ it("renders status columns and opens a ticket with comments", async () => {
   api.tickets.list.mockResolvedValue({
     tickets: [ticket("Ship", "ticket-1", "todo", "RAK-1", "bot-1", "Details")],
   });
-  api.tickets.comments.mockResolvedValue([{ id: "comment-1", body: "Ready" }]);
+  api.tickets.comments.mockResolvedValue([
+    {
+      id: "comment-1",
+      body: "Ready",
+      authorName: "Board tester",
+      createdAt: "2026-10-10T10:00:00Z",
+    },
+    { id: "comment-2", body: "Reviewed", authorName: "Helper", createdAt: "2026-10-10T10:01:00Z" },
+  ]);
   const page = await renderBoard();
   try {
     expect(
@@ -126,6 +135,23 @@ it("renders status columns and opens a ticket with comments", async () => {
     expect(page.container.querySelector('[data-testid="ticket-comments"]')?.textContent).toContain(
       "Ready",
     );
+    const comments = page.container.querySelector('[data-testid="ticket-comments"]')!;
+    expect(comments.textContent).toContain("Board tester");
+    expect(comments.textContent).toContain("Helper");
+    expect(Array.from(comments.querySelectorAll("time")).map((node) => node.textContent)).toEqual([
+      "5m ago",
+      "5m ago",
+    ]);
+    expect(
+      Array.from(page.container.querySelectorAll("select")).every(
+        (node) => node.className === "w-full",
+      ),
+    ).toBe(true);
+    const submitButtons = page.container.querySelectorAll('button[type="submit"]');
+    expect(Array.from(submitButtons).map((node) => node.parentElement?.className)).toEqual([
+      "flex justify-end",
+      "flex justify-end",
+    ]);
     expect(api.tickets.comments).toHaveBeenCalledWith({ ticketId: "ticket-1" });
   } finally {
     await page.cleanup();
@@ -139,6 +165,7 @@ it("creates a ticket without a status picker", async () => {
   api.tickets.create.mockResolvedValue({});
   const page = await renderBoard();
   try {
+    expect(page.container.textContent).toContain("No tickets yet");
     await act(async () =>
       Array.from(page.container.querySelectorAll("button"))
         .find((button) => button.textContent === "New ticket")!

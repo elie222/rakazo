@@ -58,7 +58,6 @@ export function userVisibleMessages<T extends PresentableMessage>(
 
   return messages.filter((message) => {
     if (message.runId && backgroundRunIds.has(message.runId)) {
-      // Background work stays out of the transcript except existing user-input cards.
       return message.blocks.some(isBackgroundInputBlock);
     }
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;

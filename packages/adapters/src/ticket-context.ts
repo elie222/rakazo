@@ -7,7 +7,7 @@ const MAX_TICKET_CONTEXT_BYTES = 4 * 1024;
 /** Cheap pre-check so runs without a ref-like token never touch the database. */
 const TICKET_REF_HINT = /\b[A-Za-z][A-Za-z0-9]*-[1-9][0-9]*\b/;
 
-export type TicketContextEntry = {
+type TicketContextEntry = {
   ref: string;
   title: string;
   status: string;
@@ -15,12 +15,6 @@ export type TicketContextEntry = {
   lastComment: string | null;
 };
 
-/**
- * Extract ticket references such as `RAK-42` from free text. Only the board's
- * prefix matches, matching is case-insensitive, duplicates collapse to their
- * first occurrence, and a bare prefix or `RAK-0` never matches. A reference must
- * not be preceded by an alphanumeric character, so `XRAK-1` does not match `RAK`.
- */
 export function extractTicketRefs(text: string, prefix: string): string[] {
   const normalizedPrefix = prefix.trim().toUpperCase();
   if (!normalizedPrefix) return [];
@@ -39,7 +33,6 @@ export function extractTicketRefs(text: string, prefix: string): string[] {
   return refs;
 }
 
-/** Render a compact, untrusted-data context block for referenced tickets. */
 export function renderTicketContext(
   entries: TicketContextEntry[],
   maxBytes = MAX_TICKET_CONTEXT_BYTES,
@@ -67,7 +60,6 @@ export function renderTicketContext(
     if (lineBytes > remainingBytes) {
       const truncated = truncateUtf8(line, remainingBytes);
       if (truncated) lines.push(truncated);
-      remainingBytes = 0;
       break;
     }
     lines.push(line);
@@ -77,11 +69,6 @@ export function renderTicketContext(
   return `${frame}${lines.join("")}\n${closing}`;
 }
 
-/**
- * Resolve references such as `RAK-42` in a run's text into a short ticket block
- * for the prompt. Returns undefined when no reference resolves, and caps the
- * block at `maxBytes`.
- */
 export async function loadAgentTicketContext(
   deps: { prisma: PrismaClient; ticketBoardEnabled?: boolean },
   input: { spaceId: string; text: string },

@@ -22,6 +22,7 @@ import {
 import { ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
+import { formatRelativeTime } from "../lib/relative-time";
 import { rpc } from "../lib/rpc";
 import { useTicketPriorityLabels } from "../lib/ticket-priority";
 import { useTicketStatusLabels } from "../lib/ticket-status";
@@ -102,7 +103,7 @@ export function BoardPage() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
+    <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <WindowChrome />
       <header className="flex items-center gap-3 border-b px-4 py-3">
         <Button variant="ghost" size="icon" render={<Link to="/app" />} aria-label={t`Back`}>
@@ -120,29 +121,36 @@ export function BoardPage() {
           {error}
         </p>
       ) : null}
-      <main data-testid="board-columns" className="flex min-h-0 flex-1 gap-3 overflow-auto p-4">
-        {TICKET_STATUSES.map((status) => (
-          <section key={status} className="w-64 shrink-0 space-y-2">
-            <h2 className="px-1 text-sm font-medium">{statuses[status]}</h2>
-            {tickets
-              .filter((ticket) => ticket.status === status)
-              .map((ticket) => (
-                <Button
-                  key={ticket.id}
-                  data-testid={`board-card-${ticket.id}`}
-                  variant="outline"
-                  className="h-auto w-full flex-col items-start gap-1 whitespace-normal p-3 text-left font-normal"
-                  onClick={() => setSelected(ticket)}
-                >
-                  <span className="text-xs text-muted-foreground">{ticket.ref}</span>
-                  <span>{ticket.title}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name}
-                  </span>
-                </Button>
-              ))}
-          </section>
-        ))}
+      <main className="relative min-h-0 min-w-0 flex-1 overflow-auto p-4">
+        <div data-testid="board-columns" className="flex min-h-full gap-3">
+          {TICKET_STATUSES.map((status) => (
+            <section key={status} className="min-w-40 flex-1 space-y-2">
+              <h2 className="px-1 text-sm font-medium">{statuses[status]}</h2>
+              {tickets
+                .filter((ticket) => ticket.status === status)
+                .map((ticket) => (
+                  <Button
+                    key={ticket.id}
+                    data-testid={`board-card-${ticket.id}`}
+                    variant="outline"
+                    className="h-auto w-full flex-col items-start gap-1 whitespace-normal p-3 text-left font-normal"
+                    onClick={() => setSelected(ticket)}
+                  >
+                    <span className="text-xs text-muted-foreground">{ticket.ref}</span>
+                    <span>{ticket.title}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {bots.find((bot) => bot.id === ticket.assigneeBotId)?.name}
+                    </span>
+                  </Button>
+                ))}
+            </section>
+          ))}
+        </div>
+        {tickets.length === 0 && !error ? (
+          <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+            <Trans>No tickets yet</Trans>
+          </p>
+        ) : null}
       </main>
       {selected ? (
         <TicketDialog
@@ -290,6 +298,7 @@ function TicketDialog({
               <Trans>Owner</Trans>
             </span>
             <NativeSelect
+              className="w-full"
               id={`${formId}-owner`}
               value={owner}
               onChange={(event) => setOwner(event.target.value)}
@@ -308,6 +317,7 @@ function TicketDialog({
                 <Trans>Status</Trans>
               </span>
               <NativeSelect
+                className="w-full"
                 id={`${formId}-status`}
                 value={status}
                 onChange={(event) => setStatus(event.target.value as TicketStatus)}
@@ -325,6 +335,7 @@ function TicketDialog({
               <Trans>Priority</Trans>
             </span>
             <NativeSelect
+              className="w-full"
               id={`${formId}-priority`}
               value={priority}
               onChange={(event) => setPriority(event.target.value as TicketPriority)}
@@ -346,6 +357,10 @@ function TicketDialog({
           <div data-testid="ticket-comments" className="space-y-3 border-t pt-3">
             {comments.map((row) => (
               <div key={row.id} className="text-sm">
+                <div className="mb-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span>{row.authorName}</span>
+                  <time dateTime={row.createdAt}>{formatRelativeTime(row.createdAt)}</time>
+                </div>
                 <ChatMarkdown>{row.body}</ChatMarkdown>
               </div>
             ))}
@@ -362,9 +377,11 @@ function TicketDialog({
                 onChange={(event) => setBody(event.target.value)}
                 maxLength={TICKET_COMMENT_MAX_LENGTH}
               />
-              <Button type="submit" disabled={busy || !body.trim()}>
-                <Trans>Comment</Trans>
-              </Button>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={busy || !body.trim()}>
+                  <Trans>Comment</Trans>
+                </Button>
+              </div>
             </form>
           </div>
         ) : null}

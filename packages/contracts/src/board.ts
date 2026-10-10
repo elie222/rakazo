@@ -30,12 +30,10 @@ const TicketPrefixSchema = z
     "Prefix must start with a letter and contain only letters and digits",
   );
 
-/** Render a human-readable ticket reference such as `RAK-42`. */
 export function ticketRef(prefix: string, number: number): string {
   return `${prefix}-${number}`;
 }
 
-/** Parse `RAK-42` (case-insensitive prefix) into its parts, or `null` when malformed. */
 export function parseTicketRef(
   value: string,
   expectedPrefix?: string,
@@ -75,6 +73,7 @@ export const TicketCommentSchema = z.object({
   body: z.string(),
   authorBotId: Id.nullable(),
   authorUserId: Id.nullable(),
+  authorName: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -151,10 +150,6 @@ export const CommentTicketInput = z.object({
 });
 export type CommentTicketInput = z.infer<typeof CommentTicketInput>;
 
-/**
- * A lightweight "something on this board changed" signal. Clients refetch the
- * list on every frame; no diffing and no persisted cursor are needed.
- */
 export const BoardEventSchema = z.object({
   spaceId: Id,
   boardId: Id.optional(),

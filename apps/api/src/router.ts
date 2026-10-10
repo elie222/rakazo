@@ -737,7 +737,6 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   await deps.jobs.enqueue(runContinueJob(run.id));
 }
 
-/** Resolve a ticket's board, defaulting to the space board and rejecting foreign ids. */
 async function resolveSpaceBoard(
   prisma: PrismaClient,
   spaceId: string,
