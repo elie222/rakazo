@@ -26,6 +26,7 @@ import {
   isSecretAskBlock,
   latestAnswerableAskMessageId,
   leaveThreadWindow,
+  normalizeRunError,
   openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
@@ -2086,9 +2087,17 @@ function Thread() {
         <Text style={{ color: tokens.mutedForeground, marginTop: headerHeight + 28 }}>{error}</Text>
       ) : null}
       {runError ? (
-        <Text style={{ color: tokens.destructive, marginTop: error ? 12 : headerHeight + 28 }}>
-          {runError}
-        </Text>
+        <View style={{ marginTop: error ? 12 : headerHeight + 28 }}>
+          <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
+            {normalizeRunError(runError).summary}
+          </Text>
+          <NativeActionButton
+            label={t("Details")}
+            prominence="quiet"
+            size="compact"
+            onPress={() => setSelectableText(runError)}
+          />
+        </View>
       ) : null}
       {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
       <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>

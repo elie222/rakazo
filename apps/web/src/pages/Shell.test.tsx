@@ -83,6 +83,18 @@ function rerenderComposer(overrides: Partial<ComponentProps<typeof Composer>>) {
   act(() => root?.render(<Composer {...composerProps} />));
 }
 
+it("shows a readable run error with raw details, while preserving send errors", () => {
+  const runError = '429: {"message":"Too many requests","metadata":{"provider":"OpenRouter"}}';
+  renderComposer(async () => true, { runError, runErrorId: "failed-run" });
+  const error = container?.querySelector('[data-testid="composer-error"]');
+  expect(error?.textContent).toBe("Your OpenRouter is rate limiting requests. Try again shortly.");
+  expect(error?.querySelector("span")?.title).toBe(runError);
+
+  rerenderComposer({ sendError: "Could not send the message." });
+  expect(error?.textContent).toBe("Could not send the message.");
+  expect(error?.querySelector("span")?.hasAttribute("title")).toBe(false);
+});
+
 function pickAttachment() {
   const input = container?.querySelector<HTMLInputElement>('input[type="file"]');
   if (!input) throw new Error("attachment input not found");
