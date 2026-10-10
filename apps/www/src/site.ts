@@ -5,6 +5,7 @@ export const SITE_DESCRIPTION =
 
 export const GITHUB_URL = "https://github.com/elie222/rakazo";
 export const IOS_APP_URL = "https://apps.apple.com/app/rakazo/id6801531099";
+export const ANDROID_APK_URL = "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk";
 export const GITHUB_API_REPO = "https://api.github.com/repos/elie222/rakazo";
 export const DOCS_URL = "https://github.com/elie222/rakazo/blob/main/docs/self-host.md";
 export const SELF_HOST_SECRETS_URL =
