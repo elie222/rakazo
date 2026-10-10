@@ -1,4 +1,5 @@
 import { Button } from "@rakazo/ui-web";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type DemoBot,
@@ -133,28 +134,210 @@ const BOOT_STEPS: Record<number, string> = {
   100: "Handing you the screen",
 };
 
-function ComputerDesktop({ screen, large = false }: { screen: DemoScreen; large?: boolean }) {
+type DeskWindowId = "list" | "app";
+type DeskPoint = { x: number; y: number };
+/** Window positions in percent of the desktop, plus stacking order (last is on top). */
+type Desk = { pos: Record<DeskWindowId, DeskPoint>; order: DeskWindowId[] };
+
+const DEFAULT_DESK: Desk = {
+  pos: { list: { x: 12, y: 8 }, app: { x: 38, y: 22 } },
+  order: ["list", "app"],
+};
+const DESK_SIZE: Record<DeskWindowId, { w: number; h: number }> = {
+  list: { w: 50, h: 64 },
+  app: { w: 48, h: 60 },
+};
+const LIST_ROWS = [62, 48, 70, 54, 66, 44, 58];
+
+function raise(desk: Desk, id: DeskWindowId): Desk {
+  return { ...desk, order: [...desk.order.filter((item) => item !== id), id] };
+}
+
+function ComputerDesktop({
+  screen,
+  desk,
+  text,
+  onDeskChange,
+}: {
+  screen: DemoScreen;
+  desk: Desk;
+  text: DemoTranslator;
+  /** Present only where the user has control; makes windows draggable and the dock clickable. */
+  onDeskChange?: (desk: Desk) => void;
+}) {
+  const deskRef = useRef<HTMLDivElement | null>(null);
+  const live = Boolean(onDeskChange);
+
+  function startDrag(id: DeskWindowId, event: ReactPointerEvent<HTMLDivElement>) {
+    const rect = deskRef.current?.getBoundingClientRect();
+    if (!onDeskChange || !rect || event.button !== 0) {
+      return;
+    }
+    const target = event.currentTarget;
+    target.setPointerCapture(event.pointerId);
+    const origin = desk.pos[id];
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const raised = raise(desk, id);
+    onDeskChange(raised);
+    const size = DESK_SIZE[id];
+    const move = (moveEvent: PointerEvent) => {
+      const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100;
+      const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100;
+      onDeskChange({
+        ...raised,
+        pos: {
+          ...raised.pos,
+          [id]: {
+            x: Math.min(92, Math.max(8 - size.w, x)),
+            y: Math.min(88, Math.max(0, y)),
+          },
+        },
+      });
+    };
+    const stop = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", stop);
+      target.removeEventListener("pointercancel", stop);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", stop);
+    target.addEventListener("pointercancel", stop);
+  }
+
+  function windowStyle(id: DeskWindowId): CSSProperties {
+    const { x, y } = desk.pos[id];
+    return {
+      left: `${x}%`,
+      top: `${y}%`,
+      width: `${DESK_SIZE[id].w}%`,
+      height: `${DESK_SIZE[id].h}%`,
+      zIndex: desk.order.indexOf(id) + 1,
+    };
+  }
+
+  function windowBar(id: DeskWindowId, label?: string) {
+    return (
+      <div
+        className="product-demo__window-bar"
+        onPointerDown={live ? (event) => startDrag(id, event) : undefined}
+      >
+        <span />
+        <span />
+        <span />
+        <div className="product-demo__window-url">{label}</div>
+      </div>
+    );
+  }
+
+  const dock: { id: DeskWindowId; icon: ReactNode; label: string }[] = [
+    {
+      id: "app",
+      label: screen.host,
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="12" cy="12" r="8.5" />
+          <path d="m15.5 8.5-2.2 4.8-4.8 2.2 2.2-4.8z" fill="currentColor" />
+        </svg>
+      ),
+    },
+    {
+      id: "list",
+      label: text("Files"),
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+        </svg>
+      ),
+    },
+  ];
+
   return (
-    <div className={`product-demo__desktop${large ? " is-large" : ""}`}>
-      <div className="product-demo__window">
-        <div className="product-demo__window-bar">
-          <span />
-          <span />
-          <span />
-          <div className="product-demo__window-url">{screen.host}</div>
-        </div>
-        <div className="product-demo__window-body">
-          <div className="product-demo__window-title">{screen.title}</div>
-          {screen.lines.map((line) => (
-            <div key={line}>{line}</div>
-          ))}
-        </div>
+    <div ref={deskRef} className={`product-demo__desktop${live ? " is-live" : ""}`}>
+      {screen.lines.length > 0 ? (
+        <>
+          <div
+            className="product-demo__window product-demo__window--list"
+            style={windowStyle("list")}
+            onPointerDown={live ? () => onDeskChange?.(raise(desk, "list")) : undefined}
+          >
+            {windowBar("list")}
+            <div className="product-demo__window-split">
+              <div className="product-demo__window-side">
+                {LIST_ROWS.slice(0, 5).map((width) => (
+                  <i key={width} style={{ width: `${width}%` }} />
+                ))}
+              </div>
+              <div className="product-demo__window-rows">
+                {LIST_ROWS.map((width) => (
+                  <div key={width}>
+                    <span className="product-demo__window-check">✓</span>
+                    <i style={{ width: `${width}%` }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div
+            className="product-demo__window product-demo__window--app"
+            style={windowStyle("app")}
+            onPointerDown={live ? () => onDeskChange?.(raise(desk, "app")) : undefined}
+          >
+            {windowBar("app", screen.host)}
+            <div className="product-demo__window-body">
+              <div className="product-demo__window-title">{screen.title}</div>
+              {screen.lines.map((line, index) => (
+                <div key={line} className="product-demo__window-line">
+                  <span />
+                  <div>
+                    {line}
+                    <i style={{ width: `${LIST_ROWS[index] ?? 50}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : null}
+      <div className="product-demo__dock">
+        {dock.map((app) =>
+          live ? (
+            <button
+              key={app.id}
+              type="button"
+              className={`product-demo__dock-icon product-demo__dock-icon--${app.id}`}
+              aria-label={app.label}
+              onClick={() => onDeskChange?.(raise(desk, app.id))}
+            >
+              {app.icon}
+            </button>
+          ) : (
+            <span
+              key={app.id}
+              className={`product-demo__dock-icon product-demo__dock-icon--${app.id}`}
+            >
+              {app.icon}
+            </span>
+          ),
+        )}
       </div>
     </div>
   );
 }
 
-function Thread({ messages, text }: { messages: DemoMessage[]; text: DemoTranslator }) {
+function Thread({
+  messages,
+  text,
+  screen,
+  desk,
+  onOpenComputer,
+}: {
+  messages: DemoMessage[];
+  text: DemoTranslator;
+  screen: DemoScreen;
+  desk: Desk;
+  onOpenComputer: () => void;
+}) {
   return (
     <>
       {messages.map((message, index) => {
@@ -184,6 +367,30 @@ function Thread({ messages, text }: { messages: DemoMessage[]; text: DemoTransla
                     <span>{line.v}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          );
+        }
+        if (message.type === "computer") {
+          return (
+            <div
+              key={`computer-${index}`}
+              className="product-demo__message product-demo__message--bot"
+            >
+              <div className="product-demo__computer">
+                <div className="product-demo__computer-head">
+                  <strong>{text("Computer")}</strong>
+                  <span>{text("Done")}</span>
+                </div>
+                <p>{message.text}</p>
+                <button
+                  type="button"
+                  className="product-demo__computer-shot"
+                  onClick={onOpenComputer}
+                  aria-label={text("Take control of computer")}
+                >
+                  <ComputerDesktop screen={screen} desk={desk} text={text} />
+                </button>
               </div>
             </div>
           );
@@ -298,6 +505,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   const [panelMode, setPanelMode] = useState<PanelMode>("computer");
   const [hasControl, setHasControl] = useState(false);
   const [takeover, setTakeover] = useState(false);
+  const [desk, setDesk] = useState<Desk>(DEFAULT_DESK);
   const [bootPct, setBootPct] = useState(0);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -607,6 +815,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
 
   function selectBot(id: string) {
     setActiveId(id);
+    setDesk(DEFAULT_DESK);
     closeMenu();
     if (panelMode === "routine") {
       setPanelMode("computer");
@@ -792,7 +1001,13 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
                 {text("Message {name} to give it a first job.", { name: active.name })}
               </div>
             ) : (
-              <Thread messages={messages} text={text} />
+              <Thread
+                messages={messages}
+                text={text}
+                screen={active.screen}
+                desk={desk}
+                onOpenComputer={takeControl}
+              />
             )}
           </div>
 
@@ -882,7 +1097,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
                     hasControl ? text("Open computer") : text("Take control of computer")
                   }
                 >
-                  <ComputerDesktop screen={active.screen} />
+                  <ComputerDesktop screen={active.screen} desk={desk} text={text} />
                 </button>
                 <div className="product-demo__screen-meta">
                   <span>
@@ -1214,16 +1429,18 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
                   </div>
                 </div>
                 <div className="product-demo__takeover-screen">
-                  <ComputerDesktop screen={active.screen} large />
+                  <ComputerDesktop
+                    screen={active.screen}
+                    desk={desk}
+                    text={text}
+                    onDeskChange={setDesk}
+                  />
                 </div>
               </div>
             )}
           </div>
         ) : null}
       </div>
-      <p className="product-demo__caption">
-        {text("Live demo. Pick a bot, open its computer, add a routine, or start a new chat.")}
-      </p>
     </div>
   );
 }

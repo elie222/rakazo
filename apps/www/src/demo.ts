@@ -9,6 +9,7 @@ export type DemoMessage =
   | { type: "user"; text: string }
   | { type: "bot"; text: string }
   | { type: "typing" }
+  | { type: "computer"; text: string }
   | { type: "card"; lines: DemoCardLine[] };
 
 export type DemoRoutine = {
@@ -112,6 +113,7 @@ export const DEMO_BOTS: DemoBot[] = [
         type: "bot",
         text: "understood. i will research, score, and draft. everything lands in a review list at 6am.",
       },
+      { type: "computer", text: "Scoring the list in HubSpot." },
       { type: "meta", text: "Created routine ◷ Overnight sourcing" },
       { type: "time", text: "3:10 AM" },
       {
@@ -151,6 +153,7 @@ export const DEMO_BOTS: DemoBot[] = [
         type: "bot",
         text: "on it. 41 unread since friday. archiving the noise, drafting the rest.",
       },
+      { type: "computer", text: "Sweeping Gmail back to friday." },
       { type: "time", text: "12:11 AM" },
       {
         type: "card",

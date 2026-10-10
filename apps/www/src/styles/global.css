@@ -1667,7 +1667,6 @@ button.button--secondary:focus-visible {
   display: block;
   width: 100%;
   overflow: hidden;
-  aspect-ratio: 16 / 10;
   border: 0;
   border-radius: 14px;
   background: #0e0e10;
@@ -1676,103 +1675,245 @@ button.button--secondary:focus-visible {
   cursor: pointer;
 }
 
+/* A scaled desktop: windows are placed in percent and text is sized in cqw so
+   the panel thumbnail, chat snapshot, and takeover all show the same layout. */
 .product-demo__desktop {
-  display: grid;
-  height: 100%;
-  place-items: center;
-  padding: 12px;
-  background:
-    radial-gradient(circle at 18% 20%, rgba(62, 197, 168, 0.12), transparent 42%),
-    linear-gradient(180deg, #151518 0%, #0b0b0d 100%);
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  isolation: isolate;
+  container-type: inline-size;
+  background: #1a1420 url("/graphics/desktop-wallpaper.webp") center / cover no-repeat;
+  user-select: none;
 }
 
 .product-demo__window {
-  width: 100%;
+  position: absolute;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  border: 1px solid #232326;
-  border-radius: 10px;
-  background: #121214;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 1.4cqw;
+  background: #111113;
+  box-shadow: 0 2cqw 5cqw rgba(0, 0, 0, 0.45);
 }
 
 .product-demo__window-bar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 5px;
-  border-bottom: 1px solid #1b1b1d;
-  padding: 7px 9px;
+  gap: 0.7cqw;
+  border-bottom: 1px solid #1d1d20;
+  padding: 1.3cqw 1.6cqw;
+}
+
+.product-demo__desktop.is-live .product-demo__window-bar {
+  cursor: grab;
+  touch-action: none;
+}
+
+.product-demo__desktop.is-live .product-demo__window-bar:active {
+  cursor: grabbing;
 }
 
 .product-demo__window-bar span {
-  width: 7px;
-  height: 7px;
+  width: 1cqw;
+  height: 1cqw;
   border-radius: 999px;
   background: #3a3a3e;
 }
 
 .product-demo__window-url {
   flex: 1;
-  margin-left: 6px;
+  margin-right: 3.4cqw;
   overflow: hidden;
   color: #6c6c70;
   font-family: "Geist Mono", ui-monospace, monospace;
-  font-size: 10px;
+  font-size: 1.25cqw;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.product-demo__window-split {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.product-demo__window-side {
+  display: flex;
+  width: 24%;
+  flex-direction: column;
+  gap: 1.5cqw;
+  border-right: 1px solid #1d1d20;
+  padding: 2.2cqw 1.8cqw;
+}
+
+.product-demo__window-side i,
+.product-demo__window-rows i,
+.product-demo__window-line i {
+  display: block;
+  height: 0.9cqw;
+  border-radius: 999px;
+  background: #26262a;
+}
+
+.product-demo__window-rows {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 1.4cqw 2.2cqw;
+}
+
+.product-demo__window-rows div {
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  border-bottom: 1px solid #1a1a1d;
+  padding: 1.15cqw 0;
+}
+
+.product-demo__window-check {
+  display: grid;
+  width: 1.9cqw;
+  height: 1.9cqw;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid #2f8f5b;
+  border-radius: 999px;
+  color: #4ecb71;
+  font-size: 1.1cqw;
+  line-height: 1;
+}
+
 .product-demo__window-body {
   display: flex;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
-  gap: 3px;
-  padding: 10px 11px 12px;
-  color: #9a9aa0;
-  font-size: 11.5px;
-  line-height: 1.45;
+  padding: 2.2cqw 2.6cqw;
+  color: #ececee;
+  font-size: 1.55cqw;
+  line-height: 1.4;
 }
 
 .product-demo__window-title {
-  margin-bottom: 4px;
-  color: #ececee;
-  font-size: 12px;
+  margin-bottom: 0.6cqw;
+  border-bottom: 1px solid #1d1d20;
+  padding-bottom: 1.6cqw;
+  font-size: 1.75cqw;
   font-weight: 500;
 }
 
-.product-demo__desktop.is-large {
-  place-items: stretch;
-  padding: 22px 24px 28px;
-}
-
-.product-demo__desktop.is-large .product-demo__window {
+.product-demo__window-line {
   display: flex;
-  height: 100%;
+  align-items: flex-start;
+  gap: 1.6cqw;
+  border-bottom: 1px solid #1a1a1d;
+  padding: 1.5cqw 0;
+}
+
+.product-demo__window-line > span {
+  width: 2.6cqw;
+  height: 2.6cqw;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: #26262a;
+}
+
+.product-demo__window-line > div {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   flex-direction: column;
-  border-radius: 14px;
+  gap: 0.8cqw;
 }
 
-.product-demo__desktop.is-large .product-demo__window-bar {
-  padding: 11px 14px;
+.product-demo__dock {
+  position: absolute;
+  z-index: 10;
+  bottom: 1.6cqw;
+  left: 50%;
+  display: flex;
+  gap: 1cqw;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 2.2cqw;
+  background: rgba(30, 30, 34, 0.42);
+  padding: 0.9cqw;
+  backdrop-filter: blur(14px);
 }
 
-.product-demo__desktop.is-large .product-demo__window-bar span {
-  width: 10px;
-  height: 10px;
+.product-demo__dock-icon {
+  display: grid;
+  width: 5.4cqw;
+  height: 5.4cqw;
+  place-items: center;
+  border: 0;
+  border-radius: 1.4cqw;
+  padding: 0;
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
-.product-demo__desktop.is-large .product-demo__window-url {
+.product-demo__dock-icon svg {
+  width: 62%;
+  height: 62%;
+}
+
+.product-demo__dock-icon--app {
+  background: linear-gradient(180deg, #5cb8ff 0%, #1f6fe0 100%);
+}
+
+.product-demo__dock-icon--list {
+  background: linear-gradient(180deg, #8f8f96 0%, #4a4a50 100%);
+}
+
+button.product-demo__dock-icon {
+  cursor: pointer;
+}
+
+.product-demo__computer {
+  display: flex;
+  width: min(86%, 520px);
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 18px;
+  background: #1c1c1f;
+  padding: 13px 14px 14px;
+  color: var(--panel-copy);
+  font-size: 15px;
+}
+
+.product-demo__computer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.product-demo__computer-head span {
+  border-radius: 999px;
+  background: rgba(48, 162, 75, 0.14);
+  padding: 2px 10px;
+  color: #4ecb71;
   font-size: 13px;
 }
 
-.product-demo__desktop.is-large .product-demo__window-body {
-  flex: 1;
-  gap: 8px;
-  padding: 22px 24px;
-  font-size: 16px;
+.product-demo__computer p {
+  margin: 0 0 8px;
 }
 
-.product-demo__desktop.is-large .product-demo__window-title {
-  margin-bottom: 10px;
-  font-size: 22px;
+.product-demo__computer-shot {
+  display: block;
+  overflow: hidden;
+  border: 0;
+  border-radius: 12px;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
 .product-demo__stage {
@@ -1872,12 +2013,17 @@ button.button--secondary:focus-visible {
 }
 
 .product-demo__takeover-screen {
+  display: grid;
   min-height: 0;
   flex: 1;
+  place-items: center;
+  container-type: size;
+  padding: 18px;
 }
 
 .product-demo__takeover-screen .product-demo__desktop {
-  height: 100%;
+  width: min(100cqw - 36px, (100cqh - 36px) * 1.6);
+  border-radius: 14px;
 }
 
 .product-demo__screen-meta {
@@ -2311,13 +2457,6 @@ button.button--secondary:focus-visible {
   padding: 13px 16px;
   color: #6c6c70;
   font-size: 15px;
-}
-
-.product-demo__caption {
-  margin: 16px 0 0;
-  text-align: center;
-  color: var(--muted);
-  font-size: 13.5px;
 }
 
 .privacy-copy {
