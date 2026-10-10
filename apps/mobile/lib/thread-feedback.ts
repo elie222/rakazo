@@ -1,6 +1,6 @@
 import type { AgentSkillCatalogEntry } from "@rakazo/contracts";
 import type { ComposerMention, resolveComposerSendPlan } from "@rakazo/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { rpc } from "./api";
 import type { PickedAttachment } from "./pick-attachments";
 
@@ -38,6 +38,8 @@ export type SendAttempt = {
   clientNonce: string;
   artifactIds: Map<string, string>;
   sending: boolean;
+  /** The signed-in session the attempt began in; a failure after sign-out is dropped. */
+  session: number;
   error?: string;
 };
 
@@ -80,9 +82,36 @@ export async function deliverSend(payload: SendPayload, attempt: SendAttempt, re
   });
 }
 
+// Failed sends outlive the thread screen: switching bots replaces it, and a send can fail after that.
+let failedSends: SendAttempt[] = [];
+let sessionCount = 0;
+const watchers = new Set<() => void>();
+
+function subscribe(watcher: () => void): () => void {
+  watchers.add(watcher);
+  return () => {
+    watchers.delete(watcher);
+  };
+}
+
+function getFailedSends(): SendAttempt[] {
+  return failedSends;
+}
+
+function setFailedSends(update: (current: SendAttempt[]) => SendAttempt[]) {
+  failedSends = update(failedSends);
+  for (const watcher of [...watchers]) watcher();
+}
+
+/** Forgets every unsent message, including sends still in flight, when the account signs out. */
+export function clearFailedSends() {
+  sessionCount += 1;
+  setFailedSends(() => []);
+}
+
 export function useThreadFeedback(threadKey: string | undefined, newNonce: () => string) {
   const [error, setError] = useState<string | null>(null);
-  const [failedSends, setFailedSends] = useState<SendAttempt[]>([]);
+  const allFailedSends = useSyncExternalStore(subscribe, getFailedSends, getFailedSends);
   const activeThread = useRef(threadKey);
   activeThread.current = threadKey;
 
@@ -96,9 +125,15 @@ export function useThreadFeedback(threadKey: string | undefined, newNonce: () =>
     refreshed(key = threadKey) {
       if (key === activeThread.current) setError(null);
     },
-    failedSends: failedSends.filter((attempt) => attempt.payload.originThreadKey === threadKey),
+    failedSends: allFailedSends.filter((attempt) => attempt.payload.originThreadKey === threadKey),
     sendAttempt(payload: SendPayload): SendAttempt {
-      return { payload, clientNonce: newNonce(), artifactIds: new Map(), sending: false };
+      return {
+        payload,
+        clientNonce: newNonce(),
+        artifactIds: new Map(),
+        sending: false,
+        session: sessionCount,
+      };
     },
     start(attempt: SendAttempt) {
       if (attempt.sending) return false;
@@ -112,6 +147,7 @@ export function useThreadFeedback(threadKey: string | undefined, newNonce: () =>
     },
     sendFailed(attempt: SendAttempt) {
       attempt.sending = false;
+      if (attempt.session !== sessionCount) return;
       setFailedSends((current) =>
         current.includes(attempt) ? [...current] : [...current, attempt],
       );

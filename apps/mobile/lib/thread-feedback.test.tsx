@@ -9,7 +9,12 @@ import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
 import type { ComposerSnapshot, SendPayload } from "./thread-feedback";
-import { deliverSend, settleComposer, useThreadFeedback } from "./thread-feedback";
+import {
+  clearFailedSends,
+  deliverSend,
+  settleComposer,
+  useThreadFeedback,
+} from "./thread-feedback";
 
 vi.mock("react-native", () => ({
   View: ({ children }: { children?: ReactNode }) => createElement("div", null, children),
@@ -128,6 +133,7 @@ describe("thread feedback", () => {
   });
   afterEach(() => {
     act(() => root.unmount());
+    act(() => clearFailedSends());
     container.remove();
     vi.unstubAllGlobals();
   });
@@ -306,6 +312,49 @@ describe("thread feedback", () => {
     expect(feedback.failedSends).toEqual([first, second]);
     act(() => feedback.discard(first));
     expect(feedback.failedSends).toEqual([second]);
+  });
+
+  it("keeps a send that fails after switching bots replaced the thread screen", () => {
+    const attempt = feedback.sendAttempt(payload());
+    act(() => {
+      feedback.start(attempt);
+    });
+    const leaving = feedback;
+    act(() => root.unmount());
+    act(() => {
+      attempt.error = "Network request failed";
+      leaving.sendFailed(attempt);
+    });
+    root = createRoot(container);
+    render("bot-2");
+    expect(feedback.failedSends).toEqual([]);
+    expect(container.textContent).toBe("");
+    act(() => root.unmount());
+    root = createRoot(container);
+    render("bot-1");
+    expect(feedback.failedSends).toEqual([attempt]);
+    expect(container.querySelector("button")!.getAttribute("aria-label")).toBe(
+      "Hello, photo.png. Not sent · Tap to retry",
+    );
+    act(() => feedback.start(attempt));
+    act(() => feedback.sent(attempt));
+    expect(container.textContent).toBe("");
+  });
+
+  it("forgets unsent messages on sign-out, including one still in flight", () => {
+    const failed = feedback.sendAttempt(payload());
+    const inFlight = feedback.sendAttempt(payload("Another"));
+    act(() => {
+      feedback.sendFailed(failed);
+      feedback.start(inFlight);
+    });
+    act(() => clearFailedSends());
+    expect(container.textContent).toBe("");
+    act(() => feedback.sendFailed(inFlight));
+    expect(feedback.failedSends).toEqual([]);
+    const next = feedback.sendAttempt(payload("Next account"));
+    act(() => feedback.sendFailed(next));
+    expect(feedback.failedSends).toEqual([next]);
   });
 
   it("keeps load failures separate from sends and clears them when a refresh reaches the server", () => {

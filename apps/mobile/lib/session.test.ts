@@ -14,6 +14,7 @@ import {
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session.js";
+import { clearFailedSends } from "./thread-feedback.js";
 
 vi.mock("expo-secure-store", () => ({
   getItemAsync: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("expo-secure-store", () => ({
 vi.mock("./live-notifications.js", () => ({
   stopLiveNotifications: vi.fn(async () => undefined),
 }));
+vi.mock("./thread-feedback.js", () => ({ clearFailedSends: vi.fn() }));
 
 describe("mobile session storage", () => {
   beforeEach(async () => {
@@ -53,6 +55,12 @@ describe("mobile session storage", () => {
       expect(next).not.toBe(previous);
       previous = next;
     }
+  });
+
+  it("forgets unsent messages on sign-out", async () => {
+    vi.mocked(clearFailedSends).mockClear();
+    await clearSessionToken();
+    expect(clearFailedSends).toHaveBeenCalledOnce();
   });
 
   it("forgets the cached avatar style on sign-out", async () => {
