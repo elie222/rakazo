@@ -163,7 +163,7 @@ function ComputerDesktop({
   desk: Desk;
   text: DemoTranslator;
   /** Present only where the user has control; makes windows draggable and the dock clickable. */
-  onDeskChange?: (desk: Desk) => void;
+  onDeskChange?: (update: (desk: Desk) => Desk) => void;
 }) {
   const deskRef = useRef<HTMLDivElement | null>(null);
   const live = Boolean(onDeskChange);
@@ -174,28 +174,36 @@ function ComputerDesktop({
       return;
     }
     const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
+    const pointerId = event.pointerId;
+    target.setPointerCapture(pointerId);
     const origin = desk.pos[id];
     const startX = event.clientX;
     const startY = event.clientY;
-    const raised = raise(desk, id);
-    onDeskChange(raised);
     const size = DESK_SIZE[id];
+    onDeskChange((current) => raise(current, id));
+    // Update only this window from the latest state so simultaneous touch drags
+    // on both windows do not overwrite each other.
     const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) {
+        return;
+      }
       const x = origin.x + ((moveEvent.clientX - startX) / rect.width) * 100;
       const y = origin.y + ((moveEvent.clientY - startY) / rect.height) * 100;
-      onDeskChange({
-        ...raised,
+      onDeskChange((current) => ({
+        ...current,
         pos: {
-          ...raised.pos,
+          ...current.pos,
           [id]: {
             x: Math.min(92, Math.max(8 - size.w, x)),
             y: Math.min(88, Math.max(0, y)),
           },
         },
-      });
+      }));
     };
-    const stop = () => {
+    const stop = (stopEvent: PointerEvent) => {
+      if (stopEvent.pointerId !== pointerId) {
+        return;
+      }
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", stop);
       target.removeEventListener("pointercancel", stop);
@@ -259,7 +267,7 @@ function ComputerDesktop({
           <div
             className="product-demo__window product-demo__window--list"
             style={windowStyle("list")}
-            onPointerDown={live ? () => onDeskChange?.(raise(desk, "list")) : undefined}
+            onPointerDown={live ? () => onDeskChange?.((current) => raise(current, "list")) : undefined}
           >
             {windowBar("list")}
             <div className="product-demo__window-split">
@@ -281,7 +289,7 @@ function ComputerDesktop({
           <div
             className="product-demo__window product-demo__window--app"
             style={windowStyle("app")}
-            onPointerDown={live ? () => onDeskChange?.(raise(desk, "app")) : undefined}
+            onPointerDown={live ? () => onDeskChange?.((current) => raise(current, "app")) : undefined}
           >
             {windowBar("app", screen.host)}
             <div className="product-demo__window-body">
@@ -307,7 +315,7 @@ function ComputerDesktop({
               type="button"
               className={`product-demo__dock-icon product-demo__dock-icon--${app.id}`}
               aria-label={app.label}
-              onClick={() => onDeskChange?.(raise(desk, app.id))}
+              onClick={() => onDeskChange?.((current) => raise(current, app.id))}
             >
               {app.icon}
             </button>

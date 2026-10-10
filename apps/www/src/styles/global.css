@@ -2022,7 +2022,7 @@ button.product-demo__dock-icon {
 }
 
 .product-demo__takeover-screen .product-demo__desktop {
-  width: min(100cqw - 36px, (100cqh - 36px) * 1.6);
+  width: min(100cqw, 100cqh * 1.6);
   border-radius: 14px;
 }
 
