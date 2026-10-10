@@ -450,6 +450,7 @@ export interface AgentRunRequest {
   botId: string;
   threadId: string;
   runId: string;
+  routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
   instructions: string;

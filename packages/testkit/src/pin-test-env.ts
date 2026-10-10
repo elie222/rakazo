@@ -15,6 +15,11 @@ if (!process.env.VERIFY_PROVIDERS) {
     delete process.env.REALTIME_DATABASE_URL;
   }
 }
+delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
+delete process.env.OTEL_CAPTURE_CONTENT;
 delete process.env.AXIOM_TOKEN;
 delete process.env.AXIOM_DATASET;
 if (!process.env.VERIFY_LOGGING) {
