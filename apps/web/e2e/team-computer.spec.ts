@@ -95,6 +95,11 @@ test("user control leaves another Team bot's screen available", async ({ page },
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await page
+    .getByTestId("computer-chrome")
+    .getByRole("button", { name: "Take control", exact: true })
+    .click();
+  await expect(page.getByText("You have control", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close computer" }).click();
 
   await openBot(page, "Worker");
@@ -125,6 +130,54 @@ test("user control leaves another Team bot's screen available", async ({ page },
   await captureScreenshot(page, testInfo, "47-team-computer-control-released");
 });
 
+test("opening and releasing the computer keep a view-only stream with maintenance available", async ({
+  page,
+}, testInfo) => {
+  await signup(page, `view-only-${Date.now()}@rakazo.test`, "password12", "Computer");
+  await completeOnboarding(page);
+  let takeovers = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/rpc/computer/takeover")) takeovers += 1;
+  });
+  await openComputerPanel(page);
+  await page.getByTestId("computer-preview").hover();
+  await page.getByTestId("computer-preview-open").click();
+  const chrome = page.getByTestId("computer-chrome");
+  const screen = page.getByTitle("Bot screen").last();
+  const take = chrome.getByRole("button", { name: "Take control", exact: true });
+  const release = chrome.getByRole("button", { name: "Release control", exact: true });
+  const more = chrome.getByRole("button", { name: "More computer actions" });
+  const checkViewOnly = async () => {
+    await expect(take).toBeVisible();
+    await expect(release).toHaveCount(0);
+    await expect(screen).toHaveAttribute("src", /view_only=true/);
+    await expect(screen).toHaveCSS("pointer-events", "none");
+    await more.click();
+    await expect(page.getByRole("menuitem", { name: "Recover computer" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Reset computer" })).toBeVisible();
+    await more.click();
+  };
+  await checkViewOnly();
+  expect(takeovers).toBe(0);
+  await captureScreenshot(page, testInfo, "computer-open-view-only");
+  await take.click();
+  await expect(release).toBeVisible();
+  await expect(take).toHaveCount(0);
+  await expect(screen).toHaveAttribute("src", /view_only=false/);
+  await expect(screen).toHaveCSS("pointer-events", "auto");
+  expect(takeovers).toBe(1);
+  await more.click();
+  await expect(page.getByRole("menuitem", { name: "Recover computer" })).toBeVisible();
+  await more.click();
+  await captureScreenshot(page, testInfo, "computer-controlling");
+  await release.click();
+  await checkViewOnly();
+  expect(takeovers).toBe(1);
+  await captureScreenshot(page, testInfo, "computer-released-view-only");
+  await chrome.getByRole("button", { name: "Close computer" }).click();
+  await expect(chrome).toBeHidden();
+});
+
 test("a failed control release keeps the computer open for retry", async ({ page }, testInfo) => {
   await signup(page, `team-release-${Date.now()}@rakazo.test`, "password12", "Team Release");
   await completeOnboarding(page);
@@ -132,7 +185,8 @@ test("a failed control release keeps the computer open for retry", async ({ page
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   const chrome = page.getByTestId("computer-chrome");
-  const release = chrome.getByRole("button", { name: "Release", exact: true });
+  await chrome.getByRole("button", { name: "Take control", exact: true }).click();
+  const release = chrome.getByRole("button", { name: "Release control", exact: true });
   await expect(release).toBeVisible();
   await page.route("**/rpc/computer/release", (route) =>
     route.fulfill({ status: 500, body: "release unavailable" }),
@@ -143,7 +197,8 @@ test("a failed control release keeps the computer open for retry", async ({ page
   await captureScreenshot(page, testInfo, "48-team-computer-release-retry");
   await page.unroute("**/rpc/computer/release");
   await release.click();
-  await expect(page.getByRole("button", { name: "Close computer" })).toBeHidden();
+  await expect(chrome.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
 });
 
 test("an active Team bot must be stopped before user takeover", async ({ page }, testInfo) => {
@@ -217,17 +272,18 @@ test("an active Team bot must be stopped before user takeover", async ({ page },
     )
     .toBeNull();
 
-  // After stop, Open via hover is the takeover path (no Take control button).
+  // After stop, opening stays view-only until Take control is clicked.
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
+  await expect(chrome.getByText("You have control", { exact: true })).toHaveCount(0);
+  await chrome.getByRole("button", { name: "Take control", exact: true }).click();
   await expect(chrome.getByText("You have control", { exact: true })).toBeVisible();
-  await expect(chrome.getByRole("button", { name: /Take control/i })).toHaveCount(0);
-  await expect(chrome.getByRole("button", { name: "Release", exact: true })).toBeVisible();
+  await expect(chrome.getByRole("button", { name: "Release control", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "49-team-computer-open-after-stop");
-  await chrome.getByRole("button", { name: "Release", exact: true }).click();
-  // Release closes the overlay and clears control without a DB edit.
-  await expect(page.getByRole("button", { name: "Close computer" })).toHaveCount(0);
+  await chrome.getByRole("button", { name: "Release control", exact: true }).click();
+  await expect(chrome.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
 });
 
 async function createBot(page: Page, name: string, mode: "team" | "dedicated") {
