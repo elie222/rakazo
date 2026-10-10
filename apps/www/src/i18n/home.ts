@@ -49,6 +49,12 @@ export type HomeCopy = {
     copy: string;
     bots: RosterBot[];
   };
+  testimonials: {
+    heading: string;
+    pause: string;
+    play: string;
+    items: ReadonlyArray<{ quote: string; attribution: string }>;
+  };
   faq: {
     heading: string;
     items: Array<{ question: string; answer: string }>;
@@ -277,6 +283,38 @@ const ZH_ROSTER: RosterBot[] = [
   },
 ];
 
+const TESTIMONIALS: HomeCopy["testimonials"]["items"] = [
+  {
+    quote:
+      "landed here after a first experience with Grok Bot … then found this alternative, and i can confirm that your work rocks. it replaced totally grok bot for me. mobile app is very smooth too",
+    attribution: "@dilog1114",
+  },
+  {
+    quote:
+      "Im a co-founder and cto, loving rakazo, we have it running against private on qwen 3.8 with strong hw/gpus - all private.",
+    attribution: "@bc101101",
+  },
+  {
+    quote:
+      "I use it to find cheap servers and computer parts on ebay and all other marketplaces and send me everything he decided is a good deal.",
+    attribution: "@michaelortnerit",
+  },
+  {
+    quote:
+      "Hermes is good but more complicated setup. Rakazo has better multi agent workflow and simpler to setup",
+    attribution: "@notabot_92732",
+  },
+  {
+    quote: "ive been using rakazo for 1 month in claude oauth no problems yet",
+    attribution: "@hey_cabron",
+  },
+  {
+    quote:
+      "I set up the mobile app today with expo, first time using expo but was easy with rakazo walking me through",
+    attribution: "@mithril0x",
+  },
+];
+
 const HOME_COPY: Record<Locale, HomeCopy> = {
   en: {
     title: "Rakazo | Open source Grok Bot alternative",
@@ -337,6 +375,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Give each bot a job",
       copy: "Start a new bot and it interviews you. A few questions about the work, how you write, and where it lives. Then it gets going.",
       bots: EN_ROSTER,
+    },
+    testimonials: {
+      heading: "Testimonials",
+      pause: "Pause",
+      play: "Play",
+      items: TESTIMONIALS,
     },
     faq: {
       heading: "FAQ",
@@ -498,6 +542,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "Gib jedem Bot eine Aufgabe",
       copy: "Starte einen neuen Bot und er interviewt dich. Ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
       bots: DE_ROSTER,
+    },
+    testimonials: {
+      heading: "Kundenstimmen",
+      pause: "Pause",
+      play: "Weiter",
+      items: TESTIMONIALS,
     },
     faq: {
       heading: "FAQ",
@@ -663,6 +713,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "새 봇을 시작하면 인터뷰합니다. 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
       bots: KO_ROSTER,
     },
+    testimonials: {
+      heading: "후기",
+      pause: "일시정지",
+      play: "재생",
+      items: TESTIMONIALS,
+    },
     faq: {
       heading: "질문",
       items: [
@@ -826,6 +882,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       heading: "给每个 Bot 分配一份工作",
       copy: "新建一个 Bot，它会先面试你：几个关于工作内容、写作风格和运行位置的问题。然后它就开始干活。",
       bots: ZH_ROSTER,
+    },
+    testimonials: {
+      heading: "用户评价",
+      pause: "暂停",
+      play: "播放",
+      items: TESTIMONIALS,
     },
     faq: {
       heading: "常见问题",
