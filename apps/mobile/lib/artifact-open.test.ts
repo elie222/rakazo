@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+import * as Sharing from "expo-sharing";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -123,6 +125,32 @@ describe("artifact preview caches", () => {
     expect(await preview()).toEqual(a);
     expect(state.getSize).toHaveBeenCalledTimes(2);
     expect(artifactFetches()).toBe(1);
+  });
+
+  it("downloads previews, text, and attachments without persisted cache metadata", async () => {
+    let api = await load();
+    const stored = await api.imageArtifactPreview(target, "art-1", "image/png");
+    vi.resetModules();
+    api = await load();
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked"));
+    const fresh = await api.imageArtifactPreview(target, "art-1", "image/png");
+    expect(fresh.uri).not.toBe(stored.uri);
+    expect(fresh.size).toEqual(stored.size);
+    expect(await api.readMobileArtifactText(target, "art-2", "text/plain")).toBe("aGk=");
+    vi.mocked(Sharing.isAvailableAsync).mockResolvedValueOnce(true);
+    await api.openMobileArtifact(target, "art-3", "attachment.pdf", "application/pdf");
+    expect(Sharing.shareAsync).toHaveBeenCalledWith(expect.any(String), {
+      mimeType: "application/pdf",
+    });
+    await api.imageArtifactPreview(target, "art-1", "image/png");
+    expect(artifactFetches()).toBe(4);
+    vi.resetModules();
+    api = await load();
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked"));
+    const restarted = await api.imageArtifactPreview(target, "art-1", "image/png");
+    expect(restarted.uri).not.toBe(stored.uri);
+    expect(restarted.uri).not.toBe(fresh.uri);
+    expect(artifactFetches()).toBe(5);
   });
 
   it("models 20 previews, three remount cycles, and a restart", async () => {

@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 const KEY = "rakazo.artifact-cache-session";
 let revision = 0;
 let writes: Promise<unknown> = Promise.resolve();
-let active: { token: string; namespace: string } | undefined;
+let active: { token: string; namespace: string; persisted: boolean } | undefined;
 
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
   const next = writes.then(task, task);
@@ -15,7 +15,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 export function invalidateArtifactCacheSession(): Promise<void> {
   revision += 1;
   const cleared = { token: "", namespace: newNamespace() };
-  active = cleared;
+  active = { ...cleared, persisted: false };
   return enqueue(async () => {
     try {
       await SecureStore.deleteItemAsync(KEY);
@@ -23,7 +23,7 @@ export function invalidateArtifactCacheSession(): Promise<void> {
       try {
         await SecureStore.setItemAsync(KEY, JSON.stringify(cleared));
       } catch {
-        // The next session read must persist a new namespace before disk reuse.
+        // The next session read uses a fresh namespace even if persistence stays unavailable.
       }
     }
   });
@@ -47,14 +47,24 @@ export function artifactCacheSession(token: string): Promise<string> {
           typeof stored.namespace === "string" &&
           /^[a-z0-9]+-[a-z0-9]+$/.test(stored.namespace)
         )
-          entry = stored;
+          entry = { token, namespace: stored.namespace, persisted: true };
       } catch {
         // Missing or invalid metadata is a cold cache.
       }
     }
     if (version !== revision) throw new Error("Artifact session changed");
-    if (!entry || entry.token !== token) entry = { token, namespace: newNamespace() };
-    await SecureStore.setItemAsync(KEY, JSON.stringify(entry));
+    if (!entry || entry.token !== token)
+      entry = { token, namespace: newNamespace(), persisted: false };
+    try {
+      await SecureStore.setItemAsync(
+        KEY,
+        JSON.stringify({ token: entry.token, namespace: entry.namespace }),
+      );
+      entry.persisted = true;
+    } catch {
+      // Failed persistence must not authorize files from a previous process.
+      if (entry.persisted) entry = { token, namespace: newNamespace(), persisted: false };
+    }
     if (version !== revision) throw new Error("Artifact session changed");
     active = entry;
     return entry.namespace;

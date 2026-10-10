@@ -55,11 +55,53 @@ it("does not restore a late metadata read after invalidation", async () => {
   expect(await cache.artifactCacheSession("fake-a")).not.toBe("old-namespace");
 });
 
-it("fails closed when namespace metadata cannot be persisted", async () => {
+it("uses a fresh namespace when metadata writes fail, retaining it only in memory", async () => {
+  let cache = await load();
+  const stored = await cache.artifactCacheSession("fake-a");
+  vi.resetModules();
+  cache = await load();
+  const failWrite = () =>
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked"));
+  failWrite();
+  const fallback = await cache.artifactCacheSession("fake-a");
+  expect(fallback).not.toBe(stored);
+  failWrite();
+  expect(await cache.artifactCacheSession("fake-a")).toBe(fallback);
+  vi.resetModules();
+  cache = await load();
+  failWrite();
+  const restarted = await cache.artifactCacheSession("fake-a");
+  expect(restarted).not.toBe(stored);
+  expect(restarted).not.toBe(fallback);
+  // Once persistence recovers, the fresh namespace can safely survive a restart.
+  expect(await cache.artifactCacheSession("fake-a")).toBe(restarted);
+  vi.resetModules();
+  expect(await (await load()).artifactCacheSession("fake-a")).toBe(restarted);
+});
+
+it("allows a cold cache when metadata cannot be read or written", async () => {
   const cache = await load();
+  vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(new Error("locked"));
   vi.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(new Error("locked"));
-  await expect(cache.artifactCacheSession("fake-a")).rejects.toThrow("locked");
+  expect(await cache.artifactCacheSession("fake-a")).toMatch(/^[a-z0-9]+-[a-z0-9]+$/);
   expect(disk.size).toBe(0);
+});
+
+it("rejects a failed metadata write that completes after invalidation", async () => {
+  const cache = await load();
+  let fail!: (error: Error) => void;
+  vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+  );
+  const pending = cache.artifactCacheSession("fake-a");
+  await vi.waitFor(() => expect(fail).toBeDefined());
+  const clearing = cache.invalidateArtifactCacheSession();
+  fail(new Error("locked"));
+  await expect(pending).rejects.toThrow("Artifact session changed");
+  await clearing;
 });
 
 it("keeps an invalidated namespace when both wipe attempts fail", async () => {
