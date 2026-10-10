@@ -89,6 +89,28 @@ export default function Home() {
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
   const { t, locale } = useI18n();
+  const [day, setDay] = useState(() => new Date().setHours(0, 0, 0, 0));
+  useFocusEffect(
+    useCallback(() => {
+      let timer: ReturnType<typeof setTimeout>;
+      const refreshDay = () => {
+        clearTimeout(timer);
+        const now = new Date();
+        setDay(new Date(now).setHours(0, 0, 0, 0));
+        const midnight = new Date(now);
+        midnight.setHours(24, 0, 0, 0);
+        timer = setTimeout(refreshDay, midnight.getTime() - now.getTime());
+      };
+      refreshDay();
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") refreshDay();
+      });
+      return () => {
+        clearTimeout(timer);
+        subscription.remove();
+      };
+    }, []),
+  );
   const [bots, setBots] = useState<MobileBot[]>([]);
   const [groups, setGroups] = useState<MobileGroup[]>([]);
   const [botSections, setBotSections] = useState<MobileBotSection[]>([]);
@@ -642,12 +664,14 @@ export default function Home() {
       ) : item.type === "group" ? (
         <GroupRow
           group={item.group}
+          day={day}
           onPress={openGroup}
           onLongPress={item.group.spaceId === me?.spaceId ? organizeGroup : undefined}
         />
       ) : (
         <BotRow
           bot={item.bot}
+          day={day}
           depth={item.depth}
           hasChildren={item.hasChildren}
           collapsed={collapsedRosterParents.has(item.bot.id)}
@@ -661,6 +685,7 @@ export default function Home() {
       chooseInboxSpace,
       collapsedRosterParents,
       confirmDeleteSpace,
+      day,
       me?.spaceId,
       openBot,
       openGroup,
@@ -1127,6 +1152,7 @@ const SearchRow = memo(function SearchRow({
 
 const BotRow = memo(function BotRow({
   bot,
+  day,
   depth = 0,
   hasChildren = false,
   collapsed = false,
@@ -1135,6 +1161,7 @@ const BotRow = memo(function BotRow({
   onLongPress,
 }: {
   bot: MobileBot | SpaceBot;
+  day: number;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -1144,7 +1171,7 @@ const BotRow = memo(function BotRow({
 }) {
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
-  const time = bot.updatedAt ? formatThreadTime(bot.updatedAt) : "";
+  const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
   const tag = botTag(bot.title, bot.name);
   const working = ACTIVE_RUN_STATUSES.some((status) => status === bot.status);
   // Only flat avatars carry a usable color; image avatars fall back to the muted dot.
@@ -1195,17 +1222,19 @@ const BotRow = memo(function BotRow({
 
 const GroupRow = memo(function GroupRow({
   group,
+  day,
   onPress,
   onLongPress,
 }: {
   group: MobileGroup | SpaceGroup;
+  day: number;
   onPress: (group: MobileGroup | SpaceGroup) => void;
   onLongPress?: (group: MobileGroup | SpaceGroup) => void;
 }) {
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
-  const time = group.updatedAt ? formatThreadTime(group.updatedAt) : "";
+  const time = group.updatedAt ? formatThreadTime(group.updatedAt, new Date(day)) : "";
   return (
     <ConversationRow
       title={group.name}
