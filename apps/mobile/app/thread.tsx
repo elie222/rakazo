@@ -137,6 +137,7 @@ import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
+import { retainUnchangedBotRoster } from "../lib/bot-roster";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
 import { transparentColor } from "../lib/color";
@@ -664,6 +665,11 @@ function Thread() {
     }).catch(() => undefined);
   }, [botId, inGroup, currentBot, navigation, snap?.botId, snap?.messages, snap?.run?.status]);
 
+  const speakFinishedReplyRef = useRef(speakFinishedReply);
+  useLayoutEffect(() => {
+    speakFinishedReplyRef.current = speakFinishedReply;
+  }, [speakFinishedReply]);
+
   useEffect(() => {
     speakFinishedReply();
     const appState = AppState.addEventListener("change", speakFinishedReply);
@@ -691,7 +697,7 @@ function Thread() {
       if (generation < mentionBotsAppliedGeneration.current) return;
       if (targetBotId !== activeBotId.current) return;
       mentionBotsAppliedGeneration.current = generation;
-      setMentionBots(bots);
+      setMentionBots((current) => retainUnchangedBotRoster(current, bots));
       if (targetBotId) {
         const next = bots.find((bot) => bot.id === targetBotId);
         // Read the route name from a ref so renaming does not recreate this
@@ -706,7 +712,6 @@ function Thread() {
   }, [botId, groupId, router]);
 
   useEffect(() => {
-    void refreshMentionBots();
     void rpc<MobileGroup[]>("groups/list")
       .then(setMentionGroups)
       .catch(() => setMentionGroups([]));
@@ -1227,8 +1232,8 @@ function Thread() {
       }
       void refreshMentionBots();
       markReadIfVisible();
-      if (!readOnly) speakFinishedReply();
-    }, [botId, readOnly, markReadIfVisible, refreshMentionBots, speakFinishedReply]),
+      if (!readOnly) speakFinishedReplyRef.current();
+    }, [botId, readOnly, markReadIfVisible, refreshMentionBots]),
   );
 
   // Kept apart from the effect above: its callbacks change with every streamed message, and
