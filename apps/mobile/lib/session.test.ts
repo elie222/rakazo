@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { artifactCacheSession } from "./artifact-cache-session";
 import { AVATAR_STYLE_KEY, getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style.js";
 import {
   clearSessionToken,
@@ -37,6 +38,21 @@ describe("mobile session storage", () => {
 
     expect(SecureStore.setItemAsync).toHaveBeenCalledWith("rakazo.session_token", "secret-token");
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.session_token");
+  });
+
+  it("rotates the artifact namespace on session save, clear and restore", async () => {
+    await saveSessionToken("fake-cache-token");
+    let previous = await artifactCacheSession("fake-cache-token");
+    for (const change of [
+      () => saveSessionToken("fake-cache-token"),
+      () => clearSessionToken(),
+      () => restoreSessionToken("fake-cache-token"),
+    ]) {
+      await change();
+      const next = await artifactCacheSession("fake-cache-token");
+      expect(next).not.toBe(previous);
+      previous = next;
+    }
   });
 
   it("forgets the cached avatar style on sign-out", async () => {

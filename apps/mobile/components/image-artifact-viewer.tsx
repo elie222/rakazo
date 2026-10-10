@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Alert, Image, StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
-import { imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
+import { imageArtifactPreview, imageArtifactUri, shareLocalFile } from "../lib/artifact-open";
 import { useI18n } from "../lib/i18n";
 import type { ImageSize } from "../lib/inline-image";
 import { fitImageSize } from "../lib/inline-image";
@@ -174,19 +174,9 @@ export function ImageArtifactViewer({
 
   useEffect(() => {
     let cancelled = false;
-    void imageArtifactUri(requestTarget(), target.artifactId, target.mimeType)
-      .then(
-        (uri) =>
-          new Promise<{ uri: string; natural: ImageSize }>((resolve, reject) => {
-            Image.getSize(
-              uri,
-              (width, height) => resolve({ uri, natural: { width, height } }),
-              reject,
-            );
-          }),
-      )
-      .then((loaded) => {
-        if (!cancelled) setState({ status: "ready", ...loaded });
+    void imageArtifactPreview(requestTarget(), target.artifactId, target.mimeType)
+      .then(({ uri, size }) => {
+        if (!cancelled) setState({ status: "ready", uri, natural: size });
       })
       .catch((error) => {
         if (!cancelled) fail(error);
