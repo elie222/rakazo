@@ -25,4 +25,10 @@ test("homepage screenshots", async ({ page }, testInfo) => {
   await page.goto("/zh/");
   await page.waitForLoadState("load");
   await captureScreenshot(page, testInfo, "03-marketing-homepage-zh");
+
+  await page.goto("/");
+  await page.waitForLoadState("load");
+  await page.locator(".product-demo__computer-shot").first().click();
+  await page.locator(".product-demo__takeover").waitFor({ state: "visible" });
+  await captureScreenshot(page, testInfo, "04-marketing-demo-computer");
 });
