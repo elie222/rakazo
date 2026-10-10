@@ -63,7 +63,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import type { NativeScrollEvent, NativeSyntheticEvent, TextProps } from "react-native";
+import type {
+  LayoutChangeEvent,
+  ListRenderItemInfo,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  TextProps,
+} from "react-native";
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -388,7 +394,7 @@ function Thread() {
   const tokens = mobileTokens();
   const styles = useThemedStyles(createThreadHeaderStyles);
   const [botActionsOpen, setBotActionsOpen] = useState(false);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const navigation = useNavigation();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
@@ -1816,7 +1822,7 @@ function Thread() {
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
-  const separatorIds = timeSeparatorIds(visibleMessages);
+  const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -1922,299 +1928,176 @@ function Thread() {
     }
   }
 
-  function messageActionProps(message: MobileMessage): {
-    actionProps: MessageActionProps;
-    menu: ReturnType<typeof buildMessageContextMenu>;
-    onMenuAction: (id: string) => void;
-  } {
-    const messageText = selectableMobileMessageText(message);
-    const includeQuote =
-      !readOnly &&
-      !message.id.startsWith("progress:") &&
-      quotableMessageSegments(message.role, message.blocks).length > 0;
-    const includeReact = !readOnly && canReactToThreadMessage(message);
-    // The call already reads replies aloud; a second voice would talk over it.
-    const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
-    const includeSelect = messageText.trim().length > 0;
-    const reply = () => {
+  // Event actions read the latest committed screen state without invalidating settled rows.
+  const currentRowActions: MessageRowActions = {
+    reply: (message) => {
       setReplyTarget(message);
       setReplyQuote(null);
-    };
-    const quote = () => setQuoteTarget(message);
-    const speakMessage = () => void speak(message);
-    const select = () =>
-      setSelectableText(
-        message.role === "user" ? messageText : selectableTextFromMarkdown(messageText),
-      );
-    const copy = () => {
-      const text = copyableMobileMessageText(message);
-      if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
-    };
-    const react = (reaction: MessageReaction) => void reactToMessage(message, reaction);
-    const actions = [
-      ...(!readOnly ? [{ name: "reply", text: t("Reply"), onPress: reply }] : []),
-      ...(includeQuote ? [{ name: "quote", text: t("Quote"), onPress: quote }] : []),
-      ...(includeReact
-        ? [
-            {
-              name: "react",
-              text: t("React"),
-              onPress: () =>
-                presentMessageActionSheet({
-                  cancel: t("Cancel"),
-                  more: t("More"),
-                  colorScheme,
-                  actions: MESSAGE_REACTIONS.map((emoji) => ({
-                    text: emoji,
-                    onPress: () => react(emoji),
-                  })),
-                }),
-            },
-          ]
-        : []),
-      ...(includeSpeak ? [{ name: "speak", text: t("Speak message"), onPress: speakMessage }] : []),
-      ...(includeSelect ? [{ name: "select", text: t("Select text"), onPress: select }] : []),
-      { name: "copy", text: t("Copy"), onPress: copy },
-    ];
-    const menu = buildMessageContextMenu({
-      labels: {
-        reply: t("Reply"),
-        copy: t("Copy"),
-        react: t("React"),
-        quote: t("Quote"),
-        speak: t("Speak message"),
-        select: t("Select text"),
-      },
-      reactions: MESSAGE_REACTIONS,
-      include: {
-        reply: !readOnly,
-        quote: includeQuote,
-        react: includeReact,
-        speak: includeSpeak,
-        select: includeSelect,
-      },
-    });
-    const openSheet = () =>
-      presentMessageActionSheet({
-        actions,
-        title: message.createdAt
-          ? formatMessageTime(message.createdAt, dateLocaleForUi())
-          : undefined,
-        cancel: t("Cancel"),
-        more: t("More"),
-        colorScheme,
+    },
+    quote: setQuoteTarget,
+    select: setSelectableText,
+    speak,
+    react: (message, reaction) => void reactToMessage(message, reaction),
+    answer: answerMessage,
+    openBot,
+    openComputer,
+    previewMarkdown: setMarkdownPreview,
+    previewImage: (target) =>
+      router.push({
+        pathname: "/image",
+        params: { ...target, ...(groupId ? { groupId } : { botId }) },
+      }),
+    jump: (messageId) => {
+      void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
+    },
+    dismissChoice: (messageId, question) => {
+      setDismissedChoiceQuestions((current) => {
+        const existing = current.get(messageId);
+        if (existing?.has(question)) return current;
+        const next = new Map(current);
+        const questions = new Set(existing);
+        questions.add(question);
+        next.set(messageId, questions);
+        return next;
       });
-    return {
-      menu,
-      onMenuAction: (id) => {
-        const reaction = messageMenuReaction(id);
-        if (reaction && (MESSAGE_REACTIONS as readonly string[]).includes(reaction)) {
-          react(reaction as MessageReaction);
-          return;
-        }
-        if (id === "reply") reply();
-        if (id === "copy") copy();
-        if (id === "quote") quote();
-        if (id === "speak") speakMessage();
-        if (id === "select") select();
-      },
-      actionProps: {
-        onLongPress: Platform.OS === "ios" ? undefined : openSheet,
-        accessibilityActions: actions.map((action) => ({ name: action.name, label: action.text })),
-        onAccessibilityAction: (event) => {
-          actions.find((action) => action.name === event.nativeEvent.actionName)?.onPress();
-        },
-      },
-    };
-  }
+    },
+    layout: (messageId, y, index) => {
+      const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, headerHeight + 24);
+      if (offset == null) return;
+      scrollPinnedTo(offset);
+      setHighlightedMessageId(messageId);
+      if (highlightTimer.current) clearTimeout(highlightTimer.current);
+      highlightTimer.current = setTimeout(() => setHighlightedMessageId(null), 1200);
+      requestAnimationFrame(() => {
+        const again = jumpAnchor.current.align(headerHeight + 24);
+        if (again != null) scrollPinnedTo(again);
+      });
+    },
+  };
+  const rowActionsRef = useRef(currentRowActions);
+  useLayoutEffect(() => {
+    rowActionsRef.current = currentRowActions;
+  });
+  const rowActions = useMemo<MessageRowActions>(
+    () => ({
+      reply: (message) => rowActionsRef.current.reply(message),
+      quote: (message) => rowActionsRef.current.quote(message),
+      select: (text) => rowActionsRef.current.select(text),
+      speak: (message) => rowActionsRef.current.speak(message),
+      react: (message, reaction) => rowActionsRef.current.react(message, reaction),
+      answer: (message, answer, username) =>
+        rowActionsRef.current.answer(message, answer, username),
+      openBot: (id, name) => rowActionsRef.current.openBot(id, name),
+      openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
+      previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
+      previewImage: (target) => rowActionsRef.current.previewImage(target),
+      jump: (id) => rowActionsRef.current.jump(id),
+      dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
+      layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
+    }),
+    [],
+  );
 
-  function renderMessageRow(
-    message: MobileMessage,
-    options?: { enableJump?: boolean; index?: number },
-  ) {
-    const { actionProps, menu, onMenuAction } = messageActionProps(message);
-    const parent = message.replyToMessageId
-      ? messagesById.get(message.replyToMessageId)
-      : undefined;
-    const replyBotId = message.replyPreview?.botId ?? parent?.botId;
-    const replyAuthor =
-      (message.replyPreview?.role ?? parent?.role) === "user"
-        ? t("You")
-        : (memberName(snap?.members, replyBotId) ??
-          mentionBots.find((bot) => bot.id === replyBotId)?.name ??
-          displayName ??
-          t("Bot"));
-    const messageReactions = reactionView.reactions.get(message.id);
-    const activityBotId =
-      !inGroup && message.role === "bot" && message.id.startsWith("progress:")
-        ? (message.botId ?? botId)
+  const renderMessageRow = useCallback(
+    (message: MobileMessage, options?: { enableJump?: boolean; index?: number }) => {
+      const parent = message.replyToMessageId
+        ? messagesById.get(message.replyToMessageId)
         : undefined;
-    const activityBot = activityBotId
-      ? (snap?.members?.find((member) => member.botId === activityBotId) ??
-        (currentBot?.id === activityBotId ? currentBot : undefined))
-      : undefined;
-    const activityStatus = activityBotId
-      ? (snap?.activeRuns?.find((run) => run.botId === activityBotId)?.status ??
-        (snap?.run?.botId === activityBotId ? snap.run.status : currentBotStatus))
-      : undefined;
-    return (
-      <View
-        key={message.id}
-        onLayout={
-          options?.enableJump
-            ? (event) => {
-                // Opaque header used to own this space; clear the transparent bar + fade.
-                const offset = jumpAnchor.current.onMessageLayout(
-                  message.id,
-                  event.nativeEvent.layout.y,
-                  options.index ?? 0,
-                  headerHeight + 24,
-                );
-                if (offset == null) return;
-                scrollPinnedTo(offset);
-                setHighlightedMessageId(message.id);
-                if (highlightTimer.current) clearTimeout(highlightTimer.current);
-                highlightTimer.current = setTimeout(() => setHighlightedMessageId(null), 1200);
-                requestAnimationFrame(() => {
-                  const again = jumpAnchor.current.align(headerHeight + 24);
-                  if (again != null) scrollPinnedTo(again);
-                });
-              }
-            : undefined
-        }
-        style={{
-          backgroundColor: highlightedMessageId === message.id ? tokens.muted : undefined,
-          marginTop: 12,
-          width: "100%",
-        }}
-      >
-        {separatorIds.has(message.id) ? <TimeSeparator createdAt={message.createdAt} /> : null}
-        <View
-          style={{
-            width: "100%",
-            flexDirection: "row",
-            alignItems: "flex-start",
-            gap: 8,
-            justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-          }}
-        >
-          {activityBotId ? (
-            <View style={{ paddingTop: 22 }}>
-              <BotAvatar
-                color={activityBot?.color ?? tokens.mutedForeground}
-                identity={activityBotId}
-                size={inGroup ? 20 : 28}
-                status={activityStatus}
-              />
-            </View>
+      const replyBotId = message.replyPreview?.botId ?? parent?.botId;
+      const replyAuthor =
+        (message.replyPreview?.role ?? parent?.role) === "user"
+          ? t("You")
+          : (memberName(snap?.members, replyBotId) ??
+            mentionBots.find((bot) => bot.id === replyBotId)?.name ??
+            displayName ??
+            t("Bot"));
+      const messageReactions = reactionView.reactions.get(message.id);
+      const activityBotId =
+        !inGroup && message.role === "bot" && message.id.startsWith("progress:")
+          ? (message.botId ?? botId)
+          : undefined;
+      const activityBot = activityBotId
+        ? (snap?.members?.find((member) => member.botId === activityBotId) ??
+          (currentBot?.id === activityBotId ? currentBot : undefined))
+        : undefined;
+      const activityStatus = activityBotId
+        ? (snap?.activeRuns?.find((run) => run.botId === activityBotId)?.status ??
+          (snap?.run?.botId === activityBotId ? snap.run.status : currentBotStatus))
+        : undefined;
+      return (
+        <MessageRow
+          key={message.id}
+          message={message}
+          actions={rowActions}
+          botId={botId}
+          bubbleBotId={botId ?? snap?.members?.[0]?.botId ?? ""}
+          groupId={groupId}
+          botName={displayName}
+          bots={mentionBots}
+          members={snap?.members}
+          readOnly={readOnly}
+          onCall={onCall}
+          canAnswer={!readOnly && message.id === answerableAskMessageId}
+          highlighted={highlightedMessageId === message.id}
+          separator={separatorIds.has(message.id)}
+          replyAuthor={replyAuthor}
+          replyFallbackText={parent ? previewMessageText(parent) : undefined}
+          messageReactions={messageReactions}
+          activityBotId={activityBotId}
+          activityColor={activityBot?.color}
+          activityStatus={activityStatus}
+          inGroup={inGroup}
+          windowWidth={windowWidth}
+          enableJump={options?.enableJump ?? false}
+          index={options?.index ?? 0}
+        />
+      );
+    },
+    [
+      messagesById,
+      snap?.members,
+      snap?.activeRuns,
+      snap?.run,
+      mentionBots,
+      displayName,
+      reactionView.reactions,
+      inGroup,
+      botId,
+      groupId,
+      currentBot,
+      currentBotStatus,
+      rowActions,
+      readOnly,
+      onCall,
+      answerableAskMessageId,
+      highlightedMessageId,
+      separatorIds,
+      windowWidth,
+      t,
+      locale,
+    ],
+  );
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<ThreadItem<MobileMessage>>) =>
+      item.kind === "voiceChat" ? (
+        <View style={messageListStyles.row}>
+          {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
+            <TimeSeparator createdAt={item.messages[0].createdAt} />
           ) : null}
-          <View
-            style={{
-              width: isCenteredAgentEvent(message.blocks) ? "100%" : undefined,
-              maxWidth: isCenteredAgentEvent(message.blocks)
-                ? "100%"
-                : activityBotId
-                  ? undefined
-                  : "90%",
-              flex: activityBotId ? 1 : undefined,
-              flexShrink: 1,
-            }}
-          >
-            {isPeerReceiptBlocks(message.blocks) ? null : (
-              <ReplyLine
-                threadTarget={artifactTarget}
-                targetId={message.replyToMessageId}
-                quote={message.replyQuote}
-                preview={message.replyPreview}
-                author={replyAuthor}
-                fallbackText={parent ? previewMessageText(parent) : undefined}
-                onJump={(messageId) => {
-                  void applyMessageJump({ botId, groupId, messageId }).catch(() => undefined);
-                }}
-              />
-            )}
-            <MessageContextMenu
-              actions={menu}
-              maxWidth={
-                isCenteredAgentEvent(message.blocks)
-                  ? windowWidth - 40
-                  : activityBotId
-                    ? windowWidth - 40 - (inGroup ? 28 : 36)
-                    : (windowWidth - 40) * 0.9
-              }
-              colorScheme={colorScheme}
-              onAction={onMenuAction}
-              onLongPress={actionProps.onLongPress}
-            >
-              <ThreadReadOnlyContext.Provider value={readOnly}>
-                <MessageBubble
-                  botId={botId ?? snap?.members?.[0]?.botId ?? ""}
-                  groupId={groupId}
-                  message={message}
-                  botName={displayName}
-                  bots={mentionBots}
-                  members={snap?.members}
-                  canAnswer={!readOnly && message.id === answerableAskMessageId}
-                  onAnswer={answerMessage}
-                  onOpenBot={openBot}
-                  onOpenComputer={openComputer}
-                  onChoiceDismissed={(question) => {
-                    setDismissedChoiceQuestions((current) => {
-                      const existing = current.get(message.id);
-                      if (existing?.has(question)) return current;
-                      const next = new Map(current);
-                      const questions = new Set(existing);
-                      questions.add(question);
-                      next.set(message.id, questions);
-                      return next;
-                    });
-                  }}
-                  onPreviewMarkdown={setMarkdownPreview}
-                  onPreviewImage={(target) =>
-                    router.push({
-                      pathname: "/image",
-                      params: { ...target, ...(groupId ? { groupId } : { botId }) },
-                    })
-                  }
-                  actionProps={actionProps}
-                />
-              </ThreadReadOnlyContext.Provider>
-            </MessageContextMenu>
-            {messageReactions ? (
-              <View
-                style={{
-                  flexDirection: "row",
-                  flexWrap: "wrap",
-                  gap: 4,
-                  marginTop: 4,
-                  justifyContent: message.role === "user" ? "flex-end" : "flex-start",
-                }}
-              >
-                {[...messageReactions].map(([emoji, count]) => (
-                  <Text
-                    key={emoji}
-                    style={{
-                      color: tokens.foreground,
-                      backgroundColor: tokens.muted,
-                      borderColor: tokens.border,
-                      borderWidth: 1,
-                      borderRadius: 16,
-                      paddingHorizontal: 8,
-                      paddingVertical: 2,
-                      fontSize: 13,
-                    }}
-                  >
-                    {emoji}
-                    {count > 1 ? ` ${count}` : ""}
-                  </Text>
-                ))}
-              </View>
-            ) : null}
-          </View>
+          <VoiceChatCard group={item} />
         </View>
-      </View>
-    );
-  }
+      ) : (
+        renderMessageRow(item.message)
+      ),
+    [renderMessageRow, separatorIds],
+  );
+  const listContentStyle = useMemo(
+    () => ({
+      paddingBottom: headerHeight + 8,
+      paddingTop: readOnly ? insets.bottom + 16 : 16,
+    }),
+    [headerHeight, readOnly, insets.bottom],
+  );
 
   const workingFooter =
     !inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
@@ -2317,7 +2200,7 @@ function Thread() {
             ref={pinnedScroll}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingTop: headerHeight + 8, paddingBottom: 16 }}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             onLayout={(event) => {
               pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
@@ -2376,15 +2259,13 @@ function Thread() {
             ref={scroll}
             data={liveItems}
             inverted
-            keyExtractor={(item) => (item.kind === "voiceChat" ? item.key : item.message.id)}
-            extraData={answerableAskMessageId}
-            style={{ flex: 1 }}
+            keyExtractor={threadItemKey}
+            // This callback tracks every row input, including reply, reaction and highlight state.
+            extraData={renderMessageRow}
+            style={messageListStyles.list}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
-            contentContainerStyle={{
-              paddingBottom: headerHeight + 8,
-              paddingTop: readOnly ? insets.bottom + 16 : 16,
-            }}
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            contentContainerStyle={listContentStyle}
+            maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             onScrollBeginDrag={() => {
               userDragging.current = true;
@@ -2421,18 +2302,7 @@ function Thread() {
                 {workingFooter}
               </>
             }
-            renderItem={({ item }) =>
-              item.kind === "voiceChat" ? (
-                <View style={{ marginTop: 12, width: "100%" }}>
-                  {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
-                    <TimeSeparator createdAt={item.messages[0].createdAt} />
-                  ) : null}
-                  <VoiceChatCard group={item} />
-                </View>
-              ) : (
-                renderMessageRow(item.message)
-              )
-            }
+            renderItem={renderItem}
           />
         )}
         {showPinnedPage || threadScrollState.detached ? (
@@ -3278,6 +3148,327 @@ type MessageActionProps = Pick<
   TextProps,
   "onLongPress" | "accessibilityActions" | "onAccessibilityAction"
 >;
+
+const messageListStyles = StyleSheet.create({
+  list: { flex: 1 },
+  row: { marginTop: 12, width: "100%" },
+});
+const messageListPosition = { minIndexForVisible: 0 };
+function threadItemKey(item: ThreadItem<MobileMessage>) {
+  return item.kind === "voiceChat" ? item.key : item.message.id;
+}
+
+type MessageRowActions = {
+  reply: (message: MobileMessage) => void;
+  quote: (message: MobileMessage) => void;
+  select: (text: string) => void;
+  speak: (message: MobileMessage) => void;
+  react: (message: MobileMessage, reaction: MessageReaction) => void;
+  answer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
+  openBot: (id: string, name: string) => void;
+  openComputer: (id: string, name: string) => void;
+  previewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
+  previewImage: (target: ImageArtifactPreviewTarget) => void;
+  jump: (messageId: string) => void;
+  dismissChoice: (messageId: string, question: string) => void;
+  layout: (messageId: string, y: number, index: number) => void;
+};
+
+type MessageRowProps = {
+  message: MobileMessage;
+  actions: MessageRowActions;
+  botId?: string;
+  bubbleBotId: string;
+  groupId?: string;
+  botName?: string;
+  bots: MobileBot[];
+  members?: MobileSnapshot["members"];
+  readOnly: boolean;
+  onCall: boolean;
+  canAnswer: boolean;
+  highlighted: boolean;
+  separator: boolean;
+  replyAuthor: string;
+  replyFallbackText?: string;
+  messageReactions?: ReadonlyMap<MessageReaction, number>;
+  activityBotId?: string;
+  activityColor?: string;
+  activityStatus?: MobileBot["status"];
+  inGroup: boolean;
+  windowWidth: number;
+  enableJump: boolean;
+  index: number;
+};
+
+const MessageRow = memo(function MessageRow({
+  message,
+  actions,
+  botId,
+  bubbleBotId,
+  groupId,
+  botName,
+  bots,
+  members,
+  readOnly,
+  onCall,
+  canAnswer,
+  highlighted,
+  separator,
+  replyAuthor,
+  replyFallbackText,
+  messageReactions,
+  activityBotId,
+  activityColor,
+  activityStatus,
+  inGroup,
+  windowWidth,
+  enableJump,
+  index,
+}: MessageRowProps) {
+  const tokens = useMobileTokens();
+  const colorScheme = useResolvedAppearance();
+  const { t, locale } = useI18n();
+  const artifactTarget = useMemo<MobileArtifactTarget | undefined>(
+    () => (groupId ? { groupId } : botId ? { botId } : undefined),
+    [botId, groupId],
+  );
+  const onChoiceDismissed = useCallback(
+    (question: string) => actions.dismissChoice(message.id, question),
+    [actions, message.id],
+  );
+  const onLayout = useMemo(
+    () =>
+      enableJump
+        ? (event: LayoutChangeEvent) =>
+            actions.layout(message.id, event.nativeEvent.layout.y, index)
+        : undefined,
+    [actions, message.id, enableJump, index],
+  );
+  const { actionProps, menu, onMenuAction } = useMemo<{
+    actionProps: MessageActionProps;
+    menu: ReturnType<typeof buildMessageContextMenu>;
+    onMenuAction: (id: string) => void;
+  }>(() => {
+    const messageText = selectableMobileMessageText(message);
+    const includeQuote =
+      !readOnly &&
+      !message.id.startsWith("progress:") &&
+      quotableMessageSegments(message.role, message.blocks).length > 0;
+    const includeReact = !readOnly && canReactToThreadMessage(message);
+    // The call already reads replies aloud; a second voice would talk over it.
+    const includeSpeak = message.role === "bot" && !onCall && Boolean(blockText(message));
+    const includeSelect = messageText.trim().length > 0;
+    const reply = () => actions.reply(message);
+    const quote = () => actions.quote(message);
+    const speakMessage = () => actions.speak(message);
+    const select = () =>
+      actions.select(
+        message.role === "user" ? messageText : selectableTextFromMarkdown(messageText),
+      );
+    const copy = () => {
+      const text = copyableMobileMessageText(message);
+      if (text) void Clipboard.setStringAsync(text).catch(() => undefined);
+    };
+    const react = (reaction: MessageReaction) => actions.react(message, reaction);
+    const menuActions = [
+      ...(!readOnly ? [{ name: "reply", text: t("Reply"), onPress: reply }] : []),
+      ...(includeQuote ? [{ name: "quote", text: t("Quote"), onPress: quote }] : []),
+      ...(includeReact
+        ? [
+            {
+              name: "react",
+              text: t("React"),
+              onPress: () =>
+                presentMessageActionSheet({
+                  cancel: t("Cancel"),
+                  more: t("More"),
+                  colorScheme,
+                  actions: MESSAGE_REACTIONS.map((emoji) => ({
+                    text: emoji,
+                    onPress: () => react(emoji),
+                  })),
+                }),
+            },
+          ]
+        : []),
+      ...(includeSpeak ? [{ name: "speak", text: t("Speak message"), onPress: speakMessage }] : []),
+      ...(includeSelect ? [{ name: "select", text: t("Select text"), onPress: select }] : []),
+      { name: "copy", text: t("Copy"), onPress: copy },
+    ];
+    const menu = buildMessageContextMenu({
+      labels: {
+        reply: t("Reply"),
+        copy: t("Copy"),
+        react: t("React"),
+        quote: t("Quote"),
+        speak: t("Speak message"),
+        select: t("Select text"),
+      },
+      reactions: MESSAGE_REACTIONS,
+      include: {
+        reply: !readOnly,
+        quote: includeQuote,
+        react: includeReact,
+        speak: includeSpeak,
+        select: includeSelect,
+      },
+    });
+    const openSheet = () =>
+      presentMessageActionSheet({
+        actions: menuActions,
+        title: message.createdAt
+          ? formatMessageTime(message.createdAt, dateLocaleForUi())
+          : undefined,
+        cancel: t("Cancel"),
+        more: t("More"),
+        colorScheme,
+      });
+    return {
+      menu,
+      onMenuAction: (id) => {
+        const reaction = messageMenuReaction(id);
+        if (reaction && (MESSAGE_REACTIONS as readonly string[]).includes(reaction)) {
+          react(reaction as MessageReaction);
+          return;
+        }
+        if (id === "reply") reply();
+        if (id === "copy") copy();
+        if (id === "quote") quote();
+        if (id === "speak") speakMessage();
+        if (id === "select") select();
+      },
+      actionProps: {
+        onLongPress: Platform.OS === "ios" ? undefined : openSheet,
+        accessibilityActions: menuActions.map((action) => ({
+          name: action.name,
+          label: action.text,
+        })),
+        onAccessibilityAction: (event) => {
+          menuActions.find((action) => action.name === event.nativeEvent.actionName)?.onPress();
+        },
+      },
+    };
+  }, [message, actions, readOnly, onCall, colorScheme, t, locale]);
+  return (
+    <View
+      key={message.id}
+      onLayout={onLayout}
+      style={{
+        backgroundColor: highlighted ? tokens.muted : undefined,
+        marginTop: 12,
+        width: "100%",
+      }}
+    >
+      {separator ? <TimeSeparator createdAt={message.createdAt} /> : null}
+      <View
+        style={{
+          width: "100%",
+          flexDirection: "row",
+          alignItems: "flex-start",
+          gap: 8,
+          justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+        }}
+      >
+        {activityBotId ? (
+          <View style={{ paddingTop: 22 }}>
+            <BotAvatar
+              color={activityColor ?? tokens.mutedForeground}
+              identity={activityBotId}
+              size={inGroup ? 20 : 28}
+              status={activityStatus}
+            />
+          </View>
+        ) : null}
+        <View
+          style={{
+            width: isCenteredAgentEvent(message.blocks) ? "100%" : undefined,
+            maxWidth: isCenteredAgentEvent(message.blocks)
+              ? "100%"
+              : activityBotId
+                ? undefined
+                : "90%",
+            flex: activityBotId ? 1 : undefined,
+            flexShrink: 1,
+          }}
+        >
+          {isPeerReceiptBlocks(message.blocks) ? null : (
+            <ReplyLine
+              threadTarget={artifactTarget}
+              targetId={message.replyToMessageId}
+              quote={message.replyQuote}
+              preview={message.replyPreview}
+              author={replyAuthor}
+              fallbackText={replyFallbackText}
+              onJump={actions.jump}
+            />
+          )}
+          <MessageContextMenu
+            actions={menu}
+            maxWidth={
+              isCenteredAgentEvent(message.blocks)
+                ? windowWidth - 40
+                : activityBotId
+                  ? windowWidth - 40 - (inGroup ? 28 : 36)
+                  : (windowWidth - 40) * 0.9
+            }
+            colorScheme={colorScheme}
+            onAction={onMenuAction}
+            onLongPress={actionProps.onLongPress}
+          >
+            <ThreadReadOnlyContext.Provider value={readOnly}>
+              <MessageBubble
+                botId={bubbleBotId}
+                groupId={groupId}
+                message={message}
+                botName={botName}
+                bots={bots}
+                members={members}
+                canAnswer={canAnswer}
+                onAnswer={actions.answer}
+                onOpenBot={actions.openBot}
+                onOpenComputer={actions.openComputer}
+                onChoiceDismissed={onChoiceDismissed}
+                onPreviewMarkdown={actions.previewMarkdown}
+                onPreviewImage={actions.previewImage}
+                actionProps={actionProps}
+              />
+            </ThreadReadOnlyContext.Provider>
+          </MessageContextMenu>
+          {messageReactions ? (
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                gap: 4,
+                marginTop: 4,
+                justifyContent: message.role === "user" ? "flex-end" : "flex-start",
+              }}
+            >
+              {[...messageReactions].map(([emoji, count]) => (
+                <Text
+                  key={emoji}
+                  style={{
+                    color: tokens.foreground,
+                    backgroundColor: tokens.muted,
+                    borderColor: tokens.border,
+                    borderWidth: 1,
+                    borderRadius: 16,
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    fontSize: 13,
+                  }}
+                >
+                  {emoji}
+                  {count > 1 ? ` ${count}` : ""}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+});
 
 const MessageBubble = memo(function MessageBubble({
   botId,
