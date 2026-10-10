@@ -195,6 +195,16 @@ button {
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
+.star-pill--icon {
+  padding: 7px 10px;
+}
+
+.star-pill--icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
 .star-pill:hover,
 .star-pill:focus-visible,
 .button:hover,
@@ -920,35 +930,17 @@ button.button--secondary:focus-visible {
 .site-footer {
   display: flex;
   justify-content: space-between;
-  gap: 24px;
+  gap: 48px;
   margin-top: 70px;
   padding: 60px 0 70px;
   border-top: 1px solid var(--line);
 }
 
-.site-footer__brand,
-.site-footer__nav,
-.site-footer__links,
-.site-footer__languages {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 18px;
-}
-
-.site-footer__brand,
-.site-footer__nav {
-  padding-top: 40px;
-}
-
 .site-footer__brand {
-  gap: 9px;
-}
-
-.site-footer__nav {
+  display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 14px;
+  align-items: flex-start;
+  gap: 16px;
 }
 
 .site-footer__legal {
@@ -961,14 +953,11 @@ button.button--secondary:focus-visible {
   color: var(--ink);
 }
 
-.site-footer__languages,
-.site-footer__links {
+.site-footer__languages {
+  display: flex;
+  flex-wrap: wrap;
   color: var(--muted);
   font-size: 14px;
-}
-
-.site-footer__languages {
-  gap: 0;
 }
 
 .site-footer__languages a + a::before {
@@ -978,14 +967,38 @@ button.button--secondary:focus-visible {
   pointer-events: none;
 }
 
-.site-footer__languages a[aria-current="page"] {
+.site-footer__languages a[aria-current="page"],
+.site-footer__column a[aria-current="page"] {
   color: var(--ink);
+}
+
+.site-footer__columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, auto));
+  gap: 48px;
+}
+
+.site-footer__column h2 {
+  margin: 0 0 14px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.site-footer__column ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 14px;
 }
 
 .site-footer__languages a:hover,
 .site-footer__languages a:focus-visible,
-.site-footer__links a:hover,
-.site-footer__links a:focus-visible {
+.site-footer__column a:hover,
+.site-footer__column a:focus-visible {
   color: var(--ink);
 }
 
@@ -2777,13 +2790,9 @@ button.button--secondary:focus-visible {
     flex-direction: column;
   }
 
-  .site-footer__brand,
-  .site-footer__nav {
-    padding-top: 0;
-  }
-
-  .site-footer__nav {
-    align-items: flex-start;
+  .site-footer__columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 32px;
   }
 
   .product-demo__topbar {

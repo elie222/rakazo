@@ -24,6 +24,7 @@ export type HomeCopy = {
     alternatives: string;
     alternativesMenu: string;
     viewOnGithub: string;
+    iosApp: string;
   };
   hero: {
     badge: string;
@@ -61,6 +62,7 @@ export type HomeCopy = {
     selfHostItems: string[];
     starOnGithub: string;
     readTheDocs: string;
+    openClawAlternative: string;
     cloudTitle: string;
     cloudBadge: string;
     cloudMeta: string;
@@ -105,15 +107,17 @@ export type HomeCopy = {
     languagesLabel: string;
     links: {
       docs: string;
-      openClaw: string;
+      product: string;
       changelog: string;
       alternatives: string;
+      all: string;
       about: string;
       support: string;
       privacy: string;
       terms: string;
-      grokAlternative: string;
+      company: string;
       blog: string;
+      iosApp: string;
     };
   };
 };
@@ -296,6 +300,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       alternatives: "Alternatives",
       alternativesMenu: "Alternative pages",
       viewOnGithub: "View on GitHub",
+      iosApp: "Download Rakazo for iPhone",
     },
     hero: {
       badge: "Apache-2.0",
@@ -364,6 +369,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "Star on GitHub",
       readTheDocs: "Read the docs",
+      openClawAlternative: "OpenClaw alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Coming soon",
       cloudMeta: "Bring your own keys, we run the computers",
@@ -418,15 +424,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       languagesLabel: "Language",
       links: {
         docs: "Docs",
-        openClaw: "OpenClaw alternative",
+        product: "Product",
         changelog: "Changelog",
         alternatives: "Alternatives",
+        all: "All",
         about: "About",
         support: "Support",
         privacy: "Privacy",
         terms: "Terms",
-        grokAlternative: "Grok Bot alternative",
+        company: "Company",
         blog: "Blog",
+        iosApp: "iPhone app",
       },
     },
   },
@@ -453,6 +461,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       alternatives: "Alternativen",
       alternativesMenu: "Vergleichsseiten",
       viewOnGithub: "Auf GitHub ansehen",
+      iosApp: "Rakazo für iPhone laden",
     },
     hero: {
       badge: "Apache-2.0",
@@ -525,6 +534,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
+      openClawAlternative: "OpenClaw-Alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Demnächst",
       cloudMeta: "Deine Keys, wir betreiben die Computer",
@@ -579,15 +589,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       languagesLabel: "Sprache",
       links: {
         docs: "Dokumentation",
-        openClaw: "OpenClaw-Alternative",
+        product: "Produkt",
         changelog: "Änderungsprotokoll",
         alternatives: "Alternativen",
+        all: "Alle",
         about: "Über uns",
         support: "Support",
         privacy: "Datenschutz",
         terms: "AGB",
-        grokAlternative: "Grok-Bot-Alternative",
+        company: "Unternehmen",
         blog: "Blog",
+        iosApp: "iPhone-App",
       },
     },
   },
@@ -613,6 +625,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       alternatives: "대안",
       alternativesMenu: "대안 페이지",
       viewOnGithub: "GitHub에서 보기",
+      iosApp: "iPhone용 Rakazo 받기",
     },
     hero: {
       badge: "Apache-2.0",
@@ -685,6 +698,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "GitHub에서 Star",
       readTheDocs: "문서 읽기",
+      openClawAlternative: "OpenClaw 대안",
       cloudTitle: "Cloud",
       cloudBadge: "곧 출시",
       cloudMeta: "키는 당신 것, 컴퓨터는 우리가 운영",
@@ -739,15 +753,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       languagesLabel: "언어",
       links: {
         docs: "문서",
-        openClaw: "OpenClaw 대안",
+        product: "제품",
         changelog: "변경 내역",
         alternatives: "대안",
+        all: "전체",
         about: "소개",
         support: "지원",
         privacy: "개인정보 처리방침",
         terms: "이용약관",
-        grokAlternative: "Grok Bot 대안",
+        company: "회사",
         blog: "블로그",
+        iosApp: "iPhone 앱",
       },
     },
   },
@@ -773,6 +789,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       alternatives: "替代方案",
       alternativesMenu: "替代页面",
       viewOnGithub: "在 GitHub 上查看",
+      iosApp: "下载 iPhone 版 Rakazo",
     },
     hero: {
       badge: "Apache-2.0",
@@ -845,6 +862,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
       starOnGithub: "在 GitHub 上点星",
       readTheDocs: "阅读文档",
+      openClawAlternative: "OpenClaw 替代方案",
       cloudTitle: "云端",
       cloudBadge: "即将推出",
       cloudMeta: "密钥归你，电脑由我们运行",
@@ -899,15 +917,17 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       languagesLabel: "语言",
       links: {
         docs: "文档",
-        openClaw: "OpenClaw 替代方案",
+        product: "产品",
         changelog: "更新日志",
         alternatives: "替代方案",
+        all: "全部",
         about: "关于",
         support: "支持",
         privacy: "隐私",
         terms: "条款",
-        grokAlternative: "Grok Bot 替代品",
+        company: "公司",
         blog: "博客",
+        iosApp: "iPhone 应用",
       },
     },
   },
