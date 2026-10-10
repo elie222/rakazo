@@ -1,0 +1,125 @@
+name: release-android-apk
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-android-apk
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish the Android APK
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: android
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Require Expo automation token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [[ -z "$EXPO_TOKEN" ]]; then
+            echo "Add an EXPO_TOKEN repository secret with access to the inbox-zero/rakazo Expo project." >&2
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+      - name: Set up Expo
+        uses: expo/expo-github-action@eab7a230208c952974db8c3245cfd78402c7b385 # v9
+        with:
+          eas-version: latest
+          packager: pnpm
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify mobile project
+        run: pnpm --filter @rakazo/mobile check
+
+      # EAS signs with the project's managed Android keystore and bakes in the production update
+      # channel, so installed APKs receive the same OTA updates as store builds.
+      - name: Build APK on EAS
+        id: build
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+          eas build --platform android --profile android-apk --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          url="$(jq -r '.[0].artifacts.applicationArchiveUrl // .[0].artifacts.buildUrl' "$RUNNER_TEMP/build.json")"
+          version="$(jq -r '.[0].appVersion' "$RUNNER_TEMP/build.json")"
+          version_code="$(jq -r '.[0].appBuildVersion' "$RUNNER_TEMP/build.json")"
+          if [[ -z "$url" || "$url" == "null" || "$url" != https://* ]]; then
+            echo "EAS did not return an APK download URL." >&2
+            exit 1
+          fi
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/rakazo.apk" "$url"
+          if [[ "$(head -c 2 "$RUNNER_TEMP/rakazo.apk")" != "PK" ]]; then
+            echo "The downloaded artifact is not an APK." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+
+      # One rolling release keeps a stable download URL:
+      # https://github.com/<owner>/<repo>/releases/download/android/rakazo.apk
+      # It never becomes GitHub's "latest" release, which the desktop updater reads. An existing
+      # release is updated in place: the new APK is uploaded under a temporary name before the old
+      # one is removed, so a failed run leaves the previous download working.
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.build.outputs.version }}
+          VERSION_CODE: ${{ steps.build.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          title="Rakazo for Android $VERSION ($VERSION_CODE)"
+          if ! gh release view "$RELEASE_TAG" --json tagName > /dev/null 2> "$RUNNER_TEMP/view.err"; then
+            if ! grep -q "release not found" "$RUNNER_TEMP/view.err"; then
+              cat "$RUNNER_TEMP/view.err" >&2
+              exit 1
+            fi
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/rakazo.apk" \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --notes "Install rakazo.apk on your Android phone. It updates itself over the air." \
+              --latest=false
+            exit 0
+          fi
+
+          staged="rakazo-$VERSION_CODE.apk"
+          cp "$RUNNER_TEMP/rakazo.apk" "$RUNNER_TEMP/$staged"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/$staged" --clobber
+          assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets')"
+          staged_id="$(jq -r --arg name "$staged" '.[] | select(.name == $name) | .id' <<< "$assets")"
+          old_id="$(jq -r '.[] | select(.name == "rakazo.apk") | .id' <<< "$assets")"
+          if [[ -z "$staged_id" ]]; then
+            echo "The uploaded $staged is missing from the release; leaving the previous APK in place." >&2
+            exit 1
+          fi
+          if [[ -n "$old_id" ]]; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old_id"
+          fi
+          for attempt in 1 2 3; do
+            if gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" -f name=rakazo.apk > /dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              echo "Could not rename $staged to rakazo.apk; rename it on the release page." >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+          gh release edit "$RELEASE_TAG" --title "$title" --latest=false
