@@ -1148,7 +1148,8 @@ function Thread() {
     expandedHistoryThread.current = null;
     // The live list mounts at the latest message.
     scrollBehavior.current.jumpToLatest();
-    publishThreadScrollState(scrollBehavior.current.state());
+    // Clearing the pinned refs must render even when the snapshot and scroll flags are unchanged.
+    setThreadScrollState(scrollBehavior.current.state());
     commitSnap(
       snapRef.current && pinned
         ? leaveThreadWindow(snapRef.current, pinned.newerCursor)
