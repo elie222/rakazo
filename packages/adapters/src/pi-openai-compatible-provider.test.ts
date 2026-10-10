@@ -1,7 +1,13 @@
+import {
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  normalizeContext,
+} from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { fetch as undiciFetch } from "undici";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
 import { listPiCatalog } from "./pi-models.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./pi-oauth.js";
@@ -12,6 +18,7 @@ import {
   openAiCompatibleCatalogProvider,
   prepareOpenAiCompatibleConnect,
   probeOpenAiCompatibleModels,
+  registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
 
@@ -186,6 +193,81 @@ describe("model connect", () => {
 });
 
 describe("openai-compatible provider", () => {
+  it("leaves other providers untouched during catalog and runtime registration", () => {
+    const models = createModels();
+    const other = fauxProvider();
+    models.setProvider(other.provider);
+    const setProvider = vi.spyOn(models, "setProvider");
+
+    registerOpenAiCompatibleCatalog(models);
+    registerOpenAiCompatibleRuntime(models, {
+      modelId: "fixture-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+    });
+
+    expect(models.getProvider(other.provider.id)).toBe(other.provider);
+    expect(setProvider).toHaveBeenCalledTimes(4);
+    for (const [provider] of setProvider.mock.calls) {
+      expect(provider.id).toBe(OPENAI_COMPATIBLE_PROVIDER_ID);
+    }
+  });
+
+  it.each(["stream", "streamSimple"] as const)(
+    "guards transcripts after runtime registration through %s",
+    async (method) => {
+      const models = registerOpenAiCompatibleCatalog(createModels());
+      registerOpenAiCompatibleRuntime(models, {
+        modelId: "fixture-model",
+        baseUrl: "http://127.0.0.1:8000/v1",
+      });
+      const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+      const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")!;
+      const context = normalizeContext({
+        messages: [
+          fauxAssistantMessage([
+            { type: "toolCall", id: "call_named", name: "list_tasks", arguments: {} },
+            { type: "toolCall", id: "call_nameless", name: "", arguments: {} },
+          ]),
+          ...["call_nameless", "call_named"].map((toolCallId) => ({
+            role: "toolResult" as const,
+            toolCallId,
+            toolName: "",
+            content: [{ type: "text" as const, text: "real result" }],
+            isError: false,
+            timestamp: 1,
+          })),
+        ],
+      });
+      let messages: unknown;
+      await provider[method](model, context, {
+        apiKey: "fake-api-key",
+        fetch: async (_input, init) => {
+          messages = JSON.parse(String(init?.body)).messages;
+          return new Response("data: [DONE]\n\n", {
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
+      }).result();
+
+      expect(messages).toEqual([
+        expect.objectContaining({
+          role: "assistant",
+          tool_calls: [
+            expect.objectContaining({
+              id: "call_named",
+              function: { name: "list_tasks", arguments: "{}" },
+            }),
+          ],
+        }),
+        expect.objectContaining({
+          role: "tool",
+          tool_call_id: "call_named",
+          content: "real result",
+        }),
+      ]);
+    },
+  );
+
   it("does not treat replaced Request Authorization as keyed for public http", async () => {
     const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
     process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";

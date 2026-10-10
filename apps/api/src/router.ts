@@ -2272,7 +2272,7 @@ export function createRouter(deps: RouterDeps) {
               archivedAt: null,
               thread: { id: target.threadId },
             },
-            include: { members: { orderBy: { createdAt: "asc" } } },
+            include: { members: { orderBy: [{ createdAt: "asc" }, { botId: "asc" }] } },
           });
           const botId = group?.members[0]?.botId;
           if (!botId) throw new IsolationError();

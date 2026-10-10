@@ -263,17 +263,140 @@ describe("stripNoResponseReply", () => {
     });
   });
 
-  it("keeps prose that merely repeats the sentinel around words", () => {
-    const text = `${NO_RESPONSE} and ${NO_RESPONSE}`;
+  it("keeps prose that merely repeats the sentinel between words", () => {
+    const text = `first ${NO_RESPONSE} and ${NO_RESPONSE} last`;
     const blocks = [{ kind: "text" as const, text }];
     expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
   });
 
-  it("does not strip the sentinel when extra prose is present", () => {
+  it("keeps a reply with prose but drops a stray sentinel at its start", () => {
     const text = `${NO_RESPONSE} all clear`;
     const blocks = [{ kind: "text" as const, text }];
+    const stripped = stripNoResponseReply(text, blocks);
+    expect(stripped).toEqual({
+      assembled: "all clear",
+      blocks: [{ kind: "text", text: "all clear" }],
+    });
+    expect(completionMarksUnread("routine", stripped.assembled)).toBe(true);
+  });
+
+  it("drops a stray sentinel glued to the end of a report, keeping the report", () => {
+    // Observed on a routine: the model wrote its report and then also emitted the silence
+    // signal; segments are joined without a separator.
+    const report =
+      "**À surveiller** : UPS 2U, mémoire 96 %. Proposition : examiner sans modification.";
+    const text = `${report}${NO_RESPONSE}`;
+    const stripped = stripNoResponseReply(text, [
+      { kind: "text", text: report },
+      { kind: "text", text: NO_RESPONSE },
+    ]);
+    expect(stripped).toEqual({ assembled: report, blocks: [{ kind: "text", text: report }] });
+    expect(completionNotificationBody(stripped.assembled, stripped.blocks)).not.toContain(
+      NO_RESPONSE,
+    );
+    expect(completionMarksUnread("routine", stripped.assembled)).toBe(true);
+  });
+
+  it.each([
+    ["report.NO_RESPONSENO_RESPONSE", "report."],
+    ["NO_RESPONSENO_RESPONSE report", "report"],
+    ["report.NO_RESPONSE NO_RESPONSE", "report."],
+    ["NO_RESPONSE report", "report"],
+    ["NO_RESPONSE.report", ".report"],
+    ["NO_RESPONSE first NO_RESPONSE last NO_RESPONSE", "first NO_RESPONSE last"],
+  ])("strips whole edge runs from %s while keeping prose unread", (text, prose) => {
+    const stripped = stripNoResponseReply(text, [{ kind: "text", text }]);
+    expect(stripped).toEqual({ assembled: prose, blocks: [{ kind: "text", text: prose }] });
+    expect(completionNotificationBody(stripped.assembled, stripped.blocks)).toBe(prose);
+    expect(completionMarksUnread("routine", prose)).toBe(true);
+  });
+
+  it.each([
+    ["first ", NO_RESPONSE, " last"],
+    ["first NO_RESPONSE last"],
+    ["NO_RESPONSE_POLICY"],
+    ["reportNO_RESPONSENO_RESPONSE"],
+    ["NO_RESPONSENO_RESPONSE_POLICY"],
+    ["NO_RES", "PONSE_POLICY"],
+  ])("preserves interior sentinels and identifiers in joined blocks %j", (...parts) => {
+    const text = parts.join("");
+    const blocks = parts.map((part) => ({ kind: "text" as const, text: part }));
     expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
-    expect(completionMarksUnread("routine", text)).toBe(true);
+    expect(completionNotificationBody(text, blocks)).toBe(text);
+  });
+
+  it("applies only joined edge removals across text blocks and preserves sibling activity", () => {
+    const steps = { kind: "steps" as const, steps: [{ label: "List items", count: 1 }] };
+    const parts = [
+      "NO_RES",
+      "PONSENO_RESPONSE first ",
+      NO_RESPONSE,
+      " last.NO_RES",
+      "PONSE NO_RESPONSE",
+    ];
+    const blocks = parts.map((text) => ({ kind: "text" as const, text }));
+    const stripped = stripNoResponseReply(parts.join(""), [blocks[0]!, steps, ...blocks.slice(1)]);
+    expect(stripped).toEqual({
+      assembled: "first NO_RESPONSE last.",
+      blocks: [
+        steps,
+        { kind: "text", text: "first " },
+        { kind: "text", text: NO_RESPONSE },
+        { kind: "text", text: " last." },
+      ],
+    });
+  });
+
+  it("uses joined text blocks when assembled text is empty", () => {
+    const blocks = [
+      { kind: "text" as const, text: "first " },
+      { kind: "text" as const, text: NO_RESPONSE },
+      { kind: "text" as const, text: " last.NO_RESPONSENO_RESPONSE" },
+    ];
+    const stripped = stripNoResponseReply("", blocks);
+    expect(stripped).toEqual({
+      assembled: "",
+      blocks: [blocks[0], blocks[1], { kind: "text", text: " last." }],
+    });
+    expect(completionNotificationBody(stripped.assembled, stripped.blocks)).toBe(
+      "first NO_RESPONSE last.",
+    );
+  });
+
+  it("leaves long trailing whitespace alone when there is no edge sentinel", () => {
+    const text = `report.${" ".repeat(100_000)}`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
+  });
+
+  it("drops a standalone leading sentinel but keeps the identifier that follows it", () => {
+    const text = `${NO_RESPONSE} NO_RESPONSE_POLICY is enabled.`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({
+      assembled: "NO_RESPONSE_POLICY is enabled.",
+      blocks: [{ kind: "text", text: "NO_RESPONSE_POLICY is enabled." }],
+    });
+  });
+
+  it("drops a standalone trailing sentinel but keeps the identifier before it", () => {
+    const text = `see POLICY_NO_RESPONSE ${NO_RESPONSE}`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({
+      assembled: "see POLICY_NO_RESPONSE",
+      blocks: [{ kind: "text", text: "see POLICY_NO_RESPONSE" }],
+    });
+  });
+
+  it("keeps a glued run that ends inside an identifier", () => {
+    const text = `${NO_RESPONSE}NO_RESPONSE_POLICY is enabled.`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
+  });
+
+  it("leaves a word that merely contains the sentinel alone", () => {
+    const text = `see NO_RESPONSE_POLICY`;
+    const blocks = [{ kind: "text" as const, text }];
+    expect(stripNoResponseReply(text, blocks)).toEqual({ assembled: text, blocks });
   });
 
   it("fails closed on case, punctuation, and wrapped variants", () => {
