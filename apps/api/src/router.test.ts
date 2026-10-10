@@ -2082,6 +2082,18 @@ describe("bot intro run", () => {
     );
   });
 
+  it("asks template setup questions in the first reply before starting work", async () => {
+    const { create, deps } = introDeps();
+    await enqueueBotIntroRun(deps, actor, bot, "helper");
+    expect(create.mock.calls[0]?.[0]).toMatchObject({
+      data: {
+        prompt: expect.stringMatching(
+          /first reply.*setup questions.*wait for answers.*remember or save_memory if available.*tool succeeds/i,
+        ),
+      },
+    });
+  });
+
   it("does nothing when the bot has no thread", async () => {
     const { create, enqueue, deps } = introDeps();
 

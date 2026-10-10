@@ -4814,3 +4814,15 @@ msgstr "O seu nome"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Sua equipe de agentes sempre ativos<0/>, a quem você pode dar trabalho de verdade."
+
+#: src/pages/shell/bot-templates.tsx
+msgid "Start from a template"
+msgstr "Começar com um modelo"
+
+#: src/pages/shell/bot-templates.tsx
+msgid "Browse all"
+msgstr "Ver todos"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Instructions"
+msgstr "Instruções"

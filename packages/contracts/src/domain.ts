@@ -300,6 +300,7 @@ export const BOT_DESCRIPTION_MAX_LENGTH = 4000;
 export const BOT_INSTRUCTIONS_MAX_LENGTH = 20000;
 
 export const CreateBotInput = z.object({
+  templateSlug: z.string().trim().min(1).max(120).optional(),
   name: z.string().trim().min(1).max(BOT_NAME_MAX_LENGTH),
   title: z.string().max(BOT_TITLE_MAX_LENGTH).default(""),
   description: z.string().max(BOT_DESCRIPTION_MAX_LENGTH).default(""),

@@ -4814,3 +4814,15 @@ msgstr "你的名字"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "你的一支随时在线的 Agent 团队<0/>可以交给它们真正的工作。"
+
+#: src/pages/shell/bot-templates.tsx
+msgid "Start from a template"
+msgstr "从模板开始"
+
+#: src/pages/shell/bot-templates.tsx
+msgid "Browse all"
+msgstr "浏览全部"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Instructions"
+msgstr "指令"
