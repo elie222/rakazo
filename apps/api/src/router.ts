@@ -724,7 +724,7 @@ export async function enqueueBotIntroRun(
         threadId,
         userId: actor.userId,
         prompt: templateSlug
-          ? "You were just created from a template. In your first reply, ask the setup questions specified in your instructions. Keep the interview short and wait for answers before starting work. After the user answers, save the agreed setup in your instructions."
+          ? "You were just created from a template. In your first reply, ask the setup questions specified in your instructions. Keep the interview short and wait for answers before starting work. After the user answers, save the agreed setup with remember or save_memory if available. Only confirm it was saved after the tool succeeds; otherwise do not claim it was saved."
           : BOT_INTRO_PROMPT,
         status: "queued",
       },

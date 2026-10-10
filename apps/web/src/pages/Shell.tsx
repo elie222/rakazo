@@ -2387,13 +2387,10 @@ export function ShellPage() {
     );
     navigate(`/app/${bot.id}`);
     setPanel(null);
-    if (input.templateSlug) {
-      cancelFocusPrompt();
-      return;
-    }
     // Register cancellation before awaiting start so leaving the bot during
     // startup cannot miss the abort and still schedule a late focus card.
     cancelFocusPrompt();
+    if (input.templateSlug) return;
     const controller = new AbortController();
     focusPromptAbortRef.current = controller;
     focusPromptBotIdRef.current = bot.id;

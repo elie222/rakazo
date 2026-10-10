@@ -68,20 +68,15 @@ describe("bot templates", () => {
     ]);
   });
 
-  it("prefers a fixed selection and fills up to eight featured picks", async () => {
+  it("features the first eight listings when the directory has no featured flags", async () => {
     const catalog = createBotTemplateCatalog(
       vi
         .fn()
-        .mockResolvedValue(
-          response([
-            ...Array.from({ length: 10 }, (_, i) => listing(`other-${i}`)),
-            listing("websiteaudit"),
-          ]),
-        ),
+        .mockResolvedValue(response(Array.from({ length: 10 }, (_, i) => listing(`helper-${i}`)))),
     );
-    const featured = (await catalog()).filter((bot) => bot.featured);
-    expect(featured).toHaveLength(8);
-    expect(featured.some((bot) => bot.slug === "websiteaudit")).toBe(true);
+    expect((await catalog()).filter((bot) => bot.featured).map((bot) => bot.slug)).toEqual(
+      Array.from({ length: 8 }, (_, i) => `helper-${i}`),
+    );
   });
 
   it.each([

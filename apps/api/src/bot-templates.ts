@@ -4,16 +4,6 @@ import { readBoundedJsonResponse } from "@rakazo/core";
 
 const TTL_MS = 60 * 60 * 1000;
 const RETRY_MS = 60 * 1000;
-const FEATURED_SLUGS = [
-  "early-stage-startup-job-scout",
-  "websiteaudit",
-  "cloud-file-mover",
-  "coupon-finder",
-  "controlled-english-explainer",
-  "app-extension-builder",
-  "signado-warm-lead-brief",
-  "weekly-lead-export",
-];
 
 /** Shared by requests to one server; concurrent misses use the same fetch. */
 export function createBotTemplateCatalog(fetch: typeof globalThis.fetch = globalThis.fetch) {
@@ -55,12 +45,7 @@ export function createBotTemplateCatalog(fetch: typeof globalThis.fetch = global
         return [parsed.data];
       });
       if (!cached.some((template) => template.featured)) {
-        const picks = [
-          ...FEATURED_SLUGS.flatMap((slug) => cached.filter((template) => template.slug === slug)),
-          ...cached.filter((template) => !FEATURED_SLUGS.includes(template.slug)),
-        ].slice(0, 8);
-        const featured = new Set(picks.map((template) => template.slug));
-        cached = cached.map((template) => ({ ...template, featured: featured.has(template.slug) }));
+        cached = cached.map((template, index) => ({ ...template, featured: index < 8 }));
       }
       expiresAt = Date.now() + TTL_MS;
     } catch {

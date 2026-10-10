@@ -2086,7 +2086,11 @@ describe("bot intro run", () => {
     const { create, deps } = introDeps();
     await enqueueBotIntroRun(deps, actor, bot, "helper");
     expect(create.mock.calls[0]?.[0]).toMatchObject({
-      data: { prompt: expect.stringMatching(/first reply.*setup questions.*wait for answers/i) },
+      data: {
+        prompt: expect.stringMatching(
+          /first reply.*setup questions.*wait for answers.*remember or save_memory if available.*tool succeeds/i,
+        ),
+      },
     });
   });
 
