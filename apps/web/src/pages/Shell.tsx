@@ -49,6 +49,7 @@ import {
   latestAnswerableAskMessageId,
   mentionChipKey,
   nestRosterByParent,
+  normalizeRunError,
   plainTextFromMarkdown,
   projectMessageReactions,
   reorderBotTo,
@@ -5820,7 +5821,9 @@ export const Composer = memo(function Composer({
           data-testid="composer-error"
           className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive"
         >
-          <span className="min-w-0 flex-1">{sendError ?? runError}</span>
+          <span className="min-w-0 flex-1" title={!sendError && runError ? runError : undefined}>
+            {sendError ?? (runError ? normalizeRunError(runError).summary : null)}
+          </span>
           <button
             type="button"
             aria-label={t`Dismiss error`}

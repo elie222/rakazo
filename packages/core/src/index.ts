@@ -41,6 +41,7 @@ export * from "./model-probe.js";
 export * from "./model-providers.js";
 export * from "./remote-images.js";
 export * from "./response-bytes.js";
+export * from "./run-error.js";
 export * from "./run-state.js";
 export * from "./sandbox-command.js";
 export * from "./screen-lease.js";
