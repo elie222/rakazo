@@ -281,31 +281,31 @@ const TESTIMONIALS: HomeCopy["testimonials"]["items"] = [
   {
     quote:
       "landed here after a first experience with Grok Bot … then found this alternative, and i can confirm that your work rocks. it replaced totally grok bot for me. mobile app is very smooth too",
-    attribution: "@dilog1114 on Discord",
+    attribution: "@dilog1114",
   },
   {
     quote:
       "Im a co-founder and cto, loving rakazo, we have it running against private on qwen 3.8 with strong hw/gpus - all private.",
-    attribution: "@bc101101 on Discord",
+    attribution: "@bc101101",
   },
   {
     quote:
       "I use it to find cheap servers and computer parts on ebay and all other marketplaces and send me everything he decided is a good deal.",
-    attribution: "@michaelortnerit on Discord",
+    attribution: "@michaelortnerit",
   },
   {
     quote:
       "Hermes is good but more complicated setup. Rakazo has better multi agent workflow and simpler to setup",
-    attribution: "@notabot_92732 on Discord",
+    attribution: "@notabot_92732",
   },
   {
     quote: "ive been using rakazo for 1 month in claude oauth no problems yet",
-    attribution: "@hey_cabron on Discord",
+    attribution: "@hey_cabron",
   },
   {
     quote:
       "I set up the mobile app today with expo, first time using expo but was easy with rakazo walking me through",
-    attribution: "@mithril0x on Discord",
+    attribution: "@mithril0x",
   },
 ];
 
@@ -370,7 +370,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: EN_ROSTER,
     },
     testimonials: {
-      heading: "From Discord",
+      heading: "Testimonials",
       items: TESTIMONIALS,
     },
     faq: {
@@ -531,7 +531,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: DE_ROSTER,
     },
     testimonials: {
-      heading: "Von Discord",
+      heading: "Kundenstimmen",
       items: TESTIMONIALS,
     },
     faq: {
@@ -695,7 +695,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: KO_ROSTER,
     },
     testimonials: {
-      heading: "Discord에서",
+      heading: "후기",
       items: TESTIMONIALS,
     },
     faq: {
@@ -859,7 +859,7 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       bots: ZH_ROSTER,
     },
     testimonials: {
-      heading: "来自 Discord",
+      heading: "用户评价",
       items: TESTIMONIALS,
     },
     faq: {

@@ -25,6 +25,12 @@ import {
   SITE_URL,
 } from "../site";
 
+function testimonialInitials(attribution: string): string {
+  const name = attribution.startsWith("@") ? attribution.slice(1) : attribution;
+  const letters = name.replace(/[^a-z]/gi, "");
+  return (letters.slice(0, 2) || name.slice(0, 2)).toUpperCase();
+}
+
 const locale: Locale = isLocale(Astro.currentLocale)
   ? Astro.currentLocale
   : DEFAULT_LOCALE;
@@ -169,21 +175,41 @@ const structuredData = homeStructuredData({
         </div>
       </section>
 
-      <section id="testimonials" class="section" aria-labelledby="testimonials-heading">
+      <section id="testimonials" class="section testimonials" aria-labelledby="testimonials-heading">
         <div class="section-intro">
           <h2 id="testimonials-heading" class="section-heading">{copy.testimonials.heading}</h2>
         </div>
-        <div class="testimonial-grid">
-          {
-            copy.testimonials.items.map((item) => (
-              <figure class="testimonial-card" lang="en">
-                <blockquote>
-                  <p>{item.quote}</p>
-                </blockquote>
-                <figcaption>{item.attribution}</figcaption>
-              </figure>
-            ))
-          }
+        <div
+          class="testimonial-viewport"
+          data-testimonial-marquee
+          tabindex="0"
+          role="region"
+          aria-labelledby="testimonials-heading"
+        >
+          <div class="testimonial-track">
+            {
+              [false, true].map((clone) => (
+                <div
+                  class="testimonial-group"
+                  aria-hidden={clone ? "true" : undefined}
+                  inert={clone ? true : undefined}
+                  data-testimonial-clone={clone ? "" : undefined}
+                >
+                  {copy.testimonials.items.map((item) => (
+                    <figure class="testimonial-card" lang="en">
+                      <figcaption>
+                        <span class="testimonial-avatar" aria-hidden="true">{testimonialInitials(item.attribution)}</span>
+                        <span>{item.attribution}</span>
+                      </figcaption>
+                      <blockquote>
+                        <p>{item.quote}</p>
+                      </blockquote>
+                    </figure>
+                  ))}
+                </div>
+              ))
+            }
+          </div>
         </div>
       </section>
 
@@ -294,4 +320,106 @@ const structuredData = homeStructuredData({
       setupCopyLabel.textContent = failedLabel;
     }
   });
+
+  const marquee = document.querySelector<HTMLElement>("[data-testimonial-marquee]");
+  const marqueeGroup = marquee?.querySelector<HTMLElement>(".testimonial-group");
+  if (marquee && marqueeGroup) {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const pixelsPerSecond = 36;
+    let frame = 0;
+    let last = 0;
+    let offset = 0;
+    let hovering = false;
+    let focused = false;
+    let touching = false;
+
+    const reduced = () => motion.matches;
+    const paused = () => reduced() || hovering || focused || touching;
+
+    const loopWidth = () => marqueeGroup.offsetWidth;
+
+    const normalize = (value: number) => {
+      const width = loopWidth();
+      if (width <= 0) return 0;
+      const next = value % width;
+      return next < 0 ? next + width : next;
+    };
+
+    const stop = () => {
+      if (!frame) return;
+      window.cancelAnimationFrame(frame);
+      frame = 0;
+    };
+
+    const tick = (now: number) => {
+      if (paused()) {
+        stop();
+        return;
+      }
+      const delta = last === 0 ? 0 : Math.min(48, now - last);
+      last = now;
+      offset = normalize(offset + (pixelsPerSecond * delta) / 1000);
+      marquee.scrollLeft = offset;
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    const resume = () => {
+      offset = normalize(marquee.scrollLeft);
+      if (frame || paused()) return;
+      last = 0;
+      frame = window.requestAnimationFrame(tick);
+    };
+
+    const sync = () => {
+      const animate = !reduced();
+      marquee.classList.toggle("is-animated", animate);
+      if (!animate) {
+        stop();
+        offset = 0;
+        marquee.scrollLeft = 0;
+        return;
+      }
+      resume();
+    };
+
+    marquee.addEventListener("pointerenter", () => {
+      hovering = true;
+      stop();
+    });
+    marquee.addEventListener("pointerleave", () => {
+      hovering = false;
+      touching = false;
+      resume();
+    });
+    marquee.addEventListener("pointerdown", () => {
+      touching = true;
+      stop();
+    });
+    marquee.addEventListener("pointerup", () => {
+      touching = false;
+      resume();
+    });
+    marquee.addEventListener("pointercancel", () => {
+      touching = false;
+      resume();
+    });
+    marquee.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      const card = marquee.querySelector<HTMLElement>(".testimonial-card");
+      const step = (card?.offsetWidth ?? 280) + 16;
+      event.preventDefault();
+      marquee.scrollLeft += event.key === "ArrowRight" ? step : -step;
+      offset = normalize(marquee.scrollLeft);
+    });
+    marquee.addEventListener("focusin", () => {
+      focused = true;
+      stop();
+    });
+    marquee.addEventListener("focusout", () => {
+      focused = false;
+      resume();
+    });
+    motion.addEventListener("change", sync);
+    sync();
+  }
 </script>
