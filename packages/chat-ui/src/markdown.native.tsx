@@ -600,6 +600,7 @@ function TableScrollView({
   const [scrollX, setScrollX] = useState(0);
   const widths = useMemo(() => fittedColumnWidths(table, viewportWidth), [table, viewportWidth]);
   const contentWidth = widths.reduce((total, width) => total + width, 0);
+  const overflows = viewportWidth > 0 && contentWidth > viewportWidth;
   const tableLayout = useMemo(
     () => ({ widths, viewportWidth, scrollX }),
     [widths, viewportWidth, scrollX],
@@ -633,7 +634,11 @@ function TableScrollView({
           ]}
           contentContainerStyle={{ flexGrow: 0 }}
         >
-          <View style={{ width: contentWidth, minWidth: contentWidth, flexShrink: 0 }}>
+          <View
+            // iOS won't scroll while an ancestor, like a pressable bubble, holds the touch.
+            onStartShouldSetResponder={() => Platform.OS === "ios" && overflows}
+            style={{ width: contentWidth, minWidth: contentWidth, flexShrink: 0 }}
+          >
             {children}
           </View>
         </ScrollView>
