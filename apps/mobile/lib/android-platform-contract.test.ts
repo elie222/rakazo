@@ -248,11 +248,12 @@ describe("Android mobile platform contract", () => {
 
   it("keeps send and stop separate while steering active work", () => {
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
+    const composer = readFileSync(resolve(mobileRoot, "components/thread-composer.tsx"), "utf8");
     const stopStart = thread.indexOf("async function stop()");
     const stopSource = thread.slice(stopStart, thread.indexOf("const answerMessage", stopStart));
     expect(stopStart).toBeGreaterThan(-1);
-    expect(thread).toContain('accessibilityLabel={t("Send")}');
-    expect(thread).toContain('accessibilityLabel={t("Stop")}');
+    expect(composer).toContain('accessibilityLabel={t("Send")}');
+    expect(composer).toContain('accessibilityLabel={t("Stop")}');
     expect(thread).not.toContain("Messages sent now guide the next turn.");
     expect(thread).not.toContain("Steer ");
     expect(thread).not.toContain("steering message");
@@ -280,16 +281,18 @@ describe("Android mobile platform contract", () => {
     );
     const firstDelivery = send.indexOf("await deliver(attempt, () => {");
     expect(firstDelivery).toBeGreaterThan(-1);
-    expect(send.slice(0, firstDelivery)).not.toContain('setDraft("")');
+    expect(send.slice(0, firstDelivery)).not.toContain("composerRef.current?.reset()");
     const clear = send.slice(firstDelivery, send.indexOf("async function deliver"));
     expect(clear).toMatch(
-      /if \(originThreadKey !== \(activeGroupId.current \?\? activeBotId.current\)\) return;\s*const settled = settleComposer/,
+      /if \(originThreadKey !== \(activeGroupId.current \?\? activeBotId.current\)\) return;\s*const current = composerRef.current\?\.snapshot\(\);\s*if \(!current\) return;\s*const settled = settleComposer/,
     );
-    expect(clear).toContain("settleComposer(submitted, composerRef.current)");
+    expect(clear).toContain("settleComposer(submitted, current)");
     expect(clear).toMatch(
       /setPendingAttachments\(\(current\) =>\s*current.filter\(\(attachment\) => !submitted.attachmentIds.includes\(attachment.id\)\)/,
     );
-    expect(clear).toMatch(/if \(!settled.clearComposer\) return;\s*setDraft\(""\)/);
+    expect(clear).toMatch(
+      /if \(!settled.clearComposer\) return;\s*composerRef.current\?\.reset\(\)/,
+    );
     expect(send).toMatch(/finally \{\s*onSettled\?\.\(\);/);
     expect(send).toContain('attempt.error = errorText(err, t("Failed to send message"))');
     expect(thread).toContain("onRetry={() => void deliver(attempt)}");
