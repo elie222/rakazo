@@ -104,9 +104,22 @@ jobs:
           assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets')"
           staged_id="$(jq -r --arg name "$staged" '.[] | select(.name == $name) | .id' <<< "$assets")"
           old_id="$(jq -r '.[] | select(.name == "rakazo.apk") | .id' <<< "$assets")"
+          if [[ -z "$staged_id" ]]; then
+            echo "The uploaded $staged is missing from the release; leaving the previous APK in place." >&2
+            exit 1
+          fi
           if [[ -n "$old_id" ]]; then
             gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old_id"
           fi
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" -f name=rakazo.apk > /dev/null
+          for attempt in 1 2 3; do
+            if gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" -f name=rakazo.apk > /dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 3 ]]; then
+              echo "Could not rename $staged to rakazo.apk; rename it on the release page." >&2
+              exit 1
+            fi
+            sleep 5
+          done
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
           gh release edit "$RELEASE_TAG" --title "$title" --latest=false
