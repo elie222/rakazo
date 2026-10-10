@@ -432,7 +432,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
   },
   {
     slug: "hermes-alternative",
-    name: "Hermes Agent",
+    name: "Hermes",
     summary: "Nous Research's open source agent. Rakazo keeps setup and daily use in chat.",
     title: "Open Source Hermes Agent Alternative – Rakazo",
     description:
@@ -556,7 +556,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
   },
   {
     slug: "hark-alternative",
-    name: "Hark Pro",
+    name: "Hark",
     summary: "A hosted personal agent. After install, Rakazo stays in chat on a stack you run.",
     title: "Open Source Hark Pro Alternative – Rakazo",
     description:
@@ -682,29 +682,29 @@ export type HubCard = {
 };
 
 /** Pages that already have their own route. They stay out of `ALTERNATIVES` so `[slug]` does not publish them again. */
-const DEDICATED_HUB_CARDS: readonly HubCard[] = [
-  {
-    href: GROK_ALTERNATIVE_PATH,
-    name: "Grok Bot",
-    h1: GROK_ALTERNATIVE_H1,
-    summary: "xAI's hosted bots, and what is different when you host Rakazo yourself.",
-  },
-  {
-    href: OPENCLAW_ALTERNATIVE_PATH,
-    name: "OpenClaw",
-    h1: OPENCLAW_H1,
-    summary: "An open source agent you run yourself. Rakazo stays in chat; OpenClaw's docs add a gateway and a config file.",
-  },
-];
+const GROK_HUB_CARD: HubCard = {
+  href: GROK_ALTERNATIVE_PATH,
+  name: "Grok Bot",
+  h1: GROK_ALTERNATIVE_H1,
+  summary: "xAI's hosted bots, and what is different when you host Rakazo yourself.",
+};
+
+const OPENCLAW_HUB_CARD: HubCard = {
+  href: OPENCLAW_ALTERNATIVE_PATH,
+  name: "OpenClaw",
+  h1: OPENCLAW_H1,
+  summary: "An open source agent you run yourself. Rakazo stays in chat; OpenClaw's docs add a gateway and a config file.",
+};
 
 export const HUB_CARDS: readonly HubCard[] = [
+  GROK_HUB_CARD,
   ...ALTERNATIVES.map((page) => ({
     href: alternativePath(page),
     name: page.name,
     h1: page.h1,
     summary: page.summary,
   })),
-  ...DEDICATED_HUB_CARDS,
+  OPENCLAW_HUB_CARD,
 ];
 
 export function faqPageSchema(faq: readonly FaqItem[]) {

@@ -8,12 +8,14 @@ import {
   localeHomePath,
   type Locale,
 } from "../i18n/locales";
-import { GROK_ALTERNATIVE_PATH } from "../grok-alternative";
+import { HUB_CARDS } from "../alternatives";
+import { getHomeCopy } from "../i18n/home";
+import type { HomeCopy } from "../i18n/home";
 import {
   CHANGELOG_URL,
   GITHUB_URL,
   INBOX_ZERO_URL,
-  OPENCLAW_ALTERNATIVE_PATH,
+  IOS_APP_URL,
   SELF_HOST_GUIDE_PATH,
 } from "../site";
 import Logo from "./Logo.astro";
@@ -24,41 +26,20 @@ type Props = {
   navLabel?: string;
   homeHref?: string;
   homeLabel?: string;
-  linkLabels?: {
-    docs: string;
-    openClaw: string;
-    changelog: string;
-    alternatives: string;
-    about: string;
-    support: string;
-    privacy: string;
-    terms: string;
-    grokAlternative: string;
-    blog: string;
-  };
+  linkLabels?: HomeCopy["footer"]["links"];
 };
 
 const currentLocale: Locale = isLocale(Astro.currentLocale)
   ? Astro.currentLocale
   : (Astro.props.locale ?? DEFAULT_LOCALE);
+const localeCopy = getHomeCopy(currentLocale);
 
 const {
-  languagesLabel = "Language",
-  navLabel = "Footer",
+  languagesLabel = localeCopy.footer.languagesLabel,
+  navLabel = localeCopy.footer.navLabel,
   homeHref = localeHomePath(currentLocale),
-  homeLabel = "Rakazo home",
-  linkLabels = {
-    docs: "Docs",
-    openClaw: "OpenClaw alternative",
-    changelog: "Changelog",
-    alternatives: "Alternatives",
-    about: "About",
-    support: "Support",
-    privacy: "Privacy",
-    terms: "Terms",
-    grokAlternative: "Grok Bot alternative",
-    blog: "Blog",
-  },
+  homeLabel = localeCopy.nav.home,
+  linkLabels = localeCopy.footer.links,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
@@ -66,18 +47,42 @@ const currentPath = Astro.url.pathname.replace(/\/+$/, "") || "/";
 function isCurrentPage(href: string): boolean {
   return (href.replace(/\/+$/, "") || "/") === currentPath;
 }
+
+type FooterLink = { href: string; label: string; external?: boolean };
+
+const columns: Array<{ heading: string; links: FooterLink[] }> = [
+  {
+    heading: linkLabels.product,
+    links: [
+      { href: IOS_APP_URL, label: linkLabels.iosApp, external: true },
+      { href: SELF_HOST_GUIDE_PATH, label: linkLabels.docs },
+      { href: CHANGELOG_URL, label: linkLabels.changelog, external: true },
+      { href: GITHUB_URL, label: "GitHub", external: true },
+    ],
+  },
+  {
+    heading: linkLabels.alternatives,
+    links: [
+      ...HUB_CARDS.map((card) => ({ href: card.href, label: card.name })),
+      { href: "/alternatives/", label: linkLabels.all },
+    ],
+  },
+  {
+    heading: linkLabels.company,
+    links: [
+      { href: "/blog/", label: linkLabels.blog },
+      { href: "/about/", label: linkLabels.about },
+      { href: "/support/", label: linkLabels.support },
+      { href: "/privacy/", label: linkLabels.privacy },
+      { href: "/terms/", label: linkLabels.terms },
+    ],
+  },
+];
 ---
 
 <footer class="site-footer">
   <div class="site-footer__brand">
     <Logo href={homeHref} label={homeLabel} />
-    <span class="site-footer__legal">
-      © 2026 ·
-      <a href={INBOX_ZERO_URL} target="_blank" rel="noreferrer">Inbox Zero Inc.</a>
-      · Apache-2.0
-    </span>
-  </div>
-  <div class="site-footer__nav">
     <nav class="site-footer__languages" aria-label={languagesLabel}>
       {
         LOCALES.map((locale) => (
@@ -91,29 +96,32 @@ function isCurrentPage(href: string): boolean {
         ))
       }
     </nav>
-    <nav class="site-footer__links" aria-label={navLabel}>
-      <a href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>
-      <a href={SELF_HOST_GUIDE_PATH} aria-current={isCurrentPage(SELF_HOST_GUIDE_PATH) ? "page" : undefined}>
-        {linkLabels.docs}
-      </a>
-      <a
-        href={OPENCLAW_ALTERNATIVE_PATH}
-        aria-current={isCurrentPage(OPENCLAW_ALTERNATIVE_PATH) ? "page" : undefined}
-      >
-        {linkLabels.openClaw}
-      </a>
-      <a href={CHANGELOG_URL} target="_blank" rel="noreferrer">{linkLabels.changelog}</a>
-      <a href="/alternatives/" aria-current={isCurrentPage("/alternatives/") ? "page" : undefined}>
-        {linkLabels.alternatives}
-      </a>
-      <a href={GROK_ALTERNATIVE_PATH} aria-current={isCurrentPage(GROK_ALTERNATIVE_PATH) ? "page" : undefined}>
-        {linkLabels.grokAlternative}
-      </a>
-      <a href="/blog/" aria-current={isCurrentPage("/blog/") ? "page" : undefined}>{linkLabels.blog}</a>
-      <a href="/about/">{linkLabels.about}</a>
-      <a href="/support/">{linkLabels.support}</a>
-      <a href="/privacy/">{linkLabels.privacy}</a>
-      <a href="/terms/">{linkLabels.terms}</a>
-    </nav>
+    <span class="site-footer__legal">
+      © 2026 ·
+      <a href={INBOX_ZERO_URL} target="_blank" rel="noreferrer">Inbox Zero Inc.</a>
+      · Apache-2.0
+    </span>
   </div>
+  <nav class="site-footer__columns" aria-label={navLabel}>
+    {
+      columns.map((column) => (
+        <div class="site-footer__column">
+          <h2>{column.heading}</h2>
+          <ul>
+            {column.links.map((link) => (
+              <li>
+                <a
+                  href={link.href}
+                  aria-current={!link.external && isCurrentPage(link.href) ? "page" : undefined}
+                  {...(link.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))
+    }
+  </nav>
 </footer>

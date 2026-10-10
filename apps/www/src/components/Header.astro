@@ -9,7 +9,7 @@ import {
 } from "../i18n/locales";
 import { HUB_CARDS } from "../alternatives";
 import { GROK_ALTERNATIVE_PATH } from "../grok-alternative";
-import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { GITHUB_URL, IOS_APP_URL, SELF_HOST_GUIDE_PATH } from "../site";
 import Button from "./Button.astro";
 import Logo from "./Logo.astro";
 
@@ -95,6 +95,18 @@ const externalAttrs = { target: "_blank", rel: "noreferrer" };
     <a class="star-pill" href={GITHUB_URL} target="_blank" rel="noreferrer">
       <span aria-hidden="true">★</span>
       <span>{starsLabel}</span>
+    </a>
+    <a
+      class="star-pill star-pill--icon"
+      href={IOS_APP_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={copy.iosApp}
+      title={copy.iosApp}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M16.37 12.62c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.09-2.01-3.76-2.04-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.89-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.8 1.3 10.35.86 1.25 1.89 2.65 3.24 2.6 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.39.81 1.4-.03 2.28-1.27 3.14-2.52.99-1.45 1.4-2.85 1.42-2.92-.03-.01-2.72-1.04-2.74-4.15ZM13.8 4.98c.72-.87 1.2-2.07 1.07-3.27-1.03.04-2.28.69-3.02 1.56-.66.77-1.24 1.99-1.09 3.17 1.15.09 2.32-.58 3.04-1.46Z" />
+      </svg>
     </a>
     <div class="site-header__cta">
       <Button href={GITHUB_URL} size="sm" external>{copy.viewOnGithub}</Button>
