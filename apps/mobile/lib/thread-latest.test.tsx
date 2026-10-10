@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { ThreadScrollState } from "@rakazo/core";
 import {
   appendNewerThreadPage,
@@ -16,7 +15,9 @@ import { ThreadJumpAnchor } from "./thread-jump";
 import { ThreadScrollBehavior } from "./thread-scroll";
 
 // Exercise the screen's actual handler without importing its native dependencies.
-const source = readFileSync(resolve("apps/mobile/app/thread.tsx"), "utf8");
+// Keep Vitest's jsdom URL transform from replacing the file URL with self.location.
+const testFileUrl = import.meta.url;
+const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
 const handler = source.slice(
   source.indexOf("  function showLatest() {"),
   source.indexOf("  async function loadOlderMessages() {"),
