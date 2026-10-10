@@ -184,7 +184,6 @@ const structuredData = homeStructuredData({
             data-testimonial-pause
             data-pause-label={copy.testimonials.pause}
             data-play-label={copy.testimonials.play}
-            aria-pressed="false"
           >
             {copy.testimonials.pause}
           </button>
@@ -436,7 +435,7 @@ const structuredData = homeStructuredData({
     });
     pauseButton?.addEventListener("click", () => {
       held = !held;
-      pauseButton.setAttribute("aria-pressed", held ? "true" : "false");
+      pauseButton.classList.toggle("is-paused", held);
       pauseButton.textContent = held ? playLabel : pauseLabel;
       if (held) stop();
       else resume();

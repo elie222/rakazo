@@ -612,7 +612,7 @@ button.button--secondary:focus-visible {
   font-weight: 600;
 }
 
-.testimonial-pause[aria-pressed="true"] {
+.testimonial-pause.is-paused {
   background: var(--surface);
 }
 
