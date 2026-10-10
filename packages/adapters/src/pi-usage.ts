@@ -18,6 +18,7 @@ import type {
 import type { ContextBudget } from "./context-selection.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
+import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
 
 /** Pi initializes absent usage to zero. Only raw numeric fields can prove reported zero. */
 export type ReportedUsageFields = Set<keyof AgentUsage>;
@@ -240,141 +241,165 @@ export function observedPiStream(
     }
     push({ ...event, ...(hooks?.recordUsage ? { accounted: true } : {}) });
   };
-  void (async () => {
-    let normalized: AgentUsage | null = null;
-    let reservation: string | undefined;
-    let started = false;
-    let settled = false;
-    let partialMessage: AssistantMessage | undefined;
-    let providerError: unknown;
-    let providerThrew = false;
-    try {
-      // A tool-budget or cancellation stop can reach Pi's next-turn hook after
-      // aborting. It is not a model invocation and must not create unknown usage.
-      options?.signal?.throwIfAborted();
-      // Reject an unsupported declared control before reserving or making any request.
-      const cacheRetention = resolvePiCacheRetention(model, options?.cacheRetention);
-      const preparedContext = hooks?.prepareContext?.(context, model) ?? context;
-      reservation = observer
-        ? await observer.beforeCall({
-            provider: model.provider,
-            modelId: model.id,
-            inputTokensEstimate: estimateModelContextTokens(preparedContext, hooks?.imageTokens),
-            maxOutputTokens: options?.maxTokens ?? model.maxTokens,
-            cacheWriteRetention: requestedPiCacheWriteRetention(model, cacheRetention),
-          })
-        : undefined;
-      options?.signal?.throwIfAborted();
-      started = true;
-      // Some Pi adapters reject custom fetch outright. Only audited SSE families opt in.
-      const collectRawUsage =
-        /^(openai-|anthropic-)/.test(model.api) && !model.provider.startsWith("google");
-      // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
-      const streamOptions = {
-        ...options,
-        ...(cacheRetention ? { cacheRetention } : {}),
-        ...(observer ? { maxRetries: 0 } : {}),
-      };
-      let upstream: ReturnType<Models["streamSimple"]>;
+  void withPiTelemetrySpan(
+    "pi.ai.request",
+    {
+      "pi.ai.operation": "stream",
+      "pi.ai.provider": model.provider,
+      "pi.ai.model": model.id,
+      "pi.ai.api": model.api,
+      "pi.ai.streaming": true,
+    },
+    async (span) => {
+      let normalized: AgentUsage | null = null;
+      let reservation: string | undefined;
+      let started = false;
+      let settled = false;
+      let partialMessage: AssistantMessage | undefined;
+      let providerError: unknown;
+      let providerThrew = false;
       try {
-        upstream = models.streamSimple(
-          model,
-          preparedContext,
-          collectRawUsage
-            ? {
-                ...streamOptions,
-                fetch: usageReportingFetch(streamOptions?.fetch ?? globalThis.fetch, reported),
-              }
-            : streamOptions,
-        );
-      } catch (error) {
-        providerThrew = true;
-        providerError = error;
-        throw error;
-      }
-      const events = hooks?.onProviderError
-        ? (async function* () {
-            try {
-              yield* upstream;
-            } catch (error) {
-              providerThrew = true;
-              providerError = error;
-              throw error;
-            }
-          })()
-        : upstream;
-      for await (const event of events) {
-        if (hooks?.onProviderError) {
-          partialMessage =
-            event.type === "done"
-              ? event.message
-              : event.type === "error"
-                ? event.error
-                : event.partial;
-        }
-        if (event.type === "done" || event.type === "error") {
-          const message = event.type === "done" ? event.message : event.error;
-          normalized = normalizePiUsage(message.usage, model, reported);
-          await emitUsage(
-            normalized,
-            usageOperationKind(attribution.operationKind, preparedContext, message),
+        // A tool-budget or cancellation stop can reach Pi's next-turn hook after
+        // aborting. It is not a model invocation and must not create unknown usage.
+        options?.signal?.throwIfAborted();
+        // Reject an unsupported declared control before reserving or making any request.
+        const cacheRetention = resolvePiCacheRetention(model, options?.cacheRetention);
+        const preparedContext = hooks?.prepareContext?.(context, model) ?? context;
+        recordPiTelemetryContent(span, "pi.ai.prompt", preparedContext);
+        reservation = observer
+          ? await observer.beforeCall({
+              provider: model.provider,
+              modelId: model.id,
+              inputTokensEstimate: estimateModelContextTokens(preparedContext, hooks?.imageTokens),
+              maxOutputTokens: options?.maxTokens ?? model.maxTokens,
+              cacheWriteRetention: requestedPiCacheWriteRetention(model, cacheRetention),
+            })
+          : undefined;
+        options?.signal?.throwIfAborted();
+        started = true;
+        // Some Pi adapters reject custom fetch outright. Only audited SSE families opt in.
+        const collectRawUsage =
+          /^(openai-|anthropic-)/.test(model.api) && !model.provider.startsWith("google");
+        // Each guarded reservation covers one HTTP attempt, not hidden SDK retries.
+        const streamOptions = {
+          ...options,
+          ...(cacheRetention ? { cacheRetention } : {}),
+          ...(observer ? { maxRetries: 0 } : {}),
+        };
+        let upstream: ReturnType<Models["streamSimple"]>;
+        try {
+          upstream = models.streamSimple(
+            model,
+            preparedContext,
+            collectRawUsage
+              ? {
+                  ...streamOptions,
+                  fetch: usageReportingFetch(streamOptions?.fetch ?? globalThis.fetch, reported),
+                }
+              : streamOptions,
           );
+        } catch (error) {
+          providerThrew = true;
+          providerError = error;
+          throw error;
+        }
+        const events = hooks?.onProviderError
+          ? (async function* () {
+              try {
+                yield* upstream;
+              } catch (error) {
+                providerThrew = true;
+                providerError = error;
+                throw error;
+              }
+            })()
+          : upstream;
+        for await (const event of events) {
+          if (hooks?.onProviderError) {
+            partialMessage =
+              event.type === "done"
+                ? event.message
+                : event.type === "error"
+                  ? event.error
+                  : event.partial;
+          }
+          if (event.type === "done" || event.type === "error") {
+            const message = event.type === "done" ? event.message : event.error;
+            normalized = normalizePiUsage(message.usage, model, reported);
+            span?.setAttributes({
+              "pi.ai.response.stop_reason": message.stopReason,
+              "pi.ai.usage.input_tokens": normalized.inputTokens ?? undefined,
+              "pi.ai.usage.output_tokens": normalized.outputTokens ?? undefined,
+              "pi.ai.usage.cache_read_tokens": normalized.cacheReadTokens ?? undefined,
+              "pi.ai.usage.cache_write_tokens": normalized.cacheWriteTokens ?? undefined,
+              "pi.ai.usage.reasoning_tokens": normalized.reasoningTokens ?? undefined,
+              "pi.ai.usage.total_tokens": normalized.totalTokens ?? undefined,
+              "pi.ai.usage.cost": normalized.costUsd ?? undefined,
+            });
+            if (event.type === "error") span?.setStatus({ status: "error" });
+            recordPiTelemetryContent(span, "pi.ai.response", message.content);
+            await emitUsage(
+              normalized,
+              usageOperationKind(attribution.operationKind, preparedContext, message),
+            );
+            try {
+              hooks?.onUsage?.(normalized);
+            } catch {
+              /* Cache telemetry cannot discard accounted spend. */
+            }
+            if (observer && reservation !== undefined) {
+              settled = true;
+              await observer.afterCall(reservation, normalized);
+            }
+          }
+          if (event.type === "error") hooks?.onProviderError?.(event.error);
+          stream.push(event);
+        }
+        stream.end(await upstream.result());
+      } catch (error) {
+        span?.setStatus({ status: "error" });
+        let terminalError = error;
+        if (started && normalized === null) {
           try {
-            hooks?.onUsage?.(normalized);
-          } catch {
-            /* Cache telemetry cannot discard accounted spend. */
+            await emitUsage(normalizePiUsage(undefined, model));
+          } catch (accountingError) {
+            terminalError = accountingError;
           }
-          if (observer && reservation !== undefined) {
-            settled = true;
+        }
+        if (observer && reservation !== undefined && !settled) {
+          // Keep the reservation alive until settlement finishes, before exposing termination.
+          settled = true;
+          try {
             await observer.afterCall(reservation, normalized);
+          } catch {
+            /* Already failing. */
           }
         }
-        if (event.type === "error") hooks?.onProviderError?.(event.error);
-        stream.push(event);
+        // Preserve a proper Pi terminal message so Agent and cancellation both settle.
+        const message = {
+          role: "assistant" as const,
+          content: hooks?.onProviderError ? (partialMessage?.content ?? []) : [],
+          api: model.api,
+          provider: model.provider,
+          model: model.id,
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "error" as const,
+          errorMessage:
+            terminalError instanceof Error ? terminalError.message : String(terminalError),
+          timestamp: Date.now(),
+        };
+        if (providerThrew && terminalError === providerError) hooks?.onProviderError?.(message);
+        stream.push({ type: "error", reason: "error", error: message });
+        stream.end(message);
       }
-      stream.end(await upstream.result());
-    } catch (error) {
-      let terminalError = error;
-      if (started && normalized === null) {
-        try {
-          await emitUsage(normalizePiUsage(undefined, model));
-        } catch (accountingError) {
-          terminalError = accountingError;
-        }
-      }
-      if (observer && reservation !== undefined && !settled) {
-        // Keep the reservation alive until settlement finishes, before exposing termination.
-        settled = true;
-        try {
-          await observer.afterCall(reservation, normalized);
-        } catch {
-          /* Already failing. */
-        }
-      }
-      // Preserve a proper Pi terminal message so Agent and cancellation both settle.
-      const message = {
-        role: "assistant" as const,
-        content: hooks?.onProviderError ? (partialMessage?.content ?? []) : [],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: "error" as const,
-        errorMessage:
-          terminalError instanceof Error ? terminalError.message : String(terminalError),
-        timestamp: Date.now(),
-      };
-      if (providerThrew && terminalError === providerError) hooks?.onProviderError?.(message);
-      stream.push({ type: "error", reason: "error", error: message });
-      stream.end(message);
-    }
-  })();
+    },
+  );
   return stream;
 }
