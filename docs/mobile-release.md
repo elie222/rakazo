@@ -39,6 +39,23 @@ Before submission, verify the production API, account deletion, sign-in,
 notifications, store privacy answers, age rating, screenshots, support page,
 and review account on a physical device.
 
+## Android APK
+
+Until Rakazo is on Google Play, Android users can install an APK. Run the
+`release-android-apk` workflow from `main` in GitHub Actions when native code
+changes. It builds the `android-apk` EAS profile, signed with the project's
+managed keystore, and replaces the rolling `android` GitHub release, so the
+download link stays the same:
+
+```text
+https://github.com/elie222/rakazo/releases/download/android/rakazo.apk
+```
+
+The APK uses the production update channel, so JavaScript changes reach it
+through the over-the-air updates below without a new APK. A Google Play install
+is signed with Play's key, so switching from the APK to Play means uninstalling
+the APK first.
+
 ## Over-the-air updates
 
 Production and preview builds include `expo-updates` and use the corresponding
