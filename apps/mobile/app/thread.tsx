@@ -1075,6 +1075,8 @@ function Thread() {
     newerLoadFailed.current = false;
     joinPinnedAfterLayout.current = null;
     pinnedScrollMetrics.current = { offset: 0, viewport: 0, content: 0 };
+    // Publish the jump refs even when the opened snapshot is already visible.
+    setThreadScrollState(scrollBehavior.current.state());
     commitSnap(opened?.snapshot ?? snap);
   }
 
