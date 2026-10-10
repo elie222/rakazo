@@ -1,11 +1,13 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
+const RELEASE_PROFILES = new Set(["production", "android-apk"]);
+
 export default ({ config }: ConfigContext): ExpoConfig => {
-  if (process.env.EAS_BUILD_PROFILE === "production") {
+  if (RELEASE_PROFILES.has(process.env.EAS_BUILD_PROFILE ?? "")) {
     const apiUrl = process.env.EXPO_PUBLIC_API_URL;
     if (!apiUrl) {
       throw new Error(
-        "EXPO_PUBLIC_API_URL must be set in the EAS production environment before building for the App Store.",
+        "EXPO_PUBLIC_API_URL must be set in the EAS production environment before building a release.",
       );
     }
 

@@ -74,7 +74,9 @@ jobs:
 
       # One rolling release keeps a stable download URL:
       # https://github.com/<owner>/<repo>/releases/download/android/rakazo.apk
-      # It never becomes GitHub's "latest" release, which the desktop updater reads.
+      # It never becomes GitHub's "latest" release, which the desktop updater reads. An existing
+      # release is updated in place: the new APK is uploaded under a temporary name before the old
+      # one is removed, so a failed run leaves the previous download working.
       - name: Publish rolling release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,9 +84,29 @@ jobs:
           VERSION_CODE: ${{ steps.build.outputs.version_code }}
         run: |
           set -euo pipefail
-          gh release delete "$RELEASE_TAG" --cleanup-tag --yes 2>/dev/null || true
-          gh release create "$RELEASE_TAG" "$RUNNER_TEMP/rakazo.apk" \
-            --target "$GITHUB_SHA" \
-            --title "Rakazo for Android $VERSION ($VERSION_CODE)" \
-            --notes "Install rakazo.apk on your Android phone. It updates itself over the air." \
-            --latest=false
+          title="Rakazo for Android $VERSION ($VERSION_CODE)"
+          if ! gh release view "$RELEASE_TAG" --json tagName > /dev/null 2> "$RUNNER_TEMP/view.err"; then
+            if ! grep -q "release not found" "$RUNNER_TEMP/view.err"; then
+              cat "$RUNNER_TEMP/view.err" >&2
+              exit 1
+            fi
+            gh release create "$RELEASE_TAG" "$RUNNER_TEMP/rakazo.apk" \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --notes "Install rakazo.apk on your Android phone. It updates itself over the air." \
+              --latest=false
+            exit 0
+          fi
+
+          staged="rakazo-$VERSION_CODE.apk"
+          cp "$RUNNER_TEMP/rakazo.apk" "$RUNNER_TEMP/$staged"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/$staged" --clobber
+          assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq '.assets')"
+          staged_id="$(jq -r --arg name "$staged" '.[] | select(.name == $name) | .id' <<< "$assets")"
+          old_id="$(jq -r '.[] | select(.name == "rakazo.apk") | .id' <<< "$assets")"
+          if [[ -n "$old_id" ]]; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old_id"
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" -f name=rakazo.apk > /dev/null
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+          gh release edit "$RELEASE_TAG" --title "$title" --latest=false

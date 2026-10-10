@@ -34,5 +34,9 @@ describe("Android APK release workflow", () => {
     });
     expect(workflow).toContain("--profile android-apk");
     expect(workflow).toContain("--latest=false");
+    expect(workflow).not.toContain("gh release delete");
+    expect(readFileSync(path.resolve(import.meta.dirname, "../app.config.ts"), "utf8")).toContain(
+      '"android-apk"',
+    );
   });
 });
