@@ -1,6 +1,7 @@
 import type { ComputerMode } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   normalizeCreateBotProfile,
@@ -8,6 +9,7 @@ import {
 import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { ScrollView, Text, TextInput } from "react-native";
+import { BotTemplates } from "../components/bot-templates";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { cancelHeaderOptions } from "../components/sheet-header";
@@ -25,6 +27,8 @@ export default function NewBot() {
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [templateSlug, setTemplateSlug] = useState<string>();
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -51,11 +55,13 @@ export default function NewBot() {
       const isFirstBot = existing !== null && existing.length === 0;
       const bot = await rpc<MobileBot>("bots/create", {
         ...normalizeCreateBotProfile({ name, title, description }),
+        ...(templateSlug ? { instructions: instructions.trim(), templateSlug } : {}),
         notifyOnFinish: true,
         computerMode,
       });
-      allowFocusPrompt(bot.id);
+      if (!templateSlug) allowFocusPrompt(bot.id);
       router.replace({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      if (templateSlug) return;
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
           .then(() => true)
@@ -80,6 +86,13 @@ export default function NewBot() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
+        <BotTemplates
+          onSelect={(template) => {
+            setName(template.name);
+            setInstructions(template.instructions);
+            setTemplateSlug(template.slug);
+          }}
+        />
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>
         <TextInput
           value={name}
@@ -132,6 +145,29 @@ export default function NewBot() {
             textAlignVertical: "top",
           }}
         />
+        {templateSlug ? (
+          <>
+            <Text style={{ color: tokens.mutedForeground, marginTop: 16, fontSize: 14 }}>
+              {t("Instructions")}
+            </Text>
+            <TextInput
+              value={instructions}
+              onChangeText={setInstructions}
+              maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+              accessibilityLabel={t("Instructions")}
+              multiline
+              style={{
+                marginTop: 8,
+                backgroundColor: native.fill,
+                borderRadius: 11,
+                padding: 16,
+                color: tokens.foreground,
+                minHeight: 120,
+                textAlignVertical: "top",
+              }}
+            />
+          </>
+        ) : null}
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         {error ? <Text style={{ color: tokens.destructive, marginTop: 16 }}>{error}</Text> : null}
         <NativeActionButton

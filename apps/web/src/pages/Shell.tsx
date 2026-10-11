@@ -2380,6 +2380,8 @@ export function ShellPage() {
   }
 
   async function createBot(input: {
+    instructions?: string;
+    templateSlug?: string;
     name: string;
     title: string;
     description: string;
@@ -2388,6 +2390,9 @@ export function ShellPage() {
     const isFirstBot = botsRef.current.length === 0;
     const bot = await rpc.bots.create({
       ...normalizeCreateBotProfile(input),
+      ...(input.templateSlug
+        ? { instructions: input.instructions, templateSlug: input.templateSlug }
+        : {}),
       notifyOnFinish: true,
       computerMode: input.computerMode,
     });
@@ -2399,6 +2404,7 @@ export function ShellPage() {
     // Register cancellation before awaiting start so leaving the bot during
     // startup cannot miss the abort and still schedule a late focus card.
     cancelFocusPrompt();
+    if (input.templateSlug) return;
     const controller = new AbortController();
     focusPromptAbortRef.current = controller;
     focusPromptBotIdRef.current = bot.id;

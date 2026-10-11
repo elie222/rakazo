@@ -11,6 +11,7 @@ import type {
 } from "@rakazo/contracts";
 import {
   BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_NAME_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
   isBuiltinToolName,
@@ -39,6 +40,7 @@ import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { BotCredentialsSection } from "./bot-credentials";
+import { BotTemplates } from "./bot-templates";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -95,6 +97,8 @@ export function CreateBotForm({
     title: string;
     description: string;
     computerMode: ComputerMode;
+    instructions?: string;
+    templateSlug?: string;
   }) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -103,6 +107,8 @@ export function CreateBotForm({
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [templateSlug, setTemplateSlug] = useState<string>();
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +123,7 @@ export function CreateBotForm({
         title: title.trim(),
         description: description.trim(),
         computerMode,
+        ...(templateSlug ? { instructions: instructions.trim(), templateSlug } : {}),
       });
     } catch (err) {
       setError(errorText(err, t`Could not create bot`));
@@ -144,6 +151,13 @@ export function CreateBotForm({
           {error}
         </p>
       ) : null}
+      <BotTemplates
+        onSelect={(template) => {
+          setName(template.name);
+          setInstructions(template.instructions);
+          setTemplateSlug(template.slug);
+        }}
+      />
       <label htmlFor={`${ids}-name`} className="mt-6 block text-[14px] text-muted-foreground">
         <Trans>Name</Trans>
         <Input
@@ -178,6 +192,19 @@ export function CreateBotForm({
           className="mt-2"
         />
       </label>
+      {templateSlug ? (
+        <label htmlFor={`${ids}-instructions`} className={fieldLabelClass}>
+          <Trans>Instructions</Trans>
+          <Textarea
+            id={`${ids}-instructions`}
+            value={instructions}
+            maxLength={BOT_INSTRUCTIONS_MAX_LENGTH}
+            onChange={(event) => setInstructions(event.target.value)}
+            rows={6}
+            className="mt-2"
+          />
+        </label>
+      ) : null}
       <div data-testid="create-bot-computer">
         <ComputerModePicker
           value={computerMode}

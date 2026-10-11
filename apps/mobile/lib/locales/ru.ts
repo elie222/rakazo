@@ -1,4 +1,7 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Instructions: "Инструкции",
+  "Browse all": "Все шаблоны",
+  "Start from a template": "Начать с шаблона",
   "Try Again": "Повторить",
   "Not sent · Tap to retry": "Не отправлено · Нажмите, чтобы повторить",
   Photo: "Фото",

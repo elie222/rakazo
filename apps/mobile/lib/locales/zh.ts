@@ -1,4 +1,7 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Instructions: "指令",
+  "Browse all": "浏览全部",
+  "Start from a template": "从模板开始",
   "Try Again": "重试",
   "Not sent · Tap to retry": "未发送 · 轻点重试",
   Photo: "照片",
