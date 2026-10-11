@@ -3538,7 +3538,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Release control"
-msgstr ""
+msgstr "नियंत्रण छोड़ें"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
@@ -4269,7 +4269,7 @@ msgstr "सिस्टम"
 
 #: src/pages/Shell.tsx
 msgid "Take control"
-msgstr ""
+msgstr "नियंत्रण लें"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"

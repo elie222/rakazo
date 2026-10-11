@@ -3538,7 +3538,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Release control"
-msgstr ""
+msgstr "交还控制权"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
@@ -4269,7 +4269,7 @@ msgstr "系统"
 
 #: src/pages/Shell.tsx
 msgid "Take control"
-msgstr ""
+msgstr "接管控制权"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"

@@ -3538,7 +3538,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Release control"
-msgstr ""
+msgstr "제어권 넘기기"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
@@ -4269,7 +4269,7 @@ msgstr "시스템"
 
 #: src/pages/Shell.tsx
 msgid "Take control"
-msgstr ""
+msgstr "제어권 가져오기"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"
