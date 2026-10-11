@@ -10,10 +10,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Computer from "../app/computer";
 
 const rpc = vi.hoisted(() => vi.fn());
+const textScale = vi.hoisted(() => ({ fontScale: 1 }));
+const picker = vi.hoisted(() => ({
+  mounts: 0,
+  props: undefined as
+    | { value?: string; disabled?: boolean; onChange: (mode: string) => void }
+    | undefined,
+}));
 
 vi.mock("react-native", () => {
-  function MockView(props: { children?: ReactNode }) {
-    return createElement("div", null, props.children);
+  function MockView(props: {
+    children?: ReactNode;
+    style?: { flexDirection?: string; flex?: number };
+  }) {
+    return createElement(
+      "div",
+      { "data-direction": props.style?.flexDirection, "data-flex": props.style?.flex },
+      props.children,
+    );
   }
 
   function MockPressable(props: {
@@ -44,6 +58,7 @@ vi.mock("react-native", () => {
     ScrollView: MockView,
     Text: MockView,
     View: MockView,
+    useWindowDimensions: () => ({ width: 393, height: 852, scale: 3, ...textScale }),
   };
 });
 
@@ -115,7 +130,22 @@ vi.mock("../components/computer-maintenance-actions", () => ({
   ComputerMaintenanceActions: () => null,
 }));
 
-vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
+vi.mock("../components/computer-mode-picker", async () => {
+  const { useEffect } = await import("react");
+  return {
+    ComputerModePicker: (props: {
+      value?: string;
+      disabled?: boolean;
+      onChange: (mode: string) => void;
+    }) => {
+      picker.props = props;
+      useEffect(() => {
+        picker.mounts += 1;
+      }, []);
+      return null;
+    },
+  };
+});
 
 vi.mock("./api", () => ({ currentApiBase: () => "https://api.example.test", rpc }));
 
@@ -175,6 +205,9 @@ describe("computer screen", () => {
 
   beforeEach(() => {
     rpc.mockReset();
+    textScale.fontScale = 1;
+    picker.mounts = 0;
+    picker.props = undefined;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
 
@@ -271,6 +304,63 @@ describe("computer screen", () => {
     await settle();
 
     expect(calls("computer/takeover")).toEqual([["computer/takeover", { botId: "bot-1" }]]);
+  });
+
+  function statusLabel(view: HTMLElement) {
+    const label = Array.from(view.querySelectorAll("div")).find(
+      (element) => element.textContent === "Basil is using it" && !element.querySelector("div"),
+    );
+    if (!label) throw new Error("missing status label");
+    return label;
+  }
+
+  it("keeps the status beside Take control at standard text sizes", async () => {
+    respond(botWorking);
+    const view = await render();
+
+    expect(statusLabel(view).parentElement?.dataset.direction).toBe("row");
+    expect(statusLabel(view).dataset.flex).toBe("1");
+  });
+
+  it("puts Take control under the status at accessibility text sizes", async () => {
+    // At AX5 the native button took the row and the label wrapped one letter per line.
+    textScale.fontScale = 3.571;
+    respond(botWorking);
+    const view = await render();
+
+    const row = statusLabel(view).parentElement;
+    expect(row?.dataset.direction).toBe("column");
+    expect(statusLabel(view).dataset.flex).toBeUndefined();
+    expect(row?.lastElementChild?.textContent).toBe("Take control");
+  });
+
+  it("remounts the mode picker when the status row restacks, without side effects", async () => {
+    respond(botWorking);
+    const pendingSwitch = new Promise(() => undefined);
+    const status = rpc.getMockImplementation()!;
+    rpc.mockImplementation((method: string, ...rest: unknown[]) =>
+      method === "bots/setComputer" ? pendingSwitch : status(method, ...rest),
+    );
+    const view = await render();
+    expect(picker.mounts).toBe(1);
+
+    await act(async () => picker.props?.onChange("dedicated"));
+    await settle();
+    expect(picker.props).toMatchObject({ value: "team", disabled: true });
+    const callsBefore = rpc.mock.calls.length;
+
+    // The native picker keeps a stale height when the row above restacks.
+    textScale.fontScale = 3.571;
+    act(() => {
+      root?.render(<Computer />);
+    });
+    await settle();
+
+    expect(statusLabel(view).parentElement?.dataset.direction).toBe("column");
+    expect(picker.mounts).toBe(2);
+    expect(picker.props).toMatchObject({ value: "team", disabled: true });
+    expect(rpc.mock.calls.length).toBe(callsBefore);
+    expect(calls("bots/setComputer")).toHaveLength(1);
   });
 
   it("names the preview as a button", async () => {
