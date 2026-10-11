@@ -1228,14 +1228,15 @@ bots:
               <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Option B: Paste or Edit Raw SKILL.md Content
               </label>
-              <div className="mt-1.5 overflow-hidden rounded-lg border border-input">
+              <div className="mt-1.5 overflow-hidden rounded-lg border border-input bg-background/50">
                 <textarea
-                  rows={8}
+                  rows={10}
                   value={importMarkdown}
                   onChange={(e) => setImportMarkdown(e.target.value)}
                   placeholder={`---\nname: my-skill\ndescription: How and when to use this skill.\n---\n\n# Steps\n...`}
+                  spellCheck={false}
                   style={{ fieldSizing: "fixed" }}
-                  className="h-[180px] max-h-[260px] w-full resize-none overflow-y-auto bg-transparent p-3 font-mono text-xs leading-relaxed outline-none"
+                  className="h-[260px] w-full resize-none overflow-y-auto bg-transparent p-3 font-mono text-[13px] leading-relaxed outline-none"
                 />
               </div>
             </div>
@@ -1550,9 +1551,9 @@ bots:
             setIsCreatingCustom(false);
           }}
         >
-          <DialogContent className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden sm:max-w-3xl">
-            <DialogHeader className="shrink-0 pb-1">
-              <DialogTitle className="flex items-center gap-2 text-lg">
+          <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-6 sm:max-w-5xl">
+            <DialogHeader className="shrink-0 pb-2">
+              <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
                 <BookOpen className="h-5 w-5 text-primary" />
                 <span>
                   {isCreatingCustom
@@ -1570,13 +1571,30 @@ bots:
                 supports custom keys including `bots: [id1, id2]` or `bots: [all]`.
               </p>
 
-              <div className="flex-1 min-h-[300px] max-h-[58vh] overflow-hidden rounded-lg border border-input">
+              <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-background/50 shadow-inner">
+                {/* Editor Header Bar */}
+                <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-muted/30 px-3.5 py-1.5 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-2 font-mono">
+                    <span className="font-semibold text-foreground/80">SKILL.md</span>
+                    <span>•</span>
+                    <span>{editorDraft.split("\n").length} lines</span>
+                    <span>•</span>
+                    <span>{editorDraft.length} chars</span>
+                  </div>
+                  {activeSkill?.readOnly ? (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      Read-Only
+                    </span>
+                  ) : null}
+                </div>
+
                 <textarea
                   value={editorDraft}
                   onChange={(e) => setEditorDraft(e.target.value)}
                   readOnly={Boolean(activeSkill?.readOnly)}
+                  spellCheck={false}
                   style={{ fieldSizing: "fixed" }}
-                  className="h-full w-full resize-none overflow-y-auto bg-transparent p-3 font-mono text-xs leading-relaxed outline-none"
+                  className="h-full w-full flex-1 resize-none overflow-y-auto bg-transparent p-4 font-mono text-[13px] leading-relaxed outline-none select-text"
                 />
               </div>
 
