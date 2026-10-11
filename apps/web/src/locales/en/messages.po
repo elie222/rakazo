@@ -3532,13 +3532,13 @@ msgstr "Refreshing…"
 msgid "Registration is closed"
 msgstr "Registration is closed"
 
-#: src/pages/Shell.tsx
-msgid "Release"
-msgstr "Release"
-
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release computer"
 msgstr "Release computer"
+
+#: src/pages/Shell.tsx
+msgid "Release control"
+msgstr "Release control"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release interrupted computer?"
@@ -4266,6 +4266,10 @@ msgstr "Switching…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "System"
+
+#: src/pages/Shell.tsx
+msgid "Take control"
+msgstr "Take control"
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"

@@ -3532,12 +3532,12 @@ msgstr "새로고침 중…"
 msgid "Registration is closed"
 msgstr "가입이 마감되었습니다"
 
-#: src/pages/Shell.tsx
-msgid "Release"
-msgstr "제어권 돌려주기"
-
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release computer"
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Release control"
 msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
@@ -4266,6 +4266,10 @@ msgstr "전환 중…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "시스템"
+
+#: src/pages/Shell.tsx
+msgid "Take control"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"

@@ -102,8 +102,10 @@ describe("sealed screen capabilities", () => {
     );
     expect(url.toString()).not.toContain("fake-socket-token");
     expect(url.searchParams.get("autoconnect")).toBe("true");
-    const socketPath = `/${url.searchParams.get("path")}`;
-    expect(openScreenCapability(socketPath, "fake-secret", 101)?.target.path).toBe(
+    const socket = new URL(url.searchParams.get("path")!, url);
+    expect(socket.pathname).toBe(url.pathname.replace("/vnc.html", "/websockify"));
+    expect(new URL(url.searchParams.get("path")!, url.origin).pathname).toBe(socket.pathname);
+    expect(openScreenCapability(socket.pathname, "fake-secret", 101)?.target.path).toBe(
       "/websockify?token=fake-socket-token",
     );
   });

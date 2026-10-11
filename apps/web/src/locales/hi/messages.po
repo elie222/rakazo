@@ -3532,12 +3532,12 @@ msgstr ""
 msgid "Registration is closed"
 msgstr "पंजीकरण बंद है"
 
-#: src/pages/Shell.tsx
-msgid "Release"
-msgstr "नियंत्रण छोड़ें"
-
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release computer"
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Release control"
 msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
@@ -4266,6 +4266,10 @@ msgstr "बदला जा रहा है…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "सिस्टम"
+
+#: src/pages/Shell.tsx
+msgid "Take control"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"

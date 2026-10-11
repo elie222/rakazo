@@ -3532,12 +3532,12 @@ msgstr ""
 msgid "Registration is closed"
 msgstr "注册已关闭"
 
-#: src/pages/Shell.tsx
-msgid "Release"
-msgstr "释放"
-
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Release computer"
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Release control"
 msgstr ""
 
 #: src/components/ComputerUpdateProgress.tsx
@@ -4266,6 +4266,10 @@ msgstr "正在切换…"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "System"
 msgstr "系统"
+
+#: src/pages/Shell.tsx
+msgid "Take control"
+msgstr ""
 
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Teach a task"

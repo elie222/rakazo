@@ -75,9 +75,9 @@ export function sealScreenCapability(
     autoconnect: "true",
     resize: "scale",
     view_only: policy === "control" ? "false" : "true",
-    // Our embed resolves the socket relative to its own capability directory;
-    // stock noVNC resolves it from the origin root.
-    path: target.pathname === "/embed.html" ? "websockify" : `${prefix.slice(1)}/websockify`,
+    // noVNC can resolve paths relative to its document directory. An absolute
+    // path prevents it from repeating the capability prefix.
+    path: target.pathname === "/embed.html" ? "websockify" : `${prefix}/websockify`,
   }).toString();
   return result.toString();
 }
