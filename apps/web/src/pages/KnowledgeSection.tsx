@@ -3,6 +3,10 @@ import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo
 import {
   Badge,
   Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
   Skeleton,
   Tabs,
   TabsContent,
@@ -10,6 +14,7 @@ import {
   TabsTrigger,
   Textarea,
 } from "@rakazo/ui-web";
+import { BookOpen, Maximize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { downloadArtifactBytes } from "../lib/artifact-open";
 import { rpc } from "../lib/rpc";
@@ -88,6 +93,7 @@ function MemoryDocumentList({
   const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [expandedDoc, setExpandedDoc] = useState<MemoryDocument | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,33 +190,61 @@ function MemoryDocumentList({
           </Button>
           {openId === doc.id ? (
             <div className="px-2.5 pb-2">
-              <Textarea
-                aria-label={doc.path}
-                disabled={busy}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                rows={Math.min(16, Math.max(4, draft.split("\n").length + 1))}
-                className={fieldClass}
-                dir="auto"
-              />
-              <div className="mt-2 flex gap-2">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  disabled={busy || draft === doc.content}
-                  onClick={() => void save(doc)}
-                  className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
-                >
-                  <Trans>Save</Trans>
-                </Button>
-                <Button
-                  variant="ghost"
-                  type="button"
+              <div className="relative mt-2 overflow-hidden rounded-lg border border-input bg-background/50">
+                <div className="flex items-center justify-between border-b border-border/40 bg-muted/40 px-2.5 py-1 text-[11px] text-muted-foreground">
+                  <span className="font-mono">
+                    {draft.split("\n").length} lines · {draft.length} chars
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedDoc(doc)}
+                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-foreground/80 hover:bg-accent hover:text-foreground"
+                    title="Expand to Fullscreen Editor"
+                  >
+                    <Maximize2 className="h-3 w-3" />
+                    <span>Expand</span>
+                  </button>
+                </div>
+                <textarea
+                  aria-label={doc.path}
                   disabled={busy}
-                  onClick={() => setOpenId(null)}
-                  className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  style={{ fieldSizing: "fixed" }}
+                  className="h-[260px] w-full resize-none overflow-y-auto bg-transparent p-2.5 font-mono text-[12.5px] leading-relaxed outline-none select-text"
+                  dir="auto"
+                />
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={busy || draft === doc.content}
+                    onClick={() => void save(doc)}
+                    className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
+                  >
+                    <Trans>Save</Trans>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setOpenId(null)}
+                    className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
+                  >
+                    <Trans>Cancel</Trans>
+                  </Button>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onClick={() => setExpandedDoc(doc)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
                 >
-                  <Trans>Cancel</Trans>
+                  <Maximize2 className="mr-1 h-3 w-3" />
+                  Full Editor
                 </Button>
               </div>
             </div>
@@ -227,6 +261,75 @@ function MemoryDocumentList({
         >
           <Trans>Download as markdown</Trans>
         </Button>
+      ) : null}
+
+      {/* Expanded Fullscreen Memory Editor Dialog */}
+      {expandedDoc ? (
+        <Dialog open={Boolean(expandedDoc)} onOpenChange={() => setExpandedDoc(null)}>
+          <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-6 sm:max-w-5xl">
+            <DialogHeader className="shrink-0 pb-2">
+              <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
+                <BookOpen className="h-5 w-5 text-primary" />
+                <span>
+                  {expandedDoc.path} (rev {expandedDoc.revision})
+                </span>
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="flex flex-1 min-h-0 flex-col space-y-3 pt-1">
+              <p className="shrink-0 text-xs text-muted-foreground">
+                Persistent memory documents guide the bot&apos;s behavior across all chat sessions in this space.
+              </p>
+
+              <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-background/50 shadow-inner">
+                <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-muted/30 px-3.5 py-1.5 text-[11px] text-muted-foreground">
+                  <div className="flex items-center gap-2 font-mono">
+                    <span className="font-semibold text-foreground/80">{expandedDoc.path}</span>
+                    <span>•</span>
+                    <span>{draft.split("\n").length} lines</span>
+                    <span>•</span>
+                    <span>{draft.length} chars</span>
+                  </div>
+                </div>
+
+                <textarea
+                  aria-label={expandedDoc.path}
+                  disabled={busy}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  spellCheck={false}
+                  style={{ fieldSizing: "fixed" }}
+                  className="h-full w-full flex-1 resize-none overflow-y-auto bg-transparent p-4 font-mono text-[13px] leading-relaxed outline-none select-text"
+                  dir="auto"
+                />
+              </div>
+
+              <div className="flex shrink-0 items-center justify-end gap-2 pt-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setExpandedDoc(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  type="button"
+                  disabled={busy || draft === expandedDoc.content}
+                  onClick={async () => {
+                    await save(expandedDoc);
+                    setExpandedDoc(null);
+                  }}
+                >
+                  Save Memory
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );
