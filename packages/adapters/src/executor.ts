@@ -74,6 +74,7 @@ import {
   isCallClientNonce,
   isMessagingChannelRun,
   isOneShotRoutineCrons,
+  isSkillEnabledForBot,
   isTerminal,
   messagingChannelId,
   messagingChannelPrivacyBlock,
@@ -3144,7 +3145,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         spaceId: routine.spaceId,
         userId: routine.userId,
       });
-      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+      const activeSkillRecords = skillRecords.filter((skill) =>
+        isSkillEnabledForBot(skill, routine.botId),
+      );
+      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, activeSkillRecords);
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
           where: {
@@ -6337,14 +6341,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   "\n",
                 )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
             : undefined;
-        const agentSkillsLine = formatSkillsCatalogInstruction(agentSkills);
+        const activeAgentSkills = agentSkills.filter((skill) =>
+          isSkillEnabledForBot(skill, bot.id, bot.name),
+        );
+        const agentSkillsLine = formatSkillsCatalogInstruction(activeAgentSkills);
         const missingImagesInstruction = missingTurnImagesInstruction(
           turnBlocks,
           currentTurnImages,
         );
         const taskPrompt = expandSkillReferencesInPrompt(
           [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
-          agentSkills,
+          activeAgentSkills,
         );
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),

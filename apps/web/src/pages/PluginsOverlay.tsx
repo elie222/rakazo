@@ -28,11 +28,13 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@rakazo/ui-web";
-import { ChevronDown, ChevronLeft, ChevronUp, X } from "lucide-react";
+import { Blocks, ChevronDown, ChevronLeft, ChevronUp, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
+import { SkillsTab } from "../components/integrations/SkillsTab";
 import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
 import { rpc } from "../lib/rpc";
+
 import { errorText } from "../lib/user-error";
 
 type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
@@ -79,8 +81,11 @@ export function PluginsOverlay({
   activeBotId?: string;
 }) {
   const { t } = useLingui();
+  const [overlayTab, setOverlayTab] = useState<"connectors" | "skills">("connectors");
+  const [skillsCount, setSkillsCount] = useState(0);
   const [setupOpen, setSetupOpen] = useState(false);
   const [query, setQuery] = useState("");
+
   const [visibleCount, setVisibleCount] = useState(CONNECTION_CATALOG_PAGE_SIZE);
   const [catalog, setCatalog] = useState<ConnectionCatalogItem[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -672,10 +677,45 @@ export function PluginsOverlay({
         showCloseButton={false}
         className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
       >
-        <DialogHeader className="flex-row items-start justify-between px-8 pt-7">
-          <DialogTitle className="text-2xl text-foreground">
-            <Trans>Integrations</Trans>
-          </DialogTitle>
+        <DialogHeader className="flex-row items-center justify-between border-b border-border/40 px-8 py-5">
+          <div className="flex items-center gap-6">
+            <button
+              type="button"
+              onClick={() => {
+                setOverlayTab("connectors");
+                closeDetail();
+              }}
+              className={`flex items-center gap-2 pb-1 text-lg font-semibold transition-colors border-b-2 ${
+                overlayTab === "connectors"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Blocks className="h-5 w-5" />
+              <span>Apps & MCP</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOverlayTab("skills");
+                closeDetail();
+              }}
+              className={`flex items-center gap-2 pb-1 text-lg font-semibold transition-colors border-b-2 ${
+                overlayTab === "skills"
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Sparkles className="h-5 w-5 text-amber-400" />
+              <span>Agent Skills</span>
+              {skillsCount > 0 ? (
+                <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-foreground">
+                  {skillsCount}
+                </span>
+              ) : null}
+            </button>
+
+          </div>
           <DialogClose
             render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
           >
@@ -683,22 +723,32 @@ export function PluginsOverlay({
           </DialogClose>
         </DialogHeader>
 
-        {!detailItem ? (
-          <div className="px-8 pt-4">
-            <Input
-              value={query}
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
-              }}
-              aria-label={t`Search apps`}
-              placeholder={t`Search apps`}
-              className="h-11 rounded-xl px-4 md:text-[15px]"
+        {overlayTab === "skills" ? (
+          <div className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+            <SkillsTab
+              activeBotId={activeBotId}
+              onSkillsCountChange={(count) => setSkillsCount(count)}
             />
           </div>
-        ) : null}
+        ) : (
+          <>
+            {!detailItem ? (
+              <div className="px-8 pt-4">
+                <Input
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setVisibleCount(CONNECTION_CATALOG_PAGE_SIZE);
+                  }}
+                  aria-label={t`Search apps`}
+                  placeholder={t`Search apps`}
+                  className="h-11 rounded-xl px-4 md:text-[15px]"
+                />
+              </div>
+            ) : null}
 
-        <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+            <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+
           <Button
             variant="outline"
             className="mb-4"
@@ -1161,7 +1211,10 @@ export function PluginsOverlay({
             </>
           )}
         </div>
+      </>
+    )}
       </DialogContent>
     </Dialog>
+
   );
 }

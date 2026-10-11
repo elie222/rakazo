@@ -523,3 +523,68 @@ function formatYamlLine(key: string, value: unknown): string {
   }
   return `${key}: ${JSON.stringify(String(value))}`;
 }
+
+/**
+ * Check if a skill should be available to a specific bot.
+ * - If no `bots` frontmatter is set, the skill is global (available to all bots).
+ * - If `bots` includes "all" or "*", it is global.
+ * - If `bots` is an array or string of bot IDs / bot names, it matches botId or botName.
+ */
+export function isSkillEnabledForBot(
+  skill: { content?: string },
+  botId: string,
+  botName?: string,
+): boolean {
+  if (!skill.content) return true;
+  const parsed = parseSkillMd(skill.content);
+  if ("error" in parsed) return true;
+  const bots = parsed.frontmatter.bots;
+  if (!bots) return true;
+  if (Array.isArray(bots)) {
+    if (bots.length === 0) return true;
+    if (bots.some((b) => String(b).trim().toLowerCase() === "all" || String(b).trim() === "*")) {
+      return true;
+    }
+    return bots.some((b) => {
+      const val = String(b).trim();
+      return val === botId || (Boolean(botName) && val.toLowerCase() === botName!.toLowerCase());
+    });
+  }
+  if (typeof bots === "string") {
+    const val = bots.trim().toLowerCase();
+    if (val === "all" || val === "*") return true;
+    if (val === botId || (Boolean(botName) && val === botName!.toLowerCase())) return true;
+    const parts = val.split(",").map((s) => s.trim());
+    return parts.some((p) => p === botId || (Boolean(botName) && p === botName!.toLowerCase()));
+  }
+  return true;
+}
+
+/**
+ * Extract bot scope from SKILL.md content.
+ */
+export function getSkillBotScope(content: string): { isGlobal: boolean; botIds: string[] } {
+  const parsed = parseSkillMd(content);
+  if ("error" in parsed) return { isGlobal: true, botIds: [] };
+  const bots = parsed.frontmatter.bots;
+  if (!bots) return { isGlobal: true, botIds: [] };
+  if (Array.isArray(bots)) {
+    if (
+      bots.length === 0 ||
+      bots.some((b) => String(b).trim().toLowerCase() === "all" || String(b).trim() === "*")
+    ) {
+      return { isGlobal: true, botIds: [] };
+    }
+    return { isGlobal: false, botIds: bots.map(String).map((s) => s.trim()).filter(Boolean) };
+  }
+  if (typeof bots === "string") {
+    const val = bots.trim().toLowerCase();
+    if (val === "all" || val === "*") return { isGlobal: true, botIds: [] };
+    return {
+      isGlobal: false,
+      botIds: val.split(",").map((s) => s.trim()).filter(Boolean),
+    };
+  }
+  return { isGlobal: true, botIds: [] };
+}
+
