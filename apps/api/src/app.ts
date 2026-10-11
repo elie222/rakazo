@@ -617,6 +617,95 @@ export async function createApp(
   }
   mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
+
+  // Skill proxy endpoint: bypasses browser CORS and resolves GitHub / SkillsMP URLs
+  app.get("/api/skills/fetch-url", async (c) => {
+    const rawUrl = c.req.query("url");
+    if (!rawUrl) return c.json({ error: "Missing url parameter" }, 400);
+    try {
+      let target = rawUrl.trim();
+
+      // If user provided https://skillsmp.com/ or https://skillsmp.com, suggest search
+      if (/^https?:\/\/skillsmp\.com\/?$/i.test(target)) {
+        return c.json({
+          error: "Please enter a specific skill URL (e.g. from a skill detail page) or use the search tab to find skills.",
+        }, 400);
+      }
+
+      // If it's a SkillsMP creator detail page, e.g. https://skillsmp.com/creators/affaan-m/ecc/agents-skills-market-research
+      if (target.includes("skillsmp.com/creators/")) {
+        const parts = target.split("skillsmp.com/creators/")[1]?.split("/") ?? [];
+        if (parts.length >= 3) {
+          const author = parts[0] ?? "";
+          const repo = parts[1] ?? "";
+          const skillPathSlug = parts.slice(2).join("/");
+          try {
+            const searchRes = await fetch(
+              `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(skillPathSlug)}`,
+              { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
+            );
+            if (searchRes.ok) {
+              const data = (await searchRes.json()) as {
+                success?: boolean;
+                data?: { skills?: Array<{ githubUrl: string }> };
+              };
+              const match = data.data?.skills?.find(
+                (s) => s.githubUrl.includes(author) || s.githubUrl.includes(repo),
+              );
+              if (match?.githubUrl) {
+                target = match.githubUrl;
+              }
+            }
+          } catch {
+            // fallback to direct fetch
+          }
+        }
+      }
+
+      // Convert GitHub tree/blob URLs to raw content
+      if (target.includes("github.com")) {
+        if (target.includes("/blob/")) {
+          target = target.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
+        } else if (target.includes("/tree/")) {
+          target =
+            target.replace("github.com", "raw.githubusercontent.com").replace("/tree/", "/") +
+            "/SKILL.md";
+        } else if (!target.endsWith("/SKILL.md") && !target.endsWith(".md")) {
+          target = target.replace(/\/+$/, "") + "/raw/main/SKILL.md";
+        }
+      }
+
+      const res = await fetch(target, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
+      });
+      if (!res.ok) {
+        return c.json({ error: `Upstream HTTP ${res.status}: ${res.statusText}` }, 400);
+      }
+      const text = await res.text();
+      return c.json({ ok: true, content: text, resolvedUrl: target });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);
+    }
+  });
+
+  // SkillsMP search proxy endpoint
+  app.get("/api/skills/skillsmp-search", async (c) => {
+    const q = c.req.query("q") ?? "";
+    try {
+      const res = await fetch(
+        `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q || "agent")}`,
+        { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
+      );
+      if (!res.ok) {
+        return c.json({ error: `SkillsMP HTTP ${res.status}` }, 400);
+      }
+      const data = await res.json();
+      return c.json(data);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "SkillsMP search failed" }, 500);
+    }
+  });
+
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (isBlockedAuthPath(path)) {
