@@ -1923,41 +1923,6 @@ button.product-demo__dock-icon {
   background: rgba(4, 4, 5, 0.96);
 }
 
-.product-demo__boot {
-  display: flex;
-  height: 100%;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 22px;
-}
-
-.product-demo__boot-title {
-  color: #f1f1f2;
-  font-size: 19px;
-  font-weight: 500;
-}
-
-.product-demo__boot-track {
-  width: min(420px, 70%);
-  height: 5px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #232327;
-}
-
-.product-demo__boot-track div {
-  height: 100%;
-  border-radius: 999px;
-  background: #f1f1ef;
-  transition: width 0.4s linear;
-}
-
-.product-demo__boot-step {
-  color: #6c6c70;
-  font-size: 13.5px;
-}
-
 .product-demo__takeover {
   display: flex;
   height: 100%;

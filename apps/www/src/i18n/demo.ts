@@ -203,10 +203,6 @@ const ZH_DEMO_TEXT: Record<string, string> = {
   "{n} {unit}": "{n} {unit}",
   "Unscheduled": "未安排",
 
-  "Allocating a machine": "正在分配电脑",
-  "Restoring the session": "正在恢复会话",
-  "Opening the browser": "正在打开浏览器",
-  "Handing you the screen": "正在移交屏幕控制",
   "Bots": "Bot",
   "New bot": "新建 Bot",
   "Hide bots": "隐藏 Bot 列表",
@@ -256,7 +252,6 @@ const ZH_DEMO_TEXT: Record<string, string> = {
   "No runs yet": "还没有运行记录",
   "Completed": "已完成",
   "Routine ran · {name}": "例行任务已运行 · {name}",
-  "Booting up {name}’s computer": "正在启动 {name} 的电脑",
   "Close computer": "关闭电脑",
   Done: "完成",
   Files: "文件",

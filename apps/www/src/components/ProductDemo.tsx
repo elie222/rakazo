@@ -127,13 +127,6 @@ function previewForBot(bot: LiveBot, extra: ExtraMessages) {
   return bot.preview;
 }
 
-const BOOT_STEPS: Record<number, string> = {
-  8: "Allocating a machine",
-  46: "Restoring the session",
-  82: "Opening the browser",
-  100: "Handing you the screen",
-};
-
 type DeskWindowId = "list" | "app";
 type DeskPoint = { x: number; y: number };
 /** Window positions in percent of the desktop, plus stacking order (last is on top). */
@@ -514,7 +507,6 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   const [hasControl, setHasControl] = useState(false);
   const [takeover, setTakeover] = useState(false);
   const [desk, setDesk] = useState<Desk>(DEFAULT_DESK);
-  const [bootPct, setBootPct] = useState(0);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [extra, setExtra] = useState<ExtraMessages>({});
@@ -523,7 +515,6 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   const timersRef = useRef<number[]>([]);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const widePanelRef = useRef(true);
-  const booting = bootPct > 0;
 
   const active = bots.find((bot) => bot.id === activeId) ?? bots[0];
   const messages = useMemo(() => {
@@ -546,7 +537,6 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   useEffect(() => {
     setHasControl(false);
     setTakeover(false);
-    setBootPct(0);
   }, [activeId]);
 
   useEffect(() => {
@@ -600,18 +590,17 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!takeover && !booting) {
+    if (!takeover) {
       return;
     }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setTakeover(false);
-        setBootPct(0);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [takeover, booting]);
+  }, [takeover]);
 
   if (!active) {
     return null;
@@ -758,11 +747,7 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   }
 
   function closeOverlay() {
-    for (const timer of timersRef.current.splice(0)) {
-      window.clearTimeout(timer);
-    }
     setTakeover(false);
-    setBootPct(0);
   }
 
   function releaseControl() {
@@ -771,25 +756,8 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
   }
 
   function takeControl() {
-    if (booting) {
-      return;
-    }
-    if (hasControl) {
-      setTakeover(true);
-      return;
-    }
-    for (const timer of timersRef.current.splice(0)) {
-      window.clearTimeout(timer);
-    }
-    setBootPct(8);
-    schedule(() => setBootPct(46), 450);
-    schedule(() => setBootPct(82), 1100);
-    schedule(() => setBootPct(100), 1750);
-    schedule(() => {
-      setBootPct(0);
-      setHasControl(true);
-      setTakeover(true);
-    }, 2300);
+    setHasControl(true);
+    setTakeover(true);
   }
 
   function appendMessage(botId: string, message: DemoMessage) {
@@ -1398,54 +1366,40 @@ export function ProductDemo({ locale = "en" }: { locale?: Locale }) {
           </aside>
         ) : null}
 
-        {booting || takeover ? (
+        {takeover ? (
           <div className="product-demo__stage">
-            {booting ? (
-              <div className="product-demo__boot">
-                <div className="product-demo__boot-title">
-                  {text("Booting up {name}’s computer", { name: active.name })}
+            <div className="product-demo__takeover">
+              <div className="product-demo__takeover-bar">
+                <div className="product-demo__takeover-who">
+                  <LandingBotAvatar color={active.color} size={32} />
+                  <span>{text("{name}’s computer", { name: active.name })}</span>
+                  <span className="product-demo__takeover-pill">
+                    {text("You have control")}
+                  </span>
                 </div>
-                <div className="product-demo__boot-track">
-                  <div style={{ width: `${bootPct}%` }} />
-                </div>
-                <div className="product-demo__boot-step">
-                  {text(BOOT_STEPS[bootPct] ?? "")}
-                </div>
-              </div>
-            ) : (
-              <div className="product-demo__takeover">
-                <div className="product-demo__takeover-bar">
-                  <div className="product-demo__takeover-who">
-                    <LandingBotAvatar color={active.color} size={32} />
-                    <span>{text("{name}’s computer", { name: active.name })}</span>
-                    <span className="product-demo__takeover-pill">
-                      {text("You have control")}
-                    </span>
-                  </div>
-                  <div className="product-demo__takeover-actions">
-                    <Button type="button" variant="outline" size="sm" onClick={releaseControl}>
-                      {text("Release")}
-                    </Button>
-                    <button
-                      type="button"
-                      className="product-demo__takeover-close"
-                      onClick={closeOverlay}
-                      aria-label={text("Close computer")}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-                <div className="product-demo__takeover-screen">
-                  <ComputerDesktop
-                    screen={active.screen}
-                    desk={desk}
-                    text={text}
-                    onDeskChange={setDesk}
-                  />
+                <div className="product-demo__takeover-actions">
+                  <Button type="button" variant="outline" size="sm" onClick={releaseControl}>
+                    {text("Release")}
+                  </Button>
+                  <button
+                    type="button"
+                    className="product-demo__takeover-close"
+                    onClick={closeOverlay}
+                    aria-label={text("Close computer")}
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
-            )}
+              <div className="product-demo__takeover-screen">
+                <ComputerDesktop
+                  screen={active.screen}
+                  desk={desk}
+                  text={text}
+                  onDeskChange={setDesk}
+                />
+              </div>
+            </div>
           </div>
         ) : null}
       </div>
