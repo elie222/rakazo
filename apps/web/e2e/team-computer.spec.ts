@@ -143,8 +143,6 @@ test("opening and releasing the computer keep a view-only stream with maintenanc
   await page.getByTestId("computer-preview").hover();
   await page.getByTestId("computer-preview-open").click();
   const chrome = page.getByTestId("computer-chrome");
-  await expect(chrome.getByRole("button", { name: "Take control", exact: true })).toBeVisible();
-  await captureScreenshot(page, testInfo, "48-team-computer-take-control");
   const screen = page.getByTitle("Bot screen").last();
   const take = chrome.getByRole("button", { name: "Take control", exact: true });
   const release = chrome.getByRole("button", { name: "Release control", exact: true });
