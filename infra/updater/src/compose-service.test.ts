@@ -147,5 +147,7 @@ describe("the updater compose service", () => {
     expect(updater.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(updater.environment?.AXIOM_EDGE_URL).toBe("${AXIOM_EDGE_URL:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.SENTRY_DSN).toBe("${SENTRY_DSN:-}");
   });
 });

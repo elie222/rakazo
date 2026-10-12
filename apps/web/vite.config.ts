@@ -445,6 +445,9 @@ export default defineConfig(({ mode }) => {
         configurePreviewServer: (server) => attachNovncProxy(server, screenProxySecret(), api),
       },
     ],
+    // The server image builds hidden maps, uploads them to the error collector, then deletes them
+    // (infra/compose/Dockerfile). Other builds, the desktop bundle included, ship no maps.
+    build: { sourcemap: process.env.WEB_SOURCEMAPS === "hidden" ? "hidden" : false },
     server: {
       host: "127.0.0.1",
       port: webPort,

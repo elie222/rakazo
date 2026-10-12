@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@axiomhq/js": "2.0.0",
+    "@sentry/node": "11.5.0",
     "hono": "4.13.7"
   },
   "devDependencies": {

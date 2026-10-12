@@ -148,7 +148,17 @@ jobs:
           # A fork can publish only to its own namespace; no credential can redirect this value.
           outputs: type=image,name=ghcr.io/${{ github.repository }}/${{ matrix.name }},push-by-digest=true,name-canonical=true,push=true
           # GET /health can report the exact source commit without a deployment-supplied override.
-          build-args: ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
+          # A per-run upload id reruns the cached web build step only when maps should be uploaded.
+          build-args: |
+            ${{ matrix.name == 'app' && format('GIT_SHA={0}', github.sha) || '' }}
+            ${{ matrix.name == 'app' && secrets.SENTRY_AUTH_TOKEN != '' && format('SOURCEMAP_UPLOAD_ID={0}-{1}', github.run_id, github.run_attempt) || '' }}
+          # Optional: with these repository secrets the app build uploads browser source maps to a
+          # Sentry-compatible collector (docs/self-host.md). Without them the upload is skipped.
+          secrets: |
+            sentry_auth_token=${{ matrix.name == 'app' && secrets.SENTRY_AUTH_TOKEN || '' }}
+            sentry_url=${{ matrix.name == 'app' && secrets.SENTRY_URL || '' }}
+            sentry_org=${{ matrix.name == 'app' && secrets.SENTRY_ORG || '' }}
+            sentry_project=${{ matrix.name == 'app' && secrets.SENTRY_WEB_PROJECT || '' }}
           cache-from: type=gha,scope=${{ matrix.name }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}-${{ matrix.arch }}
           provenance: mode=max

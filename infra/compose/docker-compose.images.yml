@@ -80,6 +80,9 @@ services:
       AXIOM_DATASET: ${AXIOM_DATASET:-}
       AXIOM_EDGE: ${AXIOM_EDGE:-}
       AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data

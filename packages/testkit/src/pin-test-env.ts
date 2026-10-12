@@ -17,6 +17,8 @@ if (!process.env.VERIFY_PROVIDERS) {
 }
 delete process.env.AXIOM_TOKEN;
 delete process.env.AXIOM_DATASET;
+delete process.env.SENTRY_DSN;
+delete process.env.SENTRY_BROWSER_DSN;
 if (!process.env.VERIFY_LOGGING) {
   process.env.LOG_LEVEL = "off";
 }
