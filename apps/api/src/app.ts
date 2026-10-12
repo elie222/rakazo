@@ -618,8 +618,6 @@ export async function createApp(
   mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
 
-
-
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
     if (isBlockedAuthPath(path)) {
@@ -671,16 +669,20 @@ export async function createApp(
 
   // Helper function to block private, loopback, and internal network addresses from SSRF
   function isBlockedRemoteHost(hostname: string): boolean {
-    const lower = hostname.toLowerCase();
+    const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
     if (
       lower === "localhost" ||
       lower === "0.0.0.0" ||
       lower === "127.0.0.1" ||
       lower === "::1" ||
+      lower === "::" ||
       lower.endsWith(".local") ||
       lower.endsWith(".internal") ||
       lower === "metadata.google.internal"
     ) {
+      return true;
+    }
+    if (lower.startsWith("fe80:") || lower.startsWith("fc00:") || lower.startsWith("fd00:")) {
       return true;
     }
     const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(lower);
@@ -695,6 +697,43 @@ export async function createApp(
     return false;
   }
 
+  const MAX_SKILL_FETCH_BYTES = 1024 * 1024; // 1 MB limit
+  const SKILL_FETCH_TIMEOUT_MS = 10_000; // 10s deadline
+
+  async function readBodyWithLimit(
+    response: Response,
+    maxBytes = MAX_SKILL_FETCH_BYTES,
+  ): Promise<string> {
+    const contentLength = response.headers.get("content-length");
+    if (contentLength && Number(contentLength) > maxBytes) {
+      throw new Error(`Response exceeds maximum size of ${maxBytes} bytes`);
+    }
+    if (!response.body) return "";
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let totalBytes = 0;
+    let result = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          try {
+            await reader.cancel();
+          } catch {
+            // ignore cancel error
+          }
+          throw new Error(`Response exceeded maximum size of ${maxBytes} bytes`);
+        }
+        result += decoder.decode(value, { stream: true });
+      }
+    }
+    result += decoder.decode();
+    return result;
+  }
+
   // Skill proxy endpoint: requires authentication and guards against SSRF / internal endpoints
   app.get("/api/skills/fetch-url", async (c) => {
     const actor = await sessionActor(c.req.raw);
@@ -707,9 +746,13 @@ export async function createApp(
       let target = rawUrl.trim();
 
       if (/^https?:\/\/skillsmp\.com\/?$/i.test(target)) {
-        return c.json({
-          error: "Please enter a specific skill URL (e.g. from a skill detail page) or use the search tab to find skills.",
-        }, 400);
+        return c.json(
+          {
+            error:
+              "Please enter a specific skill URL (e.g. from a skill detail page) or use the search tab to find skills.",
+          },
+          400,
+        );
       }
 
       // Convert SkillsMP creator detail page
@@ -722,10 +765,14 @@ export async function createApp(
           try {
             const searchRes = await fetch(
               `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(skillPathSlug)}`,
-              { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
+              {
+                signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
+                headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
+              },
             );
             if (searchRes.ok) {
-              const data = (await searchRes.json()) as {
+              const bodyText = await readBodyWithLimit(searchRes);
+              const data = JSON.parse(bodyText) as {
                 success?: boolean;
                 data?: { skills?: Array<{ githubUrl: string }> };
               };
@@ -747,11 +794,9 @@ export async function createApp(
         if (target.includes("/blob/")) {
           target = target.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
         } else if (target.includes("/tree/")) {
-          target =
-            target.replace("github.com", "raw.githubusercontent.com").replace("/tree/", "/") +
-            "/SKILL.md";
+          target = `${target.replace("github.com", "raw.githubusercontent.com").replace("/tree/", "/")}/SKILL.md`;
         } else if (!target.endsWith("/SKILL.md") && !target.endsWith(".md")) {
-          target = target.replace(/\/+$/, "") + "/raw/main/SKILL.md";
+          target = `${target.replace(/\/+$/, "")}/raw/main/SKILL.md`;
         }
       }
 
@@ -774,6 +819,7 @@ export async function createApp(
 
       let currentUrl = target;
       let res = await fetch(currentUrl, {
+        signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
         redirect: "manual",
         headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
       });
@@ -789,6 +835,7 @@ export async function createApp(
         currentUrl = nextUrl.toString();
         redirects++;
         res = await fetch(currentUrl, {
+          signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
           redirect: "manual",
           headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
         });
@@ -797,7 +844,7 @@ export async function createApp(
       if (!res.ok) {
         return c.json({ error: `Upstream HTTP ${res.status}: ${res.statusText}` }, 400);
       }
-      const text = await res.text();
+      const text = await readBodyWithLimit(res);
       return c.json({ ok: true, content: text, resolvedUrl: currentUrl });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);
@@ -813,12 +860,16 @@ export async function createApp(
     try {
       const res = await fetch(
         `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q || "agent")}`,
-        { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
+        {
+          signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
+        },
       );
       if (!res.ok) {
         return c.json({ error: `SkillsMP HTTP ${res.status}` }, 400);
       }
-      const data = await res.json();
+      const text = await readBodyWithLimit(res);
+      const data = JSON.parse(text);
       return c.json(data);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "SkillsMP search failed" }, 500);

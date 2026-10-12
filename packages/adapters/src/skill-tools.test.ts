@@ -362,4 +362,3 @@ describe("skill tools", () => {
     expect(denied).toEqual({ error: "Skill is not available to this bot." });
   });
 });
-

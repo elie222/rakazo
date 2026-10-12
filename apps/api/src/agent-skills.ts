@@ -1,6 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
-import type { Actor, AgentSkill, AgentSkillCatalogEntry, AgentSkillSource } from "@rakazo/contracts";
+import type {
+  Actor,
+  AgentSkill,
+  AgentSkillCatalogEntry,
+  AgentSkillSource,
+} from "@rakazo/contracts";
 import {
   buildSkillMd,
   findSkillByName,

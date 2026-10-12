@@ -566,9 +566,10 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   id: true,
   name: true,
   description: true,
-  content: true,
   source: true,
   readOnly: true,
+}).extend({
+  content: z.string().optional(),
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
 

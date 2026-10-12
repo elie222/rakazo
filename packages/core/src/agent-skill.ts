@@ -556,7 +556,9 @@ export function isSkillEnabledForBot(
     if (lower === "all" || lower === "*") return true;
     if (trimmed === botId || (Boolean(botName) && lower === botName!.toLowerCase())) return true;
     const parts = trimmed.split(",").map((s) => s.trim());
-    return parts.some((p) => p === botId || (Boolean(botName) && p.toLowerCase() === botName!.toLowerCase()));
+    return parts.some(
+      (p) => p === botId || (Boolean(botName) && p.toLowerCase() === botName!.toLowerCase()),
+    );
   }
   return true;
 }
@@ -576,7 +578,13 @@ export function getSkillBotScope(content: string): { isGlobal: boolean; botIds: 
     ) {
       return { isGlobal: true, botIds: [] };
     }
-    return { isGlobal: false, botIds: bots.map(String).map((s) => s.trim()).filter(Boolean) };
+    return {
+      isGlobal: false,
+      botIds: bots
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
   }
   if (typeof bots === "string") {
     const trimmed = bots.trim();
@@ -584,9 +592,11 @@ export function getSkillBotScope(content: string): { isGlobal: boolean; botIds: 
     if (lower === "all" || lower === "*") return { isGlobal: true, botIds: [] };
     return {
       isGlobal: false,
-      botIds: trimmed.split(",").map((s) => s.trim()).filter(Boolean),
+      botIds: trimmed
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
     };
   }
   return { isGlobal: true, botIds: [] };
 }
-

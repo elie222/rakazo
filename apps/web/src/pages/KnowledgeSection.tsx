@@ -204,7 +204,9 @@ function MemoryDocumentList({
                     title={t`Expand to Fullscreen Editor`}
                   >
                     <Maximize2 className="h-3 w-3" />
-                    <span><Trans>Expand</Trans></span>
+                    <span>
+                      <Trans>Expand</Trans>
+                    </span>
                   </button>
                 </div>
                 <Textarea
@@ -267,7 +269,12 @@ function MemoryDocumentList({
 
       {/* Expanded Fullscreen Memory Editor Dialog */}
       {expandedDoc ? (
-        <Dialog open={Boolean(expandedDoc)} onOpenChange={() => setExpandedDoc(null)}>
+        <Dialog
+          open={Boolean(expandedDoc)}
+          onOpenChange={(open) => {
+            if (!open && !busy) setExpandedDoc(null);
+          }}
+        >
           <DialogContent className="flex h-[90vh] w-[95vw] max-w-5xl flex-col overflow-hidden p-6 sm:max-w-5xl">
             <DialogHeader className="shrink-0 pb-2">
               <DialogTitle className="flex items-center gap-2 text-xl font-semibold">
@@ -281,7 +288,8 @@ function MemoryDocumentList({
             <div className="flex flex-1 min-h-0 flex-col space-y-3 pt-1">
               <p className="shrink-0 text-xs text-muted-foreground">
                 <Trans>
-                  Persistent memory documents guide the bot&apos;s behavior across all chat sessions in this space.
+                  Persistent memory documents guide the bot&apos;s behavior across all chat sessions
+                  in this space.
                 </Trans>
               </p>
 

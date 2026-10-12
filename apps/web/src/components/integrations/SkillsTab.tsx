@@ -1,5 +1,5 @@
 import type { AgentSkill, AgentSkillCatalogEntry, Bot } from "@rakazo/contracts";
-import { getSkillBotScope, parseSkillMd, buildSkillMd } from "@rakazo/core";
+import { buildSkillMd, getSkillBotScope, parseSkillMd } from "@rakazo/core";
 import {
   Badge,
   BotAvatar,
@@ -15,6 +15,7 @@ import {
   DialogTitle,
   Input,
   Skeleton,
+  Textarea,
 } from "@rakazo/ui-web";
 import {
   BookOpen,
@@ -58,7 +59,8 @@ export const CURATED_MARKETPLACE_SKILLS: MarketplaceSkill[] = [
   {
     id: "lean-output",
     name: "Lean output",
-    description: "Force ultra-lean, concise, zero-fluff responses. Saves 60-80% tokens, eliminates delay, accelerates task completion.",
+    description:
+      "Force ultra-lean, concise, zero-fluff responses. Saves 60-80% tokens, eliminates delay, accelerates task completion.",
     category: "productivity",
     author: "caveman / open-source",
     content: `---
@@ -81,7 +83,8 @@ Most usage comes from what gets read (memory, history, tool outputs, files). Sav
   {
     id: "real-estate-deal-analyzer",
     name: "Real Estate Deal Analyzer",
-    description: "Comprehensive underwriting framework for multi-family, residential, and commercial deals. Computes Cap Rate, NOI, Cash-on-Cash, DSCR, and vacancy stress tests.",
+    description:
+      "Comprehensive underwriting framework for multi-family, residential, and commercial deals. Computes Cap Rate, NOI, Cash-on-Cash, DSCR, and vacancy stress tests.",
     category: "finance",
     author: "Rakazo Community",
     content: `---
@@ -115,7 +118,8 @@ Use this skill whenever evaluating a property listing, investment pitch, or mult
   {
     id: "market-hawk-financial",
     name: "Market Hawk & Financial Briefing",
-    description: "Structured 4-step financial & equity analysis: Breaking News -> Fundamentals & Multiples -> Technicals & Momentum -> Call Packet with price targets.",
+    description:
+      "Structured 4-step financial & equity analysis: Breaking News -> Fundamentals & Multiples -> Technicals & Momentum -> Call Packet with price targets.",
     category: "finance",
     author: "WallStreet / Quantitative",
     content: `---
@@ -148,7 +152,8 @@ Always structure market analysis in four definitive sections:
   {
     id: "deep-web-researcher",
     name: "Deep Web & Fact-Checker",
-    description: "Multi-stage entity and web research. Formulates distinct cross-verification queries, extracts primary source evidence, and validates factual claims.",
+    description:
+      "Multi-stage entity and web research. Formulates distinct cross-verification queries, extracts primary source evidence, and validates factual claims.",
     category: "research",
     author: "Investigative Intelligence",
     content: `---
@@ -175,7 +180,8 @@ Conduct research systematically across multiple angles:
   {
     id: "code-reviewer-security",
     name: "Code Reviewer & Security Sentry",
-    description: "Audits codebases for security vulnerabilities (OWASP Top 10), concurrency race conditions, memory leaks, performance bottlenecks, and architectural anti-patterns.",
+    description:
+      "Audits codebases for security vulnerabilities (OWASP Top 10), concurrency race conditions, memory leaks, performance bottlenecks, and architectural anti-patterns.",
     category: "engineering",
     author: "AppSec Team",
     content: `---
@@ -203,7 +209,8 @@ Audit code pull requests and snippets using rigorous defense-in-depth criteria:
   {
     id: "job-search-career-scout",
     name: "Job Search & Career Scout",
-    description: "Autonomous career intelligence and resume tailoring. Benchmarks candidate credentials against role requirements, highlights keywords, and crafts outreach.",
+    description:
+      "Autonomous career intelligence and resume tailoring. Benchmarks candidate credentials against role requirements, highlights keywords, and crafts outreach.",
     category: "productivity",
     author: "Career Navigator",
     content: `---
@@ -227,7 +234,8 @@ description: Discovers open job opportunities, compares candidate resumes to rol
   {
     id: "autonomous-task-decomposer",
     name: "Autonomous Task Decomposer",
-    description: "Breaks complex, vague initiatives into dependency-ordered atomic work units with verification checklists and rollback contingencies.",
+    description:
+      "Breaks complex, vague initiatives into dependency-ordered atomic work units with verification checklists and rollback contingencies.",
     category: "operations",
     author: "Agile Systems",
     content: `---
@@ -252,7 +260,8 @@ When given a high-level goal, break it down before execution:
   {
     id: "meeting-standup-scribe",
     name: "Meeting & Standup Scribe",
-    description: "Transforms messy meeting transcripts and notes into punchy executive summaries with key decisions, tagged owners, blocker triage, and deadline matrix.",
+    description:
+      "Transforms messy meeting transcripts and notes into punchy executive summaries with key decisions, tagged owners, blocker triage, and deadline matrix.",
     category: "operations",
     author: "Ops Productivity",
     content: `---
@@ -362,9 +371,14 @@ export function SkillsTab({
     setSkillsmpLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/skills/skillsmp-search?q=${encodeURIComponent(queryText.trim() || "agent")}`);
+      const res = await fetch(
+        `/api/skills/skillsmp-search?q=${encodeURIComponent(queryText.trim() || "agent")}`,
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as { success?: boolean; data?: { skills?: SkillsmpSearchResult[] } };
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: { skills?: SkillsmpSearchResult[] };
+      };
       if (json.data?.skills) {
         setSkillsmpResults(json.data.skills);
       }
@@ -413,10 +427,7 @@ export function SkillsTab({
   async function openScopeModal(entry: AgentSkillCatalogEntry) {
     setError(null);
     try {
-      const skill =
-        entry.content && typeof entry.content === "string"
-          ? (entry as unknown as AgentSkill)
-          : await rpc.agentSkills.get({ skillId: entry.id });
+      const skill = await rpc.agentSkills.get({ skillId: entry.id });
       const parsedScope = getSkillBotScope(skill.content);
       setScopeModalSkill(skill);
       setScopeIsGlobal(parsedScope.isGlobal);
@@ -432,7 +443,16 @@ export function SkillsTab({
     setScopeSaving(true);
     setError(null);
     try {
-      const parsed = parseSkillMd(scopeModalSkill.content);
+      // Re-fetch current content to prevent silently overwriting concurrent edits
+      const latest = await rpc.agentSkills.get({ skillId: scopeModalSkill.id });
+      if (latest.content !== scopeModalSkill.content) {
+        setError(
+          "Skill was modified elsewhere while editing scope. Please reopen to configure scope.",
+        );
+        return;
+      }
+
+      const parsed = parseSkillMd(latest.content);
       if ("error" in parsed) throw new Error(parsed.error);
 
       const nextFrontmatter = { ...parsed.frontmatter };
@@ -700,7 +720,10 @@ bots:
   function renderBotScopeBadge(content?: string) {
     if (!content) {
       return (
-        <Badge variant="secondary" className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500">
+        <Badge
+          variant="secondary"
+          className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+        >
           <Globe className="h-3 w-3" />
           Global
         </Badge>
@@ -709,7 +732,10 @@ bots:
     const scope = getSkillBotScope(content);
     if (scope.isGlobal) {
       return (
-        <Badge variant="secondary" className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500">
+        <Badge
+          variant="secondary"
+          className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+        >
           <Globe className="h-3 w-3" />
           Global (All Bots)
         </Badge>
@@ -718,14 +744,20 @@ bots:
     if (scope.botIds.length === 1) {
       const b = bots.find((item) => item.id === scope.botIds[0] || item.name === scope.botIds[0]);
       return (
-        <Badge variant="secondary" className="gap-1 border border-primary/30 bg-primary/10 text-primary">
+        <Badge
+          variant="secondary"
+          className="gap-1 border border-primary/30 bg-primary/10 text-primary"
+        >
           <Zap className="h-3 w-3" />
           {b ? b.name : scope.botIds[0]}
         </Badge>
       );
     }
     return (
-      <Badge variant="secondary" className="gap-1 border border-primary/30 bg-primary/10 text-primary">
+      <Badge
+        variant="secondary"
+        className="gap-1 border border-primary/30 bg-primary/10 text-primary"
+      >
         <Zap className="h-3 w-3" />
         {scope.botIds.length} Bots
       </Badge>
@@ -798,7 +830,11 @@ bots:
       {error ? (
         <div className="mb-4 flex items-center justify-between rounded-xl bg-destructive/15 px-4 py-2.5 text-sm text-destructive">
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} className="opacity-70 hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="opacity-70 hover:opacity-100"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -835,9 +871,7 @@ bots:
           ) : filteredInstalledSkills.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center">
               <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-              <h3 className="text-base font-semibold text-foreground">
-                No skills found
-              </h3>
+              <h3 className="text-base font-semibold text-foreground">No skills found</h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 Install ready-to-use skills from Marketplace Hub or write your own custom skill.
               </p>
@@ -866,12 +900,18 @@ bots:
                         variant="secondary"
                         className="rounded-full px-2 py-0 text-[11px] font-normal text-muted-foreground"
                       >
-                        {skill.source === "builtin" ? "Built-in" : skill.source === "plugin" ? "Plugin" : "Custom"}
+                        {skill.source === "builtin"
+                          ? "Built-in"
+                          : skill.source === "plugin"
+                            ? "Plugin"
+                            : "Custom"}
                       </Badge>
                       {/* Bot Scope badge */}
                       {renderBotScopeBadge(skill.content)}
                     </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{skill.description}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                      {skill.description}
+                    </p>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
@@ -1041,7 +1081,9 @@ bots:
                         <div className="text-xs text-muted-foreground/75">By {item.author}</div>
                       </CardHeader>
                       <CardContent className="space-y-4 pt-0">
-                        <p className="line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
+                        <p className="line-clamp-3 text-sm text-muted-foreground">
+                          {item.description}
+                        </p>
                         <div className="flex items-center justify-between pt-2">
                           <Button
                             type="button"
@@ -1169,7 +1211,9 @@ bots:
                         </div>
                       </CardHeader>
                       <CardContent className="space-y-4 pt-0">
-                        <p className="line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
+                        <p className="line-clamp-3 text-sm text-muted-foreground">
+                          {item.description}
+                        </p>
                         <div className="flex items-center justify-end pt-2">
                           <Button
                             type="button"
@@ -1200,16 +1244,16 @@ bots:
               Import Claude Agent Skill (SKILL.md)
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
-              Import skills by pasting any web link (e.g. SkillsMP, GitHub repo, or raw SKILL.md link) or
-              pasting raw markdown.
+              Import skills by pasting any web link (e.g. SkillsMP, GitHub repo, or raw SKILL.md
+              link) or pasting raw markdown.
             </p>
           </div>
 
           <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-5">
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Option A: Skill URL or SkillsMP Link
-              </label>
+              </div>
               <div className="mt-1.5 flex gap-2">
                 <Input
                   value={importUrl}
@@ -1242,27 +1286,26 @@ bots:
             </div>
 
             <div>
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Option B: Paste or Edit Raw SKILL.md Content
-              </label>
-              <div className="mt-1.5 overflow-hidden rounded-lg border border-input bg-background/50">
-                <textarea
+              </div>
+              <div className="mt-1.5">
+                <Textarea
                   rows={10}
                   value={importMarkdown}
                   onChange={(e) => setImportMarkdown(e.target.value)}
                   placeholder={`---\nname: my-skill\ndescription: How and when to use this skill.\n---\n\n# Steps\n...`}
                   spellCheck={false}
-                  style={{ fieldSizing: "fixed" }}
-                  className="h-[260px] w-full resize-none overflow-y-auto bg-transparent p-3 font-mono text-[13px] leading-relaxed outline-none"
+                  className="h-[260px] w-full resize-none font-mono text-[13px] leading-relaxed"
                 />
               </div>
             </div>
 
             {/* Scope Selection */}
             <div className="pt-2">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Skill Availability (Bot Scope)
-              </label>
+              </div>
               <div className="mt-2 space-y-2.5">
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm">
                   <input
@@ -1309,8 +1352,13 @@ bots:
                           id.toLowerCase() === bot.name.toLowerCase(),
                       );
                       return (
-                        <label key={bot.id} className="flex cursor-pointer items-center gap-2.5 text-sm">
+                        <label
+                          key={bot.id}
+                          htmlFor={`import-bot-${bot.id}`}
+                          className="flex cursor-pointer items-center gap-2.5 text-sm"
+                        >
                           <Checkbox
+                            id={`import-bot-${bot.id}`}
                             checked={checked}
                             onCheckedChange={(val) => {
                               if (val) {
@@ -1364,9 +1412,7 @@ bots:
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-lg">
                 <Settings2 className="h-5 w-5 text-primary" />
-                <span>
-                  Configure Bot Scope: {scopeModalSkill.name}
-                </span>
+                <span>Configure Bot Scope: {scopeModalSkill.name}</span>
               </DialogTitle>
             </DialogHeader>
 
@@ -1381,9 +1427,7 @@ bots:
                     className="accent-primary"
                   />
                   <div>
-                    <span className="font-medium text-foreground">
-                      Global (All Bots)
-                    </span>
+                    <span className="font-medium text-foreground">Global (All Bots)</span>
                     <p className="text-xs text-muted-foreground">
                       All present and future bots will load and follow this skill.
                     </p>
@@ -1399,9 +1443,7 @@ bots:
                     className="accent-primary"
                   />
                   <div>
-                    <span className="font-medium text-foreground">
-                      Specific Bots Only
-                    </span>
+                    <span className="font-medium text-foreground">Specific Bots Only</span>
                   </div>
                 </label>
 
@@ -1417,8 +1459,13 @@ bots:
                           id.toLowerCase() === bot.name.toLowerCase(),
                       );
                       return (
-                        <label key={bot.id} className="flex cursor-pointer items-center gap-2.5 text-sm">
+                        <label
+                          key={bot.id}
+                          htmlFor={`scope-bot-${bot.id}`}
+                          className="flex cursor-pointer items-center gap-2.5 text-sm"
+                        >
                           <Checkbox
+                            id={`scope-bot-${bot.id}`}
                             checked={checked}
                             onCheckedChange={(val) => {
                               if (val) {
@@ -1477,9 +1524,7 @@ bots:
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-lg">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <span>
-                  Install Skill: {installModalSkill.name}
-                </span>
+                <span>Install Skill: {installModalSkill.name}</span>
               </DialogTitle>
             </DialogHeader>
 
@@ -1487,9 +1532,9 @@ bots:
               <p className="text-sm text-muted-foreground">{installModalSkill.description}</p>
 
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Scope & Bot Assignment
-                </label>
+                </div>
                 <div className="mt-2 space-y-2.5">
                   <label className="flex cursor-pointer items-center gap-2.5 text-sm">
                     <input
@@ -1500,9 +1545,7 @@ bots:
                       className="accent-primary"
                     />
                     <div>
-                      <span className="font-medium text-foreground">
-                        Global (All Bots)
-                      </span>
+                      <span className="font-medium text-foreground">Global (All Bots)</span>
                       <p className="text-xs text-muted-foreground">
                         Available workspace-wide to Chief, Real Estate Scout, and all bots.
                       </p>
@@ -1518,9 +1561,7 @@ bots:
                       className="accent-primary"
                     />
                     <div>
-                      <span className="font-medium text-foreground">
-                        Selected Bots Only
-                      </span>
+                      <span className="font-medium text-foreground">Selected Bots Only</span>
                     </div>
                   </label>
 
@@ -1533,8 +1574,13 @@ bots:
                             id.toLowerCase() === bot.name.toLowerCase(),
                         );
                         return (
-                          <label key={bot.id} className="flex cursor-pointer items-center gap-2.5 text-sm">
+                          <label
+                            key={bot.id}
+                            htmlFor={`install-bot-${bot.id}`}
+                            className="flex cursor-pointer items-center gap-2.5 text-sm"
+                          >
                             <Checkbox
+                              id={`install-bot-${bot.id}`}
                               checked={checked}
                               onCheckedChange={(val) => {
                                 if (val) {
@@ -1611,8 +1657,8 @@ bots:
 
             <div className="flex flex-1 min-h-0 flex-col space-y-3 pt-1">
               <p className="shrink-0 text-xs text-muted-foreground">
-                Agent skills follow the Claude Agent Skills standard with YAML frontmatter. Frontmatter
-                supports custom keys including `bots: [id1, id2]` or `bots: [all]`.
+                Agent skills follow the Claude Agent Skills standard with YAML frontmatter.
+                Frontmatter supports custom keys including `bots: [id1, id2]` or `bots: [all]`.
               </p>
 
               <div className="flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 bg-background/50 shadow-inner">
@@ -1632,29 +1678,50 @@ bots:
                   ) : null}
                 </div>
 
-                <textarea
+                <Textarea
                   value={editorDraft}
                   onChange={(e) => setEditorDraft(e.target.value)}
                   readOnly={Boolean(activeSkill?.readOnly)}
                   spellCheck={false}
-                  style={{ fieldSizing: "fixed" }}
-                  className="h-full w-full flex-1 resize-none overflow-y-auto bg-transparent p-4 font-mono text-[13px] leading-relaxed outline-none select-text"
+                  className="h-full w-full flex-1 resize-none border-0 bg-transparent p-4 font-mono text-[13px] leading-relaxed outline-none shadow-none focus-visible:ring-0 select-text"
                 />
               </div>
 
               <div className="flex shrink-0 items-center justify-between pt-2">
                 <div>
                   {activeSkill && !activeSkill.readOnly ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void removeSkill(activeSkill.id)}
-                      className="text-destructive hover:bg-destructive/10"
-                    >
-                      <Trash2 className="mr-1.5 h-4 w-4" />
-                      <span>Delete Skill</span>
-                    </Button>
+                    deleteConfirmId === activeSkill.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground">Delete this skill?</span>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void removeSkill(activeSkill.id)}
+                        >
+                          Confirm
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDeleteConfirmId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteConfirmId(activeSkill.id)}
+                        className="text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="mr-1.5 h-4 w-4" />
+                        <span>Delete Skill</span>
+                      </Button>
+                    )
                   ) : null}
                 </div>
 

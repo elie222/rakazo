@@ -49,6 +49,11 @@ msgstr "{0} (более 10 МБ)"
 msgid "{0} {unitLabel}"
 msgstr "{0} {unitLabel}"
 
+#. placeholder {0}: draft.length
+#: src/pages/KnowledgeSection.tsx
+msgid "{0} chars"
+msgstr ""
+
 #. placeholder {0}: block.name
 #: src/pages/shell/message-cards.tsx
 msgid "{0} connection"
@@ -68,6 +73,17 @@ msgstr "Обработка {0}"
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
 msgstr "{0} КБ"
+
+#. placeholder {0}: draft.split("\n").length
+#: src/pages/KnowledgeSection.tsx
+msgid "{0} lines"
+msgstr ""
+
+#. placeholder {0}: draft.split("\n").length
+#. placeholder {1}: draft.length
+#: src/pages/KnowledgeSection.tsx
+msgid "{0} lines · {1} chars"
+msgstr ""
 
 #. placeholder {0}: format(size / (1024 * 1024))
 #: src/components/ArtifactFileCard.tsx
@@ -2161,6 +2177,7 @@ msgstr "Каждую неделю"
 msgid "Executor token"
 msgstr "Токен Executor"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Expand"
 msgstr "Развернуть"
@@ -2170,6 +2187,10 @@ msgstr "Развернуть"
 #: src/pages/Shell.tsx
 msgid "Expand {0}"
 msgstr "Развернуть {0}"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Expand to Fullscreen Editor"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
@@ -2287,6 +2308,10 @@ msgstr ""
 #. placeholder {0}: filters.dateRange.from
 #: src/pages/ActivityList.tsx
 msgid "From {0}"
+msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Full Editor"
 msgstr ""
 
 #: src/pages/WindowChrome.tsx
@@ -2473,7 +2498,6 @@ msgstr "Домен интеграции"
 msgid "Integration options"
 msgstr "Параметры интеграции"
 
-#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Интеграции"
@@ -3358,6 +3382,10 @@ msgstr "Вставьте API-ключ и повторите тест."
 msgid "Paused"
 msgstr "Приостановлено"
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Persistent memory documents guide the bot's behavior across all chat sessions in this space."
+msgstr ""
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
@@ -3742,6 +3770,7 @@ msgid "Return to Rakazo"
 msgstr "Вернуться в Rakazo"
 
 #. placeholder {0}: doc.revision
+#. placeholder {0}: expandedDoc.revision
 #: src/pages/KnowledgeSection.tsx
 msgid "rev {0}"
 msgstr "версия {0}"
@@ -3834,6 +3863,10 @@ msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Save limits"
+msgstr ""
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Save Memory"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx

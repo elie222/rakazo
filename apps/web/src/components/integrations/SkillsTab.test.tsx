@@ -38,7 +38,9 @@ vi.mock("@rakazo/ui-web", () => {
         {children}
       </span>
     ),
-    BotAvatar: ({ identity }: { identity: string }) => <span data-testid={`bot-avatar-${identity}`} />,
+    BotAvatar: ({ identity }: { identity: string }) => (
+      <span data-testid={`bot-avatar-${identity}`} />
+    ),
     Button: ({
       variant: _variant,
       size: _size,
@@ -81,45 +83,67 @@ vi.mock("@rakazo/ui-web", () => {
       <h2 className={className}>{children}</h2>
     ),
     Input: (props: ComponentProps<"input">) => <input {...props} />,
+    Textarea: (props: ComponentProps<"textarea">) => <textarea {...props} />,
     Skeleton: ({ className }: { className?: string }) => <div className={className} />,
   };
 });
 
 import { SkillsTab } from "./SkillsTab";
 
-const mockBots: Bot[] = [
-  {
-    id: "bot-chief",
+function makeMockBot(partial: Partial<Bot> & { id: string; name: string }): Bot {
+  return {
     spaceId: "space-1",
+    title: "",
+    description: "",
+    instructions: "",
+    color: "blue",
+    notifyOnFinish: false,
+    pinned: false,
+    sectionId: null,
+    archivedAt: null,
+    unread: false,
+    parentBotId: null,
+    memoryScope: null,
+    threadId: "thread-1",
+    preview: "",
+    status: "idle",
+    runErrorId: null,
+    computerMode: "team",
+    voiceId: null,
+    autoSpeak: false,
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    teamChatAmbientEnabled: false,
+    teamChatRules: "",
+    disabledBuiltinTools: [],
+    webhookConfigured: false,
+    spawnKey: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    ...partial,
+  };
+}
+
+const mockBots: Bot[] = [
+  makeMockBot({
+    id: "bot-chief",
     name: "Chief",
     title: "Orchestrator",
     description: "Team Lead",
-    systemPrompt: "",
     modelProvider: "anthropic",
-    modelName: "claude-3-7-sonnet",
+    modelId: "claude-3-7-sonnet",
     color: "blue",
-    pinned: false,
-    sectionId: null,
-    archivedAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-  {
+  }),
+  makeMockBot({
     id: "bot-scout",
-    spaceId: "space-1",
     name: "Scout",
     title: "Market Researcher",
     description: "Scouting agent",
-    systemPrompt: "",
     modelProvider: "openai",
-    modelName: "gpt-4o",
+    modelId: "gpt-4o",
     color: "emerald",
-    pinned: false,
-    sectionId: null,
-    archivedAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
+  }),
 ];
 
 const mockSkills: AgentSkillCatalogEntry[] = [
@@ -135,7 +159,8 @@ const mockSkills: AgentSkillCatalogEntry[] = [
     id: "custom-1",
     name: "Market Research",
     description: "Deep dive competitor analysis",
-    content: "---\nname: Market Research\ndescription: Deep dive competitor analysis\nbots: [Scout]\n---\nBody",
+    content:
+      "---\nname: Market Research\ndescription: Deep dive competitor analysis\nbots: [Scout]\n---\nBody",
     source: "user",
     readOnly: false,
   },
@@ -178,8 +203,8 @@ describe("SkillsTab", () => {
     expect(container.textContent).toContain("Market Research");
 
     // "Bot Scope" configuration button only appears for user-editable skill
-    const scopeButtons = Array.from(container.querySelectorAll("button")).filter(
-      (b) => b.textContent?.includes("Bot Scope"),
+    const scopeButtons = Array.from(container.querySelectorAll("button")).filter((b) =>
+      b.textContent?.includes("Bot Scope"),
     );
     expect(scopeButtons.length).toBe(1);
   });
@@ -194,8 +219,8 @@ describe("SkillsTab", () => {
   it("opens Bot Scope modal and prevents saving when specific bots is selected with no bots checked", async () => {
     await renderComponent();
 
-    const scopeButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Bot Scope"),
+    const scopeButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Bot Scope"),
     );
     expect(scopeButton).toBeDefined();
 
@@ -209,13 +234,16 @@ describe("SkillsTab", () => {
     const radios = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
     const specificRadio = radios[1];
     expect(specificRadio).toBeDefined();
+    if (!specificRadio) throw new Error("specificRadio not found");
 
     await act(async () => {
       specificRadio.click();
     });
 
     // Uncheck any checked bots
-    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const checkboxes = Array.from(
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
     for (const cb of checkboxes) {
       if (cb.checked) {
         await act(async () => {
@@ -225,8 +253,8 @@ describe("SkillsTab", () => {
     }
 
     // Save Scope button should be disabled when specific bots is active but no bots are checked
-    const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Save Scope"),
+    const saveButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Save Scope"),
     );
     expect(saveButton?.disabled).toBe(true);
   });
@@ -235,8 +263,8 @@ describe("SkillsTab", () => {
     skillsApi.updateSkill.mockResolvedValue({ id: "custom-1", ok: true });
     await renderComponent();
 
-    const scopeButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Bot Scope"),
+    const scopeButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Bot Scope"),
     );
 
     await act(async () => {
@@ -244,16 +272,20 @@ describe("SkillsTab", () => {
     });
 
     // Select Chief bot checkbox
-    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const checkboxes = Array.from(
+      container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
     const chiefCheckbox = checkboxes[0];
+    expect(chiefCheckbox).toBeDefined();
+    if (!chiefCheckbox) throw new Error("chiefCheckbox not found");
     if (!chiefCheckbox.checked) {
       await act(async () => {
         chiefCheckbox.click();
       });
     }
 
-    const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Save Scope"),
+    const saveButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Save Scope"),
     );
     expect(saveButton?.disabled).toBe(false);
 

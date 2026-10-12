@@ -12,7 +12,6 @@ import {
   parseSkillMd,
 } from "./agent-skill.js";
 
-
 describe("built-in skill merging", () => {
   it("uses the same normalized names for catalog precedence and prompt expansion", () => {
     const builtin = {
@@ -301,18 +300,23 @@ describe("skill prompt helpers", () => {
     });
 
     it("treats skills with bots: all or wildcard as global", () => {
-      const wildcardSkill = { content: "---\nname: test\ndescription: desc\nbots:\n  - all\n---\nBody" };
+      const wildcardSkill = {
+        content: "---\nname: test\ndescription: desc\nbots:\n  - all\n---\nBody",
+      };
       expect(isSkillEnabledForBot(wildcardSkill, "bot-1", "Chief")).toBe(true);
       expect(getSkillBotScope(wildcardSkill.content)).toEqual({ isGlobal: true, botIds: [] });
 
-      const inlineWildcard = { content: "---\nname: test\ndescription: desc\nbots: '*'\n---\nBody" };
+      const inlineWildcard = {
+        content: "---\nname: test\ndescription: desc\nbots: '*'\n---\nBody",
+      };
       expect(isSkillEnabledForBot(inlineWildcard, "bot-1", "Chief")).toBe(true);
       expect(getSkillBotScope(inlineWildcard.content)).toEqual({ isGlobal: true, botIds: [] });
     });
 
     it("restricts scoped skills to specified bot IDs or names", () => {
       const scopedSkill = {
-        content: "---\nname: test\ndescription: desc\nbots:\n  - bot-1\n  - Real Estate Scout\n---\nBody",
+        content:
+          "---\nname: test\ndescription: desc\nbots:\n  - bot-1\n  - Real Estate Scout\n---\nBody",
       };
       expect(isSkillEnabledForBot(scopedSkill, "bot-1", "Chief")).toBe(true);
       expect(isSkillEnabledForBot(scopedSkill, "bot-other", "Real Estate Scout")).toBe(true);
@@ -325,4 +329,3 @@ describe("skill prompt helpers", () => {
     });
   });
 });
-
