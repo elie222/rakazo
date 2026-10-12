@@ -705,6 +705,36 @@ describe("Dictation web speech", () => {
     expect(onFinal).toHaveBeenCalledWith("okay tell me about the projects");
   });
 
+  it("does not repeat words Chrome re-reports at each result index", async () => {
+    vi.useFakeTimers();
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "endpoint", onFinal });
+    const rec = instances[0];
+
+    // Android Chrome hands the whole utterance back again on every new result index.
+    said(rec, "orlando", "orlando", "orlando florida", "orlando florida international");
+    expect(dictation.state.transcript).toBe("orlando florida international");
+
+    await vi.advanceTimersByTimeAsync(1_400);
+    expect(onFinal).toHaveBeenCalledWith("orlando florida international");
+  });
+
+  it("does not repeat what the next session hands back after a restart", async () => {
+    vi.useFakeTimers();
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "endpoint", onFinal });
+    const rec = instances[0];
+
+    said(rec, done("orlando florida international"));
+    rec?.onend?.();
+    // Chrome can replay the same buffer once the session is picked back up.
+    said(rec, "orlando florida international");
+
+    expect(dictation.state.transcript).toBe("orlando florida international");
+  });
+
   it("never ends the turn because the browser ended the session", async () => {
     vi.useFakeTimers();
     const onFinal = vi.fn();

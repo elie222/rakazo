@@ -66,6 +66,43 @@ export function webSpeechNeedsServerFallback(
   return transcribe && typeof error === "string" && WEB_SPEECH_SERVICE_ERRORS.has(error);
 }
 
+/**
+ * Web Speech ends the session on its own, and every start() plays the recognizer's tone.
+ * When the browser cannot hold the microphone the sessions end the moment they begin, so
+ * an immediate restart turns into a stream of beeps. Back off, then hand the microphone
+ * over instead of hammering it.
+ */
+const RESTART_SHORT_SESSION_MS = 400;
+const RESTART_BACKOFF_AFTER = 2;
+const RESTART_BACKOFF_MS = 900;
+const RESTART_GIVE_UP_AFTER = 4;
+const RESTART_GIVE_UP_ERROR =
+  "The browser keeps dropping the microphone. Start dictation again to retry.";
+
+/**
+ * Chrome can report the whole utterance again at every new result index ("orlando",
+ * "orlando", "orlando florida"). Joining every part blindly repeats the words, so keep
+ * the longest version of whatever is already there and append only genuinely new text.
+ */
+export function mergeSpeechResults(parts: readonly (string | undefined)[]): string {
+  let merged = "";
+  for (const raw of parts) {
+    const text = raw ?? "";
+    if (!text) continue;
+    if (!merged) {
+      merged = text;
+      continue;
+    }
+    if (text === merged || merged.endsWith(text)) continue;
+    if (text.startsWith(merged)) {
+      merged = text;
+      continue;
+    }
+    merged += text;
+  }
+  return merged;
+}
+
 function normalizedTranscript(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
@@ -115,6 +152,7 @@ export class Dictation {
   private chunks: Blob[] = [];
   private token = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  private restartTimer: ReturnType<typeof setTimeout> | undefined;
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
@@ -144,6 +182,8 @@ export class Dictation {
     this.stopVad();
     clearTimeout(this.silenceTimer);
     this.silenceTimer = undefined;
+    clearTimeout(this.restartTimer);
+    this.restartTimer = undefined;
     const rec = this.recognition;
     this.recognition = null;
     if (rec) {
@@ -220,13 +260,14 @@ export class Dictation {
     rec.lang = navigator.language || "en-US";
     // Chrome numbers results per session, so a restart starts over: keep the earlier text.
     let carried = "";
+    let sessionStartedAt = Date.now();
+    let shortSessions = 0;
     rec.onresult = (event) => {
       if (!live || this.token !== mine) return;
-      let session = "";
-      for (let i = 0; i < event.results.length; i += 1) {
-        session += event.results[i]?.[0]?.transcript ?? "";
-      }
-      const transcript = `${carried} ${session}`.trim();
+      const session = mergeSpeechResults(
+        Array.from(event.results, (result) => result?.[0]?.transcript),
+      );
+      const transcript = combineTranscript(carried, session);
       this.set({ status: "listening", transcript });
       if (mode !== "endpoint") return;
       // Every result means the caller was just heard, so the quiet gap is measured from
@@ -263,16 +304,39 @@ export class Dictation {
       }
       // Chrome ends the session on its own — after a pause, or its ~60s cap — and that
       // says nothing about whether the caller finished. Only the silence window above
-      // ends an utterance; here we just pick the microphone back up.
+      // ends an utterance; here we just pick the microphone back up — unless it keeps
+      // ending straight away, which means the browser cannot hold the microphone at all.
       carried = this.snapshot.transcript;
-      try {
-        rec.start();
-      } catch {
-        this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
+      shortSessions =
+        Date.now() - sessionStartedAt < RESTART_SHORT_SESSION_MS ? shortSessions + 1 : 0;
+      if (shortSessions >= RESTART_GIVE_UP_AFTER) {
+        live = false;
+        if (transcribe) {
+          this.fallbackToServer(rec, mine, mode, endpointMs, spaceId);
+          return;
+        }
+        this.releaseRecognition(rec);
+        this.set({ ...IDLE, error: RESTART_GIVE_UP_ERROR });
+        return;
       }
+      const restart = () => {
+        if (!live || this.token !== mine) return;
+        try {
+          sessionStartedAt = Date.now();
+          rec.start();
+        } catch {
+          this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
+        }
+      };
+      if (shortSessions >= RESTART_BACKOFF_AFTER) {
+        this.restartTimer = setTimeout(restart, RESTART_BACKOFF_MS);
+        return;
+      }
+      restart();
     };
     this.recognition = rec;
     try {
+      sessionStartedAt = Date.now();
       rec.start();
     } catch {
       if (!live || this.token !== mine) return;
