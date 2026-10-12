@@ -38,10 +38,12 @@
     "koffi": "3.2.1",
     "nodemailer": "10.0.3",
     "pg": "8.23.0",
+    "railway": "3.13.1",
     "sendblue": "3.16.1",
     "sharp": "0.35.4",
     "shell-quote": "1.10.0",
     "undici": "8.10.2",
+    "ws": "8.21.3",
     "zod": "4.6.2"
   },
   "devDependencies": {
@@ -50,6 +52,7 @@
     "@types/jsdom": "30.0.0",
     "@types/nodemailer": "8.0.1",
     "@types/pg": "8.23.1",
+    "@types/ws": "8.18.1",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }
