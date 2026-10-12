@@ -2257,7 +2257,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   return (
     <KeyboardAvoidingView
       behavior="height"
-      keyboardVerticalOffset={0}
+      // Android lays out the screen below the opaque native navigation header.
+      keyboardVerticalOffset={Platform.OS === "android" ? nativeHeaderHeight : 0}
       style={{ flex: 1, backgroundColor: tokens.background, paddingHorizontal: 20 }}
     >
       {error ? (
