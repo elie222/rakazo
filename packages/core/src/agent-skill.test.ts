@@ -315,17 +315,34 @@ describe("skill prompt helpers", () => {
 
     it("restricts scoped skills to specified bot IDs or names", () => {
       const scopedSkill = {
-        content:
-          "---\nname: test\ndescription: desc\nbots:\n  - bot-1\n  - Real Estate Scout\n---\nBody",
+        content: "---\nname: test\ndescription: desc\nbots:\n  - bot-1\n  - Researcher\n---\nBody",
       };
       expect(isSkillEnabledForBot(scopedSkill, "bot-1", "Chief")).toBe(true);
-      expect(isSkillEnabledForBot(scopedSkill, "bot-other", "Real Estate Scout")).toBe(true);
+      expect(isSkillEnabledForBot(scopedSkill, "bot-other", "Researcher")).toBe(true);
       expect(isSkillEnabledForBot(scopedSkill, "bot-2", "Writer")).toBe(false);
 
       expect(getSkillBotScope(scopedSkill.content)).toEqual({
         isGlobal: false,
-        botIds: ["bot-1", "Real Estate Scout"],
+        botIds: ["bot-1", "Researcher"],
       });
+    });
+
+    it("rejects invalid bots frontmatter type in parseSkillMd and buildSkillMd", () => {
+      const invalid = "---\nname: test\ndescription: desc\nbots: 123\n---\nBody";
+      const parsed = parseSkillMd(invalid);
+      expect("error" in parsed).toBe(true);
+      if ("error" in parsed) {
+        expect(parsed.error).toContain("Skill frontmatter bots must be a string or an array");
+      }
+
+      expect(() =>
+        buildSkillMd({
+          name: "test",
+          description: "desc",
+          body: "Body",
+          frontmatter: { bots: 123 },
+        }),
+      ).toThrow("Skill frontmatter bots must be a string or an array");
     });
   });
 });

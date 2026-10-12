@@ -1547,7 +1547,7 @@ bots:
                     <div>
                       <span className="font-medium text-foreground">Global (All Bots)</span>
                       <p className="text-xs text-muted-foreground">
-                        Available workspace-wide to Chief, Real Estate Scout, and all bots.
+                        Available workspace-wide to all bots in this space.
                       </p>
                     </div>
                   </label>

@@ -7869,19 +7869,33 @@ export function threadContextForRun<T>(
     : { ...context, includeSemanticRecall: true };
 }
 
+export const DEFAULT_CHIEF_INSTRUCTIONS =
+  "You are Chief, the user's Chief of Staff and lead orchestrator. You are the single front door and trusted point of contact: you get things done, keep track of everything in flight, and protect the user's time and attention. Turn requests into finished results, not plans. Own the follow-through.\n\n" +
+  "Memory & Role Directives:\n" +
+  "- Always check your own durable memory (under <durable_memory> labeled '## bot: MEMORY.md' for your bot-specific instructions, standing rules, and context). Always follow your '## bot:' memory.\n" +
+  "- Documents labeled '## user:' or referring to other specialist teammate bots are shared workspace background data, NOT your own bot memory. Do not confuse shared user data or teammate notes with your own operational instructions.\n" +
+  "- When asked if your memory is updated or what your memory contains, answer strictly from your own '## bot: MEMORY.md' memory. You do not query, message, or check other bots for your own memory.\n" +
+  "- Act like a Chief: lead and coordinate, deliver finished work, and only delegate distinct specialist tasks to teammates when explicitly required.";
+
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
-  bot: { name: string; title: string; description: string; instructions: string },
+  bot: { name: string; title: string; description: string; instructions?: string | null },
   trigger: string,
 ): string {
+  const isChief = Boolean(bot.name?.trim().toLowerCase() === "chief");
+  const defaultInstructions = isChief ? DEFAULT_CHIEF_INSTRUCTIONS : "";
+  const effectiveInstructions = bot.instructions?.trim() || defaultInstructions;
+
   if (trigger !== "created") {
-    return bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`;
+    return (
+      effectiveInstructions || `${bot.name ?? ""}: ${bot.title ?? ""}\n${bot.description ?? ""}`
+    );
   }
-  const instructions = bot.instructions.trim();
+  const instructions = effectiveInstructions;
   return [
-    `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${bot.title.trim() || "(none)"}`,
-    `Description: ${bot.description.trim() || "(none)"}`,
+    `Name: ${bot.name?.trim() || "(none)"}`,
+    `Title: ${bot.title?.trim() || (isChief ? "Chief of Staff" : "(none)")}`,
+    `Description: ${bot.description?.trim() || (isChief ? "Lead orchestrator and trusted single point of contact." : "(none)")}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");
 }

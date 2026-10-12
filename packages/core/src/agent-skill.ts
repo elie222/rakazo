@@ -85,6 +85,13 @@ export function parseSkillMd(content: string): ParsedSkillMd | { error: string }
   if (description.length > 2000) {
     return { error: "Skill description must be at most 2000 characters." };
   }
+  if (
+    "bots" in frontmatter &&
+    typeof frontmatter.bots !== "string" &&
+    !Array.isArray(frontmatter.bots)
+  ) {
+    return { error: "Skill frontmatter bots must be a string or an array." };
+  }
   return { name, description, body, frontmatter };
 }
 
@@ -104,6 +111,9 @@ export function buildSkillMd(input: {
     throw new Error("Skill description must be at most 2000 characters.");
   }
   const merged: Record<string, unknown> = { ...(input.frontmatter ?? {}) };
+  if (merged.bots !== undefined && typeof merged.bots !== "string" && !Array.isArray(merged.bots)) {
+    throw new Error("Skill frontmatter bots must be a string or an array.");
+  }
   merged.name = name;
   merged.description = description;
   // Stable order: name, description, then remaining keys alphabetically.
