@@ -496,6 +496,25 @@ describe("Docker sandbox stopped containers", () => {
     ]);
   });
 
+  it("reports a deleted container gone so lease cleanup can clear its stale reference", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: "(HTTP code 404) no such container - No such container: computer" },
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await provider.setScreenControl(computer, false, context, "lease-1").then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(isSandboxGoneError(error)).toBe(true);
+  });
+
   it("reports a stopped container gone when granting interactive control", async () => {
     supervisorWith(() => Response.json({ id: "computer", running: false }));
     const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
