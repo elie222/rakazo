@@ -333,4 +333,33 @@ describe("skill tools", () => {
       }),
     ).toEqual({ error: "Skill name must be at most 80 characters." });
   });
+
+  it("enforces bot scope on skillReadFromTool", async () => {
+    const content = buildSkillMd({
+      name: "Bot Restricted",
+      description: "Only for scout bot",
+      body: "Secret instructions",
+      frontmatter: { bots: ["bot-scout"] },
+    });
+    await skillCreateFromTool(prisma as never, owner, { content });
+
+    // Permitted bot
+    const allowed = await skillReadFromTool(
+      prisma as never,
+      owner,
+      { name: "Bot Restricted" },
+      { id: "bot-scout", name: "Scout" },
+    );
+    expect(allowed).toMatchObject({ name: "Bot Restricted" });
+
+    // Excluded bot
+    const denied = await skillReadFromTool(
+      prisma as never,
+      owner,
+      { name: "Bot Restricted" },
+      { id: "bot-other", name: "Other" },
+    );
+    expect(denied).toEqual({ error: "Skill is not available to this bot." });
+  });
 });
+

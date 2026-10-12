@@ -5413,6 +5413,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 name: args.name ? String(args.name) : undefined,
                 skillId: args.skillId ? String(args.skillId) : undefined,
               },
+              { id: bot.id, name: bot.name },
             );
           }
           if (name === "skill_create") {

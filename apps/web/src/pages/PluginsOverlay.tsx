@@ -706,7 +706,7 @@ export function PluginsOverlay({
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Sparkles className="h-5 w-5 text-amber-400" />
+              <Sparkles className="h-5 w-5 text-primary" />
               <span>Agent Skills</span>
               {skillsCount > 0 ? (
                 <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-foreground">

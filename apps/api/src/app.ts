@@ -618,93 +618,7 @@ export async function createApp(
   mountApiRequestBodyLimits(app);
   mountScreenTarget(app, prisma, env.screenProxySecret);
 
-  // Skill proxy endpoint: bypasses browser CORS and resolves GitHub / SkillsMP URLs
-  app.get("/api/skills/fetch-url", async (c) => {
-    const rawUrl = c.req.query("url");
-    if (!rawUrl) return c.json({ error: "Missing url parameter" }, 400);
-    try {
-      let target = rawUrl.trim();
 
-      // If user provided https://skillsmp.com/ or https://skillsmp.com, suggest search
-      if (/^https?:\/\/skillsmp\.com\/?$/i.test(target)) {
-        return c.json({
-          error: "Please enter a specific skill URL (e.g. from a skill detail page) or use the search tab to find skills.",
-        }, 400);
-      }
-
-      // If it's a SkillsMP creator detail page, e.g. https://skillsmp.com/creators/affaan-m/ecc/agents-skills-market-research
-      if (target.includes("skillsmp.com/creators/")) {
-        const parts = target.split("skillsmp.com/creators/")[1]?.split("/") ?? [];
-        if (parts.length >= 3) {
-          const author = parts[0] ?? "";
-          const repo = parts[1] ?? "";
-          const skillPathSlug = parts.slice(2).join("/");
-          try {
-            const searchRes = await fetch(
-              `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(skillPathSlug)}`,
-              { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
-            );
-            if (searchRes.ok) {
-              const data = (await searchRes.json()) as {
-                success?: boolean;
-                data?: { skills?: Array<{ githubUrl: string }> };
-              };
-              const match = data.data?.skills?.find(
-                (s) => s.githubUrl.includes(author) || s.githubUrl.includes(repo),
-              );
-              if (match?.githubUrl) {
-                target = match.githubUrl;
-              }
-            }
-          } catch {
-            // fallback to direct fetch
-          }
-        }
-      }
-
-      // Convert GitHub tree/blob URLs to raw content
-      if (target.includes("github.com")) {
-        if (target.includes("/blob/")) {
-          target = target.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
-        } else if (target.includes("/tree/")) {
-          target =
-            target.replace("github.com", "raw.githubusercontent.com").replace("/tree/", "/") +
-            "/SKILL.md";
-        } else if (!target.endsWith("/SKILL.md") && !target.endsWith(".md")) {
-          target = target.replace(/\/+$/, "") + "/raw/main/SKILL.md";
-        }
-      }
-
-      const res = await fetch(target, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
-      });
-      if (!res.ok) {
-        return c.json({ error: `Upstream HTTP ${res.status}: ${res.statusText}` }, 400);
-      }
-      const text = await res.text();
-      return c.json({ ok: true, content: text, resolvedUrl: target });
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);
-    }
-  });
-
-  // SkillsMP search proxy endpoint
-  app.get("/api/skills/skillsmp-search", async (c) => {
-    const q = c.req.query("q") ?? "";
-    try {
-      const res = await fetch(
-        `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q || "agent")}`,
-        { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
-      );
-      if (!res.ok) {
-        return c.json({ error: `SkillsMP HTTP ${res.status}` }, 400);
-      }
-      const data = await res.json();
-      return c.json(data);
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : "SkillsMP search failed" }, 500);
-    }
-  });
 
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
     const path = new URL(c.req.url).pathname.replace("/api/auth", "");
@@ -754,6 +668,162 @@ export async function createApp(
     return actor;
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
+
+  // Helper function to block private, loopback, and internal network addresses from SSRF
+  function isBlockedRemoteHost(hostname: string): boolean {
+    const lower = hostname.toLowerCase();
+    if (
+      lower === "localhost" ||
+      lower === "0.0.0.0" ||
+      lower === "127.0.0.1" ||
+      lower === "::1" ||
+      lower.endsWith(".local") ||
+      lower.endsWith(".internal") ||
+      lower === "metadata.google.internal"
+    ) {
+      return true;
+    }
+    const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(lower);
+    if (ipv4) {
+      const a = Number(ipv4[1]);
+      const b = Number(ipv4[2]);
+      if (a === 127 || a === 10 || a === 0) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 169 && b === 254) return true;
+    }
+    return false;
+  }
+
+  // Skill proxy endpoint: requires authentication and guards against SSRF / internal endpoints
+  app.get("/api/skills/fetch-url", async (c) => {
+    const actor = await sessionActor(c.req.raw);
+    if (!actor) return c.json({ error: "Unauthorized" }, 401);
+
+    const rawUrl = c.req.query("url");
+    if (!rawUrl) return c.json({ error: "Missing url parameter" }, 400);
+
+    try {
+      let target = rawUrl.trim();
+
+      if (/^https?:\/\/skillsmp\.com\/?$/i.test(target)) {
+        return c.json({
+          error: "Please enter a specific skill URL (e.g. from a skill detail page) or use the search tab to find skills.",
+        }, 400);
+      }
+
+      // Convert SkillsMP creator detail page
+      if (target.includes("skillsmp.com/creators/")) {
+        const parts = target.split("skillsmp.com/creators/")[1]?.split("/") ?? [];
+        if (parts.length >= 3) {
+          const author = parts[0] ?? "";
+          const repo = parts[1] ?? "";
+          const skillPathSlug = parts.slice(2).join("/");
+          try {
+            const searchRes = await fetch(
+              `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(skillPathSlug)}`,
+              { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
+            );
+            if (searchRes.ok) {
+              const data = (await searchRes.json()) as {
+                success?: boolean;
+                data?: { skills?: Array<{ githubUrl: string }> };
+              };
+              const match = data.data?.skills?.find(
+                (s) => s.githubUrl.includes(author) || s.githubUrl.includes(repo),
+              );
+              if (match?.githubUrl) {
+                target = match.githubUrl;
+              }
+            }
+          } catch {
+            // fallback to direct fetch
+          }
+        }
+      }
+
+      // Convert GitHub tree/blob URLs to raw content
+      if (target.includes("github.com")) {
+        if (target.includes("/blob/")) {
+          target = target.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
+        } else if (target.includes("/tree/")) {
+          target =
+            target.replace("github.com", "raw.githubusercontent.com").replace("/tree/", "/") +
+            "/SKILL.md";
+        } else if (!target.endsWith("/SKILL.md") && !target.endsWith(".md")) {
+          target = target.replace(/\/+$/, "") + "/raw/main/SKILL.md";
+        }
+      }
+
+      let parsed: URL;
+      try {
+        parsed = new URL(target);
+      } catch {
+        return c.json({ error: "Invalid URL" }, 400);
+      }
+
+      if (parsed.protocol !== "https:") {
+        return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
+      }
+      if (parsed.username || parsed.password) {
+        return c.json({ error: "URLs with credentials are not allowed" }, 400);
+      }
+      if (isBlockedRemoteHost(parsed.hostname)) {
+        return c.json({ error: "Access to private or internal destinations is blocked" }, 403);
+      }
+
+      let currentUrl = target;
+      let res = await fetch(currentUrl, {
+        redirect: "manual",
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
+      });
+
+      let redirects = 0;
+      while ([301, 302, 307, 308].includes(res.status) && redirects < 5) {
+        const loc = res.headers.get("location");
+        if (!loc) break;
+        const nextUrl = new URL(loc, currentUrl);
+        if (nextUrl.protocol !== "https:" || isBlockedRemoteHost(nextUrl.hostname)) {
+          return c.json({ error: "Redirect destination is blocked" }, 403);
+        }
+        currentUrl = nextUrl.toString();
+        redirects++;
+        res = await fetch(currentUrl, {
+          redirect: "manual",
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
+        });
+      }
+
+      if (!res.ok) {
+        return c.json({ error: `Upstream HTTP ${res.status}: ${res.statusText}` }, 400);
+      }
+      const text = await res.text();
+      return c.json({ ok: true, content: text, resolvedUrl: currentUrl });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);
+    }
+  });
+
+  // SkillsMP search proxy endpoint: requires authentication
+  app.get("/api/skills/skillsmp-search", async (c) => {
+    const actor = await sessionActor(c.req.raw);
+    if (!actor) return c.json({ error: "Unauthorized" }, 401);
+
+    const q = c.req.query("q") ?? "";
+    try {
+      const res = await fetch(
+        `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q || "agent")}`,
+        { headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" } },
+      );
+      if (!res.ok) {
+        return c.json({ error: `SkillsMP HTTP ${res.status}` }, 400);
+      }
+      const data = await res.json();
+      return c.json(data);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "SkillsMP search failed" }, 500);
+    }
+  });
   if (billing && billingProvider) {
     mountBillingRoutes(app, {
       billing,

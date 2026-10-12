@@ -566,6 +566,7 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   id: true,
   name: true,
   description: true,
+  content: true,
   source: true,
   readOnly: true,
 });

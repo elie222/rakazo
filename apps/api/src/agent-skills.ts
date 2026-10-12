@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
-import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import type { Actor, AgentSkill, AgentSkillCatalogEntry, AgentSkillSource } from "@rakazo/contracts";
 import {
   buildSkillMd,
   findSkillByName,
@@ -132,14 +132,12 @@ export function createAgentSkillsService(prisma: PrismaClient) {
   }
 
   return {
-    async list(actor: Actor): Promise<Omit<AgentSkill, "content">[]> {
+    async list(actor: Actor): Promise<AgentSkillCatalogEntry[]> {
       const rows = await prisma.agentSkill.findMany({
         where: { spaceId: actor.spaceId, userId: actor.userId },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
-      return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill)).map(
-        ({ content: _content, ...entry }) => entry,
-      );
+      return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill));
     },
 
     async listWithContent(actor: Actor): Promise<AgentSkill[]> {

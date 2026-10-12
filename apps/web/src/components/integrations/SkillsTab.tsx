@@ -413,7 +413,10 @@ export function SkillsTab({
   async function openScopeModal(entry: AgentSkillCatalogEntry) {
     setError(null);
     try {
-      const skill = await rpc.agentSkills.get({ skillId: entry.id });
+      const skill =
+        entry.content && typeof entry.content === "string"
+          ? (entry as unknown as AgentSkill)
+          : await rpc.agentSkills.get({ skillId: entry.id });
       const parsedScope = getSkillBotScope(skill.content);
       setScopeModalSkill(skill);
       setScopeIsGlobal(parsedScope.isGlobal);
@@ -437,8 +440,12 @@ export function SkillsTab({
         nextFrontmatter.scope = "global";
         nextFrontmatter.bots = ["all"];
       } else {
+        if (scopeBotIds.length === 0) {
+          setError("Select at least one bot for specific bot scope.");
+          return;
+        }
         nextFrontmatter.scope = "bot";
-        nextFrontmatter.bots = scopeBotIds.length > 0 ? scopeBotIds : ["all"];
+        nextFrontmatter.bots = scopeBotIds;
       }
 
       const updatedContent = buildSkillMd({
@@ -545,8 +552,12 @@ bots:
         nextFrontmatter.scope = "global";
         nextFrontmatter.bots = ["all"];
       } else {
+        if (installScopeBotIds.length === 0) {
+          setError("Select at least one bot for specific bot scope.");
+          return;
+        }
         nextFrontmatter.scope = "bot";
-        nextFrontmatter.bots = installScopeBotIds.length > 0 ? installScopeBotIds : ["all"];
+        nextFrontmatter.bots = installScopeBotIds;
       }
 
       const contentWithScope = buildSkillMd({
@@ -632,8 +643,12 @@ bots:
         nextFrontmatter.scope = "global";
         nextFrontmatter.bots = ["all"];
       } else {
+        if (importScopeBotIds.length === 0) {
+          setError("Select at least one bot for specific bot scope.");
+          return;
+        }
         nextFrontmatter.scope = "bot";
-        nextFrontmatter.bots = importScopeBotIds.length > 0 ? importScopeBotIds : ["all"];
+        nextFrontmatter.bots = importScopeBotIds;
       }
 
       const finalized = buildSkillMd({
@@ -747,7 +762,7 @@ bots:
                 : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
             }`}
           >
-            <Sparkles className="h-4 w-4 text-amber-400" />
+            <Sparkles className="h-4 w-4 text-primary" />
             <span>Marketplace Hub</span>
           </button>
 
@@ -828,7 +843,7 @@ bots:
               </p>
               <div className="mt-4 flex justify-center gap-3">
                 <Button variant="secondary" size="sm" onClick={() => setSubTab("marketplace")}>
-                  <Sparkles className="mr-1.5 h-4 w-4 text-amber-400" />
+                  <Sparkles className="mr-1.5 h-4 w-4 text-primary" />
                   <span>Explore Marketplace</span>
                 </Button>
                 <Button variant="outline" size="sm" onClick={openNewSkill}>
@@ -854,24 +869,26 @@ bots:
                         {skill.source === "builtin" ? "Built-in" : skill.source === "plugin" ? "Plugin" : "Custom"}
                       </Badge>
                       {/* Bot Scope badge */}
-                      {renderBotScopeBadge(skill.description)}
+                      {renderBotScopeBadge(skill.content)}
                     </div>
                     <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{skill.description}</p>
                   </div>
 
                   <div className="flex shrink-0 items-center gap-2">
-                    {/* Bot Scope Selector Trigger */}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void openScopeModal(skill)}
-                      className="gap-1.5 rounded-lg text-xs"
-                      title="Configure whether this skill is active globally or on specific bots"
-                    >
-                      <Settings2 className="h-3.5 w-3.5" />
-                      <span>Bot Scope</span>
-                    </Button>
+                    {/* Bot Scope Selector Trigger - only for user-editable skills */}
+                    {!skill.readOnly ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void openScopeModal(skill)}
+                        className="gap-1.5 rounded-lg text-xs"
+                        title="Configure whether this skill is active globally or on specific bots"
+                      >
+                        <Settings2 className="h-3.5 w-3.5" />
+                        <span>Bot Scope</span>
+                      </Button>
+                    ) : null}
 
                     {/* View/Edit SKILL.md */}
                     <Button
@@ -1134,7 +1151,7 @@ bots:
                           </CardTitle>
                           {item.stars ? (
                             <Badge variant="secondary" className="gap-1 text-[11px]">
-                              <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                              <Star className="h-3 w-3 fill-foreground/70 text-foreground/70" />
                               <span>{item.stars}</span>
                             </Badge>
                           ) : null}
@@ -1286,7 +1303,11 @@ bots:
                       Select which bots will have access to this skill:
                     </p>
                     {bots.map((bot) => {
-                      const checked = importScopeBotIds.includes(bot.id);
+                      const checked = importScopeBotIds.some(
+                        (id) =>
+                          id.toLowerCase() === bot.id.toLowerCase() ||
+                          id.toLowerCase() === bot.name.toLowerCase(),
+                      );
                       return (
                         <label key={bot.id} className="flex cursor-pointer items-center gap-2.5 text-sm">
                           <Checkbox
@@ -1295,7 +1316,13 @@ bots:
                               if (val) {
                                 setImportScopeBotIds((prev) => [...prev, bot.id]);
                               } else {
-                                setImportScopeBotIds((prev) => prev.filter((id) => id !== bot.id));
+                                setImportScopeBotIds((prev) =>
+                                  prev.filter(
+                                    (id) =>
+                                      id.toLowerCase() !== bot.id.toLowerCase() &&
+                                      id.toLowerCase() !== bot.name.toLowerCase(),
+                                  ),
+                                );
                               }
                             }}
                           />
@@ -1315,7 +1342,11 @@ bots:
             <Button
               type="button"
               variant="default"
-              disabled={importing || (!importUrl.trim() && !importMarkdown.trim())}
+              disabled={
+                importing ||
+                (!importUrl.trim() && !importMarkdown.trim()) ||
+                (!importScopeGlobal && importScopeBotIds.length === 0)
+              }
               onClick={() => void executeImport()}
               className="gap-2 rounded-lg"
             >
@@ -1340,11 +1371,6 @@ bots:
             </DialogHeader>
 
             <div className="space-y-4 pt-2">
-              <p className="text-xs text-muted-foreground">
-                Choose whether this skill should be shared globally across all bots or restricted
-                only to specific designated bots in this workspace.
-              </p>
-
               <div className="space-y-3">
                 <label className="flex cursor-pointer items-center gap-2.5 text-sm">
                   <input
@@ -1385,7 +1411,11 @@ bots:
                       Select authorized bots:
                     </p>
                     {bots.map((bot) => {
-                      const checked = scopeBotIds.includes(bot.id) || scopeBotIds.includes(bot.name);
+                      const checked = scopeBotIds.some(
+                        (id) =>
+                          id.toLowerCase() === bot.id.toLowerCase() ||
+                          id.toLowerCase() === bot.name.toLowerCase(),
+                      );
                       return (
                         <label key={bot.id} className="flex cursor-pointer items-center gap-2.5 text-sm">
                           <Checkbox
@@ -1395,7 +1425,11 @@ bots:
                                 setScopeBotIds((prev) => [...prev, bot.id]);
                               } else {
                                 setScopeBotIds((prev) =>
-                                  prev.filter((id) => id !== bot.id && id !== bot.name),
+                                  prev.filter(
+                                    (id) =>
+                                      id.toLowerCase() !== bot.id.toLowerCase() &&
+                                      id.toLowerCase() !== bot.name.toLowerCase(),
+                                  ),
                                 );
                               }
                             }}
@@ -1425,7 +1459,7 @@ bots:
                   type="button"
                   variant="default"
                   size="sm"
-                  disabled={scopeSaving}
+                  disabled={scopeSaving || (!scopeIsGlobal && scopeBotIds.length === 0)}
                   onClick={() => void saveScope()}
                 >
                   {scopeSaving ? "Saving…" : "Save Scope"}
@@ -1442,7 +1476,7 @@ bots:
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-lg">
-                <Sparkles className="h-5 w-5 text-amber-400" />
+                <Sparkles className="h-5 w-5 text-primary" />
                 <span>
                   Install Skill: {installModalSkill.name}
                 </span>
@@ -1493,7 +1527,11 @@ bots:
                   {!installScopeGlobal ? (
                     <div className="ml-6 space-y-2 rounded-xl border border-border/50 bg-accent/25 p-3">
                       {bots.map((bot) => {
-                        const checked = installScopeBotIds.includes(bot.id);
+                        const checked = installScopeBotIds.some(
+                          (id) =>
+                            id.toLowerCase() === bot.id.toLowerCase() ||
+                            id.toLowerCase() === bot.name.toLowerCase(),
+                        );
                         return (
                           <label key={bot.id} className="flex cursor-pointer items-center gap-2.5 text-sm">
                             <Checkbox
@@ -1502,7 +1540,13 @@ bots:
                                 if (val) {
                                   setInstallScopeBotIds((prev) => [...prev, bot.id]);
                                 } else {
-                                  setInstallScopeBotIds((prev) => prev.filter((id) => id !== bot.id));
+                                  setInstallScopeBotIds((prev) =>
+                                    prev.filter(
+                                      (id) =>
+                                        id.toLowerCase() !== bot.id.toLowerCase() &&
+                                        id.toLowerCase() !== bot.name.toLowerCase(),
+                                    ),
+                                  );
                                 }
                               }}
                             />
@@ -1529,7 +1573,7 @@ bots:
                   type="button"
                   variant="default"
                   size="sm"
-                  disabled={installing}
+                  disabled={installing || (!installScopeGlobal && installScopeBotIds.length === 0)}
                   onClick={() => void installMarketplaceSkill()}
                   className="gap-1.5"
                 >

@@ -157,6 +157,7 @@ import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  isSkillEnabledForBot,
   nextCronDateAcrossStrict,
 } from "@rakazo/core";
 import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
@@ -3512,7 +3513,8 @@ export function createRouter(deps: RouterDeps) {
           if (existing) return { runId: existing.id };
         }
         const skillRecords = await agentSkills.listWithContent(context.actor);
-        const prompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+        const botSkills = skillRecords.filter((s) => isSkillEnabledForBot(s, bot.id, bot.name));
+        const prompt = expandSkillReferencesInPrompt(routine.prompt, botSkills);
         let run: { id: string };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
