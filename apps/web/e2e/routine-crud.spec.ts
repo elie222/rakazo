@@ -379,3 +379,25 @@ function localSchedule(iso: string, timezone: string) {
     minute: Number(value("minute")),
   };
 }
+
+test("interval schedule only offers amounts the unit can run", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `routine-interval-${stamp}@rakazo.test`, "password12", "Interval Routine");
+  await completeOnboarding(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await addScheduleTrigger(page, "Interval");
+
+  const amount = page.getByRole("combobox", { name: "Interval amount" });
+  const unit = page.getByRole("combobox", { name: "Interval unit" });
+  await amount.selectOption("45");
+  await unit.selectOption("hours");
+  await expect(amount).toHaveValue("15");
+  await expect(amount.locator("option[value='45']")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "routine-interval-hours");
+
+  await unit.selectOption("days");
+  await expect(amount.locator("option[value='30']")).toHaveCount(1);
+  await expect(amount.locator("option[value='45']")).toHaveCount(0);
+});
