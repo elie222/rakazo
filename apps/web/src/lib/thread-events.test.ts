@@ -31,7 +31,11 @@ describe("thread event reduction", () => {
       cursor: 50,
       readState: { lastReadSeq: 3, lastUnreadSeq: 3, unread: false },
     };
-    for (const type of ["thread.read.updated", "thread.cleared", "thread.message.created"]) {
+    for (const type of [
+      "thread.read.updated",
+      "thread.cleared",
+      "thread.message.created",
+    ] as const) {
       expect(
         reduceThreadSnapshot(
           initial,
