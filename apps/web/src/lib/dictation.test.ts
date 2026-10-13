@@ -547,11 +547,11 @@ describe("Dictation recorder fallback", () => {
 });
 
 describe("combineTranscript", () => {
-  it("joins a short prefix that is not a whole word in the server text", () => {
+  it("joins a short prefix that is not a whole word in the replayed text", () => {
     expect(combineTranscript("we", "welcome")).toBe("we welcome");
   });
 
-  it("does not repeat a word when the server transcript adds a comma", () => {
+  it("does not repeat a word when the replayed transcript adds a comma", () => {
     expect(combineTranscript("hello", "hello, world")).toBe("hello, world");
     expect(combineTranscript("hello", "Hello, world")).toBe("Hello, world");
   });
@@ -567,17 +567,17 @@ describe("combineTranscript", () => {
     ["hello)"],
     ['hello"'],
     ["hello，world"],
-  ])("treats punctuation after the retained word as a boundary (%s)", (serverText) => {
-    expect(combineTranscript("hello", serverText)).toBe(serverText);
+  ])("treats punctuation after the retained word as a boundary (%s)", (speechText) => {
+    expect(combineTranscript("hello", speechText)).toBe(speechText);
   });
 
-  it("keeps the server transcript when whitespace follows the retained words", () => {
+  it("keeps the replayed transcript when whitespace follows the retained words", () => {
     expect(combineTranscript("call me later", "Call me later and goodbye")).toBe(
       "Call me later and goodbye",
     );
   });
 
-  it("still joins when the server text continues the retained token", () => {
+  it("still joins when the replayed text continues the retained token", () => {
     expect(combineTranscript("hello", "helloworld")).toBe("hello helloworld");
     expect(combineTranscript("hello", "hello2")).toBe("hello hello2");
     expect(combineTranscript("hello", "hello_world")).toBe("hello hello_world");
@@ -1314,72 +1314,28 @@ describe("Dictation web speech", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("does not repeat server text that already starts with the retained speech", async () => {
-    type ResultEvent = {
-      resultIndex: number;
-      results: ArrayLike<ArrayLike<{ transcript: string }>>;
-    };
-    const instances: FakeRecognition[] = [];
-    class FakeRecognition {
-      continuous = false;
-      interimResults = false;
-      lang = "";
-      onresult: ((event: ResultEvent) => void) | null = null;
-      onerror: ((event: { error?: string }) => void) | null = null;
-      onend: (() => void) | null = null;
-      start = vi.fn();
-      stop = vi.fn();
-      abort = vi.fn();
-      constructor() {
-        instances.push(this);
-      }
-    }
-    vi.stubGlobal("window", { SpeechRecognition: FakeRecognition });
-    let markRecording: () => void = () => undefined;
-    const recording = new Promise<void>((resolve) => {
-      markRecording = resolve;
-    });
-    const fetchMock = vi.fn(async () => Response.json({ text: "  Call me later and goodbye  " }));
-    const track = { stop: vi.fn() };
-    vi.stubGlobal("navigator", {
-      mediaDevices: {
-        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
-      },
-      language: "en-US",
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal(
-      "MediaRecorder",
-      class {
-        state = "inactive";
-        ondataavailable: ((event: { data: Blob }) => void) | null = null;
-        onstop: (() => void) | null = null;
-        start() {
-          this.state = "recording";
-          markRecording();
-        }
-        stop() {
-          this.state = "inactive";
-          this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
-          this.onstop?.();
-        }
-      },
-    );
+  it.each([
+    ["please say no", "no please", "please say no no please"],
+    ["call me later", "Call me later and goodbye", "call me later Call me later and goodbye"],
+    ["hello", "hello", "hello hello"],
+    ["call me later", "", "call me later"],
+  ])(
+    "appends fresh recording text without removing repeated words (%s / %s)",
+    async (prefix, text, expected) => {
+      const fetchMock = vi.fn(async () => Response.json({ text }));
+      stubRecorderFallback(fetchMock);
+      const onFinal = vi.fn();
+      const dictation = new Dictation();
+      await dictation.listen({ mode: "hold", transcribe: true, onFinal });
+      said(instances[0], prefix);
+      instances[0]?.onerror?.({ error: "network" });
+      await vi.waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledOnce());
+      dictation.submitHold();
 
-    const onFinal = vi.fn();
-    const dictation = new Dictation();
-    await dictation.listen({ mode: "hold", transcribe: true, onFinal });
-    instances[0]?.onresult?.({
-      resultIndex: 0,
-      results: [[{ transcript: "call me later" }]],
-    });
-    instances[0]?.onerror?.({ error: "network" });
-    await recording;
-    dictation.submitHold();
-
-    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("Call me later and goodbye"));
-    expect(onFinal).toHaveBeenCalledOnce();
-  });
+      await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith(expected));
+      expect(fetchMock).toHaveBeenCalledOnce();
+    },
+  );
 
   it("stops an endpoint fallback on silence without new microphone energy", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });

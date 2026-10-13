@@ -142,7 +142,10 @@ export function startCall(call: {
       set({ heard: pendingSecretAsk(thread) ? "" : heard.transcript });
       watchInterim(heard.transcript);
     } else clearInterim();
-    if (heard.error) set({ caption: heard.error });
+    if (heard.error) {
+      if (heard.status === "idle") micOpen = false;
+      set({ caption: heard.error });
+    }
   });
   watchThread(call.botId);
   emit();

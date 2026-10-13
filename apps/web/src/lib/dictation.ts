@@ -83,9 +83,9 @@ function normalizedTranscript(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
-function startsWithWholePrefix(serverText: string, prefix: string): boolean {
+function startsWithWholePrefix(text: string, prefix: string): boolean {
   const head = prefix.toLowerCase();
-  const tail = serverText.toLowerCase();
+  const tail = text.toLowerCase();
   if (!tail.startsWith(head)) return false;
   // Index by code point. A supplementary-plane letter is two UTF-16 units, and
   // the first half alone is not a letter.
@@ -95,10 +95,10 @@ function startsWithWholePrefix(serverText: string, prefix: string): boolean {
   return !/[\p{L}\p{N}_]/u.test(String.fromCodePoint(point));
 }
 
-/** Join carried speech with a new session or recording at their longest whole-word overlap. */
-export function combineTranscript(prefix: string, serverText: string): string {
+/** Join carried Web Speech with a restarted session at their longest whole-word overlap. */
+export function combineTranscript(prefix: string, speechText: string): string {
   const head = normalizedTranscript(prefix);
-  const tail = serverText.trim();
+  const tail = speechText.trim();
   if (!head) return tail;
   if (!tail) return head;
   if (startsWithWholePrefix(tail, head)) return tail;
@@ -530,7 +530,13 @@ export class Dictation {
         this.failListening(mine, body.error ?? "Could not transcribe that recording.");
         return;
       }
-      this.finish(combineTranscript(this.snapshot.transcript, body.text ?? ""), mine);
+      // The recorder captures fresh audio, so matching words are intentional repetitions.
+      const prefix = normalizedTranscript(this.snapshot.transcript);
+      const text = body.text ?? "";
+      this.finish(
+        prefix ? [prefix, normalizedTranscript(text)].filter(Boolean).join(" ") : text,
+        mine,
+      );
     } catch (error) {
       // User cancel bumps token in stop() before aborting, so a matching token
       // means the deadline timer fired. Browsers may reject fetch as AbortError
