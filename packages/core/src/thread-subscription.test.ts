@@ -113,6 +113,30 @@ describe("thread subscription recovery", () => {
     expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores state changes and effects already covered by a refreshed snapshot", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, state, callbacks } = setup();
+    const beforeEvent = vi.fn();
+    const running = runThreadSubscription({ ...callbacks, beforeEvent });
+    await vi.advanceTimersByTimeAsync(0);
+    state.committed = { ...head, cursor: 20 };
+    channel.send({ ...event(11), type: "thread.read.updated" });
+    await vi.advanceTimersByTimeAsync(0);
+    channel.send({ ...event(20), type: "thread.cleared" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(beforeEvent).not.toHaveBeenCalled();
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+    expect(callbacks.onEvent).not.toHaveBeenCalled();
+    channel.send(event(21));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(beforeEvent).toHaveBeenCalledExactlyOnceWith(event(21));
+    expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(21));
+    expect(callbacks.onEvent).toHaveBeenCalledExactlyOnceWith(event(21), head);
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
   it("keeps receipt handling before applying events and effects afterward", async () => {
     vi.useFakeTimers();
     const { abort, channel, callbacks } = setup();

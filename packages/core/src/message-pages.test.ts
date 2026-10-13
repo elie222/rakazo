@@ -30,6 +30,39 @@ const latest = () => ({
 });
 
 describe("thread windows", () => {
+  it("keeps latest history hidden while scanning an empty filtered around page", () => {
+    const opened = openThreadWindow(latest(), {
+      threadId: "thread",
+      messages: [] as Message[],
+      olderCursor: 25,
+      coveredThroughSeq: 124,
+    });
+    expect(opened.newerCursor).toBe(124);
+    expect(threadWindowMessages(opened.snapshot.messages, opened.newerCursor)).toEqual([]);
+
+    const next = appendNewerThreadPage(opened.snapshot, 124, page(150, 174), 174);
+    expect(next.newerCursor).toBe(174);
+    expect(ids(threadWindowMessages(next.snapshot.messages, next.newerCursor))).toEqual(
+      ids(range(150, 174)),
+    );
+    expect(next.snapshot.olderCursor).toBe(25);
+  });
+
+  it("uses raw coverage beyond the last visible row without exposing an unscanned gap", () => {
+    const opened = openThreadWindow(latest(), { ...page(25, 50), coveredThroughSeq: 124 });
+    expect(opened.newerCursor).toBe(124);
+    expect(ids(threadWindowMessages(opened.snapshot.messages, opened.newerCursor))).toEqual(
+      ids(range(25, 50)),
+    );
+    const unknown = openThreadWindow(latest(), {
+      threadId: "thread",
+      messages: [] as Message[],
+      olderCursor: null,
+    });
+    expect(unknown.newerCursor).toBe(-1);
+    expect(threadWindowMessages(unknown.snapshot.messages, unknown.newerCursor)).toEqual([]);
+  });
+
   it("opens an older page without showing the gap to the latest messages", () => {
     const opened = openThreadWindow(latest(), page(25, 124));
 

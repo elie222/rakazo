@@ -1,11 +1,14 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import type {
+  BotSecretDestination,
+  MessageBlock,
+  ProductEvent,
+  ThreadReadState,
+} from "@rakazo/contracts";
 import {
-  type BotSecretDestination,
   encodeLoginSecret,
   LoginSecretValue,
-  type MessageBlock,
   MessageBlock as MessageBlockSchema,
-  type ProductEvent,
 } from "@rakazo/contracts";
 import {
   blocksToAgentHistoryText,
@@ -313,6 +316,8 @@ export async function clearThread(
       await tx.thread.update({
         where: { id: input.threadId },
         data: {
+          lastReadSeq: thread.nextMessageSeq - 1,
+          lastUnreadSeq: -1,
           historyCompactedUpToSeq: thread.nextMessageSeq - 1,
           historyCompactionSummary: null,
           historyCompactionGeneration: { increment: 1 },
@@ -322,6 +327,8 @@ export async function clearThread(
       await tx.thread.update({
         where: { id: input.threadId },
         data: {
+          lastReadSeq: -1,
+          lastUnreadSeq: -1,
           historyCompactionSummary: null,
           historyCompactionGeneration: { increment: 1 },
         },
@@ -338,7 +345,13 @@ export async function clearThread(
     const event = await appendEventInTransaction(tx, {
       ...input,
       type: "thread.cleared",
-      payload: {},
+      payload: {
+        readState: {
+          lastReadSeq: thread.nextMessageSeq - 1,
+          lastUnreadSeq: -1,
+          unread: false,
+        },
+      },
     });
     return {
       event,
@@ -1350,7 +1363,7 @@ export async function appendEventInTransaction(
   const thread = await tx.thread.update({
     where: { id: input.threadId },
     data: { nextEventSeq: { increment: 1 } },
-    select: { nextEventSeq: true },
+    select: { nextEventSeq: true, lastReadSeq: true, lastUnreadSeq: true, unread: true },
   });
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
@@ -1360,7 +1373,22 @@ export async function appendEventInTransaction(
     await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
-  const payload = sanitizeJsonValue(input.payload);
+  let eventPayload = input.payload;
+  if (input.type === "thread.message.created" || input.type === "thread.message.updated") {
+    const messageId = input.payload.messageId;
+    if (typeof messageId !== "string") throw new Error("Message event requires a message id");
+    const message = await tx.message.findFirstOrThrow({
+      where: { id: messageId, threadId: input.threadId },
+      select: { seq: true },
+    });
+    const readState: ThreadReadState = {
+      lastReadSeq: thread.lastReadSeq,
+      lastUnreadSeq: thread.lastUnreadSeq,
+      unread: thread.unread,
+    };
+    eventPayload = { ...eventPayload, messageSeq: message.seq, readState };
+  }
+  const payload = sanitizeJsonValue(eventPayload);
   return tx.event.create({
     data: {
       spaceId: input.spaceId,

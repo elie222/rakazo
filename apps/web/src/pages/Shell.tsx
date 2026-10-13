@@ -22,6 +22,7 @@ import type {
   TaughtSkill,
   ThinkingLevel,
   ThreadMessage,
+  ThreadReadState,
   ThreadSnapshot,
   VoiceStatus,
 } from "@rakazo/contracts";
@@ -35,11 +36,14 @@ import {
 } from "@rakazo/contracts";
 import type { ComposerMention, SlashActionId } from "@rakazo/core";
 import {
+  appendNewerThreadPage,
   attachmentsForThread,
   buildComposerMentionOptions,
   clampMentionHighlightIndex,
   cronFromPreset,
+  durableMessageSeq,
   formatMessageTime,
+  forwardProbeAfterPage,
   groupVoiceChats,
   inferAttachmentMimeType,
   isActive,
@@ -47,8 +51,11 @@ import {
   isRunTerminalEvent,
   isToolActivityBlock,
   latestAnswerableAskMessageId,
+  latestDurableMessageSeq,
+  leaveThreadWindow,
   mentionChipKey,
   nestRosterByParent,
+  openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
   reorderBotTo,
@@ -60,8 +67,12 @@ import {
   searchHitThreadTarget,
   serializeComposerPrompt,
   speechFromBlocks,
+  threadReadAcknowledgement,
+  threadWindowMessages,
   timeSeparatorIds,
   truncateSlashDescription,
+  unreadBoundary,
+  unreadDividerMessageId,
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
@@ -83,6 +94,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   resolvePersonaColorDef,
+  Separator,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -658,6 +670,18 @@ export function ShellPage() {
   const closeSectionMenu = useCallback(() => setSectionMenu(null), []);
   const [booting, setBooting] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [transcriptGeneration, setTranscriptGeneration] = useState(0);
+  const [unreadWindow, setUnreadWindow] = useState<{
+    threadId: string;
+    newerCursor: number | null;
+    probeSeq?: number;
+    coveredThroughSeq?: number;
+  } | null>(null);
+  const unreadWindowRef = useRef(unreadWindow);
+  unreadWindowRef.current = unreadWindow;
+  const [loadingNewer, setLoadingNewer] = useState(false);
+  const loadingNewerRef = useRef(false);
+  const newerLoadFailed = useRef(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
@@ -783,7 +807,7 @@ export function ShellPage() {
     olderCursor: number | null;
   } | null>(null);
   const manuallyUnread = useRef(new Set<string>());
-  const readVisibleGroups = useRef(new Set<string>());
+  const pendingReadRequests = useRef(new Map<string, Promise<unknown>>());
   const notifiedBrowserEvents = useRef(new Set<string>());
   const pendingBrowserNotifications = useRef(new Map<string, PendingBrowserNotification>());
   const computerVisible = useRef(false);
@@ -847,6 +871,7 @@ export function ShellPage() {
     async (id: string) => {
       manuallyUnread.current.add(id);
       try {
+        await pendingReadRequests.current.get(id)?.catch(() => undefined);
         await rpc.threads.markUnread({ botId: id });
       } catch (err) {
         manuallyUnread.current.delete(id);
@@ -855,17 +880,6 @@ export function ShellPage() {
       updateBotUnread(id, true);
     },
     [updateBotUnread],
-  );
-  // A bot the user marked unread by hand stays unread until they open it again,
-  // otherwise the auto-read below would undo the action on the next window focus.
-  const markBotReadIfVisible = useCallback(
-    (id: string) => {
-      if (manuallyUnread.current.has(id)) return;
-      if (document.visibilityState === "visible" && document.hasFocus()) {
-        void markBotRead(id).catch(() => undefined);
-      }
-    },
-    [markBotRead],
   );
   const deliverBrowserNotification = useCallback((pending: PendingBrowserNotification): boolean => {
     const currentBot = botsRef.current.find((bot) => bot.id === pending.botId);
@@ -1036,7 +1050,8 @@ export function ShellPage() {
     if (
       stickToEnd &&
       (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
-      expandedHistoryThread.current !== snap.threadId
+      expandedHistoryThread.current !== snap.threadId &&
+      unreadBoundary(snap.readState) === null
     ) {
       snapTranscriptToEndAfterFrame();
     }
@@ -1072,7 +1087,8 @@ export function ShellPage() {
     if (
       stickToEnd &&
       (!scrollElement || transcriptIsNearEnd(scrollElement)) &&
-      expandedHistoryThread.current !== snap.threadId
+      expandedHistoryThread.current !== snap.threadId &&
+      unreadBoundary(snap.readState) === null
     ) {
       snapTranscriptToEndAfterFrame();
     }
@@ -1118,6 +1134,118 @@ export function ShellPage() {
       fallbackError: t`Could not connect to the computer screen`,
     });
   }
+
+  const markThreadReadThrough = useCallback(async (threadId: string, throughSeq: number) => {
+    const current = snapshotRef.current;
+    const id = activeGroupId.current ?? activeBotId.current;
+    if (
+      !current ||
+      current.threadId !== threadId ||
+      (current.groupId
+        ? current.groupId !== activeGroupId.current
+        : Boolean(activeGroupId.current) || current.botId !== activeBotId.current) ||
+      !id ||
+      manuallyUnread.current.has(id) ||
+      document.visibilityState !== "visible" ||
+      !document.hasFocus()
+    )
+      return false;
+    const pending = rpc.threads.markRead({
+      ...(activeGroupId.current ? { groupId: activeGroupId.current } : { botId: id }),
+      throughSeq,
+    });
+    pendingReadRequests.current.set(id, pending);
+    try {
+      await pending;
+      return true;
+    } finally {
+      if (pendingReadRequests.current.get(id) === pending) pendingReadRequests.current.delete(id);
+    }
+  }, []);
+
+  const openUnreadHistory = useCallback(async (threadId: string, boundary: number) => {
+    const epoch = historyEpoch.current;
+    const jump = jumpGeneration.current;
+    const target = activeGroupId.current
+      ? { groupId: activeGroupId.current }
+      : { botId: activeBotId.current! };
+    const page = await rpc.threads.messages({ ...target, around: { seq: boundary + 1 } });
+    const current = snapshotRef.current;
+    if (
+      epoch !== historyEpoch.current ||
+      jump !== jumpGeneration.current ||
+      current?.threadId !== threadId
+    )
+      return;
+    const opened = openThreadWindow(current, page);
+    expandedHistoryThread.current = threadId;
+    newerLoadFailed.current = false;
+    setUnreadWindow({ threadId, newerCursor: opened.newerCursor });
+    commitSnapshot(opened.snapshot);
+  }, []);
+
+  const loadNewerUnreadMessages = useCallback(async (retry = false) => {
+    if (retry) newerLoadFailed.current = false;
+    const window = unreadWindowRef.current;
+    if (window?.newerCursor == null || loadingNewerRef.current || newerLoadFailed.current) return;
+    const epoch = historyEpoch.current;
+    const probe = window.probeSeq ?? window.newerCursor + 1;
+    loadingNewerRef.current = true;
+    setLoadingNewer(true);
+    try {
+      const target = activeGroupId.current
+        ? { groupId: activeGroupId.current }
+        : { botId: activeBotId.current! };
+      const page = await rpc.threads.messages({ ...target, around: { seq: probe } });
+      const current = snapshotRef.current;
+      if (
+        epoch !== historyEpoch.current ||
+        window !== unreadWindowRef.current ||
+        current?.threadId !== window.threadId
+      )
+        return;
+      const coverage =
+        page.coveredThroughSeq == null
+          ? undefined
+          : Math.max(window.coveredThroughSeq ?? page.coveredThroughSeq, page.coveredThroughSeq);
+      const next = appendNewerThreadPage(current, window.newerCursor, page, coverage);
+      const step = forwardProbeAfterPage({
+        probe,
+        newerCursor: window.newerCursor,
+        nextCursor: next.newerCursor,
+        reportedCoverage: page.coveredThroughSeq ?? null,
+        carriedCoverage: window.coveredThroughSeq,
+      });
+      if (step.stalled) {
+        newerLoadFailed.current = true;
+        return;
+      }
+      setUnreadWindow({
+        ...window,
+        newerCursor: next.newerCursor,
+        probeSeq: step.probe,
+        coveredThroughSeq: step.coverage,
+      });
+      commitSnapshot(next.snapshot);
+    } catch {
+      newerLoadFailed.current = true;
+    } finally {
+      loadingNewerRef.current = false;
+      setLoadingNewer(false);
+    }
+  }, []);
+
+  const showLatestUnreadMessages = useCallback(() => {
+    jumpGeneration.current += 1;
+    const window = unreadWindowRef.current;
+    if (!window) return;
+    setUnreadWindow(null);
+    expandedHistoryThread.current = null;
+    const current = snapshotRef.current;
+    if (current?.threadId === window.threadId) {
+      commitSnapshot(leaveThreadWindow(current, window.newerCursor));
+    }
+  }, []);
 
   async function loadOlderMessages() {
     const targetBotId = inGroup ? undefined : active?.id;
@@ -1315,20 +1443,11 @@ export function ShellPage() {
   ]);
 
   useEffect(() => {
-    if (!active) return;
-    // Opening a bot clears the manual unread flag so it can auto-read again.
-    manuallyUnread.current.delete(active.id);
-    const markVisibleBotRead = () => {
-      markBotReadIfVisible(active.id);
-    };
-    markVisibleBotRead();
-    window.addEventListener("focus", markVisibleBotRead);
-    document.addEventListener("visibilitychange", markVisibleBotRead);
-    return () => {
-      window.removeEventListener("focus", markVisibleBotRead);
-      document.removeEventListener("visibilitychange", markVisibleBotRead);
-    };
-  }, [active?.id, markBotReadIfVisible]);
+    // A manual reminder lasts until the next visit to the conversation.
+    const id = groupId ?? active?.id;
+    if (id) manuallyUnread.current.delete(id);
+    setUnreadWindow(null);
+  }, [active?.id, groupId]);
 
   useEffect(() => {
     if (!active) return;
@@ -1395,6 +1514,8 @@ export function ShellPage() {
           expandedHistoryThread.current = null;
           pinnedAroundRef.current = null;
           historyEpoch.current += 1;
+          setUnreadWindow(null);
+          setTranscriptGeneration((value) => value + 1);
         }
         if (event.type === "bot.archived") {
           void refreshBots(true).catch(() => undefined);
@@ -1413,7 +1534,6 @@ export function ShellPage() {
           if (blocks.some((block) => block.kind === "child_bot")) {
             void refreshBots().catch(() => undefined);
           }
-          if (event.payload.role === "bot") markBotReadIfVisible(active.id);
         }
         if (
           isRunTerminalEvent(event) ||
@@ -1430,38 +1550,10 @@ export function ShellPage() {
     return () => {
       abort.abort();
     };
-  }, [active?.id, markBotReadIfVisible, notifyBrowserForEvent]);
+  }, [active?.id, notifyBrowserForEvent]);
 
   useEffect(() => {
     if (!groupId || !activeGroup) return;
-    manuallyUnread.current.delete(activeGroup.id);
-    readVisibleGroups.current.delete(groupId);
-    const markVisibleGroupRead = () => {
-      if (
-        document.visibilityState !== "visible" ||
-        !document.hasFocus() ||
-        readVisibleGroups.current.has(groupId)
-      )
-        return;
-      readVisibleGroups.current.add(groupId);
-      void rpc.threads
-        .markRead({ groupId })
-        .then(() => {
-          setGroups((current) => {
-            const group = current.find((candidate) => candidate.id === groupId);
-            if (!group?.unread) return current;
-            return current.map((candidate) =>
-              candidate.id === groupId ? { ...candidate, unread: false } : candidate,
-            );
-          });
-        })
-        .catch(() => {
-          readVisibleGroups.current.delete(groupId);
-        });
-    };
-    markVisibleGroupRead();
-    window.addEventListener("focus", markVisibleGroupRead);
-    document.addEventListener("visibilitychange", markVisibleGroupRead);
     const pendingJump = searchParamsRef.current.get("m");
     if (!pendingJump) {
       pinnedAroundRef.current = null;
@@ -1501,9 +1593,12 @@ export function ShellPage() {
           true,
           true,
         );
-        if (event.type === "thread.message.created" && event.payload.role === "bot") {
-          readVisibleGroups.current.delete(groupId);
-          markVisibleGroupRead();
+        if (event.type === "thread.cleared") {
+          expandedHistoryThread.current = null;
+          pinnedAroundRef.current = null;
+          historyEpoch.current += 1;
+          setUnreadWindow(null);
+          setTranscriptGeneration((value) => value + 1);
         }
         if (
           event.type === "run.started" ||
@@ -1519,8 +1614,6 @@ export function ShellPage() {
       },
     });
     return () => {
-      window.removeEventListener("focus", markVisibleGroupRead);
-      document.removeEventListener("visibilitychange", markVisibleGroupRead);
       abort.abort();
     };
   }, [activeGroup?.id, groupId, notifyBrowserForEvent]);
@@ -1806,10 +1899,34 @@ export function ShellPage() {
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
+  const unreadNewerCursor =
+    unreadWindow?.threadId === activeSnapshot?.threadId
+      ? (unreadWindow?.newerCursor ?? null)
+      : null;
   const transcriptMessages = useMemo(
-    () => userVisibleMessages(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
-    [activeSnapshot?.messages],
+    () =>
+      userVisibleMessages(
+        [...threadWindowMessages(activeSnapshot?.messages ?? [], unreadNewerCursor)],
+        { includePeerReceipts: true },
+      ),
+    [activeSnapshot?.messages, unreadNewerCursor],
   );
+  useEffect(() => {
+    const state = activeSnapshot?.readState;
+    if (!state) return;
+    if (activeSnapshot.groupId) {
+      const id = activeSnapshot.groupId;
+      setGroups((current) =>
+        current.map((group) =>
+          group.id === id && group.unread !== state.unread
+            ? { ...group, unread: state.unread }
+            : group,
+        ),
+      );
+    } else if (activeSnapshot.botId) {
+      updateBotUnread(activeSnapshot.botId, state.unread);
+    }
+  }, [activeSnapshot?.botId, activeSnapshot?.groupId, activeSnapshot?.readState, updateBotUnread]);
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
     () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
     [active?.id, groupId, inGroup],
@@ -1963,6 +2080,7 @@ export function ShellPage() {
 
   useLayoutEffect(() => {
     const pin = pinnedAroundRef.current;
+    if (unreadBoundary(snapshot?.readState) !== null) return;
     if (inGroup) {
       if (!groupId || !snapshot || snapshot.groupId !== groupId) return;
       if (initiallyScrolledThread.current === snapshot.threadId) return;
@@ -3656,7 +3774,15 @@ export function ShellPage() {
           </div>
         ) : (
           <Transcript
-            key={activeSnapshot?.threadId}
+            key={`${activeSnapshot?.threadId}:${transcriptGeneration}`}
+            threadId={activeSnapshot?.threadId}
+            readState={activeSnapshot?.readState}
+            onReadThrough={markThreadReadThrough}
+            onOpenUnreadHistory={openUnreadHistory}
+            newerCursor={unreadNewerCursor}
+            loadingNewer={loadingNewer}
+            onLoadNewer={loadNewerUnreadMessages}
+            onShowLatest={showLatestUnreadMessages}
             scrollRef={messageScroll}
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
@@ -4188,9 +4314,15 @@ export function ShellPage() {
                 const request = unread ? markBotUnread(contextBot.id) : markBotRead(contextBot.id);
                 void request.catch(() => undefined);
               } else {
+                const id = contextGroup!.id;
+                if (unread) manuallyUnread.current.add(id);
+                else manuallyUnread.current.delete(id);
                 const request = unread
-                  ? rpc.threads.markUnread({ groupId: contextGroup!.id })
-                  : rpc.threads.markRead({ groupId: contextGroup!.id });
+                  ? (async () => {
+                      await pendingReadRequests.current.get(id)?.catch(() => undefined);
+                      return rpc.threads.markUnread({ groupId: id });
+                    })()
+                  : rpc.threads.markRead({ groupId: id });
                 void request
                   .then(() =>
                     setGroups((current) =>
@@ -4199,7 +4331,9 @@ export function ShellPage() {
                       ),
                     ),
                   )
-                  .catch(() => undefined);
+                  .catch(() => {
+                    if (unread) manuallyUnread.current.delete(id);
+                  });
               }
             }}
             onMoveToSection={(sectionId) => {
@@ -4522,8 +4656,18 @@ export function ShellPage() {
                 expandedHistoryThread.current = null;
                 pinnedAroundRef.current = null;
                 historyEpoch.current += 1;
+                setUnreadWindow(null);
+                setTranscriptGeneration((value) => value + 1);
                 updateSnapshot((current) =>
-                  current ? { ...current, messages: [], olderCursor: null, run: null } : current,
+                  current
+                    ? {
+                        ...current,
+                        messages: [],
+                        olderCursor: null,
+                        run: null,
+                        readState: undefined,
+                      }
+                    : current,
                 );
               }
               setClearTarget(null);
@@ -4810,6 +4954,14 @@ export function ShellPage() {
 }
 
 const Transcript = memo(function Transcript({
+  threadId,
+  readState,
+  onReadThrough,
+  onOpenUnreadHistory,
+  newerCursor,
+  loadingNewer,
+  onLoadNewer,
+  onShowLatest,
   scrollRef,
   scrollRequest,
   onScrollRequestHandled,
@@ -4839,6 +4991,14 @@ const Transcript = memo(function Transcript({
   onSpeak,
   onOpenComputer,
 }: {
+  threadId?: string;
+  readState?: ThreadReadState;
+  onReadThrough: (threadId: string, throughSeq: number) => Promise<boolean>;
+  onOpenUnreadHistory: (threadId: string, boundary: number) => Promise<void>;
+  newerCursor: number | null;
+  loadingNewer: boolean;
+  onLoadNewer: (retry?: boolean) => Promise<void>;
+  onShowLatest: () => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   scrollRequest: { messageId: string; nonce: number } | null;
   onScrollRequestHandled: () => void;
@@ -4870,7 +5030,12 @@ const Transcript = memo(function Transcript({
 }) {
   const { t } = useLingui();
   const [atEnd, setAtEnd] = useState(true);
-  const following = useRef(true);
+  const [readBoundary, setReadBoundary] = useState(() => unreadBoundary(readState));
+  const [unreadPositioned, setUnreadPositioned] = useState(
+    () => unreadBoundary(readState) === null || Boolean(scrollRequest),
+  );
+  const openedUnreadHistory = useRef(false);
+  const following = useRef(unreadBoundary(readState) === null);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
   const autoScrollTimer = useRef<number | undefined>(undefined);
@@ -4880,11 +5045,168 @@ const Transcript = memo(function Transcript({
     [messages],
   );
   const reactionView = useMemo(() => projectMessageReactions(messages), [messages]);
-  const separatorIds = timeSeparatorIds(
-    reactionView.visibleMessages.filter((message) =>
-      messageHasVisibleBlocks(message.blocks, showToolActivity),
-    ),
+  const displayedMessages = useMemo(
+    () =>
+      reactionView.visibleMessages.filter((message) =>
+        messageHasVisibleBlocks(message.blocks, showToolActivity),
+      ),
+    [reactionView.visibleMessages, showToolActivity],
   );
+  const separatorIds = timeSeparatorIds(displayedMessages);
+  const unreadMessageId = unreadDividerMessageId(displayedMessages, readBoundary, olderCursor);
+  useEffect(() => {
+    // Keep the first boundary during this visit, including our own read receipts.
+    const boundary = unreadBoundary(readState);
+    if (
+      readBoundary === null &&
+      boundary !== null &&
+      (!following.current || document.visibilityState !== "visible" || !document.hasFocus())
+    ) {
+      setReadBoundary(boundary);
+    }
+  }, [readBoundary, readState]);
+  useEffect(() => {
+    if (
+      unreadPositioned ||
+      readBoundary === null ||
+      unreadMessageId ||
+      !threadId ||
+      openedUnreadHistory.current
+    )
+      return;
+    // Parent subscription effects establish the history epoch for this visit first.
+    const frame = window.requestAnimationFrame(() => {
+      openedUnreadHistory.current = true;
+      void onOpenUnreadHistory(threadId, readBoundary).catch(() => {
+        // Keep the explicit jump available if loading the unread page failed.
+        setAtEnd(false);
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [onOpenUnreadHistory, readBoundary, threadId, unreadMessageId, unreadPositioned]);
+  useLayoutEffect(() => {
+    if (unreadPositioned || !unreadMessageId) return;
+    const element = scrollRef.current;
+    const divider = element?.querySelector<HTMLElement>('[data-testid="unread-divider"]');
+    if (!element || !divider) return;
+    following.current = false;
+    element.scrollTop +=
+      divider.getBoundingClientRect().top - element.getBoundingClientRect().top - 12;
+    lastScrollTop.current = element.scrollTop;
+    setAtEnd(newerCursor === null && transcriptIsNearEnd(element));
+    setUnreadPositioned(true);
+  }, [newerCursor, scrollRef, unreadMessageId, unreadPositioned]);
+
+  const readThrough = useRef(-2);
+  const readPending = useRef(false);
+  const scheduleRead = useRef<() => void>(() => {});
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element || !threadId || !readState || !unreadPositioned) return;
+    let disposed = false;
+    let timer: number | undefined;
+    const measure = () => {
+      if (
+        disposed ||
+        readPending.current ||
+        document.visibilityState !== "visible" ||
+        !document.hasFocus() ||
+        element.clientHeight === 0
+      )
+        return;
+      const viewport = element.getBoundingClientRect();
+      let visibleSeq: number | undefined = displayedMessages.length === 0 ? -1 : undefined;
+      for (const row of element.querySelectorAll<HTMLElement>("[data-read-seq]")) {
+        const bounds = row.getBoundingClientRect();
+        // A long message is read once its end enters the viewport.
+        if (
+          bounds.height > 0 &&
+          bounds.bottom > viewport.top &&
+          bounds.bottom <= viewport.bottom + 1 &&
+          bounds.right > viewport.left &&
+          bounds.left < viewport.right
+        ) {
+          const x =
+            (Math.max(bounds.left, viewport.left) + Math.min(bounds.right, viewport.right)) / 2;
+          const y = (Math.max(bounds.top, viewport.top) + bounds.bottom) / 2;
+          const front = document.elementFromPoint(x, y);
+          if (front && row.contains(front)) {
+            visibleSeq = Math.max(visibleSeq ?? -1, Number(row.dataset.readSeq));
+          }
+        }
+      }
+      const throughSeq = threadReadAcknowledgement(readState, visibleSeq);
+      if (throughSeq === undefined || throughSeq <= readThrough.current) return;
+      readPending.current = true;
+      let progressed = false;
+      void onReadThrough(threadId, throughSeq)
+        .then((acknowledged) => {
+          if (acknowledged) {
+            readThrough.current = Math.max(readThrough.current, throughSeq);
+            progressed = true;
+          }
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          readPending.current = false;
+          if (progressed) scheduleRead.current();
+        });
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(measure, 150);
+    };
+    scheduleRead.current = schedule;
+    const observer = new ResizeObserver(schedule);
+    observer.observe(element);
+    for (const row of element.querySelectorAll<HTMLElement>("[data-read-seq]"))
+      observer.observe(row);
+    element.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("focus", schedule);
+    document.addEventListener("focusin", schedule);
+    document.addEventListener("visibilitychange", schedule);
+    schedule();
+    return () => {
+      disposed = true;
+      if (scheduleRead.current === schedule) scheduleRead.current = () => {};
+      window.clearTimeout(timer);
+      observer.disconnect();
+      element.removeEventListener("scroll", schedule);
+      window.removeEventListener("focus", schedule);
+      document.removeEventListener("focusin", schedule);
+      document.removeEventListener("visibilitychange", schedule);
+    };
+  }, [
+    displayedMessages,
+    messages,
+    onReadThrough,
+    readState,
+    scrollRef,
+    threadId,
+    unreadPositioned,
+  ]);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (newerCursor === null || loadingNewer || !element) return;
+    const loadNearEnd = (event?: Event) => {
+      if (transcriptIsNearEnd(element) || (!unreadPositioned && !unreadMessageId)) {
+        // A later scroll retries a failed page; renders never spin on a failed request.
+        void onLoadNewer(Boolean(event)).catch(() => undefined);
+      }
+    };
+    element.addEventListener("scroll", loadNearEnd, { passive: true });
+    loadNearEnd();
+    return () => element.removeEventListener("scroll", loadNearEnd);
+  }, [
+    loadingNewer,
+    messages,
+    newerCursor,
+    onLoadNewer,
+    scrollRef,
+    unreadMessageId,
+    unreadPositioned,
+  ]);
   const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
   const workingLabel =
     workingBotName != null && workingBotName !== ""
@@ -4986,6 +5308,8 @@ const Transcript = memo(function Transcript({
   }, [scrollRef]);
 
   const jumpToLatest = useCallback(() => {
+    onShowLatest();
+    setUnreadPositioned(true);
     const element = scrollRef.current;
     if (!element) return;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -5004,7 +5328,7 @@ const Transcript = memo(function Transcript({
       },
       reducedMotion ? 0 : 2_000,
     );
-  }, [scrollRef]);
+  }, [onShowLatest, scrollRef]);
 
   const scrolledJump = useRef<number | null>(null);
   const jumpScrolling = useRef(false);
@@ -5114,12 +5438,12 @@ const Transcript = memo(function Transcript({
           );
           lastScrollTop.current = event.currentTarget.scrollTop;
           const nearEnd = transcriptIsNearEnd(event.currentTarget);
-          setAtEnd(nearEnd);
+          setAtEnd(nearEnd && newerCursor === null);
           // A jump scroll owns the viewport until its animation settles; its
           // own near-end crossings must not re-arm tail-following.
           if (jumpScrolling.current) return;
           if (nearEnd) {
-            if (scrolledDown) following.current = true;
+            if (scrolledDown && newerCursor === null) following.current = true;
             if (autoScrolling.current) {
               autoScrolling.current = false;
               window.clearTimeout(autoScrollTimer.current);
@@ -5140,10 +5464,15 @@ const Transcript = memo(function Transcript({
             {loadingOlder ? t`Loading…` : t`Load earlier messages`}
           </button>
         ) : null}
-        {groupVoiceChats(reactionView.visibleMessages).map((item) => {
+        {groupVoiceChats(reactionView.visibleMessages, {
+          unreadAfterSeq: readBoundary ?? readState?.lastReadSeq,
+        }).map((item) => {
           if (item.kind === "voiceChat") {
             return (
-              <div key={item.key}>
+              <div key={item.key} data-read-seq={latestDurableMessageSeq(item.messages)}>
+                {item.messages.some((message) => message.id === unreadMessageId) ? (
+                  <UnreadDivider />
+                ) : null}
                 {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
                   <TimeSeparator
                     createdAt={item.messages[0].createdAt}
@@ -5160,11 +5489,13 @@ const Transcript = memo(function Transcript({
           const messageReactions = reactionView.reactions.get(message.id);
           return (
             <Fragment key={message.id}>
+              {message.id === unreadMessageId ? <UnreadDivider /> : null}
               {separatorIds.has(message.id) ? (
                 <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
               ) : null}
               <div
                 data-message-id={message.id}
+                data-read-seq={durableMessageSeq(message)}
                 className={peerReceipt ? "relative py-0.5" : "group/message relative hover:z-20"}
               >
                 <div
@@ -5307,10 +5638,32 @@ const Transcript = memo(function Transcript({
         }`}
       >
         <ArrowDown size={17} strokeWidth={1.8} />
+        {readState?.unread ? (
+          <span
+            aria-hidden="true"
+            className="absolute right-0 top-0 h-2 w-2 rounded-full bg-primary"
+          />
+        ) : null}
       </button>
     </div>
   );
 });
+
+function UnreadDivider() {
+  const { t } = useLingui();
+  return (
+    <div
+      data-testid="unread-divider"
+      className="flex items-center gap-3 py-3 text-xs font-medium text-muted-foreground"
+    >
+      <Separator aria-label={t`New messages`} className="flex-1" />
+      <span aria-hidden="true">
+        <Trans>New messages</Trans>
+      </span>
+      <Separator aria-hidden="true" className="flex-1" />
+    </div>
+  );
+}
 
 /**
  * Floating Quote action anchored to the selection's bounding rect. Measures

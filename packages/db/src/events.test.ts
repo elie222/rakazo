@@ -420,7 +420,10 @@ describe("finalizeComputerControlRelease", () => {
       },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -500,7 +503,10 @@ describe("finalizeComputerControlRelease", () => {
       },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -550,7 +556,10 @@ describe("finalizeComputerControlRelease", () => {
       bot: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -575,7 +584,7 @@ describe("pauseRunForInput", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       run: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({
@@ -589,10 +598,14 @@ describe("pauseRunForInput", () => {
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 4 })
+          .mockResolvedValueOnce({})
           .mockResolvedValueOnce({ nextEventSeq: 8 })
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
-      message: { create: vi.fn().mockResolvedValue({ id: "message-1" }) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        create: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
       event: {
         create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
           ...event(data.seq),
@@ -648,7 +661,7 @@ describe("pauseRunForInput", () => {
   it("stores offered choice actions on the run checkpoint for resume", async () => {
     const fanout = new TestFanout();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       run: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({
@@ -662,10 +675,14 @@ describe("pauseRunForInput", () => {
         update: vi
           .fn()
           .mockResolvedValueOnce({ nextMessageSeq: 4 })
+          .mockResolvedValueOnce({})
           .mockResolvedValueOnce({ nextEventSeq: 8 })
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
-      message: { create: vi.fn().mockResolvedValue({ id: "message-1" }) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        create: vi.fn().mockResolvedValue({ id: "message-1" }),
+      },
       event: {
         create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
           ...event(data.seq),
@@ -734,7 +751,7 @@ describe("pauseRunForTakeover", () => {
     const fanout = new TestFanout();
     const publish = vi.spyOn(fanout, "publish");
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       run: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
@@ -823,7 +840,7 @@ describe("pauseRunForTakeover", () => {
   it("keeps an active user control lease and only binds controlRunId", async () => {
     const expiresAt = new Date(Date.now() + 60_000);
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       run: {
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         findUnique: vi.fn().mockResolvedValue({ status: "waiting_takeover" }),
@@ -943,8 +960,9 @@ describe("answerRunInput", () => {
     const publish = vi.spyOn(fanout, "publish");
     publish.mockRejectedValueOnce(new Error("realtime unavailable"));
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1037,8 +1055,9 @@ describe("answerRunInput", () => {
   it("records a spoken call answer as a user utterance with the call identity", async () => {
     const fanout = new TestFanout();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [{ kind: "ask", text: "Which city?", status: "pending" }],
@@ -1121,8 +1140,11 @@ describe("answerRunInput", () => {
       const fanout = new TestFanout();
       const secret = "sk-live-choice-secret";
       const tx = {
-        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        $queryRaw: vi
+          .fn()
+          .mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
         message: {
+          findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
           findFirst: vi.fn().mockResolvedValue({
             id: "message-1",
             blocks: [
@@ -1221,8 +1243,9 @@ describe("answerRunInput", () => {
   it("answers a custom free-text reply that is not an offered choice", async () => {
     const fanout = new TestFanout();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1308,8 +1331,9 @@ describe("answerRunInput", () => {
   it("treats a typed choice label as selecting that option", async () => {
     const fanout = new TestFanout();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1391,8 +1415,9 @@ describe("answerRunInput", () => {
 describe("answerWaitingRunWithTextInTransaction", () => {
   it("answers a pending question ask with composer text", async () => {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findMany: vi.fn().mockResolvedValue([
           {
             id: "message-1",
@@ -1443,6 +1468,7 @@ describe("answerWaitingRunWithTextInTransaction", () => {
   it("leaves approval and secret cards on the dedicated answer path", async () => {
     const tx = {
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findMany: vi.fn().mockResolvedValue([
           {
             id: "message-1",
@@ -1482,8 +1508,9 @@ describe("answerRunInput", () => {
   it("approves consequential actions without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1556,8 +1583,9 @@ describe("answerRunInput", () => {
   it("approves and upserts always-allow without overwriting the task prompt", async () => {
     const fanout = new TestFanout();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1646,8 +1674,9 @@ describe("answerRunInput", () => {
 
   it("does not let another workspace member create an always-allow rule for the run owner", async () => {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1698,8 +1727,9 @@ describe("answerRunInput", () => {
 
   it("does not queue a run when an approval card has no matching effect", async () => {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1741,8 +1771,9 @@ describe("answerRunInput", () => {
 
   it("does not queue a run for an action that the approval card did not offer", async () => {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1785,8 +1816,9 @@ describe("answerRunInput", () => {
 
   it("rejects an already answered prompt without queuing the run", async () => {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [{ kind: "ask", text: "Which city?", status: "answered", answer: "Paris" }],
@@ -1821,8 +1853,9 @@ describe("answerRunInput", () => {
     const fanout = new TestFanout();
     const store = vi.fn().mockResolvedValue(undefined);
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1918,12 +1951,13 @@ describe("answerRunInput", () => {
   it("does not let another workspace member save a credential as the run owner", async () => {
     const store = vi.fn();
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       run: {
         findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "owner" }),
         updateMany: vi.fn(),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -1973,8 +2007,11 @@ describe("answerRunInput", () => {
     function loginFixture(credential: object = login) {
       const store = vi.fn().mockResolvedValue(undefined);
       const tx = {
-        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        $queryRaw: vi
+          .fn()
+          .mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
         message: {
+          findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
           findFirst: vi.fn().mockResolvedValue({
             id: "message-1",
             blocks: [
@@ -2067,8 +2104,9 @@ describe("answerRunInput", () => {
 
   it("rejects secret asks when no run secret writer is configured", async () => {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+      $queryRaw: vi.fn().mockResolvedValue([{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         findFirst: vi.fn().mockResolvedValue({
           id: "message-1",
           blocks: [
@@ -2117,6 +2155,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn(),
       },
@@ -2135,7 +2174,10 @@ describe("sendUserMessage", () => {
       },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -2187,6 +2229,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn(),
       },
@@ -2205,7 +2248,10 @@ describe("sendUserMessage", () => {
       },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -2246,6 +2292,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
@@ -2299,6 +2346,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
@@ -2360,6 +2408,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn(),
       },
@@ -2380,7 +2429,10 @@ describe("sendUserMessage", () => {
       },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -2412,6 +2464,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn(),
       },
@@ -2432,7 +2485,10 @@ describe("sendUserMessage", () => {
       },
     };
     const prisma = {
-      message: { findUnique: vi.fn().mockResolvedValue(null) },
+      message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
+        findUnique: vi.fn().mockResolvedValue(null),
+      },
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
 
@@ -2470,6 +2526,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
@@ -2528,6 +2585,7 @@ describe("sendUserMessage", () => {
           .mockResolvedValueOnce({ nextEventSeq: 9 }),
       },
       message: {
+        findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }),
         create: vi.fn().mockResolvedValue({ id: "message-1", seq: 4 }),
         update: vi.fn().mockResolvedValue({ id: "message-1" }),
       },
@@ -2767,7 +2825,7 @@ describe("clearThread", () => {
       task: { updateMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
-      message: { deleteMany: vi.fn() },
+      message: { findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }), deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -2804,6 +2862,8 @@ describe("clearThread", () => {
       where: { id: "thread-1" },
       data: {
         historyCompactedUpToSeq: 41,
+        lastReadSeq: 41,
+        lastUnreadSeq: -1,
         historyCompactionSummary: null,
         historyCompactionGeneration: { increment: 1 },
       },
@@ -2831,7 +2891,7 @@ describe("clearThread", () => {
       task: { updateMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
-      message: { deleteMany: vi.fn() },
+      message: { findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 0 }), deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
         create: vi.fn().mockResolvedValue({
@@ -3127,4 +3187,44 @@ describe("appendEvent", () => {
     expect(tx.run.findUnique).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();
   });
+});
+
+describe("durable message event positions", () => {
+  it.each(["thread.message.created", "thread.message.updated"] as const)(
+    "publishes the stored message sequence and committed read state for %s",
+    async (type) => {
+      const readState = { lastReadSeq: 4, lastUnreadSeq: 7, unread: true };
+      const tx = {
+        thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 25, ...readState }) },
+        message: { findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 7 }) },
+        event: {
+          create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+            ...data,
+            id: "event-24",
+            createdAt: new Date("2026-10-13T12:00:00.000Z"),
+          })),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+      } as unknown as PrismaClient;
+      await appendEvent(prisma, {
+        spaceId: "space-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        type,
+        payload: { messageId: "message-7", messageSeq: 999, readState: { unread: false } },
+      });
+      expect(tx.message.findFirstOrThrow).toHaveBeenCalledWith({
+        where: { id: "message-7", threadId: "thread-1" },
+        select: { seq: true },
+      });
+      expect(tx.event.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          seq: 24,
+          payload: { messageId: "message-7", messageSeq: 7, readState },
+        }),
+      });
+    },
+  );
 });

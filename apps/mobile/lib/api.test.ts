@@ -2469,6 +2469,72 @@ describe("discarded mobile thread refresh cursor", () => {
 });
 
 describe("mobile thread event reduction", () => {
+  it("retains a live read update that arrived while an older snapshot was loading", () => {
+    const current: MobileSnapshot = {
+      ...snapshot(),
+      cursor: 100,
+      readState: { lastReadSeq: 5, lastUnreadSeq: 5, unread: false },
+    };
+    const older: MobileSnapshot = {
+      ...current,
+      cursor: 99,
+      readState: { lastReadSeq: 2, lastUnreadSeq: 4, unread: true },
+    };
+    expect(mergeMobileSnapshot(current, older)).toBe(current);
+  });
+  it("ignores replayed read and message events already covered by a fresh snapshot", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot(),
+      cursor: 100,
+      readState: { lastReadSeq: 5, lastUnreadSeq: 5, unread: false },
+    };
+    for (const type of ["thread.read.updated", "thread.message.created", "thread.cleared"]) {
+      expect(
+        applyMobileThreadEvent(initial, {
+          type,
+          seq: 99,
+          payload: {
+            messageId: "old",
+            messageSeq: 4,
+            role: "bot",
+            blocks: [],
+            readState: { lastReadSeq: 2, lastUnreadSeq: 4, unread: true },
+          },
+        }),
+      ).toBe(initial);
+    }
+  });
+  it("keeps durable message positions separate from replay positions and preserves them on edits", () => {
+    const readState = { lastReadSeq: 2, lastUnreadSeq: 3, unread: true };
+    const created = applyMobileThreadEvent(snapshot(), {
+      type: "thread.message.created",
+      seq: 100,
+      payload: { messageId: "new", messageSeq: 3, role: "bot", blocks: [], readState },
+    });
+    expect(created?.messages.find((message) => message.id === "new")?.seq).toBe(3);
+    expect(created?.cursor).toBe(100);
+    expect(created?.readState).toEqual(readState);
+    const edited = applyMobileThreadEvent(created, {
+      type: "thread.message.updated",
+      seq: 105,
+      payload: { messageId: "new", role: "bot", blocks: [{ kind: "text", text: "Edited" }] },
+    });
+    expect(edited?.messages.find((message) => message.id === "new")?.seq).toBe(3);
+    expect(edited?.readState).toEqual(readState);
+    const read = applyMobileThreadEvent(edited, {
+      type: "thread.read.updated",
+      seq: 106,
+      payload: { readState: { ...readState, lastReadSeq: 3, unread: false } },
+    });
+    expect(read?.readState?.unread).toBe(false);
+    expect(read?.cursor).toBe(106);
+    expect(applyMobileThreadEvent(read, { type: "thread.cleared", seq: 107 })?.readState).toEqual({
+      lastReadSeq: -1,
+      lastUnreadSeq: -1,
+      unread: false,
+    });
+  });
+
   it("appends an emoji reply with its exact target", () => {
     const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
 

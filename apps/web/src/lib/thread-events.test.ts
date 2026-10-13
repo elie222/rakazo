@@ -25,6 +25,103 @@ import {
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
+  it("ignores events covered by a newer snapshot, including read state and clears", () => {
+    const initial = {
+      ...snapshot([message("latest", [{ kind: "text", text: "Visible" }], 3)]),
+      cursor: 50,
+      readState: { lastReadSeq: 3, lastUnreadSeq: 3, unread: false },
+    };
+    for (const type of ["thread.read.updated", "thread.cleared", "thread.message.created"]) {
+      expect(
+        reduceThreadSnapshot(
+          initial,
+          event({
+            type,
+            seq: 49,
+            payload: {
+              messageId: "stale",
+              messageSeq: 2,
+              role: "bot",
+              blocks: [],
+              readState: { lastReadSeq: 1, lastUnreadSeq: 2, unread: true },
+            },
+          }),
+        ),
+      ).toBe(initial);
+    }
+    expect(
+      reduceThreadSnapshot(
+        initial,
+        event({
+          type: "thread.read.updated",
+          seq: 50,
+          payload: { readState: { lastReadSeq: 1, lastUnreadSeq: 3, unread: true } },
+        }),
+      ),
+    ).toBe(initial);
+  });
+
+  it("uses durable message sequences instead of event cursors for reads", () => {
+    const readState = { lastReadSeq: 2, lastUnreadSeq: 3, unread: true };
+    const next = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "thread.message.created",
+        seq: 80,
+        payload: {
+          messageId: "persisted",
+          messageSeq: 3,
+          role: "bot",
+          blocks: [{ kind: "text", text: "New reply" }],
+          readState,
+        },
+      }),
+    );
+    expect(next?.messages[0]?.seq).toBe(3);
+    expect(next?.cursor).toBe(80);
+    expect(next?.readState).toEqual(readState);
+    const updated = reduceThreadSnapshot(
+      next,
+      event({
+        type: "thread.message.updated",
+        seq: 95,
+        payload: { messageId: "persisted", role: "bot", blocks: [] },
+      }),
+    );
+    expect(updated?.messages[0]?.seq).toBe(3);
+    const legacy = reduceThreadSnapshot(
+      snapshot([]),
+      event({
+        type: "thread.message.created",
+        seq: 99,
+        payload: { messageId: "legacy", role: "bot", blocks: [] },
+      }),
+    );
+    expect(legacy?.messages[0]?.seq).toBe(-1);
+  });
+
+  it("applies read receipts and clear state without changing durable messages", () => {
+    const initial = snapshot([message("persisted", [{ kind: "text", text: "Reply" }], 3)]);
+    const readState = { lastReadSeq: 3, lastUnreadSeq: 3, unread: false };
+    const receipt = event({ type: "thread.read.updated", seq: 100, payload: { readState } });
+    expect(isThreadSnapshotEvent(receipt)).toBe(true);
+    const next = reduceThreadSnapshot(initial, receipt);
+    expect(next?.readState).toEqual(readState);
+    expect(next?.messages).toBe(initial.messages);
+    expect(next?.cursor).toBe(100);
+    const clearedState = { lastReadSeq: 3, lastUnreadSeq: -1, unread: false };
+    expect(
+      reduceThreadSnapshot(
+        next,
+        event({
+          type: "thread.cleared",
+          seq: 101,
+          payload: { readState: clearedState },
+        }),
+      ),
+    ).toMatchObject({ messages: [], readState: clearedState, cursor: 101 });
+  });
+
   it("shows a committed direct send as queued before its snapshot refresh returns", () => {
     const initial = snapshot([message("user-1", [{ kind: "text", text: "Continue" }], 4)]);
 
@@ -468,7 +565,7 @@ describe("thread event reduction", () => {
   });
 
   it("event-sources the active run on run.started so Stop does not wait on threads.get", () => {
-    const initial = snapshot([]);
+    const initial = { ...snapshot([]), cursor: 2 };
     const started = reduceThreadSnapshot(
       initial,
       event({

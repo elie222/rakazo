@@ -536,6 +536,8 @@ model Thread {
   historyCompactionSummary    String?    @db.Text
   historyCompactionGeneration Int        @default(0)
   unread                      Boolean    @default(false)
+  lastReadSeq                 Int        @default(-1)
+  lastUnreadSeq               Int        @default(-1)
   messages                    Message[]
   events                      Event[]
   tasks                       Task[]

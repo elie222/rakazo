@@ -46,6 +46,7 @@ function createDeps(
   };
   const txMock = {
     message: {
+      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       findUnique: vi.fn(async () => null),
       create: vi.fn(async ({ data }: { data: unknown }) => {
         txCalls.messageCreate.push(data);
@@ -159,6 +160,7 @@ function createDeps(
       }),
     },
     message: {
+      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       findUnique: vi.fn(async () =>
         overrides.sourceHop != null
           ? { blocks: [{ kind: "bot_message_received", hop: overrides.sourceHop }] }

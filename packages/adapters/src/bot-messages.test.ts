@@ -53,6 +53,7 @@ function deps(
     },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
+      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       findUnique: messageFindUnique,
       create: vi.fn().mockResolvedValue({ id: "message-1", seq: 1 }),
       update: vi.fn().mockResolvedValue({}),

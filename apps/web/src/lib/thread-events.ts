@@ -21,6 +21,7 @@ import {
   runFailureError,
   subagentBlockFromPayload,
   takeLiveMessage,
+  threadReadStateFromPayload,
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
@@ -237,6 +238,7 @@ export function prependThreadMessagePage(
 export function isThreadSnapshotEvent(event: ProductEvent): boolean {
   return (
     event.type === "thread.cleared" ||
+    event.type === "thread.read.updated" ||
     event.type === "thread.progress" ||
     event.type === "thread.subagent" ||
     event.type === "thread.cloud_agent" ||
@@ -256,7 +258,10 @@ export function reduceThreadSnapshot(
   prev: ThreadSnapshot | null,
   event: ProductEvent,
 ): ThreadSnapshot | null {
-  if (!prev) return prev;
+  if (!prev || event.threadId !== prev.threadId || event.seq <= prev.cursor) return prev;
+  const readState = threadReadStateFromPayload(event.payload);
+  if (readState) prev = { ...prev, readState };
+  if (event.type === "thread.read.updated") return { ...prev, cursor: event.seq };
   if (event.type === "thread.cleared") {
     return {
       ...prev,
@@ -480,7 +485,13 @@ export function reduceThreadSnapshot(
     const next: ThreadMessage = {
       id,
       threadId: event.threadId,
-      seq: event.seq,
+      // Event cursors and persisted message positions have different sequences.
+      seq:
+        typeof event.payload.messageSeq === "number" &&
+        Number.isInteger(event.payload.messageSeq) &&
+        event.payload.messageSeq >= 0
+          ? event.payload.messageSeq
+          : (known?.seq ?? -1),
       role,
       blocks,
       botId: event.botId,

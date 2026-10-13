@@ -99,7 +99,7 @@ import {
   VoiceInfoSchema,
   VoiceStatusSchema,
 } from "./domain.js";
-import { ComputerCommandSchema, ProductEventSchema } from "./events.js";
+import { ComputerCommandSchema, ProductEventSchema, ThreadReadStateSchema } from "./events.js";
 import { Id, IsoDate } from "./ids.js";
 import {
   IntegrationProviderConfigSchema,
@@ -410,8 +410,12 @@ export const appContract = {
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
-    markRead: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
-    markUnread: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
+    markRead: oc
+      .input(threadTarget.safeExtend({ throughSeq: z.number().int().min(-1).optional() }))
+      .output(z.object({ ok: z.literal(true), readState: ThreadReadStateSchema.optional() })),
+    markUnread: oc
+      .input(threadTarget)
+      .output(z.object({ ok: z.literal(true), readState: ThreadReadStateSchema.optional() })),
   },
   computer: {
     status: oc.input(botId).output(ComputerStatusSchema),

@@ -7,7 +7,7 @@ import {
   cloudflareGatewayRoutingId,
   isCloudflareAiGatewayProvider,
 } from "./cloudflare-ai-gateway.js";
-import { ThreadMessageSchema } from "./events.js";
+import { ThreadMessageSchema, ThreadReadStateSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
 import { RunTriggerSchema } from "./runs.js";
@@ -932,6 +932,7 @@ export type ThreadMessagePage = z.infer<typeof ThreadMessagePageSchema>;
 
 export const ThreadSnapshotSchema = z.object({
   threadId: Id,
+  readState: ThreadReadStateSchema.optional(),
   cursor: z.number().int().min(-1),
   messages: z.array(ThreadMessageSchema),
   olderCursor: z.number().int().nonnegative().nullable(),

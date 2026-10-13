@@ -7,6 +7,8 @@ export interface ThreadHistory<TMessage extends MessageIdentity> {
   threadId: string;
   messages: readonly TMessage[];
   olderCursor: number | null;
+  /** Around pages can scan past messages that the transcript intentionally hides. */
+  coveredThroughSeq?: number;
 }
 
 export function mergeThreadHistory<
@@ -54,7 +56,7 @@ export function openThreadWindow<
   const messages = mergeMessagesBySeq(latest.messages, page.messages);
   return {
     snapshot: { ...latest, messages, olderCursor: page.olderCursor },
-    newerCursor: newerGapCursor(messages, newestSeq(page.messages)),
+    newerCursor: newerGapCursor(messages, page.coveredThroughSeq ?? newestSeq(page.messages)),
   };
 }
 
@@ -163,7 +165,8 @@ function forwardCursor(
 }
 
 function newerGapCursor(messages: readonly MessageIdentity[], loadedThrough: number | null) {
-  if (loadedThrough === null) return null;
+  // An empty page without coverage cannot prove the gap was scanned.
+  if (loadedThrough === null) return oldestSeq(messages) === null ? null : -1;
   const next = oldestSeq(
     messages.filter((message) => typeof message.seq === "number" && message.seq > loadedThrough),
   );
@@ -262,6 +265,6 @@ export function upsertMessageById<T extends { id: string }>(messages: readonly T
   return updated;
 }
 
-function isDurableMessage(message: { id: string }): boolean {
+export function isDurableMessage(message: { id: string }): boolean {
   return !message.id.startsWith("progress:") && !message.id.startsWith("subagent:");
 }
