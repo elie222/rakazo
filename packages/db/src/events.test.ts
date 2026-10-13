@@ -2844,6 +2844,16 @@ describe("clearThread", () => {
     ).resolves.toMatchObject({
       event: { type: "thread.cleared" },
       cancelledRunIds: ["run-1"],
+      historyCompactionGeneration: 0,
+    });
+    expect(tx.event.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: "thread.cleared",
+        payload: {
+          historyGeneration: 1,
+          readState: { lastReadSeq: 41, lastUnreadSeq: -1, unread: false },
+        },
+      }),
     });
     expect(tx.computerExecutionLease.updateMany).toHaveBeenCalledWith({
       where: { runId: { in: ["run-1"] } },

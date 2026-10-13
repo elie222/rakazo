@@ -1012,6 +1012,7 @@ export type MobileSnapshot = {
   groupName?: string;
   threadId: string;
   cursor?: number;
+  historyGeneration?: number;
   readState?: ThreadReadState;
   messages: MobileMessage[];
   olderCursor: number | null;
@@ -1236,6 +1237,12 @@ export function applyMobileThreadEvent(
     return {
       ...prev,
       cursor: event.seq,
+      historyGeneration:
+        typeof event.payload?.historyGeneration === "number" &&
+        Number.isSafeInteger(event.payload.historyGeneration) &&
+        event.payload.historyGeneration >= 0
+          ? event.payload.historyGeneration
+          : prev.historyGeneration,
       messages: [],
       olderCursor: null,
       run: null,

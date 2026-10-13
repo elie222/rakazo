@@ -1,5 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mergeThreadHistory, threadHistoryWasCleared } from "./message-pages.js";
 import { IDLE_TIMEOUT_MS, runThreadSubscription } from "./thread-subscription.js";
 
 const head = { threadId: "thread", cursor: 10 };
@@ -132,6 +133,55 @@ describe("thread subscription recovery", () => {
     expect(beforeEvent).toHaveBeenCalledExactlyOnceWith(event(21));
     expect(callbacks.applyEvent).toHaveBeenCalledExactlyOnceWith(event(21));
     expect(callbacks.onEvent).toHaveBeenCalledExactlyOnceWith(event(21), head);
+    abort.abort();
+    channel.end();
+    await running;
+  });
+
+  it("drops cleared retained history when reconnect refresh overtakes the clear event", async () => {
+    vi.useFakeTimers();
+    const { abort, channel, callbacks } = setup();
+    const messages = (from: number, length: number) =>
+      Array.from({ length }, (_, index) => ({
+        id: `message-${from + index}`,
+        seq: from + index,
+      }));
+    let committed = {
+      ...head,
+      cursor: 250,
+      historyGeneration: 0,
+      messages: messages(0, 200),
+      olderCursor: 0,
+    };
+    // More than a page has arrived after clearing. A non-null olderCursor cannot
+    // tell the merger whether its retained page still belongs to this conversation.
+    const refreshed = {
+      ...head,
+      cursor: 500,
+      historyGeneration: 1,
+      messages: messages(300, 100),
+      olderCursor: 300,
+    };
+    const resetHistory = vi.fn();
+    callbacks.loadInitial.mockResolvedValue(committed);
+    callbacks.currentSnapshot = () => committed;
+    callbacks.refresh.mockImplementation(async () => {
+      const next = mergeThreadHistory(committed, refreshed, true);
+      if (threadHistoryWasCleared(committed, next)) resetHistory();
+      committed = next;
+    });
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    channel.end();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(committed).toBe(refreshed);
+    expect(resetHistory).toHaveBeenCalledTimes(1);
+    expect(callbacks.subscribe.mock.calls.map(([cursor]) => cursor)).toEqual([250, 250]);
+    channel.send({ ...event(251), type: "thread.cleared", payload: { historyGeneration: 1 } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(callbacks.applyEvent).not.toHaveBeenCalled();
+    expect(callbacks.onEvent).not.toHaveBeenCalled();
+    expect(committed.messages).toEqual(messages(300, 100));
     abort.abort();
     channel.end();
     await running;

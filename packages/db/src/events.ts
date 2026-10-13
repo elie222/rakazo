@@ -346,6 +346,7 @@ export async function clearThread(
       ...input,
       type: "thread.cleared",
       payload: {
+        historyGeneration: thread.historyCompactionGeneration + 1,
         readState: {
           lastReadSeq: thread.nextMessageSeq - 1,
           lastUnreadSeq: -1,
@@ -1113,6 +1114,32 @@ export async function appendEvent(
   const productEvent = mapProductEvent(event);
   await notifyRealtime(realtime, event.threadId, event.seq);
   return productEvent;
+}
+
+/** Keep edits and their event atomic, using the same thread-first lock order as clearThread. */
+export async function updateThreadMessageWithEvent(
+  prisma: PrismaClient,
+  input: AppendEventInput & {
+    type: "thread.message.updated";
+    payload: { messageId: string; blocks: MessageBlock[] } & Record<string, unknown>;
+  },
+): Promise<ProductEvent | null> {
+  const event = await withTransactionRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const [thread] = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM threads WHERE id = ${input.threadId}
+          AND "spaceId" = ${input.spaceId} FOR UPDATE`;
+      if (!thread) return null;
+      const updated = await tx.message.updateMany({
+        where: { id: input.payload.messageId, threadId: input.threadId },
+        data: { blocks: input.payload.blocks as Prisma.InputJsonValue },
+      });
+      // A clear may have won the lock after the caller loaded the card to edit.
+      if (updated.count === 0) return null;
+      return appendEventInTransaction(tx, input);
+    }),
+  );
+  return event ? mapProductEvent(event) : null;
 }
 
 export async function finalizeRun(

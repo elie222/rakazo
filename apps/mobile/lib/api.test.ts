@@ -2469,6 +2469,44 @@ describe("discarded mobile thread refresh cursor", () => {
 });
 
 describe("mobile thread event reduction", () => {
+  it("replaces retained history on a newer clear generation and keeps post-clear messages when the old clear arrives", () => {
+    const initial: MobileSnapshot = {
+      ...snapshot([{ ...mobileMessage("old", [{ kind: "text", text: "Deleted" }]), seq: 1 }]),
+      historyGeneration: 0,
+      cursor: 100,
+      olderCursor: 1,
+    };
+    const fresh: MobileSnapshot = {
+      ...initial,
+      historyGeneration: 1,
+      cursor: 102,
+      olderCursor: null,
+      messages: [{ ...mobileMessage("new", [{ kind: "text", text: "After clear" }]), seq: 7 }],
+      readState: { lastReadSeq: 6, lastUnreadSeq: 7, unread: true },
+    };
+    const reconciled = mergeMobileSnapshot(initial, fresh, true);
+    expect(reconciled).toBe(fresh);
+    expect(
+      applyMobileThreadEvent(reconciled, {
+        type: "thread.cleared",
+        seq: 101,
+        payload: {
+          historyGeneration: 1,
+          readState: { lastReadSeq: 6, lastUnreadSeq: 6, unread: false },
+        },
+      }),
+    ).toBe(fresh);
+    const clear = applyMobileThreadEvent(initial, {
+      type: "thread.cleared",
+      seq: 101,
+      payload: {
+        historyGeneration: 1,
+        readState: { lastReadSeq: 6, lastUnreadSeq: 6, unread: false },
+      },
+    });
+    expect(clear?.historyGeneration).toBe(1);
+    expect(clear?.messages).toEqual([]);
+  });
   it("retains a live read update that arrived while an older snapshot was loading", () => {
     const current: MobileSnapshot = {
       ...snapshot(),

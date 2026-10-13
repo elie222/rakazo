@@ -5,8 +5,10 @@ import type { ThreadScrollState } from "@rakazo/core";
 import {
   latestDurableMessageSeq,
   mergeMessagesById,
+  mergeThreadHistory,
   openThreadWindow,
   projectMessageReactions,
+  threadHistoryWasCleared,
   unreadDividerMessageId,
   userVisibleMessages,
   withLiveStreamingProgress,
@@ -18,6 +20,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { MobileMessagePage, MobileSnapshot } from "./api";
 import { hasVisibleMessagePresentation } from "./message-presentation";
 import { ThreadJumpAnchor } from "./thread-jump";
+import { mobileVisibleReadSeq } from "./thread-read";
 import { ThreadScrollBehavior } from "./thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "./thread-snapshot";
 
@@ -33,6 +36,21 @@ const jumpHandler = source.slice(
 const handlers = ts.transpileModule(`${commitHandler}\n${jumpHandler}\nreturn applyMessageJump;`, {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;
+const readHandler = source.slice(
+  source.indexOf("  const markReadIfVisible = useCallback("),
+  source.indexOf("  const onViewableItemsChanged = useRef("),
+);
+const unreadEffectStart = source.indexOf(
+  "    const visit = readVisit.current;",
+  source.indexOf(readHandler),
+);
+const unreadEffect = source.slice(
+  unreadEffectStart,
+  source.indexOf(
+    "  }, [snap, showingSaved, readVisitVersion, markReadIfVisible]);",
+    unreadEffectStart,
+  ),
+);
 
 describe("mobile search jump", () => {
   it.each([
@@ -87,12 +105,14 @@ describe("mobile search jump", () => {
           rpc,
           latestDurableMessageSeq,
           mergeMessagesById,
+          threadHistoryWasCleared,
           t: (message: string) => message,
           projectMessageReactions,
           userVisibleMessages,
           hasVisibleMessagePresentation,
           freshReadSnapshot: useRef(false),
           visibleReadIds: useRef(new Set<string>()),
+          visibleReadCallIds: useRef(new Set<string>()),
           pinnedRowLayouts: useRef(new Map()),
           liveSavedChatsScope: async () => ({}),
           isIntegrationsScopeCurrent: () => true,
@@ -204,14 +224,14 @@ describe("mobile search jump", () => {
         messageId: "first-unread",
         coveredThroughSeq: 200,
       });
-      expect(scope.snapRef.current.olderCursor).toBe(75);
+      expect(scope.snapRef.current!.olderCursor).toBe(75);
       expect(
         unreadDividerMessageId(
-          scope.snapRef.current.messages.filter((message) =>
+          scope.snapRef.current!.messages.filter((message) =>
             hasVisibleMessagePresentation(message.blocks),
           ),
           100,
-          scope.snapRef.current.olderCursor,
+          scope.snapRef.current!.olderCursor,
         ),
       ).toBe("first-unread");
       expect(scope.jumpScrollTarget.current).toBe("first-unread");
@@ -251,6 +271,96 @@ describe("mobile search jump", () => {
     },
   );
 
+  it("finishes a fully covered hidden-only unread scan and acknowledges a later visible reply", async () => {
+    const initial: MobileSnapshot = {
+      threadId: "thread-1",
+      cursor: 500,
+      olderCursor: null,
+      run: null,
+      readState: { lastReadSeq: 100, lastUnreadSeq: 180, unread: true },
+      messages: [
+        { id: "read", seq: 100, role: "bot", blocks: [{ kind: "text", text: "Earlier reply" }] },
+        {
+          id: "hidden",
+          seq: 180,
+          role: "bot",
+          blocks: [{ kind: "steps", steps: [{ label: "Browser", count: 1 }] }],
+        },
+      ],
+    };
+    const { scope, beginUnreadVisit, markRead } = unreadJumpHarness(initial, [
+      { threadId: "thread-1", olderCursor: 75, coveredThroughSeq: 150, messages: [] },
+      {
+        threadId: "thread-1",
+        olderCursor: 125,
+        coveredThroughSeq: 180,
+        messages: [initial.messages[1]!],
+      },
+    ]);
+    scope.freshReadSnapshot.current = true;
+    scope.readVisit.current = { threadId: initial.threadId, boundary: 100, opened: false };
+    beginUnreadVisit();
+    expect(scope.openingUnread.current).toBe(true);
+    await vi.waitFor(() => expect(scope.openingUnread.current).toBe(false));
+    expect(scope.jumpScrollTarget.current).toBeNull();
+    expect(scope.setUnreadOpeningFailed).not.toHaveBeenCalledWith(true);
+    scope.visibleReadIds.current = new Set(["read"]);
+    markRead();
+    expect(scope.rpc.mock.calls.filter(([method]) => method === "threads/markRead")).toEqual([]);
+
+    scope.snapRef.current = {
+      ...initial,
+      cursor: 501,
+      readState: { lastReadSeq: 100, lastUnreadSeq: 181, unread: true },
+      messages: [
+        ...initial.messages,
+        { id: "reply", seq: 181, role: "bot", blocks: [{ kind: "text", text: "New reply" }] },
+      ],
+    };
+    // A new reply outside the viewport must still remain unread.
+    markRead();
+    expect(scope.rpc.mock.calls.filter(([method]) => method === "threads/markRead")).toEqual([]);
+    scope.visibleReadIds.current = new Set(["reply"]);
+    markRead();
+    expect(scope.rpc).toHaveBeenLastCalledWith("threads/markRead", {
+      botId: "bot-1",
+      throughSeq: 181,
+    });
+  });
+
+  it("offers explicit recovery after the current unread request fails without acknowledging the tail", async () => {
+    const initial: MobileSnapshot = {
+      threadId: "thread-1",
+      cursor: 500,
+      olderCursor: 300,
+      run: null,
+      readState: { lastReadSeq: 100, lastUnreadSeq: 300, unread: true },
+      messages: [{ id: "tail", seq: 300, role: "bot", blocks: [{ kind: "text", text: "Newest" }] }],
+    };
+    const { scope, beginUnreadVisit, markRead, jumpToLatest } = unreadJumpHarness(initial, []);
+    const originalRpc = scope.rpc.getMockImplementation()!;
+    scope.rpc.mockImplementation(async (method, input) => {
+      if (method === "threads/messages") throw new Error("offline");
+      return originalRpc(method, input);
+    });
+    scope.freshReadSnapshot.current = true;
+    scope.readVisit.current = { threadId: initial.threadId, boundary: 100, opened: false };
+    beginUnreadVisit();
+    await vi.waitFor(() => expect(scope.setUnreadOpeningFailed).toHaveBeenLastCalledWith(true));
+    scope.visibleReadIds.current = new Set(["tail"]);
+    markRead();
+    expect(scope.openingUnread.current).toBe(true);
+    expect(scope.rpc.mock.calls.filter(([method]) => method === "threads/markRead")).toEqual([]);
+    jumpToLatest();
+    expect(scope.setUnreadOpeningFailed).toHaveBeenLastCalledWith(false);
+    expect(scope.openingUnread.current).toBe(false);
+    expect(scope.performScroll).toHaveBeenCalled();
+    expect(scope.rpc).toHaveBeenLastCalledWith("threads/markRead", {
+      botId: "bot-1",
+      throughSeq: 300,
+    });
+  });
+
   it("drops an unread scan overtaken by a conversation clear", async () => {
     const initial: MobileSnapshot = {
       threadId: "thread-1",
@@ -286,14 +396,112 @@ describe("mobile search jump", () => {
   });
 });
 
+describe("mobile cleared history reconciliation", () => {
+  it("releases pinned history and read tracking when a reconnect snapshot advances generation without a clear event", () => {
+    const { initial, fresh } = clearedSnapshots();
+    const { scope, commit } = unreadJumpHarness(initial, []);
+    scope.expandedHistoryThread.current = initial.threadId;
+    scope.pinnedAroundRef.current = { messageId: "old" };
+    scope.jumpScrollTarget.current = "old";
+    scope.jumpAnchor.current.begin("old");
+    scope.readVisit.current = { threadId: initial.threadId, boundary: 0, opened: true };
+    scope.visibleReadIds.current.add("old");
+    scope.visibleReadCallIds.current.add("old");
+    scope.readRequest.current = { threadId: initial.threadId, throughSeq: 1 };
+    scope.loadingOlderContent.current = true;
+    scope.loadingNewerContent.current = true;
+    scope.openingUnread.current = true;
+
+    commit(mergeThreadHistory(initial, fresh, true));
+
+    expect(scope.snapRef.current).toBe(fresh);
+    expect(scope.snapRef.current?.messages.map((message) => message.id)).toEqual(["new"]);
+    expect(scope.historyEpoch.current).toBe(1);
+    expect(scope.expandedHistoryThread.current).toBeNull();
+    expect(scope.pinnedAroundRef.current).toBeNull();
+    expect(scope.jumpScrollTarget.current).toBeNull();
+    expect(scope.jumpAnchor.current.holds()).toBe(false);
+    expect(scope.readVisit.current).toBeNull();
+    expect(scope.readRequest.current).toBeNull();
+    expect(scope.visibleReadIds.current.size).toBe(0);
+    expect(scope.visibleReadCallIds.current.size).toBe(0);
+    expect(scope.openingUnread.current).toBe(false);
+    expect(scope.setLoadingOlder).toHaveBeenCalledWith(false);
+    expect(scope.setLoadingNewer).toHaveBeenCalledWith(false);
+
+    commit({ ...fresh, cursor: 103 });
+    expect(scope.historyEpoch.current).toBe(1);
+  });
+
+  it.each(["initial", "pinned"])(
+    "opens a valid explicit search in a cleared conversation from an %s snapshot",
+    async (position) => {
+      const { initial, fresh } = clearedSnapshots();
+      const { jump, scope } = unreadJumpHarness(initial, []);
+      scope.snapRef.current = position === "initial" ? null : initial;
+      scope.rpc.mockImplementation(async (method) => {
+        if (method === "threads/get") return fresh;
+        expect(scope.snapRef.current?.historyGeneration).toBe(1);
+        expect(scope.jumpAnchor.current.holds()).toBe(true);
+        return { threadId: fresh.threadId, messages: fresh.messages, olderCursor: null };
+      });
+      expect(await jump({ botId: "bot-1", messageId: "new" })).toBe(true);
+      expect(scope.rpc.mock.calls.map(([method]) => method)).toEqual([
+        "threads/get",
+        "threads/messages",
+      ]);
+      expect(scope.pinnedAroundRef.current?.messageId).toBe("new");
+      expect(scope.snapRef.current?.messages.map((message) => message.id)).toEqual(["new"]);
+      expect(scope.snapRef.current?.historyGeneration).toBe(1);
+    },
+  );
+
+  it("restarts automatic unread positioning from the fresh generation before fetching a page", async () => {
+    const { initial, fresh } = clearedSnapshots();
+    const { jump, scope } = unreadJumpHarness(initial, []);
+    scope.rpc.mockResolvedValue(fresh);
+    expect(await jump({ botId: "bot-1", seq: 1 })).toBeUndefined();
+    expect(scope.rpc.mock.calls.map(([method]) => method)).toEqual(["threads/get"]);
+    expect(scope.snapRef.current).toBe(fresh);
+    expect(scope.historyEpoch.current).toBe(1);
+    expect(scope.pinnedAroundRef.current).toBeNull();
+  });
+});
+
+function clearedSnapshots(): { initial: MobileSnapshot; fresh: MobileSnapshot } {
+  const initial: MobileSnapshot = {
+    threadId: "thread-1",
+    historyGeneration: 0,
+    cursor: 100,
+    olderCursor: 1,
+    run: null,
+    readState: { lastReadSeq: 0, lastUnreadSeq: 1, unread: true },
+    messages: [{ id: "old", seq: 1, role: "bot", blocks: [{ kind: "text", text: "Deleted" }] }],
+  };
+  const fresh: MobileSnapshot = {
+    ...initial,
+    historyGeneration: 1,
+    cursor: 102,
+    olderCursor: null,
+    readState: { lastReadSeq: 6, lastUnreadSeq: 7, unread: true },
+    messages: [{ id: "new", seq: 7, role: "bot", blocks: [{ kind: "text", text: "After clear" }] }],
+  };
+  return { initial, fresh };
+}
+
 function unreadJumpHarness(initial: MobileSnapshot, pages: MobileMessagePage[]) {
   let pageIndex = 0;
   const scope = {
     rpc: vi.fn(async (method: string, _input: unknown) =>
-      method === "threads/get" ? initial : pages[pageIndex++]!,
+      method === "threads/get"
+        ? initial
+        : method === "threads/markRead"
+          ? { ok: true }
+          : pages[pageIndex++]!,
     ),
     latestDurableMessageSeq,
     mergeMessagesById,
+    threadHistoryWasCleared,
     projectMessageReactions,
     userVisibleMessages,
     hasVisibleMessagePresentation,
@@ -305,6 +513,7 @@ function unreadJumpHarness(initial: MobileSnapshot, pages: MobileMessagePage[]) 
     isIntegrationsScopeCurrent: () => true,
     freshReadSnapshot: { current: false },
     visibleReadIds: { current: new Set<string>() },
+    visibleReadCallIds: { current: new Set<string>() },
     pinnedRowLayouts: { current: new Map() },
     snapshotOrigin: { current: null },
     setShowingSaved: vi.fn(),
@@ -312,14 +521,41 @@ function unreadJumpHarness(initial: MobileSnapshot, pages: MobileMessagePage[]) 
     jumpGeneration: { current: 0 },
     activeGroupId: { current: undefined },
     activeBotId: { current: "bot-1" },
-    expandedHistoryThread: { current: null },
+    expandedHistoryThread: { current: null as string | null },
+    loadingOlderContent: { current: false },
+    loadingNewerContent: { current: false },
+    setLoadingOlder: vi.fn(),
+    setLoadingNewer: vi.fn(),
+    readVisit: {
+      current: null as { threadId: string; boundary: number | null; opened: boolean } | null,
+    },
+    readRequest: { current: null as { threadId: string; throughSeq: number } | null },
+    openingUnread: { current: false },
+    setUnreadOpeningFailed: vi.fn(),
+    botId: "bot-1",
+    groupId: undefined,
+    messageId: undefined,
+    readOnly: false,
+    showingSaved: false,
+    headerHeight: 0,
+    readViewportReady: { current: true },
+    AppState: { currentState: "active" },
+    navigation: { isFocused: () => true },
+    useCallback: (callback: unknown) => callback,
+    useRef: (current: unknown) => ({ current }),
+    mobileVisibleReadSeq,
+    dismissThreadNotifications: vi.fn(async () => undefined),
+    errorText: (error: Error) => error.message,
+    setError: vi.fn(),
+    performScroll: vi.fn(),
+    publishThreadScrollState: vi.fn(),
     pinnedAroundRef: { current: null as { messageId: string; coveredThroughSeq?: number } | null },
     jumpAnchor: { current: new ThreadJumpAnchor() },
     jumpScrollTarget: { current: null as string | null },
     newerLoadFailed: { current: false },
     joinPinnedAfterLayout: { current: null },
     pinnedScrollMetrics: { current: { offset: 0, viewport: 0, content: 0 } },
-    snapRef: { current: initial },
+    snapRef: { current: initial as MobileSnapshot | null },
     streamResponsesRef: { current: false },
     setSnap: vi.fn(),
     setThreadScrollState: vi.fn(),
@@ -327,7 +563,36 @@ function unreadJumpHarness(initial: MobileSnapshot, pages: MobileMessagePage[]) 
   };
   const jump = new Function(...Object.keys(scope), handlers)(...Object.values(scope)) as (target: {
     botId: string;
-    seq: number;
+    seq?: number;
+    messageId?: string;
   }) => Promise<boolean | undefined>;
-  return { jump, scope };
+  const commit = new Function(
+    ...Object.keys(scope),
+    ts.transpileModule(`${commitHandler}\nreturn commitSnap;`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText,
+  )(...Object.values(scope)) as (next: MobileSnapshot | null, cleared?: boolean) => void;
+  const readScope = { ...scope, commitSnap: commit };
+  const { markReadIfVisible, markVisibleRef } = new Function(
+    ...Object.keys(readScope),
+    ts.transpileModule(`${readHandler}\nreturn {markReadIfVisible, markVisibleRef};`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText,
+  )(...Object.values(readScope));
+  const visitScope = { ...scope, applyMessageJump: jump, markReadIfVisible, markVisibleRef };
+  const beginUnreadVisit = new Function(
+    ...Object.keys(visitScope),
+    ts.transpileModule(`return function () {${unreadEffect}};`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText,
+  )(...Object.values(visitScope));
+  const latestHandler = source.slice(
+    source.indexOf("  function jumpToLatest() {"),
+    source.indexOf("  async function loadOlderMessages() {"),
+  );
+  const jumpToLatest = new Function(
+    ...Object.keys(visitScope),
+    `${latestHandler}\nreturn jumpToLatest;`,
+  )(...Object.values(visitScope));
+  return { jump, scope, commit, beginUnreadVisit, markRead: markReadIfVisible, jumpToLatest };
 }

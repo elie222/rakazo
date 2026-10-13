@@ -1,10 +1,15 @@
-import { latestDurableMessageSeq, threadReadAcknowledgement } from "@rakazo/core";
+import {
+  durableMessageSeq,
+  latestDurableMessageSeq,
+  threadReadAcknowledgement,
+} from "@rakazo/core";
 import type { MobileSnapshot } from "./api";
 
 /** Native list viewability supplies the durable rows actually displayed. */
 export function mobileVisibleReadSeq(input: {
   snapshot: MobileSnapshot | null;
   visibleIds: ReadonlySet<string>;
+  visibleCallMessageIds?: ReadonlySet<string>;
   active: boolean;
   focused: boolean;
   ready: boolean;
@@ -14,11 +19,19 @@ export function mobileVisibleReadSeq(input: {
   if (!input.active || !input.focused || !input.ready || input.readOnly) return;
   const snapshot = input.snapshot;
   if (!snapshot?.readState) return;
+  const readState = snapshot.readState;
   const throughSeq = latestDurableMessageSeq(
-    snapshot.messages.filter((message) => input.visibleIds.has(message.id)),
+    snapshot.messages.filter((message) => {
+      if (input.visibleIds.has(message.id)) return true;
+      if (!input.visibleCallMessageIds?.has(message.id)) return false;
+      // A displayed call summary can dismiss a reminder at the saved cursor without
+      // acknowledging any newer transcript turns hidden inside that card.
+      const seq = durableMessageSeq(message);
+      return seq != null && seq <= readState.lastReadSeq;
+    }),
   );
   return threadReadAcknowledgement(
-    snapshot.readState,
+    readState,
     throughSeq ??
       (input.emptyVisible && snapshot.messages.length === 0 && snapshot.olderCursor == null
         ? -1

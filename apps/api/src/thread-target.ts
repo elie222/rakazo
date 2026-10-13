@@ -346,10 +346,13 @@ export async function threadSnapshot(
       }),
       deps.prisma.$transaction(
         async (tx) => {
-          const [readState] = await tx.$queryRaw<ThreadReadState[]>`
-            SELECT "lastReadSeq", "lastUnreadSeq", unread FROM threads
+          const [thread] = await tx.$queryRaw<
+            Array<ThreadReadState & { historyCompactionGeneration: number }>
+          >`
+            SELECT "lastReadSeq", "lastUnreadSeq", unread, "historyCompactionGeneration" FROM threads
             WHERE id = ${target.threadId} FOR SHARE`;
-          if (!readState) throw new IsolationError();
+          if (!thread) throw new IsolationError();
+          const { historyCompactionGeneration: historyGeneration, ...readState } = thread;
           const [messagePage, last, waitingRun, busyOrFailed] = await Promise.all([
             loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
             tx.event.findFirst({
@@ -420,7 +423,7 @@ export async function threadSnapshot(
                   orderBy: { seq: "asc" },
                 })
               : [];
-          return { messagePage, last, run: currentRun, liveEvents, readState };
+          return { messagePage, last, run: currentRun, liveEvents, readState, historyGeneration };
         },
         { timeout: 15_000, maxWait: 5_000 },
       ),
@@ -428,6 +431,7 @@ export async function threadSnapshot(
     return {
       botId: target.botId,
       threadId: target.threadId,
+      historyGeneration: core.historyGeneration,
       readState: core.readState,
       cursor: core.last?.seq ?? -1,
       messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
@@ -439,10 +443,13 @@ export async function threadSnapshot(
 
   const core = await deps.prisma.$transaction(
     async (tx) => {
-      const [readState] = await tx.$queryRaw<ThreadReadState[]>`
-        SELECT "lastReadSeq", "lastUnreadSeq", unread FROM threads
+      const [thread] = await tx.$queryRaw<
+        Array<ThreadReadState & { historyCompactionGeneration: number }>
+      >`
+        SELECT "lastReadSeq", "lastUnreadSeq", unread, "historyCompactionGeneration" FROM threads
         WHERE id = ${target.threadId} FOR SHARE`;
-      if (!readState) throw new IsolationError();
+      if (!thread) throw new IsolationError();
+      const { historyCompactionGeneration: historyGeneration, ...readState } = thread;
       const [messagePage, last, activeRuns, recentTerminals] = await Promise.all([
         loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
         tx.event.findFirst({
@@ -495,6 +502,7 @@ export async function threadSnapshot(
           : [];
       return {
         messagePage,
+        historyGeneration,
         readState,
         last,
         activeRuns,
@@ -510,6 +518,7 @@ export async function threadSnapshot(
     groupName: target.groupName,
     members: target.members,
     threadId: target.threadId,
+    historyGeneration: core.historyGeneration,
     readState: core.readState,
     cursor: core.last?.seq ?? -1,
     messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),

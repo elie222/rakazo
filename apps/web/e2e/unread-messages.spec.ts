@@ -175,3 +175,111 @@ test("opens older unread history without exposing a gap or acknowledging the lat
   await expect(transcript.locator('[data-message-id="unread-history-139"]')).toBeInViewport();
   await expect.poll(() => Math.max(...reads)).toBe(139);
 });
+
+for (const historyResult of ["hidden", "failed"] as const) {
+  test(`reading recovers when the unread history is ${historyResult}`, async ({ page }) => {
+    await signup(page, `unread-${historyResult}-${Date.now()}@rakazo.test`, "password12", "Reader");
+    await completeOnboarding(page);
+    const bot = await rpc<{ id: string }>(page, "bots/create", {
+      name: "Unread recovery",
+      title: "",
+      description: "",
+      computerMode: "team",
+    });
+    const snapshot = await rpc<ThreadSnapshot>(page, "threads/get", { botId: bot.id });
+    const message = (seq: number, text: string): ThreadSnapshot["messages"][number] => ({
+      id: `recovery-${seq}`,
+      threadId: snapshot.threadId,
+      botId: bot.id,
+      seq,
+      role: "bot",
+      blocks: [{ kind: "text", text }],
+      createdAt: new Date(Date.UTC(2026, 0, 1, 12, seq)).toISOString(),
+    });
+    const hidden = {
+      ...message(10, ""),
+      blocks: [{ kind: "steps" as const, steps: [{ label: "Shell", count: 1 }] }],
+    };
+    let hydrated: ThreadSnapshot = {
+      ...snapshot,
+      messages:
+        historyResult === "hidden"
+          ? [message(9, "Previously read note"), hidden]
+          : [
+              message(40, "Visible latest note"),
+              message(41, Array.from({ length: 60 }, (_, i) => `Later detail ${i}`).join("\n\n")),
+            ],
+      olderCursor: historyResult === "hidden" ? 9 : 40,
+      readState: {
+        lastReadSeq: 9,
+        lastUnreadSeq: historyResult === "hidden" ? 10 : 41,
+        unread: true,
+      },
+    };
+    const reads: number[] = [];
+    let historyRequests = 0;
+    await page.route(/\/rpc\/(bootstrap|threads\/get)(?:\?|$)/, async (route) => {
+      if (route.request().url().includes("/threads/get")) {
+        await route.fulfill({ json: { json: hydrated } });
+        return;
+      }
+      const response = await route.fetch();
+      const body = await response.json();
+      body.json.thread = hydrated;
+      await route.fulfill({ response, json: body });
+    });
+    // A closed stream refreshes the snapshot on reconnect, letting this fixture
+    // deliver a later reply without sending synthetic messages to the database.
+    await page.route(/\/rpc\/threads\/subscribe(?:\?|$)/, (route) =>
+      route.fulfill({ contentType: "text/event-stream", body: "" }),
+    );
+    await page.route(/\/rpc\/threads\/messages(?:\?|$)/, async (route) => {
+      historyRequests += 1;
+      if (historyResult === "failed") {
+        await route.abort("failed");
+        return;
+      }
+      await route.fulfill({
+        json: {
+          json: {
+            threadId: snapshot.threadId,
+            messages: hydrated.messages,
+            olderCursor: 9,
+            coveredThroughSeq: 10,
+          },
+        },
+      });
+    });
+    await page.route(/\/rpc\/threads\/markRead(?:\?|$)/, async (route) => {
+      const { json: input } = route.request().postDataJSON() as { json: { throughSeq?: number } };
+      if (input.throughSeq == null) throw new Error("Automatic reads must be scoped");
+      reads.push(input.throughSeq);
+      await route.fulfill({ json: { json: { ok: true } } });
+    });
+
+    await page.goto(`/app/${bot.id}`);
+    await page.bringToFront();
+    await expect.poll(() => historyRequests).toBe(1);
+    const transcript = page.getByTestId("transcript");
+    await expect(page.getByTestId("unread-divider")).toHaveCount(0);
+    if (historyResult === "failed") {
+      await expect(transcript.locator('[data-message-id="recovery-40"]')).toBeInViewport();
+      await expect(transcript.getByText("Later detail 59", { exact: true })).not.toBeInViewport();
+      await expect.poll(() => reads).toContain(40);
+      expect(reads).not.toContain(41);
+      await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible();
+    } else {
+      await expect(transcript.locator('[data-message-id="recovery-10"]')).toHaveCount(0);
+      expect(reads).toEqual([]);
+      hydrated = {
+        ...hydrated,
+        cursor: hydrated.cursor + 1,
+        messages: [...hydrated.messages, message(11, "A later visible reply")],
+        readState: { lastReadSeq: 9, lastUnreadSeq: 11, unread: true },
+      };
+      await expect(transcript.locator('[data-message-id="recovery-11"]')).toBeInViewport();
+      await expect.poll(() => reads).toContain(11);
+      expect(reads).not.toContain(10);
+    }
+  });
+}

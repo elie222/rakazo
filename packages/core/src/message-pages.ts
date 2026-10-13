@@ -5,17 +5,38 @@ interface MessageIdentity {
 
 export interface ThreadHistory<TMessage extends MessageIdentity> {
   threadId: string;
+  /** Changes only when the conversation is cleared; missing on older cached snapshots. */
+  historyGeneration?: number;
   messages: readonly TMessage[];
   olderCursor: number | null;
   /** Around pages can scan past messages that the transcript intentionally hides. */
   coveredThroughSeq?: number;
 }
 
+/** A newer authoritative generation invalidates retained pages and their pending requests. */
+export function threadHistoryWasCleared(
+  previous: { threadId: string; historyGeneration?: number } | null,
+  recent: { threadId: string; historyGeneration?: number } | null,
+): boolean {
+  return Boolean(
+    previous &&
+      recent &&
+      previous.threadId === recent.threadId &&
+      (recent.historyGeneration ?? 0) > (previous.historyGeneration ?? 0),
+  );
+}
+
 export function mergeThreadHistory<
   TMessage extends MessageIdentity,
   TSnapshot extends ThreadHistory<TMessage>,
 >(previous: TSnapshot | null, recent: TSnapshot, preserveLoadedHistory = false): TSnapshot {
-  if (!previous || previous.threadId !== recent.threadId || !preserveLoadedHistory) return recent;
+  if (
+    !previous ||
+    previous.threadId !== recent.threadId ||
+    !preserveLoadedHistory ||
+    threadHistoryWasCleared(previous, recent)
+  )
+    return recent;
   return {
     ...recent,
     messages: mergeMessagePages(previous.messages, recent.messages),

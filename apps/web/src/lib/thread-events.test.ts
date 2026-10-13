@@ -120,10 +120,15 @@ describe("thread event reduction", () => {
         event({
           type: "thread.cleared",
           seq: 101,
-          payload: { readState: clearedState },
+          payload: { readState: clearedState, historyGeneration: 1 },
         }),
       ),
-    ).toMatchObject({ messages: [], readState: clearedState, cursor: 101 });
+    ).toMatchObject({
+      messages: [],
+      readState: clearedState,
+      cursor: 101,
+      historyGeneration: 1,
+    });
   });
 
   it("shows a committed direct send as queued before its snapshot refresh returns", () => {
@@ -289,6 +294,43 @@ describe("thread event reduction", () => {
 
     expect(mergeThreadSnapshot(live, stale)).toBe(live);
     expect(mergeThreadSnapshot(live, stale, true)).toBe(live);
+  });
+
+  it("discards expanded history on a refreshed clear without losing newer messages to its late event", () => {
+    const previous: ThreadSnapshot = {
+      ...snapshot([message("deleted-old", [], 1), message("deleted-recent", [], 150)], null),
+      cursor: 200,
+      historyGeneration: 0,
+      readState: { lastReadSeq: 1, lastUnreadSeq: 150, unread: true },
+    };
+    // More than one page arrived after clearing. A non-null older cursor must not
+    // imply that retained pre-clear pages are still part of this conversation.
+    const fresh: ThreadSnapshot = {
+      ...snapshot(
+        Array.from({ length: 100 }, (_, index) => message(`new-${index + 300}`, [], index + 300)),
+        300,
+      ),
+      cursor: 450,
+      historyGeneration: 1,
+      readState: { lastReadSeq: 299, lastUnreadSeq: 399, unread: true },
+      run: threadRun("new-run"),
+    };
+    const reconciled = reconcileRefreshedThread(previous, fresh, null, true).snapshot;
+    expect(reconciled).toBe(fresh);
+    expect(
+      reduceThreadSnapshot(
+        reconciled,
+        event({
+          type: "thread.cleared",
+          seq: 201,
+          payload: {
+            historyGeneration: 1,
+            readState: { lastReadSeq: 150, lastUnreadSeq: -1, unread: false },
+          },
+        }),
+      ),
+    ).toBe(fresh);
+    expect(mergeThreadSnapshot(fresh, previous, true)).toBe(fresh);
   });
 
   it("accumulates progress deltas and keeps only the active progress message", () => {

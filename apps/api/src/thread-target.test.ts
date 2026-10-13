@@ -172,6 +172,42 @@ describe("reaction messages", () => {
 });
 
 describe("threadSnapshot", () => {
+  it.each(["bot", "group"] as const)(
+    "reads the %s history generation under the snapshot lock",
+    async (kind) => {
+      const readState = { lastReadSeq: 7, lastUnreadSeq: 9, unread: true };
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ ...readState, historyCompactionGeneration: 3 }]),
+        message: { findMany: vi.fn().mockResolvedValue([]) },
+        event: { findFirst: vi.fn().mockResolvedValue({ seq: 42 }) },
+        run: {
+          findFirst: vi.fn().mockResolvedValue(null),
+          findMany: vi.fn().mockResolvedValue([]),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      const target =
+        kind === "group"
+          ? groupTarget()
+          : ({
+              kind: "bot",
+              botId: "bot-1",
+              threadId: "thread-1",
+              bot: { computer: null },
+            } as ThreadTarget);
+
+      const snapshot = await threadSnapshot({ prisma }, target);
+
+      expect(snapshot).toMatchObject({ historyGeneration: 3, cursor: 42, readState });
+      expect(snapshot.readState).toEqual(readState);
+      const query = (tx.$queryRaw.mock.calls[0]![0] as string[]).join("?");
+      expect(query).toContain('"historyCompactionGeneration"');
+      expect(query).toContain("FOR SHARE");
+    },
+  );
+
   it("reloads tool-only live messages for an active run", async () => {
     const run = {
       id: "run-1",

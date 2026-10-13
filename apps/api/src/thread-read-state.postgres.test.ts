@@ -7,6 +7,7 @@ import {
   createDb,
   createThreadMessage,
   createThreadMessageInTransaction,
+  updateThreadMessageWithEvent,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resolveThreadTarget, setThreadUnreadState, threadSnapshot } from "./thread-target.js";
@@ -174,15 +175,21 @@ postgres("thread read positions (PostgreSQL)", () => {
   it("clears the old boundary while retaining monotonic message positions", async () => {
     const { actor, target, deps, thread, bot, message } = await setup();
     const first = await message();
+    expect((await threadSnapshot(deps, target)).historyGeneration).toBe(0);
     const cleared = await clearThread(prisma, {
       spaceId: actor.spaceId,
       threadId: thread.id,
       botId: bot.id,
     });
     expect(cleared.event.payload).toEqual({
+      historyGeneration: 1,
       readState: { lastReadSeq: first.seq, lastUnreadSeq: -1, unread: false },
     });
-    expect((await threadSnapshot(deps, target)).messages).toEqual([]);
+    expect(cleared.historyCompactionGeneration).toBe(0);
+    expect(await threadSnapshot(deps, target)).toMatchObject({
+      historyGeneration: 1,
+      messages: [],
+    });
     const next = await message();
     expect(next.seq).toBe(first.seq + 1);
     expect((await threadSnapshot(deps, target)).readState).toEqual({
@@ -190,5 +197,106 @@ postgres("thread read positions (PostgreSQL)", () => {
       lastUnreadSeq: next.seq,
       unread: true,
     });
+  });
+
+  it("retains the clear generation after more than a page of new history", async () => {
+    const { actor, target, deps, thread, bot, message } = await setup();
+    const deleted = await message();
+    const cleared = await clearThread(prisma, {
+      spaceId: actor.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+    });
+    await prisma.$transaction(async (tx) => {
+      for (let index = 0; index < 101; index++) {
+        const next = await createThreadMessageInTransaction(tx, {
+          threadId: thread.id,
+          role: "bot",
+          blocks: [{ kind: "text", text: `New history ${index}` }],
+        });
+        if (index === 100) {
+          await appendEventInTransaction(tx, {
+            spaceId: actor.spaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            type: "thread.message.created",
+            payload: { messageId: next.id, role: "bot", blocks: next.blocks },
+          });
+        }
+      }
+    });
+    const snapshot = await threadSnapshot(deps, target);
+    expect(snapshot.historyGeneration).toBe(1);
+    expect(snapshot.cursor).toBeGreaterThan(cleared.event.seq);
+    expect(snapshot.messages).toHaveLength(100);
+    expect(snapshot.olderCursor).not.toBeNull();
+    expect(snapshot.messages.every((item) => item.seq > deleted.seq)).toBe(true);
+  });
+
+  it("serializes message edits with clearing and ignores cards already removed by clear", async () => {
+    const { actor, thread, bot, message } = await setup();
+    const card = await message();
+    const edited = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const pausedWriter = prisma.$extends({
+      query: {
+        message: {
+          async updateMany({ args, query }) {
+            const result = await query(args);
+            edited.resolve();
+            await release.promise;
+            return result;
+          },
+        },
+      },
+    });
+    const input = {
+      spaceId: actor.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+      type: "thread.message.updated" as const,
+      payload: {
+        messageId: card.id,
+        role: "bot",
+        blocks: [{ kind: "text" as const, text: "Edited card" }],
+      },
+    };
+    const updating = updateThreadMessageWithEvent(pausedWriter as unknown as PrismaClient, input);
+    await edited.promise;
+    const clearing = clearThread(prisma, {
+      spaceId: actor.spaceId,
+      threadId: thread.id,
+      botId: bot.id,
+    });
+    release.resolve();
+    expect((await updating)?.payload).toMatchObject({ messageSeq: card.seq });
+    const cleared = await clearing;
+    expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
+    expect(await updateThreadMessageWithEvent(prisma, input)).toBeNull();
+    expect(
+      await prisma.event.findMany({ where: { threadId: thread.id }, select: { seq: true } }),
+    ).toEqual([{ seq: cleared.event.seq }]);
+  });
+
+  it("rolls back the card edit if its event cannot be appended", async () => {
+    const { actor, thread, bot, message } = await setup();
+    const card = await message();
+    await expect(
+      updateThreadMessageWithEvent(prisma, {
+        spaceId: actor.spaceId,
+        threadId: thread.id,
+        botId: bot.id,
+        runId: "missing-run",
+        type: "thread.message.updated",
+        payload: {
+          messageId: card.id,
+          role: "bot",
+          blocks: [{ kind: "text", text: "Must not persist" }],
+        },
+      }),
+    ).rejects.toThrow("Run cannot write thread history");
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: card.id } })).blocks).toEqual(
+      card.blocks,
+    );
   });
 });

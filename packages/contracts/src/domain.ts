@@ -932,6 +932,7 @@ export type ThreadMessagePage = z.infer<typeof ThreadMessagePageSchema>;
 
 export const ThreadSnapshotSchema = z.object({
   threadId: Id,
+  historyGeneration: z.number().int().nonnegative().optional(),
   readState: ThreadReadStateSchema.optional(),
   cursor: z.number().int().min(-1),
   messages: z.array(ThreadMessageSchema),

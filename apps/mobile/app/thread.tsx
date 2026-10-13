@@ -37,6 +37,7 @@ import {
   resolveComposerSendPlan,
   resolvePersonaColorDef,
   selectedAskActionLabel,
+  threadHistoryWasCleared,
   threadWindowMessages,
   timeSeparatorIds,
   unreadBoundary,
@@ -517,6 +518,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
   const visibleReadIds = useRef(new Set<string>());
+  const visibleReadCallIds = useRef(new Set<string>());
   const readViewportReady = useRef(false);
   const pinnedRowLayouts = useRef(new Map<string, { y: number; height: number }>());
   const readRequest = useRef<{ threadId: string; throughSeq: number } | null>(null);
@@ -527,6 +529,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   } | null>(null);
   const freshReadSnapshot = useRef(false);
   const openingUnread = useRef(false);
+  const [unreadOpeningFailed, setUnreadOpeningFailed] = useState(false);
   const [readVisitVersion, setReadVisitVersion] = useState(0);
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
@@ -542,7 +545,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     readVisit.current = null;
     freshReadSnapshot.current = false;
     openingUnread.current = false;
+    setUnreadOpeningFailed(false);
     visibleReadIds.current.clear();
+    visibleReadCallIds.current.clear();
     readViewportReady.current = false;
     pinnedRowLayouts.current.clear();
     readRequest.current = null;
@@ -574,7 +579,29 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
 
-  function commitSnap(next: MobileSnapshot | null) {
+  function commitSnap(next: MobileSnapshot | null, cleared = false) {
+    if (cleared || threadHistoryWasCleared(snapRef.current, next)) {
+      historyEpoch.current += 1;
+      expandedHistoryThread.current = null;
+      pinnedAroundRef.current = null;
+      jumpScrollTarget.current = null;
+      jumpAnchor.current.release();
+      joinPinnedAfterLayout.current = null;
+      loadingOlderContent.current = false;
+      loadingNewerContent.current = false;
+      newerLoadFailed.current = false;
+      setLoadingOlder(false);
+      setLoadingNewer(false);
+      readVisit.current = null;
+      visibleReadIds.current.clear();
+      visibleReadCallIds.current.clear();
+      pinnedRowLayouts.current.clear();
+      readRequest.current = null;
+      openingUnread.current = false;
+      setUnreadOpeningFailed(false);
+      scrollBehavior.current.jumpToLatest();
+      setThreadScrollState(scrollBehavior.current.state());
+    }
     snapRef.current = next;
     const visible = withLiveStreamingProgress(next, streamResponsesRef.current);
     setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
@@ -1151,20 +1178,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     seq?: number;
   }) {
     const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
-    const epoch = historyEpoch.current;
+    const initialSnapshot = snapRef.current;
+    let epoch = historyEpoch.current;
     jumpGeneration.current += 1;
     visibleReadIds.current.clear();
+    visibleReadCallIds.current.clear();
     pinnedRowLayouts.current.clear();
     const jumpId = jumpGeneration.current;
     const scope = await liveSavedChatsScope();
     if (!scope || !isIntegrationsScopeCurrent(scope)) return;
-    const [snap, firstPage] = await Promise.all([
-      rpc<MobileSnapshot>("threads/get", threadTarget),
-      rpc<MobileMessagePage>("threads/messages", {
-        ...threadTarget,
-        around: target.messageId ? { messageId: target.messageId } : { seq: target.seq },
-      }),
-    ]);
+    const snap = await rpc<MobileSnapshot>("threads/get", threadTarget);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch); the
     // generation check drops an older same-thread jump that finished after a newer one.
     const isCurrentJump = () =>
@@ -1174,10 +1197,38 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       (!target.groupId || activeGroupId.current === target.groupId) &&
       (!target.botId || activeBotId.current === target.botId);
     if (!isCurrentJump()) return;
+    const current = snapRef.current;
+    if (threadHistoryWasCleared(snap, current)) return;
+    if (
+      threadHistoryWasCleared(
+        initialSnapshot?.threadId === snap.threadId ? initialSnapshot : { threadId: snap.threadId },
+        snap,
+      ) ||
+      threadHistoryWasCleared(current, snap)
+    ) {
+      // Establish the new generation before requesting any around-page. An explicit
+      // search can continue; an unread visit must choose its boundary from this snapshot.
+      const latest =
+        current?.threadId === snap.threadId && (current.cursor ?? -1) > (snap.cursor ?? -1)
+          ? current
+          : snap;
+      snapshotOrigin.current = scope;
+      freshReadSnapshot.current = true;
+      commitSnap(latest);
+      setShowingSaved(false);
+      if (!target.messageId) return;
+      epoch = historyEpoch.current;
+      jumpAnchor.current.begin(target.messageId);
+    }
+    const firstPage = await rpc<MobileMessagePage>("threads/messages", {
+      ...threadTarget,
+      around: target.messageId ? { messageId: target.messageId } : { seq: target.seq },
+    });
+    if (!isCurrentJump()) return;
     let page = firstPage;
-    const firstRenderedUnread = () =>
+    const firstRenderedUnread = (messages = page.messages) =>
       projectMessageReactions(
-        userVisibleMessages(page.messages, { includePeerReceipts: true }).filter((message) =>
+        userVisibleMessages(messages, { includePeerReceipts: true }).filter((message) =>
           hasVisibleMessagePresentation(message.blocks),
         ),
       ).visibleMessages.find((message) => message.seq != null && message.seq >= (target.seq ?? 0))
@@ -1211,8 +1262,14 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         covered = nextCovered;
         targetMessageId = firstRenderedUnread();
       }
-      // A missing or stalled boundary must never turn into an automatic jump to the tail.
-      if (!targetMessageId) throw new Error(t("Could not load earlier messages"));
+      // A fully covered window may contain only hidden activity. It needs no anchor,
+      // but missing coverage or a visible unread tail must never silently skip a gap.
+      if (
+        !targetMessageId &&
+        (covered == null || covered < scanThrough || firstRenderedUnread(snap.messages))
+      ) {
+        throw new Error(t("Could not load earlier messages"));
+      }
     }
     const targetInPage =
       targetMessageId != null && page.messages.some((message) => message.id === targetMessageId);
@@ -1309,15 +1366,19 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       newerLoadFailed.current = true;
       setError(errorText(err, t("Could not open message")));
     } finally {
-      loadingNewerContent.current = false;
-      setLoadingNewer(false);
-      if (visibleUnchanged) loadNewerNearEnd();
+      if (epoch === historyEpoch.current) {
+        loadingNewerContent.current = false;
+        setLoadingNewer(false);
+        if (visibleUnchanged) loadNewerNearEnd();
+      }
     }
   }
 
   function showLatest() {
     openingUnread.current = false;
+    setUnreadOpeningFailed(false);
     visibleReadIds.current.clear();
+    visibleReadCallIds.current.clear();
     const pinned = pinnedAroundRef.current;
     pinnedAroundRef.current = null;
     joinPinnedAfterLayout.current = null;
@@ -1335,6 +1396,20 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     );
   }
 
+  function jumpToLatest() {
+    openingUnread.current = false;
+    setUnreadOpeningFailed(false);
+    if (pinnedAroundRef.current || jumpScrollTarget.current) {
+      showLatest();
+      return;
+    }
+    performScroll(scrollBehavior.current.jumpToLatest());
+    publishThreadScrollState(scrollBehavior.current.state());
+    // The list may already be at the tail after an unread-position request failed.
+    // In that case no new viewability callback is needed for this explicit choice.
+    markVisibleRef.current();
+  }
+
   async function loadOlderMessages() {
     if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
     loadingOlderContent.current = true;
@@ -1347,17 +1422,19 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         before: snap.olderCursor,
         includePeerReceipts: true,
       });
-      if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned) {
+      if (epoch !== historyEpoch.current) return;
+      if (pinnedAroundRef.current !== pinned) {
         loadingOlderContent.current = false;
         return;
       }
       expandedHistoryThread.current = page.threadId;
       commitSnap(prependMobileMessagePage(snapRef.current, page));
     } catch (err) {
+      if (epoch !== historyEpoch.current) return;
       loadingOlderContent.current = false;
       setError(errorText(err, t("Could not load earlier messages")));
     } finally {
-      setLoadingOlder(false);
+      if (epoch === historyEpoch.current) setLoadingOlder(false);
     }
   }
 
@@ -1368,6 +1445,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     const throughSeq = mobileVisibleReadSeq({
       snapshot,
       visibleIds: visibleReadIds.current,
+      visibleCallMessageIds: visibleReadCallIds.current,
       emptyVisible: readViewportReady.current && !pinnedAroundRef.current,
       active: AppState.currentState === "active",
       focused: navigation.isFocused(),
@@ -1406,6 +1484,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         const newer = mobileVisibleReadSeq({
           snapshot: snapRef.current,
           visibleIds: visibleReadIds.current,
+          visibleCallMessageIds: visibleReadCallIds.current,
           active: AppState.currentState === "active",
           focused: navigation.isFocused(),
           ready: freshReadSnapshot.current && !openingUnread.current,
@@ -1420,6 +1499,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     ({ viewableItems }: { viewableItems: Array<ViewToken<ThreadItem<MobileMessage>>> }) => {
       visibleReadIds.current = new Set(
         viewableItems.flatMap(({ item }) => (item.kind === "voiceChat" ? [] : [item.message.id])),
+      );
+      visibleReadCallIds.current = new Set(
+        viewableItems.flatMap(({ item }) =>
+          item.kind === "voiceChat" ? item.messages.map((message) => message.id) : [],
+        ),
       );
       markVisibleRef.current();
     },
@@ -1454,6 +1538,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       visit.opened = true;
       if (visit.boundary != null && !messageId && !readOnly) {
         openingUnread.current = true;
+        setUnreadOpeningFailed(false);
         void applyMessageJump({ botId, groupId, seq: visit.boundary + 1 })
           .then((opened) => {
             if (!opened || readVisit.current !== visit) return;
@@ -1462,8 +1547,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           })
           .catch((err: unknown) => {
             if (readVisit.current !== visit) return;
-            // Keep the tail unread when loading the saved boundary fails. A drag is an
-            // explicit choice to read the displayed page; the next visit retries the jump.
+            // Keep the tail unread until an explicit drag or Jump to latest. The next
+            // visit retries the saved boundary, even when this page cannot scroll.
+            setUnreadOpeningFailed(true);
             setError(errorText(err, t("Could not load earlier messages")));
           });
         return;
@@ -1511,6 +1597,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         readVisit.current = null;
         freshReadSnapshot.current = false;
         openingUnread.current = false;
+        setUnreadOpeningFailed(false);
       };
     }, [botId, readOnly, markReadIfVisible, refreshMentionBots]),
   );
@@ -1547,6 +1634,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       readVisit.current = null;
       freshReadSnapshot.current = false;
       openingUnread.current = false;
+      setUnreadOpeningFailed(false);
       void setOpenNotificationThread(null).catch(() => undefined);
     });
     return () => appState.remove();
@@ -1603,19 +1691,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "computer.takeover.requested" ||
                 isRunTerminalEvent(event)
               ) {
-                if (event.type === "thread.cleared") {
-                  readVisit.current = null;
-                  visibleReadIds.current.clear();
-                  pinnedRowLayouts.current.clear();
-                  readRequest.current = null;
-                  openingUnread.current = false;
-                  expandedHistoryThread.current = null;
-                  pinnedAroundRef.current = null;
-                  jumpScrollTarget.current = null;
-                  jumpAnchor.current.release();
-                  historyEpoch.current += 1;
-                }
-                commitSnap(applyMobileThreadEvent(snapRef.current, event));
+                commitSnap(
+                  applyMobileThreadEvent(snapRef.current, event),
+                  event.type === "thread.cleared",
+                );
               }
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
@@ -2145,6 +2224,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   function markPinnedMessagesRead() {
+    visibleReadCallIds.current.clear();
     visibleReadIds.current = pinnedVisibleMessageIds(
       pinnedRowLayouts.current,
       pinnedScrollMetrics.current,
@@ -2574,6 +2654,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             scrollEventThrottle={16}
             onScrollBeginDrag={() => {
               openingUnread.current = false;
+              setUnreadOpeningFailed(false);
               userDragging.current = true;
             }}
             onScroll={(event) => {
@@ -2615,20 +2696,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             renderItem={renderItem}
           />
         )}
-        {showPinnedPage || threadScrollState.detached ? (
+        {showPinnedPage || threadScrollState.detached || unreadOpeningFailed ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
               threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
             }
-            onPress={() => {
-              if (showPinnedPage) {
-                showLatest();
-                return;
-              }
-              performScroll(scrollBehavior.current.jumpToLatest());
-              publishThreadScrollState(scrollBehavior.current.state());
-            }}
+            onPress={jumpToLatest}
             style={{
               position: "absolute",
               left: "50%",

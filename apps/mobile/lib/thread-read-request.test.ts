@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
+import type { ThreadItem } from "@rakazo/core";
+import { groupVoiceChats } from "@rakazo/core";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
-import type { MobileSnapshot } from "./api";
+import type { MobileMessage, MobileSnapshot } from "./api";
 import { ThreadJumpAnchor } from "./thread-jump";
 import { mobileVisibleReadSeq } from "./thread-read";
 
@@ -12,6 +14,13 @@ const handler = ts.transpileModule(
     source.indexOf("  const markReadIfVisible = useCallback("),
     source.indexOf("  const onViewableItemsChanged = useRef("),
   )}\nreturn markReadIfVisible;`,
+  { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+).outputText;
+const viewabilityHandler = ts.transpileModule(
+  `${source.slice(
+    source.indexOf("  const onViewableItemsChanged = useRef("),
+    source.indexOf("  const viewabilityConfig = useRef("),
+  )}\nreturn onViewableItemsChanged;`,
   { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
 ).outputText;
 
@@ -35,6 +44,7 @@ function setup() {
     readViewportReady: { current: true },
     pinnedAroundRef: { current: null },
     visibleReadIds: { current: new Set(["message-3"]) },
+    visibleReadCallIds: { current: new Set<string>() },
     readRequest: { current: null as { threadId: string; throughSeq: number } | null },
     readVisit: { current: { threadId: "thread-1", boundary: 2, opened: true } },
     freshReadSnapshot: { current: true },
@@ -55,10 +65,60 @@ function setup() {
   const markRead = new Function(...Object.keys(scope), handler)(
     ...Object.values(scope),
   ) as () => void;
-  return { scope, pending, markRead };
+  const viewabilityScope = { ...scope, markVisibleRef: { current: markRead } };
+  const onViewableItemsChanged = new Function(...Object.keys(viewabilityScope), viewabilityHandler)(
+    ...Object.values(viewabilityScope),
+  ) as (change: { viewableItems: Array<{ item: ThreadItem<MobileMessage> }> }) => void;
+  return { scope, pending, markRead, onViewableItemsChanged };
 }
 
 describe("mobile read acknowledgement races", () => {
+  it("clears a voice-only reminder after fresh state arrives without reading a concurrent hidden call turn", async () => {
+    const { scope, pending, markRead, onViewableItemsChanged } = setup();
+    const callMessages = scope.snapRef.current.messages.map((message) => ({
+      ...message,
+      callId: "call-1",
+    }));
+    scope.snapRef.current = {
+      ...scope.snapRef.current,
+      messages: callMessages,
+      readState: undefined,
+    };
+    onViewableItemsChanged({
+      viewableItems: groupVoiceChats(callMessages).map((item) => ({ item })),
+    });
+    expect(scope.rpc).not.toHaveBeenCalled();
+    scope.snapRef.current = {
+      ...scope.snapRef.current,
+      readState: { lastReadSeq: 4, lastUnreadSeq: 4, unread: true },
+    };
+    markRead();
+    expect(scope.rpc).toHaveBeenCalledWith("threads/markRead", { botId: "bot-1", throughSeq: 4 });
+    const incoming: MobileMessage = {
+      id: "message-5",
+      seq: 5,
+      callId: "call-1",
+      role: "bot",
+      blocks: [],
+    };
+    scope.snapRef.current = {
+      ...scope.snapRef.current,
+      cursor: 101,
+      messages: [...callMessages, incoming],
+      readState: { lastReadSeq: 4, lastUnreadSeq: 5, unread: true },
+    };
+    onViewableItemsChanged({
+      viewableItems: groupVoiceChats(scope.snapRef.current.messages).map((item) => ({ item })),
+    });
+    pending[0]!({ ok: true, readState: { lastReadSeq: 4, lastUnreadSeq: 4, unread: false } });
+    await vi.waitFor(() => expect(scope.readRequest.current).toBeNull());
+    expect(scope.rpc).toHaveBeenCalledTimes(1);
+    expect(scope.snapRef.current.readState).toEqual({
+      lastReadSeq: 4,
+      lastUnreadSeq: 5,
+      unread: true,
+    });
+  });
   it("acknowledges a newer visible row after the previous request finishes", async () => {
     const { scope, pending, markRead } = setup();
     markRead();

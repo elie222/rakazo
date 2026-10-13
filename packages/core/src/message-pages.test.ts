@@ -3,8 +3,10 @@ import {
   appendNewerThreadPage,
   forwardProbeAfterPage,
   leaveThreadWindow,
+  mergeThreadHistory,
   openThreadWindow,
   prependThreadHistoryPage,
+  threadHistoryWasCleared,
   threadWindowMessages,
   upsertMessageById,
 } from "./message-pages.js";
@@ -27,6 +29,36 @@ const latest = () => ({
   ...page(200, 299),
   cursor: 7,
   messages: [...range(200, 299), { id: "progress:run" }],
+});
+
+describe("history generations", () => {
+  it("replaces retained pages after clear even when the new latest page has older history", () => {
+    const previous = { ...page(0, 299), historyGeneration: 0 };
+    const recent = { ...page(400, 499), historyGeneration: 1 };
+    expect(mergeThreadHistory(previous, recent, true)).toBe(recent);
+    expect(threadHistoryWasCleared(previous, recent)).toBe(true);
+    const next = { ...page(450, 549), historyGeneration: 1 };
+    expect(ids(mergeThreadHistory(recent, next, true).messages)).toEqual(ids(range(400, 549)));
+  });
+
+  it("recognizes a clear after a legacy cache without treating a different thread as a clear", () => {
+    expect(threadHistoryWasCleared(page(0, 49), { ...page(200, 249), historyGeneration: 1 })).toBe(
+      true,
+    );
+    expect(threadHistoryWasCleared(page(0, 49), { ...page(50, 99), historyGeneration: 0 })).toBe(
+      false,
+    );
+    expect(threadHistoryWasCleared({ ...page(0, 49), historyGeneration: 1 }, page(50, 99))).toBe(
+      false,
+    );
+    expect(
+      threadHistoryWasCleared(page(0, 49), {
+        ...page(200, 249),
+        threadId: "other",
+        historyGeneration: 1,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("thread windows", () => {

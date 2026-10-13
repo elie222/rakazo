@@ -67,6 +67,7 @@ import {
   searchHitThreadTarget,
   serializeComposerPrompt,
   speechFromBlocks,
+  threadHistoryWasCleared,
   threadReadAcknowledgement,
   threadWindowMessages,
   timeSeparatorIds,
@@ -551,7 +552,23 @@ export function ShellPage() {
     }
   }
 
+  function resetThreadHistory() {
+    const current = snapshotRef.current;
+    const targetId = current?.groupId ?? current?.botId;
+    if (targetId) manuallyUnread.current.delete(targetId);
+    expandedHistoryThread.current = null;
+    pinnedAroundRef.current = null;
+    historyEpoch.current += 1;
+    jumpGeneration.current += 1;
+    initiallyScrolledThread.current = null;
+    unreadWindowRef.current = null;
+    setUnreadWindow(null);
+    setScrollRequest(null);
+    setTranscriptGeneration((value) => value + 1);
+  }
+
   function commitSnapshot(next: ThreadSnapshot | null) {
+    if (threadHistoryWasCleared(snapshotRef.current, next)) resetThreadHistory();
     snapshotRef.current = next;
     setSnapshot(withLiveStreamingProgress(next, streamResponsesRef.current));
   }
@@ -1176,12 +1193,13 @@ export function ShellPage() {
       jump !== jumpGeneration.current ||
       current?.threadId !== threadId
     )
-      return;
+      return "stale" as const;
     const opened = openThreadWindow(current, page);
     expandedHistoryThread.current = threadId;
     newerLoadFailed.current = false;
     setUnreadWindow({ threadId, newerCursor: opened.newerCursor });
     commitSnapshot(opened.snapshot);
+    return "opened" as const;
   }, []);
 
   const loadNewerUnreadMessages = useCallback(async (retry = false) => {
@@ -1510,12 +1528,9 @@ export function ShellPage() {
           currentBot?.notifyOnFinish ?? false,
           false,
         );
-        if (event.type === "thread.cleared") {
-          expandedHistoryThread.current = null;
-          pinnedAroundRef.current = null;
-          historyEpoch.current += 1;
-          setUnreadWindow(null);
-          setTranscriptGeneration((value) => value + 1);
+        if (event.type === "thread.cleared" && event.payload.historyGeneration === undefined) {
+          // Legacy servers do not carry a generation for commitSnapshot to observe.
+          resetThreadHistory();
         }
         if (event.type === "bot.archived") {
           void refreshBots(true).catch(() => undefined);
@@ -1593,12 +1608,9 @@ export function ShellPage() {
           true,
           true,
         );
-        if (event.type === "thread.cleared") {
-          expandedHistoryThread.current = null;
-          pinnedAroundRef.current = null;
-          historyEpoch.current += 1;
-          setUnreadWindow(null);
-          setTranscriptGeneration((value) => value + 1);
+        if (event.type === "thread.cleared" && event.payload.historyGeneration === undefined) {
+          // Legacy servers do not carry a generation for commitSnapshot to observe.
+          resetThreadHistory();
         }
         if (
           event.type === "run.started" ||
@@ -1761,17 +1773,39 @@ export function ShellPage() {
 
   async function jumpToMessage(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = searchHitThreadTarget(target);
-    const epoch = historyEpoch.current;
+    const requestedEpoch = historyEpoch.current;
     jumpGeneration.current += 1;
+    const requestedJump = jumpGeneration.current;
+    // Establish the current history generation before requesting a page. Parallel requests
+    // could pair a post-clear snapshot with a page of messages read before the clear.
+    const snap = await rpc.threads.get(threadTarget);
+    if (requestedEpoch !== historyEpoch.current || requestedJump !== jumpGeneration.current) return;
+    if (target.groupId && activeGroupId.current !== target.groupId) return;
+    if (target.botId && activeBotId.current !== target.botId) return;
+    const refreshed = reconcileRefreshedThread(
+      snapshotRef.current,
+      snap,
+      computerRef.current,
+      expandedHistoryThread.current === snap.threadId,
+    );
+    commitSnapshot(refreshed.snapshot);
+    commitComputer(threadTarget.botId ? refreshed.computer : null);
+    // Accepting a newly cleared generation resets these refs; the page belongs to that
+    // accepted generation. Later clears, switches, or jumps invalidate it while it loads.
+    const epoch = historyEpoch.current;
     const jumpId = jumpGeneration.current;
-    const [snap, page] = await Promise.all([
-      rpc.threads.get(threadTarget),
-      rpc.threads.messages({ ...threadTarget, around: { messageId: target.messageId } }),
-    ]);
-    // The epoch check drops a jump that raced a conversation clear (or a bot switch): applying
-    // the fetched page would pin deleted messages that every later refresh keeps restoring.
-    // jumpId drops an older jump that finished after a newer click.
-    if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
+    const page = await rpc.threads.messages({
+      ...threadTarget,
+      around: { messageId: target.messageId },
+    });
+    const current = snapshotRef.current;
+    if (
+      epoch !== historyEpoch.current ||
+      jumpId !== jumpGeneration.current ||
+      current?.threadId !== page.threadId ||
+      current.historyGeneration !== refreshed.snapshot.historyGeneration
+    )
+      return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
     const targetInPage = userVisibleMessages(page.messages, { includePeerReceipts: true }).some(
@@ -1789,12 +1823,11 @@ export function ShellPage() {
       : null;
     if (targetInPage) initiallyScrolledThread.current = page.threadId;
     commitSnapshot({
-      ...snap,
-      messages: targetInPage ? page.messages : snap.messages,
-      olderCursor: targetInPage ? page.olderCursor : snap.olderCursor,
+      ...current,
+      messages: targetInPage ? page.messages : current.messages,
+      olderCursor: targetInPage ? page.olderCursor : current.olderCursor,
     });
     if (threadTarget.botId) {
-      commitComputer(snap.computer ?? null);
       // Don't block parent-scroll on routines metadata; a list failure must not abort the jump.
       void rpc.routines
         .list({ botId: threadTarget.botId })
@@ -4650,25 +4683,14 @@ export function ShellPage() {
                   : { groupId: clearTarget.chat.id },
               );
               if (
-                (clearTarget.kind === "bot" && active?.id === clearTarget.chat.id) ||
-                (clearTarget.kind === "group" && activeGroup?.id === clearTarget.chat.id)
+                (clearTarget.kind === "bot" && activeBotId.current === clearTarget.chat.id) ||
+                (clearTarget.kind === "group" && activeGroupId.current === clearTarget.chat.id)
               ) {
-                expandedHistoryThread.current = null;
-                pinnedAroundRef.current = null;
-                historyEpoch.current += 1;
-                setUnreadWindow(null);
-                setTranscriptGeneration((value) => value + 1);
-                updateSnapshot((current) =>
-                  current
-                    ? {
-                        ...current,
-                        messages: [],
-                        olderCursor: null,
-                        run: null,
-                        readState: undefined,
-                      }
-                    : current,
-                );
+                resetThreadHistory();
+                // A reply can arrive after the clear but before this request returns.
+                // Refresh the authoritative history instead of deleting that new reply.
+                if (clearTarget.kind === "bot") await refreshThread(clearTarget.chat.id);
+                else await refreshGroupThread(clearTarget.chat.id);
               }
               setClearTarget(null);
               await refreshBots();
@@ -4994,7 +5016,7 @@ const Transcript = memo(function Transcript({
   threadId?: string;
   readState?: ThreadReadState;
   onReadThrough: (threadId: string, throughSeq: number) => Promise<boolean>;
-  onOpenUnreadHistory: (threadId: string, boundary: number) => Promise<void>;
+  onOpenUnreadHistory: (threadId: string, boundary: number) => Promise<"opened" | "stale">;
   newerCursor: number | null;
   loadingNewer: boolean;
   onLoadNewer: (retry?: boolean) => Promise<void>;
@@ -5035,6 +5057,7 @@ const Transcript = memo(function Transcript({
     () => unreadBoundary(readState) === null || Boolean(scrollRequest),
   );
   const openedUnreadHistory = useRef(false);
+  const [unreadHistoryOpened, setUnreadHistoryOpened] = useState(false);
   const following = useRef(unreadBoundary(readState) === null);
   const autoScrolling = useRef(false);
   const lastScrollTop = useRef<number | null>(null);
@@ -5074,28 +5097,49 @@ const Transcript = memo(function Transcript({
       openedUnreadHistory.current
     )
       return;
+    let current = true;
+    const fallback = () => {
+      if (!current) return;
+      // A failed or superseded request must not block reads of rendered rows.
+      // Leave the explicit jump available without assuming history was exhausted.
+      setAtEnd(false);
+      setUnreadPositioned(true);
+    };
     // Parent subscription effects establish the history epoch for this visit first.
     const frame = window.requestAnimationFrame(() => {
       openedUnreadHistory.current = true;
-      void onOpenUnreadHistory(threadId, readBoundary).catch(() => {
-        // Keep the explicit jump available if loading the unread page failed.
-        setAtEnd(false);
-      });
+      void onOpenUnreadHistory(threadId, readBoundary)
+        .then((result) => {
+          if (!current) return;
+          if (result === "opened") setUnreadHistoryOpened(true);
+          else fallback();
+        })
+        .catch(fallback);
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      current = false;
+      window.cancelAnimationFrame(frame);
+    };
   }, [onOpenUnreadHistory, readBoundary, threadId, unreadMessageId, unreadPositioned]);
   useLayoutEffect(() => {
-    if (unreadPositioned || !unreadMessageId) return;
+    if (unreadPositioned) return;
+    if (!unreadMessageId) {
+      // Tool-only messages and reactions can exhaust a successfully opened window
+      // without a rendered divider. Future visible messages must still be readable.
+      if (unreadHistoryOpened && newerCursor === null) setUnreadPositioned(true);
+      return;
+    }
     const element = scrollRef.current;
     const divider = element?.querySelector<HTMLElement>('[data-testid="unread-divider"]');
     if (!element || !divider) return;
-    following.current = false;
     element.scrollTop +=
       divider.getBoundingClientRect().top - element.getBoundingClientRect().top - 12;
     lastScrollTop.current = element.scrollTop;
-    setAtEnd(newerCursor === null && transcriptIsNearEnd(element));
+    const reachedEnd = newerCursor === null && transcriptIsNearEnd(element);
+    following.current = reachedEnd;
+    setAtEnd(reachedEnd);
     setUnreadPositioned(true);
-  }, [newerCursor, scrollRef, unreadMessageId, unreadPositioned]);
+  }, [newerCursor, scrollRef, unreadHistoryOpened, unreadMessageId, unreadPositioned]);
 
   const readThrough = useRef(-2);
   const readPending = useRef(false);

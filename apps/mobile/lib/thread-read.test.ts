@@ -80,6 +80,33 @@ describe("mobile visible message acknowledgements", () => {
     ).toBeUndefined();
   });
 
+  it("clears a visible call reminder using only its already-read turns", () => {
+    const call = {
+      ...snapshot,
+      readState: { lastReadSeq: 3, lastUnreadSeq: 3, unread: true },
+    };
+    const visibleCall = {
+      ...reading,
+      snapshot: call,
+      visibleIds: new Set<string>(),
+      visibleCallMessageIds: new Set(["message-3", "message-5"]),
+    };
+    expect(mobileVisibleReadSeq(visibleCall)).toBe(3);
+    expect(mobileVisibleReadSeq({ ...visibleCall, focused: false })).toBeUndefined();
+    expect(
+      mobileVisibleReadSeq({
+        ...visibleCall,
+        visibleCallMessageIds: new Set(["message-5"]),
+      }),
+    ).toBeUndefined();
+    expect(
+      mobileVisibleReadSeq({
+        ...visibleCall,
+        snapshot: { ...call, readState: { ...call.readState, lastUnreadSeq: 5 } },
+      }),
+    ).toBeUndefined();
+  });
+
   it("does not advance from an old search result past the saved cursor", () => {
     expect(
       mobileVisibleReadSeq({
