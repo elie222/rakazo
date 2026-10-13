@@ -633,6 +633,27 @@ describe("FishAudioVoiceProvider", () => {
     expect(modelHeader(init)).toBe("transcribe-1-pro");
   });
 
+  it.each([
+    [
+      "<|speaker:0|>Hello there.<|speaker:1|>Hi.<|speaker:0|>How are you?",
+      "Hello there. Hi. How are you?",
+    ],
+    ["  <|speaker:0|>\n<|speaker:1|>  ", ""],
+    [
+      "<|startoftext|><|speaker:0|> First turn.\n<|speaker:1|>  Second\tturn.<|endoftext|>\n<|speaker:0|> Third turn.",
+      "First turn. Second turn. Third turn.",
+    ],
+  ])("removes Fish ASR control markers while preserving words (%s)", async (text, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ text }))));
+
+    await expect(
+      new FishAudioVoiceProvider().transcribe!(
+        { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: "sk-test" },
+        ctx,
+      ),
+    ).resolves.toEqual({ text: expected });
+  });
+
   it("reduces a spoken-language tag to the code Fish expects", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "hola" })));
     vi.stubGlobal("fetch", fetchMock);

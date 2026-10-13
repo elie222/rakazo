@@ -246,11 +246,22 @@ describe("Dictation recorder fallback", () => {
     );
   });
 
-  it("prefers the server on iOS Safari, which cannot hold the microphone open either", async () => {
+  it.each([
+    [
+      "iOS Safari",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+    ],
+    [
+      "iPadOS desktop-style Safari",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15",
+    ],
+  ])("prefers the server on %s with Web Speech available", async (_browser, userAgent) => {
+    const recognition = vi.fn();
+    vi.stubGlobal("window", { webkitSpeechRecognition: recognition });
+    expect(webSpeechAvailable()).toBe(true);
     const track = { stop: vi.fn() };
     vi.stubGlobal("navigator", {
-      userAgent:
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      userAgent,
       maxTouchPoints: 5,
       mediaDevices: {
         getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
@@ -278,6 +289,8 @@ describe("Dictation recorder fallback", () => {
     const onFinal = vi.fn();
     const dictation = new Dictation();
     await dictation.listen({ mode: "hold", onFinal });
+    expect(recognition).not.toHaveBeenCalled();
+    expect(dictation.state.status).toBe("listening");
     dictation.submitHold();
     await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("hola otra vez"));
 
@@ -521,7 +534,14 @@ describe("Dictation recorder fallback", () => {
     expect(dictation.state.error).toMatch(/stop talking/i);
   });
 
-  it("stops an endpoint recording after silence", async () => {
+  it.each([
+    ["recorder fallback", "", 240],
+    [
+      "phone with Web Speech available",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      undefined,
+    ],
+  ])("stops an endpoint recording after silence on %s", async (_browser, userAgent, endpointMs) => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const level = { current: 0.6 };
     class FakeAnalyser {
@@ -547,8 +567,14 @@ describe("Dictation recorder fallback", () => {
     }
     vi.stubGlobal("AudioContext", FakeContext);
 
+    const recognition = vi.fn();
+    if (userAgent) {
+      vi.stubGlobal("window", { webkitSpeechRecognition: recognition });
+      expect(webSpeechAvailable()).toBe(true);
+    }
     const track = { stop: vi.fn() };
     vi.stubGlobal("navigator", {
+      userAgent,
       mediaDevices: {
         getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
       },
@@ -558,6 +584,7 @@ describe("Dictation recorder fallback", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const onFinal = vi.fn();
+    const stopped = vi.fn();
     class FakeRecorder {
       state = "inactive";
       ondataavailable: ((event: { data: Blob }) => void) | null = null;
@@ -566,6 +593,7 @@ describe("Dictation recorder fallback", () => {
         this.state = "recording";
       }
       stop() {
+        stopped();
         this.state = "inactive";
         this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
         this.onstop?.();
@@ -577,14 +605,28 @@ describe("Dictation recorder fallback", () => {
     await dictation.listen({
       mode: "endpoint",
       transcribe: true,
-      endpointMs: 240,
+      endpointMs,
       onFinal,
     });
+    expect(recognition).not.toHaveBeenCalled();
     expect(dictation.state.status).toBe("listening");
     await vi.advanceTimersByTimeAsync(80);
     level.current = 0;
-    await vi.advanceTimersByTimeAsync(240);
-    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("hello"));
+    await vi.advanceTimersByTimeAsync((endpointMs ?? 1_200) - 80);
+    expect(stopped).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onFinal).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(80);
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledExactlyOnceWith("hello"));
+    expect(stopped).toHaveBeenCalledOnce();
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      "/api/voice/transcribe",
+      expect.objectContaining({ method: "POST" }),
+    );
+    await vi.advanceTimersByTimeAsync(1_200);
+    expect(onFinal).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledOnce();
     vi.useRealTimers();
   });
 
