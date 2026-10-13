@@ -1,6 +1,20 @@
+import type { Page, Route } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import type { ThreadSnapshot } from "@rakazo/contracts";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
+
+async function routeBotRpc(
+  page: Page,
+  botId: string,
+  url: RegExp,
+  handler: (route: Route) => Promise<void>,
+) {
+  await page.route(url, async (route) => {
+    const input = route.request().postDataJSON() as { json?: { botId?: string } } | null;
+    if (input?.json?.botId !== botId) return route.fallback();
+    await handler(route);
+  });
+}
 
 test("unread boundary stays in place and reading advances only through visible messages", async ({
   page,
@@ -99,7 +113,7 @@ test("opens older unread history without exposing a gap or acknowledging the lat
   };
   const reads: number[] = [];
   const pages: number[] = [];
-  await page.route(/\/rpc\/(bootstrap|threads\/get)(?:\?|$)/, async (route) => {
+  await routeBotRpc(page, bot.id, /\/rpc\/(bootstrap|threads\/get)(?:\?|$)/, async (route) => {
     if (route.request().url().includes("/threads/get")) {
       await route.fulfill({ json: { json: hydrated } });
       return;
@@ -109,7 +123,7 @@ test("opens older unread history without exposing a gap or acknowledging the lat
     body.json.thread = hydrated;
     await route.fulfill({ response, json: body });
   });
-  await page.route(/\/rpc\/threads\/messages(?:\?|$)/, async (route) => {
+  await routeBotRpc(page, bot.id, /\/rpc\/threads\/messages(?:\?|$)/, async (route) => {
     const { json: input } = route.request().postDataJSON() as {
       json: { around?: { seq?: number } };
     };
@@ -132,7 +146,7 @@ test("opens older unread history without exposing a gap or acknowledging the lat
       },
     });
   });
-  await page.route(/\/rpc\/threads\/markRead(?:\?|$)/, async (route) => {
+  await routeBotRpc(page, bot.id, /\/rpc\/threads\/markRead(?:\?|$)/, async (route) => {
     const { json: input } = route.request().postDataJSON() as { json: { throughSeq?: number } };
     if (input.throughSeq == null)
       throw new Error("Automatic reads must include a message sequence");
@@ -180,6 +194,7 @@ for (const historyResult of ["hidden", "failed", "superseded"] as const) {
   test(`reading recovers when the unread history is ${historyResult}`, async ({ page }) => {
     await signup(page, `unread-${historyResult}-${Date.now()}@rakazo.test`, "password12", "Reader");
     await completeOnboarding(page);
+    const homeBotId = activeBotId(page);
     const bot = await rpc<{ id: string }>(page, "bots/create", {
       name: "Unread recovery",
       title: "",
@@ -224,7 +239,7 @@ for (const historyResult of ["hidden", "failed", "superseded"] as const) {
     const pendingHistory = new Promise<void>((resolve) => {
       releaseHistory = resolve;
     });
-    await page.route(/\/rpc\/(bootstrap|threads\/get)(?:\?|$)/, async (route) => {
+    await routeBotRpc(page, bot.id, /\/rpc\/(bootstrap|threads\/get)(?:\?|$)/, async (route) => {
       if (route.request().url().includes("/threads/get")) {
         snapshotRequests += 1;
         await route.fulfill({ json: { json: hydrated } });
@@ -237,10 +252,10 @@ for (const historyResult of ["hidden", "failed", "superseded"] as const) {
     });
     // A closed stream refreshes the snapshot on reconnect, letting this fixture
     // deliver a later reply without sending synthetic messages to the database.
-    await page.route(/\/rpc\/threads\/subscribe(?:\?|$)/, (route) =>
+    await routeBotRpc(page, bot.id, /\/rpc\/threads\/subscribe(?:\?|$)/, (route) =>
       route.fulfill({ contentType: "text/event-stream", body: "" }),
     );
-    await page.route(/\/rpc\/threads\/messages(?:\?|$)/, async (route) => {
+    await routeBotRpc(page, bot.id, /\/rpc\/threads\/messages(?:\?|$)/, async (route) => {
       historyRequests += 1;
       if (historyResult === "failed") {
         await route.abort("failed");
@@ -262,12 +277,25 @@ for (const historyResult of ["hidden", "failed", "superseded"] as const) {
       });
       historyCompleted = true;
     });
-    await page.route(/\/rpc\/threads\/markRead(?:\?|$)/, async (route) => {
+    await routeBotRpc(page, bot.id, /\/rpc\/threads\/markRead(?:\?|$)/, async (route) => {
       const { json: input } = route.request().postDataJSON() as { json: { throughSeq?: number } };
       if (input.throughSeq == null) throw new Error("Automatic reads must be scoped");
       reads.push(input.throughSeq);
       await route.fulfill({ json: { json: { ok: true } } });
     });
+
+    // A late acknowledgement from the chat we are leaving must use the real API
+    // and never count as reading the recovery fixture's missing history.
+    const homeReadSucceeded = await page.evaluate(async (botId) => {
+      const response = await fetch("/rpc/threads/markRead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ json: { botId, throughSeq: -1 } }),
+      });
+      return response.ok;
+    }, homeBotId);
+    expect(homeReadSucceeded).toBe(true);
+    expect(reads).toEqual([]);
 
     await page.goto(`/app/${bot.id}`);
     await page.bringToFront();
