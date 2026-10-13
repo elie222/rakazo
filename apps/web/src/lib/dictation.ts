@@ -1,5 +1,7 @@
 import { readBoundedResponseBytes } from "@rakazo/core";
+import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
+import type { UiLocale } from "./ui-locale.js";
 import { errorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
@@ -58,6 +60,21 @@ function electronSpeechHost(): boolean {
   return typeof agent === "string" && agent.includes("Electron");
 }
 
+/**
+ * Phones cannot hold a speech session open: `start()` replays the system tone on every
+ * restart and the session ends at each pause, so Web Speech there means one beep per
+ * phrase and a transcript that keeps getting cut. Server transcription records silently,
+ * so prefer it on mobile browsers wherever a provider can transcribe.
+ */
+export function prefersServerDictation(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const agent = typeof navigator.userAgent === "string" ? navigator.userAgent : "";
+  if (/android|iphone|ipod|ipad|mobile/i.test(agent)) return true;
+  // iPadOS 13+ reports a desktop Safari user agent, so fall back to touch support.
+  const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return touchPoints > 1 && /macintosh/i.test(agent);
+}
+
 /** Connected server transcription should take over after Web Speech cannot run. */
 export function webSpeechNeedsServerFallback(
   error: string | undefined,
@@ -78,6 +95,34 @@ const RESTART_BACKOFF_MS = 900;
 const RESTART_GIVE_UP_AFTER = 4;
 const RESTART_GIVE_UP_ERROR =
   "The browser keeps dropping the microphone. Start dictation again to retry.";
+
+/** Web Speech wants a BCP-47 tag; the app's UI locale is a short code. */
+const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
+  en: "en-US",
+  de: "de-DE",
+  es: "es-ES",
+  fr: "fr-FR",
+  hi: "hi-IN",
+  ko: "ko-KR",
+  "pt-BR": "pt-BR",
+  ru: "ru-RU",
+  tr: "tr-TR",
+  "zh-CN": "zh-CN",
+};
+
+/** The tag the recognizer needs for a UI locale, when we know one. */
+export function speechLocaleTag(locale: UiLocale): string | undefined {
+  return SPEECH_LOCALE_TAGS[locale];
+}
+
+/**
+ * Language hint for server transcription: the primary subtag of the app's own locale
+ * (`es`, `pt`, `zh`). Undefined leaves detection to the provider.
+ */
+export function transcriptionLanguage(): string | undefined {
+  const tag = speechLocaleTag(getActiveUiLocale());
+  return tag ? tag.split("-")[0]?.toLowerCase() : undefined;
+}
 
 function normalizedTranscript(text: string): string {
   return text.trim().replace(/\s+/g, " ");
@@ -208,6 +253,12 @@ export class Dictation {
     this.onFinal = opts.onFinal;
     this.set({ status: "listening", transcript: "" });
     const transcribe = Boolean(opts.transcribe);
+    // An unknown capability is not a refusal: a device whose browser cannot hold the
+    // microphone open goes to the server even before the voice status has loaded.
+    if (prefersServerDictation() && opts.transcribe !== false) {
+      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
+      return;
+    }
     if (webSpeechAvailable()) {
       this.listenWebSpeech(
         opts.mode,
@@ -515,7 +566,11 @@ export class Dictation {
           method: "POST",
           headers: withSpaceHeaders({ "content-type": "application/json" }, spaceId),
           credentials: "include",
-          body: JSON.stringify({ audioBase64, mimeType: blob.type }),
+          body: JSON.stringify({
+            audioBase64,
+            mimeType: blob.type,
+            language: transcriptionLanguage(),
+          }),
           signal: abort.signal,
         }),
         abort.signal,

@@ -630,8 +630,48 @@ describe("FishAudioVoiceProvider", () => {
     const form = init.body as FormData;
     expect((form.get("audio") as File).name).toBe("speech.ogg");
     expect(form.get("ignore_timestamps")).toBe("true");
+    expect(modelHeader(init)).toBe("transcribe-1-pro");
+  });
+
+  it("reduces a spoken-language tag to the code Fish expects", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "hola" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FishAudioVoiceProvider().transcribe!(
+      { audio: new Uint8Array([1]), mimeType: "audio/webm", apiKey: "sk-test", language: "es-ES" },
+      ctx,
+    );
+
+    const form = fetchMock.mock.calls[0]?.[1]?.body as FormData;
+    expect(form.get("language")).toBe("es");
+  });
+
+  it("leaves language out when the tag is not one, and honors FISH_ASR_MODEL", async () => {
+    vi.stubEnv("FISH_ASR_MODEL", "transcribe-1");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: "hi" })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new FishAudioVoiceProvider().transcribe!(
+      {
+        audio: new Uint8Array([1]),
+        mimeType: "audio/webm",
+        apiKey: "sk-test",
+        language: "definitely not a tag",
+      },
+      ctx,
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.body as FormData).get("language")).toBeNull();
+    expect(modelHeader(init)).toBe("transcribe-1");
   });
 });
+
+/** The `model` header of a stubbed request, as a plain string. */
+function modelHeader(init: RequestInit): string | undefined {
+  const headers = init.headers as HeadersInit & Record<string, string>;
+  return new Headers(headers).get("model") ?? undefined;
+}
 
 describe("hosted voice response limits", () => {
   it.each([

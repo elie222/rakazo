@@ -3,7 +3,9 @@ import {
   combineTranscript,
   Dictation,
   MAX_TRANSCRIPTION_RESPONSE_BYTES,
+  speechLocaleTag,
   TRANSCRIPTION_RESPONSE_TIMEOUT_MS,
+  transcriptionLanguage,
   webSpeechAvailable,
   webSpeechNeedsServerFallback,
 } from "./dictation.js";
@@ -202,6 +204,128 @@ describe("Dictation recorder fallback", () => {
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
     expect(headers.get("x-rakazo-space-id")).toBe("space-support");
     expect(headers.get("content-type")).toBe("application/json");
+  });
+
+  it("sends Android to the server before the voice status has loaded", async () => {
+    const track = { stop: vi.fn() };
+    vi.stubGlobal("navigator", {
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/141 Mobile Safari/537.36",
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+      },
+      language: "en-US",
+    });
+    const fetchMock = vi.fn(async () => Response.json({ text: "hola, una prueba" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    class FakeRecorder {
+      state = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
+        this.onstop?.();
+      }
+    }
+    vi.stubGlobal("MediaRecorder", FakeRecorder);
+
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", onFinal });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("hola, una prueba"));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/voice/transcribe",
+      expect.objectContaining({ credentials: "include" }),
+    );
+  });
+
+  it("prefers the server on iOS Safari, which cannot hold the microphone open either", async () => {
+    const track = { stop: vi.fn() };
+    vi.stubGlobal("navigator", {
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      maxTouchPoints: 5,
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+      },
+      language: "es-ES",
+    });
+    const fetchMock = vi.fn(async () => Response.json({ text: "hola otra vez" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    class FakeRecorder {
+      state = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/mp4" }) });
+        this.onstop?.();
+      }
+    }
+    vi.stubGlobal("MediaRecorder", FakeRecorder);
+
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", onFinal });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("hola otra vez"));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/voice/transcribe",
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(track.stop).toHaveBeenCalled();
+  });
+
+  it("tells the provider which language the caller speaks", async () => {
+    const track = { stop: vi.fn() };
+    vi.stubGlobal("navigator", {
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/141 Mobile Safari/537.36",
+      mediaDevices: {
+        getUserMedia: vi.fn(async () => ({ getTracks: () => [track] })),
+      },
+      language: "es-ES",
+    });
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json({ text: "hola" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    class FakeRecorder {
+      state = "inactive";
+      ondataavailable: ((event: { data: Blob }) => void) | null = null;
+      onstop: (() => void) | null = null;
+      start() {
+        this.state = "recording";
+      }
+      stop() {
+        this.state = "inactive";
+        this.ondataavailable?.({ data: new Blob(["audio"], { type: "audio/webm" }) });
+        this.onstop?.();
+      }
+    }
+    vi.stubGlobal("MediaRecorder", FakeRecorder);
+
+    const onFinal = vi.fn();
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", onFinal });
+    dictation.submitHold();
+    await vi.waitFor(() => expect(onFinal).toHaveBeenCalledWith("hola"));
+
+    const sent = fetchMock.mock.calls[0]?.[1] as { body?: string } | undefined;
+    expect(JSON.parse(String(sent?.body)).language).toBe("es");
   });
 
   it("rejects oversized transcription responses without waiting for cancellation", async () => {
@@ -1479,5 +1603,17 @@ describe("Dictation web speech", () => {
     instances[1]?.onerror?.({ error: "network" });
     expect(offline.state.error).toBe("Dictation failed: network");
     expect(started).not.toHaveBeenCalled();
+  });
+});
+
+describe("transcriptionLanguage", () => {
+  it("maps an app locale to a tag the recognizer accepts", () => {
+    expect(speechLocaleTag("es")).toBe("es-ES");
+    expect(speechLocaleTag("pt-BR")).toBe("pt-BR");
+  });
+
+  it("hints the provider with the language the caller picked", () => {
+    vi.stubGlobal("navigator", { language: "es-ES" });
+    expect(transcriptionLanguage()).toBe("es");
   });
 });
