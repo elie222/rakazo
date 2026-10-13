@@ -581,17 +581,12 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function commitSnap(next: MobileSnapshot | null, cleared = false) {
     if (cleared || threadHistoryWasCleared(snapRef.current, next)) {
-      historyEpoch.current += 1;
+      invalidateHistoryLoads();
       expandedHistoryThread.current = null;
       pinnedAroundRef.current = null;
       jumpScrollTarget.current = null;
       jumpAnchor.current.release();
       joinPinnedAfterLayout.current = null;
-      loadingOlderContent.current = false;
-      loadingNewerContent.current = false;
-      newerLoadFailed.current = false;
-      setLoadingOlder(false);
-      setLoadingNewer(false);
       readVisit.current = null;
       visibleReadIds.current.clear();
       visibleReadCallIds.current.clear();
@@ -605,6 +600,15 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     snapRef.current = next;
     const visible = withLiveStreamingProgress(next, streamResponsesRef.current);
     setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
+  }
+
+  function invalidateHistoryLoads() {
+    historyEpoch.current += 1;
+    loadingOlderContent.current = false;
+    loadingNewerContent.current = false;
+    newerLoadFailed.current = false;
+    setLoadingOlder(false);
+    setLoadingNewer(false);
   }
 
   useEffect(() => {
@@ -1005,16 +1009,37 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function clearConversation() {
     if (!botId) return;
+    const epoch = historyEpoch.current;
+    const threadId = snapRef.current?.threadId;
+    const sessionGeneration = currentSessionGeneration();
+    const spaceId = selectedSpaceId();
     void rpc("threads/clear", { botId })
       .then(() => {
-        expandedHistoryThread.current = null;
-        pinnedAroundRef.current = null;
-        historyEpoch.current += 1;
-        commitSnap(
-          snapRef.current
-            ? { ...snapRef.current, messages: [], olderCursor: null, run: null }
-            : snapRef.current,
-        );
+        if (
+          !isCurrentTarget(botId, groupId) ||
+          sessionGeneration !== currentSessionGeneration() ||
+          spaceId !== selectedSpaceId() ||
+          (threadId != null && snapRef.current?.threadId !== threadId)
+        )
+          return;
+        // An observed clear has already reset history and may include newer replies.
+        // Otherwise reset immediately; the authoritative refresh supplies read state.
+        if (epoch === historyEpoch.current) {
+          commitSnap(
+            snapRef.current
+              ? {
+                  ...snapRef.current,
+                  messages: [],
+                  olderCursor: null,
+                  run: null,
+                  activeRuns: [],
+                  readState: undefined,
+                }
+              : snapRef.current,
+            true,
+          );
+        }
+        void refresh().catch(() => undefined);
       })
       .catch((err: unknown) =>
         Alert.alert(t("Could not clear conversation"), errorText(err, t("Try again."))),
@@ -1643,7 +1668,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   useEffect(() => {
     if (!botId && !groupId) return;
     // Invalidate pending history loads while retaining pages already loaded for this chat.
-    historyEpoch.current += 1;
+    invalidateHistoryLoads();
     const abort = new AbortController();
     const subscriptionGeneration = ++liveSubscriptionGeneration.current;
     const sessionGeneration = currentSessionGeneration();

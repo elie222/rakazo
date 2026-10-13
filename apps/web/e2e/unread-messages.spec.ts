@@ -176,7 +176,7 @@ test("opens older unread history without exposing a gap or acknowledging the lat
   await expect.poll(() => Math.max(...reads)).toBe(139);
 });
 
-for (const historyResult of ["hidden", "failed"] as const) {
+for (const historyResult of ["hidden", "failed", "superseded"] as const) {
   test(`reading recovers when the unread history is ${historyResult}`, async ({ page }) => {
     await signup(page, `unread-${historyResult}-${Date.now()}@rakazo.test`, "password12", "Reader");
     await completeOnboarding(page);
@@ -218,8 +218,15 @@ for (const historyResult of ["hidden", "failed"] as const) {
     };
     const reads: number[] = [];
     let historyRequests = 0;
+    let snapshotRequests = 0;
+    let historyCompleted = false;
+    let releaseHistory = () => {};
+    const pendingHistory = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
     await page.route(/\/rpc\/(bootstrap|threads\/get)(?:\?|$)/, async (route) => {
       if (route.request().url().includes("/threads/get")) {
+        snapshotRequests += 1;
         await route.fulfill({ json: { json: hydrated } });
         return;
       }
@@ -239,16 +246,21 @@ for (const historyResult of ["hidden", "failed"] as const) {
         await route.abort("failed");
         return;
       }
+      if (historyResult === "superseded") await pendingHistory;
       await route.fulfill({
         json: {
           json: {
             threadId: snapshot.threadId,
-            messages: hydrated.messages,
+            messages:
+              historyResult === "superseded"
+                ? [message(10, "Older unread note")]
+                : hydrated.messages,
             olderCursor: 9,
             coveredThroughSeq: 10,
           },
         },
       });
+      historyCompleted = true;
     });
     await page.route(/\/rpc\/threads\/markRead(?:\?|$)/, async (route) => {
       const { json: input } = route.request().postDataJSON() as { json: { throughSeq?: number } };
@@ -262,12 +274,31 @@ for (const historyResult of ["hidden", "failed"] as const) {
     await expect.poll(() => historyRequests).toBe(1);
     const transcript = page.getByTestId("transcript");
     await expect(page.getByTestId("unread-divider")).toHaveCount(0);
-    if (historyResult === "failed") {
+    if (historyResult !== "hidden") {
       await expect(transcript.locator('[data-message-id="recovery-40"]')).toBeInViewport();
       await expect(transcript.getByText("Later detail 59", { exact: true })).not.toBeInViewport();
-      await expect.poll(() => reads).toContain(40);
-      expect(reads).not.toContain(41);
-      await expect(page.getByRole("button", { name: "Jump to latest" })).toBeVisible();
+      // Scrolling to the tail must neither hide recovery nor consume the missing
+      // unread history. Reconnect refreshes leave time for read measurements.
+      const previousRequests = snapshotRequests;
+      await transcript.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect(transcript.getByText("Later detail 59", { exact: true })).toBeInViewport();
+      await expect.poll(() => snapshotRequests).toBeGreaterThan(previousRequests + 1);
+      expect(reads).toEqual([]);
+      const jump = page.getByRole("button", { name: "Jump to latest" });
+      await expect(jump).toBeVisible();
+      await jump.click();
+      await expect.poll(() => reads).toContain(41);
+      if (historyResult === "superseded") {
+        const requestsBeforeRelease = snapshotRequests;
+        releaseHistory();
+        await expect.poll(() => historyCompleted).toBe(true);
+        await expect.poll(() => snapshotRequests).toBeGreaterThan(requestsBeforeRelease + 1);
+        await expect(transcript.locator('[data-message-id="recovery-10"]')).toHaveCount(0);
+        await expect(transcript.getByText("Later detail 59", { exact: true })).toBeInViewport();
+        await expect(jump).toBeHidden();
+      }
     } else {
       await expect(transcript.locator('[data-message-id="recovery-10"]')).toHaveCount(0);
       expect(reads).toEqual([]);

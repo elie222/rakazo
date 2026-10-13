@@ -7,6 +7,8 @@ export interface ThreadHistory<TMessage extends MessageIdentity> {
   threadId: string;
   /** Changes only when the conversation is cleared; missing on older cached snapshots. */
   historyGeneration?: number;
+  /** Unread messages can fall beyond the last row left by server-side filtering. */
+  readState?: { lastUnreadSeq: number };
   messages: readonly TMessage[];
   olderCursor: number | null;
   /** Around pages can scan past messages that the transcript intentionally hides. */
@@ -77,7 +79,11 @@ export function openThreadWindow<
   const messages = mergeMessagesBySeq(latest.messages, page.messages);
   return {
     snapshot: { ...latest, messages, olderCursor: page.olderCursor },
-    newerCursor: newerGapCursor(messages, page.coveredThroughSeq ?? newestSeq(page.messages)),
+    newerCursor: newerGapCursor(
+      messages,
+      page.coveredThroughSeq ?? newestSeq(page.messages),
+      latest.readState?.lastUnreadSeq,
+    ),
   };
 }
 
@@ -121,7 +127,7 @@ export function appendNewerThreadPage<
       ? mergeMessagesBySeq(snapshot.messages, page.messages)
       : snapshot.messages;
   const covered = coveredThroughSeq ?? overlappingPageCoverage(page, newerCursor);
-  const cursor = forwardCursor(messages, newerCursor, covered);
+  const cursor = forwardCursor(messages, newerCursor, covered, snapshot.readState?.lastUnreadSeq);
   if (messages === snapshot.messages && cursor === newerCursor) return { snapshot, newerCursor };
   return {
     snapshot: messages === snapshot.messages ? snapshot : { ...snapshot, messages },
@@ -159,9 +165,10 @@ function forwardCursor(
   messages: readonly MessageIdentity[],
   newerCursor: number,
   coveredThroughSeq: number | null,
+  requiredThroughSeq = -1,
 ): number | null {
   const present = new Set<number>();
-  let maxSeq = newerCursor;
+  let maxSeq = Math.max(newerCursor, requiredThroughSeq);
   for (const message of messages) {
     if (!isDurableMessage(message) || typeof message.seq !== "number") continue;
     present.add(message.seq);
@@ -185,9 +192,15 @@ function forwardCursor(
   return scan >= maxSeq ? null : cursor;
 }
 
-function newerGapCursor(messages: readonly MessageIdentity[], loadedThrough: number | null) {
+function newerGapCursor(
+  messages: readonly MessageIdentity[],
+  loadedThrough: number | null,
+  requiredThroughSeq = -1,
+) {
   // An empty page without coverage cannot prove the gap was scanned.
-  if (loadedThrough === null) return oldestSeq(messages) === null ? null : -1;
+  if (loadedThrough === null)
+    return oldestSeq(messages) === null && requiredThroughSeq < 0 ? null : -1;
+  if (requiredThroughSeq > Math.max(loadedThrough, newestSeq(messages) ?? -1)) return loadedThrough;
   const next = oldestSeq(
     messages.filter((message) => typeof message.seq === "number" && message.seq > loadedThrough),
   );

@@ -62,6 +62,46 @@ describe("history generations", () => {
 });
 
 describe("thread windows", () => {
+  it("scans through the saved unread position when the latest tail is entirely filtered", () => {
+    const snapshot = {
+      threadId: "thread",
+      messages: [] as Message[],
+      olderCursor: 100,
+      readState: { lastUnreadSeq: 149 },
+    };
+    const opened = openThreadWindow(snapshot, {
+      threadId: "thread",
+      messages: [] as Message[],
+      olderCursor: 0,
+      coveredThroughSeq: 49,
+    });
+    expect(opened.newerCursor).toBe(49);
+    const partial = appendNewerThreadPage(
+      opened.snapshot,
+      49,
+      {
+        threadId: "thread",
+        messages: [] as Message[],
+        olderCursor: 25,
+        coveredThroughSeq: 99,
+      },
+      99,
+    );
+    expect(partial.newerCursor).not.toBeNull();
+    const complete = appendNewerThreadPage(
+      partial.snapshot,
+      partial.newerCursor!,
+      {
+        threadId: "thread",
+        messages: [] as Message[],
+        olderCursor: 75,
+        coveredThroughSeq: 149,
+      },
+      149,
+    );
+    expect(complete.newerCursor).toBeNull();
+  });
+
   it("keeps latest history hidden while scanning an empty filtered around page", () => {
     const opened = openThreadWindow(latest(), {
       threadId: "thread",
