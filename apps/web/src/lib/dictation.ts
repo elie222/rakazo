@@ -79,30 +79,6 @@ const RESTART_GIVE_UP_AFTER = 4;
 const RESTART_GIVE_UP_ERROR =
   "The browser keeps dropping the microphone. Start dictation again to retry.";
 
-/**
- * Chrome can report the whole utterance again at every new result index ("orlando",
- * "orlando", "orlando florida"). Joining every part blindly repeats the words, so keep
- * the longest version of whatever is already there and append only genuinely new text.
- */
-export function mergeSpeechResults(parts: readonly (string | undefined)[]): string {
-  let merged = "";
-  for (const raw of parts) {
-    const text = raw ?? "";
-    if (!text) continue;
-    if (!merged) {
-      merged = text;
-      continue;
-    }
-    if (text === merged || merged.endsWith(text)) continue;
-    if (text.startsWith(merged)) {
-      merged = text;
-      continue;
-    }
-    merged += text;
-  }
-  return merged;
-}
-
 function normalizedTranscript(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
@@ -119,13 +95,22 @@ function startsWithWholePrefix(serverText: string, prefix: string): boolean {
   return !/[\p{L}\p{N}_]/u.test(String.fromCodePoint(point));
 }
 
+/** Join carried speech with a new session or recording at their longest whole-word overlap. */
 export function combineTranscript(prefix: string, serverText: string): string {
   const head = normalizedTranscript(prefix);
   const tail = serverText.trim();
   if (!head) return tail;
   if (!tail) return head;
   if (startsWithWholePrefix(tail, head)) return tail;
-  return `${head} ${normalizedTranscript(tail)}`;
+  const normalizedTail = normalizedTranscript(tail);
+  for (let start = 0; start < head.length; start += 1) {
+    if (start > 0 && !/\s/u.test(head[start - 1] ?? "")) continue;
+    const overlap = head.slice(start);
+    if (startsWithWholePrefix(normalizedTail, overlap)) {
+      return head.slice(0, start) + normalizedTail;
+    }
+  }
+  return `${head} ${normalizedTail}`;
 }
 
 function speechRecognitionCtor(): SpeechRecognitionCtor | undefined {
@@ -262,11 +247,18 @@ export class Dictation {
     let carried = "";
     let sessionStartedAt = Date.now();
     let shortSessions = 0;
+    let sessionHeardSpeech = false;
     rec.onresult = (event) => {
       if (!live || this.token !== mine) return;
-      const session = mergeSpeechResults(
-        Array.from(event.results, (result) => result?.[0]?.transcript),
+      // Each result index is a separate phrase. Matching text within this session
+      // may be a real repetition; only deduplicate against a previous session.
+      const session = normalizedTranscript(
+        Array.from(event.results, (result) => result?.[0]?.transcript ?? "").join(" "),
       );
+      if (session.trim()) {
+        sessionHeardSpeech = true;
+        shortSessions = 0;
+      }
       const transcript = combineTranscript(carried, session);
       this.set({ status: "listening", transcript });
       if (mode !== "endpoint") return;
@@ -308,7 +300,9 @@ export class Dictation {
       // ending straight away, which means the browser cannot hold the microphone at all.
       carried = this.snapshot.transcript;
       shortSessions =
-        Date.now() - sessionStartedAt < RESTART_SHORT_SESSION_MS ? shortSessions + 1 : 0;
+        !sessionHeardSpeech && Date.now() - sessionStartedAt < RESTART_SHORT_SESSION_MS
+          ? shortSessions + 1
+          : 0;
       if (shortSessions >= RESTART_GIVE_UP_AFTER) {
         live = false;
         if (transcribe) {
@@ -316,13 +310,14 @@ export class Dictation {
           return;
         }
         this.releaseRecognition(rec);
-        this.set({ ...IDLE, error: RESTART_GIVE_UP_ERROR });
+        this.failListening(mine, RESTART_GIVE_UP_ERROR, true);
         return;
       }
       const restart = () => {
         if (!live || this.token !== mine) return;
         try {
           sessionStartedAt = Date.now();
+          sessionHeardSpeech = false;
           rec.start();
         } catch {
           this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
@@ -564,21 +559,22 @@ export class Dictation {
     this.finish(this.snapshot.transcript, this.token);
   }
 
-  private failListening(mine: number, message: string) {
+  private failListening(mine: number, message: string, showError = false) {
     if (this.token !== mine) return;
     const prefix = normalizedTranscript(this.snapshot.transcript);
     if (prefix) {
-      this.finish(prefix, mine);
+      this.finish(prefix, mine, showError ? message : undefined);
       return;
     }
     this.set({ ...IDLE, error: message });
   }
 
-  private finish(text: string, mine: number) {
+  private finish(text: string, mine: number, error?: string) {
     if (this.token !== mine) return;
     const trimmed = text.trim();
     const onFinal = this.onFinal;
     this.stop("submit");
+    if (error) this.set({ ...IDLE, error });
     if (trimmed) onFinal?.(trimmed);
   }
 }
