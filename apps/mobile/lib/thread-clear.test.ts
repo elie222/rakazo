@@ -16,21 +16,19 @@ import { reconcileVisibleThreadSnapshot } from "./thread-snapshot";
 
 // Run the actual screen handlers without loading native modules.
 const source = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-const commitStart = source.indexOf("  function commitSnap(");
+function sliceBetween(start: string, end: string): string {
+  const startIndex = source.indexOf(start);
+  if (startIndex < 0) throw new Error(`thread.tsx marker missing: ${start}`);
+  const endIndex = source.indexOf(end, startIndex + start.length);
+  if (endIndex < 0) throw new Error(`thread.tsx marker missing after ${start}: ${end}`);
+  return source.slice(startIndex, endIndex);
+}
+
 const handlerSource = [
-  source.slice(commitStart, source.indexOf("  useEffect(() => {", commitStart)),
-  source.slice(
-    source.indexOf("  function clearConversation()"),
-    source.indexOf("  const botActions ="),
-  ),
-  source.slice(
-    source.indexOf("  async function loadNewerMessages()"),
-    source.indexOf("  function showLatest()"),
-  ),
-  source.slice(
-    source.indexOf("  async function loadOlderMessages()"),
-    source.indexOf("  const markReadIfVisible ="),
-  ),
+  sliceBetween("  function commitSnap(", "  useEffect(() => {"),
+  sliceBetween("  function clearConversation()", "  const botActions ="),
+  sliceBetween("  async function loadNewerMessages()", "  function showLatest()"),
+  sliceBetween("  async function loadOlderMessages()", "  const markReadIfVisible ="),
 ].join("\n");
 const handlerCode = ts.transpileModule(
   `${handlerSource}\nreturn {commitSnap, clearConversation, loadOlderMessages, loadNewerMessages, invalidateHistoryLoads};`,
