@@ -258,6 +258,9 @@ interface RetryScenario {
   laterRun?: boolean;
   duplicate?: boolean;
   enqueueFails?: boolean;
+  routineNotify?: boolean;
+  missingRoutine?: boolean;
+  missingTask?: boolean;
 }
 
 function retryHarness(scenario: RetryScenario = {}) {
@@ -278,6 +281,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     thinkingLevel: "low",
     modelPinned: true,
     createdAt: failedAt,
+    error: overloaded().message,
   };
   const tx = {
     task: { create: vi.fn(async () => ({ id: "task-2" })) },
@@ -293,37 +297,101 @@ function retryHarness(scenario: RetryScenario = {}) {
   const prisma = {
     run: {
       findUnique: vi.fn(async () => failed),
-      findFirst: vi.fn(async () => (scenario.laterRun ? { id: "run-later" } : null)),
+      findFirst: vi.fn(async ({ select }: { select: { id?: boolean } }) =>
+        select.id
+          ? scenario.laterRun
+            ? { id: "run-later" }
+            : null
+          : { bot: { notifyOnFinish: true }, thread: { groupId: null } },
+      ),
       deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     routine: {
-      findUnique: vi.fn(async () => ({
-        active: scenario.active ?? true,
-        crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
-        nextRunAt:
-          scenario.nextRunAt === undefined
-            ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
-            : scenario.nextRunAt,
-        bot: { archivedAt: scenario.archived ? failedAt : null },
-      })),
+      findUnique: vi.fn(async () =>
+        scenario.missingRoutine
+          ? null
+          : {
+              notify: scenario.routineNotify ?? true,
+              active: scenario.active ?? true,
+              crons: scenario.oneShot ? ["@once"] : ["0 9 * * *"],
+              nextRunAt:
+                scenario.nextRunAt === undefined
+                  ? new Date(NOW.getTime() + 24 * 60 * MINUTE)
+                  : scenario.nextRunAt,
+              bot: { archivedAt: scenario.archived ? failedAt : null },
+            },
+      ),
     },
     task: {
-      findUnique: vi.fn(async () => ({ prompt: "Sweep the inbox" })),
+      findUnique: vi.fn(async () => (scenario.missingTask ? null : { prompt: "Sweep the inbox" })),
       deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+    bot: { findUniqueOrThrow: vi.fn(async () => ({ name: "Assistant" })) },
   };
   const enqueue = vi.fn(async () => {
     if (scenario.enqueueFails) throw new Error("queue down");
   });
+  const send = vi.fn(async () => undefined);
   const executor = createRunExecutor({
     prisma,
     jobs: { enqueue },
+    notifications: { send },
   } as unknown as Parameters<typeof createRunExecutor>[0]);
-  return { executor, prisma, tx, enqueue };
+  return { executor, prisma, tx, enqueue, send };
 }
 
 describe("running a routine retry", () => {
+  it.each([
+    ["paused", { active: false }],
+    ["archived", { archived: true }],
+    ["missing its routine", { missingRoutine: true }],
+    ["missing its task", { missingTask: true }],
+  ] satisfies Array<[string, RetryScenario]>)(
+    "notifies when the retry is abandoned because it is %s",
+    async (_label, scenario) => {
+      const { executor, send, prisma } = retryHarness(scenario);
+
+      await executor.retryRoutineRun("run-1");
+
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledExactlyOnceWith(
+        {
+          kind: "failure",
+          title: "Assistant failed",
+          body: overloaded().message,
+          botId: "bot-1",
+          threadId: "thread-1",
+        },
+        expect.objectContaining({ userId: "user-1" }),
+      );
+    },
+  );
+
+  it("respects the routine's notification preference when a paused retry is abandoned", async () => {
+    const { executor, send } = retryHarness({ active: false, routineNotify: false });
+
+    await executor.retryRoutineRun("run-1");
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a later run exists", { laterRun: true }],
+    ["a later run exists for a paused routine", { laterRun: true, active: false }],
+    ["the next occurrence is near", { nextRunAt: new Date(NOW.getTime() + 20 * MINUTE) }],
+    ["the retry was already created", { duplicate: true }],
+  ] satisfies Array<[string, RetryScenario]>)(
+    "does not notify when %s",
+    async (_label, scenario) => {
+      const { executor, send } = retryHarness(scenario);
+
+      await executor.retryRoutineRun("run-1");
+
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
   it("queues one new run of the routine that points at the failed run", async () => {
     const { executor, tx, enqueue } = retryHarness();
 

@@ -3266,25 +3266,42 @@ export function createRunExecutor(deps: ExecutorDeps) {
           bot: { select: { archivedAt: true } },
         },
       });
-      // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
-      if (
-        !routine ||
-        (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
-        routine.bot.archivedAt ||
-        routineNextRunIsNear(routine.nextRunAt, Date.now())
-      ) {
-        return;
-      }
+      if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) return;
       const laterRun = await deps.prisma.run.findFirst({
         where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
         select: { id: true },
       });
       if (laterRun) return;
+      const notifyAbandonedRetry = async () => {
+        const bot = await deps.prisma.bot.findUniqueOrThrow({
+          where: { id: failed.botId },
+          select: { name: true },
+        });
+        await notifyRun(deps, failed, {
+          kind: "failure",
+          title: `${bot.name} failed`,
+          body: (failed.error ?? "").slice(0, 180),
+          botId: failed.botId,
+          threadId: failed.threadId,
+        });
+      };
+      // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+      if (
+        !routine ||
+        (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
+        routine.bot.archivedAt
+      ) {
+        await notifyAbandonedRetry();
+        return;
+      }
       const task = await deps.prisma.task.findUnique({
         where: { id: failed.taskId },
         select: { prompt: true },
       });
-      if (!task) return;
+      if (!task) {
+        await notifyAbandonedRetry();
+        return;
+      }
       let retry: { id: string; taskId: string };
       try {
         retry = await deps.prisma.$transaction(async (tx) => {
