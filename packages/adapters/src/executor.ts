@@ -3266,7 +3266,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           bot: { select: { archivedAt: true } },
         },
       });
-      if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) return;
       const laterRun = await deps.prisma.run.findFirst({
         where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
         select: { id: true },
@@ -3285,6 +3284,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           threadId: failed.threadId,
         });
       };
+      if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
+        await notifyAbandonedRetry();
+        return;
+      }
       // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
       if (
         !routine ||
@@ -3302,9 +3305,38 @@ export function createRunExecutor(deps: ExecutorDeps) {
         await notifyAbandonedRetry();
         return;
       }
-      let retry: { id: string; taskId: string };
+      let retry: { id: string; taskId: string } | null;
       try {
         retry = await deps.prisma.$transaction(async (tx) => {
+          // Claim the still-eligible routine without changing its state. One-shot routines
+          // may already be inactive; match their crons so an edit cannot revive a paused routine.
+          const claimed = await tx.routine.updateMany({
+            where: {
+              id: failed.routineId!,
+              active: routine.active,
+              ...(!routine.active ? { crons: { equals: routine.crons } } : {}),
+              bot: { archivedAt: null },
+            },
+            data: { active: routine.active },
+          });
+          if (claimed.count !== 1) return null;
+          const targetThread = await tx.thread.findFirst({
+            where: {
+              id: failed.threadId,
+              spaceId: failed.spaceId,
+              OR: [
+                { botId: failed.botId },
+                {
+                  group: {
+                    archivedAt: null,
+                    members: { some: { botId: failed.botId } },
+                  },
+                },
+              ],
+            },
+            select: { id: true },
+          });
+          if (!targetThread) return null;
           const retryTask = await tx.task.create({
             data: {
               spaceId: failed.spaceId,
@@ -3342,12 +3374,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (isUniqueViolation(error)) return;
         throw error;
       }
+      if (!retry) {
+        await notifyAbandonedRetry();
+        return;
+      }
       try {
         await deps.jobs.enqueue(runContinueJob(retry.id));
       } catch (error) {
         // Remove the retry so the job queue's own retry of this job can queue it again.
-        await deps.prisma.run.deleteMany({ where: { id: retry.id, status: "queued" } });
-        await deps.prisma.task.deleteMany({ where: { id: retry.taskId, status: "queued" } });
+        const queuedRetry = retry;
+        await deps.prisma.$transaction(async (tx) => {
+          const removed = await tx.run.deleteMany({
+            where: { id: queuedRetry.id, status: "queued" },
+          });
+          if (removed.count === 1) {
+            await tx.task.deleteMany({ where: { id: queuedRetry.taskId, status: "queued" } });
+          }
+        });
         throw error;
       }
     },

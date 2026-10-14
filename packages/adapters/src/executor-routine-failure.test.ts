@@ -261,6 +261,10 @@ interface RetryScenario {
   routineNotify?: boolean;
   missingRoutine?: boolean;
   missingTask?: boolean;
+  pausedBeforeCreate?: boolean;
+  archivedBeforeCreate?: boolean;
+  invalidDestination?: boolean;
+  retryStartedBeforeCleanup?: boolean;
 }
 
 function retryHarness(scenario: RetryScenario = {}) {
@@ -284,8 +288,20 @@ function retryHarness(scenario: RetryScenario = {}) {
     error: overloaded().message,
   };
   const tx = {
-    task: { create: vi.fn(async () => ({ id: "task-2" })) },
+    routine: {
+      updateMany: vi.fn(async () => ({
+        count: scenario.pausedBeforeCreate || scenario.archivedBeforeCreate ? 0 : 1,
+      })),
+    },
+    thread: {
+      findFirst: vi.fn(async () => (scenario.invalidDestination ? null : { id: "thread-1" })),
+    },
+    task: {
+      create: vi.fn(async () => ({ id: "task-2" })),
+      deleteMany: vi.fn(async () => ({ count: 1 })),
+    },
     run: {
+      deleteMany: vi.fn(async () => ({ count: scenario.retryStartedBeforeCleanup ? 0 : 1 })),
       create: vi.fn(async () => {
         if (scenario.duplicate) {
           throw Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
@@ -304,7 +320,6 @@ function retryHarness(scenario: RetryScenario = {}) {
             : null
           : { bot: { notifyOnFinish: true }, thread: { groupId: null } },
       ),
-      deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     routine: {
       findUnique: vi.fn(async () =>
@@ -324,7 +339,6 @@ function retryHarness(scenario: RetryScenario = {}) {
     },
     task: {
       findUnique: vi.fn(async () => (scenario.missingTask ? null : { prompt: "Sweep the inbox" })),
-      deleteMany: vi.fn(async () => ({ count: 1 })),
     },
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
     bot: { findUniqueOrThrow: vi.fn(async () => ({ name: "Assistant" })) },
@@ -379,7 +393,6 @@ describe("running a routine retry", () => {
   it.each([
     ["a later run exists", { laterRun: true }],
     ["a later run exists for a paused routine", { laterRun: true, active: false }],
-    ["the next occurrence is near", { nextRunAt: new Date(NOW.getTime() + 20 * MINUTE) }],
     ["the retry was already created", { duplicate: true }],
   ] satisfies Array<[string, RetryScenario]>)(
     "does not notify when %s",
@@ -391,6 +404,64 @@ describe("running a routine retry", () => {
       expect(send).not.toHaveBeenCalled();
     },
   );
+
+  it("releases the held notice when delivery puts the next occurrence inside the window", async () => {
+    const { executor, tx, send } = retryHarness({
+      nextRunAt: new Date(NOW.getTime() + 33 * MINUTE),
+    });
+    vi.setSystemTime(new Date(NOW.getTime() + 4 * MINUTE));
+
+    await executor.retryRoutineRun("run-1");
+
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ kind: "failure" }),
+      expect.anything(),
+    );
+  });
+
+  it.each([
+    ["paused", { pausedBeforeCreate: true }],
+    ["archived", { archivedBeforeCreate: true }],
+  ] satisfies Array<[string, RetryScenario]>)(
+    "rechecks eligibility when the routine is %s before creation",
+    async (_label, scenario) => {
+      const { executor, tx, enqueue, send } = retryHarness(scenario);
+
+      await executor.retryRoutineRun("run-1");
+
+      expect(tx.routine.updateMany).toHaveBeenCalledWith({
+        where: { id: "routine-1", active: true, bot: { archivedAt: null } },
+        data: { active: true },
+      });
+      expect(tx.task.create).not.toHaveBeenCalled();
+      expect(tx.run.create).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("abandons a retry whose destination is no longer eligible", async () => {
+    const { executor, tx, enqueue, send } = retryHarness({ invalidDestination: true });
+
+    await executor.retryRoutineRun("run-1");
+
+    expect(tx.thread.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: "thread-1",
+        spaceId: "space-1",
+        OR: [
+          { botId: "bot-1" },
+          { group: { archivedAt: null, members: { some: { botId: "bot-1" } } } },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(tx.task.create).not.toHaveBeenCalled();
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledOnce();
+  });
 
   it("queues one new run of the routine that points at the failed run", async () => {
     const { executor, tx, enqueue } = retryHarness();
@@ -451,10 +522,23 @@ describe("running a routine retry", () => {
   );
 
   it("retries a one-time routine, which turns itself off when it fires", async () => {
-    const { executor, enqueue } = retryHarness({ active: false, oneShot: true, nextRunAt: null });
+    const { executor, tx, enqueue } = retryHarness({
+      active: false,
+      oneShot: true,
+      nextRunAt: null,
+    });
 
     await executor.retryRoutineRun("run-1");
 
+    expect(tx.routine.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: "routine-1",
+        active: false,
+        crons: { equals: ["@once"] },
+        bot: { archivedAt: null },
+      },
+      data: { active: false },
+    });
     expect(enqueue).toHaveBeenCalledOnce();
   });
 
@@ -466,14 +550,30 @@ describe("running a routine retry", () => {
   });
 
   it("removes the queued retry when it cannot be handed to the job queue", async () => {
-    const { executor, prisma } = retryHarness({ enqueueFails: true });
+    const { executor, prisma, tx } = retryHarness({ enqueueFails: true });
 
     await expect(executor.retryRoutineRun("run-1")).rejects.toThrow("queue down");
-    expect(prisma.run.deleteMany).toHaveBeenCalledWith({
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.run.deleteMany).toHaveBeenCalledWith({
       where: { id: "run-2", status: "queued" },
     });
-    expect(prisma.task.deleteMany).toHaveBeenCalledWith({
+    expect(tx.task.deleteMany).toHaveBeenCalledWith({
       where: { id: "task-2", status: "queued" },
     });
+  });
+
+  it("preserves the task when reconciliation started the retry before enqueue failed", async () => {
+    const { executor, prisma, tx } = retryHarness({
+      enqueueFails: true,
+      retryStartedBeforeCleanup: true,
+    });
+
+    await expect(executor.retryRoutineRun("run-1")).rejects.toThrow("queue down");
+
+    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(tx.run.deleteMany).toHaveBeenCalledWith({
+      where: { id: "run-2", status: "queued" },
+    });
+    expect(tx.task.deleteMany).not.toHaveBeenCalled();
   });
 });
