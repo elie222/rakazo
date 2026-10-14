@@ -32,8 +32,10 @@ import {
   historyCompactJob,
   MEMORY_REVISION_CONFLICT_ERROR,
   routineJobKey,
+  routineRetryJob,
   routineWakeupJob,
   runContinueJob,
+  TransientModelError,
 } from "@rakazo/adapter-kit";
 import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
@@ -2628,6 +2630,10 @@ export function desktopProtectionGuardMessage(reason: string): string {
 
 /** Cap the roster so a large Space cannot flood the prompt. */
 const BOT_DIRECTORY_LIMIT = 40;
+/** A routine run stopped by a transient model error gets one more try this much later. */
+const ROUTINE_RETRY_DELAY_MS = 12 * 60_000;
+/** The retry is skipped when the routine's next occurrence is this close; that run covers it. */
+const ROUTINE_RETRY_NEXT_RUN_WINDOW_MS = 30 * 60_000;
 const MISSING_MODEL_MESSAGE = "Connect a model in Settings before running bots.";
 
 function runtimeFallbackModel(runtime: AgentRuntime) {
@@ -3238,6 +3244,94 @@ export function createRunExecutor(deps: ExecutorDeps) {
         }
       } else if (nextRunAt) {
         await deps.jobs.enqueue(routineWakeupJob(routine.id, nextRunAt));
+      }
+    },
+
+    async retryRoutineRun(runId: string) {
+      const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
+      if (
+        !failed?.routineId ||
+        failed.trigger !== "routine" ||
+        failed.status !== "failed" ||
+        failed.retryOfRunId
+      ) {
+        return;
+      }
+      const routine = await deps.prisma.routine.findUnique({
+        where: { id: failed.routineId },
+        select: {
+          active: true,
+          crons: true,
+          nextRunAt: true,
+          bot: { select: { archivedAt: true } },
+        },
+      });
+      // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+      if (
+        !routine ||
+        (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
+        routine.bot.archivedAt ||
+        routineNextRunIsNear(routine.nextRunAt, Date.now())
+      ) {
+        return;
+      }
+      const laterRun = await deps.prisma.run.findFirst({
+        where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
+        select: { id: true },
+      });
+      if (laterRun) return;
+      const task = await deps.prisma.task.findUnique({
+        where: { id: failed.taskId },
+        select: { prompt: true },
+      });
+      if (!task) return;
+      let retry: { id: string; taskId: string };
+      try {
+        retry = await deps.prisma.$transaction(async (tx) => {
+          const retryTask = await tx.task.create({
+            data: {
+              spaceId: failed.spaceId,
+              botId: failed.botId,
+              threadId: failed.threadId,
+              userId: failed.userId,
+              prompt: task.prompt,
+              status: "queued",
+            },
+          });
+          return tx.run.create({
+            data: {
+              spaceId: failed.spaceId,
+              botId: failed.botId,
+              threadId: failed.threadId,
+              taskId: retryTask.id,
+              userId: failed.userId,
+              status: "queued",
+              trigger: "routine",
+              routineId: failed.routineId,
+              retryOfRunId: failed.id,
+              ...(failed.modelPinned
+                ? {
+                    modelProvider: failed.modelProvider,
+                    modelId: failed.modelId,
+                    thinkingLevel: failed.thinkingLevel,
+                    modelPinned: true,
+                  }
+                : {}),
+            },
+          });
+        });
+      } catch (error) {
+        // retryOfRunId is unique: another delivery of this job already queued the retry.
+        if (isUniqueViolation(error)) return;
+        throw error;
+      }
+      try {
+        await deps.jobs.enqueue(runContinueJob(retry.id));
+      } catch (error) {
+        // Remove the retry so the job queue's own retry of this job can queue it again.
+        await deps.prisma.run.deleteMany({ where: { id: retry.id, status: "queued" } });
+        await deps.prisma.task.deleteMany({ where: { id: retry.taskId, status: "queued" } });
+        throw error;
       }
     },
 
@@ -7221,7 +7315,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { forceUnread: true },
             ).catch((returnError) => getLogger().error("bot message failure return", returnError));
           }
-          if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId) {
+          const retrying =
+            !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+          if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {
             await notifyRun(deps, run, {
               kind: "failure",
               title: `${bot.name} failed`,
@@ -7406,6 +7502,56 @@ async function runNotice(
     enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,
   };
+}
+
+function routineNextRunIsNear(nextRunAt: Date | null, retryAt: number): boolean {
+  return Boolean(nextRunAt && nextRunAt.getTime() - retryAt <= ROUTINE_RETRY_NEXT_RUN_WINDOW_MS);
+}
+
+/**
+ * Queue one later retry of a routine run that a transient model error stopped before it posted
+ * a message or called a tool. Effects are keyed to their run, so a retry after either could
+ * repeat them. Returns whether a retry was queued.
+ */
+async function scheduleRoutineRetry(
+  deps: ExecutorDeps,
+  run: {
+    id: string;
+    threadId: string;
+    trigger: string;
+    routineId: string | null;
+    retryOfRunId: string | null;
+  },
+  error: unknown,
+): Promise<boolean> {
+  if (
+    run.trigger !== "routine" ||
+    !run.routineId ||
+    run.retryOfRunId ||
+    !(error instanceof TransientModelError)
+  ) {
+    return false;
+  }
+  try {
+    const retryAt = Date.now() + ROUTINE_RETRY_DELAY_MS;
+    const [routine, toolCalls, botMessages] = await Promise.all([
+      deps.prisma.routine.findUnique({
+        where: { id: run.routineId },
+        select: { nextRunAt: true },
+      }),
+      deps.prisma.event.count({ where: { runId: run.id, type: "agent.tool.called" } }),
+      deps.prisma.message.count({
+        where: { threadId: run.threadId, runId: run.id, role: "bot" },
+      }),
+    ]);
+    if (!routine || toolCalls > 0 || botMessages > 0) return false;
+    if (routineNextRunIsNear(routine.nextRunAt, retryAt)) return false;
+    await deps.jobs.enqueue(routineRetryJob(run.id, new Date(retryAt)));
+    return true;
+  } catch (scheduleError) {
+    getLogger().error("routine retry schedule", scheduleError);
+    return false;
+  }
 }
 
 async function notifyRun(

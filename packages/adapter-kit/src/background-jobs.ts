@@ -12,6 +12,7 @@ const payloadSchemas = {
     routineId: z.string().min(1),
     scheduledFor: z.string().datetime({ offset: true }),
   }),
+  "routine.retry": z.object({ runId: z.string().min(1) }),
   "computer.update": z.object({ updateId: z.string().min(1) }),
   "computer.sleep": z.object({ computerId: z.string().min(1) }),
   "computer.control-expire": z.object({
@@ -77,6 +78,16 @@ export function routineWakeupJob(routineId: string, scheduledFor: Date): Backgro
     payload: { routineId, scheduledFor: scheduledFor.toISOString() },
     availableAt: scheduledFor,
     replaceKey: routineJobKey(routineId),
+  };
+}
+
+/** Keyed to the failed run, so a repeated enqueue keeps a single retry. */
+export function routineRetryJob(runId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "routine.retry",
+    payload: { runId },
+    availableAt,
+    replaceKey: `routine.retry:${runId}`,
   };
 }
 

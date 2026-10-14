@@ -640,6 +640,8 @@ model Run {
   sourceMessage        Message?         @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?         @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  // The failed routine run this run retries. Unique, so a run is retried at most once.
+  retryOfRunId         String?          @unique
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
