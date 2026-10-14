@@ -453,6 +453,7 @@ export interface AgentRunRequest {
   sourceMessageId?: string | null;
   prompt: string;
   instructions: string;
+  redactModelContext?: <T>(context: T) => T;
   history: Array<{
     id?: string;
     createdAt?: string;

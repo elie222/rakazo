@@ -1520,3 +1520,133 @@ class ChangeLatch {
     });
   }
 }
+
+export async function replaceThreadUserMessageSecret(
+  tx: Prisma.TransactionClient,
+  input: { threadId: string; botId: string; runId: string; value: string; replacement: string },
+): Promise<number> {
+  const { threadId, value, replacement } = input;
+  if (!value || replacement.includes(value)) throw new Error("Invalid secret replacement");
+  await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
+  const thread = await tx.thread.findUniqueOrThrow({ where: { id: threadId } });
+  const recent = await tx.message.findMany({
+    where: { threadId, role: "user" },
+    orderBy: { seq: "desc" },
+    take: 20,
+    select: { blocks: true },
+  });
+  if (
+    !recent.some((message) =>
+      (message.blocks as MessageBlock[]).some(
+        (block) => "text" in block && typeof block.text === "string" && block.text.includes(value),
+      ),
+    )
+  )
+    return 0;
+  const replace = (text: string) => text.split(value).join(replacement);
+  const replaceJson = (json: Prisma.JsonValue): Prisma.InputJsonValue => {
+    if (typeof json === "string") return replace(json);
+    if (Array.isArray(json)) return json.map((item) => (item === null ? null : replaceJson(item)));
+    if (json && typeof json === "object") {
+      return Object.fromEntries(
+        Object.entries(json).map(([key, item]) => [
+          replace(key),
+          item == null ? null : replaceJson(item),
+        ]),
+      );
+    }
+    return typeof json === "number" && String(json).includes(value)
+      ? replacement
+      : (json as number | boolean);
+  };
+  const messages = await tx.message.findMany({ where: { threadId } });
+  let count = 0;
+  for (const message of messages) {
+    const blocks = replaceJson(message.blocks);
+    const replyQuote = message.replyQuote === null ? null : replace(message.replyQuote);
+    if (
+      JSON.stringify(blocks) !== JSON.stringify(message.blocks) ||
+      replyQuote !== message.replyQuote
+    ) {
+      await tx.message.update({ where: { id: message.id }, data: { blocks, replyQuote } });
+      await appendEventInTransaction(tx, {
+        spaceId: thread.spaceId,
+        threadId,
+        botId: input.botId,
+        runId: input.runId,
+        type: "thread.message.updated",
+        payload: {
+          messageId: message.id,
+          role: message.role,
+          blocks,
+          replyToMessageId: message.replyToMessageId,
+          replyQuote,
+        },
+      });
+      if (message.role === "user" && JSON.stringify(blocks) !== JSON.stringify(message.blocks))
+        count += 1;
+    }
+  }
+  for (const event of await tx.event.findMany({ where: { threadId } })) {
+    const payload = replaceJson(event.payload);
+    if (JSON.stringify(payload) !== JSON.stringify(event.payload))
+      await tx.event.update({ where: { id: event.id }, data: { payload } });
+  }
+  for (const effect of await tx.externalEffect.findMany({ where: { run: { threadId } } })) {
+    const request = replaceJson(effect.request);
+    const result = effect.result === null ? undefined : replaceJson(effect.result);
+    if (
+      JSON.stringify(request) !== JSON.stringify(effect.request) ||
+      (result !== undefined && JSON.stringify(result) !== JSON.stringify(effect.result))
+    )
+      await tx.externalEffect.update({ where: { id: effect.id }, data: { request, result } });
+  }
+  await tx.$executeRaw`UPDATE tasks SET prompt = replace(prompt, ${value}, ${replacement})
+    WHERE "threadId" = ${threadId} AND strpos(prompt, ${value}) > 0`;
+  for (const run of await tx.run.findMany({
+    where: { threadId },
+    select: { id: true, checkpoint: true, error: true },
+  })) {
+    let checkpoint = run.checkpoint;
+    if (checkpoint !== null) {
+      try {
+        checkpoint = JSON.stringify(replaceJson(JSON.parse(checkpoint)));
+      } catch {
+        checkpoint = replace(checkpoint);
+      }
+    }
+    const error = run.error === null ? null : replace(run.error);
+    if (checkpoint !== run.checkpoint || error !== run.error)
+      await tx.run.update({ where: { id: run.id }, data: { checkpoint, error } });
+  }
+  await tx.thread.update({
+    where: { id: threadId },
+    data: {
+      historyCompactionSummary:
+        thread.historyCompactionSummary === null ? null : replace(thread.historyCompactionSummary),
+      historyCompactionGeneration: { increment: 1 },
+    },
+  });
+  const revised = await tx.$queryRaw<
+    Array<{ id: string; revision: number; content: string }>
+  >`UPDATE memory_documents SET content = replace(content, ${value}, ${replacement}),
+    path = replace(path, ${value}, ${replacement}),
+    revision = revision + 1 WHERE "spaceId" = ${thread.spaceId} AND "userId" = ${thread.userId}
+    AND ("botId" = ${input.botId} OR "botId" IS NULL) AND (strpos(content, ${value}) > 0 OR strpos(path, ${value}) > 0)
+    RETURNING id, revision, content`;
+  await tx.$executeRaw`UPDATE memory_revisions SET content = replace(content, ${value}, ${replacement})
+    WHERE "documentId" IN (SELECT id FROM memory_documents WHERE "spaceId" = ${thread.spaceId}
+      AND "userId" = ${thread.userId} AND ("botId" = ${input.botId} OR "botId" IS NULL))
+    AND strpos(content, ${value}) > 0`;
+  for (const document of revised)
+    await tx.memoryRevision.create({
+      data: {
+        documentId: document.id,
+        revision: document.revision,
+        content: document.content,
+        sourceThreadId: threadId,
+        sourceRunId: input.runId,
+      },
+    });
+  return count;
+}

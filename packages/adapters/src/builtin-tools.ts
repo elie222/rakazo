@@ -8,7 +8,7 @@ import {
   TICKET_STATUSES,
 } from "@rakazo/contracts";
 import { z } from "zod";
-import { allowPrivateHttpSecretOrigins } from "./bot-secrets.js";
+import { allowPrivateHttpSecretOrigins, SecurePastedSecretInput } from "./bot-secrets.js";
 
 // The owner flag can land in process.env after static imports run (loadRootEnv
 // parses .env once the entry module is already executing), so the model-facing
@@ -389,6 +389,12 @@ export const builtinAgentTools: ConnectorTool[] = [
     get inputSchema() {
       return secretAskToolSurface().inputSchema;
     },
+  },
+  {
+    name: "secure_pasted_secret",
+    description:
+      'Move a credential pasted in one of this chat\'s last 20 user messages into protected storage and replace every occurrence in this chat with "[saved as <name>]". Creates or replaces the named credential. Use auth {type:"command"} for a command environment variable, or {type:"login",origin:"https://example.test",field:"username"|"password"} for browser_act fill_secret on that origin. Never repeat the value or save it to memory.',
+    inputSchema: z.toJSONSchema(SecurePastedSecretInput, { io: "input" }),
   },
   {
     name: "list_secrets",

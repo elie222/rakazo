@@ -177,11 +177,13 @@ import {
   forgetBotSecret,
   listBotSecrets,
   loadBotCommandEnvironment,
+  loadBotSecretRedactions,
   normalizeSecretDestination,
   requestWithBotSecret,
   resolveLoginFill,
   resolveRequestSecretDestination,
   sameSecretDestination,
+  securePastedBotSecret,
   shellCommandEnvironment,
 } from "./bot-secrets.js";
 import { createBrowserProvider } from "./browser-provider-factory.js";
@@ -3434,6 +3436,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         runSecrets.push(...Object.values(agentEnvironment));
         // Encoded forms too: read_file redacts with these values before any shell command runs.
         runSecrets.push(...commandCredentialRedactions(initialBotCommandEnvironment));
+        runSecrets.push(...(await loadBotSecretRedactions(deps.prisma, deps.secretStore, run)));
         const agentEnvironmentInstruction = formatAgentEnvironmentInstruction({
           ...agentEnvironment,
           ...initialBotCommandEnvironment,
@@ -4037,6 +4040,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
 
         const mutatingEffectOccurrences = new Map<string, number>();
+        const registerRunSecrets = (values: string[]) => {
+          const additions = values.filter((value) => !runSecrets.includes(value));
+          if (additions.length === 0) return;
+          pendingProgress += progressRedactor.finish();
+          runSecrets.push(...additions);
+          progressRedactor = createStreamingRedactor(runSecrets);
+        };
         const consumedEffectIds = new Set<string>();
         const nextMutatingEffectOccurrence = (toolName: string, args: Record<string, unknown>) => {
           const fingerprint = toolEffectIdempotencyKey(runId, toolName, args);
@@ -4061,6 +4071,53 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }
+          if (name === "secure_pasted_secret") {
+            const result = await securePastedBotSecret({
+              prisma: deps.prisma,
+              secretStore: deps.secretStore,
+              scope: run,
+              threadId: thread.id,
+              runId,
+              args,
+              registerRedactions: registerRunSecrets,
+            });
+            if (!("ok" in result)) return result;
+            const updated = await deps.prisma.thread.findUniqueOrThrow({
+              where: { id: thread.id },
+              select: { nextEventSeq: true, historyCompactionGeneration: true },
+            });
+            await deps.events.notify(thread.id, updated.nextEventSeq - 1);
+            if (semanticMemory) {
+              try {
+                const purged = await semanticMemory.purgeHistory(
+                  {
+                    botId: bot.id,
+                    generations: Array.from(
+                      { length: updated.historyCompactionGeneration },
+                      (_, index) => index,
+                    ),
+                  },
+                  context,
+                );
+                if (!purged.ok)
+                  return {
+                    ...result,
+                    error: "Credential saved; earlier semantic history could not be removed.",
+                  };
+              } catch {
+                return {
+                  ...result,
+                  error: "Credential saved; earlier semantic history could not be removed.",
+                };
+              }
+            }
+            return result;
+          }
+          if (
+            ["remember", "save_shared_memory", "save_memory"].includes(name) &&
+            JSON.stringify(args) !== JSON.stringify(redactConnectorPayload(args, runSecrets))
+          )
+            return { error: "Protected credentials cannot be saved to memory." };
           if (PAGE_BROWSER_TOOL_NAMES.has(name) && !pageBrowserAllowed) {
             return { error: "Page browser is unavailable on this computer." };
           }
@@ -4632,13 +4689,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               : Promise.resolve(true);
           const finish = async (result: unknown) =>
             (await persistEffectResult(result)) ? result : uncertainEffectResult(name);
-          const registerRunSecrets = (values: string[]) => {
-            const additions = values.filter((value) => !runSecrets.includes(value));
-            if (additions.length === 0) return;
-            pendingProgress += progressRedactor.finish();
-            runSecrets.push(...additions);
-            progressRedactor = createStreamingRedactor(runSecrets);
-          };
           const appendComputerCommand = (payload: ComputerCommand) =>
             deps.events
               .append({
@@ -6504,6 +6554,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 });
               },
               prompt,
+              redactModelContext: <T>(value: T): T =>
+                redactConnectorPayload(value, runSecrets) as T,
               contextStrategy,
               instructions: userTurnInstructions({
                 botInstructions: runIdentityInstruction(bot, run.trigger),
@@ -7042,8 +7094,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 {
                   scope: mem.scope,
                   botId: mem.scope === "bot" ? bot.id : undefined,
-                  path: mem.path,
-                  content: mem.content,
+                  path: redactSecrets(mem.path, runSecrets),
+                  content: redactSecrets(mem.content, runSecrets),
                   sourceRunId: runId,
                   sourceThreadId: thread.id,
                 },
@@ -7676,6 +7728,15 @@ function pageWorkClause(
 
 function secretGuidance(disabled?: ReadonlySet<string>): string[] {
   const clauses: string[] = [];
+  if (builtinOffered(disabled, "secure_pasted_secret")) {
+    const uses = [
+      builtinOffered(disabled, "browser_act") ? "browser_act fill_secret" : undefined,
+      builtinOffered(disabled, "shell") ? "its command environment variable" : undefined,
+    ].filter(Boolean);
+    clauses.push(
+      `When the user pastes a credential in chat, call secure_pasted_secret right away${uses.length ? `, then use the saved name through ${uses.join(" or ")}` : ""}. Never repeat the value or save it to memory.`,
+    );
+  }
   if (builtinOffered(disabled, "request_secret")) {
     const fill = builtinOffered(disabled, "browser_act")
       ? "; fill it with browser_act fill_secret, which only works on the saved site"

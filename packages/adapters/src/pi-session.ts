@@ -1,5 +1,5 @@
 import type { Dirent } from "node:fs";
-import { readdir, rm, stat } from "node:fs/promises";
+import { readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type AgentMessage, type Branch, JsonlSessionRepo } from "@earendil-works/pi-agent-core";
 import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core/harness/context";
@@ -135,6 +135,7 @@ export interface PiSessionStart {
   thinkingLevel: string;
   systemPrompt: string;
   initialMessages: readonly AgentMessage[];
+  redact?: <T>(value: T) => T;
 }
 
 export interface PiSessionHandle {
@@ -143,6 +144,10 @@ export interface PiSessionHandle {
 
 export interface PiSessionRecorder {
   start(input: PiSessionStart): Promise<PiSessionHandle>;
+  redactThread(
+    input: Pick<PiSessionStart, "userId" | "botId" | "threadId">,
+    redact: <T>(value: T) => T,
+  ): Promise<void>;
 }
 
 /**
@@ -154,6 +159,46 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
   private readonly cwd: string;
   private readonly sessionsRoot: string;
   private readonly fs: NodeExecutionEnv;
+  private pending: Promise<unknown> = Promise.resolve();
+
+  private serialize(write: () => Promise<unknown>): Promise<unknown> {
+    const next = this.pending.then(write);
+    this.pending = next.catch(() => undefined);
+    return next;
+  }
+
+  async redactThread(
+    input: Pick<PiSessionStart, "userId" | "botId" | "threadId">,
+    redact: <T>(value: T) => T,
+  ): Promise<void> {
+    await this.serialize(async () => {
+      const files: PiSessionFile[] = [];
+      await collectPiSessionFiles(
+        piSessionBotRoot(this.sessionsRoot, input.userId, input.botId),
+        files,
+      );
+      for (const file of files) {
+        const records = (await readFile(file.path, "utf8"))
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => JSON.parse(line));
+        if (
+          !records
+            .flat()
+            .some(
+              (record) =>
+                record.customType === "rakazo_context" &&
+                record.data?.rakazoThreadId === input.threadId,
+            )
+        )
+          continue;
+        await writeFile(
+          file.path,
+          `${records.map((record) => JSON.stringify(redact(record))).join("\n")}\n`,
+        );
+      }
+    });
+  }
 
   constructor(sessionsRoot: string, cwd = process.cwd()) {
     this.cwd = path.resolve(cwd);
@@ -186,6 +231,8 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
     const handle = new BestEffortPiSession(
       await session.createBranch("main", null, BACKGROUND_CONTEXT),
       input.runId,
+      (write) => this.serialize(write),
+      input.redact,
     );
 
     await handle.appendCustomEntry("rakazo_context", {
@@ -213,11 +260,15 @@ class BestEffortPiSession implements PiSessionHandle {
   constructor(
     private readonly session: Branch,
     private readonly runId: string,
+    private readonly serialize: (write: () => Promise<unknown>) => Promise<unknown>,
+    private readonly redact?: <T>(value: T) => T,
   ) {}
 
   async appendMessage(message: AgentMessage): Promise<void> {
     try {
-      await this.session.appendMessage(message, BACKGROUND_CONTEXT);
+      await this.serialize(() =>
+        this.session.appendMessage(this.redact?.(message) ?? message, BACKGROUND_CONTEXT),
+      );
     } catch (error) {
       this.logFailure("message", error);
     }
@@ -225,7 +276,9 @@ class BestEffortPiSession implements PiSessionHandle {
 
   async appendCustomEntry(customType: string, data: Record<string, string>): Promise<void> {
     try {
-      await this.session.appendCustomEntry(customType, data, BACKGROUND_CONTEXT);
+      await this.serialize(() =>
+        this.session.appendCustomEntry(customType, this.redact?.(data) ?? data, BACKGROUND_CONTEXT),
+      );
     } catch (error) {
       this.logFailure("context", error);
     }

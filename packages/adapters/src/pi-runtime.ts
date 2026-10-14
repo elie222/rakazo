@@ -215,6 +215,21 @@ export class PiAgentRuntime implements AgentRuntime {
       ? AbortSignal.any([controller.signal, context.signal])
       : controller.signal;
     const queue = createQueue();
+    const executeTool = request.executeTool;
+    if (executeTool && this.sessionRecorder && context?.userId && request.redactModelContext) {
+      const recorder = this.sessionRecorder;
+      const redact = request.redactModelContext;
+      const input = { threadId: request.threadId, botId: request.botId, userId: context.userId };
+      request = {
+        ...request,
+        executeTool: async (...args) => {
+          const result = await executeTool(...args);
+          if (args[0] === "secure_pasted_secret" && (result as { ok?: boolean })?.ok)
+            await recorder.redactThread(input, redact);
+          return result;
+        },
+      };
+    }
 
     const work = (async () => {
       let trackedBudget: ToolCallBudget | undefined;
@@ -298,6 +313,7 @@ export class PiAgentRuntime implements AgentRuntime {
               thinkingLevel,
               systemPrompt,
               initialMessages: history,
+              redact: request.redactModelContext,
             });
           } catch (error) {
             getLogger().warn("Pi session recording could not start", {
@@ -312,7 +328,8 @@ export class PiAgentRuntime implements AgentRuntime {
           imageTokens: estimatePiImageTokens,
         });
         const usageHooks = {
-          prepareContext: contextPolicy.prepareContext,
+          prepareContext: (ctx: Context, model: Model<Api>) =>
+            contextPolicy.prepareContext(request.redactModelContext?.(ctx) ?? ctx, model),
           imageTokens: estimatePiImageTokens,
           recordUsage: request.onUsage,
           onUsage: (usage: AgentUsage) => {
@@ -357,7 +374,8 @@ export class PiAgentRuntime implements AgentRuntime {
                   { operationKind: request.usageOperationKind ?? "answer" },
                   {
                     ...usageHooks,
-                    prepareContext: (ctx, m) => contextPolicy.prepareContext(ctx, m),
+                    prepareContext: (ctx, m) =>
+                      contextPolicy.prepareContext(request.redactModelContext?.(ctx) ?? ctx, m),
                     onProviderError: (message) => providerFailures.add(message.content),
                   },
                 ),
@@ -1036,6 +1054,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     label: tool.name,
     description: tool.description,
     parameters: parametersFor(tool),
+    executionMode: tool.name === "secure_pasted_secret" ? "sequential" : undefined,
     prepareArguments: (args: unknown) => {
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       if (tool.name === "destination.write") {
@@ -1422,7 +1441,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
             host.modelCallObserver,
             { operationKind: "subagent", agentId },
             {
-              prepareContext: contextPolicy.prepareContext,
+              prepareContext: (ctx, m) =>
+                contextPolicy.prepareContext(host.request.redactModelContext?.(ctx) ?? ctx, m),
               imageTokens: estimatePiImageTokens,
               recordUsage: host.request.onUsage,
               onProviderError: (message) => providerFailures.add(message.content),
