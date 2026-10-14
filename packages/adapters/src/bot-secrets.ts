@@ -125,7 +125,10 @@ async function preparePastedBotSecret(input: {
       StoredLoginSecretValue.parse({ ...login, [secret.auth.field]: secret.value }),
     );
   }
-  return { destination, prepared: await prepareBotSecret({ ...input, destination, plaintext }) };
+  return {
+    destination,
+    prepared: await prepareStoredBotSecret({ ...input, destination, plaintext }),
+  };
 }
 
 export async function loadBotSecretRedactions(
@@ -508,6 +511,13 @@ export async function prepareBotSecret(input: {
   destination: BotSecretDestination;
   plaintext: string;
 }) {
+  if (input.destination.auth.type === "login") {
+    LoginSecretValue.parse(JSON.parse(input.plaintext));
+  }
+  return prepareStoredBotSecret(input);
+}
+
+async function prepareStoredBotSecret(input: Parameters<typeof prepareBotSecret>[0]) {
   const { prisma, secretStore, scope, plaintext } = input;
   if (!plaintext || plaintext.length > 16_384) throw new Error("Invalid credential length");
   const destination = normalizeSecretDestination(input.destination);

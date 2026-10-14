@@ -18,6 +18,7 @@ export const BUILTIN_TOOL_NAMES = [
   "ask_user",
   "message_user",
   "request_secret",
+  "secure_pasted_secret",
   "list_secrets",
   "secret_request",
   "forget_secret",
