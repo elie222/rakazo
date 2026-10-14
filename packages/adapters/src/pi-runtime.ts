@@ -2310,6 +2310,10 @@ function errorFacts(value: unknown) {
   return { text: text.join(" ").toLowerCase(), statuses };
 }
 
+function isProviderTimeout(error: unknown): boolean {
+  return /timed? out|timeout/.test(errorFacts(error).text);
+}
+
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
@@ -2569,7 +2573,9 @@ function fallbackAwareModelStream(
                 break;
               }
               firstRetryableError ??= event;
-              const delay = MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
+              const delay = isProviderTimeout(event.error)
+                ? undefined
+                : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
               if (delay !== undefined) {
                 retries += 1;
                 await abortableDelay(delay, signal);

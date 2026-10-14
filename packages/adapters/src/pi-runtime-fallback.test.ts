@@ -284,6 +284,15 @@ describe("Pi runtime transient model retries", () => {
     expect(providerState.delay.mock.calls.map(([delay]) => delay)).toEqual([2_000, 8_000, 20_000]);
   });
 
+  it("does not back off after a provider timeout, which already spent its request budget", async () => {
+    providerState.stream.mockImplementation(() =>
+      stream(primary, message(primary, [], "error", "Request timed out.")),
+    );
+    await expect(run(request())).rejects.toThrow("Request timed out.");
+    expect(providerState.stream).toHaveBeenCalledTimes(1);
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
   it("surfaces a non-retryable error encountered after a transient failure", async () => {
     providerState.stream
       .mockImplementationOnce(() => stream(primary, message(primary, [], "error", "terminated")))
