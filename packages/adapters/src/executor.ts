@@ -7383,7 +7383,12 @@ export async function runNotificationsEnabled(
 async function runNotice(
   prisma: PrismaClient,
   run: { spaceId: string; userId: string; botId: string; threadId: string },
+  routineId?: string | null,
 ): Promise<{ enabled: boolean; groupId: string | null }> {
+  // A routine carries its own notify setting, which decides on its failures.
+  const routine = routineId
+    ? await prisma.routine.findUnique({ where: { id: routineId }, select: { notify: true } })
+    : null;
   const source = await prisma.run.findFirst({
     where: {
       botId: run.botId,
@@ -7398,14 +7403,21 @@ async function runNotice(
   });
   if (!source) return { enabled: false, groupId: null };
   return {
-    enabled: Boolean(source.thread.groupId || source.bot.notifyOnFinish),
+    enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,
   };
 }
 
 async function notifyRun(
   deps: ExecutorDeps,
-  run: { spaceId: string; userId: string; botId: string; threadId: string; trigger: string },
+  run: {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    trigger: string;
+    routineId?: string | null;
+  },
   message: NotificationMessage,
 ) {
   if (
@@ -7413,7 +7425,8 @@ async function notifyRun(
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
-  const notice = await runNotice(deps.prisma, run).catch((error) => {
+  const routineId = message.kind === "failure" ? run.routineId : null;
+  const notice = await runNotice(deps.prisma, run, routineId).catch((error) => {
     getLogger().error("notification preference lookup", error);
     return null;
   });
