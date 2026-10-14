@@ -25,6 +25,7 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  localStorage.clear();
 });
 
 const bob: ComposerMention = { kind: "bot", id: "bot-2", name: "Bob" };
@@ -70,7 +71,6 @@ function renderComposer(
     onStop: async () => {},
     draftKey: "bot:bot-1",
     enterToSend: true,
-    onToggleEnterToSend: () => {},
     mentionTargets: [bob],
     agentSkills: [summarize],
     ...overrides,
@@ -349,21 +349,19 @@ describe("Composer", () => {
     const first = renderComposer(onSend, { draftKey });
     type(first, "unsent thought");
     expect(window.localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("unsent thought");
+    act(() => root?.unmount());
+    container?.remove();
     const second = renderComposer(onSend, { draftKey });
     expect(second.value).toBe("unsent thought");
   });
 
   it("keeps Enter as newline and Ctrl+Enter as send when enter-to-send is off", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
-    const onToggleEnterToSend = vi.fn();
     const textarea = renderComposer(onSend, {
       draftKey: "bot:enter-toggle-test",
       enterToSend: false,
-      onToggleEnterToSend,
     });
-    const toggle = container?.querySelector('[data-testid="composer-enter-to-send-toggle"]');
-    if (!(toggle instanceof HTMLElement)) throw new Error("enter-to-send toggle not found");
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(container?.querySelector('[data-testid="composer-enter-to-send-toggle"]')).toBeNull();
     type(textarea, "line one");
     pressEnter(textarea);
     await act(async () => {});
@@ -375,9 +373,48 @@ describe("Composer", () => {
     });
     await act(async () => {});
     expect(onSend).toHaveBeenCalledTimes(1);
-    act(() => {
-      toggle.click();
-    });
-    expect(onToggleEnterToSend).toHaveBeenCalledTimes(1);
   });
 });
+
+it.each([true, false])(
+  "keeps a pending draft recoverable across unmount (accepted: %s)",
+  async (accepted) => {
+    let finishSend = (_accepted: boolean) => {};
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+    );
+    const draftKey = "bot:pending-draft";
+    const textarea = renderComposer(onSend, { draftKey });
+    type(textarea, "pending text");
+    pressEnter(textarea);
+    expect(textarea.value).toBe("");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("pending text");
+    act(() => root?.unmount());
+    container?.remove();
+    await act(async () => finishSend(accepted));
+    const restored = renderComposer(vi.fn(), { draftKey });
+    expect(restored.value).toBe(accepted ? "" : "pending text");
+  },
+);
+
+it.each([true, false])(
+  "preserves newer stored edits when a send settles (accepted: %s)",
+  async (accepted) => {
+    let finishSend = (_accepted: boolean) => {};
+    const textarea = renderComposer(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+    );
+    type(textarea, "submitted text");
+    pressEnter(textarea);
+    type(textarea, "newer text");
+    await act(async () => finishSend(accepted));
+    expect(textarea.value).toBe("newer text");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("newer text");
+  },
+);

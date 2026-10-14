@@ -153,3 +153,18 @@ describe("resolveMentionPickerKey", () => {
     ).toEqual({ type: "complete", index: 0 });
   });
 });
+
+it.each(["ctrlKey", "metaKey"] as const)(
+  "sends with %s+Enter while the picker is open",
+  (modifier) => {
+    expect(
+      resolveMentionPickerKey({
+        key: "Enter",
+        [modifier]: true,
+        optionCount: 2,
+        highlightedIndex: 0,
+        enterToSend: false,
+      }),
+    ).toEqual({ type: "send" });
+  },
+);

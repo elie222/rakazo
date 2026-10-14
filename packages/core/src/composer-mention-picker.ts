@@ -51,6 +51,8 @@ export function resolveMentionPickerKey(input: {
   } = input;
   const highlightedIndex = clampMentionHighlightIndex(input.highlightedIndex, optionCount);
 
+  if (key === "Enter" && !shiftKey && (ctrlKey || metaKey)) return { type: "send" };
+
   if (optionCount > 0) {
     if (key === "ArrowDown") {
       return { type: "move", index: wrapMentionHighlightIndex(highlightedIndex + 1, optionCount) };

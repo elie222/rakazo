@@ -93,7 +93,6 @@ import {
   CircleAlert,
   Clock,
   Copy,
-  CornerDownLeft,
   FolderOpen,
   Gauge,
   LayoutGrid,
@@ -185,7 +184,6 @@ import { newClientId } from "../lib/client-id";
 import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
 import {
   getComposerEnterToSend,
-  setComposerEnterToSend,
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
 import {
@@ -465,9 +463,6 @@ export function ShellPage() {
     getComposerEnterToSend,
     () => true,
   );
-  const toggleEnterToSend = useCallback(() => {
-    setComposerEnterToSend(!getComposerEnterToSend());
-  }, []);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -3720,7 +3715,6 @@ export function ShellPage() {
             key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
             draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
             enterToSend={enterToSend}
-            onToggleEnterToSend={toggleEnterToSend}
             activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
             running={composerRunning}
             disabled={Boolean(recordingSkill)}
@@ -5433,7 +5427,6 @@ export const Composer = memo(function Composer({
   onSlashAction,
   draftKey,
   enterToSend,
-  onToggleEnterToSend,
 }: {
   activeName?: string;
   running: boolean;
@@ -5463,7 +5456,6 @@ export const Composer = memo(function Composer({
   onSlashAction?: (action: SlashActionId) => void;
   draftKey: string;
   enterToSend: boolean;
-  onToggleEnterToSend: () => void;
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
@@ -5478,10 +5470,13 @@ export const Composer = memo(function Composer({
   });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
+  const editRevision = useRef(0);
+  const pendingDraftRevision = useRef<number | null>(null);
   useEffect(() => {
+    // Keep the submitted text recoverable while the optimistic field is empty.
+    if (draft === "" && pendingDraftRevision.current === editRevision.current) return;
     writeComposerDraft(draftKey, draft);
   }, [draftKey, draft]);
-  const editRevision = useRef(0);
   const retryNonce = useRef<string | null>(null);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
@@ -5719,6 +5714,7 @@ export const Composer = memo(function Composer({
     const clientNonce = retryNonce.current ?? newClientNonce();
     retryNonce.current = null;
     const text = serializeComposerPrompt(draft, selectedSkill, selectedMentions);
+    pendingDraftRevision.current = revision;
     setDraft("");
     setMentionQuery(null);
     setMentionHighlightIndex(0);
@@ -5727,7 +5723,12 @@ export const Composer = memo(function Composer({
     const mentions = selectedMentions;
     setSelectedMentions([]);
     try {
-      if ((await onSend(text, mentions, clientNonce)) !== false) return;
+      if ((await onSend(text, mentions, clientNonce)) !== false) {
+        if (editRevision.current === revision && readComposerDraft(draftKey) === draft) {
+          writeComposerDraft(draftKey, "");
+        }
+        return;
+      }
     } catch {
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
       return;
@@ -6237,27 +6238,6 @@ export const Composer = memo(function Composer({
             expanded ? "row-start-2" : ""
           }`}
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={
-              enterToSend
-                ? t`Enter sends the message (turn off)`
-                : t`Enter adds a new line (turn on to send)`
-            }
-            title={enterToSend ? t`Enter sends the message` : t`Enter adds a new line`}
-            aria-pressed={enterToSend}
-            data-testid="composer-enter-to-send-toggle"
-            disabled={disabled}
-            onClick={onToggleEnterToSend}
-            className={`size-8 rounded-full shadow-sm transition-colors ${
-              enterToSend
-                ? "bg-muted text-foreground hover:bg-accent"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground"
-            }`}
-          >
-            <CornerDownLeft size={16} strokeWidth={enterToSend ? 2.2 : 1.8} />
-          </Button>
           {onVoice && draft.trim().length === 0 ? (
             <Button
               variant="outline"

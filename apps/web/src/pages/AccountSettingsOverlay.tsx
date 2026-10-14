@@ -17,6 +17,11 @@ import {
   setBotsSidebarDensity,
   subscribeBotsSidebarDensity,
 } from "../lib/bots-sidebar-density-pref";
+import {
+  getComposerEnterToSend,
+  setComposerEnterToSend,
+  subscribeComposerEnterToSend,
+} from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
 import {
   getRemoteImagesPreference,
@@ -72,6 +77,12 @@ export function GeneralSettingsPanels({
     () => getResponseStreamingPreference() === "on",
   );
   const streamRepliesId = useId();
+  const enterToSend = useSyncExternalStore(
+    subscribeComposerEnterToSend,
+    getComposerEnterToSend,
+    () => true,
+  );
+  const enterToSendId = useId();
   const [showToolActivity, setShowToolActivity] = useState(
     () => getToolActivityPreference() === "on",
   );
@@ -233,6 +244,18 @@ export function GeneralSettingsPanels({
           </span>
         </summary>
         <div className="border-t border-border px-4 pb-5">
+          <div className="flex items-start gap-3 pt-5">
+            <Switch
+              id={enterToSendId}
+              data-testid="composer-enter-to-send-toggle"
+              className="mt-0.5"
+              checked={enterToSend}
+              onCheckedChange={(checked) => setComposerEnterToSend(checked)}
+            />
+            <Label htmlFor={enterToSendId} className="text-[14px] font-normal text-foreground/75">
+              <Trans>Send with Enter</Trans>
+            </Label>
+          </div>
           <div className="flex items-start gap-3 pt-5">
             <Switch
               id={streamRepliesId}

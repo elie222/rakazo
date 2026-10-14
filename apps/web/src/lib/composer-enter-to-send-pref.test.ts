@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type * as ComposerEnterToSendPref from "./composer-enter-to-send-pref.js";
 
 import {
   COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
@@ -6,7 +7,7 @@ import {
   normalizeComposerEnterToSend,
 } from "./composer-enter-to-send-pref.js";
 
-let mod: typeof import("./composer-enter-to-send-pref.js");
+let mod: typeof ComposerEnterToSendPref;
 
 function memoryStorage(initial: Record<string, string> = {}) {
   const map = new Map<string, string>(Object.entries(initial));

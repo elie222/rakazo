@@ -3972,6 +3972,10 @@ msgstr "L'envoyer"
 msgid "Send reset link"
 msgstr "Envoyer le lien de réinitialisation"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Send with Enter"
+msgstr "Envoyer avec Entrée"
+
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Envoi en cours…"
