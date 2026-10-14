@@ -6456,6 +6456,27 @@ async function releaseComputerControl(
     if (expectedRunId !== undefined) return;
     throw new IsolationError();
   }
+  const unopenedTakeover =
+    expectedRunId !== undefined &&
+    bot.computer.controlHolder === "none" &&
+    bot.computer.controlBotId === null &&
+    bot.computer.controlLeaseId === null &&
+    bot.computer.controlRunId === expectedRunId;
+  if (unopenedTakeover) {
+    const released = await deps.events.finalizeComputerControlRelease({
+      spaceId: actor.spaceId,
+      computerId: bot.computer.id,
+      botId: bot.id,
+      runId: expectedRunId,
+      leaseId: null,
+      holder: "bot",
+      reason: reason ?? "released",
+    });
+    if (!released) return;
+    await enqueueTakeoverContinuation(deps.jobs, released.runId);
+    scheduleComputerSleep(deps.jobs, bot.computer.id);
+    return;
+  }
   const controlBotId = bot.computer.controlBotId;
   const controlLeaseId = bot.computer.controlLeaseId;
   if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;

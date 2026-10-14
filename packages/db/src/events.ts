@@ -79,7 +79,7 @@ export interface FinalizeComputerControlReleaseInput {
   computerId: string;
   botId: string;
   runId: string | null;
-  leaseId: string;
+  leaseId: string | null;
   holder: "bot" | "none";
   reason: "done" | "expired" | "released" | "skipped";
 }
@@ -1034,15 +1034,25 @@ export async function finalizeComputerControlRelease(
   input: FinalizeComputerControlReleaseInput,
   realtime?: RealtimeFanout,
 ): Promise<FinalizeComputerControlReleaseResult | false> {
+  if (!input.leaseId && !input.runId) return false;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
-      where: {
-        id: input.computerId,
-        spaceId: input.spaceId,
-        controlBotId: input.botId,
-        controlLeaseId: input.leaseId,
-        controlRunId: input.runId,
-      },
+      where: input.leaseId
+        ? {
+            id: input.computerId,
+            spaceId: input.spaceId,
+            controlBotId: input.botId,
+            controlLeaseId: input.leaseId,
+            controlRunId: input.runId,
+          }
+        : {
+            id: input.computerId,
+            spaceId: input.spaceId,
+            controlHolder: "none",
+            controlBotId: null,
+            controlLeaseId: null,
+            controlRunId: input.runId,
+          },
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,

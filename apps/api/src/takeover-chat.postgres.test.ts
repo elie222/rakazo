@@ -55,7 +55,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
   });
 
-  async function setup() {
+  async function setup(mode: "opened" | "unopened" = "opened") {
     const id = randomUUID();
     organizations.push(id);
     await prisma.user.create({
@@ -118,19 +118,49 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         signal: new AbortController().signal,
       },
     );
-    const leaseId = randomUUID();
+    const events = createThreadEvents(prisma);
     await prisma.computer.update({
       where: { id: computer.id },
-      data: {
-        providerRef: ref.id,
-        controlHolder: "user",
-        controlBotId: bot.id,
-        controlRunId: run.id,
-        controlLeaseId: leaseId,
-        controlLeaseExpiresAt: new Date(Date.now() + 60_000),
-      },
+      data: { providerRef: ref.id },
     });
-    const events = createThreadEvents(prisma);
+    let leaseId: string | null = null;
+    if (mode === "opened") {
+      leaseId = randomUUID();
+      await prisma.computer.update({
+        where: { id: computer.id },
+        data: {
+          controlHolder: "user",
+          controlBotId: bot.id,
+          controlRunId: run.id,
+          controlLeaseId: leaseId,
+          controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+    } else {
+      const attempt = await prisma.attempt.create({
+        data: { runId: run.id, fence: 1, status: "running" },
+      });
+      await prisma.run.update({
+        where: { id: run.id },
+        data: {
+          status: "running",
+          leaseOwner: "fixture-worker",
+          leaseFence: 1,
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      });
+      await events.pauseRunForTakeover({
+        spaceId: id,
+        threadId: thread.id,
+        botId: bot.id,
+        runId: run.id,
+        attemptId: attempt.id,
+        leaseOwner: "fixture-worker",
+        leaseFence: 1,
+        reason: "Enter the fixture code",
+        computerId: computer.id,
+      });
+    }
     const queuedStates: Array<{ status: string; checkpoint: string | null }> = [];
     const enqueue = vi.fn<JobPublisher["enqueue"]>(async (job) => {
       if (job.name === "run.continue") {
@@ -284,6 +314,87 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     expect(await prisma.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
     await executor.continueRun(fixture.run.id, "late-worker");
     expect(requests).toHaveLength(1);
+  });
+
+  it("releases an unopened takeover and restores tools for the steered continuation", async () => {
+    const fixture = await setup("unopened");
+    expect(await fixture.control()).toMatchObject({
+      controlHolder: "none",
+      controlBotId: null,
+      controlLeaseId: null,
+      controlRunId: fixture.run.id,
+    });
+    const response = await fixture.send({ clientNonce: "unopened-reply" });
+    expect(response.status).toBe(200);
+    const { json: sent } = await response.json();
+    const message = await prisma.message.findUniqueOrThrow({
+      where: {
+        threadId_clientNonce: { threadId: fixture.thread.id, clientNonce: "unopened-reply" },
+      },
+    });
+    expect(sent.runId).toBe(fixture.run.id);
+    expect(await fixture.control()).toMatchObject({
+      controlHolder: "bot",
+      controlBotId: null,
+      controlLeaseId: null,
+      controlRunId: null,
+    });
+    expect(
+      await prisma.event.findMany({
+        where: { runId: fixture.run.id, type: "computer.takeover.released" },
+      }),
+    ).toMatchObject([{ payload: { holder: "bot", reason: "done", leaseId: null } }]);
+    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "queued",
+      checkpoint: "takeover",
+    });
+
+    const requests: AgentRunRequest[] = [];
+    const runtime = {
+      describe: () => ({
+        ...new ScriptedAgentRuntime().describe(),
+        capabilities: { streaming: true, compaction: false, tools: true, scripted: false },
+      }),
+      abort: async () => undefined,
+      async *run(request: AgentRunRequest) {
+        requests.push(request);
+        expect(request.resumeFromCheckpoint).toBe("takeover");
+        expect(request.instructions).not.toContain("The user has the screen");
+        expect(request.tools.map((tool) => tool.name)).toEqual(
+          expect.arrayContaining(["computer_act", "browser_navigate"]),
+        );
+        expect(await request.claimSteering!([])).toMatchObject([
+          { messageId: message.id, text: "The fixture code is 1234." },
+        ]);
+        yield { type: "done" as const, text: "Fixture completed." };
+      },
+    };
+    const executor = createRunExecutor({
+      prisma,
+      events: fixture.events,
+      jobs: fixture.jobs,
+      sandbox: fixture.sandbox,
+      browser: new FakeBrowserProvider(),
+      runtime,
+      home: new LocalAgentHomeStore(dataDir),
+      memory: new MarkdownMemoryStore(prisma),
+      memoryProviders: { resolve: async () => null },
+      secretStore: new EncryptedSecretStore("fake-fixture-encryption-key"),
+      secrets: [],
+      deploymentModelKey: "fake-fixture-model-key",
+      deploymentModelConfigured: true,
+      dataDir,
+    });
+    await Promise.all([
+      executor.continueRun(fixture.run.id, "steering-worker"),
+      executor.continueRun(fixture.run.id, "release-worker"),
+    ]);
+    expect(await prisma.run.findUniqueOrThrow({ where: { id: fixture.run.id } })).toMatchObject({
+      status: "completed",
+      error: null,
+    });
+    expect(requests).toHaveLength(1);
+    expect(await prisma.steeringMessage.count({ where: { messageId: message.id } })).toBe(0);
   });
 
   it.each(["none", "other-run", "other-bot", "idle"])(
