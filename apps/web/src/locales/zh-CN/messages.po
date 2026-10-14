@@ -64,6 +64,12 @@ msgstr ""
 msgid "{0} handling"
 msgstr ""
 
+#. placeholder {0}: bot.name
+#. placeholder {0}: ringing.bot.name
+#: src/components/call/IncomingCall.tsx
+msgid "{0} is calling you"
+msgstr ""
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -132,10 +138,18 @@ msgstr "{days} 天前"
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr ""
 
+#: src/components/call/VoiceChatCard.tsx
+msgid "{hours} h {minutes} min"
+msgstr ""
+
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
 msgid "{hours}h ago"
 msgstr "{hours} 小时前"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "{minutes} min {rest} s"
+msgstr ""
 
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
@@ -160,6 +174,10 @@ msgstr "{name} 已停止"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "剩余 {remaining} · Bot 只看不操作"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "{rest} s"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -486,6 +504,11 @@ msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
 msgid "Answer"
 msgstr "回答"
 
+#: src/components/call/IncomingCall.tsx
+msgctxt "incoming call"
+msgid "Answer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "已回答"
@@ -785,6 +808,31 @@ msgstr ""
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
 msgstr "内置"
+
+#: src/pages/Shell.tsx
+msgid "Call"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Call back"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Call with {0}"
+msgstr ""
+
+#: src/components/call/IncomingCall.tsx
+msgid "Calling you"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Calling you…"
+msgstr ""
+
+#: src/components/call/CallCard.tsx
+msgid "Calling…"
+msgstr ""
 
 #: src/App.tsx
 msgid "Can't reach the server."
@@ -1656,6 +1704,7 @@ msgstr ""
 msgid "Could not send reset email"
 msgstr "无法发送重置邮件"
 
+#: src/components/call/IncomingCall.tsx
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "无法发送"
@@ -1831,6 +1880,7 @@ msgstr "日常工作"
 msgid "days"
 msgstr "天"
 
+#: src/components/call/IncomingCall.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Decline"
 msgstr "拒绝"
@@ -1952,6 +2002,10 @@ msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Discard recording"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -2396,6 +2450,14 @@ msgstr "高"
 msgid "High"
 msgstr ""
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk, release to send"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
 msgstr "小时"
@@ -2448,6 +2510,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr "收件箱和邮件"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Incoming call"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Inherit default"
@@ -2571,6 +2637,15 @@ msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
+msgstr ""
+
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Listening"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Listening…"
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -2837,6 +2912,10 @@ msgstr "最小化"
 msgid "Minimize bots"
 msgstr ""
 
+#: src/components/call/CallCard.tsx
+msgid "Minimize call"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "minute"
 msgstr "分钟"
@@ -2844,6 +2923,10 @@ msgstr "分钟"
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "分钟"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Missed call"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -2928,6 +3011,11 @@ msgstr "移动到"
 msgid "Mute"
 msgstr "静音"
 
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Muted"
+msgstr ""
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
@@ -3004,6 +3092,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr "还没有 Agent 连接。"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "No answer"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
@@ -3179,11 +3271,6 @@ msgstr "OAuth 连接失败"
 msgid "OAuth expired"
 msgstr ""
 
-#. placeholder {0}: call.botName
-#: src/components/call/CallCard.tsx
-msgid "On a call with {0}"
-msgstr "正在与 {0} 通话"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "按计划"
@@ -3218,6 +3305,15 @@ msgstr ""
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Open call"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Open chat with {0}"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
@@ -3357,6 +3453,10 @@ msgstr "请粘贴你的 API 密钥，然后重新测试。"
 #: src/pages/RoutineEditor.tsx
 msgid "Paused"
 msgstr "已暂停"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Phone call"
+msgstr ""
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
@@ -3737,6 +3837,11 @@ msgstr "立即重试"
 msgid "Retry screen"
 msgstr ""
 
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Return to call with {0}"
+msgstr ""
+
 #: src/pages/McpOAuthCallback.tsx
 msgid "Return to Rakazo"
 msgstr "返回 Rakazo"
@@ -3968,6 +4073,10 @@ msgstr "发送删除验证码"
 msgid "Send it"
 msgstr "发送"
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Send recording"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Send reset link"
 msgstr "发送重置链接"
@@ -4144,6 +4253,10 @@ msgstr "Slack 消息"
 msgid "Slack not enabled"
 msgstr ""
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Slide up to lock"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "软件更新"
@@ -4184,6 +4297,11 @@ msgstr "仅朗读"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "朗读这条回复"
+
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Speaking"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
@@ -4372,6 +4490,11 @@ msgstr ""
 msgid "Thinking"
 msgstr "思考"
 
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Thinking"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
@@ -4379,6 +4502,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "此 Bot 运行在这台电脑上，而不是 Linux 桌面。Shell 和文件使用你的主目录。"
+
+#: src/components/call/IncomingCall.tsx
+msgid "This call is no longer ringing."
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "This can't be undone."
@@ -4494,6 +4621,10 @@ msgstr "工具源"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tools"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Transcribing…"
 msgstr ""
 
 #: src/components/call/CallCard.tsx
@@ -4704,15 +4835,10 @@ msgid "View chat"
 msgstr "查看聊天"
 
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "语音"
-
-#: src/components/call/VoiceChatCard.tsx
-msgid "Voice chat"
-msgstr "语音聊天"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -4824,6 +4950,10 @@ msgstr "如果没有自动跳转，可以关闭此标签页。"
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "可以关闭此窗口。"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "You declined"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "You have control"

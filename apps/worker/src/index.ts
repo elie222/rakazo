@@ -223,6 +223,7 @@ async function main() {
     events,
     onTicketChange: ticketChanges,
     ticketBoardEnabled,
+    phoneCallsEnabled: process.env.PHONE_CALLS_ENABLED === "true",
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,

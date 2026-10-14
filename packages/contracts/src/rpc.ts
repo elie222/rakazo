@@ -393,6 +393,38 @@ export const appContract = {
             .min(1)
             .max(200)
             .regex(/^[^:]+$/),
+          /** How long the call was connected, measured from pickup on the caller's client. */
+          durationSeconds: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(7 * 24 * 60 * 60)
+            .optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    /** The user picked up the bot's call: returns what the bot opens with. */
+    answerCall: oc
+      .input(
+        botId.safeExtend({
+          callId: z
+            .string()
+            .min(1)
+            .max(200)
+            .regex(/^[^:]+$/),
+        }),
+      )
+      .output(z.object({ opening: z.string(), reason: z.string() })),
+    /** The user turned the bot's call down, asked for it later, or it rang out. */
+    declineCall: oc
+      .input(
+        botId.safeExtend({
+          callId: z
+            .string()
+            .min(1)
+            .max(200)
+            .regex(/^[^:]+$/),
+          outcome: z.enum(["declined", "missed"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),

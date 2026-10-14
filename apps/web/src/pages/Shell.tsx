@@ -100,13 +100,13 @@ import {
   LogOut,
   Maximize2,
   Menu,
-  Mic,
   Monitor,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
   Pencil,
+  Phone,
   Plus,
   Puzzle,
   Reply,
@@ -145,8 +145,14 @@ import {
   computersAreUnavailable,
 } from "../components/ComputersUnavailableHint";
 import { ComputerUpdateProgress } from "../components/ComputerUpdateProgress";
-import { CallCard } from "../components/call/CallCard";
+import { CallCard, CallReturnBar } from "../components/call/CallCard";
+import { IncomingCall } from "../components/call/IncomingCall";
 import { VoiceChatCard } from "../components/call/VoiceChatCard";
+import {
+  HoldToTalkControls,
+  HoldToTalkStrip,
+  useHoldToTalk,
+} from "../components/composer/HoldToTalk";
 import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
@@ -179,7 +185,7 @@ import {
   requestBrowserNotificationPermission,
   shouldNotifyBrowser,
 } from "../lib/browser-notifications";
-import { startCall, useCallSession } from "../lib/call-session";
+import { setCallMinimized, startCall, useCallSession } from "../lib/call-session";
 import { newClientId } from "../lib/client-id";
 import {
   embeddableScreenUrl,
@@ -568,6 +574,20 @@ export function ShellPage() {
   >(undefined);
   const memoryProviderConfigRevision = useRef(0);
   const call = useCallSession();
+  /** Calls a bot, or opens voice settings first when no voice is connected. */
+  const callBot = (bot: Bot) => {
+    if (!bootstrapMe?.phoneCallsEnabled) return;
+    if (!voiceStatus?.ready) {
+      openSettings("voice");
+      return;
+    }
+    startCall({
+      botId: bot.id,
+      botName: bot.name,
+      botColor: bot.color,
+      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
+    });
+  };
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus | null>(null);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [dismissedRunErrorIds, setDismissedRunErrorIds] =
@@ -660,6 +680,10 @@ export function ShellPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
+  const callsEnabledRef = useRef(false);
+  useEffect(() => {
+    callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
+  }, [bootstrapMe?.phoneCallsEnabled]);
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputerRecoveryHint =
@@ -1231,7 +1255,7 @@ export function ShellPage() {
       });
     let refreshTimer: number | undefined;
     const refreshVisibleBots = () => {
-      if (document.visibilityState !== "visible") return;
+      if (document.visibilityState !== "visible" && !callsEnabledRef.current) return;
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => void refreshBots().catch(() => undefined), 50);
     };
@@ -3627,6 +3651,25 @@ export function ShellPage() {
             </button>
           </div>
           <div className="flex items-center gap-1">
+            {bootstrapMe?.phoneCallsEnabled && !inGroup && active ? (
+              <button
+                type="button"
+                data-testid="call-button"
+                aria-label={call?.botId === active.id ? t`Open call` : t`Call`}
+                title={call?.botId === active.id ? t`Open call` : t`Call`}
+                onClick={() => {
+                  if (call?.botId === active.id) {
+                    setCallMinimized(false);
+                    return;
+                  }
+                  callBot(active);
+                }}
+                data-active={call?.botId === active.id ? "" : undefined}
+                className="app-no-drag grid h-[30px] w-[34px] place-items-center rounded-[9px] hover:bg-accent data-active:bg-accent"
+              >
+                <Phone size={17} strokeWidth={1.6} className="text-foreground/75" />
+              </button>
+            ) : null}
             {!inGroup && active ? (
               <button
                 type="button"
@@ -3647,6 +3690,7 @@ export function ShellPage() {
             ) : null}
           </div>
         </div>
+        <CallReturnBar />
         {!active && !activeGroup && initialBotsLoaded ? (
           <div className="grid flex-1 place-items-center">
             <Button onClick={() => setPanel("create")}>
@@ -3668,6 +3712,11 @@ export function ShellPage() {
             answerableAskMessageId={answerableAskMessageId}
             running={transcriptRunning}
             workingBots={workingBots}
+            onCallBack={
+              bootstrapMe?.phoneCallsEnabled && !inGroup && active
+                ? () => callBot(active)
+                : undefined
+            }
             onLoadOlder={loadOlder}
             onOpenBot={openBot}
             onAnswer={answerMessage}
@@ -3719,22 +3768,8 @@ export function ShellPage() {
             onRemoveAttachment={removeAttachment}
             onSend={sendMessage}
             onStop={stopRun}
-            onVoice={
-              !inGroup && active
-                ? () => {
-                    if (!voiceStatus?.ready) {
-                      openSettings("voice");
-                      return;
-                    }
-                    startCall({
-                      botId: active.id,
-                      botName: active.name,
-                      botColor: active.color,
-                      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
-                    });
-                  }
-                : undefined
-            }
+            phoneCallsEnabled={bootstrapMe?.phoneCallsEnabled === true}
+            dictationTranscribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
             artifactTarget={transcriptArtifactTarget}
             replyTarget={activeReplyTarget}
             replyQuote={activeReplyQuote}
@@ -3761,6 +3796,11 @@ export function ShellPage() {
       </main>
 
       <CallCard onSettings={() => openSettings("voice")} />
+      <IncomingCall
+        bots={bootstrapMe?.phoneCallsEnabled ? bots : []}
+        transcribe={voiceStatus ? Boolean(voiceStatus.transcribe) : undefined}
+        onAnswered={(botId) => navigate(`/app/${botId}`)}
+      />
 
       <ResizableSidePanel
         botsSidebarCollapsed={botsSidebarCollapsed}
@@ -4821,6 +4861,7 @@ const Transcript = memo(function Transcript({
   answerableAskMessageId,
   running,
   workingBots,
+  onCallBack,
   onLoadOlder,
   onOpenBot,
   onAnswer,
@@ -4850,6 +4891,8 @@ const Transcript = memo(function Transcript({
   answerableAskMessageId: string | null;
   running: boolean;
   workingBots: GroupAvatarMember[];
+  /** Calls the bot back from a missed call in the transcript. */
+  onCallBack?: () => void;
   onLoadOlder: () => void | Promise<void>;
   onOpenBot: (botId: string) => void;
   onAnswer: (message: ThreadMessage, text: string, username?: string) => Promise<void>;
@@ -5150,7 +5193,11 @@ const Transcript = memo(function Transcript({
                     locale={i18n.locale || "en"}
                   />
                 ) : null}
-                <VoiceChatCard group={item} revealMessageId={scrollRequest?.messageId} />
+                <VoiceChatCard
+                  group={item}
+                  revealMessageId={scrollRequest?.messageId}
+                  onCallBack={onCallBack}
+                />
               </div>
             );
           }
@@ -5404,7 +5451,8 @@ export const Composer = memo(function Composer({
   onRemoveAttachment,
   onSend,
   onStop,
-  onVoice,
+  phoneCallsEnabled,
+  dictationTranscribe,
   replyTarget,
   replyQuote,
   replyTargetName,
@@ -5430,7 +5478,9 @@ export const Composer = memo(function Composer({
   onRemoveAttachment: (attachment: PendingAttachment) => void;
   onSend: (text: string, mentions: ComposerMention[], clientNonce: string) => Promise<boolean>;
   onStop: () => Promise<void>;
-  onVoice?: () => void;
+  phoneCallsEnabled?: boolean;
+  /** Hold-to-talk falls back to the voice provider's transcription; undefined while unknown. */
+  dictationTranscribe?: boolean;
   artifactTarget: ArtifactTarget;
   replyTarget?: ThreadMessage | null;
   replyQuote?: string | null;
@@ -5443,6 +5493,19 @@ export const Composer = memo(function Composer({
 }) {
   const { t } = useLingui();
   const [draft, setDraft] = useState("");
+  const onCall = useCallSession() !== null;
+  const talk = useHoldToTalk({
+    transcribe: dictationTranscribe,
+    disabled: disabled || onCall || !phoneCallsEnabled,
+    onText: (text) => {
+      // A refused send keeps the words: they land in the field to edit or retry.
+      void onSend(text, [], newClientNonce())
+        .then((accepted) => {
+          if (accepted === false) setDraft((current) => (current ? `${current} ${text}` : text));
+        })
+        .catch(() => setDraft((current) => (current ? `${current} ${text}` : text)));
+    },
+  });
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
@@ -6128,8 +6191,10 @@ export const Composer = memo(function Composer({
               </button>
             </span>
           ))}
+          <HoldToTalkStrip talk={talk} />
           <textarea
             ref={textareaRef}
+            hidden={talk.recording !== null}
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onPaste={handlePaste}
@@ -6201,21 +6266,13 @@ export const Composer = memo(function Composer({
             expanded ? "row-start-2" : ""
           }`}
         >
-          {onVoice && draft.trim().length === 0 ? (
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={t`Voice`}
-              title={t`Voice`}
-              disabled={disabled}
-              onClick={onVoice}
-              className="size-8 shrink-0 rounded-full text-foreground/75"
-            >
-              <Mic size={16} strokeWidth={1.8} />
-            </Button>
-          ) : null}
-          {running ? (
+          {talk.recording?.locked ? (
+            <HoldToTalkControls talk={talk} />
+          ) : running ? (
             <>
+              {phoneCallsEnabled && draft.trim().length === 0 ? (
+                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
+              ) : null}
               <Button
                 size="icon"
                 aria-label={t`Send`}
@@ -6237,15 +6294,20 @@ export const Composer = memo(function Composer({
               </Button>
             </>
           ) : (
-            <Button
-              size="icon"
-              aria-label={t`Send`}
-              disabled={sending || !canSend || disabled}
-              onClick={send}
-              className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
-            >
-              <ArrowUp size={16} strokeWidth={2.2} />
-            </Button>
+            <>
+              {phoneCallsEnabled && draft.trim().length === 0 ? (
+                <HoldToTalkControls talk={talk} disabled={disabled || onCall} />
+              ) : null}
+              <Button
+                size="icon"
+                aria-label={t`Send`}
+                disabled={sending || !canSend || disabled}
+                onClick={send}
+                className="size-8 shrink-0 rounded-full bg-white text-black hover:bg-white/90 shadow-sm transition-transform active:scale-95 disabled:bg-white/10 disabled:text-muted-foreground/30 disabled:shadow-none"
+              >
+                <ArrowUp size={16} strokeWidth={2.2} />
+              </Button>
+            </>
           )}
         </div>
       </div>

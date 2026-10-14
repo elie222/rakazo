@@ -10,6 +10,7 @@ import type {
 import { messagingDeliverJob } from "@rakazo/adapter-kit";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { settleCallRequest } from "./call-request.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { expireComputerControl } from "./computer-control.js";
@@ -87,6 +88,9 @@ export function createBackgroundJobHandlers(deps: {
     },
     "skill.teaching-expire": async (payload) => {
       await expireTaughtSkillTeaching(deps, payload.skillId);
+    },
+    "call.expire": async (payload) => {
+      await settleCallRequest(deps, { ...payload, from: ["ringing"], status: "missed" });
     },
     "cloud_agent.poll": async (payload) => {
       await pollCloudAgent(

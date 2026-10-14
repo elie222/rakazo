@@ -7,6 +7,13 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("keeps calls off unless explicitly enabled", () => {
+    expect(loadEnv(base).phoneCallsEnabled).toBe(false);
+    for (const value of ["false", "1", ""]) {
+      expect(loadEnv({ ...base, PHONE_CALLS_ENABLED: value }).phoneCallsEnabled).toBe(false);
+    }
+    expect(loadEnv({ ...base, PHONE_CALLS_ENABLED: "true" }).phoneCallsEnabled).toBe(true);
+  });
   it("keeps the ticket board off unless explicitly enabled", () => {
     expect(loadEnv(base).ticketBoardEnabled).toBe(false);
     for (const value of ["false", "1", ""])

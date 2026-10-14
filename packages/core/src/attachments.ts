@@ -123,6 +123,16 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
         const choice = block.actions?.find((action) => action.id === block.answer);
         return `${block.text}\nAnswer: ${choice?.label ?? block.answer}`;
       }
+      // The bot needs the outcome of its own call: a missed call is its cue to follow up.
+      if (block.kind === "call_request") {
+        const outcome = {
+          ringing: "still ringing",
+          answered: "the user answered",
+          declined: "the user declined it",
+          missed: "the user did not answer",
+        }[block.status];
+        return `[you called the user about: ${block.reason}; ${outcome}]${block.status === "answered" ? `\n${block.opening}` : ""}`;
+      }
       if ("text" in block && typeof block.text === "string") return block.text;
       return "";
     })

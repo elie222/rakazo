@@ -64,6 +64,12 @@ msgstr ""
 msgid "{0} handling"
 msgstr ""
 
+#. placeholder {0}: bot.name
+#. placeholder {0}: ringing.bot.name
+#: src/components/call/IncomingCall.tsx
+msgid "{0} is calling you"
+msgstr "{0} ruft dich an"
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -132,10 +138,18 @@ msgstr "vor {days} T."
 msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr ""
 
+#: src/components/call/VoiceChatCard.tsx
+msgid "{hours} h {minutes} min"
+msgstr "{hours} Std. {minutes} Min."
+
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
 msgid "{hours}h ago"
 msgstr "vor {hours} Std."
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "{minutes} min {rest} s"
+msgstr "{minutes} Min. {rest} Sek."
 
 #: src/lib/relative-time.ts
 #: src/pages/ActivityList.tsx
@@ -160,6 +174,10 @@ msgstr "{name} wurde gestoppt"
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "Noch {remaining} · Bot beobachtet nur"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "{rest} s"
+msgstr "{rest} Sek."
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "{seats, plural, one {# seat} other {# seats}}"
@@ -486,6 +504,11 @@ msgstr "Für diesen Anbieter ist ein API-Schlüssel gespeichert, keine Anmeldung
 msgid "Answer"
 msgstr "Antwort"
 
+#: src/components/call/IncomingCall.tsx
+msgctxt "incoming call"
+msgid "Answer"
+msgstr "Annehmen"
+
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "Beantwortet"
@@ -785,6 +808,31 @@ msgstr "Browser"
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
 msgstr "Integriert"
+
+#: src/pages/Shell.tsx
+msgid "Call"
+msgstr "Anrufen"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Call back"
+msgstr "Zurückrufen"
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Call with {0}"
+msgstr "Anruf mit {0}"
+
+#: src/components/call/IncomingCall.tsx
+msgid "Calling you"
+msgstr "Ruft dich an"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Calling you…"
+msgstr "Ruft dich an…"
+
+#: src/components/call/CallCard.tsx
+msgid "Calling…"
+msgstr "Anruf läuft…"
 
 #: src/App.tsx
 msgid "Can't reach the server."
@@ -1656,6 +1704,7 @@ msgstr ""
 msgid "Could not send reset email"
 msgstr "E-Mail zum Zurücksetzen konnte nicht gesendet werden"
 
+#: src/components/call/IncomingCall.tsx
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "Senden fehlgeschlagen"
@@ -1831,9 +1880,10 @@ msgstr ""
 msgid "days"
 msgstr "Tage"
 
+#: src/components/call/IncomingCall.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Decline"
-msgstr ""
+msgstr "Ablehnen"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1953,6 +2003,10 @@ msgstr ""
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
 msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Discard recording"
+msgstr "Aufnahme verwerfen"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -2396,6 +2450,14 @@ msgstr "Hoch"
 msgid "High"
 msgstr ""
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk"
+msgstr "Zum Sprechen gedrückt halten"
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk, release to send"
+msgstr "Zum Sprechen halten, zum Senden loslassen"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
 msgstr "Stunde"
@@ -2448,6 +2510,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Incoming call"
+msgstr "Eingehender Anruf"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Inherit default"
@@ -2571,7 +2637,16 @@ msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
-msgstr ""
+msgstr "Hört zu"
+
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Listening"
+msgstr "Hört zu"
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Listening…"
+msgstr "Hört zu…"
 
 #: src/pages/Shell.tsx
 msgid "Load earlier messages"
@@ -2837,6 +2912,10 @@ msgstr "Minimieren"
 msgid "Minimize bots"
 msgstr ""
 
+#: src/components/call/CallCard.tsx
+msgid "Minimize call"
+msgstr "Anruf minimieren"
+
 #: src/pages/RoutineSchedule.tsx
 msgid "minute"
 msgstr "Minute"
@@ -2844,6 +2923,10 @@ msgstr "Minute"
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "Minuten"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Missed call"
+msgstr "Verpasster Anruf"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -2928,6 +3011,11 @@ msgstr "Verschieben nach"
 msgid "Mute"
 msgstr "Stummschalten"
 
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Muted"
+msgstr "Stummgeschaltet"
+
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
@@ -3004,6 +3092,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "No agent connections yet."
 msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "No answer"
+msgstr "Keine Antwort"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No apps match your search."
@@ -3179,11 +3271,6 @@ msgstr "OAuth-Verbindung fehlgeschlagen"
 msgid "OAuth expired"
 msgstr ""
 
-#. placeholder {0}: call.botName
-#: src/components/call/CallCard.tsx
-msgid "On a call with {0}"
-msgstr "Im Gespräch mit {0}"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr ""
@@ -3219,6 +3306,15 @@ msgstr ""
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
 msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Open call"
+msgstr "Anruf öffnen"
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Open chat with {0}"
+msgstr "Chat mit {0} öffnen"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
@@ -3357,6 +3453,10 @@ msgstr "Füge deinen API-Schlüssel ein und teste erneut."
 #: src/pages/RoutineEditor.tsx
 msgid "Paused"
 msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Phone call"
+msgstr "Telefonanruf"
 
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
@@ -3737,6 +3837,11 @@ msgstr "Jetzt erneut versuchen"
 msgid "Retry screen"
 msgstr ""
 
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Return to call with {0}"
+msgstr "Zurück zum Anruf mit {0}"
+
 #: src/pages/McpOAuthCallback.tsx
 msgid "Return to Rakazo"
 msgstr "Zurück zu Rakazo"
@@ -3968,6 +4073,10 @@ msgstr "Löschcode senden"
 msgid "Send it"
 msgstr "Senden"
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Send recording"
+msgstr "Aufnahme senden"
+
 #: src/pages/Auth.tsx
 msgid "Send reset link"
 msgstr "Link zum Zurücksetzen senden"
@@ -4144,6 +4253,10 @@ msgstr ""
 msgid "Slack not enabled"
 msgstr ""
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Slide up to lock"
+msgstr "Zum Sperren nach oben schieben"
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr ""
@@ -4184,6 +4297,11 @@ msgstr "Nur sprechen"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "Diese Antwort vorlesen"
+
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Speaking"
+msgstr "Spricht"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
@@ -4372,6 +4490,11 @@ msgstr ""
 msgid "Thinking"
 msgstr "Denkmodus"
 
+#: src/components/call/CallCard.tsx
+msgctxt "call status"
+msgid "Thinking"
+msgstr "Denkt nach"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
@@ -4379,6 +4502,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Dieser Bot wird auf diesem Computer und nicht auf einem Linux-Desktop ausgeführt. Shell und Dateien verwenden deinen persönlichen Ordner."
+
+#: src/components/call/IncomingCall.tsx
+msgid "This call is no longer ringing."
+msgstr "Dieser Anruf klingelt nicht mehr."
 
 #: src/pages/Artifacts.tsx
 msgid "This can't be undone."
@@ -4495,6 +4622,10 @@ msgstr "Toolquellen"
 #: src/pages/PluginsOverlay.tsx
 msgid "Tools"
 msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Transcribing…"
+msgstr "Wird transkribiert…"
 
 #: src/components/call/CallCard.tsx
 msgid "Transcript"
@@ -4704,15 +4835,10 @@ msgid "View chat"
 msgstr "Chat anzeigen"
 
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "Stimme"
-
-#: src/components/call/VoiceChatCard.tsx
-msgid "Voice chat"
-msgstr "Sprachchat"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -4824,6 +4950,10 @@ msgstr "Du kannst diesen Tab schließen, wenn du nicht automatisch weitergeleite
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "Du kannst dieses Fenster schließen."
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "You declined"
+msgstr "Du hast abgelehnt"
 
 #: src/pages/Shell.tsx
 msgid "You have control"

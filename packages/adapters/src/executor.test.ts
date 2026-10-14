@@ -3106,3 +3106,25 @@ describe("ticket board tool capability", () => {
       expect(backgroundNames).not.toContain(name);
   });
 });
+
+describe("call_user availability", () => {
+  const options = {
+    graphicalToolsAllowed: false,
+    groupId: null,
+    trigger: "user_message",
+    semanticMemoryEnabled: false,
+    messagingChannelRun: false,
+    phoneCallsEnabled: true,
+  };
+  const offered = (patch = {}) =>
+    selectBuiltinToolsForRun({ ...options, ...patch }).some((tool) => tool.name === "call_user");
+  it("requires the server flag and a private non-ticket turn", () => {
+    expect(offered()).toBe(true);
+    expect(offered({ phoneCallsEnabled: false })).toBe(false);
+    expect(offered({ phoneCallsEnabled: undefined })).toBe(false);
+    expect(offered({ groupId: "group-1" })).toBe(false);
+    expect(offered({ messagingChannelRun: true })).toBe(false);
+    expect(offered({ trigger: "tickets" })).toBe(false);
+    expect(offered({ voiceCall: true })).toBe(false);
+  });
+});
