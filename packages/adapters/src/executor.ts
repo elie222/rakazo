@@ -3247,6 +3247,19 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
     },
 
+    async notifyRoutineRetryAttemptsExhausted(runId: string) {
+      const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
+      if (
+        !failed?.routineId ||
+        failed.trigger !== "routine" ||
+        failed.status !== "failed" ||
+        failed.retryOfRunId
+      ) {
+        return;
+      }
+      await notifyFailedRoutineRun(deps, failed);
+    },
+
     async retryRoutineRun(runId: string) {
       const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (
@@ -3271,19 +3284,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         select: { id: true },
       });
       if (laterRun) return;
-      const notifyAbandonedRetry = async () => {
-        const bot = await deps.prisma.bot.findUniqueOrThrow({
-          where: { id: failed.botId },
-          select: { name: true },
-        });
-        await notifyRun(deps, failed, {
-          kind: "failure",
-          title: `${bot.name} failed`,
-          body: (failed.error ?? "").slice(0, 180),
-          botId: failed.botId,
-          threadId: failed.threadId,
-        });
-      };
+      const notifyAbandonedRetry = () => notifyFailedRoutineRun(deps, failed);
       if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
         await notifyAbandonedRetry();
         return;
@@ -3320,6 +3321,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             data: { active: routine.active },
           });
           if (claimed.count !== 1) return null;
+          const laterRun = await tx.run.findFirst({
+            where: { routineId: failed.routineId!, createdAt: { gt: failed.createdAt } },
+            select: { id: true },
+          });
+          if (laterRun) return null;
           const targetThread = await tx.thread.findFirst({
             where: {
               id: failed.threadId,
@@ -3375,6 +3381,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         throw error;
       }
       if (!retry) {
+        const laterRun = await deps.prisma.run.findFirst({
+          where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
+          select: { id: true },
+        });
+        if (laterRun) return;
         await notifyAbandonedRetry();
         return;
       }
@@ -7612,6 +7623,23 @@ async function scheduleRoutineRetry(
     getLogger().error("routine retry schedule", scheduleError);
     return false;
   }
+}
+
+async function notifyFailedRoutineRun(
+  deps: ExecutorDeps,
+  failed: Parameters<typeof notifyRun>[1] & { error: string | null },
+) {
+  const bot = await deps.prisma.bot.findUniqueOrThrow({
+    where: { id: failed.botId },
+    select: { name: true },
+  });
+  await notifyRun(deps, failed, {
+    kind: "failure",
+    title: `${bot.name} failed`,
+    body: (failed.error ?? "").slice(0, 180),
+    botId: failed.botId,
+    threadId: failed.threadId,
+  });
 }
 
 async function notifyRun(

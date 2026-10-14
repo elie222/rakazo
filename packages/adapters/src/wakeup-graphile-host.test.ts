@@ -344,6 +344,43 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     ]);
   });
 
+  it("notifies routine retry exhaustion only through the terminal failure event", async () => {
+    const first = mockRunner();
+    run.mockResolvedValueOnce(first.runner);
+    const notify = vi.fn(async () => undefined);
+    const host = new GraphileJobWorkerHost({} as Pool, {
+      onRoutineRetryAttemptsExhausted: notify,
+    });
+
+    try {
+      await host.start(handlers());
+      const on = first.runner.events.on as ReturnType<typeof vi.fn>;
+      expect(on.mock.calls.some((call) => call[0] === "job:error")).toBe(false);
+      const failed = on.mock.calls.find((call) => call[0] === "job:failed")?.[1];
+      expect(failed).toBeTypeOf("function");
+      for (const payload of [null, {}, { runId: 1 }, { runId: "" }]) {
+        failed({ job: { task_identifier: "routine.retry", payload }, error: new Error("failed") });
+      }
+      failed({
+        job: { task_identifier: "run.continue", payload: { runId: "run-1" } },
+        error: new Error("failed"),
+      });
+      expect(notify).not.toHaveBeenCalled();
+      failed({
+        job: {
+          task_identifier: "routine.retry",
+          payload: wrapJobPayload({ runId: "run-1" }),
+          attempts: 25,
+          max_attempts: 25,
+        },
+        error: new Error("queue down"),
+      });
+      expect(notify).toHaveBeenCalledExactlyOnceWith("run-1");
+    } finally {
+      await host.stop();
+    }
+  });
+
   it("wakes a pending restart delay when stop is called", async () => {
     const first = mockRunner();
     run.mockResolvedValueOnce(first.runner);

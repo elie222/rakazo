@@ -173,11 +173,6 @@ async function main() {
     prisma,
     ticketBoardEnabled,
   });
-  const jobHost: JobWorkerHost =
-    inMemoryJobs ??
-    new GraphileJobWorkerHost(pool, {
-      concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
-    });
   // One provider instance so emulator launches and polls share the same Map.
   const cloudAgent = createCloudAgentConnection();
   // Shared with the reconciler so a stuck wait uses the same push path as a finish notice.
@@ -227,6 +222,14 @@ async function main() {
     web: createWebProvider(),
     cloudAgent,
   });
+
+  const jobHost: JobWorkerHost =
+    inMemoryJobs ??
+    new GraphileJobWorkerHost(pool, {
+      concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
+      onRoutineRetryAttemptsExhausted: (runId) =>
+        executor.notifyRoutineRetryAttemptsExhausted(runId),
+    });
 
   const jobHandlers = createBackgroundJobHandlers({
     executor,

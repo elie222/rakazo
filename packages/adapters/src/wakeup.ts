@@ -1,13 +1,14 @@
-import {
-  type BackgroundJob,
-  type BackgroundJobHandlers,
-  dispatchBackgroundJob,
-  type JobPublisher,
-  type JobWorkerHost,
+import type {
+  BackgroundJob,
+  BackgroundJobHandlers,
+  JobPublisher,
+  JobWorkerHost,
 } from "@rakazo/adapter-kit";
+import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
 import { isTooManyDatabaseConnections } from "@rakazo/db";
-import { runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
-import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
+import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
+import type { Runner, WorkerUtils } from "graphile-worker";
+import { makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
 
@@ -86,6 +87,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   constructor(
     private readonly pgPool: Pool,
     private readonly options: {
+      onRoutineRetryAttemptsExhausted?: (runId: string) => Promise<void>;
       concurrency?: number;
       pollInterval?: number;
       noHandleSignals?: boolean;
@@ -144,6 +146,20 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     });
     runner.events.on("job:failed", ({ job, error }) => {
       recordHistoryCompactAttemptsExhausted(job, error);
+      if (job.task_identifier !== "routine.retry") return;
+      const { payload } = unwrapJobPayload(job.payload);
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !("runId" in payload) ||
+        typeof payload.runId !== "string" ||
+        !payload.runId
+      ) {
+        return;
+      }
+      void this.options.onRoutineRetryAttemptsExhausted?.(payload.runId).catch((notifyError) => {
+        getLogger().error("routine retry exhaustion notification", notifyError);
+      });
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);
