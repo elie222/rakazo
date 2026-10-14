@@ -615,6 +615,12 @@ export interface VoiceTranscribeRequest {
   audio: Uint8Array;
   mimeType: string;
   apiKey: string;
+  /**
+   * Language of the recording, as a BCP-47 tag or an ISO 639-1 code. Providers treat it
+   * as a hint: Fish Audio guesses when it is missing, and a wrong guess turns speech in
+   * one language into lookalike words of another.
+   */
+  language?: string;
   signal?: AbortSignal;
 }
 

@@ -3730,7 +3730,7 @@ export function ShellPage() {
                       botId: active.id,
                       botName: active.name,
                       botColor: active.color,
-                      transcribe: Boolean(voiceStatus?.transcribe),
+                      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
                     });
                   }
                 : undefined
