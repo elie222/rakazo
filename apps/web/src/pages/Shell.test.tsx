@@ -68,6 +68,9 @@ function renderComposer(
     onRemoveAttachment: () => {},
     onSend,
     onStop: async () => {},
+    draftKey: "bot:bot-1",
+    enterToSend: true,
+    onToggleEnterToSend: () => {},
     mentionTargets: [bob],
     agentSkills: [summarize],
     ...overrides,
@@ -338,5 +341,43 @@ describe("Composer", () => {
     await act(async () => {});
     expect(onSend.mock.calls[1]?.[2]).toBe(onSend.mock.calls[0]?.[2]);
     expect(onSend.mock.calls[2]?.[2]).not.toBe(onSend.mock.calls[0]?.[2]);
+  });
+
+  it("restores an unsent draft when the composer remounts", () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const draftKey = "bot:draft-restore-test";
+    const first = renderComposer(onSend, { draftKey });
+    type(first, "unsent thought");
+    expect(window.localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("unsent thought");
+    const second = renderComposer(onSend, { draftKey });
+    expect(second.value).toBe("unsent thought");
+  });
+
+  it("keeps Enter as newline and Ctrl+Enter as send when enter-to-send is off", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const onToggleEnterToSend = vi.fn();
+    const textarea = renderComposer(onSend, {
+      draftKey: "bot:enter-toggle-test",
+      enterToSend: false,
+      onToggleEnterToSend,
+    });
+    const toggle = container?.querySelector('[data-testid="composer-enter-to-send-toggle"]');
+    if (!(toggle instanceof HTMLElement)) throw new Error("enter-to-send toggle not found");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    type(textarea, "line one");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).not.toHaveBeenCalled();
+    act(() => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+    act(() => {
+      toggle.click();
+    });
+    expect(onToggleEnterToSend).toHaveBeenCalledTimes(1);
   });
 });

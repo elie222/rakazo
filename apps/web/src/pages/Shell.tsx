@@ -93,6 +93,7 @@ import {
   CircleAlert,
   Clock,
   Copy,
+  CornerDownLeft,
   FolderOpen,
   Gauge,
   LayoutGrid,
@@ -181,6 +182,12 @@ import {
 } from "../lib/browser-notifications";
 import { startCall, useCallSession } from "../lib/call-session";
 import { newClientId } from "../lib/client-id";
+import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import {
+  getComposerEnterToSend,
+  setComposerEnterToSend,
+  subscribeComposerEnterToSend,
+} from "../lib/composer-enter-to-send-pref";
 import {
   embeddableScreenUrl,
   loadComputerScreen,
@@ -453,6 +460,14 @@ export function ShellPage() {
     getBotsSidebarDensity,
     () => "comfortable",
   );
+  const enterToSend = useSyncExternalStore(
+    subscribeComposerEnterToSend,
+    getComposerEnterToSend,
+    () => true,
+  );
+  const toggleEnterToSend = useCallback(() => {
+    setComposerEnterToSend(!getComposerEnterToSend());
+  }, []);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -3703,6 +3718,9 @@ export function ShellPage() {
         {active || activeGroup ? (
           <Composer
             key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            enterToSend={enterToSend}
+            onToggleEnterToSend={toggleEnterToSend}
             activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
             running={composerRunning}
             disabled={Boolean(recordingSkill)}
@@ -5413,6 +5431,9 @@ export const Composer = memo(function Composer({
   agentSkills,
   onSlashOpen,
   onSlashAction,
+  draftKey,
+  enterToSend,
+  onToggleEnterToSend,
 }: {
   activeName?: string;
   running: boolean;
@@ -5440,14 +5461,26 @@ export const Composer = memo(function Composer({
   agentSkills?: AgentSkillCatalogEntry[];
   onSlashOpen?: () => void;
   onSlashAction?: (action: SlashActionId) => void;
+  draftKey: string;
+  enterToSend: boolean;
+  onToggleEnterToSend: () => void;
 }) {
   const { t } = useLingui();
-  const [draft, setDraft] = useState("");
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
+  const [mentionQuery, setMentionQuery] = useState<string | null>(() => {
+    const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(draft);
+    return mentionMatch ? (mentionMatch[1] ?? "") : null;
+  });
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashQuery, setSlashQuery] = useState<string | null>(() => {
+    const slashMatch = /^\/([^\n]*)$/.exec(draft);
+    return slashMatch ? (slashMatch[1] ?? "") : null;
+  });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
+  useEffect(() => {
+    writeComposerDraft(draftKey, draft);
+  }, [draftKey, draft]);
   const editRevision = useRef(0);
   const retryNonce = useRef<string | null>(null);
   const replyId = replyTarget?.id ?? null;
@@ -6146,6 +6179,9 @@ export const Composer = memo(function Composer({
               const action = resolveMentionPickerKey({
                 key: event.key,
                 shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                enterToSend,
                 isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
                 optionCount: mentionOptions.length,
                 highlightedIndex: activeMentionIndex,
@@ -6201,6 +6237,27 @@ export const Composer = memo(function Composer({
             expanded ? "row-start-2" : ""
           }`}
         >
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={
+              enterToSend
+                ? t`Enter sends the message (turn off)`
+                : t`Enter adds a new line (turn on to send)`
+            }
+            title={enterToSend ? t`Enter sends the message` : t`Enter adds a new line`}
+            aria-pressed={enterToSend}
+            data-testid="composer-enter-to-send-toggle"
+            disabled={disabled}
+            onClick={onToggleEnterToSend}
+            className={`size-8 rounded-full shadow-sm transition-colors ${
+              enterToSend
+                ? "bg-muted text-foreground hover:bg-accent"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+            }`}
+          >
+            <CornerDownLeft size={16} strokeWidth={enterToSend ? 2.2 : 1.8} />
+          </Button>
           {onVoice && draft.trim().length === 0 ? (
             <Button
               variant="outline"
