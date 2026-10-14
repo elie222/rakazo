@@ -83,6 +83,7 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private stopping = false;
   private superviseTask: Promise<void> | undefined;
   private wakeSleep: (() => void) | undefined;
+  private readonly exhaustionNotifications = new Set<Promise<void>>();
 
   constructor(
     private readonly pgPool: Pool,
@@ -114,6 +115,9 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       await this.runner?.stop();
     } finally {
       await this.superviseTask?.catch(() => undefined);
+      while (this.exhaustionNotifications.size > 0) {
+        await Promise.allSettled(this.exhaustionNotifications);
+      }
       this.runner = undefined;
       this.superviseTask = undefined;
       this.handlers = undefined;
@@ -157,9 +161,13 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       ) {
         return;
       }
-      void this.options.onRoutineRetryAttemptsExhausted?.(payload.runId).catch((notifyError) => {
+      const notification = this.options.onRoutineRetryAttemptsExhausted?.(payload.runId);
+      if (!notification) return;
+      const delivery = notification.catch((notifyError) => {
         getLogger().error("routine retry exhaustion notification", notifyError);
       });
+      this.exhaustionNotifications.add(delivery);
+      void delivery.then(() => this.exhaustionNotifications.delete(delivery));
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);

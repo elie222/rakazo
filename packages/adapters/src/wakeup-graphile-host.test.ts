@@ -381,6 +381,64 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     }
   });
 
+  it.each([false, true])(
+    "waits for exhaustion notification during stop (delivery rejects: %s)",
+    async (rejectDelivery) => {
+      const first = mockRunner();
+      run.mockResolvedValueOnce(first.runner);
+      const delivery = deferred();
+      const notify = vi.fn(() => delivery.promise);
+      const sink = createTestSink();
+      installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
+      const host = new GraphileJobWorkerHost({} as Pool, {
+        onRoutineRetryAttemptsExhausted: notify,
+      });
+      let stopped = false;
+
+      try {
+        await host.start(handlers());
+        const on = first.runner.events.on as ReturnType<typeof vi.fn>;
+        const failed = on.mock.calls.find((call) => call[0] === "job:failed")?.[1];
+        failed({
+          job: {
+            task_identifier: "routine.retry",
+            payload: wrapJobPayload({ runId: "run-1" }),
+            attempts: 25,
+            max_attempts: 25,
+          },
+          error: new Error("queue down"),
+        });
+        const stopping = host.stop().then(() => {
+          stopped = true;
+        });
+        await vi.waitFor(() => expect(first.runner.stop).toHaveBeenCalled());
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped).toBe(false);
+
+        if (rejectDelivery) delivery.reject(new Error("notification failed"));
+        else delivery.resolve();
+
+        await expect(stopping).resolves.toBeUndefined();
+        expect(stopped).toBe(true);
+        expect(sink.events).toEqual(
+          rejectDelivery
+            ? [
+                expect.objectContaining({
+                  level: "error",
+                  message: "routine retry exhaustion notification",
+                  error: expect.objectContaining({ message: "notification failed" }),
+                }),
+              ]
+            : [],
+        );
+      } finally {
+        delivery.resolve();
+        await host.stop();
+        installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
+      }
+    },
+  );
+
   it("wakes a pending restart delay when stop is called", async () => {
     const first = mockRunner();
     run.mockResolvedValueOnce(first.runner);

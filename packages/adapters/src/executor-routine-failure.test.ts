@@ -603,6 +603,37 @@ describe("running a routine retry", () => {
 });
 
 describe("exhausted routine retry notification", () => {
+  it("does not notify when reconciliation started the retry before enqueue failed", async () => {
+    const { executor, prisma, send } = retryHarness({
+      enqueueFails: true,
+      retryStartedBeforeCleanup: true,
+    });
+
+    await expect(executor.retryRoutineRun("run-1")).rejects.toThrow("queue down");
+    prisma.run.findFirst.mockResolvedValueOnce({ id: "run-2" });
+
+    await executor.notifyRoutineRetryAttemptsExhausted("run-1");
+
+    expect(prisma.run.findFirst).toHaveBeenLastCalledWith({
+      where: {
+        OR: [
+          { retryOfRunId: "run-1" },
+          { routineId: "routine-1", createdAt: { gt: new Date(NOW.getTime() - 12 * MINUTE) } },
+        ],
+      },
+      select: { id: true },
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("does not notify when a later run of the routine exists", async () => {
+    const { executor, send } = retryHarness({ laterRun: true });
+
+    await executor.notifyRoutineRetryAttemptsExhausted("run-1");
+
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("sends the original failure notice after enqueue cleanup", async () => {
     const { executor, send } = retryHarness({ enqueueFails: true });
 

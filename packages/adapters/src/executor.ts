@@ -3257,6 +3257,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
       ) {
         return;
       }
+      const supersedingRun = await deps.prisma.run.findFirst({
+        where: {
+          OR: [
+            { retryOfRunId: failed.id },
+            { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (supersedingRun) return;
       await notifyFailedRoutineRun(deps, failed);
     },
 
