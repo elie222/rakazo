@@ -3,8 +3,12 @@ import { createServer } from "node:http";
 import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
+import { Agent } from "undici";
 import { describe, expect, it, vi } from "vitest";
-import { createOpenAiCompatibleFetch } from "./pi-openai-compatible-provider.js";
+import {
+  createOpenAiCompatibleFetch,
+  registerOpenAiCompatibleRuntime,
+} from "./pi-openai-compatible-provider.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 import { normalizePiUsage, observedPiStream, usageReportingFetch } from "./pi-usage.js";
 
@@ -348,7 +352,7 @@ describe("Pi usage accounting", () => {
     for (const callback of [beforeCall, afterCall, prepareContext, recordUsage, fetcher, push])
       expect(callback).not.toHaveBeenCalled();
   });
-  it("retains reported zero through the full generic runtime and its safe network adapter", async () => {
+  it("retains reported zero through the full generic runtime and its safe hostname network adapter", async () => {
     const server = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.end(
@@ -361,7 +365,7 @@ describe("Pi usage accounting", () => {
         }),
       );
     });
-    server.listen(0, "127.0.0.1");
+    server.listen(0, "localhost");
     await once(server, "listening");
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
@@ -379,7 +383,7 @@ describe("Pi usage accounting", () => {
           model: {
             provider: "openai-compatible",
             id: "fixture",
-            baseUrl: `http://127.0.0.1:${address.port}/v1`,
+            baseUrl: `http://localhost:${address.port}/v1`,
           },
         },
         { signal: AbortSignal.timeout(5000) },
@@ -397,6 +401,58 @@ describe("Pi usage accounting", () => {
       await once(server, "close");
     }
   });
+  it("preserves an injected compatible fetch, its pinned dispatcher, and raw usage", async () => {
+    const models = registerOpenAiCompatibleRuntime(builtinModels(), {
+      modelId: "fixture",
+      baseUrl: "http://localhost:1234/v1",
+    });
+    const compatible = models.getModel("openai-compatible", "fixture")!;
+    const events: AgentRuntimeEvent[] = [];
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect((init as RequestInit & { dispatcher?: Agent }).dispatcher).toBeInstanceOf(Agent);
+      expect(init?.redirect).toBe("error");
+      return new Response(sse({ prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 }), {
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const stream = observedPiStream(
+      models,
+      compatible,
+      { messages: [{ role: "user", content: "test", timestamp: 1 }] },
+      { fetch: fetcher },
+      (event) => events.push(event),
+    );
+    for await (const _event of stream) {
+    }
+    expect((await stream.result()).errorMessage).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(events.find((event) => event.type === "usage")).toMatchObject({
+      inputTokens: 10,
+      outputTokens: 0,
+      totalTokens: 10,
+    });
+  });
+  it.each([false, true])(
+    "enforces the public gate and pinned lookup through default usage observation (allowPublic=%s)",
+    async (allowPublic) => {
+      const resolve = vi.fn(async () => [{ address: "127.0.0.1", family: 4 }]);
+      const safe = createOpenAiCompatibleFetch(
+        usageReportingFetch(globalThis.fetch, new Set()),
+        resolve,
+        { allowPublic },
+      );
+      const request = safe("https://models.example.test/v1/chat/completions");
+      if (allowPublic) {
+        await expect(request).rejects.toMatchObject({
+          cause: { message: "Public model server hostname resolved to a private address" },
+        });
+        expect(resolve).toHaveBeenCalledOnce();
+      } else {
+        await expect(request).rejects.toThrow();
+        expect(resolve).not.toHaveBeenCalled();
+      }
+    },
+  );
   it("keeps network protections when composing raw-usage observation", async () => {
     const fetcher = vi.fn();
     const safe = createOpenAiCompatibleFetch(usageReportingFetch(fetcher, new Set()));

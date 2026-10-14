@@ -28,7 +28,7 @@ function createPlatform(
   adapterOverrides: Partial<Adapter> = {},
 ) {
   let chat: ChatInstance | undefined;
-  const adapter: Adapter = createMockAdapter("mock", {
+  const adapter: Adapter = createMockAdapter(overrides.provider ?? "mock", {
     initialize: vi.fn(async (instance: ChatInstance) => {
       chat = instance;
     }),
@@ -304,6 +304,30 @@ describe("ChatSdkMessagingSurface webhook plumbing", () => {
 });
 
 describe("ChatSdkMessagingSurface outbound", () => {
+  it("posts Telegram replies as Markdown", async () => {
+    const { surface, adapter } = createSurface({ provider: "telegram" });
+    const body = "# Heading\n\n**bold** and [link](https://example.test)";
+
+    await surface.sendToThread({ threadId: "telegram:123", body }, context);
+
+    expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith("telegram:123", {
+      markdown: body,
+    });
+  });
+
+  it.each(["slack", "whatsapp", "lark", "sendblue"])(
+    "keeps %s replies as strings",
+    async (provider) => {
+      const { surface, adapter } = createSurface({ provider });
+      const body = "**bold** and [link](https://example.test)";
+      const threadId = `${provider}:C1:9`;
+
+      await surface.sendToThread({ threadId, body }, context);
+
+      expect(adapter.postMessage).toHaveBeenCalledExactlyOnceWith(threadId, body);
+    },
+  );
+
   it("posts to a thread through the platform adapter and returns the handle", async () => {
     const { surface, adapter } = createSurface();
     const result = await surface.sendToThread({ threadId: "mock:C1:9", body: "hi" }, context);

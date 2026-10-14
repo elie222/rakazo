@@ -15,9 +15,11 @@ import type {
   ModelCallObserver,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
+import { Agent } from "undici";
 import type { ContextBudget } from "./context-selection.js";
 import { estimateModelContextTokens } from "./model-context.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
+import { fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 /** Pi initializes absent usage to zero. Only raw numeric fields can prove reported zero. */
 export type ReportedUsageFields = Set<keyof AgentUsage>;
@@ -85,7 +87,13 @@ export function usageReportingFetch(
   reported: ReportedUsageFields,
 ): typeof fetch {
   return async (input, init) => {
-    const response = await fetcher(input, init);
+    // The wrapper hides the default fetch identity from the SSRF guard. Pair
+    // its transport when the guard attaches a package Agent; keep injected fetches.
+    const transport =
+      init && "dispatcher" in init && init.dispatcher instanceof Agent
+        ? fetchPairedWithDispatcher(fetcher)
+        : fetcher;
+    const response = await transport(input, init);
     if (!response.body || !response.headers.get("content-type")?.includes("text/event-stream"))
       return response;
     let buffer = "";

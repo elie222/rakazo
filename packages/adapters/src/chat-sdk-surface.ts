@@ -135,7 +135,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     _context: AdapterContext,
   ): Promise<MessagingSendResult> {
     await this.ensureInitialized();
-    const sent = await this.chat.thread(request.threadId).post(request.body);
+    // Telegram converts Markdown and retries parse errors as plain text. Keep
+    // other adapters' existing payloads (Slack markdown_text has a lower limit).
+    const message =
+      providerOfThreadId(request.threadId) === "telegram"
+        ? { markdown: request.body }
+        : request.body;
+    const sent = await this.chat.thread(request.threadId).post(message);
     const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
     return { handle };
   }
