@@ -27,6 +27,9 @@ export class GraphileJobPublisher implements JobPublisher {
       runAt: job.availableAt,
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
+      // replace resets attempts and run_at. keepExisting is graphile's dedupe:
+      // a queued retry, including one that has used its attempts, stays put.
+      ...(job.keepExisting ? { jobKeyMode: "unsafe_dedupe" as const } : {}),
     });
   }
 
@@ -215,6 +218,14 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     const stored = toQueuedJob(job);
     if (this.closed) throw new Error("Background job publisher is closed");
     if (this.stopped) throw new Error("Background job publisher is stopped");
+    if (
+      job.keepExisting &&
+      stored.replaceKey &&
+      (this.keyed.has(stored.replaceKey) ||
+        this.closingJobs.some((queued) => queued.replaceKey === stored.replaceKey))
+    ) {
+      return;
+    }
     if (this.closing) {
       this.enqueueWhileClosing(stored);
       return;

@@ -115,6 +115,31 @@ describe("InMemoryJobQueue", () => {
     await queue.close();
   });
 
+  it("leaves a keyed job in place when asked to keep the existing one", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "backed-off" },
+      availableAt: new Date(Date.now() + 5_000),
+      replaceKey: "run:run-1",
+    });
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "pulled-forward" },
+      replaceKey: "run:run-1",
+      keepExisting: true,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["run.continue"]).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(target["run.continue"]).toHaveBeenCalledTimes(1);
+    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    await queue.close();
+  });
+
   it.each([
     ["stop", "stop"],
     ["close", "close"],

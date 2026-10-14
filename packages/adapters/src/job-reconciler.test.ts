@@ -134,6 +134,7 @@ describe("createJobReconciler", () => {
       name: "run.continue",
       payload: { runId: "run-1" },
       replaceKey: "run:run-1",
+      keepExisting: true,
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "routine.wakeup",
