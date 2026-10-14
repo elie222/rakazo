@@ -2384,6 +2384,19 @@ function contextImageCount(context: Context): number {
   }, 0);
 }
 
+/**
+ * Same rule as the primary model (modelAcceptsImageInput): the catalog's input
+ * modalities decide for native providers, and the connection's acceptsImages flag
+ * only applies to OpenAI-compatible models, whose runtime model is built from it.
+ */
+function fallbackSeesImages(candidate: RuntimeModelTarget): boolean {
+  if (!candidate.model.input.includes("image")) return false;
+  return (
+    candidate.config.provider !== OPENAI_COMPATIBLE_PROVIDER_ID ||
+    candidate.config.acceptsImages !== false
+  );
+}
+
 function fallbackSupportsContext(
   candidate: RuntimeModelTarget,
   context: TranscriptContext,
@@ -2407,7 +2420,7 @@ function fallbackSupportsContext(
   const imageCount = contextImageCount(context);
   if (
     (imageCount > 0 || tools.some((tool) => IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name))) &&
-    (!candidate.model.input.includes("image") || candidate.config.acceptsImages === false)
+    !fallbackSeesImages(candidate)
   ) {
     return false;
   }

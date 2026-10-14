@@ -1461,6 +1461,128 @@ describe("Pi runtime ordered model fallback", () => {
     ).toEqual([primary.provider, backupB.provider]);
   });
 
+  it("uses a native vision backup with acceptsImages false after a 429", async () => {
+    providerState.models.set(`${backupA.provider}/${backupA.id}`, {
+      ...backupA,
+      input: ["text", "image"],
+    });
+    const input = request([
+      {
+        provider: backupA.provider,
+        id: backupA.id,
+        apiKey: "vision-backup-key",
+        acceptsImages: false,
+      },
+    ]);
+    input.tools = [
+      {
+        name: "computer_observe",
+        description: "Read the screen",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+    ];
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", "429 rate_limit_error"))
+        : stream(target, message(target, [{ type: "text", text: "saw the screen" }], "stop")),
+    );
+
+    const events = await run(input);
+
+    expect(
+      providerState.stream.mock.calls.map(
+        ([target]) => (target as Model<"openai-completions">).provider,
+      ),
+    ).toEqual([primary.provider, backupA.provider]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "saw the screen" });
+  });
+
+  it("still skips a native text-only backup when screen tools can return images", async () => {
+    providerState.models.set(`${backupA.provider}/${backupA.id}`, {
+      ...backupA,
+      input: ["text"],
+    });
+    const input = request([
+      {
+        provider: backupA.provider,
+        id: backupA.id,
+        apiKey: "text-only-key",
+        acceptsImages: false,
+      },
+    ]);
+    input.tools = [
+      {
+        name: "computer_observe",
+        description: "Read the screen",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+    ];
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      stream(target, message(target, [], "error", "429 rate_limit_error")),
+    );
+
+    await expect(run(input)).rejects.toThrow(/429 rate_limit_error/);
+    expect(
+      providerState.stream.mock.calls.map(
+        ([target]) => (target as Model<"openai-completions">).provider,
+      ),
+    ).toEqual([primary.provider, primary.provider, primary.provider, primary.provider]);
+  });
+
+  it("skips an OpenAI-compatible backup with acceptsImages false and uses one with true", async () => {
+    const refused = model("openai-compatible", "compat-refused", 16_384);
+    const accepted = model("openai-compatible", "compat-accepted", 16_384);
+    providerState.models.set(`${refused.provider}/${refused.id}`, {
+      ...refused,
+      input: ["text", "image"],
+    });
+    providerState.models.set(`${accepted.provider}/${accepted.id}`, {
+      ...accepted,
+      input: ["text", "image"],
+    });
+    const input = request([
+      {
+        provider: refused.provider,
+        id: refused.id,
+        apiKey: "compat-refused-key",
+        baseUrl: "https://compat.invalid/v1",
+        acceptsImages: false,
+      },
+      {
+        provider: accepted.provider,
+        id: accepted.id,
+        apiKey: "compat-accepted-key",
+        baseUrl: "https://compat.invalid/v1",
+        acceptsImages: true,
+      },
+    ]);
+    input.tools = [
+      {
+        name: "computer_observe",
+        description: "Read the screen",
+        inputSchema: { type: "object", properties: {} },
+        readOnly: true,
+      },
+    ];
+    providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
+      target.provider === primary.provider
+        ? stream(target, message(target, [], "error", "429 rate_limit_error"))
+        : stream(target, message(target, [{ type: "text", text: "compat saw it" }], "stop")),
+    );
+
+    const events = await run(input);
+
+    expect(
+      providerState.stream.mock.calls.map(([target]) => target as Model<"openai-completions">),
+    ).toEqual([
+      expect.objectContaining({ provider: primary.provider, id: primary.id }),
+      expect.objectContaining({ provider: accepted.provider, id: accepted.id }),
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", text: "compat saw it" });
+  });
+
   it("does not persist or start a backup when cancellation wins during credential resolution", async () => {
     const input = request([{ provider: backupA.provider, id: backupA.id }]);
     let releaseResolution: ((model: AgentRunRequest["model"]) => void) | undefined;
