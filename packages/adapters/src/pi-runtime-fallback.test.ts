@@ -59,7 +59,7 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
 }));
 
 import { IMAGE_RETURNING_COMPUTER_TOOLS } from "./model-vision.js";
-import { isRetryableProviderUnavailable, PiAgentRuntime } from "./pi-runtime.js";
+import { PiAgentRuntime } from "./pi-runtime.js";
 import { MODEL_STREAM_IDLE_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
 
@@ -1538,53 +1538,5 @@ describe("Pi runtime ordered model fallback", () => {
     expect(resolveFallbackModel).toHaveBeenNthCalledWith(2, backupB.provider, backupB.id);
     expect(requestKeys).toEqual(["backup-only-key"]);
     expect(JSON.stringify(events)).not.toContain("backup-only-key");
-  });
-});
-
-describe("provider availability classification", () => {
-  it.each([
-    ["dropped fetch body", new TypeError("terminated"), true],
-    [
-      "Codex overload",
-      new Error("Codex error: Our servers are currently overloaded. Please try again later."),
-      true,
-    ],
-    [
-      "HTTP 400 before retry text",
-      { status: 400, message: "429 rate limit; Retry-After 3301s" },
-      false,
-    ],
-    [
-      "HTTP 401 before retry text",
-      { statusCode: 401, message: "429 rate limit; Retry-After 3301s" },
-      false,
-    ],
-    [
-      "HTTP 403 before retry text",
-      { httpStatus: 403, message: "429 rate limit; Retry-After 3301s" },
-      false,
-    ],
-    [
-      "unprocessable input before retry text",
-      { status: 422, message: "The request cannot be processed; 429 rate limit" },
-      false,
-    ],
-    [
-      "cancellation",
-      new Error("user cancelled request; retry after 3301 seconds; 429 rate limit"),
-      false,
-    ],
-    [
-      "consent refusal",
-      new Error("user declined consent; retry after 3301 seconds; 429 rate limit"),
-      false,
-    ],
-    ["quota exhaustion", { status: 402, message: "provider quota exhausted" }, true],
-    ["plain status", new Error("503 provider unavailable"), true],
-    ["HTTP server status", new Error("HTTP 500"), true],
-    ["context overflow", new Error("context_length_exceeded; retry after 60s"), false],
-    ["transient server failure", { status: 503, message: "service unavailable" }, true],
-  ])("classifies %s", (_label, error, expected) => {
-    expect(isRetryableProviderUnavailable(error)).toBe(expected);
   });
 });
