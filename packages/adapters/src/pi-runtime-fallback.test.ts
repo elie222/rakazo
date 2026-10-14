@@ -391,9 +391,7 @@ describe("Pi runtime transient model retries", () => {
         stream(primary, message(primary, [], "error", "429 rate limit")),
       );
       const controller = new AbortController();
-      const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
-      const onModelChange = vi.fn(async () => undefined);
-      input.onModelChange = onModelChange;
+      const input = request();
       const events: AgentRuntimeEvent[] = [];
       const consume = async () => {
         for await (const event of new PiAgentRuntime().run(input, { signal: controller.signal })) {
@@ -413,7 +411,6 @@ describe("Pi runtime transient model retries", () => {
       );
       expect(events.some((event) => event.type === "done")).toBe(false);
       expect(providerState.stream).toHaveBeenCalledTimes(attempts);
-      expect(onModelChange).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     },
   );
@@ -526,7 +523,7 @@ describe("Pi runtime ordered model fallback", () => {
         providerState.stream.mock.calls.map(
           ([target]) => (target as Model<"openai-completions">).provider,
         ),
-      ).toEqual([...Array<string>(4).fill(primary.provider), backupB.provider]);
+      ).toEqual([primary.provider, backupB.provider]);
       expect(providerState.stream.mock.lastCall?.[2]).toMatchObject({
         apiKey: "fake-user-backup-key",
       });
@@ -563,7 +560,7 @@ describe("Pi runtime ordered model fallback", () => {
         [],
         new PiAgentRuntime({ modelCallObserver: { beforeCall, afterCall } }),
       );
-      const targets = switched ? [primary, primary, primary, primary, backupA] : [primary];
+      const targets = switched ? [primary, backupA] : [primary];
       expect(beforeCall.mock.calls.map(([call]) => call)).toEqual(
         targets.map((target) =>
           expect.objectContaining({ provider: target.provider, modelId: target.id }),
@@ -627,7 +624,7 @@ describe("Pi runtime ordered model fallback", () => {
       request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]),
     );
     expect(events).toContainEqual({ type: "text", text: "backup answer" });
-    expect(providerState.stream).toHaveBeenCalledTimes(5);
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
   });
 
   it("switches after a Codex idle timeout before output", async () => {
@@ -663,9 +660,9 @@ describe("Pi runtime ordered model fallback", () => {
       const input = request([{ provider: backupA.provider, id: backupA.id, apiKey: "backup-key" }]);
       input.model.provider = codex.provider;
       const pending = run(input);
-      await vi.advanceTimersByTimeAsync((MODEL_STREAM_IDLE_TIMEOUT_MS + 1) * 4);
+      await vi.advanceTimersByTimeAsync(MODEL_STREAM_IDLE_TIMEOUT_MS + 1);
       expect(await pending).toContainEqual({ type: "text", text: "recovered" });
-      expect(providerState.stream).toHaveBeenCalledTimes(5);
+      expect(providerState.stream).toHaveBeenCalledTimes(2);
     } finally {
       vi.useRealTimers();
     }
@@ -781,12 +778,12 @@ describe("Pi runtime ordered model fallback", () => {
     const events = await run(input);
 
     expect(executeTool).toHaveBeenCalledTimes(1);
-    expect(primaryCalls).toBe(5);
+    expect(primaryCalls).toBe(2);
     expect(
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([...Array<string>(5).fill(primary.provider), backupA.provider]);
+    ).toEqual([primary.provider, primary.provider, backupA.provider]);
     expect(JSON.stringify(backupContext?.messages)).toContain("write-once");
     expect(events).toContainEqual(
       expect.objectContaining({ type: "text", text: "Finished safely." }),
@@ -862,13 +859,13 @@ describe("Pi runtime ordered model fallback", () => {
     await run(input);
 
     expect(providers).toEqual([
-      ...Array<string>(4).fill(primary.provider),
+      primary.provider,
       backupA.provider,
       backupA.provider,
       backupA.provider,
     ]);
     expect(apiKeys).toEqual([
-      ...Array<string>(4).fill("primary-fixture-key"),
+      "primary-fixture-key",
       "backup-fixture-key",
       "backup-fixture-key",
       "backup-fixture-key",
@@ -1295,7 +1292,7 @@ describe("Pi runtime ordered model fallback", () => {
     ).toEqual([primary.provider, primary.provider]);
   });
 
-  it("tries backups in order with three retries per target before surfacing exhaustion", async () => {
+  it("tries each backup once in order, then retries the last before surfacing exhaustion", async () => {
     providerState.stream.mockImplementation((target: Model<"openai-completions">) =>
       stream(target, message(target, [], "error", "529 overloaded_error")),
     );
@@ -1315,11 +1312,7 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([
-      ...Array<string>(4).fill(primary.provider),
-      ...Array<string>(4).fill(backupA.provider),
-      ...Array<string>(4).fill(backupB.provider),
-    ]);
+    ).toEqual([primary.provider, backupA.provider, ...Array<string>(4).fill(backupB.provider)]);
   });
 
   it("skips a backup that cannot fit the actual prompt and selects the next smaller-than-primary fit", async () => {
@@ -1340,7 +1333,7 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([...Array<string>(4).fill(primary.provider), backupB.provider]);
+    ).toEqual([primary.provider, backupB.provider]);
   });
 
   it("uses a small-context backup when the actual input and configured output fit", async () => {
@@ -1369,7 +1362,7 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([...Array<string>(4).fill(primary.provider), smallContextBackup.provider]);
+    ).toEqual([primary.provider, smallContextBackup.provider]);
   });
 
   it("skips backups without the primary turn's reasoning capability", async () => {
@@ -1397,7 +1390,7 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([...Array<string>(4).fill(primary.provider), backupB.provider]);
+    ).toEqual([primary.provider, backupB.provider]);
   });
 
   it.each([...IMAGE_RETURNING_COMPUTER_TOOLS, "write_effect"])(
@@ -1428,7 +1421,7 @@ describe("Pi runtime ordered model fallback", () => {
           ([target]) => (target as Model<"openai-completions">).provider,
         ),
       ).toEqual([
-        ...Array<string>(4).fill(primary.provider),
+        primary.provider,
         IMAGE_RETURNING_COMPUTER_TOOLS.has(toolName) ? backupB.provider : backupA.provider,
       ]);
     },
@@ -1456,7 +1449,7 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual([...Array<string>(4).fill(primary.provider), backupB.provider]);
+    ).toEqual([primary.provider, backupB.provider]);
   });
 
   it("does not persist or start a backup when cancellation wins during credential resolution", async () => {
@@ -1506,7 +1499,7 @@ describe("Pi runtime ordered model fallback", () => {
       providerState.stream.mock.calls.map(
         ([target]) => (target as Model<"openai-completions">).provider,
       ),
-    ).toEqual(Array<string>(4).fill(primary.provider));
+    ).toEqual([primary.provider]);
   });
 
   it("skips a backup with changed credentials and uses only the next backup's credential", async () => {
