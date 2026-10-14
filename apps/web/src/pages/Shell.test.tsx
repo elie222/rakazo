@@ -418,3 +418,67 @@ it.each([true, false])(
     expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("newer text");
   },
 );
+
+it.each([true, false])(
+  "settles a submission after returning to its thread (accepted: %s)",
+  async (accepted) => {
+    let finishSend = (_accepted: boolean) => {};
+    const draftKey = "bot:return-before-settle";
+    const first = renderComposer(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+      { draftKey },
+    );
+    type(first, "submitted text");
+    pressEnter(first);
+    act(() => root?.unmount());
+    container?.remove();
+    const returned = renderComposer(vi.fn(), { draftKey });
+    expect(returned.value).toBe("submitted text");
+    await act(async () => finishSend(accepted));
+    expect(returned.value).toBe(accepted ? "" : "submitted text");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe(
+      accepted ? null : "submitted text",
+    );
+  },
+);
+
+it("preserves edits made after returning, even when the text matches the submission", async () => {
+  let finishSend = (_accepted: boolean) => {};
+  const draftKey = "bot:identical-newer-edit";
+  const first = renderComposer(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishSend = resolve;
+      }),
+    { draftKey },
+  );
+  type(first, "submitted text");
+  pressEnter(first);
+  act(() => root?.unmount());
+  container?.remove();
+  const returned = renderComposer(vi.fn(), { draftKey });
+  type(returned, "edited text");
+  type(returned, "submitted text");
+  await act(async () => finishSend(true));
+  expect(returned.value).toBe("submitted text");
+  expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("submitted text");
+});
+
+it("clears accepted saved text when only an attachment was picked during the send", async () => {
+  let finishSend = (_accepted: boolean) => {};
+  const textarea = renderComposer(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishSend = resolve;
+      }),
+  );
+  type(textarea, "submitted text");
+  pressEnter(textarea);
+  pickAttachment();
+  await act(async () => finishSend(true));
+  expect(textarea.value).toBe("");
+  expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
+});

@@ -181,7 +181,13 @@ import {
 } from "../lib/browser-notifications";
 import { startCall, useCallSession } from "../lib/call-session";
 import { newClientId } from "../lib/client-id";
-import { readComposerDraft, writeComposerDraft } from "../lib/composer-draft";
+import {
+  beginComposerDraftSubmission,
+  readComposerDraft,
+  settleComposerDraftSubmission,
+  subscribeComposerDraftAccepted,
+  writeComposerDraft,
+} from "../lib/composer-draft";
 import {
   getComposerEnterToSend,
   subscribeComposerEnterToSend,
@@ -5471,12 +5477,15 @@ export const Composer = memo(function Composer({
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
-  const pendingDraftRevision = useRef<number | null>(null);
-  useEffect(() => {
-    // Keep the submitted text recoverable while the optimistic field is empty.
-    if (draft === "" && pendingDraftRevision.current === editRevision.current) return;
-    writeComposerDraft(draftKey, draft);
-  }, [draftKey, draft]);
+  useEffect(
+    () =>
+      subscribeComposerDraftAccepted(draftKey, (text) => {
+        setDraft((current) => (current === text ? "" : current));
+        setMentionQuery(null);
+        setSlashQuery(null);
+      }),
+    [draftKey],
+  );
   const retryNonce = useRef<string | null>(null);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
@@ -5611,6 +5620,7 @@ export const Composer = memo(function Composer({
 
   function updateDraft(value: string) {
     markEdited();
+    writeComposerDraft(draftKey, value);
     setDraft(value);
     const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(mentionMatch ? (mentionMatch[1] ?? "") : null);
@@ -5627,7 +5637,9 @@ export const Composer = memo(function Composer({
 
   function insertMention(mention: ComposerMention) {
     markEdited();
-    setDraft((current) => current.replace(/@([\w-]*)$/, ""));
+    const next = draft.replace(/@([\w-]*)$/, "");
+    writeComposerDraft(draftKey, next);
+    setDraft(next);
     setMentionQuery(null);
     setMentionHighlightIndex(0);
     setSelectedMentions((current) =>
@@ -5641,12 +5653,14 @@ export const Composer = memo(function Composer({
   function insertSkill(skill: AgentSkillCatalogEntry) {
     markEdited();
     setSelectedSkill(skill);
+    writeComposerDraft(draftKey, "");
     setDraft("");
     setSlashQuery(null);
   }
 
   function runSlashAction(action: SlashActionId) {
     markEdited();
+    writeComposerDraft(draftKey, "");
     setDraft("");
     setSlashQuery(null);
     onSlashAction?.(action);
@@ -5714,7 +5728,7 @@ export const Composer = memo(function Composer({
     const clientNonce = retryNonce.current ?? newClientNonce();
     retryNonce.current = null;
     const text = serializeComposerPrompt(draft, selectedSkill, selectedMentions);
-    pendingDraftRevision.current = revision;
+    const submission = beginComposerDraftSubmission(draftKey, draft);
     setDraft("");
     setMentionQuery(null);
     setMentionHighlightIndex(0);
@@ -5723,13 +5737,11 @@ export const Composer = memo(function Composer({
     const mentions = selectedMentions;
     setSelectedMentions([]);
     try {
-      if ((await onSend(text, mentions, clientNonce)) !== false) {
-        if (editRevision.current === revision && readComposerDraft(draftKey) === draft) {
-          writeComposerDraft(draftKey, "");
-        }
-        return;
-      }
+      const accepted = (await onSend(text, mentions, clientNonce)) !== false;
+      settleComposerDraftSubmission(draftKey, submission, accepted);
+      if (accepted) return;
     } catch {
+      settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
       return;
     }

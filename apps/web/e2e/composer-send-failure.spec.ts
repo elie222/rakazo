@@ -223,3 +223,31 @@ test("an unchanged routine retry after a lost response reuses the run", async ({
   expect(nonces[1]).toBe(nonces[0]);
   expect(runIds[1]).toBe(runIds[0]);
 });
+
+test("an accepted send clears recovered text after returning to the thread", async ({ page }) => {
+  await openComposer(page, "pending-return");
+  await createNamedBot(page, "Other thread");
+  const sidebar = page.locator("aside").first();
+  await sidebar.getByRole("button", { name: /^Chief/ }).click();
+  const composer = page.getByRole("combobox", { name: "Message Chief", exact: true });
+  let releaseSend = () => {};
+  const released = new Promise<void>((resolve) => {
+    releaseSend = resolve;
+  });
+  await page.route("**/rpc/threads/send", async (route) => {
+    await released;
+    await route.continue();
+  });
+  await composer.fill("pending accepted message");
+  const request = page.waitForRequest("**/rpc/threads/send");
+  await composer.press("Enter");
+  await request;
+  await expect(composer).toHaveValue("");
+  await sidebar.getByRole("button", { name: /^Other thread/ }).click();
+  await sidebar.getByRole("button", { name: /^Chief/ }).click();
+  await expect(composer).toHaveValue("pending accepted message");
+  releaseSend();
+  await expect(composer).toHaveValue("");
+  await page.reload();
+  await expect(composer).toHaveValue("");
+});
