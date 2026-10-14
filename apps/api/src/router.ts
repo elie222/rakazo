@@ -2170,7 +2170,15 @@ export function createRouter(deps: RouterDeps) {
         if (target.kind === "bot") {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         }
-        return sendThreadMessage(deps, context.actor, target, input);
+        return sendThreadMessage(
+          deps,
+          context.actor,
+          target,
+          input,
+          target.kind === "bot"
+            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
+            : undefined,
+        );
       }),
       react: authed.threads.react.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
@@ -6441,12 +6449,17 @@ async function releaseComputerControl(
   actor: Actor,
   botId: string,
   reason?: ComputerReleaseReason,
+  expectedRunId?: string,
 ): Promise<void> {
   const bot = await createRepos(deps.prisma).getBot(actor, botId);
-  if (!bot.computer) throw new IsolationError();
+  if (!bot.computer) {
+    if (expectedRunId !== undefined) return;
+    throw new IsolationError();
+  }
   const controlBotId = bot.computer.controlBotId;
   const controlLeaseId = bot.computer.controlLeaseId;
   if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;
+  if (expectedRunId !== undefined && bot.computer.controlRunId !== expectedRunId) return;
   if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
     // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
     // remains after a failed revoke, keep it so reconciliation can retry.

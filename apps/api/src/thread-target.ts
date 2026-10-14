@@ -137,7 +137,11 @@ function sendRunClientNonce(
 async function enqueueRunsNeedingContinue(
   jobs: JobPublisher,
   runs: Array<{ id: string; status: string }>,
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
+  for (const run of runs) {
+    if (isActive(run.status as RunStatus)) await releaseTakeover?.(run.id);
+  }
   await Promise.all(
     runs
       .filter((run) => RUNS_NEEDING_CONTINUE.has(run.status))
@@ -161,6 +165,7 @@ async function replayExistingSend(
   deps: { prisma: PrismaClient; events: ThreadEvents; jobs: JobPublisher },
   threadId: string,
   clientNonce: string | undefined,
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
   if (!clientNonce) return null;
   const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
@@ -192,7 +197,13 @@ async function replayExistingSend(
     : message.sourceRuns.length
       ? message.sourceRuns
       : [linkedRun!];
-  await enqueueRunsNeedingContinue(deps.jobs, runs);
+  const pendingSteering = releaseTakeover
+    ? await deps.prisma.steeringMessage.findFirst({
+        where: { messageId: message.id, claimedAt: null },
+        select: { id: true },
+      })
+    : null;
+  await enqueueRunsNeedingContinue(deps.jobs, runs, pendingSteering ? releaseTakeover : undefined);
   const latestEvent = await deps.prisma.event.findFirst({
     where: { threadId },
     orderBy: { seq: "desc" },
@@ -617,8 +628,14 @@ export async function sendThreadMessage(
     replyQuote?: string;
     clientNonce?: string;
   },
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
-  const existing = await replayExistingSend(deps, target.threadId, input.clientNonce);
+  const existing = await replayExistingSend(
+    deps,
+    target.threadId,
+    input.clientNonce,
+    releaseTakeover,
+  );
   if (existing) return existing;
   // Live events carry the call id so a spoken turn joins the call card on first
   // paint; without it the bubble shows loose until a refetch reads the nonce.
@@ -1000,7 +1017,12 @@ export async function sendThreadMessage(
     });
 
   const committed = await withSerializableRetry(commit).catch(async (error) => {
-    const winner = await replayExistingSend(deps, target.threadId, input.clientNonce);
+    const winner = await replayExistingSend(
+      deps,
+      target.threadId,
+      input.clientNonce,
+      releaseTakeover,
+    );
     if (winner) return { replay: winner } as const;
     throw error;
   });
@@ -1009,7 +1031,7 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
-  await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
+  await enqueueRunsNeedingContinue(deps.jobs, committed.runs, releaseTakeover);
   return sendResult(committed.message, committed.runs);
 }
 
