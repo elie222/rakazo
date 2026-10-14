@@ -23,13 +23,14 @@ export class GraphileJobPublisher implements JobPublisher {
 
   async enqueue(job: BackgroundJob): Promise<void> {
     const utils = await this.getUtils();
+    // replace resets attempts and run_at. unsafe_dedupe leaves both, so an
+    // exhausted row would stay queued forever. Dedupe only while attempts remain.
+    const jobKeyMode = await this.keepExistingMode(utils, job);
     await utils.addJob(job.name, wrapJobPayload(job.payload), {
       runAt: job.availableAt,
       jobKey: job.replaceKey,
       maxAttempts: job.maxAttempts,
-      // replace resets attempts and run_at. keepExisting is graphile's dedupe:
-      // a queued retry, including one that has used its attempts, stays put.
-      ...(job.keepExisting ? { jobKeyMode: "unsafe_dedupe" as const } : {}),
+      ...(jobKeyMode ? { jobKeyMode } : {}),
     });
   }
 
@@ -50,6 +51,23 @@ export class GraphileJobPublisher implements JobPublisher {
     if (this.closed) throw new Error("Background job publisher is closed");
     this.utils ??= makeWorkerUtils({ pgPool: this.pgPool });
     return this.utils;
+  }
+
+  private async keepExistingMode(
+    utils: WorkerUtils,
+    job: BackgroundJob,
+  ): Promise<"unsafe_dedupe" | undefined> {
+    const key = job.replaceKey;
+    if (!job.keepExisting || !key) return undefined;
+    const existing = await utils.withPgClient(async (client) => {
+      const found = await client.query<{ attempts: number; max_attempts: number }>(
+        "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+        [key],
+      );
+      return found.rows[0];
+    });
+    if (!existing || Number(existing.attempts) >= Number(existing.max_attempts)) return undefined;
+    return "unsafe_dedupe";
   }
 }
 
@@ -183,11 +201,16 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   }
 }
 
+/** Graphile's default when a job sets no cap. */
+const DEFAULT_JOB_MAX_ATTEMPTS = 25;
+
 interface QueuedJob {
   name: BackgroundJob["name"];
   payload: unknown;
   availableAt?: Date;
   replaceKey?: string;
+  attempts: number;
+  maxAttempts: number;
 }
 
 function toQueuedJob(job: BackgroundJob): QueuedJob {
@@ -196,6 +219,8 @@ function toQueuedJob(job: BackgroundJob): QueuedJob {
     payload: wrapJobPayload(job.payload),
     availableAt: job.availableAt,
     replaceKey: job.replaceKey,
+    attempts: 0,
+    maxAttempts: job.maxAttempts ?? DEFAULT_JOB_MAX_ATTEMPTS,
   };
 }
 
@@ -218,12 +243,10 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     const stored = toQueuedJob(job);
     if (this.closed) throw new Error("Background job publisher is closed");
     if (this.stopped) throw new Error("Background job publisher is stopped");
-    if (
-      job.keepExisting &&
-      stored.replaceKey &&
-      (this.keyed.has(stored.replaceKey) ||
-        this.closingJobs.some((queued) => queued.replaceKey === stored.replaceKey))
-    ) {
+    // Keep a keyed job only while attempts remain. An exhausted row stays
+    // queued in Graphile and would never run again under unsafe_dedupe.
+    const existing = this.existingJob(stored.replaceKey);
+    if (job.keepExisting && existing && existing.attempts < existing.maxAttempts) {
       return;
     }
     if (this.closing) {
@@ -264,6 +287,34 @@ export class InMemoryJobQueue implements JobPublisher, JobWorkerHost {
     this.keyed.delete(replaceKey);
     this.timers.delete(timer);
     this.scheduled.delete(timer);
+  }
+
+  /** Attempts and schedule for a keyed job that is still queued. */
+  keyedJob(
+    replaceKey: string,
+  ): { attempts: number; maxAttempts: number; availableAt?: Date } | undefined {
+    const job = this.existingJob(replaceKey);
+    if (!job) return undefined;
+    return {
+      attempts: job.attempts,
+      maxAttempts: job.maxAttempts,
+      availableAt: job.availableAt ? new Date(job.availableAt.getTime()) : undefined,
+    };
+  }
+
+  /** Count one failed attempt on a keyed job that is still queued. */
+  recordFailedAttempt(replaceKey: string): void {
+    const job = this.existingJob(replaceKey);
+    if (!job) throw new Error("No keyed background job");
+    job.attempts += 1;
+  }
+
+  private existingJob(replaceKey: string | undefined): QueuedJob | undefined {
+    if (!replaceKey) return undefined;
+    const timer = this.keyed.get(replaceKey);
+    const scheduled = timer ? this.scheduled.get(timer) : undefined;
+    if (scheduled) return scheduled;
+    return this.closingJobs.find((queued) => queued.replaceKey === replaceKey);
   }
 
   async start(handlers: BackgroundJobHandlers): Promise<void> {

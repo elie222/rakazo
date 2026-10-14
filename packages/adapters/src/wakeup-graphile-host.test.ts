@@ -107,6 +107,113 @@ describe("GraphileJobPublisher.enqueue", () => {
     expect(options?.maxAttempts).toBeUndefined();
     await publisher.close();
   });
+
+  // graphile-worker 0.17.3 add_job: unsafe_dedupe on conflict bumps revision only.
+  // replace sets attempts = 0 and run_at = excluded.run_at.
+  function graphileJobs(jobs: Map<string, { attempts: number; maxAttempts: number; runAt: Date }>) {
+    const query = vi.fn(async (_sql: string, params?: readonly unknown[]) => {
+      const job = jobs.get(String(params?.[0]));
+      return { rows: job ? [{ attempts: job.attempts, max_attempts: job.maxAttempts }] : [] };
+    });
+    const addJob = vi.fn(
+      async (
+        _name: string,
+        _payload: unknown,
+        spec: { runAt?: Date; jobKey?: string; maxAttempts?: number; jobKeyMode?: string },
+      ) => {
+        const key = spec.jobKey;
+        if (!key) return;
+        const existing = jobs.get(key);
+        if (spec.jobKeyMode === "unsafe_dedupe" && existing) return;
+        jobs.set(key, {
+          attempts: 0,
+          maxAttempts: spec.maxAttempts ?? 25,
+          runAt: spec.runAt ?? new Date(),
+        });
+      },
+    );
+    const withPgClient = vi.fn(
+      async (callback: (client: { query: typeof query }) => Promise<unknown>) =>
+        callback({ query }),
+    );
+    return { query, addJob, withPgClient };
+  }
+
+  function publisherOver(
+    jobs: Map<string, { attempts: number; maxAttempts: number; runAt: Date }>,
+  ) {
+    const graphile = graphileJobs(jobs);
+    vi.mocked(makeWorkerUtils).mockResolvedValue({
+      addJob: graphile.addJob,
+      withPgClient: graphile.withPgClient,
+      release: vi.fn(async () => undefined),
+    } as never);
+    return { publisher: new GraphileJobPublisher({} as Pool), ...graphile };
+  }
+
+  it("keeps attempts and run_at while a keyed job still has attempts left", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 2, maxAttempts: 25, runAt }]]);
+    const { publisher, addJob, query } = publisherOver(jobs);
+    const pulledForward = new Date("2030-01-01T00:00:01.000Z");
+    await publisher.enqueue({
+      name: "run.continue",
+      payload: { runId: "pulled-forward" },
+      replaceKey: "run:run-1",
+      availableAt: pulledForward,
+      keepExisting: true,
+    });
+    expect(query).toHaveBeenCalledWith(
+      "select attempts, max_attempts from graphile_worker._private_jobs where key = $1",
+      ["run:run-1"],
+    );
+    expect(addJob).toHaveBeenCalledWith(
+      "run.continue",
+      expect.anything(),
+      expect.objectContaining({
+        jobKey: "run:run-1",
+        jobKeyMode: "unsafe_dedupe",
+        runAt: pulledForward,
+      }),
+    );
+    expect(jobs.get("run:run-1")).toEqual({ attempts: 2, maxAttempts: 25, runAt });
+    await publisher.close();
+  });
+
+  it("replaces an exhausted job so it is re-enqueued with fresh attempts", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 3, maxAttempts: 3, runAt }]]);
+    const { publisher, addJob } = publisherOver(jobs);
+    const revivedAt = new Date("2030-01-02T00:00:00.000Z");
+    await publisher.enqueue({
+      name: "run.continue",
+      payload: { runId: "revived" },
+      replaceKey: "run:run-1",
+      availableAt: revivedAt,
+      keepExisting: true,
+    });
+    const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
+    expect(options?.jobKeyMode).toBeUndefined();
+    expect(jobs.get("run:run-1")).toEqual({ attempts: 0, maxAttempts: 25, runAt: revivedAt });
+    await publisher.close();
+  });
+
+  it("enqueues a keepExisting job when no row has that key", async () => {
+    const jobs = new Map<string, { attempts: number; maxAttempts: number; runAt: Date }>();
+    const { publisher, addJob } = publisherOver(jobs);
+    const runAt = new Date("2030-01-03T00:00:00.000Z");
+    await publisher.enqueue({
+      name: "run.continue",
+      payload: { runId: "fresh" },
+      replaceKey: "run:missing",
+      availableAt: runAt,
+      keepExisting: true,
+    });
+    const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
+    expect(options?.jobKeyMode).toBeUndefined();
+    expect(jobs.get("run:missing")).toEqual({ attempts: 0, maxAttempts: 25, runAt });
+    await publisher.close();
+  });
 });
 
 describe("GraphileJobWorkerHost runner lifecycle", () => {

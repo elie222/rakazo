@@ -327,8 +327,8 @@ export function createJobReconciler(
       }
 
       // A queued run already has a job while it waits out failure backoff.
-      // Default replace would zero that job's attempts and run it now, so a setup
-      // failure would retry without the worker's attempt cap. Leave the existing job.
+      // Default replace would zero that job's attempts and run it now. keepExisting
+      // leaves the job while attempts remain, and still replaces one that is exhausted.
       await Promise.all([
         ...runs.map((run) => deps.jobs.enqueue({ ...runContinueJob(run.id), keepExisting: true })),
         ...routines.flatMap((routine) =>
