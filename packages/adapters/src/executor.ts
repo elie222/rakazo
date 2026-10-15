@@ -3914,11 +3914,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let discardedMidTurnNarration = false;
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
-        const turnStartedAtMs = attempt.startedAt?.getTime() ?? Date.now();
+        const turnStartedAtMs = run.startedAt?.getTime() ?? Date.now();
         // Durable interim messages only on genuinely long turns, capped per run.
         const canPublishDurableProgress = () =>
-          runPromotesMidTurnNarration(run.trigger) &&
           midTurnProgressBudgetAllows(midTurnProgressCount, Date.now() - turnStartedAtMs);
+        const canPublishDurableNarration = () =>
+          runPromotesMidTurnNarration(run.trigger) && canPublishDurableProgress();
         {
           const priorProgress = await deps.prisma.message.findMany({
             where: { runId: run.id, role: "bot" },
@@ -3993,13 +3994,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           messageSegments = extracted.remaining;
           currentTextSegment = "";
           if (!narration) return;
-          assembled = "";
           hasStreamedText = false;
           pendingProgress = "";
-          if (!canPublishDurableProgress()) {
-            discardedMidTurnNarration = true;
+          if (!canPublishDurableNarration()) {
+            if (!runPromotesMidTurnNarration(run.trigger)) {
+              assembled = "";
+              discardedMidTurnNarration = true;
+            }
             return;
           }
+          assembled = "";
           await publishMessage(
             deps,
             run,
@@ -6800,7 +6804,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await publishMidTurnNarration();
               if (assembled.trim()) {
                 const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
-                if (narration && canPublishDurableProgress()) {
+                if (narration && canPublishDurableNarration()) {
                   await publishMessage(
                     deps,
                     run,
