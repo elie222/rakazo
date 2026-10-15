@@ -1,4 +1,4 @@
-/** Whether plain Enter sends the composer message. Default is false (Enter = newline). */
+/** Whether plain Enter sends the composer message, with a device default and saved override. */
 
 export const COMPOSER_ENTER_TO_SEND_STORAGE_KEY = "rakazo.composerEnterToSend";
 
@@ -27,9 +27,9 @@ function detectCoarsePointer(): boolean {
   }
 }
 
-/** Default: Enter inserts a newline (safer on mobile; enable sending in Settings > General). */
-export function defaultComposerEnterToSend(_coarsePointer = false): boolean {
-  return false;
+/** Default: Enter sends on desktop and inserts a newline on touch devices. */
+export function defaultComposerEnterToSend(coarsePointer = detectCoarsePointer()): boolean {
+  return !coarsePointer;
 }
 
 export function normalizeComposerEnterToSend(

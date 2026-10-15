@@ -3,7 +3,7 @@ import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 for (const touch of [false, true]) {
   test.describe(touch ? "touch composer" : "desktop composer", () => {
-    test.use({ hasTouch: touch });
+    test.use({ hasTouch: touch, isMobile: touch });
 
     test("Settings controls Enter behavior and persists the preference", async ({
       page,
@@ -17,6 +17,16 @@ for (const touch of [false, true]) {
       await completeOnboarding(page);
       const composer = page.getByRole("combobox", { name: /^Message/ });
       await expect(page.getByTestId("composer-enter-to-send-toggle")).toBeHidden();
+      await composer.fill("default behavior");
+      await composer.press("End");
+      await composer.press("Shift+Enter");
+      await expect(composer).toHaveValue("default behavior\n");
+      await composer.press("Enter");
+      if (touch) {
+        await expect(composer).toHaveValue("default behavior\n\n");
+        await composer.press("Control+Enter");
+      }
+      await expect(composer).toHaveValue("");
       await composer.fill("saved draft");
       await page.getByTestId("user-menu-trigger").click();
       await page.getByRole("button", { name: "Settings", exact: true }).click();

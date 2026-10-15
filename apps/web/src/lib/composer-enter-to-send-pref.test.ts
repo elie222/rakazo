@@ -25,8 +25,8 @@ beforeEach(async () => {
 });
 
 describe("defaultComposerEnterToSend", () => {
-  it("defaults to newline so Enter does not send", () => {
-    expect(defaultComposerEnterToSend(false)).toBe(false);
+  it("defaults to sending on desktop and newline on touch", () => {
+    expect(defaultComposerEnterToSend(false)).toBe(true);
     expect(defaultComposerEnterToSend(true)).toBe(false);
   });
 });
@@ -39,17 +39,42 @@ describe("normalizeComposerEnterToSend", () => {
     expect(normalizeComposerEnterToSend("off")).toBe(false);
   });
 
-  it("falls back to newline for missing or unknown values", () => {
-    expect(normalizeComposerEnterToSend(null, false)).toBe(false);
+  it("falls back to the device default for missing or unknown values", () => {
+    expect(normalizeComposerEnterToSend(null, false)).toBe(true);
     expect(normalizeComposerEnterToSend(null, true)).toBe(false);
-    expect(normalizeComposerEnterToSend("maybe", false)).toBe(false);
+    expect(normalizeComposerEnterToSend("maybe", false)).toBe(true);
+    expect(normalizeComposerEnterToSend("maybe", true)).toBe(false);
   });
 });
 
 describe("get/setComposerEnterToSend", () => {
+  it.each([false, true])("reads the device default with coarse pointer %s", (coarsePointer) => {
+    expect(mod.getComposerEnterToSend(memoryStorage(), coarsePointer)).toBe(!coarsePointer);
+  });
+
+  it.each([false, true])("uses the detected pointer without storage: %s", (coarsePointer) => {
+    vi.stubGlobal("window", {
+      matchMedia: vi.fn().mockReturnValue({ matches: coarsePointer }),
+    });
+    try {
+      expect(mod.getComposerEnterToSend(null)).toBe(!coarsePointer);
+      expect(window.matchMedia).toHaveBeenCalledWith("(pointer: coarse)");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([
+    [false, "0", false],
+    [true, "1", true],
+  ] as const)("stored preference overrides coarse pointer %s", (coarsePointer, raw, expected) => {
+    const storage = memoryStorage({ [COMPOSER_ENTER_TO_SEND_STORAGE_KEY]: raw });
+    expect(mod.getComposerEnterToSend(storage, coarsePointer)).toBe(expected);
+  });
+
   it("reads the default, persists the toggle, and notifies subscribers", () => {
     const storage = memoryStorage();
-    expect(mod.getComposerEnterToSend(storage, false)).toBe(false);
+    expect(mod.getComposerEnterToSend(storage, false)).toBe(true);
     let notifications = 0;
     const unsubscribe = mod.subscribeComposerEnterToSend(() => {
       notifications += 1;
