@@ -137,11 +137,7 @@ function sendRunClientNonce(
 async function enqueueRunsNeedingContinue(
   jobs: JobPublisher,
   runs: Array<{ id: string; status: string }>,
-  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
-  for (const run of runs) {
-    if (isActive(run.status as RunStatus)) await releaseTakeover?.(run.id);
-  }
   await Promise.all(
     runs
       .filter((run) => RUNS_NEEDING_CONTINUE.has(run.status))
@@ -200,10 +196,11 @@ async function replayExistingSend(
   const pendingSteering = releaseTakeover
     ? await deps.prisma.steeringMessage.findFirst({
         where: { messageId: message.id, claimedAt: null },
-        select: { id: true },
+        select: { runId: true },
       })
     : null;
-  await enqueueRunsNeedingContinue(deps.jobs, runs, pendingSteering ? releaseTakeover : undefined);
+  if (releaseTakeover && pendingSteering?.runId) await releaseTakeover(pendingSteering.runId);
+  await enqueueRunsNeedingContinue(deps.jobs, runs);
   const latestEvent = await deps.prisma.event.findFirst({
     where: { threadId },
     orderBy: { seq: "desc" },
@@ -1031,7 +1028,12 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
-  await enqueueRunsNeedingContinue(deps.jobs, committed.runs, releaseTakeover);
+  if (releaseTakeover) {
+    for (const run of committed.runs) {
+      if (steersUserMessage(run)) await releaseTakeover(run.id);
+    }
+  }
+  await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
   return sendResult(committed.message, committed.runs);
 }
 

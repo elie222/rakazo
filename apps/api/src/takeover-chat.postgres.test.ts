@@ -55,7 +55,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
   });
 
-  async function setup(mode: "opened" | "unopened" = "opened") {
+  async function setup(mode: "opened" | "unopened" = "opened", trigger = "user") {
     const id = randomUUID();
     organizations.push(id);
     await prisma.user.create({
@@ -90,7 +90,7 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         threadId: thread.id,
         taskId: task.id,
         status: "waiting_takeover",
-        trigger: "user",
+        trigger,
       },
     });
     await prisma.computerExecutionLease.create({
@@ -464,6 +464,59 @@ describePostgres("chat replies during screen takeover (PostgreSQL)", () => {
         where: { threadId: fixture.thread.id, type: "computer.takeover.released" },
       }),
     ).toBe(0);
+  });
+
+  it("does not release the takeover of a routine run that the reply does not steer", async () => {
+    const fixture = await setup("opened", "routine");
+    const before = await fixture.control();
+    const revoke = vi.spyOn(fixture.sandbox, "setScreenControl");
+    expect((await fixture.send({ clientNonce: "routine-reply" })).status).toBe(200);
+    expect(await fixture.control()).toEqual(before);
+    expect(revoke).not.toHaveBeenCalled();
+    expect(
+      await prisma.steeringMessage.count({ where: { botId: fixture.bot.id, runId: null } }),
+    ).toBe(1);
+    expect(
+      await prisma.event.count({
+        where: { runId: fixture.run.id, type: "computer.takeover.released" },
+      }),
+    ).toBe(0);
+  });
+
+  it("releases a takeover the user opens while the release is in flight", async () => {
+    const fixture = await setup("unopened");
+    const finalize = fixture.events.finalizeComputerControlRelease;
+    vi.spyOn(fixture.events, "finalizeComputerControlRelease").mockImplementationOnce(
+      async (input) => {
+        await prisma.computer.update({
+          where: { id: fixture.computer.id },
+          data: {
+            controlHolder: "user",
+            controlBotId: fixture.bot.id,
+            controlRunId: fixture.run.id,
+            controlLeaseId: randomUUID(),
+            controlLeaseExpiresAt: new Date(Date.now() + 60_000),
+          },
+        });
+        return finalize(input);
+      },
+    );
+    const revoke = vi.spyOn(fixture.sandbox, "setScreenControl");
+    expect((await fixture.send({ clientNonce: "opened-meanwhile" })).status).toBe(200);
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(await fixture.control()).toMatchObject({
+      controlHolder: "bot",
+      controlLeaseId: null,
+      controlRunId: null,
+    });
+    expect(
+      await prisma.event.count({
+        where: { runId: fixture.run.id, type: "computer.takeover.released" },
+      }),
+    ).toBe(1);
+    expect(fixture.queuedStates).toContainEqual(
+      expect.objectContaining({ status: "queued", checkpoint: "takeover" }),
+    );
   });
 
   it("retries a failed screen revocation without losing or duplicating the steering message", async () => {

@@ -6451,7 +6451,7 @@ async function releaseComputerControl(
   reason?: ComputerReleaseReason,
   expectedRunId?: string,
 ): Promise<void> {
-  const bot = await createRepos(deps.prisma).getBot(actor, botId);
+  let bot = await createRepos(deps.prisma).getBot(actor, botId);
   if (!bot.computer) {
     if (expectedRunId !== undefined) return;
     throw new IsolationError();
@@ -6472,10 +6472,13 @@ async function releaseComputerControl(
       holder: "bot",
       reason: reason ?? "released",
     });
-    if (!released) return;
-    await enqueueTakeoverContinuation(deps.jobs, released.runId);
-    scheduleComputerSleep(deps.jobs, bot.computer.id);
-    return;
+    if (released) {
+      await enqueueTakeoverContinuation(deps.jobs, released.runId);
+      scheduleComputerSleep(deps.jobs, bot.computer.id);
+      return;
+    }
+    bot = await createRepos(deps.prisma).getBot(actor, botId);
+    if (!bot.computer) return;
   }
   const controlBotId = bot.computer.controlBotId;
   const controlLeaseId = bot.computer.controlLeaseId;
