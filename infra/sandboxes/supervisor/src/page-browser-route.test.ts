@@ -177,3 +177,29 @@ it("sends a saved-login fill only over stdin, never in the helper's arguments", 
   expect(helperCall[0].Env).toContain("RAKAZO_BROWSER_ARGS_STDIN=1");
   expect(mock.stdin.join("")).toBe(`${JSON.stringify({ command: "act", actions })}\n`);
 });
+
+it("reports a helper that exceeds its deadline as a timeout the bot can retry", async () => {
+  const defaultExec = mock.exec.getMockImplementation()!;
+  mock.exec.mockImplementation(async (options: { Cmd: string[] }) => {
+    if (options.Cmd.includes("/usr/local/bin/rakazo-page-browser")) {
+      return {
+        start: async () =>
+          Duplex.from({ readable: Readable.from([]), writable: new PassThrough() }),
+        inspect: async () => ({ ExitCode: 124 }),
+      };
+    }
+    if (options.Cmd[0] === "sh") {
+      return {
+        start: async () => Readable.from([]),
+        inspect: async () => ({ ExitCode: 1 }),
+      };
+    }
+    return defaultExec(options);
+  });
+  const result = await (await snapshot("computer-timeout", "first", "run:1")).json();
+  expect(result).toMatchObject({
+    ok: false,
+    fallback: "computer_act",
+    error: expect.stringContaining("timed out"),
+  });
+});
