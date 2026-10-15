@@ -97,6 +97,7 @@ describe("finalizeRun", () => {
         findMany: vi.fn(async () => []),
         updateMany: vi.fn(async () => ({ count: 0 })),
       },
+      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const transaction = vi
@@ -163,6 +164,7 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -231,6 +233,7 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -321,6 +324,7 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
+      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {

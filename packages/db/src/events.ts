@@ -1265,6 +1265,7 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     } else {
+      await discardAnsweredSteering(tx, input);
       const { sourceMessage } = await tx.run.findUniqueOrThrow({
         where: { id: input.runId },
         select: { sourceMessage: { select: { seq: true } } },
@@ -1282,6 +1283,26 @@ async function finalizeRunOnce(
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId };
+  });
+}
+
+export async function discardAnsweredSteering(
+  tx: Prisma.TransactionClient,
+  input: { threadId: string; runId: string },
+) {
+  const lastReply = await tx.message.findFirst({
+    where: {
+      threadId: input.threadId,
+      runId: input.runId,
+      role: "bot",
+      blocks: { array_contains: [{ kind: "text" }] },
+    },
+    orderBy: { seq: "desc" },
+    select: { createdAt: true },
+  });
+  if (!lastReply) return;
+  await tx.steeringMessage.deleteMany({
+    where: { runId: input.runId, claimedAt: { lt: lastReply.createdAt } },
   });
 }
 

@@ -44,6 +44,7 @@ function tx(options?: {
     },
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 9 })) },
     message: {
+      findFirst: vi.fn(async () => null),
       create: vi.fn(async (args: { data: Record<string, unknown> }) => {
         const row = { id: "message-expired", ...args.data };
         messages.push(row);

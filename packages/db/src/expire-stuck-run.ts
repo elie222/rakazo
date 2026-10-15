@@ -3,7 +3,11 @@ import type { StuckWorkStatus } from "@rakazo/core";
 import { ACTIVE_RUN_STATUSES, stuckWorkExpiredNonce, stuckWorkStatusMessage } from "@rakazo/core";
 import type { Prisma } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
-import { appendEventInTransaction, createPendingSteeringRun } from "./events.js";
+import {
+  appendEventInTransaction,
+  createPendingSteeringRun,
+  discardAnsweredSteering,
+} from "./events.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 
 export interface ExpireStuckRunInput {
@@ -125,6 +129,7 @@ export async function expireStuckRun(
       executionLeaseExpiresAt: null,
     },
   });
+  await discardAnsweredSteering(tx, { threadId: run.threadId, runId: input.runId });
   await tx.steeringMessage.updateMany({
     where: { runId: input.runId },
     data: { runId: null, claimedAt: null },
