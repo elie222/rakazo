@@ -38,6 +38,9 @@ const MODEL_PROTOCOL_FIELDS: ReadonlySet<string> = new Set([
   "customType",
   "mimeType",
   "data",
+  "encrypted_content",
+]);
+const SERIALIZED_MODEL_FIELDS: ReadonlySet<string> = new Set([
   "thinkingSignature",
   "textSignature",
 ]);
@@ -58,17 +61,31 @@ function redactModelValue(
     return value.map((item) => redactModelValue(item, secrets, protocolFields));
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
-    Object.entries(value).map(([key, item]) => [
-      key,
-      protocolFields.has(key) && typeof item === "string"
-        ? item
-        : redactModelValue(
-            item,
-            secrets,
-            key === "arguments" ? NO_PROTOCOL_FIELDS : protocolFields,
-          ),
-    ]),
+    Object.entries(value).map(([key, item]) => {
+      if (typeof item === "string" && protocolFields.has(key)) return [key, item];
+      if (typeof item === "string" && SERIALIZED_MODEL_FIELDS.has(key))
+        return [key, redactSerializedModelValue(item, secrets, protocolFields)];
+      return [
+        key,
+        redactModelValue(item, secrets, key === "arguments" ? NO_PROTOCOL_FIELDS : protocolFields),
+      ];
+    }),
   );
+}
+
+function redactSerializedModelValue(
+  value: string,
+  secrets: string[],
+  protocolFields: ReadonlySet<string>,
+): string {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object"
+      ? JSON.stringify(redactModelValue(parsed, secrets, protocolFields))
+      : value;
+  } catch {
+    return value;
+  }
 }
 
 function redactPayloadValue(value: unknown, secrets: string[]): unknown {

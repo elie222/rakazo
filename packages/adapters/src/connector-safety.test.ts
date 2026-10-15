@@ -40,7 +40,17 @@ describe("redactModelContextSecrets", () => {
       {
         role: "assistant",
         content: [
-          { type: "thinking", thinking: "secret", thinkingSignature: '{"type":"secret"}' },
+          {
+            type: "thinking",
+            thinking: "secret",
+            thinkingSignature: JSON.stringify({
+              type: "reasoning",
+              id: "rs_1",
+              encrypted_content: "opaque-secret",
+              summary: [{ type: "summary_text", text: "about secret" }],
+            }),
+          },
+          { type: "thinking", thinking: "", thinkingSignature: "opaque-secret" },
           {
             type: "toolCall",
             id: "call-1",
@@ -61,7 +71,17 @@ describe("redactModelContextSecrets", () => {
       {
         role: "assistant",
         content: [
-          { type: "thinking", thinking: "[redacted]", thinkingSignature: '{"type":"secret"}' },
+          {
+            type: "thinking",
+            thinking: "[redacted]",
+            thinkingSignature: JSON.stringify({
+              type: "reasoning",
+              id: "rs_1",
+              encrypted_content: "opaque-secret",
+              summary: [{ type: "summary_text", text: "about [redacted]" }],
+            }),
+          },
+          { type: "thinking", thinking: "", thinkingSignature: "opaque-secret" },
           {
             type: "toolCall",
             id: "call-1",
