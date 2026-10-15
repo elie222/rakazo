@@ -178,7 +178,10 @@ it("sends a saved-login fill only over stdin, never in the helper's arguments", 
   expect(mock.stdin.join("")).toBe(`${JSON.stringify({ command: "act", actions })}\n`);
 });
 
-it("reports a helper that exceeds its deadline as a timeout the bot can retry", async () => {
+it.each([
+  [{ command: "snapshot" }, "Retry once"],
+  [{ command: "act", actions: [{ kind: "click", ref: "e1" }] }, "Inspect the screen"],
+])("reports a helper that exceeds its deadline as a timeout: %j", async (body, advice) => {
   const defaultExec = mock.exec.getMockImplementation()!;
   mock.exec.mockImplementation(async (options: { Cmd: string[] }) => {
     if (options.Cmd.includes("/usr/local/bin/rakazo-page-browser")) {
@@ -196,10 +199,24 @@ it("reports a helper that exceeds its deadline as a timeout the bot can retry", 
     }
     return defaultExec(options);
   });
-  const result = await (await snapshot("computer-timeout", "first", "run:1")).json();
+  const response = await supervisorApp.request("/computers/computer-timeout/browser", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "content-type": "application/json",
+      "x-rakazo-bot-id": "home",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "first",
+      "x-rakazo-screen-lease-id": "run:1",
+    },
+    body: JSON.stringify(body),
+  });
+  const result = (await response.json()) as { error: string; uncertain: boolean };
   expect(result).toMatchObject({
     ok: false,
     fallback: "computer_act",
     error: expect.stringContaining("timed out"),
   });
+  expect(result.error).toContain(advice);
+  expect(result.uncertain).toBe(body.command === "act");
 });

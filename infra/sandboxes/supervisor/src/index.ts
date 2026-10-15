@@ -527,7 +527,11 @@ app.post("/computers/:id/browser", async (c) => {
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
       throw new Error(
         /command timed out/.test(result.stderr)
-          ? "Page browser timed out; the page may be busy or blocked by a dialog. Retry once before using other tools."
+          ? `Page browser timed out; the page may be busy or blocked by a dialog. ${
+              body.command === "act"
+                ? "Inspect the screen before continuing."
+                : "Retry once before using other tools."
+            }`
           : "Page browser unavailable or interrupted",
       );
     }
