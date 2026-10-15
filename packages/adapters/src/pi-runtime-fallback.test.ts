@@ -1763,6 +1763,22 @@ describe("provider availability classification", () => {
       true,
     ],
     [
+      "HTTP 401 with nested Kimi 403 usage limit",
+      {
+        status: 401,
+        cause: { status: 403, message: "You've reached your monthly usage limit." },
+      },
+      false,
+    ],
+    [
+      "Kimi 403 monthly usage limit not reached",
+      {
+        status: 403,
+        message: "You have not reached your monthly usage limit; access denied",
+      },
+      false,
+    ],
+    [
       "Kimi 401",
       {
         status: 401,
