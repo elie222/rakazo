@@ -18,6 +18,7 @@ export const ProductEventType = z.enum([
   "thread.cloud_agent",
   "thread.call.ended",
   "run.started",
+  "run.steering.claimed",
   "run.checkpointed",
   "run.waiting_input",
   "run.completed",

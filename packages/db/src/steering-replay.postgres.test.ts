@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDb, type PrismaClient } from "./client.js";
-import { finalizeRun } from "./events.js";
+import type { PrismaClient } from "./client.js";
+import { createDb } from "./client.js";
+import { claimSteering, finalizeRun } from "./events.js";
 import { expireStuckRun } from "./expire-stuck-run.js";
 import { createThreadMessage } from "./messages.js";
 import { provisionMessagingIdentity } from "./messaging.js";
@@ -13,6 +14,7 @@ const describePostgres =
 describePostgres("steering after a run ends without completing (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;
+  let provisioned = false;
   let userId: string;
   let spaceId: string;
   let botId: string;
@@ -23,8 +25,11 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
     const db = createDb(databaseUrl!);
     prisma = db.prisma;
     close = async () => {
-      await db.prisma.$disconnect();
-      await db.pool.end();
+      try {
+        await db.prisma.$disconnect();
+      } finally {
+        await db.pool.end();
+      }
     };
     const identity = await provisionMessagingIdentity(
       prisma,
@@ -32,15 +37,19 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       { signupsEnabled: undefined, signupAllowlist: undefined },
     );
     ({ userId, spaceId, botId, threadId } = identity);
+    provisioned = true;
   });
 
   afterAll(async () => {
-    if (prisma) {
-      await prisma.messagingIdentity.deleteMany({ where: { provider: "sendblue", address } });
-      await prisma.organization.deleteMany({ where: { id: spaceId } });
-      await prisma.user.deleteMany({ where: { id: userId } });
+    try {
+      if (prisma && provisioned) {
+        await prisma.messagingIdentity.deleteMany({ where: { provider: "sendblue", address } });
+        await prisma.organization.deleteMany({ where: { id: spaceId } });
+        await prisma.user.deleteMany({ where: { id: userId } });
+      }
+    } finally {
+      await close?.();
     }
-    await close?.();
   });
 
   async function runSteeredByMessage(status: "running" | "waiting_input") {
@@ -58,10 +67,10 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
         threadId,
         taskId: task.id,
         userId,
-        status,
+        status: "running",
         trigger: "user",
         startedAt: new Date(),
-        leaseOwner: status === "running" ? "worker-1" : null,
+        leaseOwner: "worker-1",
         leaseFence: 1,
       },
     });
@@ -79,20 +88,30 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
         botId,
         userId,
         runId: run.id,
-        claimedAt: new Date(),
       },
     });
+    await claimSteering(prisma, {
+      threadId,
+      botId,
+      runId: run.id,
+      leaseOwner: "worker-1",
+      leaseFence: 1,
+      seenIds: [],
+    });
+    if (status === "waiting_input") {
+      await prisma.run.update({ where: { id: run.id }, data: { status, leaseOwner: null } });
+    }
     return { task, run, attempt };
   }
 
-  async function botReplies(runId: string) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  async function botReplies(runId: string, clientNonce?: string) {
     await createThreadMessage(prisma, {
       threadId,
       role: "bot",
       botId,
       runId,
       blocks: [{ kind: "text", text: "Yes, I can pull the documents myself." }],
+      clientNonce,
     });
   }
 
@@ -117,7 +136,7 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
 
     await expect(failRun(fixture)).resolves.toEqual({ continuationRunId: null });
 
-    expect(await prisma.run.count({ where: { threadId, trigger: "follow_up" } })).toBe(0);
+    expect(await prisma.steeringMessage.count({ where: { runId: fixture.run.id } })).toBe(0);
   });
 
   it("still continues a message the failed run claimed but never replied to", async () => {
@@ -130,6 +149,52 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
       where: { id: (result as { continuationRunId: string }).continuationRunId },
     });
     expect(continuation.trigger).toBe("follow_up");
+  });
+
+  it("replays a claimed request after a progress update or promoted narration", async () => {
+    const fixture = await runSteeredByMessage("running");
+    await botReplies(fixture.run.id, `user-progress:${fixture.run.id}:0:test`);
+    await expect(failRun(fixture)).resolves.toEqual({ continuationRunId: expect.any(String) });
+  });
+
+  it.each([0, 60_000])("ignores a claim clock offset of %i ms", async (offset) => {
+    const fixture = await runSteeredByMessage("running");
+    await botReplies(fixture.run.id);
+    const reply = await prisma.message.findFirstOrThrow({ where: { runId: fixture.run.id } });
+    await prisma.steeringMessage.updateMany({
+      where: { runId: fixture.run.id },
+      data: { claimedAt: new Date(reply.createdAt.getTime() + offset) },
+    });
+    await expect(failRun(fixture)).resolves.toEqual({ continuationRunId: null });
+    expect(await prisma.steeringMessage.count({ where: { runId: fixture.run.id } })).toBe(0);
+  });
+
+  it("replays a message claimed after a reply even when the user message preceded it", async () => {
+    const fixture = await runSteeredByMessage("running");
+    const message = await createThreadMessage(prisma, {
+      threadId,
+      role: "user",
+      blocks: [{ kind: "text", text: "A second request" }],
+    });
+    const steering = await prisma.steeringMessage.create({
+      data: { messageId: message.id, botId, userId, runId: fixture.run.id },
+    });
+    await botReplies(fixture.run.id);
+    await claimSteering(prisma, {
+      threadId,
+      botId,
+      runId: fixture.run.id,
+      leaseOwner: "worker-1",
+      leaseFence: 1,
+      seenIds: (
+        await prisma.steeringMessage.findMany({
+          where: { runId: fixture.run.id, id: { not: steering.id } },
+          select: { id: true },
+        })
+      ).map((item) => item.id),
+    });
+    await expect(failRun(fixture)).resolves.toEqual({ continuationRunId: expect.any(String) });
+    expect(await prisma.steeringMessage.findUnique({ where: { id: steering.id } })).not.toBeNull();
   });
 
   it("does not answer a message again after an expired wait that already replied to it", async () => {

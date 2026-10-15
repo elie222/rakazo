@@ -1,11 +1,9 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
-  type BotSecretDestination,
   encodeLoginSecret,
   LoginSecretValue,
-  type MessageBlock,
   MessageBlock as MessageBlockSchema,
-  type ProductEvent,
 } from "@rakazo/contracts";
 import {
   blocksToAgentHistoryText,
@@ -542,7 +540,12 @@ export async function claimSteering(
         leaseOwner: input.leaseOwner,
         leaseFence: input.leaseFence,
       },
-      select: { id: true, trigger: true, sourceMessage: { select: { blocks: true } } },
+      select: {
+        id: true,
+        spaceId: true,
+        trigger: true,
+        sourceMessage: { select: { blocks: true } },
+      },
     });
     if (!run || run.trigger === "created") return [];
     const channelId =
@@ -582,6 +585,20 @@ export async function claimSteering(
     await tx.steeringMessage.updateMany({
       where: { id: { in: steering.map((item) => item.id) }, claimedAt: null },
       data: { runId: input.runId, claimedAt: new Date() },
+    });
+    // The thread lock serializes this watermark with message writes. Unlike claim
+    // timestamps, it cannot drift from the database clock or tie with a reply.
+    const { nextMessageSeq } = await tx.thread.findUniqueOrThrow({
+      where: { id: input.threadId },
+      select: { nextMessageSeq: true },
+    });
+    await appendEventInTransaction(tx, {
+      threadId: input.threadId,
+      spaceId: run.spaceId,
+      botId: input.botId,
+      runId: input.runId,
+      type: "run.steering.claimed",
+      payload: { steeringIds: steering.map((item) => item.id), nextMessageSeq },
     });
     return steering.map((item) => ({
       id: item.id,
@@ -1296,13 +1313,36 @@ export async function discardAnsweredSteering(
       runId: input.runId,
       role: "bot",
       blocks: { array_contains: [{ kind: "text" }] },
+      // Progress and promoted narration carry a nonce. Conservatively keep all
+      // nonce-bearing output out of answer detection, including unknown kinds.
+      clientNonce: null,
+      NOT: ["ask", "computer", "steps", "subagent"].map((kind) => ({
+        blocks: { array_contains: [{ kind }] },
+      })),
     },
     orderBy: { seq: "desc" },
-    select: { createdAt: true },
+    select: { seq: true },
   });
   if (!lastReply) return;
+  const claims = await tx.event.findMany({
+    where: { threadId: input.threadId, runId: input.runId, type: "run.steering.claimed" },
+    select: { payload: true },
+  });
+  const answeredIds = new Set<string>();
+  for (const claim of claims) {
+    const payload = claim.payload as { steeringIds?: unknown; nextMessageSeq?: unknown } | null;
+    if (!payload || !Array.isArray(payload.steeringIds)) continue;
+    for (const id of payload.steeringIds) {
+      if (typeof id !== "string") continue;
+      if (typeof payload.nextMessageSeq === "number" && payload.nextMessageSeq <= lastReply.seq) {
+        answeredIds.add(id);
+      }
+    }
+  }
+  // Old runs without a durable claim watermark are deliberately replayed.
+  if (answeredIds.size === 0) return;
   await tx.steeringMessage.deleteMany({
-    where: { runId: input.runId, claimedAt: { lt: lastReply.createdAt } },
+    where: { runId: input.runId, claimedAt: { not: null }, id: { in: [...answeredIds] } },
   });
 }
 
