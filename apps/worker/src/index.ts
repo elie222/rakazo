@@ -40,6 +40,7 @@ import {
   pipedreamConfigFromEnv,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcileRoutineRetryNotices,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -227,8 +228,6 @@ async function main() {
     inMemoryJobs ??
     new GraphileJobWorkerHost(pool, {
       concurrency: parsePositiveInteger(process.env.GRAPHILE_WORKER_CONCURRENCY, 4),
-      onRoutineRetryAttemptsExhausted: (runId) =>
-        executor.notifyRoutineRetryAttemptsExhausted(runId),
     });
 
   const jobHandlers = createBackgroundJobHandlers({
@@ -274,6 +273,12 @@ async function main() {
     leadership: createPostgresReconciliationLeadership(pool),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
+    reconcileRoutineRetryNotices: inMemoryJobs
+      ? undefined
+      : () =>
+          reconcileRoutineRetryNotices(pool, (runId) =>
+            executor.notifyRoutineRetryAttemptsExhausted(runId),
+          ),
   });
   reconciler.start();
 

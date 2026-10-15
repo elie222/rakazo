@@ -3267,7 +3267,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         select: { id: true },
       });
       if (supersedingRun) return;
-      await notifyFailedRoutineRun(deps, failed);
+      await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
     },
 
     async retryRoutineRun(runId: string) {
@@ -7638,18 +7638,24 @@ async function scheduleRoutineRetry(
 async function notifyFailedRoutineRun(
   deps: ExecutorDeps,
   failed: Parameters<typeof notifyRun>[1] & { error: string | null },
+  options: { retryOnFailure?: boolean } = {},
 ) {
   const bot = await deps.prisma.bot.findUniqueOrThrow({
     where: { id: failed.botId },
     select: { name: true },
   });
-  await notifyRun(deps, failed, {
-    kind: "failure",
-    title: `${bot.name} failed`,
-    body: (failed.error ?? "").slice(0, 180),
-    botId: failed.botId,
-    threadId: failed.threadId,
-  });
+  await notifyRun(
+    deps,
+    failed,
+    {
+      kind: "failure",
+      title: `${bot.name} failed`,
+      body: (failed.error ?? "").slice(0, 180),
+      botId: failed.botId,
+      threadId: failed.threadId,
+    },
+    options,
+  );
 }
 
 async function notifyRun(
@@ -7663,6 +7669,7 @@ async function notifyRun(
     routineId?: string | null;
   },
   message: NotificationMessage,
+  options: { retryOnFailure?: boolean } = {},
 ) {
   if (
     !deps.notifications ||
@@ -7671,6 +7678,7 @@ async function notifyRun(
     return;
   const routineId = message.kind === "failure" ? run.routineId : null;
   const notice = await runNotice(deps.prisma, run, routineId).catch((error) => {
+    if (options.retryOnFailure) throw error;
     getLogger().error("notification preference lookup", error);
     return null;
   });
@@ -7685,6 +7693,7 @@ async function notifyRun(
       signal: new AbortController().signal,
     })
     .catch((error) => {
+      if (options.retryOnFailure) throw error;
       getLogger().error("run notification", error);
     });
 }

@@ -21,6 +21,7 @@ import {
   databaseCapacityBackoffMs,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
+  reconcileRoutineRetryNotices,
 } from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
@@ -344,101 +345,6 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
     ]);
   });
 
-  it("notifies routine retry exhaustion only through the terminal failure event", async () => {
-    const first = mockRunner();
-    run.mockResolvedValueOnce(first.runner);
-    const notify = vi.fn(async () => undefined);
-    const host = new GraphileJobWorkerHost({} as Pool, {
-      onRoutineRetryAttemptsExhausted: notify,
-    });
-
-    try {
-      await host.start(handlers());
-      const on = first.runner.events.on as ReturnType<typeof vi.fn>;
-      expect(on.mock.calls.some((call) => call[0] === "job:error")).toBe(false);
-      const failed = on.mock.calls.find((call) => call[0] === "job:failed")?.[1];
-      expect(failed).toBeTypeOf("function");
-      for (const payload of [null, {}, { runId: 1 }, { runId: "" }]) {
-        failed({ job: { task_identifier: "routine.retry", payload }, error: new Error("failed") });
-      }
-      failed({
-        job: { task_identifier: "run.continue", payload: { runId: "run-1" } },
-        error: new Error("failed"),
-      });
-      expect(notify).not.toHaveBeenCalled();
-      failed({
-        job: {
-          task_identifier: "routine.retry",
-          payload: wrapJobPayload({ runId: "run-1" }),
-          attempts: 25,
-          max_attempts: 25,
-        },
-        error: new Error("queue down"),
-      });
-      expect(notify).toHaveBeenCalledExactlyOnceWith("run-1");
-    } finally {
-      await host.stop();
-    }
-  });
-
-  it.each([false, true])(
-    "waits for exhaustion notification during stop (delivery rejects: %s)",
-    async (rejectDelivery) => {
-      const first = mockRunner();
-      run.mockResolvedValueOnce(first.runner);
-      const delivery = deferred();
-      const notify = vi.fn(() => delivery.promise);
-      const sink = createTestSink();
-      installLogger(createLogger({ service: "rakazo-worker", sinks: [sink] }));
-      const host = new GraphileJobWorkerHost({} as Pool, {
-        onRoutineRetryAttemptsExhausted: notify,
-      });
-      let stopped = false;
-
-      try {
-        await host.start(handlers());
-        const on = first.runner.events.on as ReturnType<typeof vi.fn>;
-        const failed = on.mock.calls.find((call) => call[0] === "job:failed")?.[1];
-        failed({
-          job: {
-            task_identifier: "routine.retry",
-            payload: wrapJobPayload({ runId: "run-1" }),
-            attempts: 25,
-            max_attempts: 25,
-          },
-          error: new Error("queue down"),
-        });
-        const stopping = host.stop().then(() => {
-          stopped = true;
-        });
-        await vi.waitFor(() => expect(first.runner.stop).toHaveBeenCalled());
-        await new Promise<void>((resolve) => setImmediate(resolve));
-        expect(stopped).toBe(false);
-
-        if (rejectDelivery) delivery.reject(new Error("notification failed"));
-        else delivery.resolve();
-
-        await expect(stopping).resolves.toBeUndefined();
-        expect(stopped).toBe(true);
-        expect(sink.events).toEqual(
-          rejectDelivery
-            ? [
-                expect.objectContaining({
-                  level: "error",
-                  message: "routine retry exhaustion notification",
-                  error: expect.objectContaining({ message: "notification failed" }),
-                }),
-              ]
-            : [],
-        );
-      } finally {
-        delivery.resolve();
-        await host.stop();
-        installLogger(createLogger({ service: "rakazo-worker", level: "off", sinks: [] }));
-      }
-    },
-  );
-
   it("wakes a pending restart delay when stop is called", async () => {
     const first = mockRunner();
     run.mockResolvedValueOnce(first.runner);
@@ -455,5 +361,82 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
 
     await host.stop();
     expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("reconcileRoutineRetryNotices", () => {
+  function pendingNotices(payloads: unknown[] = [wrapJobPayload({ runId: "run-1" })]) {
+    const pending = payloads.map((payload, index) => ({
+      id: String(index + 1),
+      revision: 2,
+      payload,
+    }));
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.startsWith("select")) return { rows: [...pending] };
+      const index = pending.findIndex(
+        (job) => job.id === params?.[0] && job.revision === params?.[1],
+      );
+      if (index >= 0) pending.splice(index, 1);
+      return { rows: [] };
+    });
+    return { pending, query, pool: { query } as unknown as Pool };
+  }
+
+  it("retains a failed callback for recovery by a later reconciliation", async () => {
+    const { pending, query, pool } = pendingNotices();
+    const notify = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("database unavailable"))
+      .mockResolvedValue(undefined);
+    await reconcileRoutineRetryNotices(pool, notify);
+    expect(pending).toHaveLength(1);
+    expect(query).toHaveBeenCalledTimes(1);
+
+    // A new pass has no dependence on an event or in-memory retry state.
+    await reconcileRoutineRetryNotices(pool, notify);
+    expect(notify.mock.calls).toEqual([["run-1"], ["run-1"]]);
+    expect(pending).toHaveLength(0);
+    expect(query).toHaveBeenLastCalledWith(expect.stringContaining("revision = $2"), ["1", 2]);
+    await reconcileRoutineRetryNotices(pool, notify);
+    expect(notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues other notices after a failed delivery and skips malformed payloads", async () => {
+    const { pool, pending } = pendingNotices([
+      { runId: "run-1" },
+      wrapJobPayload({ runId: "run-2" }),
+      null,
+      {},
+      { runId: 1 },
+      { runId: "" },
+    ]);
+    const notify = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("lookup failed"))
+      .mockResolvedValue(undefined);
+    await reconcileRoutineRetryNotices(pool, notify);
+    expect(notify.mock.calls).toEqual([["run-1"], ["run-2"]]);
+    expect(pending.map((job) => job.id)).toEqual(["1", "3", "4", "5", "6"]);
+  });
+
+  it("retains the request if acknowledging delivery fails", async () => {
+    const { pool, query, pending } = pendingNotices();
+    query
+      .mockImplementationOnce(async () => ({ rows: [...pending] }))
+      .mockRejectedValueOnce(new Error("delete failed"));
+    const notify = vi.fn(async () => undefined);
+    await reconcileRoutineRetryNotices(pool, notify);
+    expect(pending).toHaveLength(1);
+    await reconcileRoutineRetryNotices(pool, notify);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(pending).toHaveLength(0);
+  });
+
+  it("keeps concurrently replaced work when acknowledging a notice", async () => {
+    const { pool, pending } = pendingNotices();
+    await reconcileRoutineRetryNotices(pool, async () => {
+      pending[0] = { id: "1", revision: 3, payload: { runId: "new-run" } };
+    });
+    expect(pending).toEqual([{ id: "1", revision: 3, payload: { runId: "new-run" } }]);
   });
 });

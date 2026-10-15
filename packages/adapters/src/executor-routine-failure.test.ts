@@ -603,6 +603,21 @@ describe("running a routine retry", () => {
 });
 
 describe("exhausted routine retry notification", () => {
+  it.each(["run lookup", "preference lookup", "delivery"])(
+    "propagates %s failures so reconciliation retains the notice",
+    async (failure) => {
+      const { executor, prisma, send } = retryHarness();
+      const error = new Error("temporarily unavailable");
+      if (failure === "run lookup") prisma.run.findUnique.mockRejectedValueOnce(error);
+      if (failure === "preference lookup") prisma.routine.findUnique.mockRejectedValueOnce(error);
+      if (failure === "delivery") send.mockRejectedValueOnce(error);
+
+      await expect(executor.notifyRoutineRetryAttemptsExhausted("run-1")).rejects.toThrow(error);
+      await executor.notifyRoutineRetryAttemptsExhausted("run-1");
+      expect(send).toHaveBeenCalledTimes(failure === "delivery" ? 2 : 1);
+    },
+  );
+
   it("does not notify when reconciliation started the retry before enqueue failed", async () => {
     const { executor, prisma, send } = retryHarness({
       enqueueFails: true,

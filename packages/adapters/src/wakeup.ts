@@ -83,12 +83,10 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
   private stopping = false;
   private superviseTask: Promise<void> | undefined;
   private wakeSleep: (() => void) | undefined;
-  private readonly exhaustionNotifications = new Set<Promise<void>>();
 
   constructor(
     private readonly pgPool: Pool,
     private readonly options: {
-      onRoutineRetryAttemptsExhausted?: (runId: string) => Promise<void>;
       concurrency?: number;
       pollInterval?: number;
       noHandleSignals?: boolean;
@@ -115,9 +113,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       await this.runner?.stop();
     } finally {
       await this.superviseTask?.catch(() => undefined);
-      while (this.exhaustionNotifications.size > 0) {
-        await Promise.allSettled(this.exhaustionNotifications);
-      }
       this.runner = undefined;
       this.superviseTask = undefined;
       this.handlers = undefined;
@@ -150,24 +145,6 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
     });
     runner.events.on("job:failed", ({ job, error }) => {
       recordHistoryCompactAttemptsExhausted(job, error);
-      if (job.task_identifier !== "routine.retry") return;
-      const { payload } = unwrapJobPayload(job.payload);
-      if (
-        !payload ||
-        typeof payload !== "object" ||
-        !("runId" in payload) ||
-        typeof payload.runId !== "string" ||
-        !payload.runId
-      ) {
-        return;
-      }
-      const notification = this.options.onRoutineRetryAttemptsExhausted?.(payload.runId);
-      if (!notification) return;
-      const delivery = notification.catch((notifyError) => {
-        getLogger().error("routine retry exhaustion notification", notifyError);
-      });
-      this.exhaustionNotifications.add(delivery);
-      void delivery.then(() => this.exhaustionNotifications.delete(delivery));
     });
     if (this.stopping) {
       await runner.stop().catch(() => undefined);
@@ -221,6 +198,46 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
           }
         }
       }
+    }
+  }
+}
+
+/** Exhausted retry rows are durable notice requests, including across worker restarts. */
+export async function reconcileRoutineRetryNotices(
+  pool: Pool,
+  notify: (runId: string) => Promise<void>,
+): Promise<void> {
+  const { rows } = await pool.query<{ id: string; revision: number; payload: unknown }>(
+    `select jobs.id, jobs.revision, jobs.payload
+     from graphile_worker._private_jobs as jobs
+     join graphile_worker._private_tasks as tasks on tasks.id = jobs.task_id
+     where tasks.identifier = 'routine.retry'
+       and jobs.attempts >= jobs.max_attempts and jobs.locked_at is null
+     order by jobs.id`,
+  );
+  for (const job of rows) {
+    const { payload } = unwrapJobPayload(job.payload);
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      !("runId" in payload) ||
+      typeof payload.runId !== "string" ||
+      !payload.runId
+    ) {
+      continue;
+    }
+    try {
+      await notify(payload.runId);
+      // A concurrently replaced job is new work, not the notice we just delivered.
+      // A crash before this delete may replay the notice (at-least-once delivery).
+      await pool.query(
+        `delete from graphile_worker._private_jobs
+         where id = $1 and revision = $2
+           and attempts >= max_attempts and locked_at is null`,
+        [job.id, job.revision],
+      );
+    } catch (error) {
+      getLogger().error("routine retry exhaustion notification", error);
     }
   }
 }
