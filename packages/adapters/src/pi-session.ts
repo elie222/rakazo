@@ -183,11 +183,13 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
           .filter(Boolean)
           .map((line) => JSON.parse(line));
         if (
-          !records.some(
-            (record) =>
-              record.customType === "rakazo_context" &&
-              record.data?.rakazoThreadId === input.threadId,
-          )
+          !records
+            .flat()
+            .some(
+              (record) =>
+                record.customType === "rakazo_context" &&
+                record.data?.rakazoThreadId === input.threadId,
+            )
         )
           continue;
         await writeFile(
