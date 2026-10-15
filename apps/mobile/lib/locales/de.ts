@@ -1,4 +1,5 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "New messages": "Neue Nachrichten",
   "Couldn't refresh — showing the last loaded messages.":
     "Aktualisierung fehlgeschlagen – die zuletzt geladenen Nachrichten werden angezeigt.",
   "Try Again": "Erneut versuchen",

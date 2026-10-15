@@ -116,6 +116,7 @@ import {
   retireModelCredential,
   SpaceLimitError,
   searchHistory,
+  updateThreadMessageWithEvent,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { parse as parseShellCommand } from "shell-quote";
@@ -5700,11 +5701,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               );
               changed = JSON.stringify(blocks) !== JSON.stringify(before);
               if (changed) {
-                await deps.prisma.message.update({
-                  where: { id: existing.id },
-                  data: { blocks: blocks as Prisma.InputJsonValue },
-                });
-                await deps.events.append({
+                const event = await updateThreadMessageWithEvent(deps.prisma, {
                   spaceId: run.spaceId,
                   threadId: thread.id,
                   botId: bot.id,
@@ -5712,6 +5709,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   type: "thread.message.updated",
                   payload: { messageId: existing.id, role: "bot", blocks, callId },
                 });
+                changed = event !== null;
+                if (event) await deps.events.notify(event.threadId, event.seq);
               }
               markerId = existing.id;
             }

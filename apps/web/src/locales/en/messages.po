@@ -2975,6 +2975,10 @@ msgstr "New bot"
 msgid "New group"
 msgstr "New group"
 
+#: src/pages/Shell.tsx
+msgid "New messages"
+msgstr "New messages"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
 msgstr "New open-work item"

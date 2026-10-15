@@ -7,6 +7,7 @@ export const ProductEventType = z.enum([
   "thread.message.created",
   "thread.cleared",
   "thread.message.updated",
+  "thread.read.updated",
   "thread.message.reaction",
   "thread.progress",
   "thread.artifact",
@@ -52,6 +53,13 @@ export const ProductEventType = z.enum([
   "heartbeat",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
+
+export const ThreadReadStateSchema = z.object({
+  lastReadSeq: z.number().int().min(-1),
+  lastUnreadSeq: z.number().int().min(-1),
+  unread: z.boolean(),
+});
+export type ThreadReadState = z.infer<typeof ThreadReadStateSchema>;
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
 export const BotMessageIntent = z.enum(["request", "result", "question", "status", "fyi"]);

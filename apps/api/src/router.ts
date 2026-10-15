@@ -2468,13 +2468,19 @@ export function createRouter(deps: RouterDeps) {
       }),
       markRead: authed.threads.markRead.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        await setThreadUnreadState(deps.prisma, context.actor, target, false);
-        return { ok: true as const };
+        const readState = await setThreadUnreadState(
+          deps,
+          context.actor,
+          target,
+          false,
+          input.throughSeq,
+        );
+        return { ok: true as const, readState };
       }),
       markUnread: authed.threads.markUnread.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        await setThreadUnreadState(deps.prisma, context.actor, target, true);
-        return { ok: true as const };
+        const readState = await setThreadUnreadState(deps, context.actor, target, true);
+        return { ok: true as const, readState };
       }),
     },
     computer: {

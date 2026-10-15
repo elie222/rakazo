@@ -7,6 +7,7 @@ import type {
   MessageBlock,
   MessageReaction,
   Routine,
+  ThreadReadState,
 } from "@rakazo/contracts";
 import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
 import type { SlashActionId, ThreadItem } from "@rakazo/core";
@@ -25,7 +26,9 @@ import {
   isRunTerminalEvent,
   isSecretAskBlock,
   latestAnswerableAskMessageId,
+  latestDurableMessageSeq,
   leaveThreadWindow,
+  mergeMessagesById,
   openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
@@ -34,8 +37,11 @@ import {
   resolveComposerSendPlan,
   resolvePersonaColorDef,
   selectedAskActionLabel,
+  threadHistoryWasCleared,
   threadWindowMessages,
   timeSeparatorIds,
+  unreadBoundary,
+  unreadDividerMessageId,
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
@@ -64,6 +70,7 @@ import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
   TextProps,
+  ViewToken,
 } from "react-native";
 import {
   ActionSheetIOS,
@@ -110,6 +117,7 @@ import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { TimeSeparator } from "../components/time-separator";
+import { UnreadSeparator } from "../components/unread-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import type {
@@ -201,6 +209,7 @@ import {
 import type { SendAttempt } from "../lib/thread-feedback";
 import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
+import { mobileVisibleReadSeq, pinnedVisibleMessageIds } from "../lib/thread-read";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
 import { ThreadScrollBehavior } from "../lib/thread-scroll";
@@ -508,7 +517,20 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   routeName.current = name;
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
-  const readVisibleTarget = useRef<string | null>(null);
+  const visibleReadIds = useRef(new Set<string>());
+  const visibleReadCallIds = useRef(new Set<string>());
+  const readViewportReady = useRef(false);
+  const pinnedRowLayouts = useRef(new Map<string, { y: number; height: number }>());
+  const readRequest = useRef<{ threadId: string; throughSeq: number } | null>(null);
+  const readVisit = useRef<{
+    threadId: string;
+    boundary: number | null;
+    opened: boolean;
+  } | null>(null);
+  const freshReadSnapshot = useRef(false);
+  const openingUnread = useRef(false);
+  const [unreadOpeningFailed, setUnreadOpeningFailed] = useState(false);
+  const [readVisitVersion, setReadVisitVersion] = useState(0);
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
@@ -520,6 +542,15 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, []);
   useLayoutEffect(() => {
     scrollBehavior.current.openThread(threadKey ?? "");
+    readVisit.current = null;
+    freshReadSnapshot.current = false;
+    openingUnread.current = false;
+    setUnreadOpeningFailed(false);
+    visibleReadIds.current.clear();
+    visibleReadCallIds.current.clear();
+    readViewportReady.current = false;
+    pinnedRowLayouts.current.clear();
+    readRequest.current = null;
     expandedHistoryThread.current = null;
     pinnedAroundRef.current = null;
     jumpScrollTarget.current = null;
@@ -548,16 +579,41 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
 
-  function commitSnap(next: MobileSnapshot | null) {
+  function commitSnap(next: MobileSnapshot | null, cleared = false) {
+    if (cleared || threadHistoryWasCleared(snapRef.current, next)) {
+      invalidateHistoryLoads();
+      expandedHistoryThread.current = null;
+      pinnedAroundRef.current = null;
+      jumpScrollTarget.current = null;
+      jumpAnchor.current.release();
+      joinPinnedAfterLayout.current = null;
+      readVisit.current = null;
+      visibleReadIds.current.clear();
+      visibleReadCallIds.current.clear();
+      pinnedRowLayouts.current.clear();
+      readRequest.current = null;
+      openingUnread.current = false;
+      setUnreadOpeningFailed(false);
+      scrollBehavior.current.jumpToLatest();
+      setThreadScrollState(scrollBehavior.current.state());
+    }
     snapRef.current = next;
     const visible = withLiveStreamingProgress(next, streamResponsesRef.current);
     setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
   }
 
+  function invalidateHistoryLoads() {
+    historyEpoch.current += 1;
+    loadingOlderContent.current = false;
+    loadingNewerContent.current = false;
+    newerLoadFailed.current = false;
+    setLoadingOlder(false);
+    setLoadingNewer(false);
+  }
+
   useEffect(() => {
     commitSnap(snapRef.current);
   }, [streamResponses]);
-  const activeThreadId = useRef<string | undefined>(undefined);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
   const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
   // The call outlives renders, so its switch check reads the newest bot list from here.
@@ -644,7 +700,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const displayName = currentBot?.name ?? name;
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
-  activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
   const workingGroupBots = useMemo(() => {
@@ -954,16 +1009,37 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function clearConversation() {
     if (!botId) return;
+    const epoch = historyEpoch.current;
+    const threadId = snapRef.current?.threadId;
+    const sessionGeneration = currentSessionGeneration();
+    const spaceId = selectedSpaceId();
     void rpc("threads/clear", { botId })
       .then(() => {
-        expandedHistoryThread.current = null;
-        pinnedAroundRef.current = null;
-        historyEpoch.current += 1;
-        commitSnap(
-          snapRef.current
-            ? { ...snapRef.current, messages: [], olderCursor: null, run: null }
-            : snapRef.current,
-        );
+        if (
+          !isCurrentTarget(botId, groupId) ||
+          sessionGeneration !== currentSessionGeneration() ||
+          spaceId !== selectedSpaceId() ||
+          (threadId != null && snapRef.current?.threadId !== threadId)
+        )
+          return;
+        // An observed clear has already reset history and may include newer replies.
+        // Otherwise reset immediately; the authoritative refresh supplies read state.
+        if (epoch === historyEpoch.current) {
+          commitSnap(
+            snapRef.current
+              ? {
+                  ...snapRef.current,
+                  messages: [],
+                  olderCursor: null,
+                  run: null,
+                  activeRuns: [],
+                  readState: undefined,
+                }
+              : snapRef.current,
+            true,
+          );
+        }
+        void refresh().catch(() => undefined);
       })
       .catch((err: unknown) =>
         Alert.alert(t("Could not clear conversation"), errorText(err, t("Try again."))),
@@ -1104,63 +1180,152 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     if (result.commit) {
       snapshotOrigin.current = scope;
       pendingSave.current = null;
-      writeSavedThread(scope, savedChatTarget(next), next);
-      commitSnap(
-        mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
+      const committed = mergeMobileSnapshot(
+        snapRef.current,
+        next,
+        expandedHistoryThread.current === next.threadId,
       );
+      writeSavedThread(scope, savedChatTarget(committed), committed);
+      commitSnap(committed);
       setShowingSaved(false);
+      freshReadSnapshot.current = true;
     }
     if (isCurrentTarget(targetBotId, targetGroupId)) {
       feedback.refreshed(targetGroupId ?? targetBotId);
     }
-    return result.snapshot ?? undefined;
+    return (result.commit ? snapRef.current : result.snapshot) ?? undefined;
   }
 
-  async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
+  async function applyMessageJump(target: {
+    botId?: string;
+    groupId?: string;
+    messageId?: string;
+    seq?: number;
+  }) {
     const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
-    const epoch = historyEpoch.current;
+    const initialSnapshot = snapRef.current;
+    let epoch = historyEpoch.current;
     jumpGeneration.current += 1;
+    visibleReadIds.current.clear();
+    visibleReadCallIds.current.clear();
+    pinnedRowLayouts.current.clear();
     const jumpId = jumpGeneration.current;
     const scope = await liveSavedChatsScope();
     if (!scope || !isIntegrationsScopeCurrent(scope)) return;
-    const [snap, page] = await Promise.all([
-      rpc<MobileSnapshot>("threads/get", threadTarget),
-      rpc<MobileMessagePage>("threads/messages", {
-        ...threadTarget,
-        around: { messageId: target.messageId },
-      }),
-    ]);
+    const snap = await rpc<MobileSnapshot>("threads/get", threadTarget);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch); the
     // generation check drops an older same-thread jump that finished after a newer one.
+    const isCurrentJump = () =>
+      epoch === historyEpoch.current &&
+      jumpId === jumpGeneration.current &&
+      isIntegrationsScopeCurrent(scope) &&
+      (!target.groupId || activeGroupId.current === target.groupId) &&
+      (!target.botId || activeBotId.current === target.botId);
+    if (!isCurrentJump()) return;
+    const current = snapRef.current;
+    if (threadHistoryWasCleared(snap, current)) return;
     if (
-      epoch !== historyEpoch.current ||
-      jumpId !== jumpGeneration.current ||
-      !isIntegrationsScopeCurrent(scope)
-    )
-      return;
-    if (target.groupId && activeGroupId.current !== target.groupId) return;
-    if (target.botId && activeBotId.current !== target.botId) return;
-    const targetInPage = page.messages.some((message) => message.id === target.messageId);
-    const opened = targetInPage ? openThreadWindow(snap, page) : null;
+      threadHistoryWasCleared(
+        initialSnapshot?.threadId === snap.threadId ? initialSnapshot : { threadId: snap.threadId },
+        snap,
+      ) ||
+      threadHistoryWasCleared(current, snap)
+    ) {
+      // Establish the new generation before requesting any around-page. An explicit
+      // search can continue; an unread visit must choose its boundary from this snapshot.
+      const latest =
+        current?.threadId === snap.threadId && (current.cursor ?? -1) > (snap.cursor ?? -1)
+          ? current
+          : snap;
+      snapshotOrigin.current = scope;
+      freshReadSnapshot.current = true;
+      commitSnap(latest);
+      setShowingSaved(false);
+      if (!target.messageId) return;
+      epoch = historyEpoch.current;
+      jumpAnchor.current.begin(target.messageId);
+    }
+    const firstPage = await rpc<MobileMessagePage>("threads/messages", {
+      ...threadTarget,
+      around: target.messageId ? { messageId: target.messageId } : { seq: target.seq },
+    });
+    if (!isCurrentJump()) return;
+    let page = firstPage;
+    const firstRenderedUnread = (messages = page.messages) =>
+      projectMessageReactions(
+        userVisibleMessages(messages, { includePeerReceipts: true }).filter((message) =>
+          hasVisibleMessagePresentation(message.blocks),
+        ),
+      ).visibleMessages.find((message) => message.seq != null && message.seq >= (target.seq ?? 0))
+        ?.id;
+    let targetMessageId = target.messageId ?? firstRenderedUnread();
+    if (!target.messageId) {
+      const scanThrough = Math.max(
+        target.seq ?? 0,
+        snap.readState?.lastUnreadSeq ?? -1,
+        latestDurableMessageSeq(snap.messages) ?? -1,
+      );
+      let covered = page.coveredThroughSeq ?? latestDurableMessageSeq(page.messages);
+      // An around-page can contain only filtered activity. Scan forward from its raw
+      // coverage, retaining the original older cursor so the divider cannot skip a gap.
+      while (!targetMessageId && covered != null && covered < scanThrough) {
+        const nextPage = await rpc<MobileMessagePage>("threads/messages", {
+          ...threadTarget,
+          around: { seq: covered + 1 },
+        });
+        if (!isCurrentJump()) return;
+        const nextCovered =
+          nextPage.coveredThroughSeq ?? latestDurableMessageSeq(nextPage.messages);
+        if (nextPage.threadId !== page.threadId || nextCovered == null || nextCovered <= covered) {
+          throw new Error(t("Could not load earlier messages"));
+        }
+        page = {
+          ...page,
+          messages: mergeMessagesById(page.messages, nextPage.messages),
+          coveredThroughSeq: nextCovered,
+        };
+        covered = nextCovered;
+        targetMessageId = firstRenderedUnread();
+      }
+      // A fully covered window may contain only hidden activity. It needs no anchor,
+      // but missing coverage or a visible unread tail must never silently skip a gap.
+      if (
+        !targetMessageId &&
+        (covered == null || covered < scanThrough || firstRenderedUnread(snap.messages))
+      ) {
+        throw new Error(t("Could not load earlier messages"));
+      }
+    }
+    const targetInPage =
+      targetMessageId != null && page.messages.some((message) => message.id === targetMessageId);
+    const onScreen = snapRef.current;
+    const latest =
+      onScreen?.threadId === snap.threadId && (onScreen.cursor ?? -1) > (snap.cursor ?? -1)
+        ? onScreen
+        : snap;
+    const opened = targetInPage ? openThreadWindow(latest, page) : null;
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = opened
       ? {
           ...threadTarget,
-          messageId: target.messageId,
+          messageId: targetMessageId!,
           threadId: page.threadId,
           newerCursor: opened.newerCursor,
+          coveredThroughSeq: page.coveredThroughSeq,
         }
       : null;
-    jumpAnchor.current.begin(targetInPage ? target.messageId : null);
-    jumpScrollTarget.current = targetInPage ? target.messageId : null;
+    jumpAnchor.current.begin(targetInPage ? targetMessageId! : null);
+    jumpScrollTarget.current = targetInPage ? targetMessageId! : null;
     newerLoadFailed.current = false;
     joinPinnedAfterLayout.current = null;
     pinnedScrollMetrics.current = { offset: 0, viewport: 0, content: 0 };
     // Publish the jump refs even when the opened snapshot is already visible.
     setThreadScrollState(scrollBehavior.current.state());
     snapshotOrigin.current = scope;
-    commitSnap(opened?.snapshot ?? snap);
+    freshReadSnapshot.current = true;
+    commitSnap(opened?.snapshot ?? latest);
     setShowingSaved(false);
+    return true;
   }
 
   async function loadNewerMessages() {
@@ -1226,13 +1391,19 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       newerLoadFailed.current = true;
       setError(errorText(err, t("Could not open message")));
     } finally {
-      loadingNewerContent.current = false;
-      setLoadingNewer(false);
-      if (visibleUnchanged) loadNewerNearEnd();
+      if (epoch === historyEpoch.current) {
+        loadingNewerContent.current = false;
+        setLoadingNewer(false);
+        if (visibleUnchanged) loadNewerNearEnd();
+      }
     }
   }
 
   function showLatest() {
+    openingUnread.current = false;
+    setUnreadOpeningFailed(false);
+    visibleReadIds.current.clear();
+    visibleReadCallIds.current.clear();
     const pinned = pinnedAroundRef.current;
     pinnedAroundRef.current = null;
     joinPinnedAfterLayout.current = null;
@@ -1250,6 +1421,20 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     );
   }
 
+  function jumpToLatest() {
+    openingUnread.current = false;
+    setUnreadOpeningFailed(false);
+    if (pinnedAroundRef.current || jumpScrollTarget.current) {
+      showLatest();
+      return;
+    }
+    performScroll(scrollBehavior.current.jumpToLatest());
+    publishThreadScrollState(scrollBehavior.current.state());
+    // The list may already be at the tail after an unread-position request failed.
+    // In that case no new viewability callback is needed for this explicit choice.
+    markVisibleRef.current();
+  }
+
   async function loadOlderMessages() {
     if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
     loadingOlderContent.current = true;
@@ -1262,38 +1447,141 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         before: snap.olderCursor,
         includePeerReceipts: true,
       });
-      if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned) {
+      if (epoch !== historyEpoch.current) return;
+      if (pinnedAroundRef.current !== pinned) {
         loadingOlderContent.current = false;
         return;
       }
       expandedHistoryThread.current = page.threadId;
       commitSnap(prependMobileMessagePage(snapRef.current, page));
     } catch (err) {
+      if (epoch !== historyEpoch.current) return;
       loadingOlderContent.current = false;
       setError(errorText(err, t("Could not load earlier messages")));
     } finally {
-      setLoadingOlder(false);
+      if (epoch === historyEpoch.current) setLoadingOlder(false);
     }
   }
 
   const markReadIfVisible = useCallback(() => {
-    if (readOnly || AppState.currentState !== "active" || !navigation.isFocused()) return;
-    const target = groupId ?? botId;
-    if (!target || readVisibleTarget.current === target) return;
-    readVisibleTarget.current = target;
-    if (activeThreadId.current) {
-      void dismissThreadNotifications({ threadId: activeThreadId.current }).catch(() => undefined);
-    }
-    if (groupId) {
-      void rpc("threads/markRead", { groupId }).catch(() => {
-        if (readVisibleTarget.current === target) readVisibleTarget.current = null;
-      });
-      return;
-    }
-    void rpc("threads/markRead", { botId: botId! }).catch(() => {
-      if (readVisibleTarget.current === target) readVisibleTarget.current = null;
+    const snapshot = snapRef.current;
+    const target = groupId ? { groupId } : botId ? { botId } : null;
+    if (!snapshot || !target || readRequest.current) return;
+    const throughSeq = mobileVisibleReadSeq({
+      snapshot,
+      visibleIds: visibleReadIds.current,
+      visibleCallMessageIds: visibleReadCallIds.current,
+      emptyVisible: readViewportReady.current && !pinnedAroundRef.current,
+      active: AppState.currentState === "active",
+      focused: navigation.isFocused(),
+      ready:
+        freshReadSnapshot.current &&
+        !openingUnread.current &&
+        readVisit.current?.threadId === snapshot.threadId &&
+        readVisit.current.opened &&
+        (!jumpAnchor.current.holds() || jumpAnchor.current.align(headerHeight + 24) != null),
+      readOnly,
     });
-  }, [botId, groupId, navigation, readOnly]);
+    if (throughSeq == null) return;
+    const request = { threadId: snapshot.threadId, throughSeq };
+    readRequest.current = request;
+    const epoch = historyEpoch.current;
+    const cursor = snapshot.cursor;
+    void rpc<{ ok: true; readState?: ThreadReadState }>("threads/markRead", {
+      ...target,
+      throughSeq,
+    })
+      .then((result) => {
+        if (epoch !== historyEpoch.current || snapRef.current?.threadId !== request.threadId)
+          return;
+        // A later event is authoritative; a concurrent arrival must keep its unread flag.
+        if (result.readState && snapRef.current.cursor === cursor) {
+          commitSnap({ ...snapRef.current, readState: result.readState });
+        }
+        if (result.readState && !result.readState.unread && !snapRef.current.readState?.unread) {
+          void dismissThreadNotifications({ threadId: request.threadId }).catch(() => undefined);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (readRequest.current !== request) return;
+        readRequest.current = null;
+        const newer = mobileVisibleReadSeq({
+          snapshot: snapRef.current,
+          visibleIds: visibleReadIds.current,
+          visibleCallMessageIds: visibleReadCallIds.current,
+          active: AppState.currentState === "active",
+          focused: navigation.isFocused(),
+          ready: freshReadSnapshot.current && !openingUnread.current,
+          readOnly,
+        });
+        if (newer != null && newer > throughSeq) markVisibleRef.current();
+      });
+  }, [botId, groupId, navigation, readOnly, headerHeight]);
+  const markVisibleRef = useRef(markReadIfVisible);
+  markVisibleRef.current = markReadIfVisible;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<ViewToken<ThreadItem<MobileMessage>>> }) => {
+      visibleReadIds.current = new Set(
+        viewableItems.flatMap(({ item }) => (item.kind === "voiceChat" ? [] : [item.message.id])),
+      );
+      visibleReadCallIds.current = new Set(
+        viewableItems.flatMap(({ item }) =>
+          item.kind === "voiceChat" ? item.messages.map((message) => message.id) : [],
+        ),
+      );
+      markVisibleRef.current();
+    },
+  ).current;
+  const viewabilityConfig = useRef({
+    viewAreaCoveragePercentThreshold: 50,
+    minimumViewTime: 250,
+  }).current;
+
+  // Keep the boundary for this visit after acknowledgements and other-device read events.
+  if (
+    snap?.readState &&
+    !showingSaved &&
+    freshReadSnapshot.current &&
+    AppState.currentState === "active" &&
+    navigation.isFocused()
+  ) {
+    if (readVisit.current?.threadId !== snap.threadId) {
+      readVisit.current = {
+        threadId: snap.threadId,
+        boundary: unreadBoundary(snap.readState),
+        opened: false,
+      };
+    } else if (readVisit.current.boundary == null) {
+      readVisit.current.boundary = unreadBoundary(snap.readState);
+    }
+  }
+  useEffect(() => {
+    const visit = readVisit.current;
+    if (!visit || showingSaved || !freshReadSnapshot.current || !navigation.isFocused()) return;
+    if (!visit.opened) {
+      visit.opened = true;
+      if (visit.boundary != null && !messageId && !readOnly) {
+        openingUnread.current = true;
+        setUnreadOpeningFailed(false);
+        void applyMessageJump({ botId, groupId, seq: visit.boundary + 1 })
+          .then((opened) => {
+            if (!opened || readVisit.current !== visit) return;
+            openingUnread.current = false;
+            markVisibleRef.current();
+          })
+          .catch((err: unknown) => {
+            if (readVisit.current !== visit) return;
+            // Keep the tail unread until an explicit drag or Jump to latest. The next
+            // visit retries the saved boundary, even when this page cannot scroll.
+            setUnreadOpeningFailed(true);
+            setError(errorText(err, t("Could not load earlier messages")));
+          });
+        return;
+      }
+    }
+    markReadIfVisible();
+  }, [snap, showingSaved, readVisitVersion, markReadIfVisible]);
 
   useEffect(() => {
     if (!notificationThreadId || AppState.currentState !== "active" || !navigation.isFocused())
@@ -1324,8 +1612,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         cancelFocusPrompt();
       }
       void refreshMentionBots();
-      markReadIfVisible();
+      if (!freshReadSnapshot.current) {
+        void refresh()
+          .then(() => setReadVisitVersion((version) => version + 1))
+          .catch(() => undefined);
+      }
       if (!readOnly) speakFinishedReplyRef.current();
+      return () => {
+        readVisit.current = null;
+        freshReadSnapshot.current = false;
+        openingUnread.current = false;
+        setUnreadOpeningFailed(false);
+      };
     }, [botId, readOnly, markReadIfVisible, refreshMentionBots]),
   );
 
@@ -1353,9 +1651,15 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           botId,
           threadId: notificationThreadId,
         }).catch(() => undefined);
-        markReadIfVisible();
+        void refresh()
+          .then(() => setReadVisitVersion((version) => version + 1))
+          .catch(() => undefined);
         return;
       }
+      readVisit.current = null;
+      freshReadSnapshot.current = false;
+      openingUnread.current = false;
+      setUnreadOpeningFailed(false);
       void setOpenNotificationThread(null).catch(() => undefined);
     });
     return () => appState.remove();
@@ -1364,7 +1668,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   useEffect(() => {
     if (!botId && !groupId) return;
     // Invalidate pending history loads while retaining pages already loaded for this chat.
-    historyEpoch.current += 1;
+    invalidateHistoryLoads();
     const abort = new AbortController();
     const subscriptionGeneration = ++liveSubscriptionGeneration.current;
     const sessionGeneration = currentSessionGeneration();
@@ -1396,6 +1700,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
               if (sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
+              if (event.seq != null && event.seq <= (snapRef.current?.cursor ?? -1)) return;
               if (
                 event.type === "thread.progress" ||
                 event.type === "agent.tool.called" ||
@@ -1406,25 +1711,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "thread.subagent" ||
                 event.type === "thread.cloud_agent" ||
                 event.type === "thread.cleared" ||
+                event.type === "thread.read.updated" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
                 isRunTerminalEvent(event)
               ) {
-                if (event.type === "thread.cleared") {
-                  expandedHistoryThread.current = null;
-                  pinnedAroundRef.current = null;
-                  jumpScrollTarget.current = null;
-                  jumpAnchor.current.release();
-                  historyEpoch.current += 1;
-                }
-                commitSnap(applyMobileThreadEvent(snapRef.current, event));
+                commitSnap(
+                  applyMobileThreadEvent(snapRef.current, event),
+                  event.type === "thread.cleared",
+                );
               }
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
-              }
-              if (event.type === "thread.message.created" && event.payload?.role === "bot") {
-                readVisibleTarget.current = null;
-                markReadIfVisible();
               }
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
@@ -1907,8 +2205,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     },
     [],
   );
+  const visitBoundary =
+    readVisit.current?.threadId === snap?.threadId ? (readVisit.current?.boundary ?? null) : null;
+  const unreadDividerId = unreadDividerMessageId(
+    visibleMessages,
+    visitBoundary,
+    snap?.olderCursor ?? null,
+  );
   // Group calls in reading order, then reverse for the inverted list.
-  const liveItems = useMemo(() => groupVoiceChats(visibleMessages).reverse(), [visibleMessages]);
+  const liveItems = useMemo(
+    () => groupVoiceChats(visibleMessages, { unreadAfterSeq: visitBoundary }).reverse(),
+    [visibleMessages, visitBoundary],
+  );
   const messagesById = useMemo(
     () => new Map((snap?.messages ?? []).map((message) => [message.id, message])),
     [snap?.messages],
@@ -1940,9 +2248,20 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     return viewport > 0 && content - viewport - offset <= 80;
   }
 
+  function markPinnedMessagesRead() {
+    visibleReadCallIds.current.clear();
+    visibleReadIds.current = pinnedVisibleMessageIds(
+      pinnedRowLayouts.current,
+      pinnedScrollMetrics.current,
+      headerHeight,
+    );
+    markReadIfVisible();
+  }
+
   function scrollPinnedTo(offset: number) {
     pinnedScroll.current?.scrollTo({ y: offset, animated: false });
     pinnedScrollMetrics.current.offset = offset;
+    requestAnimationFrame(markPinnedMessagesRead);
   }
 
   function loadNewerNearEnd() {
@@ -2037,7 +2356,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         return next;
       });
     },
-    layout: (messageId, y, index) => {
+    layout: (messageId, y, index, height) => {
+      pinnedRowLayouts.current.set(messageId, { y, height });
+      markPinnedMessagesRead();
       const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, headerHeight + 24);
       if (offset == null) return;
       scrollPinnedTo(offset);
@@ -2069,7 +2390,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
-      layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
+      layout: (id, y, index, height) => rowActionsRef.current.layout(id, y, index, height),
     }),
     [],
   );
@@ -2116,6 +2437,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           canAnswer={!readOnly && message.id === answerableAskMessageId}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
+          unreadSeparator={unreadDividerId === message.id}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
@@ -2148,6 +2470,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       answerableAskMessageId,
       highlightedMessageId,
       separatorIds,
+      unreadDividerId,
       windowWidth,
       t,
       locale,
@@ -2157,6 +2480,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     ({ item }: ListRenderItemInfo<ThreadItem<MobileMessage>>) =>
       item.kind === "voiceChat" ? (
         <View style={messageListStyles.row}>
+          {item.messages.some((message) => message.id === unreadDividerId) ? (
+            <UnreadSeparator />
+          ) : null}
           {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
             <TimeSeparator createdAt={item.messages[0].createdAt} />
           ) : null}
@@ -2165,7 +2491,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds],
+    [renderMessageRow, separatorIds, unreadDividerId],
   );
   const listContentStyle = useMemo(
     () => ({
@@ -2283,6 +2609,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             scrollEventThrottle={16}
             onLayout={(event) => {
               pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
+              markPinnedMessagesRead();
               loadNewerNearEnd();
             }}
             onContentSizeChange={(_, height) => {
@@ -2301,6 +2628,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                   return;
                 }
               }
+              markPinnedMessagesRead();
               loadNewerNearEnd();
             }}
             onScroll={(event) => {
@@ -2310,6 +2638,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 viewport: layoutMeasurement.height,
                 content: contentSize.height,
               };
+              markPinnedMessagesRead();
               loadNewerNearEnd();
             }}
             onScrollBeginDrag={() => {
@@ -2337,6 +2666,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             key={threadKey}
             ref={scroll}
             data={liveItems}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
             inverted
             keyExtractor={threadItemKey}
             // This callback tracks every row input, including reply, reaction and highlight state.
@@ -2347,6 +2678,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             onScrollBeginDrag={() => {
+              openingUnread.current = false;
+              setUnreadOpeningFailed(false);
               userDragging.current = true;
             }}
             onScroll={(event) => {
@@ -2357,7 +2690,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
               userDragging.current = false;
             }}
             onMomentumScrollEnd={updateUserScroll}
-            onLayout={() => performScroll(scrollBehavior.current.onLayout())}
+            onLayout={(event) => {
+              readViewportReady.current = event.nativeEvent.layout.height > 0;
+              performScroll(scrollBehavior.current.onLayout());
+              markReadIfVisible();
+            }}
             onContentSizeChange={() => {
               if (loadingOlderContent.current) {
                 loadingOlderContent.current = false;
@@ -2384,20 +2721,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             renderItem={renderItem}
           />
         )}
-        {showPinnedPage || threadScrollState.detached ? (
+        {showPinnedPage || threadScrollState.detached || unreadOpeningFailed ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
               threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
             }
-            onPress={() => {
-              if (showPinnedPage) {
-                showLatest();
-                return;
-              }
-              performScroll(scrollBehavior.current.jumpToLatest());
-              publishThreadScrollState(scrollBehavior.current.state());
-            }}
+            onPress={jumpToLatest}
             style={{
               position: "absolute",
               left: "50%",
@@ -2809,7 +3139,7 @@ type MessageRowActions = {
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
-  layout: (messageId: string, y: number, index: number) => void;
+  layout: (messageId: string, y: number, index: number, height: number) => void;
 };
 
 type MessageRowProps = {
@@ -2826,6 +3156,7 @@ type MessageRowProps = {
   canAnswer: boolean;
   highlighted: boolean;
   separator: boolean;
+  unreadSeparator: boolean;
   replyAuthor: string;
   replyFallbackText?: string;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
@@ -2852,6 +3183,7 @@ const MessageRow = memo(function MessageRow({
   canAnswer,
   highlighted,
   separator,
+  unreadSeparator,
   replyAuthor,
   replyFallbackText,
   messageReactions,
@@ -2878,7 +3210,12 @@ const MessageRow = memo(function MessageRow({
     () =>
       enableJump
         ? (event: LayoutChangeEvent) =>
-            actions.layout(message.id, event.nativeEvent.layout.y, index)
+            actions.layout(
+              message.id,
+              event.nativeEvent.layout.y,
+              index,
+              event.nativeEvent.layout.height,
+            )
         : undefined,
     [actions, message.id, enableJump, index],
   );
@@ -2997,6 +3334,7 @@ const MessageRow = memo(function MessageRow({
         width: "100%",
       }}
     >
+      {unreadSeparator ? <UnreadSeparator /> : null}
       {separator ? <TimeSeparator createdAt={message.createdAt} /> : null}
       <View
         style={{

@@ -1,15 +1,11 @@
 import type { AdapterContext, JobPublisher } from "@rakazo/adapter-kit";
 import { cloudAgentPollJob } from "@rakazo/adapter-kit";
 import { cloudAgentBlockFromPayload } from "@rakazo/core";
-import {
-  appendEventInTransaction,
-  type CloudAgent,
-  createThreadMessageInTransaction,
-  type PrismaClient,
-  type ThreadEvents,
-} from "@rakazo/db";
+import type { CloudAgent, PrismaClient, ThreadEvents } from "@rakazo/db";
+import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
-import { type CloudAgentConnection, cloudAgentsEnabled } from "./cloud-agent-factory.js";
+import type { CloudAgentConnection } from "./cloud-agent-factory.js";
+import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { cloudAgentLaunchSchema, cloudAgentReplySchema } from "./cloud-agent-tools.js";
 
 export interface CloudAgentDeps {
@@ -42,7 +38,7 @@ export async function executeCloudAgentTool(
       // Serialize with clearThread before creating either the intent or its card.
       await tx.thread.update({
         where: { id: run.threadId, userId: context.userId, spaceId: context.spaceId },
-        data: { unread: false },
+        data: { nextMessageSeq: { increment: 0 } },
       });
       const existing = await tx.cloudAgent.findUnique({
         where: { operationKey: context.operationId },

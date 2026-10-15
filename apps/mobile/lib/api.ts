@@ -13,6 +13,7 @@ import type {
   ReplyPreview,
   Space,
   SpaceNavigation,
+  ThreadReadState,
 } from "@rakazo/contracts";
 import {
   accountSecuritySchema,
@@ -38,6 +39,7 @@ import {
   runFailureError,
   signupRequiresEmailVerification,
   takeLiveMessage,
+  threadReadStateFromPayload,
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
@@ -1010,6 +1012,8 @@ export type MobileSnapshot = {
   groupName?: string;
   threadId: string;
   cursor?: number;
+  historyGeneration?: number;
+  readState?: ThreadReadState;
   messages: MobileMessage[];
   olderCursor: number | null;
   run: { id: string; botId?: string; status: string; error?: string | null } | null;
@@ -1060,13 +1064,14 @@ export function mobileThreadRefreshResult(input: {
   return { commit, snapshot: commit ? input.fetched : input.onScreen };
 }
 
-export type MobileMessagePage = ThreadHistory<MobileMessage>;
+export type MobileMessagePage = ThreadHistory<MobileMessage> & { coveredThroughSeq?: number };
 
 export function mergeMobileSnapshot(
   prev: MobileSnapshot | null,
   next: MobileSnapshot,
   preserveLoadedHistory = false,
 ): MobileSnapshot {
+  if (prev?.threadId === next.threadId && (prev.cursor ?? -1) > (next.cursor ?? -1)) return prev;
   return mergeThreadHistory(prev, next, preserveLoadedHistory);
 }
 
@@ -1227,14 +1232,33 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev || event.type === "heartbeat") return prev;
+  if (event.seq != null && prev.cursor != null && event.seq <= prev.cursor) return prev;
   if (event.type === "thread.cleared") {
     return {
       ...prev,
       cursor: event.seq,
+      historyGeneration:
+        typeof event.payload?.historyGeneration === "number" &&
+        Number.isSafeInteger(event.payload.historyGeneration) &&
+        event.payload.historyGeneration >= 0
+          ? event.payload.historyGeneration
+          : prev.historyGeneration,
       messages: [],
       olderCursor: null,
       run: null,
       activeRuns: [],
+      readState: threadReadStateFromPayload(event.payload) ?? {
+        lastReadSeq: -1,
+        lastUnreadSeq: -1,
+        unread: false,
+      },
+    };
+  }
+  if (event.type === "thread.read.updated") {
+    return {
+      ...prev,
+      cursor: event.seq ?? prev.cursor,
+      readState: threadReadStateFromPayload(event.payload) ?? prev.readState,
     };
   }
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
@@ -1395,6 +1419,7 @@ export function applyMobileThreadEvent(
     const known = prev.messages.find((message) => message.id === id);
     const next: MobileMessage = {
       id,
+      seq: typeof event.payload?.messageSeq === "number" ? event.payload.messageSeq : known?.seq,
       createdAt: known?.createdAt ?? event.createdAt,
       runId: event.runId ? String(event.runId) : undefined,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
@@ -1408,6 +1433,7 @@ export function applyMobileThreadEvent(
     return {
       ...prev,
       cursor: event.seq ?? prev.cursor,
+      readState: threadReadStateFromPayload(event.payload) ?? prev.readState,
       messages: upsertMessageById(
         remaining.filter(
           (message) =>

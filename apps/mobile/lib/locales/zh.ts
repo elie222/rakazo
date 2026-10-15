@@ -1,4 +1,5 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "New messages": "新消息",
   "Couldn't refresh — showing the last loaded messages.": "无法刷新——显示最近加载的消息。",
   "Try Again": "重试",
   "Too many unsent messages": "未发送消息过多",

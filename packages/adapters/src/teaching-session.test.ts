@@ -45,6 +45,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
       }),
     },
     message: {
+      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       findMany: vi
         .fn()
         .mockResolvedValue([
@@ -81,6 +82,7 @@ function recordingDeps(skill: ReturnType<typeof skillRow>) {
           findUnique: vi.fn(),
         },
         message: {
+          findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
           findMany: vi
             .fn()
             .mockResolvedValue([

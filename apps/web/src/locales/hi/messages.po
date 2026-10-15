@@ -2975,6 +2975,10 @@ msgstr "नया बॉट"
 msgid "New group"
 msgstr "नया समूह"
 
+#: src/pages/Shell.tsx
+msgid "New messages"
+msgstr "नए संदेश"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
 msgstr "नया खुला-कार्य आइटम"

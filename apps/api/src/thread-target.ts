@@ -9,6 +9,7 @@ import type {
   MessageReaction,
   ReplyPreview,
   RunStatus,
+  ThreadReadState,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { GROUP_MEMBER_MIN, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
@@ -345,7 +346,13 @@ export async function threadSnapshot(
       }),
       deps.prisma.$transaction(
         async (tx) => {
-          await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
+          const [thread] = await tx.$queryRaw<
+            Array<ThreadReadState & { historyCompactionGeneration: number }>
+          >`
+            SELECT "lastReadSeq", "lastUnreadSeq", unread, "historyCompactionGeneration" FROM threads
+            WHERE id = ${target.threadId} FOR SHARE`;
+          if (!thread) throw new IsolationError();
+          const { historyCompactionGeneration: historyGeneration, ...readState } = thread;
           const [messagePage, last, waitingRun, busyOrFailed] = await Promise.all([
             loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
             tx.event.findFirst({
@@ -416,7 +423,7 @@ export async function threadSnapshot(
                   orderBy: { seq: "asc" },
                 })
               : [];
-          return { messagePage, last, run: currentRun, liveEvents };
+          return { messagePage, last, run: currentRun, liveEvents, readState, historyGeneration };
         },
         { timeout: 15_000, maxWait: 5_000 },
       ),
@@ -424,6 +431,8 @@ export async function threadSnapshot(
     return {
       botId: target.botId,
       threadId: target.threadId,
+      historyGeneration: core.historyGeneration,
+      readState: core.readState,
       cursor: core.last?.seq ?? -1,
       messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
       olderCursor: core.messagePage.olderCursor,
@@ -434,7 +443,13 @@ export async function threadSnapshot(
 
   const core = await deps.prisma.$transaction(
     async (tx) => {
-      await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
+      const [thread] = await tx.$queryRaw<
+        Array<ThreadReadState & { historyCompactionGeneration: number }>
+      >`
+        SELECT "lastReadSeq", "lastUnreadSeq", unread, "historyCompactionGeneration" FROM threads
+        WHERE id = ${target.threadId} FOR SHARE`;
+      if (!thread) throw new IsolationError();
+      const { historyCompactionGeneration: historyGeneration, ...readState } = thread;
       const [messagePage, last, activeRuns, recentTerminals] = await Promise.all([
         loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
         tx.event.findFirst({
@@ -487,6 +502,8 @@ export async function threadSnapshot(
           : [];
       return {
         messagePage,
+        historyGeneration,
+        readState,
         last,
         activeRuns,
         terminalRun: pickLatestTerminalRun(recentTerminals),
@@ -501,6 +518,8 @@ export async function threadSnapshot(
     groupName: target.groupName,
     members: target.members,
     threadId: target.threadId,
+    historyGeneration: core.historyGeneration,
+    readState: core.readState,
     cursor: core.last?.seq ?? -1,
     messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
     olderCursor: core.messagePage.olderCursor,
@@ -1223,19 +1242,62 @@ export async function stopThreadRuns(
 }
 
 export async function setThreadUnreadState(
-  prisma: PrismaClient,
+  deps: { prisma: PrismaClient; events: Pick<ThreadEvents, "notify"> },
   actor: Actor,
   target: ThreadTarget,
   unread: boolean,
+  throughSeq?: number,
 ) {
-  const result = await prisma.thread.updateMany({
-    where: {
-      id: target.threadId,
+  const result = await deps.prisma.$transaction(async (tx) => {
+    // Serialize acknowledgements with message creation and clearing history.
+    // Read only after acquiring the lock: an older device must never move the
+    // position backwards or clear a message committed after its visible page.
+    const [thread] = await tx.$queryRaw<Array<ThreadReadState & { nextMessageSeq: number }>>`
+      SELECT "lastReadSeq", "lastUnreadSeq", unread, "nextMessageSeq" FROM threads
+      WHERE id = ${target.threadId} AND "spaceId" = ${actor.spaceId}
+        AND "userId" = ${actor.userId} FOR UPDATE`;
+    if (!thread) throw new IsolationError();
+    const lastReadSeq = unread
+      ? thread.lastReadSeq
+      : Math.max(
+          thread.lastReadSeq,
+          Math.min(throughSeq ?? thread.nextMessageSeq - 1, thread.nextMessageSeq - 1),
+        );
+    // A manual reminder has no invented message boundary. A stale device
+    // cannot clear it; reopening at the current position or explicitly marking
+    // the whole chat read can.
+    const preserveReminder =
+      throughSeq !== undefined &&
+      thread.unread &&
+      thread.lastUnreadSeq <= thread.lastReadSeq &&
+      throughSeq < thread.lastReadSeq;
+    const readState: ThreadReadState = {
+      lastReadSeq,
+      lastUnreadSeq: thread.lastUnreadSeq,
+      unread:
+        unread ||
+        (throughSeq !== undefined && (thread.lastUnreadSeq > lastReadSeq || preserveReminder)),
+    };
+    if (readState.lastReadSeq === thread.lastReadSeq && readState.unread === thread.unread) {
+      return { readState, eventSeq: undefined };
+    }
+    await tx.thread.update({
+      where: { id: target.threadId },
+      data: { lastReadSeq, unread: readState.unread },
+    });
+    const event = await appendEventInTransaction(tx, {
       spaceId: actor.spaceId,
-      userId: actor.userId,
-      unread: { not: unread },
-    },
-    data: { unread },
+      threadId: target.threadId,
+      botId: target.kind === "bot" ? target.botId : target.memberBotIds[0]!,
+      type: "thread.read.updated",
+      payload: { readState },
+    });
+    return { readState, eventSeq: event.seq };
   });
-  if (result.count > 1) throw new IsolationError();
+  if (result.eventSeq !== undefined) {
+    await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
+      getLogger().error("thread read state notification", error);
+    });
+  }
+  return result.readState;
 }

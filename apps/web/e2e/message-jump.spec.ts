@@ -1,3 +1,4 @@
+import type { Response } from "@playwright/test";
 import { expect, test } from "@playwright/test";
 import { activeBotId, completeOnboarding, rpc, signup } from "./helpers";
 
@@ -5,6 +6,7 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }) => 
   const stamp = Date.now();
   await signup(page, `jump-${stamp}@rakazo.test`, "password12", "Jump Tester");
   await completeOnboarding(page);
+  await page.bringToFront();
 
   const botId = activeBotId(page);
   const transcript = page.getByTestId("transcript");
@@ -21,6 +23,11 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }) => 
   await expect(targetRow).toBeVisible({ timeout: 20_000 });
   const messageId = await targetRow.getAttribute("data-message-id");
   if (!messageId) throw new Error("missing data-message-id");
+  // Start at the live tail; opening an unread boundary can intentionally unfollow it.
+  await transcript.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(targetRow).toBeInViewport();
 
   // Flood the thread: every successful send steers the run, so SSE events keep
   // committing urgent updates — the churn that previously starved the router's
@@ -48,6 +55,17 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }) => 
       }
     }),
   );
+  let aroundResponse: Response | undefined;
+  const captureAroundResponse = (response: Response) => {
+    const body = response.request().postData() ?? "";
+    if (
+      response.url().includes("/rpc/threads/messages") &&
+      body.includes('"around"') &&
+      body.includes(messageId)
+    )
+      aroundResponse = response;
+  };
+  page.on("response", captureAroundResponse);
   try {
     // Precondition: the stream is really committing — rows keep appearing.
     const rowsBefore = await rows.count();
@@ -55,18 +73,11 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }) => 
 
     // The flood has pushed the target out of the live window.
     await expect(targetRow).not.toBeInViewport({ timeout: 20_000 });
-    const sentAtPush = sent;
-
-    const aroundJump = page.waitForResponse(
-      (response) =>
-        response.url().includes("/rpc/threads/messages") &&
-        (response.request().postData() ?? "").includes('"around"'),
-      { timeout: 15_000 },
-    );
     await page.evaluate((id) => {
       history.pushState({}, "", `?m=${id}`);
       window.dispatchEvent(new PopStateEvent("popstate"));
     }, messageId);
+    const sentAtPush = sent;
     // The jump's finally strips this one-shot param as soon as the around-fetch
     // settles. toHaveURL only samples the current URL, so under load the first
     // poll can already miss ?m= and then retry a value that will not return.
@@ -76,14 +87,18 @@ test("a ?m= deep link jumps while the thread is streaming", async ({ page }) => 
     // keep landing, and the target scrolls back into view. (The transcript
     // unfollows the tail for a jump; before that, follow commits could cancel
     // the scroll — asserting the viewport also guards that path.)
-    const aroundResponse = await aroundJump;
-    expect(aroundResponse.ok()).toBe(true);
+    // Capture before navigation so fast responses cannot be missed, but start
+    // the deadline after the browser dispatches it: CI can queue evaluate behind
+    // several seconds of stream rendering before pushState runs at all.
+    await expect.poll(() => Boolean(aroundResponse), { timeout: 15_000 }).toBe(true);
+    expect(aroundResponse!.ok()).toBe(true);
     await expect.poll(() => sent, { timeout: 10_000 }).toBeGreaterThan(sentAtPush);
     await expect(targetRow).toBeInViewport({ timeout: 20_000 });
 
     // The one-shot param is stripped so a refresh does not re-jump.
     await expect(page).not.toHaveURL(/[?&]m=/, { timeout: 20_000 });
   } finally {
+    page.off("response", captureAroundResponse);
     flooding = false;
     await flood;
     await rpc(page, "threads/stop", { botId }).catch(() => {});

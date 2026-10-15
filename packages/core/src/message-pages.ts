@@ -5,15 +5,40 @@ interface MessageIdentity {
 
 export interface ThreadHistory<TMessage extends MessageIdentity> {
   threadId: string;
+  /** Changes only when the conversation is cleared; missing on older cached snapshots. */
+  historyGeneration?: number;
+  /** Unread messages can fall beyond the last row left by server-side filtering. */
+  readState?: { lastUnreadSeq: number };
   messages: readonly TMessage[];
   olderCursor: number | null;
+  /** Around pages can scan past messages that the transcript intentionally hides. */
+  coveredThroughSeq?: number;
+}
+
+/** A newer authoritative generation invalidates retained pages and their pending requests. */
+export function threadHistoryWasCleared(
+  previous: { threadId: string; historyGeneration?: number } | null,
+  recent: { threadId: string; historyGeneration?: number } | null,
+): boolean {
+  return Boolean(
+    previous &&
+      recent &&
+      previous.threadId === recent.threadId &&
+      (recent.historyGeneration ?? 0) > (previous.historyGeneration ?? 0),
+  );
 }
 
 export function mergeThreadHistory<
   TMessage extends MessageIdentity,
   TSnapshot extends ThreadHistory<TMessage>,
 >(previous: TSnapshot | null, recent: TSnapshot, preserveLoadedHistory = false): TSnapshot {
-  if (!previous || previous.threadId !== recent.threadId || !preserveLoadedHistory) return recent;
+  if (
+    !previous ||
+    previous.threadId !== recent.threadId ||
+    !preserveLoadedHistory ||
+    threadHistoryWasCleared(previous, recent)
+  )
+    return recent;
   return {
     ...recent,
     messages: mergeMessagePages(previous.messages, recent.messages),
@@ -54,7 +79,11 @@ export function openThreadWindow<
   const messages = mergeMessagesBySeq(latest.messages, page.messages);
   return {
     snapshot: { ...latest, messages, olderCursor: page.olderCursor },
-    newerCursor: newerGapCursor(messages, newestSeq(page.messages)),
+    newerCursor: newerGapCursor(
+      messages,
+      page.coveredThroughSeq ?? newestSeq(page.messages),
+      latest.readState?.lastUnreadSeq,
+    ),
   };
 }
 
@@ -98,7 +127,7 @@ export function appendNewerThreadPage<
       ? mergeMessagesBySeq(snapshot.messages, page.messages)
       : snapshot.messages;
   const covered = coveredThroughSeq ?? overlappingPageCoverage(page, newerCursor);
-  const cursor = forwardCursor(messages, newerCursor, covered);
+  const cursor = forwardCursor(messages, newerCursor, covered, snapshot.readState?.lastUnreadSeq);
   if (messages === snapshot.messages && cursor === newerCursor) return { snapshot, newerCursor };
   return {
     snapshot: messages === snapshot.messages ? snapshot : { ...snapshot, messages },
@@ -136,9 +165,10 @@ function forwardCursor(
   messages: readonly MessageIdentity[],
   newerCursor: number,
   coveredThroughSeq: number | null,
+  requiredThroughSeq = -1,
 ): number | null {
   const present = new Set<number>();
-  let maxSeq = newerCursor;
+  let maxSeq = Math.max(newerCursor, requiredThroughSeq);
   for (const message of messages) {
     if (!isDurableMessage(message) || typeof message.seq !== "number") continue;
     present.add(message.seq);
@@ -162,8 +192,15 @@ function forwardCursor(
   return scan >= maxSeq ? null : cursor;
 }
 
-function newerGapCursor(messages: readonly MessageIdentity[], loadedThrough: number | null) {
-  if (loadedThrough === null) return null;
+function newerGapCursor(
+  messages: readonly MessageIdentity[],
+  loadedThrough: number | null,
+  requiredThroughSeq = -1,
+) {
+  // An empty page without coverage cannot prove the gap was scanned.
+  if (loadedThrough === null)
+    return oldestSeq(messages) === null && requiredThroughSeq < 0 ? null : -1;
+  if (requiredThroughSeq > Math.max(loadedThrough, newestSeq(messages) ?? -1)) return loadedThrough;
   const next = oldestSeq(
     messages.filter((message) => typeof message.seq === "number" && message.seq > loadedThrough),
   );
@@ -262,6 +299,6 @@ export function upsertMessageById<T extends { id: string }>(messages: readonly T
   return updated;
 }
 
-function isDurableMessage(message: { id: string }): boolean {
+export function isDurableMessage(message: { id: string }): boolean {
   return !message.id.startsWith("progress:") && !message.id.startsWith("subagent:");
 }

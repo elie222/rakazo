@@ -80,8 +80,11 @@ export async function runThreadSubscription(options: {
           // Heartbeats only prove the socket is alive; they carry no state and no cursor.
           if (event.type === "heartbeat") continue;
           cursor = Math.max(cursor, event.seq);
+          const committed = options.currentSnapshot();
+          // A refresh can overtake the stream. Skip both state changes and stale UI effects.
+          if (committed?.threadId === event.threadId && event.seq <= committed.cursor) continue;
           options.beforeEvent?.(event);
-          if (snapshotReady && options.currentSnapshot()?.threadId === event.threadId) {
+          if (snapshotReady && committed?.threadId === event.threadId) {
             options.applyEvent(event);
           } else if (!snapshotReady) {
             pendingSnapshotEvents.push(event);
