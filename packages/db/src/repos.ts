@@ -1,9 +1,10 @@
 import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
 import { BOT_COLORS } from "@rakazo/contracts";
 import { BACKGROUND_RUN_TRIGGERS, isBackgroundRunTrigger, userVisibleMessages } from "@rakazo/core";
-import type { PrismaClient } from "./client.js";
+import type { ExecutionProfile, PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
+import { executionProfileDto, resolveExecutionProfile } from "./execution-profiles.js";
 import { createThreadMessageInTransaction } from "./messages.js";
 import { BotSectionNameConflictError, IsolationError } from "./scope.js";
 import { lockSpaceForContentCreation } from "./spaces.js";
@@ -60,6 +61,8 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    executionProfileId?: string | null;
+    executionProfile?: ExecutionProfile | null;
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: string | null;
@@ -100,6 +103,8 @@ function mapBot(
     updatedAt: bot.updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    executionProfileId: bot.executionProfileId ?? null,
+    executionProfile: bot.executionProfile ? executionProfileDto(bot.executionProfile) : null,
     modelProvider: bot.modelProvider ?? null,
     modelId: bot.modelId ?? null,
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,
@@ -311,6 +316,7 @@ export function createRepos(prisma: PrismaClient) {
             },
           },
           runs: activeRunSelection,
+          executionProfile: true,
           computer: { select: { scope: true } },
         },
         orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
@@ -416,6 +422,7 @@ export function createRepos(prisma: PrismaClient) {
         parentBotId?: string | null;
         computerMode?: ComputerMode;
         spawnKey?: string;
+        executionProfileId?: string | null;
         modelProvider?: string | null;
         modelId?: string | null;
         thinkingLevel?: string | null;
@@ -427,6 +434,9 @@ export function createRepos(prisma: PrismaClient) {
         };
       },
     ): Promise<Bot> {
+      if (input.executionProfileId) {
+        await resolveExecutionProfile(prisma, actor, input.executionProfileId);
+      }
       let color = input.color;
       if (color === undefined) {
         const count = await prisma.bot.count({
@@ -490,6 +500,7 @@ export function createRepos(prisma: PrismaClient) {
               parentBotId: input.parentBotId ?? null,
               computerId: teamComputer.id,
               spawnKey: input.spawnKey,
+              executionProfileId: input.executionProfileId ?? null,
               modelProvider,
               modelId,
               thinkingLevel,
@@ -538,7 +549,7 @@ export function createRepos(prisma: PrismaClient) {
           });
           return tx.bot.findFirstOrThrow({
             where: { id: created.id },
-            include: { thread: true, computer: true },
+            include: { thread: true, computer: true, executionProfile: true },
           });
         });
 
@@ -551,7 +562,7 @@ export function createRepos(prisma: PrismaClient) {
               spawnKey: input.spawnKey,
             },
           },
-          include: { thread: true, computer: true },
+          include: { thread: true, computer: true, executionProfile: true },
         });
       };
 
@@ -626,7 +637,7 @@ export function createRepos(prisma: PrismaClient) {
           return tx.bot.update({
             where: { id: botId },
             data: { computerId: computer.id },
-            include: { thread: true, computer: true },
+            include: { thread: true, computer: true, executionProfile: true },
           });
         }),
       );

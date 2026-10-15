@@ -112,3 +112,19 @@ export function filterImageReturningComputerTools<T extends { name: string }>(
   if (acceptsImages) return tools;
   return tools.filter((tool) => !IMAGE_RETURNING_COMPUTER_TOOLS.has(tool.name));
 }
+
+/** Exact catalog evidence only; custom endpoints/model IDs remain explicit declarations. */
+export function knownModelImageCapability(input: {
+  provider: string;
+  modelId: string;
+  endpoint: string | null;
+}): boolean | undefined {
+  const model = catalogModels().getModel(input.provider, input.modelId);
+  if (!model || !input.endpoint || !model.baseUrl) return undefined;
+  try {
+    if (new URL(model.baseUrl).origin !== new URL(input.endpoint).origin) return undefined;
+  } catch {
+    return undefined;
+  }
+  return model.input.includes("image");
+}

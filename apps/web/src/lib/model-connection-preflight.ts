@@ -128,6 +128,7 @@ export function unavailableSelectedModel(
 }
 
 type ListedModelCredential = {
+  id?: string;
   provider: string;
   authKind?: StoredModelAuthKind;
   modelId?: string;
@@ -161,6 +162,7 @@ export async function loadStoredModelAuth(
   provider: string,
   listCredentials: () => Promise<ReadonlyArray<ListedModelCredential>>,
   modelId?: string,
+  credentialId?: string,
 ): Promise<{
   storedAuthKind: StoredModelAuthKind | null;
   credentialLookupFailed: boolean;
@@ -168,7 +170,9 @@ export async function loadStoredModelAuth(
 }> {
   try {
     const credentials = await listCredentials();
-    const match = credentialForSpaceModel(credentials, provider, modelId);
+    const match = credentialId
+      ? credentials.find((entry) => entry.id === credentialId && entry.provider === provider)
+      : credentialForSpaceModel(credentials, provider, modelId);
     return {
       storedAuthKind: match?.authKind ?? null,
       credentialLookupFailed: false,

@@ -224,6 +224,12 @@ describe("model setup gate", () => {
     deploymentModelCredentialCipher?: string;
   }) {
     const prisma = {
+      bot: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "bot-1", thread: { id: "thread-1" }, executionProfileId: null }),
+        findMany: vi.fn().mockResolvedValue([{ id: "bot-1", executionProfileId: null }]),
+      },
       user: {
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           email: "user@rakazo.test",

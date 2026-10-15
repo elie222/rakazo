@@ -96,6 +96,41 @@ jobs:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm test
 
+  test-native-harnesses:
+    name: Offline native harness compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+        env:
+          DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
+      - name: Install exact official engines in a disposable directory
+        run: |
+          npm install --prefix "$RUNNER_TEMP/rakazo-native-engines" --no-audit --no-fund --package-lock=false \
+            @anthropic-ai/claude-agent-sdk@0.3.300 @anthropic-ai/sdk@0.134.0 \
+            @openai/codex@0.162.1 @moonshot-ai/kimi-code@2.2.0 \
+            @modelcontextprotocol/sdk@1.30.0 zod@4.6.2
+      - name: Exercise native media, tools and durable resume against fake HTTP APIs
+        env:
+          RAKAZO_NATIVE_HARNESS_TEST_MODULES: ${{ runner.temp }}/rakazo-native-engines/node_modules
+        run: |
+          pnpm exec vitest run \
+            packages/adapters/src/primary-harness-offline-integration.test.ts \
+            packages/adapters/src/primary-harness-kimi-offline-integration.test.ts \
+            packages/adapters/src/primary-harness-auth-codex-offline-integration.test.ts \
+            packages/adapters/src/primary-harness-auth-kimi.test.ts \
+            packages/adapters/src/primary-harness-errors-offline-integration.test.ts \
+            packages/adapters/src/primary-harness-accounts-offline-integration.test.ts
+
   test-integration:
     name: Postgres journeys
     runs-on: ubuntu-latest

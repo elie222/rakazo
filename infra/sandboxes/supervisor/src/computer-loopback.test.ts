@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type * as NodeFsPromises from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -23,6 +24,8 @@ const mocks = vi.hoisted(() => ({
     createNetwork: vi.fn(),
     getNetwork: vi.fn(),
     listNetworks: vi.fn(),
+    listVolumes: vi.fn(),
+    getVolume: vi.fn(),
   },
   assertHomeWritable: vi.fn(),
 }));
@@ -36,6 +39,8 @@ vi.mock("dockerode", () => ({
     createNetwork = mocks.docker.createNetwork;
     getNetwork = mocks.docker.getNetwork;
     listNetworks = mocks.docker.listNetworks;
+    listVolumes = mocks.docker.listVolumes;
+    getVolume = mocks.docker.getVolume;
   },
 }));
 vi.mock("./home-ownership.js", () => ({ assertComputerHomeWritable: mocks.assertHomeWritable }));
@@ -50,6 +55,7 @@ let screenPort: string;
 beforeEach(async () => {
   vi.resetModules();
   vi.resetAllMocks();
+  mocks.docker.listVolumes.mockResolvedValue({ Volumes: [] });
   vi.stubEnv("HOSTNAME", "");
   vi.stubEnv("DATA_DIR", "/tmp/rakazo-loopback-test");
   vi.stubEnv("SANDBOX_SCREEN_NETWORK", "published");
@@ -2137,5 +2143,162 @@ describe("computer network reclaim", () => {
       expect(existing.start).not.toHaveBeenCalled();
       expect(existing.remove).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("private runtime session destruction", () => {
+  const headers = () => ({
+    authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+    "x-rakazo-bot-id": "bot",
+    "x-rakazo-space-id": "space",
+  });
+  const labels = () => ({
+    "rakazo.harnessSessionOwner": createHash("sha256")
+      .update(resolveSupervisorToken(process.env))
+      .digest("hex")
+      .slice(0, 32),
+    "rakazo.harnessSessionComputer": "bot",
+    "rakazo.harnessSessionSpace": "space",
+  });
+  function missingContainer() {
+    mocks.docker.getContainer.mockReturnValue({
+      inspect: vi.fn().mockRejectedValue({ statusCode: 404 }),
+    });
+    mocks.docker.listContainers.mockResolvedValue([]);
+  }
+  async function destroy() {
+    const { supervisorApp } = await import("./index.js");
+    return supervisorApp.request("/computers/old-computer", {
+      method: "DELETE",
+      headers: headers(),
+    });
+  }
+
+  it("cleans strictly scoped volumes after a cold disabled restart and missing computer", async () => {
+    vi.stubEnv("PRIMARY_HARNESSES_ENABLED", "false");
+    missingContainer();
+    const own = labels();
+    const { "rakazo.harnessSessionSpace": _space, ...legacy } = own;
+    mocks.docker.listVolumes.mockResolvedValue({
+      Volumes: [
+        { Name: "own", Labels: own },
+        {
+          Name: "foreign-installation",
+          Labels: { ...own, "rakazo.harnessSessionOwner": "foreign" },
+        },
+        {
+          Name: "foreign-computer",
+          Labels: { ...own, "rakazo.harnessSessionComputer": "foreign" },
+        },
+        { Name: "foreign-space", Labels: { ...own, "rakazo.harnessSessionSpace": "foreign" } },
+        { Name: "legacy", Labels: legacy },
+      ],
+    });
+    const remove = vi.fn().mockResolvedValue(undefined);
+    mocks.docker.getVolume.mockReturnValue({ remove });
+    expect((await destroy()).status).toBe(200);
+    expect(mocks.docker.getVolume).toHaveBeenCalledExactlyOnceWith("own");
+    expect(remove).toHaveBeenCalledExactlyOnceWith();
+    expect(mocks.docker.createContainer).not.toHaveBeenCalled();
+    expect(mocks.docker.getNetwork).not.toHaveBeenCalled();
+  });
+
+  it("rejects a stale deletion once a replacement computer exists", async () => {
+    missingContainer();
+    mocks.docker.listContainers.mockResolvedValue([{ Id: "replacement" }]);
+    const missing = mocks.docker.getContainer();
+    mocks.docker.getContainer.mockImplementation((id: string) =>
+      id === "replacement"
+        ? {
+            inspect: vi.fn().mockResolvedValue({
+              Config: {
+                Labels: {
+                  "rakazo.managed": "true",
+                  "rakazo.botId": "bot",
+                  "rakazo.spaceId": "space",
+                },
+              },
+            }),
+          }
+        : missing,
+    );
+    expect((await destroy()).status).toBe(409);
+    expect(mocks.docker.listVolumes).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 500])(
+    "does not treat Docker inspection error %s as a missing computer",
+    async (statusCode) => {
+      mocks.docker.getContainer.mockReturnValue({
+        inspect: vi.fn().mockRejectedValue({ statusCode }),
+      });
+      expect((await destroy()).status).toBe(503);
+      expect(mocks.docker.listContainers).not.toHaveBeenCalled();
+      expect(mocks.docker.listVolumes).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a mismatched computer identity before touching volumes", async () => {
+    mocks.docker.getContainer.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: {
+            "rakazo.managed": "true",
+            "rakazo.botId": "foreign",
+            "rakazo.spaceId": "space",
+          },
+        },
+      }),
+    });
+    expect((await destroy()).status).toBe(403);
+    expect(mocks.docker.listVolumes).not.toHaveBeenCalled();
+  });
+
+  it("requires a complete computer identity for orphan cleanup", async () => {
+    const { supervisorApp } = await import("./index.js");
+    const response = await supervisorApp.request("/computers/missing", {
+      method: "DELETE",
+      headers: { authorization: headers().authorization, "x-rakazo-bot-id": "bot" },
+    });
+    expect(response.status).toBe(403);
+    expect(mocks.docker.getContainer).not.toHaveBeenCalled();
+    expect(mocks.docker.listVolumes).not.toHaveBeenCalled();
+  });
+
+  it("reports a leased orphan volume as cleanup failure instead of success", async () => {
+    missingContainer();
+    mocks.docker.listVolumes.mockResolvedValue({ Volumes: [{ Name: "own", Labels: labels() }] });
+    mocks.docker.getVolume.mockReturnValue({
+      remove: vi.fn().mockRejectedValue({ statusCode: 409 }),
+    });
+    expect((await destroy()).status).toBe(503);
+  });
+
+  it("removes legacy volume scope only after verifying a live computer", async () => {
+    vi.stubEnv("PRIMARY_HARNESSES_ENABLED", "false");
+    vi.stubEnv("SANDBOX_SCREEN_NETWORK", "internal");
+    const removeComputer = vi.fn().mockResolvedValue(undefined);
+    mocks.docker.getContainer.mockReturnValue({
+      inspect: vi.fn().mockResolvedValue({
+        Config: {
+          Labels: {
+            "rakazo.managed": "true",
+            "rakazo.botId": "bot",
+            "rakazo.spaceId": "space",
+          },
+        },
+      }),
+      remove: removeComputer,
+    });
+    const { "rakazo.harnessSessionSpace": _space, ...legacy } = labels();
+    mocks.docker.listVolumes.mockResolvedValue({ Volumes: [{ Name: "legacy", Labels: legacy }] });
+    const removeVolume = vi.fn().mockResolvedValue(undefined);
+    mocks.docker.getVolume.mockReturnValue({ remove: removeVolume });
+    expect((await destroy()).status).toBe(200);
+    expect(removeVolume).toHaveBeenCalledExactlyOnceWith();
+    expect(removeComputer).toHaveBeenCalledExactlyOnceWith({ force: true });
+    expect(removeVolume.mock.invocationCallOrder[0]).toBeLessThan(
+      removeComputer.mock.invocationCallOrder[0]!,
+    );
   });
 });

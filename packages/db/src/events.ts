@@ -318,6 +318,10 @@ export async function clearThread(
         executionLeaseExpiresAt: null,
       },
     });
+    // Native continuation must not resurrect cleared canonical conversation history.
+    await tx.nativeHarnessSession.deleteMany({
+      where: { spaceId: input.spaceId, threadId: input.threadId },
+    });
     await tx.message.deleteMany({ where: { threadId: input.threadId } });
     await tx.event.deleteMany({ where: { threadId: input.threadId } });
     if (thread.nextMessageSeq > 0) {

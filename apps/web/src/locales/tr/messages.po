@@ -225,7 +225,10 @@ msgstr ""
 msgid "Access token (optional)"
 msgstr "Erişim token'ı (isteğe bağlı)"
 
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Account"
 msgstr "Hesap"
 
@@ -241,6 +244,11 @@ msgstr "Hesap kimliği"
 #: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
+msgid "Account name"
+msgstr "Hesap adı"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
@@ -306,6 +314,10 @@ msgstr "Bir sunucu adı gir."
 msgid "Add a stdio command."
 msgstr "Bir stdio komutu gir."
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Add account…"
+msgstr "Hesap ekle…"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "Bir HTTPS sunucu URL'si gir."
@@ -363,6 +375,10 @@ msgstr "Sunucu ekle"
 msgid "Add server URL"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Add signed-in account"
+msgstr "Oturum açılan hesap ekle"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
 msgstr "Rutine ekle"
@@ -392,6 +408,7 @@ msgstr "Ekleniyor…"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Advanced"
 msgstr "Gelişmiş"
 
@@ -482,6 +499,10 @@ msgstr "Her zaman izinli"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Bu sağlayıcı için abonelik girişi değil, bir API anahtarı saklanıyor."
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "An available Linux Docker computer is required."
+msgstr "Kullanılabilir bir Linux Docker bilgisayarı gerekir."
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "Yanıtla"
@@ -512,6 +533,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
 msgstr "API anahtarı"
@@ -623,6 +645,10 @@ msgstr "Ek"
 msgid "Authentication failed."
 msgstr "Kimlik doğrulama başarısız."
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Authentication header"
+msgstr "Kimlik doğrulama başlığı"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Authorization code or callback URL"
@@ -702,6 +728,7 @@ msgstr ""
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
 
@@ -741,6 +768,10 @@ msgstr "Bot"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "Bot"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Bot computer"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Bot screen"
@@ -798,10 +829,12 @@ msgstr "Sunucuya ulaşılamıyor."
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Cancel"
 msgstr "İptal"
 
@@ -816,6 +849,10 @@ msgstr "Yeni grubu iptal et"
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
 msgstr "Yanıtı iptal et"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Cancel sign-in"
+msgstr "Oturum açmayı iptal et"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
@@ -884,6 +921,10 @@ msgstr "Durum bildir."
 msgid "Check the API key or sign-in, then test again."
 msgstr "API anahtarını veya oturumu kontrol et, sonra yeniden test et."
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Check the profile fields"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Check the server URL and network, then test again."
 msgstr "Sunucu URL'sini ve ağı kontrol et, sonra yeniden test et."
@@ -919,9 +960,25 @@ msgstr ""
 msgid "Choose a new password"
 msgstr "Yeni bir parola seçin"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose account"
+msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Choose computer"
+msgstr "Bilgisayar seç"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Dosya seç"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose model"
+msgstr "Model seç"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose provider"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose which connected model Rakazo uses."
@@ -1078,6 +1135,7 @@ msgstr ""
 msgid "Complete"
 msgstr "Tamamlandı"
 
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1153,6 +1211,10 @@ msgstr "Model bağla"
 msgid "Connect a provider to add backups."
 msgstr "Yedek eklemek için bir sağlayıcı bağlayın."
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Connect an account in Models first."
+msgstr "Önce Modeller bölümünde bir hesap bağlayın."
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "API anahtarıyla bağlan"
@@ -1181,6 +1243,7 @@ msgstr "Treg'i bağla"
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1287,6 +1350,10 @@ msgstr "Parola değiştirilemedi"
 msgid "Could not change the default model"
 msgstr "Varsayılan model değiştirilemedi"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not check sign-in. Try reconnecting."
+msgstr "Oturum kontrol edilemedi. Yeniden bağlanmayı deneyin."
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
 msgstr "Kayıtlı kimlik bilgileri kontrol edilemedi."
@@ -1350,6 +1417,10 @@ msgstr "Bot oluşturulamadı"
 msgid "Could not create group"
 msgstr "Grup oluşturulamadı"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not create profile"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "Bölüm oluşturulamadı"
@@ -1389,6 +1460,10 @@ msgstr ""
 #: src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not disconnect account"
+msgstr "Hesap bağlantısı kesilemedi"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
@@ -1472,6 +1547,10 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not load execution profiles"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1485,6 +1564,10 @@ msgstr "MCP sunucuları yüklenemedi"
 msgid "Could not load model settings"
 msgstr "Model ayarları yüklenemedi"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not load models"
+msgstr "Modeller yüklenemedi"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "Çalıştırma geçmişi yüklenemedi"
@@ -1493,6 +1576,10 @@ msgstr "Çalıştırma geçmişi yüklenemedi"
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
 msgstr "Giriş seçenekleri yüklenemedi"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not load signed-in accounts"
+msgstr "Oturum açılan hesaplar yüklenemedi"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -1565,6 +1652,10 @@ msgstr "Kural kaldırılamadı"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not remove the credential"
 msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Could not rename account"
+msgstr "Hesap yeniden adlandırılamadı"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1664,6 +1755,10 @@ msgstr "Gönderilemedi"
 msgid "Could not start OAuth"
 msgstr "OAuth başlatılamadı"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not start sign-in"
+msgstr "Oturum açma başlatılamadı"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr ""
@@ -1748,6 +1843,10 @@ msgstr "Yeni grup oluştur"
 #: src/pages/shell/bot-picker.tsx
 msgid "Create new Space"
 msgstr "Yeni space oluştur"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Create profile"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -1859,6 +1958,10 @@ msgstr "Varsayılan ({0})"
 msgid "Default scope"
 msgstr "Varsayılan kapsam"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Delegated agents are unavailable for signed-in accounts."
+msgstr "Oturum açılan hesaplarda devredilen ajanlar kullanılamaz."
+
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1957,6 +2060,7 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
 msgstr "Bağlantıyı kes"
@@ -1964,6 +2068,10 @@ msgstr "Bağlantıyı kes"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Disconnect {logoutName}?"
+msgstr "{logoutName} bağlantısı kesilsin mi?"
 
 #. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/ModelSettingsOverlay.tsx
@@ -2080,6 +2188,14 @@ msgstr "Bu e-posta adresinin kaydolmasına izin verilmiyor"
 msgid "Email verification required"
 msgstr "E-posta doğrulaması gerekiyor"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Endpoint"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Endpoint (optional)"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -2119,6 +2235,10 @@ msgstr "Görüntü sınırı için 1 ile 1000 arasında bir tam sayı girin."
 msgid "Enter an API key before testing."
 msgstr "Test etmeden önce bir API anahtarı gir."
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Environment"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Shell.tsx
 msgid "Error"
@@ -2156,6 +2276,11 @@ msgstr "Her ay"
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "Her hafta"
+
+#: src/components/RunExecutionProfileDetails.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Execution profile"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
@@ -2251,6 +2376,10 @@ msgstr "Aranıyor…"
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "<0>{0}</0> adresinde oturum açmayı tamamla. Son sayfa yüklenmeyebilir; URL'sini veya kodu buraya yapıştır."
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Finish signing in in your browser:"
+msgstr "Tarayıcınızda oturum açmayı tamamlayın:"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "Abonelik girişini tamamla, sonra yeniden test et."
@@ -2318,10 +2447,18 @@ msgstr ""
 msgid "Git event"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Global"
+msgstr "Küresel"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "Grup"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Group handoffs remain available."
+msgstr "Grup devirleri kullanılabilir olmaya devam eder."
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2345,6 +2482,12 @@ msgstr ""
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
+msgstr ""
+
+#: src/components/RunExecutionProfileDetails.tsx
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Harness"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -2423,6 +2566,10 @@ msgstr "Bunu duyduysan ses hazır."
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "image input"
 msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2573,6 +2720,10 @@ msgstr ""
 msgid "Listening"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Live calls use transcripts."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Load earlier messages"
 msgstr "Önceki mesajları yükle"
@@ -2630,6 +2781,7 @@ msgstr "Ses sağlayıcıları yükleniyor…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Loading…"
 msgstr "Yükleniyor…"
 
@@ -2664,6 +2816,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Mainland China"
+msgstr "Çin ana karası"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2845,10 +3001,12 @@ msgstr "dakika"
 msgid "minutes"
 msgstr "dakika"
 
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Model"
 msgstr "Model"
 
@@ -2856,8 +3014,21 @@ msgstr "Model"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "\"{modelId}\" modeli listelenmedi."
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model accepts images"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model accepts uploaded audio"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model for {role}"
+msgstr "{role} için model"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Model id"
 msgstr "Model kimliği"
 
@@ -2950,6 +3121,10 @@ msgstr "Gruba bir ad ver"
 msgid "Name this routine"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Native sign-in"
+msgstr "Yerel oturum açma"
+
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
 msgstr ""
@@ -2983,6 +3158,14 @@ msgstr "Yeni açık iş öğesi"
 #: src/pages/Auth.tsx
 msgid "New password"
 msgstr "Yeni parola"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "New profile"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "New revision"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3133,6 +3316,10 @@ msgstr ""
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "Bağlı değil"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Not enabled for this model: {undeclaredInputs}"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3297,6 +3484,7 @@ msgstr "Orijinal mesaj kullanılamıyor"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Other model…"
 msgstr "Başka model…"
 
@@ -3358,10 +3546,19 @@ msgstr "API anahtarını yapıştır, sonra yeniden test et."
 msgid "Paused"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Personal interactive chats only."
+msgstr "Yalnızca kişisel etkileşimli sohbetler."
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
 msgstr "Fotoğraf"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Pi (default)"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -3374,6 +3571,10 @@ msgstr "Listeden bir model seç veya bu uç noktanın sunduğu bir model kimliğ
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Sabitle"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Pinned computer"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Playing…"
@@ -3404,8 +3605,17 @@ msgstr ""
 msgid "Private"
 msgstr "Özel"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Private computer"
+msgstr "Özel bilgisayar"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Private workspace with its own bots and groups."
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Profile name"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
@@ -3416,8 +3626,14 @@ msgstr ""
 msgid "Protected input"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Protocol"
+msgstr ""
+
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Provider"
 msgstr "Sağlayıcı"
 
@@ -3466,6 +3682,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Son"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Reconnect"
+msgstr "Yeniden bağlan"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Reconnect OAuth"
@@ -3546,6 +3766,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Region"
+msgstr "Bölge"
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "Kayıt kapalı"
@@ -3617,9 +3841,17 @@ msgstr "Sohbeti, bilgisayarı ve hafızasıyla birlikte kaldırıldı."
 msgid "Removed, but list refresh failed"
 msgstr "Kaldırıldı ama liste yenilenemedi"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Removes this sign-in from Rakazo. Provider sessions may remain active."
+msgstr "Bu oturumu Rakazo’dan kaldırır. Sağlayıcı oturumları etkin kalabilir."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Removing…"
 msgstr "Kaldırılıyor…"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Rename"
+msgstr "Yeniden adlandır"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx
@@ -3663,6 +3895,10 @@ msgstr ""
 #. placeholder {0}: replyNameRef.current
 #: src/pages/Shell.tsx
 msgid "Replying to {0}"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Requires an enabled Linux Docker runtime."
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx
@@ -3725,6 +3961,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Retry"
 msgstr "Yeniden dene"
 
@@ -3783,6 +4020,10 @@ msgstr ""
 msgid "Run at"
 msgstr ""
 
+#: src/components/RunExecutionProfileDetails.tsx
+msgid "Run details"
+msgstr "Çalıştırma ayrıntıları"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Run history"
 msgstr ""
@@ -3811,6 +4052,10 @@ msgstr "Çalışıyor…"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Runtime version"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Board.tsx
@@ -3830,10 +4075,6 @@ msgstr "Yedekleri kaydet"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save credential"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
@@ -4089,6 +4330,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
 msgid "Sign in"
@@ -4116,6 +4358,22 @@ msgstr "Abonelikle oturum aç veya bunun yerine API anahtarını test et."
 #: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "Kaydol"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in did not complete"
+msgstr "Oturum açma tamamlanmadı"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in expired"
+msgstr "Oturum açma süresi doldu"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in page unavailable"
+msgstr "Oturum açma sayfası kullanılamıyor"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Signed out"
+msgstr "Oturum kapatıldı"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
@@ -4309,6 +4567,11 @@ msgstr "Öğretme sürüyor. Yeni mesaj göndermeden önce öğretmeyi durdur."
 msgid "Team"
 msgstr "Takım"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Team computer"
+msgstr "Ekip bilgisayarı"
+
 #: src/pages/Shell.tsx
 msgid "Team Computer"
 msgstr "Takım Bilgisayarı"
@@ -4380,6 +4643,10 @@ msgstr "Düşünüyor"
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This account’s protocol is not supported by execution profiles."
+msgstr "Yürütme profilleri bu hesabın protokolünü desteklemiyor."
+
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Bu bot bir Linux masaüstünde değil, bu bilgisayarda çalışır. Kabuk ve dosyalar senin kullanıcı klasörünü kullanır."
@@ -4409,6 +4676,10 @@ msgstr ""
 msgid "This file is not valid UTF-8 text."
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "This is my personal, self-hosted deployment."
+msgstr "Bu benim kişisel, kendi barındırdığım kurulumum."
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "bu Mac"
@@ -4423,6 +4694,14 @@ msgstr "Bu işlem hesabınızı ve verilerinizi kalıcı olarak siler."
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This profile is unavailable. Choose another profile."
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This profile’s account is unavailable. Choose another profile."
 msgstr ""
 
 #: src/lib/model-connection-preflight.ts
@@ -4549,6 +4828,18 @@ msgstr "Atanmamış"
 msgid "Unavailable"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable account"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable profile"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable: {unsupportedInputs}"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4573,6 +4864,10 @@ msgstr "Sabitlemeyi kaldır"
 #: src/pages/Shell.tsx
 msgid "Unsupported file type: {0}"
 msgstr "Desteklenmeyen dosya türü: {0}"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unsupported runtime version. Create a new revision."
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -4635,6 +4930,10 @@ msgstr ""
 msgid "Upload"
 msgstr "Yükle"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "uploaded audio"
+msgstr ""
+
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
 msgstr ""
@@ -4690,6 +4989,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."
 msgstr "Değerler şifrelenir ve bir daha gösterilmez."
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Verification code"
+msgstr "Doğrulama kodu"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Verify and add"

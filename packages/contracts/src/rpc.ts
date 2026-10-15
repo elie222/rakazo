@@ -100,11 +100,22 @@ import {
   VoiceStatusSchema,
 } from "./domain.js";
 import { ComputerCommandSchema, ProductEventSchema } from "./events.js";
+import {
+  CreateExecutionProfileInput,
+  ExecutionHarnessSchema,
+  ExecutionProfileModelSchema,
+  ExecutionProfileSchema,
+} from "./execution-profiles.js";
 import { Id, IsoDate } from "./ids.js";
 import {
   IntegrationProviderConfigSchema,
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
+import {
+  BeginNativeLoginInput,
+  NativeLoginAccountSchema,
+  NativeLoginListSchema,
+} from "./native-login.js";
 import { MessageReactionSchema } from "./reactions.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
@@ -238,25 +249,40 @@ export const appContract = {
         z.object({
           baseUrl: z.string(),
           apiKey: z.string().optional(),
+          credentialId: Id.optional(),
         }),
       )
       .output(z.object({ models: z.array(z.string()) })),
     probeCatalog: oc
       .input(
-        z.object({
-          provider: z.string().trim().min(1),
-          apiKey: z.string().trim().min(8),
-        }),
+        z
+          .object({
+            provider: z.string().trim().min(1),
+            apiKey: z.string().trim().min(8).optional(),
+            credentialId: Id.optional(),
+          })
+          .refine(
+            (value) => Boolean(value.apiKey || value.credentialId),
+            "Choose an account or enter an API key",
+          ),
       )
       .output(z.object({ models: z.array(z.string()) })),
     beginOAuth: oc
       .input(
-        z.object({
-          provider: z.string(),
-          label: z.string().optional(),
-          modelId: z.string().optional(),
-          thinkingLevel: ThinkingLevelSchema.nullable().optional(),
-        }),
+        z
+          .object({
+            provider: z.string(),
+            credentialId: Id.optional(),
+            createNew: z.boolean().optional(),
+            makeDefault: z.boolean().optional(),
+            label: z.string().optional(),
+            modelId: z.string().optional(),
+            thinkingLevel: ThinkingLevelSchema.nullable().optional(),
+          })
+          .refine(
+            (value) => !(value.createNew && value.credentialId),
+            "Choose a new account or an existing account, not both",
+          ),
       )
       .output(ModelOAuthBeginSchema),
     submitOAuthCode: oc
@@ -280,13 +306,28 @@ export const appContract = {
         z.object({
           provider: z.string(),
           modelId: z.string(),
+          credentialId: Id.optional(),
           thinkingLevel: ThinkingLevelSchema.nullable().optional(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
     disconnect: oc
-      .input(z.object({ provider: z.string().trim().min(1) }))
+      .input(z.object({ provider: z.string().trim().min(1), credentialId: Id.optional() }))
       .output(z.object({ ok: z.literal(true) })),
+  },
+  nativeLogins: {
+    list: oc.output(NativeLoginListSchema),
+    begin: oc.input(BeginNativeLoginInput).output(NativeLoginAccountSchema),
+    status: oc.input(z.object({ credentialId: Id })).output(NativeLoginAccountSchema),
+    cancel: oc.input(z.object({ credentialId: Id })).output(NativeLoginAccountSchema),
+    logout: oc.input(z.object({ credentialId: Id })).output(NativeLoginAccountSchema),
+  },
+  executionProfiles: {
+    models: oc
+      .input(z.object({ harness: ExecutionHarnessSchema, credentialId: Id }))
+      .output(z.array(ExecutionProfileModelSchema)),
+    list: oc.output(z.array(ExecutionProfileSchema)),
+    create: oc.input(CreateExecutionProfileInput).output(ExecutionProfileSchema),
   },
   bots: {
     list: oc.output(z.array(BotSchema)),

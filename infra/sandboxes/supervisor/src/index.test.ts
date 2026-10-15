@@ -8,6 +8,7 @@ import { resolveSupervisorToken } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   MAX_SUPERVISOR_FILE_REQUEST_BYTES,
+  MAX_SUPERVISOR_HARNESS_INPUT_BYTES,
   MAX_SUPERVISOR_REQUEST_BYTES,
   resolveDockerSocketPath,
   supervisorApp,
@@ -221,6 +222,18 @@ describe("sandbox supervisor HTTP boundary", () => {
   });
 
   it("keeps the larger file-write allowance scoped to that exact POST route", () => {
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/processes/process/input")).toBe(
+      MAX_SUPERVISOR_HARNESS_INPUT_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/processes")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/processes/process/input/extra")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
+    expect(supervisorRequestBodyLimit("PUT", "/computers/id/processes/process/input")).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
     expect(supervisorRequestBodyLimit("POST", "/computers/id/files")).toBe(
       MAX_SUPERVISOR_FILE_REQUEST_BYTES,
     );

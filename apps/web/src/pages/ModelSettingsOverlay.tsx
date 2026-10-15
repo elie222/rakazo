@@ -67,6 +67,7 @@ import { rpc } from "../lib/rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { ModelBackupsSettings } from "./ModelBackupsSettings";
+import { NativeLoginSettings } from "./NativeLoginSettings";
 
 function connectionMaxTokensField(providerId: string, stored: number | undefined): string {
   if (providerId === OPENAI_COMPATIBLE_PROVIDER_ID) {
@@ -90,6 +91,9 @@ export function ModelSettingsOverlay({
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [provider, setProvider] = useState("");
+  const [credentialId, setCredentialId] = useState("");
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [accountLabel, setAccountLabel] = useState("");
   // The provider whose optional personal-key form is open.
   const [ownKeyProvider, setOwnKeyProvider] = useState<string | null>(null);
   const [providerQuery, setProviderQuery] = useState("");
@@ -139,16 +143,20 @@ export function ModelSettingsOverlay({
   } = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (controller) => {
-      await refresh();
+    onFinished: async (controller, connected) => {
+      await refresh(connected.id);
       if (controller.signal.aborted) return;
-      setNotice(t`Connected and using ${selectedLabelRef.current ?? "this model"}.`);
+      setNotice(
+        !connected.isDefault
+          ? t`Saved.`
+          : t`Connected and using ${selectedLabelRef.current ?? "this model"}.`,
+      );
     },
   });
 
-  async function refresh() {
+  async function refresh(preferredCredentialId?: string, expectedSelectionRevision?: number) {
     const refreshRevision = ++refreshRevisionRef.current;
-    const selectionRevision = selectionRevisionRef.current;
+    const selectionRevision = expectedSelectionRevision ?? selectionRevisionRef.current;
     const [nextCatalog, nextCredentials, nextMe] = await Promise.all([
       rpc.models.list(),
       rpc.models.credentials(),
@@ -159,7 +167,11 @@ export function ModelSettingsOverlay({
       provider && nextCatalog.some((entry) => entry.provider === provider)
         ? provider
         : (nextMe.defaultProvider ?? nextCatalog[0]?.provider ?? "");
-    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
+    const providerCredentials = nextCredentials.filter((entry) => entry.provider === nextProvider);
+    const nextCredential =
+      providerCredentials.find((entry) => entry.id === (preferredCredentialId ?? credentialId)) ??
+      providerCredentials.find((entry) => entry.isDefault) ??
+      providerCredentials[0];
     const nextModel =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ??
@@ -179,6 +191,9 @@ export function ModelSettingsOverlay({
       invalidatePreflight();
       resetOpenAiCompatibleProbe();
       setProvider(nextProvider);
+      setCredentialId(nextCredential?.id ?? "");
+      setCreatingAccount(false);
+      setAccountLabel(nextCredential?.label ?? "");
       setModelId(nextModel);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
@@ -285,7 +300,7 @@ export function ModelSettingsOverlay({
   const selected = modelsForProvider.find((entry) => entry.id === modelId) ?? modelsForProvider[0];
   selectedLabelRef.current = selected?.label;
   const selectedProviderName = selected?.providerName ?? selected?.provider ?? "";
-  const disconnectName = selectedProviderName;
+  const disconnectName = accountLabel || selectedProviderName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const serverCredentialsNote = (
     <p className="text-sm leading-[1.5] text-muted-foreground">
@@ -298,13 +313,14 @@ export function ModelSettingsOverlay({
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
   const cloudflareRoutingReady =
     !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
-  const credential = credentials.find((entry) => entry.provider === provider);
+  const providerCredentials = credentials.filter((entry) => entry.provider === provider);
+  const credential = creatingAccount
+    ? undefined
+    : providerCredentials.find((entry) => entry.id === credentialId);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
-  const activeCredential = credentials.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
-  );
+  const activeCredential = credentials.find((entry) => entry.isDefault);
   // The banner shows the effective effort — stored level or the runtime
   // default — only when the active model can actually think.
   const activeThinkingLabel =
@@ -313,6 +329,7 @@ export function ModelSettingsOverlay({
       ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium")
       : null;
   const isActive =
+    Boolean(credential?.isDefault) &&
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   // Space still bills the host while this provider matches; model id alone is not credentials.
@@ -374,10 +391,19 @@ export function ModelSettingsOverlay({
     );
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, nextCredentialId?: string) {
     cancelOAuthAttempt();
     selectionRevisionRef.current += 1;
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const matches = credentials.filter((entry) => entry.provider === nextProvider);
+    const nextCredential =
+      nextCredentialId === "new"
+        ? undefined
+        : (matches.find((entry) => entry.id === nextCredentialId) ??
+          matches.find((entry) => entry.isDefault) ??
+          matches[0]);
+    setCredentialId(nextCredential?.id ?? "");
+    setCreatingAccount(nextCredentialId === "new");
+    setAccountLabel(nextCredential?.label ?? "");
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -426,7 +452,11 @@ export function ModelSettingsOverlay({
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: rpc.models.probeOpenAiCompatible,
+      request: (input) =>
+        rpc.models.probeOpenAiCompatible({
+          ...input,
+          ...(credential ? { credentialId: credential.id } : {}),
+        }),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const current = modelIdRef.current;
@@ -490,6 +520,7 @@ export function ModelSettingsOverlay({
       selected.provider,
       () => rpc.models.credentials(),
       selected.id,
+      credential?.id,
     );
     if (!preflightStillCurrent(revision)) return;
     const result = await runModelConnectionPreflight({
@@ -516,6 +547,7 @@ export function ModelSettingsOverlay({
     try {
       await rpc.models.setDefault({
         provider: selected.provider,
+        credentialId: credential.id,
         modelId: activeModelId,
         // Catalog connections keep the space default effort on the preference;
         // openai-compatible still owns its level inside the stored endpoint config.
@@ -532,6 +564,27 @@ export function ModelSettingsOverlay({
       setNotice(isOpenAiCompatible ? t`Model updated.` : t`Now using ${selected.label}.`);
     } catch (err) {
       setError(errorText(err, t`Could not change the default model`));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function renameAccount() {
+    if (!credential || !accountLabel.trim() || pending) return;
+    const selectionRevision = selectionRevisionRef.current;
+    setPending("connect");
+    setError(null);
+    try {
+      const renamed = await rpc.models.connect({
+        provider,
+        credentialId: credential.id,
+        label: accountLabel.trim(),
+        makeDefault: false,
+      });
+      await refresh(renamed.id, selectionRevision);
+      setNotice(t`Saved.`);
+    } catch (err) {
+      setError(errorText(err, t`Could not rename account`));
     } finally {
       setPending(null);
     }
@@ -595,10 +648,16 @@ export function ModelSettingsOverlay({
     setNotice(null);
     setPending("connect");
     try {
-      await rpc.models.connect(
+      const selectionRevision = selectionRevisionRef.current;
+      const connected = await rpc.models.connect(
         isOpenAiCompatible
           ? {
               provider: selected.provider,
+              ...(creatingAccount
+                ? { createNew: true, makeDefault: false }
+                : credential
+                  ? { credentialId: credential.id, makeDefault: credential.isDefault }
+                  : {}),
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               reasoning,
@@ -608,10 +667,15 @@ export function ModelSettingsOverlay({
               supportsImages,
               maxImagesPerPrompt: maxImagesPerPromptInput,
               apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
+              label: accountLabel.trim() || selected.providerName || selected.provider,
             }
           : {
               provider: selected.provider,
+              ...(creatingAccount
+                ? { createNew: true, makeDefault: false }
+                : credential
+                  ? { credentialId: credential.id, makeDefault: credential.isDefault }
+                  : {}),
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
               ...(isCloudflareGateway
                 ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
@@ -622,14 +686,14 @@ export function ModelSettingsOverlay({
               // null, so the previous model's effort is not reused.
               ...(!savingLimitOnly || modelChanged ? { thinkingLevel: stagedThinking } : {}),
               maxTokens: parsedMaxTokens ?? null,
-              label: selected.providerName ?? selected.provider,
+              label: accountLabel.trim() || selected.providerName || selected.provider,
             },
       );
       setApiKey("");
-      await refresh();
+      await refresh(connected.id, selectionRevision);
       detailScrollRef.current?.scrollTo({ top: 0 });
       setNotice(
-        isOpenAiCompatible || savingLimitOnly
+        !connected.isDefault || isOpenAiCompatible || savingLimitOnly
           ? t`Saved.`
           : t`Connected and using ${selected.label}.`,
       );
@@ -647,7 +711,7 @@ export function ModelSettingsOverlay({
     setNotice(null);
     setPending("disconnect");
     try {
-      await rpc.models.disconnect({ provider: selected.provider });
+      await rpc.models.disconnect({ provider: selected.provider, credentialId: credential.id });
       setApiKey("");
       setThinkingLevel(null);
       await refresh();
@@ -670,12 +734,17 @@ export function ModelSettingsOverlay({
     setNotice(null);
     void startSubscriptionSignIn({
       provider: selected.provider,
+      ...(creatingAccount
+        ? { createNew: true, makeDefault: false }
+        : credential
+          ? { credentialId: credential.id, makeDefault: credential.isDefault }
+          : {}),
       modelId: selected.id,
       thinkingLevel: clampCatalogThinkingLevel(
         thinkingLevel,
         selected.thinkingLevels,
       ) as ThinkingLevel | null,
-      label: selected.providerName ?? selected.provider,
+      label: accountLabel.trim() || selected.providerName || selected.provider,
     });
   }
 
@@ -1057,7 +1126,7 @@ export function ModelSettingsOverlay({
             {pending === "connect" ? (
               <Trans>Saving…</Trans>
             ) : builtinLimitSave ? (
-              <Trans>Save limits</Trans>
+              <Trans>Save</Trans>
             ) : credential ? (
               <Trans>Replace API key</Trans>
             ) : (
@@ -1235,6 +1304,55 @@ export function ModelSettingsOverlay({
           ) : null}
           {selected ? (
             <>
+              {providerCredentials.length ? (
+                <label
+                  className="mb-4 block text-[13.5px] text-muted-foreground"
+                  htmlFor="model-account"
+                >
+                  <Trans>Account</Trans>
+                  <NativeSelect
+                    id="model-account"
+                    className="mt-2 w-full"
+                    value={creatingAccount ? "new" : credentialId}
+                    disabled={busy}
+                    onChange={(event) => chooseProvider(provider, event.target.value)}
+                  >
+                    {providerCredentials.map((entry) => (
+                      <NativeSelectOption key={entry.id} value={entry.id}>
+                        {entry.label}
+                      </NativeSelectOption>
+                    ))}
+                    <NativeSelectOption value="new">{t`Add account…`}</NativeSelectOption>
+                  </NativeSelect>
+                </label>
+              ) : null}
+              {acceptsKey || subscriptionSignIn ? (
+                <label
+                  className="mb-4 block text-[13.5px] text-muted-foreground"
+                  htmlFor="model-account-label"
+                >
+                  <Trans>Account name</Trans>
+                  <Input
+                    id="model-account-label"
+                    value={accountLabel}
+                    maxLength={80}
+                    disabled={busy}
+                    placeholder={selectedProviderName}
+                    onChange={(event) => setAccountLabel(event.target.value)}
+                    className="mt-2 h-10 text-foreground"
+                  />
+                  {credential && accountLabel.trim() !== credential.label ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy || !accountLabel.trim()}
+                      onClick={() => void renameAccount()}
+                    >
+                      <Trans>Rename</Trans>
+                    </Button>
+                  ) : null}
+                </label>
+              ) : null}
               {isOpenAiCompatible ? (
                 <div className="block text-[13.5px] text-muted-foreground">
                   <label className="block" htmlFor="model-base-url">
@@ -1390,6 +1508,17 @@ export function ModelSettingsOverlay({
                 <>
                   {compatKeyBlock}
                   {saveButton}
+                  {credential ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-3"
+                      disabled={busy}
+                      onClick={() => setConfirmDisconnect(true)}
+                    >
+                      <Trans>Disconnect</Trans>
+                    </Button>
+                  ) : null}
                 </>
               ) : credential ? (
                 <>
@@ -1462,6 +1591,7 @@ export function ModelSettingsOverlay({
               <Trans>No model catalog is available.</Trans>
             </p>
           )}
+          <NativeLoginSettings />
           {me ? (
             <ModelBackupsSettings
               userId={me.userId}

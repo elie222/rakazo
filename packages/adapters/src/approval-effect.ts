@@ -3,6 +3,7 @@ import type { AgentToolExecutionResult } from "@rakazo/adapter-kit";
 export type ApprovalPausedToolResult = AgentToolExecutionResult & { terminate: true };
 
 export interface ApprovedEffectReplay {
+  idempotencyKey?: string;
   kind: string;
   request: unknown;
 }
@@ -10,6 +11,7 @@ export interface ApprovedEffectReplay {
 export interface ApprovedEffectReplayQueue {
   nextToolName(): string | undefined;
   nextRequest(): unknown;
+  nextIdempotencyKey(): string | undefined;
   take(toolName: string): unknown;
   assertDrained(): void;
 }
@@ -22,6 +24,9 @@ export function createApprovedEffectReplayQueue(
   return {
     nextToolName() {
       return pending[0]?.kind;
+    },
+    nextIdempotencyKey() {
+      return pending[0]?.idempotencyKey;
     },
     nextRequest() {
       return pending[0]?.request;

@@ -85,6 +85,8 @@ services:
       CURSOR_API_KEY: ${CURSOR_API_KEY:-}
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      PRIMARY_HARNESSES_ENABLED: ${PRIMARY_HARNESSES_ENABLED:-false}
+      PRIMARY_HARNESS_NATIVE_LOGIN_MODE: ${PRIMARY_HARNESS_NATIVE_LOGIN_MODE:-disabled}
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
       HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
@@ -157,6 +159,8 @@ services:
       SCREEN_PROXY_SECRET: ""
       WAKEUP_DRIVER: graphile
       AGENT_RUNTIME: pi
+      PRIMARY_HARNESSES_ENABLED: ${PRIMARY_HARNESSES_ENABLED:-false}
+      PRIMARY_HARNESS_NATIVE_LOGIN_MODE: ${PRIMARY_HARNESS_NATIVE_LOGIN_MODE:-disabled}
       # Optional egress proxy (Mainland / corporate). Empty = unset; either case works.
       HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
       HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}

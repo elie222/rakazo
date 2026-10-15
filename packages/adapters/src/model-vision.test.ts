@@ -3,6 +3,7 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
+  knownModelImageCapability,
   MODEL_CANNOT_SEE_MESSAGE,
   modelAcceptsImageInput,
   modelIdSupportsImages,
@@ -87,4 +88,42 @@ describe("model vision gating for computer tools", () => {
     expect(MODEL_CANNOT_SEE_MESSAGE).toMatch(/cannot see/i);
     expect(MODEL_CANNOT_SEE_MESSAGE).toMatch(/vision-capable model/i);
   });
+});
+
+it("uses only exact catalog endpoint/model evidence for explicit image declarations", () => {
+  expect(
+    knownModelImageCapability({
+      provider: "openrouter",
+      modelId: "deepseek/deepseek-v4-pro",
+      endpoint: "https://openrouter.ai/api/v1",
+    }),
+  ).toBe(false);
+  expect(
+    knownModelImageCapability({
+      provider: "openrouter",
+      modelId: "openai/gpt-4o",
+      endpoint: "https://openrouter.ai/api/v1",
+    }),
+  ).toBe(true);
+  expect(
+    knownModelImageCapability({
+      provider: "openrouter",
+      modelId: "deepseek/deepseek-v4-pro",
+      endpoint: "https://custom.example.test/v1",
+    }),
+  ).toBeUndefined();
+  expect(
+    knownModelImageCapability({
+      provider: "openrouter",
+      modelId: "unknown",
+      endpoint: "https://openrouter.ai/api/v1",
+    }),
+  ).toBeUndefined();
+  expect(
+    knownModelImageCapability({
+      provider: "unknown",
+      modelId: "openai/gpt-4o",
+      endpoint: "https://openrouter.ai/api/v1",
+    }),
+  ).toBeUndefined();
 });

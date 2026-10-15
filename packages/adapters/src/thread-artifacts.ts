@@ -11,6 +11,7 @@ import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
+  isAttachmentAudioMimeType,
 } from "@rakazo/contracts";
 import {
   attachmentExtensionForMimeType,
@@ -20,6 +21,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { withResolvedArtifactVersion } from "@rakazo/db";
+import { validateAudioContent } from "./agent-input-media.js";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
 export type MaterializedThreadFile = {
@@ -57,6 +59,8 @@ export async function attachWorkspaceFileToThread(
   if (input.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
     throw new Error("file exceeds the 10 MiB attachment limit");
   }
+
+  if (isAttachmentAudioMimeType(mimeType)) validateAudioContent(mimeType, input.bytes);
 
   const context = {
     operationId: input.operationId,

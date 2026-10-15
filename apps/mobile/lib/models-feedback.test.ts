@@ -32,7 +32,7 @@ describe("Models save feedback", () => {
       /t\("Find models"\)\}[\s\S]*?prominence="secondary"[\s\S]*?\/>\s*\{feedbackAnchor === "probe" \? feedback : null\}/,
     );
     expect(screen).toMatch(
-      /\{compatKeySection\}\s*\{saveRow\}\s*\{feedbackAnchor === "probe" \? null : feedback\}/,
+      /\{compatKeySection\}\s*\{saveRow\}\s*\{connectedStatusRow\}\s*\{feedbackAnchor === "probe" \? null : feedback\}/,
     );
     expect(screen).toMatch(
       /\{saveRow\}\s*\{feedbackAnchor === "model" \? feedback : null\}\s*<View style=\{styles\.maintenanceSection\}>\{catalogConnectionControls\}<\/View>\s*\{feedbackAnchor === "model" \? null : feedback\}/,

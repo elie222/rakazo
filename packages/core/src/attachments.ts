@@ -3,6 +3,7 @@ import {
   ATTACHMENT_MAX_BASE64_LENGTH,
   ATTACHMENT_MAX_BYTES,
   isAllowedAttachmentMimeType,
+  isAttachmentAudioMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
 
@@ -46,6 +47,9 @@ export function decodeAttachmentBase64(contentBase64: string): Uint8Array {
     bytes = Buffer.from(normalized, "base64");
   } catch {
     throw new AttachmentValidationError("Attachment content is not valid base64");
+  }
+  if (bytes.toString("base64") !== normalized) {
+    throw new AttachmentValidationError("Attachment content is not canonical base64");
   }
   if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
   if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
@@ -136,6 +140,14 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
   ".png": "image/png",
   ".webp": "image/webp",
   ".gif": "image/gif",
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".mp4": "audio/mp4",
+  ".webm": "audio/webm",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".flac": "audio/flac",
   ".pdf": "application/pdf",
   ".txt": "text/plain",
   ".md": "text/markdown",
@@ -152,6 +164,12 @@ const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
   "image/png": ".png",
   "image/webp": ".webp",
   "image/gif": ".gif",
+  "audio/wav": ".wav",
+  "audio/mpeg": ".mp3",
+  "audio/mp4": ".m4a",
+  "audio/webm": ".webm",
+  "audio/ogg": ".ogg",
+  "audio/flac": ".flac",
   "application/pdf": ".pdf",
   "text/plain": ".txt",
   "text/markdown": ".md",
@@ -165,6 +183,12 @@ export function inferAttachmentMimeType(
   name: string,
   reportedType?: string,
 ): AttachmentMimeType | null {
+  const audioMime = reportedType?.split(";", 1)[0]?.trim().toLowerCase();
+  if (audioMime && isAttachmentAudioMimeType(audioMime)) return audioMime;
+  if (audioMime === "audio/x-wav" || audioMime === "audio/wave") return "audio/wav";
+  if (audioMime === "audio/mp3") return "audio/mpeg";
+  if (audioMime === "audio/x-m4a") return "audio/mp4";
+  if (audioMime === "audio/x-flac") return "audio/flac";
   if (
     reportedType === "application/x-zip-compressed" ||
     reportedType === "application/x-zip" ||

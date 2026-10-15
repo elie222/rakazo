@@ -105,6 +105,7 @@ export function createJobReconciler(
     notifications?: NotificationProvider;
     leadership?: ReconciliationLeadership;
     reconcileComputerUpdates?: () => Promise<void>;
+    reconcileNativeStateCleanup?: () => Promise<void>;
     reconcileCloudAgents?: () => Promise<void>;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
@@ -125,9 +126,11 @@ export function createJobReconciler(
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
       const auxiliary = await Promise.allSettled(
-        [deps.reconcileCloudAgents, deps.reconcileComputerUpdates].map(async (reconcile) =>
-          reconcile?.(),
-        ),
+        [
+          deps.reconcileCloudAgents,
+          deps.reconcileComputerUpdates,
+          deps.reconcileNativeStateCleanup,
+        ].map(async (reconcile) => reconcile?.()),
       );
       for (const result of auxiliary) {
         if (result.status === "rejected")

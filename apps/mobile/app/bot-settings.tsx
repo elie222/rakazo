@@ -1,4 +1,4 @@
-import type { ComputerMode, ThinkingLevel } from "@rakazo/contracts";
+import type { ComputerMode, ExecutionProfile, ThinkingLevel } from "@rakazo/contracts";
 import {
   BOT_COLORS,
   BOT_DESCRIPTION_MAX_LENGTH,
@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
+import { ExecutionProfileSettings } from "../components/execution-profile-settings";
 import { glassHeaderOptions } from "../components/glass-title";
 import type { MenuPickerChoice } from "../components/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
@@ -37,6 +38,8 @@ import { stopVoicePlayback } from "../lib/voice";
 
 type BotSettingsRecord = MobileBot & {
   description?: string;
+  executionProfileId?: string | null;
+  executionProfile?: ExecutionProfile | null;
 };
 
 export default function BotSettingsScreen() {
@@ -51,6 +54,7 @@ export default function BotSettingsScreen() {
   const [color, setColor] = useState<string>(BOT_COLORS[0]);
   const [computerMode, setComputerMode] = useState<ComputerMode>("team");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [executionProfileId, setExecutionProfileId] = useState<string | null>(null);
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
@@ -78,6 +82,7 @@ export default function BotSettingsScreen() {
         setDescription(next.description ?? "");
         setColor(next.color);
         setComputerMode(next.computerMode);
+        setExecutionProfileId(next.executionProfileId ?? null);
         setModelKey(
           next.modelProvider && next.modelId
             ? modelOptionKey(next.modelProvider, next.modelId)
@@ -285,6 +290,7 @@ export default function BotSettingsScreen() {
         modelId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
+        executionProfileId?: string | null;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -298,11 +304,13 @@ export default function BotSettingsScreen() {
         (selected?.provider ?? null) !== (bot.modelProvider ?? null) ||
         (selected?.modelId ?? null) !== (bot.modelId ?? null);
       const thinkingChanged = (thinkingLevel || null) !== (bot.thinkingLevel ?? null);
-      if (modelChanged) {
+      if (executionProfileId !== (bot.executionProfileId ?? null))
+        input.executionProfileId = executionProfileId;
+      if (modelChanged && !executionProfileId) {
         input.modelProvider = selected?.provider ?? null;
         input.modelId = selected?.modelId ?? null;
       }
-      if (modelMetaReady && (modelChanged || thinkingChanged)) {
+      if (!executionProfileId && modelMetaReady && (modelChanged || thinkingChanged)) {
         input.thinkingLevel = thinkingOptions.length
           ? ((thinkingLevel || null) as ThinkingLevel | null)
           : null;
@@ -510,31 +518,39 @@ export default function BotSettingsScreen() {
         </Pressable>
         {advancedOpen ? (
           <View>
-            <View
-              style={{
-                marginTop: 8,
-                borderRadius: 14,
-                backgroundColor: native.fill,
-                overflow: "hidden",
-              }}
-            >
-              <MenuPicker
-                choices={modelChoices}
-                label={t("Model")}
-                onChange={selectModel}
-                value={selectedModelKey}
-              />
-              {thinkingOptions.length ? (
+            <ExecutionProfileSettings
+              key={botId}
+              value={executionProfileId}
+              currentProfile={bot?.executionProfile}
+              onChange={setExecutionProfileId}
+            />
+            {!executionProfileId ? (
+              <View
+                style={{
+                  marginTop: 8,
+                  borderRadius: 14,
+                  backgroundColor: native.fill,
+                  overflow: "hidden",
+                }}
+              >
                 <MenuPicker
-                  choices={thinkingChoices}
-                  divider
-                  label={t("Thinking")}
-                  onChange={setThinkingLevel}
-                  value={thinkingLevel}
+                  choices={modelChoices}
+                  label={t("Model")}
+                  onChange={selectModel}
+                  value={selectedModelKey}
                 />
-              ) : null}
-            </View>
-            {modelMetaError ? (
+                {thinkingOptions.length ? (
+                  <MenuPicker
+                    choices={thinkingChoices}
+                    divider
+                    label={t("Thinking")}
+                    onChange={setThinkingLevel}
+                    value={thinkingLevel}
+                  />
+                ) : null}
+              </View>
+            ) : null}
+            {modelMetaError && !executionProfileId ? (
               <Text style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13 }}>
                 {modelMetaError}
               </Text>

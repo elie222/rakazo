@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import http from "node:http";
@@ -53,6 +53,7 @@ import {
   xdotoolCommand,
 } from "./computer-spec.js";
 import { assertComputerHomeWritable } from "./home-ownership.js";
+import { IsolatedProcessManager, isolatedProcessRoutes } from "./isolated-process.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -116,9 +117,12 @@ const computerScreenBoots = new Map<string, string>();
 
 export const MAX_SUPERVISOR_REQUEST_BYTES = 1024 * 1024;
 export const MAX_SUPERVISOR_FILE_REQUEST_BYTES = 16 * 1024 * 1024 + 64 * 1024;
+export const MAX_SUPERVISOR_HARNESS_INPUT_BYTES = 32 * 1024 * 1024 + 64 * 1024;
 
 /** Keep normal control requests small while allowing the existing 16 MiB file payload. */
 export function supervisorRequestBodyLimit(method: string, pathname: string): number {
+  if (method === "POST" && /^\/computers\/[^/]+\/processes\/[^/]+\/input\/?$/.test(pathname))
+    return MAX_SUPERVISOR_HARNESS_INPUT_BYTES;
   return method === "POST" && /^\/computers\/[^/]+\/files\/?$/.test(pathname)
     ? MAX_SUPERVISOR_FILE_REQUEST_BYTES
     : MAX_SUPERVISOR_REQUEST_BYTES;
@@ -166,6 +170,47 @@ app.use("/computers/*", async (c, next) => {
 });
 app.use("/computers", limitSupervisorRequestBody);
 app.use("/computers/*", limitSupervisorRequestBody);
+
+const isolatedProcesses = new IsolatedProcessManager(
+  docker,
+  computerEgressMode,
+  createHash("sha256").update(supervisorToken).digest("hex").slice(0, 32),
+);
+app.route(
+  "/computers",
+  isolatedProcessRoutes(
+    isolatedProcesses,
+    (identity, launch) =>
+      withComputerScreenLock(identity.computerId, async () => {
+        const { info } = await managedContainer(
+          identity.computerId,
+          identity.computerBotId,
+          identity.spaceId,
+        );
+        if (!info.State.Running) throw new Error("Computer is not running.");
+        return launch();
+      }),
+    (identity, cleanup) =>
+      withComputerScreenLock(identity.computerId, async () => {
+        try {
+          await managedContainer(identity.computerId, identity.computerBotId, identity.spaceId);
+        } catch (error) {
+          // Exact private scope remains verifiable after the team computer disappears.
+          // Other Docker/identity errors never grant cleanup authority.
+          if (
+            !(
+              error &&
+              typeof error === "object" &&
+              "statusCode" in error &&
+              error.statusCode === 404
+            )
+          )
+            throw error;
+        }
+        await cleanup();
+      }),
+  ),
+);
 
 app.post("/computers", async (c) => {
   const body = z
@@ -295,6 +340,7 @@ app.post("/computers", async (c) => {
         try {
           if (existing) {
             await withComputerScreenLock(existing.id, async () => {
+              await isolatedProcesses.stopComputer(existing.id);
               await existing.remove({ force: true }).catch(() => undefined);
               clearComputerScreenRegistry(computerScreens, computerScreenBoots, existing.id);
             });
@@ -940,6 +986,7 @@ app.post("/computers/:id/stop", async (c) => {
   try {
     const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
     await withComputerScreenLock(id, async () => {
+      await isolatedProcesses.stopComputer(id);
       const info = await container.inspect();
       if (info.State.Running) {
         try {
@@ -977,21 +1024,42 @@ app.post("/computers/:id/stop", async (c) => {
 app.delete("/computers/:id", async (c) => {
   const id = c.req.param("id");
   const botId = c.req.header("x-rakazo-bot-id");
+  const spaceId = c.req.header("x-rakazo-space-id");
   try {
-    if (!botId) throw new Error("missing computer identity");
+    if (!botId || !spaceId) throw new ComputerIdentityError("missing computer identity");
     return await withBotLifecycleLock(botId, async () => {
-      const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
+      let managed: Awaited<ReturnType<typeof managedContainer>>;
+      try {
+        managed = await managedContainer(id, botId, spaceId);
+      } catch (error) {
+        if (
+          !(error && typeof error === "object" && "statusCode" in error && error.statusCode === 404)
+        )
+          throw error;
+        // A stale DELETE must not destroy sessions belonging to a replacement computer.
+        // Provision shares the bot lock; the screen lock waits for any already
+        // authorized launch on the missing container before session removal.
+        return withComputerScreenLock(id, async () => {
+          if (await findBotContainer(botId, spaceId))
+            return c.json({ error: "computer was replaced; refresh before deleting" }, 409);
+          await isolatedProcesses.destroyComputer(botId, spaceId);
+          return c.json({ ok: true });
+        });
+      }
       await withComputerScreenLock(id, async () => {
-        await container.remove({ force: true }).catch(() => undefined);
+        await isolatedProcesses.stopComputer(id);
+        // The live container independently authenticates ownership of legacy volumes.
+        await isolatedProcesses.destroyComputer(botId, spaceId, true);
+        await managed.container.remove({ force: true });
         clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
       });
-      if (screenNetworkMode !== "internal") {
-        await removeBotNetwork(botId);
-      }
+      if (screenNetworkMode !== "internal") await removeBotNetwork(botId);
       return c.json({ ok: true });
     });
-  } catch {
-    return c.json({ error: "computer not found" }, 404);
+  } catch (error) {
+    if (error instanceof ComputerIdentityError)
+      return c.json({ error: "invalid computer identity" }, 403);
+    return c.json({ error: "computer cleanup failed" }, 503);
   }
 });
 
@@ -1009,6 +1077,9 @@ function startSupervisor() {
       "SANDBOX_COMPUTER_EGRESS=restricted requires the host firewall rules from infra/compose/restrict-computer-egress.sh (see docs/self-host.md)",
     );
   }
+  void isolatedProcesses.initialize().catch((error) => {
+    logger.error("isolated runtime orphan cleanup failed", error);
+  });
   void reclaimIdleComputerNetworks().catch((error) => {
     logger.error("computer network reclaim failed", error);
   });
@@ -1021,6 +1092,7 @@ function startSupervisor() {
   const shutdown = async () => {
     if (stopping) return;
     stopping = true;
+    await isolatedProcesses.close();
     await closeListeningServer(server);
     await logger.flush({ timeoutMs: 2_000 });
     process.exit(0);
@@ -1649,8 +1721,11 @@ async function rekeyRestrictedBotNetwork(name: string, botId: string, owner: str
 }
 
 async function stopContainer(container: Docker.Container) {
-  await container.stop({ t: 1 }).catch(async () => {
-    await container.kill().catch(() => undefined);
+  await withComputerScreenLock(container.id, async () => {
+    await isolatedProcesses.stopComputer(container.id);
+    await container.stop({ t: 1 }).catch(async () => {
+      await container.kill().catch(() => undefined);
+    });
   });
 }
 

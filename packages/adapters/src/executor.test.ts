@@ -2354,6 +2354,7 @@ description: Prepare standup notes
     );
     const prisma = {
       run: {
+        findFirst: vi.fn(async () => null),
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
         updateMany: vi.fn(async () => ({ count: 1 })),
@@ -2435,6 +2436,7 @@ description: Prepare standup notes
     };
     const prisma = {
       run: {
+        findFirst: vi.fn(async () => null),
         findUnique: vi.fn(async () => run),
         findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
         updateMany: vi.fn(async () => ({ count: 1 })),

@@ -5,6 +5,7 @@ import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
 import { isAgedStuckWork } from "@rakazo/core";
 import { Button, Input, Label, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { RunExecutionProfileDetails } from "../components/RunExecutionProfileDetails";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import {
   activityFiltersActive,
@@ -360,33 +361,40 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   const activityLabel = t`${title}, ${label}`;
   const tone = statusTone(run.status, run.updatedAt);
   return (
-    <button
-      type="button"
-      aria-label={activityLabel}
-      onClick={onOpen}
-      className="flex w-full gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-accent"
-    >
-      <span
-        className={`mt-1.5 size-2 shrink-0 rounded-full bg-current ${tone}`}
-        aria-hidden="true"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">{title}</span>
-          <span className="shrink-0 text-xs text-muted-foreground/80">
-            {formatRelativeTime(run.updatedAt)}
-          </span>
-        </div>
-        <div className="mt-0.5 flex items-baseline gap-2">
-          {run.promptSnippet ? (
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-              {run.promptSnippet}
+    <div className="group/run flex items-center">
+      <button
+        type="button"
+        aria-label={activityLabel}
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 gap-3 rounded-xl px-2.5 py-[9px] text-left hover:bg-accent"
+      >
+        <span
+          className={`mt-1.5 size-2 shrink-0 rounded-full bg-current ${tone}`}
+          aria-hidden="true"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-sm font-medium text-foreground">{title}</span>
+            <span className="shrink-0 text-xs text-muted-foreground/80">
+              {formatRelativeTime(run.updatedAt)}
             </span>
-          ) : null}
-          <span className={`ms-auto shrink-0 text-xs ${tone}`}>{label}</span>
+          </div>
+          <div className="mt-0.5 flex items-baseline gap-2">
+            {run.promptSnippet ? (
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                {run.promptSnippet}
+              </span>
+            ) : null}
+            <span className={`ms-auto shrink-0 text-xs ${tone}`}>{label}</span>
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {run.executionProfile ? (
+        <div className="opacity-0 group-hover/run:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+          <RunExecutionProfileDetails profile={run.executionProfile} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

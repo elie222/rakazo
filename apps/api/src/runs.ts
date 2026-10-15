@@ -1,5 +1,5 @@
 import type { Actor, RunActivityRow } from "@rakazo/contracts";
-import { MessageBlock } from "@rakazo/contracts";
+import { MessageBlock, runExecutionProfileSummary } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, botMessageContext } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
@@ -71,6 +71,7 @@ export async function listSpaceRuns(
 
   return rows.map((row) => ({
     runId: row.id,
+    executionProfile: runExecutionProfileSummary(row.executionProfileSnapshot),
     botId: row.botId,
     botName: row.bot.name,
     groupId: row.thread.groupId,

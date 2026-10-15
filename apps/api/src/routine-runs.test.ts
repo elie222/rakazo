@@ -158,3 +158,43 @@ describe("routine history", () => {
     });
   });
 });
+
+it("retains immutable routine run attribution without exposing credential references", async () => {
+  const { prisma, runs } = fixture();
+  runs.mockResolvedValue([
+    {
+      id: "run",
+      botId: "bot-1",
+      threadId: "thread-1",
+      thread: { groupId: null },
+      status: "completed",
+      createdAt: at,
+      startedAt: at,
+      completedAt: at,
+      executionProfileSnapshot: {
+        profileId: "old-profile",
+        profileName: "Old revision",
+        revision: 1,
+        harness: "pi",
+        provider: "anthropic",
+        modelId: "old-model",
+        credentialLabel: "Old account",
+        credentialId: "private-account",
+        credentialSecretId: "private-secret",
+        spaceId: "private-space",
+        userId: "private-user",
+        protocol: "anthropic",
+        endpoint: null,
+        computerId: null,
+        runtimeVersion: "0.87.1",
+      },
+    },
+  ]);
+  const history = await listRoutineRuns(prisma, actor, "routine-1");
+  expect(history.runs[0]?.executionProfile).toMatchObject({
+    id: "old-profile",
+    accountLabel: "Old account",
+    harness: "pi",
+  });
+  expect(JSON.stringify(history)).not.toContain("private-");
+});

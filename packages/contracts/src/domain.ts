@@ -8,6 +8,7 @@ import {
   isCloudflareAiGatewayProvider,
 } from "./cloudflare-ai-gateway.js";
 import { ThreadMessageSchema } from "./events.js";
+import { ExecutionProfileSchema, RunExecutionProfileSchema } from "./execution-profiles.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
 import { RunTriggerSchema } from "./runs.js";
@@ -72,6 +73,8 @@ export const BotSchema = z.object({
   createdAt: z.string(),
   voiceId: z.string().nullable(),
   autoSpeak: z.boolean(),
+  executionProfileId: Id.nullable().optional(),
+  executionProfile: ExecutionProfileSchema.nullable().optional(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
@@ -340,6 +343,7 @@ export const UpdateBotInput = z
     sectionId: Id.nullable().optional(),
     voiceId: z.string().max(120).nullable().optional(),
     autoSpeak: z.boolean().optional(),
+    executionProfileId: Id.nullable().optional(),
     modelProvider: z.string().trim().min(1).max(80).nullable().optional(),
     modelId: z.string().trim().min(1).max(200).nullable().optional(),
     thinkingLevel: ThinkingLevelSchema.nullable().optional(),
@@ -913,6 +917,7 @@ export const RunSchema = z.object({
   status: RunStatus,
   trigger: RunTriggerSchema,
   routineId: Id.nullable(),
+  executionProfile: RunExecutionProfileSchema.nullable().optional(),
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   error: z.string().nullable(),
@@ -1071,6 +1076,9 @@ export const ModelConnectInputSchema = z
   .object({
     ...ModelContextLimitsSchema.shape,
     provider: z.string(),
+    credentialId: Id.optional(),
+    createNew: z.boolean().optional(),
+    makeDefault: z.boolean().optional(),
     apiKey: z.string().optional(),
     accountId: z.string().optional(),
     gatewayId: z.string().optional(),
@@ -1084,6 +1092,13 @@ export const ModelConnectInputSchema = z
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.createNew && value.credentialId) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Choose a new account or an existing account, not both",
+        path: ["credentialId"],
+      });
+    }
     if (!modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow)) {
       ctx.addIssue({
         code: "custom",
@@ -1107,6 +1122,12 @@ export const ModelConnectInputSchema = z
         });
       }
     }
+    const metadataOnly =
+      value.credentialId &&
+      Object.keys(value).every((key) =>
+        ["provider", "credentialId", "label", "makeDefault"].includes(key),
+      );
+    if (metadataOnly) return;
     if (value.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       if (!value.baseUrl?.trim()) {
         ctx.addIssue({
@@ -1133,7 +1154,7 @@ export const ModelConnectInputSchema = z
       });
     }
     // An existing connection can update its output limit without a new key.
-    if (!apiKey && value.maxTokens === undefined) {
+    if (!apiKey && (value.createNew || (value.maxTokens === undefined && !value.credentialId))) {
       ctx.addIssue({
         code: "custom",
         message: "API key must contain at least 8 characters",

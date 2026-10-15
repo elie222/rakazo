@@ -1,4 +1,4 @@
-import type { ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
+import type { ModelCredential, ModelOAuthBegin, ThinkingLevel } from "@rakazo/contracts";
 import { cancelModelOAuthAttempt, finishModelOAuthAttempt } from "@rakazo/core";
 import { useEffect, useRef, useState } from "react";
 import { desktopBridge, oauthStateOf, onDesktopOAuthCallback } from "./desktop";
@@ -8,6 +8,9 @@ import { errorText } from "./user-error";
 
 export type ModelOAuthSignInBegin = {
   provider: string;
+  credentialId?: string;
+  createNew?: boolean;
+  makeDefault?: boolean;
   modelId?: string;
   thinkingLevel?: ThinkingLevel | null;
   label?: string;
@@ -19,7 +22,7 @@ export type ModelOAuthSignInBegin = {
  * guards so cancel-and-retry cannot drop a newer callback.
  */
 export function useModelOAuthSignIn(options: {
-  onFinished: (controller: AbortController) => void | Promise<void>;
+  onFinished: (controller: AbortController, credential: ModelCredential) => void | Promise<void>;
   onError: (message: string) => void;
   onClearError?: () => void;
 }) {
@@ -63,14 +66,14 @@ export function useModelOAuthSignIn(options: {
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
     await waitForModelOAuth(loginId, controller.signal);
     if (controller.signal.aborted) return;
-    await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
+    const credential = await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
     // Keep post-connect UI work outside the OAuth try/catch so a refresh failure
     // is not reported as a failed sign-in (finishOAuth already persisted).
     try {
-      await onFinishedRef.current(controller);
+      await onFinishedRef.current(controller, credential);
     } catch (err) {
       if (controller.signal.aborted) return;
       onErrorRef.current(errorText(err, "Connected, but could not refresh"));
@@ -132,6 +135,9 @@ export function useModelOAuthSignIn(options: {
       const started = await rpc.models.beginOAuth(
         {
           provider: begin.provider,
+          credentialId: begin.credentialId,
+          createNew: begin.createNew,
+          makeDefault: begin.makeDefault,
           modelId: begin.modelId,
           thinkingLevel: begin.thinkingLevel,
           label: begin.label,

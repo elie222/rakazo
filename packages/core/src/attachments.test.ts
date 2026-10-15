@@ -12,6 +12,16 @@ import {
 } from "./attachments.js";
 
 describe("attachment helpers", () => {
+  it("accepts canonical audio MIME aliases and preserves audio as a file attachment", () => {
+    expect(inferAttachmentMimeType("voice.webm", "audio/webm;codecs=opus")).toBe("audio/webm");
+    expect(inferAttachmentMimeType("voice.wav", "audio/x-wav")).toBe("audio/wav");
+    expect(inferAttachmentMimeType("voice.m4a", "audio/x-m4a")).toBe("audio/mp4");
+    expect(inferAttachmentMimeType("voice.mp3", "")).toBe("audio/mpeg");
+    expect(attachmentExtensionForMimeType("audio/wav")).toBe(".wav");
+    expect(() => validateAttachmentMimeType("audio/wav")).not.toThrow();
+    expect(() => decodeAttachmentBase64("AB==")).toThrow("canonical");
+  });
+
   it("accepts zip archives and rejects unsupported mime types and empty payloads", () => {
     expect(() => validateAttachmentMimeType("application/zip")).not.toThrow();
     expect(() => validateAttachmentMimeType("application/octet-stream")).toThrow(

@@ -34,6 +34,8 @@ for cidr in 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 \
   172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4; do
   grep -qxF "iptables -I DOCKER-USER 1 -i rakazo-c+ -d $cidr -j DROP" <<<"$printed" ||
     fail "missing DOCKER-USER drop for $cidr"
+  grep -qxF "iptables -I DOCKER-USER 1 -i rakazo-h+ -d $cidr -j DROP" <<<"$printed" ||
+    fail "missing isolated harness drop for $cidr"
 done
 
 # Host input: the catch-all drop executes before the established-accept so the
@@ -48,7 +50,18 @@ est_i="$(grep -nx 'iptables -I INPUT 1 -i rakazo-c+ -m conntrack --ctstate ESTAB
 for cidr in ::1/128 fc00::/7 fe80::/10 ff00::/8; do
   grep -qxF "ip6tables -I DOCKER-USER 1 -i rakazo-c+ -d $cidr -j DROP" <<<"$printed" ||
     fail "missing IPv6 drop for $cidr"
+  grep -qxF "ip6tables -I DOCKER-USER 1 -i rakazo-h+ -d $cidr -j DROP" <<<"$printed" ||
+    fail "missing isolated harness IPv6 drop for $cidr"
 done
+
+# Isolated harnesses have no host or same-bridge service exception.
+for family in iptables ip6tables; do
+  grep -qxF "$family -I INPUT 1 -i rakazo-h+ -j DROP" <<<"$printed" ||
+    fail "missing isolated harness host drop"
+done
+if grep -E -- '-i rakazo-h\+.*-j (RETURN|ACCEPT)' <<<"$printed"; then
+  fail "isolated harness bridges must never have an ACCEPT/RETURN exemption"
+fi
 
 # --apply with stubbed firewall commands: installs each rule once, idempotently,
 # inserting in reverse so the printed order lands at the top of each chain.
@@ -153,8 +166,8 @@ v4_state="$STUB_DIR/iptables.state"
 v6_state="$STUB_DIR/ip6tables.state"
 v4_calls="$STUB_DIR/iptables.calls"
 
-[[ "$(wc -l <"$v4_state")" -eq 14 ]] || fail "expected 14 IPv4 rules, got $(wc -l <"$v4_state")"
-[[ "$(wc -l <"$v6_state")" -eq 7 ]] || fail "expected 7 IPv6 rules, got $(wc -l <"$v6_state")"
+[[ "$(wc -l <"$v4_state")" -eq 26 ]] || fail "expected 26 IPv4 rules, got $(wc -l <"$v4_state")"
+[[ "$(wc -l <"$v6_state")" -eq 12 ]] || fail "expected 12 IPv6 rules, got $(wc -l <"$v6_state")"
 grep -qxF 'INPUT -i rakazo-c+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT' "$v4_state" ||
   fail "established accept missing after apply"
 grep -qxF 'INPUT -i rakazo-c+ -j DROP' "$v4_state" || fail "INPUT drop missing after apply"
@@ -173,9 +186,9 @@ drop_at="$(grep -nxF 'INPUT -i rakazo-c+ -j DROP' "$v4_state" | head -1 | cut -d
 # Second apply inserts nothing when the managed rules are already the prefix.
 # The stub's -S output has already moved -d ahead of -i and swapped ctstate.
 RAKAZO_IPTABLES="$bin/iptables" RAKAZO_IP6TABLES="$bin/ip6tables" bash "$script" --apply
-[[ "$(grep -c '^-I ' "$v4_calls")" == 14 ]] ||
+[[ "$(grep -c '^-I ' "$v4_calls")" == 26 ]] ||
   fail "rules re-inserted on repeat apply"
-[[ "$(grep -c '^-I ' "$STUB_DIR/ip6tables.calls")" == 7 ]] ||
+[[ "$(grep -c '^-I ' "$STUB_DIR/ip6tables.calls")" == 12 ]] ||
   fail "IPv6 rules re-inserted on repeat apply"
 
 # Later repair checks expect this exact prefix.
@@ -254,17 +267,17 @@ meta_at="$(grep -nxF 'DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP' "$v4_s
   fail "metadata drop is not above the foreign ACCEPT"
 [[ "$(grep -cxF 'DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP' "$v4_state")" == 1 ]] ||
   fail "repair left a stale metadata drop"
-[[ "$(wc -l <"$v4_state")" -eq 15 ]] ||
+[[ "$(wc -l <"$v4_state")" -eq 27 ]] ||
   fail "repair left duplicate rules, got $(wc -l <"$v4_state") lines"
 
-# A failure halfway through the repair must not remove the drops. 14 inserts
-# land the new prefix first; the 15th mutation is the first stale delete and
+# A failure halfway through the repair must not remove the drops. 26 inserts
+# land the new prefix first; the 27th mutation is the first stale delete and
 # is failed before it changes anything. Both the new and previous copies stay.
 { printf '%s\n' 'DOCKER-USER -j ACCEPT' 'INPUT -j ACCEPT'; cat "$v4_state"; } >"$v4_state.tmp"
 mv "$v4_state.tmp" "$v4_state"
 rm -f "$STUB_DIR/mutation.count"
 calls_before="$(wc -l <"$v4_calls")"
-STUB_FAIL_ON_MUTATION=15 RAKAZO_IPTABLES="$bin/iptables" RAKAZO_IP6TABLES="$bin/ip6tables" \
+STUB_FAIL_ON_MUTATION=27 RAKAZO_IPTABLES="$bin/iptables" RAKAZO_IP6TABLES="$bin/ip6tables" \
   bash "$script" --apply && fail "repair should fail when iptables fails midway" || true
 meta_drop='DOCKER-USER -i rakazo-c+ -d 169.254.0.0/16 -j DROP'
 input_drop='INPUT -i rakazo-c+ -j DROP'
@@ -273,7 +286,7 @@ input_drop='INPUT -i rakazo-c+ -j DROP'
 [[ "$(grep -cxF "$input_drop" "$v4_state")" == 2 ]] ||
   fail "INPUT drop missing after a midway repair failure"
 new_calls="$(tail -n +"$((calls_before + 1))" "$v4_calls")"
-[[ "$(grep -c '^-I ' <<<"$new_calls")" == 14 ]] ||
+[[ "$(grep -c '^-I ' <<<"$new_calls")" == 26 ]] ||
   fail "repair did not insert the new prefix before failing"
 [[ "$(grep -c '^-D ' <<<"$new_calls")" == 1 ]] ||
   fail "repair deleted rules before the new prefix was in place"

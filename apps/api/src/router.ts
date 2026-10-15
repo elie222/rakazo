@@ -3,6 +3,7 @@ import { implement, ORPCError } from "@orpc/server";
 import type {
   AdapterContext,
   AgentHomeStore,
+  AgentRunModel,
   ArtifactStore,
   ConnectorCatalogItem,
   JobPublisher,
@@ -73,6 +74,7 @@ import {
   isSandboxGoneError,
   isScratchpadStatus,
   kickModelCredentialRefresh,
+  knownModelImageCapability,
   listAvailablePiCatalog,
   listBotSecretMetadata,
   listPiCatalog,
@@ -81,11 +83,13 @@ import {
   mapScratchpadItem,
   modelCredentialAuthKindsForSpace,
   modelCredentialDto,
+  normalizeOpenAiCompatibleBaseUrl,
   normalizeSecretDestination,
   PushSessionEndedError,
   parseModelSecret,
   persistPreparedSecret,
   pickReusableConnection,
+  piExecutionProfileModel,
   planLiveConnectionSync,
   prepareApiInstall,
   prepareGraphqlInstall,
@@ -119,6 +123,8 @@ import {
   updateTicket,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
+  validateNativeLoginProfile,
+  validatePiProfileModel,
   validateStoredModelAuth,
   verifyMcpInstall,
 } from "@rakazo/adapters";
@@ -130,6 +136,7 @@ import type {
   BotSecretMetadata,
   ComputerReleaseReason,
   ComputerStatus,
+  ExecutionProfileModel,
   ExportManifest,
   McpServer,
   Me,
@@ -142,6 +149,7 @@ import {
   appContract,
   BotSecretAuth,
   ComputerCommandSchema,
+  EXECUTION_HARNESS_PROTOCOLS,
   foldComputerCommands,
   IntegrationProviderIdSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -159,6 +167,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  resolveGroupTargetBotIds,
 } from "@rakazo/core";
 import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -170,6 +179,7 @@ import {
   CannotRenameSpaceAsNonOwnerError,
   ComputerLimitError,
   claimEmptySpaceDeletionForMember,
+  createExecutionProfile,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
@@ -178,7 +188,9 @@ import {
   defaultModelCredentialCandidates,
   deleteEmptySpaceForMember,
   deleteUnreferencedCredentialSecret,
+  ExecutionProfileUnavailableError,
   ensureBoard,
+  executionProfileDto,
   findDefaultModelCredential,
   findDefaultVoiceCredential,
   findModelCredential,
@@ -201,6 +213,7 @@ import {
   renameSpaceForMember,
   renewSpaceDeletionClaim,
   replaceSpaceBackupModels,
+  resolveExecutionProfile,
   restoreBotUnderComputerQuota,
   SPACE_DELETION_CLAIM_TIMEOUT_MS,
   SpaceDeletionInProgressError,
@@ -248,6 +261,7 @@ import {
   serializeSpaceMemoryConfig,
   updateMemoryProviderDefaultScope,
 } from "./memory-provider-config.js";
+import { createNativeLogins } from "./native-logins.js";
 import {
   chooseFocus,
   dismissFocus,
@@ -543,6 +557,7 @@ function mcpAssignmentDto(row: {
 }
 
 export interface RouterDeps {
+  nativeLoginSelfHosted?: boolean;
   cloudAgent?: CloudAgentConnection | null;
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -710,7 +725,13 @@ export async function enqueueBotIntroRun(deps: RouterDeps, actor: Actor, bot: Bo
   // extra automatic run there competes with whatever response a test or eval
   // harness queued next, for a bot it doesn't otherwise get to opt out of.
   if (deps.env.agentRuntime === "scripted") return;
-  if ((await modelSetup(deps, actor)).needsModel) return;
+  if (bot.executionProfileId) {
+    const binding = await resolveExecutionProfile(deps.prisma, actor, bot.executionProfileId);
+    if (binding.profile.provider === "native-kimi")
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Kimi native login is available only for interactive user turns.",
+      });
+  } else if ((await modelSetup(deps, actor)).needsModel) return;
   const run = await deps.prisma.$transaction(async (tx) => {
     const task = await tx.task.create({
       data: {
@@ -759,6 +780,12 @@ export function createRouter(deps: RouterDeps) {
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
   }>();
+  const nativeLogins = createNativeLogins({
+    prisma: deps.prisma,
+    secrets: deps.secrets,
+    sandbox: deps.sandbox,
+    selfHostedEnabled: deps.nativeLoginSelfHosted === true,
+  });
   const repos = createRepos(deps.prisma);
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
@@ -1135,7 +1162,10 @@ export function createRouter(deps: RouterDeps) {
       }),
       credentials: authed.models.credentials.handler(async ({ context }) => {
         const rows = await deps.prisma.userModelCredential.findMany({
-          where: { userId: context.actor.userId },
+          where: {
+            userId: context.actor.userId,
+            provider: { notIn: ["native-codex", "native-kimi"] },
+          },
           include: {
             preferences: {
               where: { userId: context.actor.userId, spaceId: context.actor.spaceId },
@@ -1236,11 +1266,77 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       connect: authed.models.connect.handler(async ({ context, input }) => {
+        if (input.provider.startsWith("native-"))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Manage this account through Native login settings.",
+          });
+        if (
+          input.credentialId &&
+          Object.keys(input).every((key) =>
+            ["provider", "credentialId", "label", "makeDefault"].includes(key),
+          )
+        ) {
+          return deps.prisma.$transaction(async (tx) => {
+            const existing = await tx.userModelCredential.findFirst({
+              where: {
+                id: input.credentialId,
+                userId: context.actor.userId,
+                provider: input.provider,
+              },
+            });
+            if (!existing)
+              throw new ORPCError("NOT_FOUND", { message: "The selected account is unavailable." });
+            const preference = await tx.spaceModelPreference.findFirst({
+              where: {
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+                credentialId: existing.id,
+              },
+            });
+            if (input.makeDefault)
+              await selectSpaceModelPreference(
+                tx,
+                context.actor,
+                existing.id,
+                preference?.modelId,
+                preference?.thinkingLevel,
+              );
+            const updated = await tx.userModelCredential.update({
+              where: { id: existing.id },
+              data: { ...(input.label !== undefined ? { label: input.label } : {}) },
+            });
+            const stored = await tx.secret.findFirst({
+              where: { id: existing.secretId, userId: context.actor.userId, spaceId: null },
+            });
+            return modelCredentialDto(
+              {
+                ...updated,
+                isDefault: Boolean(input.makeDefault || preference?.isDefault),
+                defaultModel: preference?.modelId,
+              },
+              stored ? await deps.secrets.load(stored.ciphertext, stored.id) : undefined,
+            );
+          });
+        }
         let plaintext: string;
+        let credentialId = input.credentialId;
         try {
           let previousPlaintext: string | undefined;
           let omitVisionModelIds = false;
-          const credential = await findModelCredential(deps.prisma, context.actor, input.provider);
+          const credential = input.createNew
+            ? null
+            : input.credentialId
+              ? await deps.prisma.userModelCredential.findFirst({
+                  where: {
+                    id: input.credentialId,
+                    userId: context.actor.userId,
+                    provider: input.provider,
+                  },
+                })
+              : await findModelCredential(deps.prisma, context.actor, input.provider);
+          if (input.credentialId && !credential)
+            throw new Error("The selected account is unavailable.");
+          credentialId = credential?.id;
           if (credential) {
             const secret = await deps.prisma.secret.findFirst({
               where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
@@ -1275,6 +1371,9 @@ export function createRouter(deps: RouterDeps) {
           context.actor,
           {
             provider: input.provider,
+            credentialId,
+            createNew: input.createNew,
+            makeDefault: input.makeDefault ?? (!input.createNew && !input.credentialId),
             plaintext,
             label: input.label,
             modelId: input.modelId,
@@ -1291,7 +1390,27 @@ export function createRouter(deps: RouterDeps) {
       probeOpenAiCompatible: authed.models.probeOpenAiCompatible.handler(
         async ({ context, input }) => {
           try {
-            const models = await probeOpenAiCompatibleModels(input, undefined, context.signal);
+            let apiKey = input.apiKey;
+            if (input.credentialId && apiKey === undefined) {
+              const { secret } = await readExactModelAccount(
+                deps,
+                context.actor,
+                input.credentialId,
+                OPENAI_COMPATIBLE_PROVIDER_ID,
+              );
+              if (
+                secret.kind !== "openai_compatible" ||
+                normalizeOpenAiCompatibleBaseUrl(input.baseUrl) !== secret.baseUrl
+              ) {
+                throw new Error("Enter a key explicitly when changing the account endpoint.");
+              }
+              apiKey = secret.apiKey;
+            }
+            const models = await probeOpenAiCompatibleModels(
+              { baseUrl: input.baseUrl, apiKey },
+              undefined,
+              context.signal,
+            );
             return { models };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {
@@ -1302,8 +1421,21 @@ export function createRouter(deps: RouterDeps) {
       ),
       probeCatalog: authed.models.probeCatalog.handler(async ({ context, input }) => {
         try {
+          let apiKey = input.apiKey;
+          if (!apiKey && input.credentialId) {
+            const { secret } = await readExactModelAccount(
+              deps,
+              context.actor,
+              input.credentialId,
+              input.provider,
+            );
+            if (secret.kind !== "api_key")
+              throw new Error("This discovery method requires an API-key account.");
+            apiKey = secret.key;
+          }
+          if (!apiKey) throw new Error("Choose an account or enter an API key.");
           const models = await probeCatalogProviderModels(
-            { provider: input.provider, apiKey: input.apiKey },
+            { provider: input.provider, apiKey },
             undefined,
             context.signal,
           );
@@ -1315,10 +1447,28 @@ export function createRouter(deps: RouterDeps) {
         }
       }),
       beginOAuth: authed.models.beginOAuth.handler(async ({ context, input }) => {
+        if (input.provider.startsWith("native-"))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Manage this account through Native login settings.",
+          });
+        if (
+          input.credentialId &&
+          !(await deps.prisma.userModelCredential.findFirst({
+            where: {
+              id: input.credentialId,
+              userId: context.actor.userId,
+              provider: input.provider,
+            },
+          }))
+        )
+          throw new ORPCError("NOT_FOUND", { message: "The selected account is unavailable." });
         return deps.oauthLogins.begin({
           userId: context.actor.userId,
           spaceId: context.actor.spaceId,
           provider: input.provider,
+          credentialId: input.credentialId,
+          createNew: input.createNew,
+          makeDefault: input.makeDefault ?? (!input.createNew && !input.credentialId),
           modelId: input.modelId,
           thinkingLevel: input.thinkingLevel,
           label: input.label,
@@ -1346,6 +1496,9 @@ export function createRouter(deps: RouterDeps) {
               context.actor,
               {
                 provider: login.provider,
+                credentialId: login.credentialId,
+                createNew: login.createNew,
+                makeDefault: login.makeDefault,
                 plaintext: serializeModelSecret({ kind: "oauth", credential: login.credential }),
                 label:
                   login.label ??
@@ -1371,6 +1524,10 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       setDefault: authed.models.setDefault.handler(async ({ context, input }) => {
+        if (input.provider.startsWith("native-"))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Manage this account through Native login settings.",
+          });
         const loadSpaceModelState = async (
           client: Pick<PrismaClient, "spaceModelPreference" | "userModelCredential">,
         ) => {
@@ -1380,11 +1537,16 @@ export function createRouter(deps: RouterDeps) {
                 spaceId: context.actor.spaceId,
                 userId: context.actor.userId,
                 credential: { provider: input.provider },
+                ...(input.credentialId ? { credentialId: input.credentialId } : {}),
               },
               include: { credential: true },
             }),
             client.userModelCredential.findMany({
-              where: { userId: context.actor.userId, provider: input.provider },
+              where: {
+                userId: context.actor.userId,
+                provider: input.provider,
+                ...(input.credentialId ? { id: input.credentialId } : {}),
+              },
             }),
           ]);
           return {
@@ -1435,7 +1597,13 @@ export function createRouter(deps: RouterDeps) {
                 )
               : Boolean(input.thinkingLevel);
           const thinking = needsThinking
-            ? await prepareAllowedThinkingLevels(deps, context.actor, input.provider, input.modelId)
+            ? await prepareAllowedThinkingLevels(
+                deps,
+                context.actor,
+                input.provider,
+                input.modelId,
+                input.credentialId,
+              )
             : { allowed: undefined, secret: undefined };
           return deps.prisma.$transaction(
             async (tx) => {
@@ -1528,21 +1696,41 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       disconnect: authed.models.disconnect.handler(async ({ context, input }) => {
+        if (input.provider.startsWith("native-"))
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Manage this account through Native login settings.",
+          });
         // Retire pending sign-ins in every space first — the credentials are
         // account-wide, so a finishing OAuth session anywhere could otherwise
         // re-persist a credential the delete below just removed.
-        await deps.oauthLogins.cancelProvider({
-          userId: context.actor.userId,
-          provider: input.provider,
-        });
+        if (!input.credentialId) {
+          await deps.oauthLogins.cancelProvider({
+            userId: context.actor.userId,
+            provider: input.provider,
+          });
+        }
         await withSerializableRetry(() =>
           deps.prisma.$transaction(
             async (tx) => {
-              await tx.spaceBackupModel.deleteMany({
-                where: { userId: context.actor.userId, provider: input.provider },
-              });
+              const otherAccounts = input.credentialId
+                ? await tx.userModelCredential.count({
+                    where: {
+                      userId: context.actor.userId,
+                      provider: input.provider,
+                      id: { not: input.credentialId },
+                    },
+                  })
+                : 0;
+              if (otherAccounts === 0)
+                await tx.spaceBackupModel.deleteMany({
+                  where: { userId: context.actor.userId, provider: input.provider },
+                });
               const existing = await tx.userModelCredential.findMany({
-                where: { userId: context.actor.userId, provider: input.provider },
+                where: {
+                  userId: context.actor.userId,
+                  provider: input.provider,
+                  ...(input.credentialId ? { id: input.credentialId } : {}),
+                },
               });
               if (existing.length === 0) return;
               const ids = existing.map((row) => row.id);
@@ -1569,6 +1757,116 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
     },
+    nativeLogins: {
+      list: authed.nativeLogins.list.handler(({ context }) => nativeLogins.list(context.actor)),
+      begin: authed.nativeLogins.begin.handler(({ context, input }) =>
+        nativeLogins.begin(context.actor, input),
+      ),
+      status: authed.nativeLogins.status.handler(({ context, input }) =>
+        nativeLogins.status(context.actor, input.credentialId),
+      ),
+      cancel: authed.nativeLogins.cancel.handler(({ context, input }) =>
+        nativeLogins.cancel(context.actor, input.credentialId),
+      ),
+      logout: authed.nativeLogins.logout.handler(({ context, input }) =>
+        nativeLogins.logout(context.actor, input.credentialId),
+      ),
+    },
+    executionProfiles: {
+      models: authed.executionProfiles.models.handler(async ({ context, input }) => {
+        const { credential, secret } = await readExactModelAccount(
+          deps,
+          context.actor,
+          input.credentialId,
+        );
+        if (secret.kind === "native_login" || (input.harness !== "pi" && secret.kind === "oauth"))
+          return [];
+        const ids =
+          credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+            ? credential.preferences
+                .map((preference) => preference.modelId)
+                .filter((id): id is string => Boolean(id))
+            : listPiCatalog()
+                .filter((entry) => entry.provider === credential.provider && !entry.placeholder)
+                .map((entry) => entry.id);
+        const models: ExecutionProfileModel[] = [];
+        for (const id of new Set(ids)) {
+          const model = modelForExactAccount(credential.provider, id, secret);
+          const metadata = piExecutionProfileModel(model);
+          if (!metadata) continue;
+          if (
+            input.harness === "pi" &&
+            validateModelAuthAvailability(credential.provider, id, serializeModelSecret(secret))
+          )
+            continue;
+          models.push(
+            input.harness === "pi"
+              ? metadata
+              : { ...metadata, protocol: EXECUTION_HARNESS_PROTOCOLS[input.harness][0] },
+          );
+        }
+        return models;
+      }),
+      list: authed.executionProfiles.list.handler(async ({ context }) => {
+        const profiles = await deps.prisma.executionProfile.findMany({
+          where: { spaceId: context.actor.spaceId, userId: context.actor.userId },
+          orderBy: [{ createdAt: "desc" }, { revision: "desc" }, { id: "asc" }],
+        });
+        return profiles.map(executionProfileDto);
+      }),
+      create: authed.executionProfiles.create.handler(async ({ context, input }) => {
+        await assertMcpRemoteEndpoint(input.endpoint, context.actor, deps);
+        try {
+          const account = await readExactModelAccount(
+            deps,
+            context.actor,
+            input.credentialId,
+            input.provider,
+          );
+          if (account.secret.kind === "native_login") {
+            if (!deps.nativeLoginSelfHosted)
+              throw new Error("Native login requires an enabled self-hosted personal deployment.");
+            validateNativeLoginProfile(account.secret, input, context.actor);
+          } else if (input.provider.startsWith("native-"))
+            throw new Error("Native account configuration is invalid.");
+          if (input.harness === "pi") {
+            const { credential, secret } = await readExactModelAccount(
+              deps,
+              context.actor,
+              input.credentialId,
+              input.provider,
+            );
+            const model = modelForExactAccount(credential.provider, input.modelId, secret);
+            if (input.endpoint) model.baseUrl = input.endpoint;
+            validatePiProfileModel(model, input.protocol, input.endpoint);
+            const unavailable = validateModelAuthAvailability(
+              input.provider,
+              input.modelId,
+              serializeModelSecret(secret),
+            );
+            if (unavailable) throw new ORPCError("BAD_REQUEST", { message: unavailable });
+          }
+          if (
+            input.inputModalities.includes("image") &&
+            knownModelImageCapability(input) === false
+          ) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "This model does not support image input.",
+            });
+          }
+          const profile = await createExecutionProfile(deps.prisma, context.actor, input);
+          return executionProfileDto(profile);
+        } catch (error) {
+          if (
+            error instanceof ExecutionProfileUnavailableError ||
+            (error instanceof Error && !(error instanceof ORPCError))
+          ) {
+            throw new ORPCError("BAD_REQUEST", { message: error.message });
+          }
+          throw error;
+        }
+      }),
+    },
     bots: {
       list: authed.bots.list.handler(async ({ context }) => repos.listBots(context.actor)),
       listArchived: authed.bots.listArchived.handler(async ({ context }) =>
@@ -1593,6 +1891,23 @@ export function createRouter(deps: RouterDeps) {
       }),
       duplicate: authed.bots.duplicate.handler(async ({ context, input }) => {
         const source = await repos.getBot(context.actor, input.botId);
+        if (source.executionProfileId) {
+          const binding = await resolveExecutionProfile(
+            deps.prisma,
+            context.actor,
+            source.executionProfileId,
+          );
+          if (
+            binding.profile.computerId &&
+            (source.computer?.scope === "dedicated" ||
+              binding.profile.computerId !== source.computerId)
+          ) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                "This profile is bound to a computer the duplicate would not use. Create a new bot and a profile for its computer, or use a profile with Bot computer.",
+            });
+          }
+        }
         const duplicate = await repos
           .createBot(context.actor, {
             name: duplicateBotName(source.name),
@@ -1602,6 +1917,7 @@ export function createRouter(deps: RouterDeps) {
             notifyOnFinish: source.notifyOnFinish,
             color: source.color,
             computerMode: source.computer?.scope === "dedicated" ? "dedicated" : "team",
+            executionProfileId: source.executionProfileId,
             modelProvider: source.modelProvider,
             modelId: source.modelId,
             thinkingLevel: source.thinkingLevel,
@@ -1648,6 +1964,30 @@ export function createRouter(deps: RouterDeps) {
           });
           if (!section) throw new IsolationError();
         }
+        if (input.executionProfileId) {
+          try {
+            const binding = await resolveExecutionProfile(
+              deps.prisma,
+              context.actor,
+              input.executionProfileId,
+            );
+            if (binding.profile.computerId && binding.profile.computerId !== existing.computerId) {
+              throw new ORPCError("BAD_REQUEST", {
+                message:
+                  "This profile is bound to another computer. Select a profile for this bot’s current computer or create a new revision using Bot computer.",
+              });
+            }
+          } catch (error) {
+            if (error instanceof ExecutionProfileUnavailableError) {
+              throw new ORPCError("BAD_REQUEST", { message: error.message });
+            }
+            throw error;
+          }
+        }
+        const effectiveProfileId =
+          input.executionProfileId === undefined
+            ? existing.executionProfileId
+            : input.executionProfileId;
         // Web settings resend the saved model on every save. Reject an
         // incompatible override only when this request is changing it; a run
         // still rejects a Spark model the subscription sign-in cannot call.
@@ -1655,6 +1995,11 @@ export function createRouter(deps: RouterDeps) {
           input.modelProvider !== undefined &&
           input.modelId !== undefined &&
           (input.modelProvider !== existing.modelProvider || input.modelId !== existing.modelId);
+        if (settingModel && effectiveProfileId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Change the execution profile to select another model.",
+          });
+        }
         if (settingModel && input.modelProvider && input.modelId) {
           const credential = await findModelCredential(
             deps.prisma,
@@ -1694,7 +2039,7 @@ export function createRouter(deps: RouterDeps) {
           }
         }
         const thinkingLevel = input.thinkingLevel;
-        if (input.thinkingLevel) {
+        if (input.thinkingLevel && !effectiveProfileId) {
           const provider =
             input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
           const modelId = input.modelId !== undefined ? input.modelId : existing.modelId;
@@ -1758,6 +2103,9 @@ export function createRouter(deps: RouterDeps) {
             sectionId: input.sectionId,
             voiceId: input.voiceId,
             autoSpeak: input.autoSpeak,
+            ...(input.executionProfileId !== undefined
+              ? { executionProfileId: input.executionProfileId }
+              : {}),
             ...(input.modelProvider !== undefined
               ? { modelProvider: input.modelProvider, modelId: input.modelId ?? null }
               : {}),
@@ -2163,10 +2511,42 @@ export function createRouter(deps: RouterDeps) {
         }
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
-        if ((await modelSetup(deps, context.actor)).needsModel) {
-          throw new ORPCError("BAD_REQUEST", { message: "Connect a model to start a run." });
-        }
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind === "bot" && target.bot.executionProfileId) {
+          await resolveExecutionProfile(deps.prisma, context.actor, target.bot.executionProfileId);
+        } else if ((await modelSetup(deps, context.actor)).needsModel) {
+          const targetBotIds =
+            target.kind === "group"
+              ? resolveGroupTargetBotIds({
+                  text: input.text ?? "",
+                  members: target.members.map((member) => ({
+                    id: member.botId,
+                    name: member.name,
+                  })),
+                  explicitMentions: (input.mentions ?? []).flatMap((mention) =>
+                    typeof mention === "string"
+                      ? [mention]
+                      : mention.kind === "bot"
+                        ? [mention.id]
+                        : [],
+                  ),
+                })
+              : [target.botId];
+          const bots = await deps.prisma.bot.findMany({
+            where: {
+              id: { in: targetBotIds },
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+            },
+            select: { id: true, executionProfileId: true },
+          });
+          if (bots.length !== targetBotIds.length || bots.some((bot) => !bot.executionProfileId)) {
+            throw new ORPCError("BAD_REQUEST", { message: "Connect a model to start a run." });
+          }
+          for (const bot of bots) {
+            await resolveExecutionProfile(deps.prisma, context.actor, bot.executionProfileId!);
+          }
+        }
         if (target.kind === "bot") {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         }
@@ -3285,7 +3665,7 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         const bot = await repos.getBot(context.actor, input.botId);
-        await assertRoutineModel(deps, context.actor, input);
+        await assertRoutineModel(deps, context.actor, input, bot);
         // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
         let nextRunAt: Date | null = null;
         if (input.crons.length > 0 && !isOneShotRoutineCrons(input.crons)) {
@@ -3371,8 +3751,8 @@ export function createRouter(deps: RouterDeps) {
               ? null
               : existing.thinkingLevel
             : input.thinkingLevel;
-        if (modelChanged) {
-          await assertRoutineModel(deps, context.actor, { modelProvider, modelId });
+        if (modelChanged || bot.executionProfileId) {
+          await assertRoutineModel(deps, context.actor, { modelProvider, modelId }, bot);
         }
         if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider) {
           throw new ORPCError("BAD_REQUEST", {
@@ -3523,6 +3903,7 @@ export function createRouter(deps: RouterDeps) {
         });
         if (!routine) throw new IsolationError();
         const bot = await repos.getBot(context.actor, routine.botId);
+        await assertRoutineModel(deps, context.actor, routine, bot);
         if (!bot.thread) throw new IsolationError();
         const threadId = bot.thread.id;
         const nonce = input.clientNonce ? `routine-test:${input.clientNonce}` : undefined;
@@ -6388,6 +6769,7 @@ async function prepareAllowedThinkingLevels(
   actor: Actor,
   provider: string,
   modelId: string,
+  credentialId?: string,
 ): Promise<{ allowed: string[] | undefined; secret?: { id: string; ciphertext: string } }> {
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
     return {
@@ -6397,7 +6779,21 @@ async function prepareAllowedThinkingLevels(
   }
   let allowed: string[] | undefined = ["off"];
   let savedSecret: { id: string; ciphertext: string } | undefined;
-  const credential = await findModelCredential(deps.prisma, actor, provider);
+  const exact = credentialId
+    ? await deps.prisma.userModelCredential.findFirst({
+        where: { id: credentialId, userId: actor.userId, provider },
+        include: { preferences: { where: { spaceId: actor.spaceId, userId: actor.userId } } },
+      })
+    : null;
+  const credential = credentialId
+    ? exact
+      ? {
+          ...exact,
+          defaultModel: exact.preferences[0]?.modelId,
+          isDefault: exact.preferences[0]?.isDefault ?? false,
+        }
+      : null
+    : await findModelCredential(deps.prisma, actor, provider);
   if (credential && credential.defaultModel === modelId) {
     const secret = await deps.prisma.secret.findFirst({
       where: { id: credential.secretId, userId: actor.userId, spaceId: null },
@@ -6417,12 +6813,6 @@ async function prepareAllowedThinkingLevels(
     }
   }
   return { allowed, secret: savedSecret };
-}
-
-async function allowedThinkingLevels(
-  ...args: Parameters<typeof prepareAllowedThinkingLevels>
-): Promise<string[] | undefined> {
-  return (await prepareAllowedThinkingLevels(...args)).allowed;
 }
 
 async function computerStatus(
@@ -6714,11 +7104,53 @@ function computerHostFor(
   return null;
 }
 
+async function readExactModelAccount(
+  deps: RouterDeps,
+  actor: Actor,
+  credentialId: string,
+  provider?: string,
+) {
+  const credential = await deps.prisma.userModelCredential.findFirst({
+    where: { id: credentialId, userId: actor.userId, ...(provider ? { provider } : {}) },
+    include: { preferences: { where: { spaceId: actor.spaceId, userId: actor.userId } } },
+  });
+  if (!credential)
+    throw new ORPCError("NOT_FOUND", { message: "The selected account is unavailable." });
+  const row = await deps.prisma.secret.findFirst({
+    where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+  });
+  if (!row) throw new ORPCError("NOT_FOUND", { message: "The selected account is unavailable." });
+  const secret = parseModelSecret(await deps.secrets.load(row.ciphertext, row.id));
+  return { credential, secret };
+}
+
+function modelForExactAccount(
+  provider: string,
+  modelId: string,
+  secret: ReturnType<typeof parseModelSecret>,
+): AgentRunModel {
+  if (secret.kind === "native_login")
+    throw new Error("Native login accounts require their matching native harness.");
+  return {
+    provider,
+    id: modelId,
+    ...(secret.kind === "oauth"
+      ? { oauth: { credential: secret.credential } }
+      : { apiKey: secret.kind === "api_key" ? secret.key : secret.apiKey }),
+    ...(secret.kind === "openai_compatible"
+      ? { baseUrl: secret.baseUrl, reasoning: secret.reasoning }
+      : {}),
+  };
+}
+
 async function persistModelCredential(
   deps: RouterDeps,
   actor: Actor,
   input: {
     provider: string;
+    credentialId?: string;
+    createNew?: boolean;
+    makeDefault?: boolean;
     plaintext: string;
     label?: string;
     modelId?: string;
@@ -6752,7 +7184,20 @@ async function persistModelCredential(
     defaultCatalogModelId(input.provider, input.plaintext) ??
     usableModelId(deps.env.defaultModel);
   const allowedThinking = defaultModel
-    ? await allowedThinkingLevels(deps, actor, input.provider, defaultModel)
+    ? input.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? modelCredentialDto(
+          {
+            id: "pending",
+            provider: input.provider,
+            label: input.label ?? input.provider,
+            isDefault: false,
+            defaultModel,
+          },
+          input.plaintext,
+        ).thinkingLevels
+      : listPiCatalog().find(
+          (entry) => entry.provider === input.provider && entry.id === defaultModel,
+        )?.thinkingLevels
     : undefined;
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
@@ -6766,10 +7211,18 @@ async function persistModelCredential(
     deps.prisma.$transaction(
       async (tx) => {
         throwIfAborted(input.signal);
-        const existing = await tx.userModelCredential.findFirst({
-          where: { userId: actor.userId, provider: input.provider },
-          orderBy: newestModelCredentialOrder,
-        });
+        const existing = input.createNew
+          ? null
+          : await tx.userModelCredential.findFirst({
+              where: {
+                userId: actor.userId,
+                provider: input.provider,
+                ...(input.credentialId ? { id: input.credentialId } : {}),
+              },
+              orderBy: newestModelCredentialOrder,
+            });
+        if (input.credentialId && !existing)
+          throw new ORPCError("NOT_FOUND", { message: "The selected account is unavailable." });
         throwIfAborted(input.signal);
         const secret = await tx.secret.create({
           data: {
@@ -6794,7 +7247,7 @@ async function persistModelCredential(
           : await tx.userModelCredential.update({
               where: { id: existing.id },
               data: {
-                label: input.label ?? input.provider,
+                label: input.label ?? existing.label,
                 secretId: secret.id,
                 ...(input.supportsImages !== undefined
                   ? { supportsImages: input.supportsImages }
@@ -6802,17 +7255,13 @@ async function persistModelCredential(
               },
             });
         throwIfAborted(input.signal);
+        const previous = await tx.spaceModelPreference.findFirst({
+          where: { spaceId: actor.spaceId, userId: actor.userId, credentialId: credential.id },
+          select: { modelId: true, thinkingLevel: true, isDefault: true },
+        });
         let thinkingLevel = input.thinkingLevel;
         if (thinkingLevel === undefined) {
           // A stored effort only carries over while it still names this model.
-          const previous = await tx.spaceModelPreference.findFirst({
-            where: {
-              spaceId: actor.spaceId,
-              userId: actor.userId,
-              credentialId: credential.id,
-            },
-            select: { modelId: true, thinkingLevel: true },
-          });
           thinkingLevel =
             previous?.modelId === usableModelId(defaultModel) ? previous.thinkingLevel : null;
         }
@@ -6821,7 +7270,29 @@ async function persistModelCredential(
         thinkingLevel = defaultModel
           ? clampCatalogThinkingLevel(thinkingLevel, allowedThinking)
           : null;
-        await selectSpaceModelPreference(tx, actor, credential.id, defaultModel, thinkingLevel);
+        const makeDefault = input.makeDefault ?? !input.createNew;
+        if (makeDefault) {
+          await selectSpaceModelPreference(tx, actor, credential.id, defaultModel, thinkingLevel);
+        } else {
+          await tx.spaceModelPreference.upsert({
+            where: {
+              spaceId_userId_credentialId: {
+                spaceId: actor.spaceId,
+                userId: actor.userId,
+                credentialId: credential.id,
+              },
+            },
+            create: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              credentialId: credential.id,
+              modelId: defaultModel,
+              thinkingLevel: thinkingLevel ?? null,
+              isDefault: false,
+            },
+            update: { modelId: defaultModel, thinkingLevel: thinkingLevel ?? null },
+          });
+        }
         throwIfAborted(input.signal);
         if (existing) {
           await deleteUnreferencedCredentialSecret(tx, {
@@ -6831,7 +7302,11 @@ async function persistModelCredential(
           });
           throwIfAborted(input.signal);
         }
-        return { ...credential, isDefault: true, defaultModel };
+        return {
+          ...credential,
+          isDefault: makeDefault || previous?.isDefault === true,
+          defaultModel,
+        };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     ),
@@ -6859,7 +7334,21 @@ async function assertRoutineModel(
   deps: RouterDeps,
   actor: Actor,
   model: { modelProvider?: string | null; modelId?: string | null },
+  bot?: { executionProfileId?: string | null },
 ) {
+  if (bot?.executionProfileId) {
+    const binding = await resolveExecutionProfile(deps.prisma, actor, bot.executionProfileId);
+    if (binding.profile.provider === "native-kimi")
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Kimi native login is available only for interactive user turns.",
+      });
+    if (model.modelProvider || model.modelId) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Clear the routine model override to use the bot execution profile.",
+      });
+    }
+    return;
+  }
   if (!model.modelProvider || !model.modelId) return;
   const message = await validateConnectedModelChoice(
     deps.prisma,

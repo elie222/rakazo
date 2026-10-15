@@ -225,7 +225,10 @@ msgstr ""
 msgid "Access token (optional)"
 msgstr "访问令牌（可选）"
 
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Account"
 msgstr "账户"
 
@@ -241,6 +244,11 @@ msgstr "账户 ID"
 #: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
+msgid "Account name"
+msgstr "账户名称"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
@@ -306,6 +314,10 @@ msgstr "请填写服务器名称。"
 msgid "Add a stdio command."
 msgstr "请填写 stdio 命令。"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Add account…"
+msgstr "添加账户…"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "请填写 HTTPS 服务器 URL。"
@@ -363,6 +375,10 @@ msgstr "添加服务器"
 msgid "Add server URL"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Add signed-in account"
+msgstr "添加登录账户"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
 msgstr "加入例行任务"
@@ -392,6 +408,7 @@ msgstr "正在添加…"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Advanced"
 msgstr "高级"
 
@@ -482,6 +499,10 @@ msgstr "始终允许"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "An available Linux Docker computer is required."
+msgstr "需要可用的 Linux Docker 电脑。"
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "回答"
@@ -512,6 +533,7 @@ msgstr "API 已恢复，但更新未完成。请查看宿主日志。"
 #: src/lib/localized-provider-hint.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
 msgstr "API 密钥"
@@ -623,6 +645,10 @@ msgstr "附件"
 msgid "Authentication failed."
 msgstr "身份验证失败。"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Authentication header"
+msgstr "身份验证请求头"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Authorization code or callback URL"
@@ -702,6 +728,7 @@ msgstr ""
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Bearer token"
 msgstr "Bearer token"
 
@@ -741,6 +768,10 @@ msgstr "Bot"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "Bot"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Bot computer"
+msgstr "Bot 电脑"
 
 #: src/pages/Shell.tsx
 msgid "Bot screen"
@@ -798,10 +829,12 @@ msgstr "无法连接服务器。"
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Cancel"
 msgstr "取消"
 
@@ -816,6 +849,10 @@ msgstr "取消新建群组"
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
 msgstr "取消回复"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Cancel sign-in"
+msgstr "取消登录"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
@@ -884,6 +921,10 @@ msgstr "报到。"
 msgid "Check the API key or sign-in, then test again."
 msgstr "请检查 API 密钥或登录，然后重新测试。"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Check the profile fields"
+msgstr "请检查配置文件中的字段"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Check the server URL and network, then test again."
 msgstr "请检查服务器 URL 和网络，然后重新测试。"
@@ -919,9 +960,25 @@ msgstr "选择 Bot…"
 msgid "Choose a new password"
 msgstr "设置新密码"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose account"
+msgstr "选择账户"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Choose computer"
+msgstr "选择电脑"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "选择文件"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose model"
+msgstr "选择模型"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose provider"
+msgstr "选择服务商"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose which connected model Rakazo uses."
@@ -1078,6 +1135,7 @@ msgstr ""
 msgid "Complete"
 msgstr "完成"
 
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1153,6 +1211,10 @@ msgstr "连接模型"
 msgid "Connect a provider to add backups."
 msgstr "连接提供商后即可添加备用模型。"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Connect an account in Models first."
+msgstr "请先在“模型”中连接账户。"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "连接 API 密钥"
@@ -1181,6 +1243,7 @@ msgstr "连接 Treg"
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1287,6 +1350,10 @@ msgstr "无法修改密码"
 msgid "Could not change the default model"
 msgstr "无法更改默认模型"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not check sign-in. Try reconnecting."
+msgstr "无法检查登录状态。请尝试重新连接。"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
 msgstr "无法检查已存储的凭据。"
@@ -1350,6 +1417,10 @@ msgstr "无法创建 Bot"
 msgid "Could not create group"
 msgstr "无法创建群组"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not create profile"
+msgstr "无法创建配置文件"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "无法创建分组"
@@ -1389,6 +1460,10 @@ msgstr ""
 #: src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not disconnect account"
+msgstr "无法断开账户连接"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
@@ -1472,6 +1547,10 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not load execution profiles"
+msgstr "无法加载执行配置文件"
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1485,6 +1564,10 @@ msgstr "无法加载 MCP 服务器"
 msgid "Could not load model settings"
 msgstr "无法加载模型设置"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not load models"
+msgstr "无法加载模型"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "无法加载运行历史记录"
@@ -1493,6 +1576,10 @@ msgstr "无法加载运行历史记录"
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
 msgstr "无法加载登录选项"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not load signed-in accounts"
+msgstr "无法加载登录账户"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -1565,6 +1652,10 @@ msgstr "无法移除规则"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not remove the credential"
 msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Could not rename account"
+msgstr "无法重命名账户"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1664,6 +1755,10 @@ msgstr "无法发送"
 msgid "Could not start OAuth"
 msgstr "无法开始 OAuth"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not start sign-in"
+msgstr "无法开始登录"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr ""
@@ -1748,6 +1843,10 @@ msgstr "新建群组"
 #: src/pages/shell/bot-picker.tsx
 msgid "Create new Space"
 msgstr "新建工作区"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Create profile"
+msgstr "创建配置文件"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -1859,6 +1958,10 @@ msgstr "默认（{0}）"
 msgid "Default scope"
 msgstr "默认范围"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Delegated agents are unavailable for signed-in accounts."
+msgstr "登录账户不支持委派代理。"
+
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1957,6 +2060,7 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
 msgstr "断开"
@@ -1964,6 +2068,10 @@ msgstr "断开"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Disconnect {logoutName}?"
+msgstr "断开 {logoutName} 的连接？"
 
 #. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/ModelSettingsOverlay.tsx
@@ -2080,6 +2188,14 @@ msgstr "该邮箱不允许注册"
 msgid "Email verification required"
 msgstr "需要验证邮箱"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Endpoint"
+msgstr "端点"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Endpoint (optional)"
+msgstr "端点（可选）"
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -2119,6 +2235,10 @@ msgstr "请输入 1 到 1000 之间的整数作为图像限制。"
 msgid "Enter an API key before testing."
 msgstr "测试前请输入 API 密钥。"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Environment"
+msgstr "环境"
+
 #: src/lib/roster-status.ts
 #: src/pages/Shell.tsx
 msgid "Error"
@@ -2156,6 +2276,11 @@ msgstr "每月"
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "每周"
+
+#: src/components/RunExecutionProfileDetails.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Execution profile"
+msgstr "执行配置文件"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
@@ -2251,6 +2376,10 @@ msgstr "正在查找…"
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "在 <0>{0}</0> 完成登录。最后一页可能无法加载；把 URL 或代码粘贴到这里。"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Finish signing in in your browser:"
+msgstr "请在浏览器中完成登录："
+
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "请完成订阅登录，然后重新测试。"
@@ -2318,10 +2447,18 @@ msgstr ""
 msgid "Git event"
 msgstr "Git 事件"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Global"
+msgstr "全球"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "群组"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Group handoffs remain available."
+msgstr "仍可在群组中移交任务。"
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2346,6 +2483,12 @@ msgstr "请先挂断，然后输入屏幕上的代码。"
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
 msgstr "请挂断，然后输入屏幕上的代码。"
+
+#: src/components/RunExecutionProfileDetails.tsx
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Harness"
+msgstr "执行引擎"
 
 #: src/pages/RoutineEditor.tsx
 msgid "header"
@@ -2424,6 +2567,10 @@ msgstr "如果听到了，说明语音已就绪。"
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
 msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "image input"
+msgstr "图像输入"
 
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Image upload area"
@@ -2573,6 +2720,10 @@ msgstr ""
 msgid "Listening"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Live calls use transcripts."
+msgstr "实时通话使用语音转写文本。"
+
 #: src/pages/Shell.tsx
 msgid "Load earlier messages"
 msgstr "加载更早的消息"
@@ -2630,6 +2781,7 @@ msgstr "正在加载语音提供方…"
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Loading…"
 msgstr "加载中…"
 
@@ -2664,6 +2816,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Mainland China"
+msgstr "中国大陆"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2845,10 +3001,12 @@ msgstr "分钟"
 msgid "minutes"
 msgstr "分钟"
 
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Model"
 msgstr "模型"
 
@@ -2856,8 +3014,21 @@ msgstr "模型"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "模型“{modelId}”未列出。"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model accepts images"
+msgstr "模型支持图像输入"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model accepts uploaded audio"
+msgstr "模型支持上传的音频"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model for {role}"
+msgstr "{role} 使用的模型"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Model id"
 msgstr "模型 ID"
 
@@ -2950,6 +3121,10 @@ msgstr "给这个群组命名"
 msgid "Name this routine"
 msgstr "给这个例行任务命名"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Native sign-in"
+msgstr "原生登录"
+
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
 msgstr ""
@@ -2983,6 +3158,14 @@ msgstr "新的待办"
 #: src/pages/Auth.tsx
 msgid "New password"
 msgstr "新密码"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "New profile"
+msgstr "新建配置文件"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "New revision"
+msgstr "新修订版本"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3133,6 +3316,10 @@ msgstr ""
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "未连接"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Not enabled for this model: {undeclaredInputs}"
+msgstr "此模型未启用：{undeclaredInputs}"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3297,6 +3484,7 @@ msgstr "原消息不可用"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Other model…"
 msgstr "其他模型…"
 
@@ -3358,10 +3546,19 @@ msgstr "请粘贴你的 API 密钥，然后重新测试。"
 msgid "Paused"
 msgstr "已暂停"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Personal interactive chats only."
+msgstr "仅限个人交互式聊天。"
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
 msgstr "照片"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Pi (default)"
+msgstr "Pi（默认）"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -3374,6 +3571,10 @@ msgstr "请从列表中选择模型，或输入此端点提供的模型 ID。"
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "置顶"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Pinned computer"
+msgstr "固定电脑"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Playing…"
@@ -3404,9 +3605,18 @@ msgstr ""
 msgid "Private"
 msgstr "私有"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Private computer"
+msgstr "专用电脑"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Private workspace with its own bots and groups."
 msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Profile name"
+msgstr "配置文件名称"
 
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Project ID"
@@ -3416,8 +3626,14 @@ msgstr ""
 msgid "Protected input"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Protocol"
+msgstr "协议"
+
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Provider"
 msgstr "提供方"
 
@@ -3466,6 +3682,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "最近"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Reconnect"
+msgstr "重新连接"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Reconnect OAuth"
@@ -3546,6 +3766,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Region"
+msgstr "地区"
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "注册已关闭"
@@ -3617,9 +3841,17 @@ msgstr "已连同对话、电脑和记忆一起移除。"
 msgid "Removed, but list refresh failed"
 msgstr "已移除，但列表刷新失败"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Removes this sign-in from Rakazo. Provider sessions may remain active."
+msgstr "从 Rakazo 移除此登录。提供商端的会话可能仍然有效。"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Removing…"
 msgstr "正在移除…"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Rename"
+msgstr "重命名"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx
@@ -3664,6 +3896,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Replying to {0}"
 msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Requires an enabled Linux Docker runtime."
+msgstr "需要启用 Linux Docker 运行环境。"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Research & writing"
@@ -3725,6 +3961,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Retry"
 msgstr "重试"
 
@@ -3783,6 +4020,10 @@ msgstr ""
 msgid "Run at"
 msgstr "运行时间"
 
+#: src/components/RunExecutionProfileDetails.tsx
+msgid "Run details"
+msgstr "运行详情"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Run history"
 msgstr "运行记录"
@@ -3811,6 +4052,10 @@ msgstr "正在运行…"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Runtime version"
+msgstr "运行时版本"
+
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Board.tsx
@@ -3830,10 +4075,6 @@ msgstr "保存备用模型"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save credential"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
@@ -4089,6 +4330,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
 msgid "Sign in"
@@ -4116,6 +4358,22 @@ msgstr "请使用订阅登录，或改为测试 API 密钥。"
 #: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "注册"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in did not complete"
+msgstr "登录未完成"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in expired"
+msgstr "登录已过期"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in page unavailable"
+msgstr "登录页面不可用"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Signed out"
+msgstr "已退出登录"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
@@ -4309,6 +4567,11 @@ msgstr "正在示范，发送新消息前请先停止示范。"
 msgid "Team"
 msgstr "团队"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Team computer"
+msgstr "团队电脑"
+
 #: src/pages/Shell.tsx
 msgid "Team Computer"
 msgstr "团队电脑"
@@ -4380,6 +4643,10 @@ msgstr "思考"
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This account’s protocol is not supported by execution profiles."
+msgstr "执行配置不支持此账户的协议。"
+
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "此 Bot 运行在这台电脑上，而不是 Linux 桌面。Shell 和文件使用你的主目录。"
@@ -4409,6 +4676,10 @@ msgstr ""
 msgid "This file is not valid UTF-8 text."
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "This is my personal, self-hosted deployment."
+msgstr "这是我个人的自托管部署。"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "这台 Mac"
@@ -4424,6 +4695,14 @@ msgstr "此操作将永久删除您的账户和数据。"
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."
 msgstr "将永久删除全部消息并停止当前工作。聊天仍可使用。"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This profile is unavailable. Choose another profile."
+msgstr "此配置文件不可用。请选择其他配置文件。"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This profile’s account is unavailable. Choose another profile."
+msgstr "此配置文件的账户不可用。请选择其他配置文件。"
 
 #: src/lib/model-connection-preflight.ts
 msgid "This provider cannot be tested without saving."
@@ -4549,6 +4828,18 @@ msgstr "未分配"
 msgid "Unavailable"
 msgstr "不可用"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable account"
+msgstr "账户不可用"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable profile"
+msgstr "配置文件不可用"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable: {unsupportedInputs}"
+msgstr "不支持：{unsupportedInputs}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4573,6 +4864,10 @@ msgstr "取消置顶"
 #: src/pages/Shell.tsx
 msgid "Unsupported file type: {0}"
 msgstr "不支持的文件类型：{0}"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unsupported runtime version. Create a new revision."
+msgstr "不支持此运行时版本。请创建新修订版本。"
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -4635,6 +4930,10 @@ msgstr "正在更新…"
 msgid "Upload"
 msgstr "上传"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "uploaded audio"
+msgstr "上传的音频"
+
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
 msgstr ""
@@ -4690,6 +4989,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."
 msgstr "值会加密保存，之后不再显示。"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Verification code"
+msgstr "验证码"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Verify and add"

@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { RunExecutionProfileSchema } from "./execution-profiles.js";
 import { Id, IsoDate, RunStatus } from "./ids.js";
 
 export const RUN_TRIGGERS = [
@@ -23,6 +24,7 @@ export type RunTrigger = z.infer<typeof RunTriggerSchema>;
 export const RoutineRunSchema = z.object({
   id: Id,
   botId: Id,
+  executionProfile: RunExecutionProfileSchema.nullable().optional(),
   groupId: Id.nullable(),
   status: RunStatus,
   createdAt: IsoDate,
@@ -43,6 +45,7 @@ export type RoutineHistory = z.infer<typeof RoutineHistorySchema>;
 export const RunActivityRowSchema = z.object({
   runId: Id,
   botId: Id,
+  executionProfile: RunExecutionProfileSchema.nullable().optional(),
   botName: z.string(),
   groupId: Id.nullable(),
   groupName: z.string().nullable(),

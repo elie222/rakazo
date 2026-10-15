@@ -40,6 +40,7 @@ import {
   pipedreamConfigFromEnv,
   reconcileCloudAgents,
   reconcileComputerUpdates,
+  reconcileNativeStateCleanup,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -185,6 +186,8 @@ async function main() {
     pushSessionExpiresAt(prisma, sessionId),
   );
   const executor = createRunExecutor({
+    primaryHarnessesEnabled: process.env.PRIMARY_HARNESSES_ENABLED === "true",
+    nativeLoginSelfHosted: process.env.PRIMARY_HARNESS_NATIVE_LOGIN_MODE === "self-hosted-personal",
     prisma,
     runtime,
     // Live per-account Codex catalog; never refreshes or writes credentials.
@@ -271,6 +274,7 @@ async function main() {
     leadership: createPostgresReconciliationLeadership(pool),
     reconcileCloudAgents: () => reconcileCloudAgents({ prisma, jobs, cloudAgent }),
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
+    reconcileNativeStateCleanup: () => reconcileNativeStateCleanup({ prisma, sandbox }),
   });
   reconciler.start();
 

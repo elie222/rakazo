@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import type { Actor, RoutineHistory, RoutineRun, RoutineRunCursor } from "@rakazo/contracts";
+import { runExecutionProfileSummary } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { Prisma } from "@rakazo/db";
 
@@ -44,6 +45,7 @@ export async function listRoutineRuns(
       createdAt: true,
       startedAt: true,
       completedAt: true,
+      executionProfileSnapshot: true,
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 21,
@@ -71,6 +73,7 @@ export async function listRoutineRuns(
     nextCursor,
     runs: runs.map((run) => ({
       id: run.id,
+      executionProfile: runExecutionProfileSummary(run.executionProfileSnapshot),
       botId: run.botId,
       groupId: run.thread.groupId,
       status: run.status as RoutineRun["status"],

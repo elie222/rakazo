@@ -487,6 +487,7 @@ export async function acquireComputerExecutionLease(
     runId: string;
     botId: string;
     resumeHeldLease?: boolean;
+    exclusive?: boolean;
   },
 ): Promise<ComputerExecutionLease | null> {
   const computer = await prisma.computer.findUniqueOrThrow({ where: { id: input.computerId } });
@@ -496,34 +497,39 @@ export async function acquireComputerExecutionLease(
   if (isLiveSuspending(computer)) throw new ComputerBusyError();
   const now = new Date();
   const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
-  const [reclaimed] = await prisma.computerExecutionLease.updateManyAndReturn({
-    where: {
-      computerId: input.computerId,
-      botId: input.botId,
-      OR: [{ expiresAt: { lt: now } }, ...(input.resumeHeldLease ? [{ runId: input.runId }] : [])],
-    },
-    data: {
-      runId: input.runId,
-      expiresAt,
-      fence: { increment: 1 },
-    },
-    select: { fence: true },
-  });
-  if (reclaimed) {
-    return validateAcquiredComputerLease(prisma, {
-      computerId: input.computerId,
-      botId: input.botId,
-      runId: input.runId,
-      fence: reclaimed.fence,
-    });
-  }
   try {
+    const [reclaimed] = await prisma.computerExecutionLease.updateManyAndReturn({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        OR: [
+          { expiresAt: { lt: now } },
+          ...(input.resumeHeldLease ? [{ runId: input.runId }] : []),
+        ],
+      },
+      data: {
+        runId: input.runId,
+        exclusive: input.exclusive ?? false,
+        expiresAt,
+        fence: { increment: 1 },
+      },
+      select: { fence: true },
+    });
+    if (reclaimed) {
+      return validateAcquiredComputerLease(prisma, {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: reclaimed.fence,
+      });
+    }
     const created = await prisma.computerExecutionLease.create({
       data: {
         computerId: input.computerId,
         botId: input.botId,
         runId: input.runId,
         fence: 1,
+        exclusive: input.exclusive ?? false,
         expiresAt,
       },
       select: { fence: true },

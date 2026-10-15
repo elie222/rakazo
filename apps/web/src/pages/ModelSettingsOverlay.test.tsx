@@ -21,6 +21,7 @@ const models = vi.hoisted(() => ({
   submitOAuthCode: vi.fn(),
 }));
 
+vi.mock("./NativeLoginSettings", () => ({ NativeLoginSettings: () => null }));
 vi.mock("../lib/rpc", () => ({
   selectedSpaceId: () => "space-1",
   rpc: {
@@ -195,6 +196,7 @@ async function renderSettings() {
 }
 
 beforeEach(() => {
+  HTMLElement.prototype.scrollTo = vi.fn();
   vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
   models.list.mockResolvedValue([deepseekEntry]);
   models.credentials.mockResolvedValue([]);
@@ -258,7 +260,10 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(models.disconnect).toHaveBeenCalledWith({ provider: "deepseek" });
+    expect(models.disconnect).toHaveBeenCalledWith({
+      provider: "deepseek",
+      credentialId: "cred-deepseek",
+    });
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe("sk-…");
   } finally {
@@ -373,5 +378,165 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
     expect(input.placeholder).toBe("Optional");
   } finally {
     await empty.unmount();
+  }
+});
+
+async function chooseAccount(container: HTMLElement, id: string) {
+  const select = container.querySelector<HTMLSelectElement>("#model-account")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(select, id);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+const sharedAccounts = [
+  {
+    id: "account-one",
+    provider: "deepseek",
+    label: "Team",
+    modelId: "deepseek-chat",
+    hasKey: true,
+    isDefault: true,
+    authKind: "api_key",
+  },
+  {
+    id: "account-two",
+    provider: "deepseek",
+    label: "Project",
+    modelId: "deepseek-chat",
+    hasKey: true,
+    isDefault: false,
+    authKind: "api_key",
+  },
+];
+it("renames an exact same-provider account without changing the default", async () => {
+  models.credentials.mockResolvedValue(sharedAccounts);
+  models.connect.mockResolvedValue(sharedAccounts[1]);
+  const view = await renderSettings();
+  try {
+    await chooseAccount(view.container, "account-two");
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>("#model-account-label")!,
+      "Project review",
+    );
+    await act(async () => buttons(view.container, "Rename")[0]!.click());
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialId: "account-two",
+        label: "Project review",
+        makeDefault: false,
+      }),
+    );
+    expect(models.connect.mock.lastCall?.[0]).not.toHaveProperty("createNew");
+    expect(view.container.querySelector<HTMLSelectElement>("#model-account")!.value).toBe(
+      "account-two",
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+it("creates a separate account with a fresh key while keeping the default", async () => {
+  models.credentials.mockResolvedValue(sharedAccounts);
+  const view = await renderSettings();
+  try {
+    await chooseAccount(view.container, "new");
+    expect(keyField(view.container).placeholder).toBe("sk-…");
+    expect(keyField(view.container).value).toBe("");
+    await typeInto(
+      view.container.querySelector<HTMLInputElement>("#model-account-label")!,
+      "New project",
+    );
+    await typeInto(keyField(view.container), "sk-fake-new-project");
+    const created = { ...sharedAccounts[1], id: "account-three", label: "New project" };
+    models.connect.mockResolvedValue(created);
+    models.credentials.mockResolvedValue([...sharedAccounts, created]);
+    await act(async () => buttons(view.container, "Connect API key")[0]!.click());
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        createNew: true,
+        makeDefault: false,
+        apiKey: "sk-fake-new-project",
+        label: "New project",
+      }),
+    );
+    expect(models.connect.mock.lastCall?.[0]).not.toHaveProperty("credentialId");
+    expect(view.container.querySelector<HTMLSelectElement>("#model-account")!.value).toBe(
+      "account-three",
+    );
+    expect(keyField(view.container).value).toBe("");
+  } finally {
+    await view.unmount();
+  }
+});
+it("targets the selected account when setting the same model as default or disconnecting", async () => {
+  models.credentials.mockResolvedValue(sharedAccounts);
+  const view = await renderSettings();
+  try {
+    await chooseAccount(view.container, "account-two");
+    await act(async () => buttons(view.container, "Use this model")[0]!.click());
+    expect(models.setDefault).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialId: "account-two",
+        provider: "deepseek",
+        modelId: "deepseek-chat",
+      }),
+    );
+    await act(async () => buttons(view.container, "Disconnect")[0]!.click());
+    expect(view.container.textContent).toContain("Disconnect Project?");
+    await act(async () => buttons(view.container, "Disconnect").at(-1)!.click());
+    expect(models.disconnect).toHaveBeenCalledWith({
+      provider: "deepseek",
+      credentialId: "account-two",
+    });
+  } finally {
+    await view.unmount();
+  }
+});
+it("switches compatible endpoint and model metadata with the exact selected account", async () => {
+  models.list.mockResolvedValue([compatibleEntry]);
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "one-model"));
+  models.credentials.mockResolvedValue([
+    {
+      ...sharedAccounts[0],
+      provider: "openai-compatible",
+      baseUrl: "https://one.example.test/v1",
+      modelId: "one-model",
+    },
+    {
+      ...sharedAccounts[1],
+      provider: "openai-compatible",
+      baseUrl: "https://two.example.test/v1",
+      modelId: "two-model",
+    },
+  ]);
+  const view = await renderSettings();
+  try {
+    await chooseAccount(view.container, "account-two");
+    expect(view.container.querySelector<HTMLInputElement>("#model-base-url")!.value).toBe(
+      "https://two.example.test/v1",
+    );
+    expect(view.container.querySelector<HTMLInputElement>('[aria-label="Model id"]')!.value).toBe(
+      "two-model",
+    );
+    expect(buttons(view.container, "Disconnect")).toHaveLength(1);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("reconnects a secondary account without claiming it became the default", async () => {
+  models.credentials.mockResolvedValue(sharedAccounts);
+  models.connect.mockResolvedValue(sharedAccounts[1]);
+  const view = await renderSettings();
+  try {
+    await chooseAccount(view.container, "account-two");
+    await typeInto(keyField(view.container), "sk-fake-replacement");
+    await act(async () => buttons(view.container, "Replace API key")[0]!.click());
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ credentialId: "account-two", makeDefault: false }),
+    );
+    expect(view.container.textContent).toContain("Saved.");
+    expect(view.container.textContent).not.toContain("Connected and using");
+  } finally {
+    await view.unmount();
   }
 });

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { ArtifactStore } from "@rakazo/adapter-kit";
+import { validateAudioContent } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_COUNT, isAttachmentAudioMimeType } from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   decodeAttachmentBase64,
@@ -42,12 +43,21 @@ export async function createOwnedArtifact(
 ) {
   const replayed = await findReplayedArtifact(deps.prisma, actor, input);
   if (replayed) return createdArtifact(replayed);
+  const inferredMimeType = inferAttachmentMimeType(input.name, input.mimeType);
   const mimeType =
-    inferAttachmentMimeType(input.name, input.mimeType) === "application/zip"
-      ? "application/zip"
+    inferredMimeType === "application/zip" ||
+    (inferredMimeType && isAttachmentAudioMimeType(inferredMimeType))
+      ? inferredMimeType
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64);
+  if (isAttachmentAudioMimeType(mimeType)) {
+    try {
+      validateAudioContent(mimeType, bytes);
+    } catch {
+      throw new AttachmentValidationError("Audio content does not match its declared format");
+    }
+  }
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");

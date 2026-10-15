@@ -183,3 +183,34 @@ describe("the images compose file", () => {
     expect(compose.services.computer?.environment?.LOG_LEVEL).toBeUndefined();
   });
 });
+
+const composeDefault = (name: string, fallback: string) => `${"$"}{${name}:-${fallback}}`;
+
+describe("opt-in primary harness deployment gates", () => {
+  it.each(["docker-compose.yml", "docker-compose.images.yml", "docker-compose.prod.yml"])(
+    "%s keeps API/worker harness and personal-login modes disabled by default",
+    (file) => {
+      const config = parse(readFileSync(path.join(repoRoot, "infra/compose", file), "utf8"));
+      for (const service of ["api", "worker"]) {
+        expect(config.services[service].environment.PRIMARY_HARNESSES_ENABLED).toBe(
+          composeDefault("PRIMARY_HARNESSES_ENABLED", "false"),
+        );
+        expect(config.services[service].environment.PRIMARY_HARNESS_NATIVE_LOGIN_MODE).toBe(
+          composeDefault("PRIMARY_HARNESS_NATIVE_LOGIN_MODE", "disabled"),
+        );
+      }
+    },
+  );
+  it.each(["docker-compose.yml", "docker-compose.images.yml", "docker-compose.prod.docker.yml"])(
+    "%s requires explicit supervisor enablement and verified egress",
+    (file) => {
+      const config = parse(readFileSync(path.join(repoRoot, "infra/compose", file), "utf8"));
+      expect(config.services.supervisor.environment).toMatchObject({
+        PRIMARY_HARNESSES_ENABLED: composeDefault("PRIMARY_HARNESSES_ENABLED", "false"),
+        PRIMARY_HARNESS_EGRESS_VERIFIED: composeDefault("PRIMARY_HARNESS_EGRESS_VERIFIED", "false"),
+        SANDBOX_COMPUTER_EGRESS: composeDefault("SANDBOX_COMPUTER_EGRESS", "open"),
+        RAKAZO_HARNESS_IMAGE: composeDefault("RAKAZO_HARNESS_IMAGE", "rakazo/harness:local"),
+      });
+    },
+  );
+});

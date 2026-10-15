@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
   speak: vi.fn(),
+  rpc: vi.fn(),
+  back: vi.fn(),
 }));
 const offered = [
   { identifier: "voice-a", name: "Alice", language: "en-US" },
@@ -40,17 +42,10 @@ vi.mock("./bot-voices", () => ({
 vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
-vi.mock("./api", () => ({
-  rpc: async (procedure: string) => {
-    if (procedure === "bots/get")
-      return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
-    if (procedure === "me") return {};
-    return [];
-  },
-}));
+vi.mock("./api", () => ({ rpc: mocks.rpc }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: mocks.back }),
   useLocalSearchParams: () => ({ botId: "bot-fixture" }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
@@ -98,11 +93,42 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./i18n", () => {
   const t = (text: string, values?: { name: string }) => text.replace("{name}", values?.name ?? "");
-  return { useI18n: () => ({ t }) };
+  return { t, useI18n: () => ({ t }) };
 });
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
-vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({
+    label,
+    onPress,
+    disabled,
+  }: {
+    label: string;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => (
+    <button type="button" disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
+vi.mock("../components/execution-profile-settings", () => ({
+  ExecutionProfileSettings: ({
+    value,
+    onChange,
+  }: {
+    value: string | null;
+    onChange: (value: string | null) => void;
+  }) => (
+    <button
+      type="button"
+      data-profile={value ?? ""}
+      onClick={() => onChange(value ? null : "profile-review")}
+    >
+      {value ? "Use Pi" : "Choose review profile"}
+    </button>
+  ),
+}));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("../components/native-symbol", () => ({
@@ -150,6 +176,12 @@ describe("bot settings device voice menu", () => {
     mocks.voiceForBot.mockResolvedValue("voice-a");
     mocks.setVoiceForBot.mockResolvedValue(undefined);
     mocks.stop.mockResolvedValue(undefined);
+    mocks.rpc.mockImplementation(async (procedure: string) => {
+      if (procedure === "bots/get")
+        return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
+      if (procedure === "me") return {};
+      return [];
+    });
     container = document.createElement("div");
     root = createRoot(container);
   });
@@ -312,5 +344,46 @@ describe("bot settings device voice menu", () => {
     await act(async () => actions[0]!.click());
     expect(onChange).toHaveBeenCalledWith("");
     expect(container.querySelector("i")!.dataset.ios).toBe("chevron.up.chevron.down");
+  });
+
+  it("saves the chosen execution profile without overriding its model", async () => {
+    await render();
+    const click = async (label: string) =>
+      act(async () => {
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent === label)!
+          .click();
+      });
+    await click("Advanced");
+    await click("Choose review profile");
+    expect(container.querySelector('[data-menu="Model"]')).toBeNull();
+    await click("Save");
+    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+      botId: "bot-fixture",
+      executionProfileId: "profile-review",
+    });
+    expect(mocks.back).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a selected profile across closing and reopening Advanced", async () => {
+    await render();
+    const click = async (label: string) =>
+      act(async () => {
+        [...container.querySelectorAll("button")]
+          .find((button) => button.textContent === label)!
+          .click();
+      });
+    await click("Advanced");
+    await click("Choose review profile");
+    await click("Advanced");
+    await click("Advanced");
+    expect(container.querySelector('[data-profile="profile-review"]')).not.toBeNull();
+    await click("Use Pi");
+    expect(container.querySelector('[data-menu="Model"]')).not.toBeNull();
+    await click("Save");
+    expect(mocks.rpc).not.toHaveBeenCalledWith(
+      "bots/update",
+      expect.objectContaining({ executionProfileId: expect.anything() }),
+    );
   });
 });

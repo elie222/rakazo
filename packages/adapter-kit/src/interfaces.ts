@@ -56,6 +56,9 @@ import type {
   PortableFile,
   ProcessEvent,
   SandboxCapabilities,
+  SandboxNativeStateCleanupRequest,
+  SandboxProcessHandle,
+  SandboxProcessRequest,
   ScreenRequest,
   ScreenSession,
   SecretChangeListener,
@@ -113,6 +116,20 @@ export interface SandboxProvider {
     request: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent>;
+  /** Optional hardened runtime, separate from the team computer's filesystem and OS identity. */
+  startProcess?(
+    computer: ComputerRef,
+    request: SandboxProcessRequest,
+    context: AdapterContext,
+  ): Promise<SandboxProcessHandle>;
+  /** Non-secret current namespace identity; persist it before allocating any private state. */
+  nativeStateInstallationId?(): string;
+  /** Remove one obsolete private namespace. Refuses active leases; never routes to a host shell. */
+  cleanupNativeState?(
+    computer: ComputerRef,
+    request: SandboxNativeStateCleanupRequest,
+    context: AdapterContext,
+  ): Promise<void>;
   inspectBackgroundWork?(
     computer: ComputerRef,
     markerId: string,
@@ -300,7 +317,8 @@ export interface AgentHomeStore {
 export interface ArtifactStore {
   describe(): AdapterDescriptor<{ stream: boolean }>;
   put(artifact: ArtifactPut, context: AdapterContext): Promise<{ id: string; hash: string }>;
-  get(id: string, context: AdapterContext): Promise<Uint8Array>;
+  /** A bounded read must reject oversized content before allocating its full payload. */
+  get(id: string, context: AdapterContext, options?: { maxBytes: number }): Promise<Uint8Array>;
   remove(id: string, context: AdapterContext): Promise<void>;
 }
 

@@ -225,7 +225,10 @@ msgstr ""
 msgid "Access token (optional)"
 msgstr "एक्सेस टोकन (वैकल्पिक)"
 
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/AccountSettingsOverlay.tsx
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Account"
 msgstr "खाता"
 
@@ -241,6 +244,11 @@ msgstr "खाता आईडी"
 #: src/pages/PluginsOverlay.tsx
 msgid "Account label"
 msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
+msgid "Account name"
+msgstr "खाते का नाम"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
@@ -306,6 +314,10 @@ msgstr "सर्वर का नाम दर्ज करें।"
 msgid "Add a stdio command."
 msgstr "एक stdio कमांड दर्ज करें।"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Add account…"
+msgstr "खाता जोड़ें…"
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
 msgstr "एक HTTPS सर्वर URL दर्ज करें।"
@@ -363,6 +375,10 @@ msgstr "सर्वर जोड़ें"
 msgid "Add server URL"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Add signed-in account"
+msgstr "लॉगिन किया हुआ खाता जोड़ें"
+
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Add to routine"
 msgstr "रूटीन में जोड़ें"
@@ -392,6 +408,7 @@ msgstr "जोड़ा जा रहा है…"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Advanced"
 msgstr "उन्नत"
 
@@ -482,6 +499,10 @@ msgstr "हमेशा अनुमत"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "इस प्रोवाइडर के लिए API कुंजी संग्रहीत है, सब्सक्रिप्शन साइन-इन नहीं।"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "An available Linux Docker computer is required."
+msgstr "उपलब्ध Linux Docker कंप्यूटर आवश्यक है।"
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "उत्तर"
@@ -512,6 +533,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "API key"
 msgstr "API कुंजी"
@@ -623,6 +645,10 @@ msgstr "अटैचमेंट"
 msgid "Authentication failed."
 msgstr "प्रमाणीकरण विफल रहा।"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Authentication header"
+msgstr "प्रमाणीकरण हेडर"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Authorization code or callback URL"
@@ -702,6 +728,7 @@ msgstr ""
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Bearer token"
 msgstr "बियरर टोकन"
 
@@ -741,6 +768,10 @@ msgstr "बॉट"
 #: src/lib/browser-notifications.ts
 msgid "Bot"
 msgstr "बॉट"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Bot computer"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Bot screen"
@@ -798,10 +829,12 @@ msgstr "सर्वर तक नहीं पहुंचा जा सका�
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/dialogs.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Cancel"
 msgstr "रद्द करें"
 
@@ -816,6 +849,10 @@ msgstr "नया समूह रद्द करें"
 #: src/pages/shell/chat-context.tsx
 msgid "Cancel reply"
 msgstr "उत्तर रद्द करें"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Cancel sign-in"
+msgstr "लॉगिन रद्द करें"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Canceled"
@@ -884,6 +921,10 @@ msgstr "जांच करें।"
 msgid "Check the API key or sign-in, then test again."
 msgstr "API कुंजी या साइन-इन जाँचें, फिर फिर से परीक्षण करें।"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Check the profile fields"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Check the server URL and network, then test again."
 msgstr "सर्वर URL और नेटवर्क जाँचें, फिर फिर से परीक्षण करें।"
@@ -919,9 +960,25 @@ msgstr ""
 msgid "Choose a new password"
 msgstr "नया पासवर्ड चुनें"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose account"
+msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Choose computer"
+msgstr "कंप्यूटर चुनें"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "फ़ाइल चुनें"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose model"
+msgstr "मॉडल चुनें"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Choose provider"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Choose which connected model Rakazo uses."
@@ -1078,6 +1135,7 @@ msgstr ""
 msgid "Complete"
 msgstr "पूर्ण"
 
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -1153,6 +1211,10 @@ msgstr "एक मॉडल कनेक्ट करें"
 msgid "Connect a provider to add backups."
 msgstr "बैकअप जोड़ने के लिए किसी प्रदाता को कनेक्ट करें।"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Connect an account in Models first."
+msgstr "पहले मॉडल में एक खाता कनेक्ट करें।"
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "API कुंजी कनेक्ट करें"
@@ -1181,6 +1243,7 @@ msgstr "Treg कनेक्ट करें"
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/shell/message-cards.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected"
@@ -1287,6 +1350,10 @@ msgstr "पासवर्ड बदला नहीं जा सका"
 msgid "Could not change the default model"
 msgstr "डिफ़ॉल्ट मॉडल बदला नहीं जा सका"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not check sign-in. Try reconnecting."
+msgstr "लॉगिन की जाँच नहीं हो सकी। फिर से कनेक्ट करें।"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not check stored credentials."
 msgstr "संग्रहीत क्रेडेंशियल जाँचे नहीं जा सके।"
@@ -1350,6 +1417,10 @@ msgstr "बॉट नहीं बनाया जा सका"
 msgid "Could not create group"
 msgstr "समूह नहीं बनाया जा सका"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not create profile"
+msgstr ""
+
 #: src/pages/shell/dialogs.tsx
 msgid "Could not create section"
 msgstr "सेक्शन नहीं बनाया जा सका"
@@ -1389,6 +1460,10 @@ msgstr ""
 #: src/pages/Artifacts.tsx
 msgid "Could not delete this artifact."
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not disconnect account"
+msgstr "खाता डिस्कनेक्ट नहीं हो सका"
 
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not disconnect memory provider"
@@ -1472,6 +1547,10 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not load execution profiles"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
@@ -1485,6 +1564,10 @@ msgstr "MCP सर्वर लोड नहीं हो सके"
 msgid "Could not load model settings"
 msgstr "मॉडल सेटिंग्स लोड नहीं हो सकीं"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Could not load models"
+msgstr "मॉडल लोड नहीं हो सके"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Could not load run history"
 msgstr "रन का इतिहास लोड नहीं हो सका"
@@ -1493,6 +1576,10 @@ msgstr "रन का इतिहास लोड नहीं हो सका
 #: src/pages/Auth.tsx
 msgid "Could not load sign-in options"
 msgstr "साइन इन के विकल्प लोड नहीं हो सके"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not load signed-in accounts"
+msgstr "लॉगिन किए हुए खाते लोड नहीं हो सके"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not load skill"
@@ -1565,6 +1652,10 @@ msgstr "नियम हटाया नहीं जा सका"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not remove the credential"
 msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Could not rename account"
+msgstr "खाते का नाम नहीं बदला जा सका"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not rename connection"
@@ -1664,6 +1755,10 @@ msgstr "वह भेजा नहीं जा सका"
 msgid "Could not start OAuth"
 msgstr "OAuth शुरू नहीं हो सका"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Could not start sign-in"
+msgstr "लॉगिन शुरू नहीं हो सका"
+
 #: src/components/teach/TeachComputerOverlay.tsx
 msgid "Could not start teaching"
 msgstr ""
@@ -1748,6 +1843,10 @@ msgstr "नया समूह बनाएं"
 #: src/pages/shell/bot-picker.tsx
 msgid "Create new Space"
 msgstr "नया स्पेस बनाएं"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Create profile"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Create Routine"
@@ -1859,6 +1958,10 @@ msgstr "डिफ़ॉल्ट ({0})"
 msgid "Default scope"
 msgstr "डिफ़ॉल्ट स्कोप"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Delegated agents are unavailable for signed-in accounts."
+msgstr "लॉगिन किए हुए खातों के लिए सौंपे गए एजेंट उपलब्ध नहीं हैं।"
+
 #: src/pages/Artifacts.tsx
 #: src/pages/BotContextMenu.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1957,6 +2060,7 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Disconnect"
 msgstr "डिस्कनेक्ट करें"
@@ -1964,6 +2068,10 @@ msgstr "डिस्कनेक्ट करें"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Disconnect {disconnectName}?"
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Disconnect {logoutName}?"
+msgstr "{logoutName} डिस्कनेक्ट करें?"
 
 #. placeholder {0}: selected.providerName ?? selected.provider
 #: src/pages/ModelSettingsOverlay.tsx
@@ -2080,6 +2188,14 @@ msgstr "इस ईमेल को पंजीकरण की अनुमत�
 msgid "Email verification required"
 msgstr "ईमेल सत्यापन आवश्यक है"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Endpoint"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Endpoint (optional)"
+msgstr ""
+
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
 msgstr ""
@@ -2119,6 +2235,10 @@ msgstr "इमेज सीमा के लिए 1 से 1000 के बी�
 msgid "Enter an API key before testing."
 msgstr "परीक्षण से पहले API कुंजी दर्ज करें।"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Environment"
+msgstr ""
+
 #: src/lib/roster-status.ts
 #: src/pages/Shell.tsx
 msgid "Error"
@@ -2156,6 +2276,11 @@ msgstr "हर महीने"
 #: src/pages/RoutineSchedule.tsx
 msgid "Every week"
 msgstr "हर सप्ताह"
+
+#: src/components/RunExecutionProfileDetails.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Execution profile"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Executor token"
@@ -2251,6 +2376,10 @@ msgstr "खोजा जा रहा है…"
 msgid "Finish signing in at <0>{0}</0>. The final page may not load; paste its URL or code here."
 msgstr "<0>{0}</0> पर साइन इन पूरा करें। अंतिम पेज शायद लोड न हो; उसका URL या कोड यहां पेस्ट करें।"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Finish signing in in your browser:"
+msgstr "अपने ब्राउज़र में लॉगिन पूरा करें:"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
 msgstr "सब्सक्रिप्शन साइन-इन पूरा करें, फिर फिर से परीक्षण करें।"
@@ -2318,10 +2447,18 @@ msgstr ""
 msgid "Git event"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Global"
+msgstr "वैश्विक"
+
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
 msgstr "समूह"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Group handoffs remain available."
+msgstr "समूह में कार्य हस्तांतरण उपलब्ध है।"
 
 #: src/pages/GroupPanel.tsx
 msgid "Group settings"
@@ -2345,6 +2482,12 @@ msgstr ""
 
 #: src/lib/call-session.ts
 msgid "Hang up, then enter the code on screen."
+msgstr ""
+
+#: src/components/RunExecutionProfileDetails.tsx
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Harness"
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx
@@ -2423,6 +2566,10 @@ msgstr "अगर आपने वह सुना, तो आवाज़ त�
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Ignore"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "image input"
 msgstr ""
 
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -2573,6 +2720,10 @@ msgstr ""
 msgid "Listening"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Live calls use transcripts."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Load earlier messages"
 msgstr "पुराने संदेश लोड करें"
@@ -2630,6 +2781,7 @@ msgstr "आवाज़ प्रोवाइडर्स लोड हो र�
 #: src/pages/PeerMessagesOverlay.tsx
 #: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Loading…"
 msgstr "लोड हो रहा है…"
 
@@ -2664,6 +2816,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Lowercase letters, numbers, hyphens and underscores, starting with a letter."
 msgstr ""
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Mainland China"
+msgstr "मुख्यभूमि चीन"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Make sure nothing is still running on this computer."
@@ -2845,10 +3001,12 @@ msgstr "मिनट"
 msgid "minutes"
 msgstr "मिनट"
 
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-panel.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Model"
 msgstr "मॉडल"
 
@@ -2856,8 +3014,21 @@ msgstr "मॉडल"
 msgid "Model \"{modelId}\" was not listed."
 msgstr "मॉडल \"{modelId}\" सूची में नहीं था।"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model accepts images"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model accepts uploaded audio"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Model for {role}"
+msgstr "{role} के लिए मॉडल"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Model id"
 msgstr "मॉडल आईडी"
 
@@ -2950,6 +3121,10 @@ msgstr "इस समूह को नाम दें"
 msgid "Name this routine"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Native sign-in"
+msgstr "नेटिव लॉगिन"
+
 #: src/lib/roster-status.ts
 msgid "Needs an answer"
 msgstr ""
@@ -2983,6 +3158,14 @@ msgstr "नया खुला-कार्य आइटम"
 #: src/pages/Auth.tsx
 msgid "New password"
 msgstr "नया पासवर्ड"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "New profile"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "New revision"
+msgstr ""
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/shell/dialogs.tsx
@@ -3133,6 +3316,10 @@ msgstr ""
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "कनेक्ट नहीं है"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Not enabled for this model: {undeclaredInputs}"
+msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Not in the plugin catalog"
@@ -3297,6 +3484,7 @@ msgstr "मूल संदेश उपलब्ध नहीं है"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Other model…"
 msgstr "अन्य मॉडल…"
 
@@ -3358,10 +3546,19 @@ msgstr "अपनी API कुंजी पेस्ट करें, फिर
 msgid "Paused"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Personal interactive chats only."
+msgstr "केवल व्यक्तिगत इंटरैक्टिव चैट।"
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
 msgstr "फ़ोटो"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Pi (default)"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -3374,6 +3571,10 @@ msgstr "सूची से एक मॉडल चुनें या इस �
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "पिन करें"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Pinned computer"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Playing…"
@@ -3404,8 +3605,17 @@ msgstr ""
 msgid "Private"
 msgstr "निजी"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Private computer"
+msgstr "निजी कंप्यूटर"
+
 #: src/pages/shell/dialogs.tsx
 msgid "Private workspace with its own bots and groups."
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Profile name"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
@@ -3416,8 +3626,14 @@ msgstr ""
 msgid "Protected input"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Protocol"
+msgstr ""
+
+#: src/components/RunExecutionProfileDetails.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Provider"
 msgstr "प्रोवाइडर"
 
@@ -3466,6 +3682,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "हाल के"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Reconnect"
+msgstr "फिर से कनेक्ट करें"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Reconnect OAuth"
@@ -3546,6 +3766,10 @@ msgstr ""
 msgid "Refreshing…"
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Region"
+msgstr "क्षेत्र"
+
 #: src/lib/user-error.ts
 msgid "Registration is closed"
 msgstr "पंजीकरण बंद है"
@@ -3617,9 +3841,17 @@ msgstr "चैट, कंप्यूटर और मेमोरी सहि�
 msgid "Removed, but list refresh failed"
 msgstr "हटाया गया, लेकिन सूची रिफ़्रेश विफल रही"
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "Removes this sign-in from Rakazo. Provider sessions may remain active."
+msgstr "इस लॉगिन को Rakazo से हटाता है। प्रदाता के सत्र सक्रिय रह सकते हैं।"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Removing…"
 msgstr "हटाया जा रहा है…"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Rename"
+msgstr "नाम बदलें"
 
 #: src/pages/BotContextMenu.tsx
 #: src/pages/Shell.tsx
@@ -3663,6 +3895,10 @@ msgstr ""
 #. placeholder {0}: replyNameRef.current
 #: src/pages/Shell.tsx
 msgid "Replying to {0}"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Requires an enabled Linux Docker runtime."
 msgstr ""
 
 #: src/pages/shell/message-cards.tsx
@@ -3725,6 +3961,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
 msgid "Retry"
 msgstr "फिर कोशिश करें"
 
@@ -3783,6 +4020,10 @@ msgstr ""
 msgid "Run at"
 msgstr ""
 
+#: src/components/RunExecutionProfileDetails.tsx
+msgid "Run details"
+msgstr "रन का विवरण"
+
 #: src/pages/RoutineRunHistory.tsx
 msgid "Run history"
 msgstr ""
@@ -3811,6 +4052,10 @@ msgstr "चल रहा है…"
 msgid "Runs when this bot receives a verified message from this provider."
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Runtime version"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Board.tsx
@@ -3830,10 +4075,6 @@ msgstr "बैकअप सहेजें"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save credential"
-msgstr ""
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
@@ -4089,6 +4330,7 @@ msgstr ""
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
 #: src/pages/ModelSettingsOverlay.tsx
+#: src/pages/NativeLoginSettings.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
 msgid "Sign in"
@@ -4116,6 +4358,22 @@ msgstr "सब्सक्रिप्शन से साइन इन कर�
 #: src/pages/Welcome.tsx
 msgid "Sign up"
 msgstr "साइन अप करें"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in did not complete"
+msgstr "लॉगिन पूरा नहीं हुआ"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in expired"
+msgstr "लॉगिन की अवधि समाप्त हो गई"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Sign-in page unavailable"
+msgstr "लॉगिन पेज उपलब्ध नहीं है"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Signed out"
+msgstr "लॉग आउट हो गया"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
@@ -4309,6 +4567,11 @@ msgstr "सिखाना जारी है। नया संदेश भ�
 msgid "Team"
 msgstr "टीम"
 
+#: src/pages/NativeLoginSettings.tsx
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Team computer"
+msgstr "टीम का कंप्यूटर"
+
 #: src/pages/Shell.tsx
 msgid "Team Computer"
 msgstr "टीम कंप्यूटर"
@@ -4380,6 +4643,10 @@ msgstr "सोच रहा है"
 msgid "Thinking: {activeThinkingLabel}"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This account’s protocol is not supported by execution profiles."
+msgstr "निष्पादन प्रोफ़ाइल इस खाते के प्रोटोकॉल का समर्थन नहीं करतीं।"
+
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "यह बॉट इसी कंप्यूटर पर चलता है, किसी Linux डेस्कटॉप पर नहीं। शेल और फ़ाइलें आपके होम फ़ोल्डर का उपयोग करती हैं।"
@@ -4409,6 +4676,10 @@ msgstr ""
 msgid "This file is not valid UTF-8 text."
 msgstr ""
 
+#: src/pages/NativeLoginSettings.tsx
+msgid "This is my personal, self-hosted deployment."
+msgstr "यह मेरा व्यक्तिगत, स्वयं होस्ट किया गया परिनियोजन है।"
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "this Mac"
 msgstr "यह Mac"
@@ -4423,6 +4694,14 @@ msgstr "इससे आपका खाता और डेटा स्था�
 
 #: src/pages/shell/dialogs.tsx
 msgid "This permanently removes every message and stops current work. The chat remains available."
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This profile is unavailable. Choose another profile."
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "This profile’s account is unavailable. Choose another profile."
 msgstr ""
 
 #: src/lib/model-connection-preflight.ts
@@ -4549,6 +4828,18 @@ msgstr "असाइन नहीं किया गया"
 msgid "Unavailable"
 msgstr ""
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable account"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable profile"
+msgstr ""
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unavailable: {unsupportedInputs}"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4573,6 +4864,10 @@ msgstr "पिन हटाएं"
 #: src/pages/Shell.tsx
 msgid "Unsupported file type: {0}"
 msgstr "असमर्थित फ़ाइल प्रकार: {0}"
+
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "Unsupported runtime version. Create a new revision."
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -4635,6 +4930,10 @@ msgstr "अपडेट हो रहा है…"
 msgid "Upload"
 msgstr "अपलोड"
 
+#: src/pages/shell/execution-profile-settings.tsx
+msgid "uploaded audio"
+msgstr ""
+
 #: src/lib/ticket-priority.ts
 msgid "Urgent"
 msgstr ""
@@ -4690,6 +4989,10 @@ msgstr ""
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."
 msgstr "मान एन्क्रिप्ट किए जाते हैं और दोबारा नहीं दिखाए जाते।"
+
+#: src/pages/NativeLoginSettings.tsx
+msgid "Verification code"
+msgstr "सत्यापन कोड"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Verify and add"

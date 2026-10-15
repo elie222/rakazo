@@ -12,6 +12,8 @@
 # Rules key on the deterministic bridge names the supervisor assigns in
 # restricted mode (rakazo-c<hash>), never on Docker's dynamic subnets — so
 # computer churn, network recreate, and subnet reuse need no firewall changes.
+# Isolated native harnesses use rakazo-h<hash> bridges. They get the same private
+# destination blocks with no same-bridge peer or host-input exception.
 #
 # Same-bridge peers stay reachable: the supervisor and web screen proxy join the
 # computer's bridge. Docker loads br_netfilter with bridge-nf-call-iptables, so
@@ -35,6 +37,7 @@ IP6TABLES="${RAKAZO_IP6TABLES:-ip6tables}"
 SYSTEMCTL="${RAKAZO_SYSTEMCTL:-systemctl}"
 IF_INET6="${RAKAZO_IF_INET6:-/proc/net/if_inet6}"
 BRIDGE_PREFIX="rakazo-c"
+HARNESS_BRIDGE_PREFIX="rakazo-h"
 INSTALLED_PATH=/usr/local/sbin/rakazo-computer-egress
 UNIT_PATH=/etc/systemd/system/rakazo-computer-egress.service
 
@@ -85,9 +88,12 @@ egress_rules_v4() {
   printf 'DOCKER-USER -i %s+ -o %s+ -j RETURN\n' "$BRIDGE_PREFIX" "$BRIDGE_PREFIX"
   while IFS= read -r cidr; do
     printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$BRIDGE_PREFIX" "$cidr"
+    printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$HARNESS_BRIDGE_PREFIX" "$cidr"
   done < <(blocked_destinations_v4)
   printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
   printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
+  # Harnesses have no host-initiated service and no same-bridge peer exemption.
+  printf 'INPUT -i %s+ -j DROP\n' "$HARNESS_BRIDGE_PREFIX"
 }
 
 egress_rules_v6() {
@@ -95,9 +101,12 @@ egress_rules_v6() {
   printf 'DOCKER-USER -i %s+ -o %s+ -j RETURN\n' "$BRIDGE_PREFIX" "$BRIDGE_PREFIX"
   while IFS= read -r cidr; do
     printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$BRIDGE_PREFIX" "$cidr"
+    printf 'DOCKER-USER -i %s+ -d %s -j DROP\n' "$HARNESS_BRIDGE_PREFIX" "$cidr"
   done < <(blocked_destinations_v6)
   printf 'INPUT -i %s+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT\n' "$BRIDGE_PREFIX"
   printf 'INPUT -i %s+ -j DROP\n' "$BRIDGE_PREFIX"
+  # Harnesses have no host-initiated service and no same-bridge peer exemption.
+  printf 'INPUT -i %s+ -j DROP\n' "$HARNESS_BRIDGE_PREFIX"
 }
 
 wait_for_docker_user() {
@@ -323,7 +332,7 @@ install_persistence() {
   fi
   cat >"$UNIT_PATH" <<EOF
 [Unit]
-Description=Restrict Rakazo bot-computer egress (rakazo-c* bridges)
+Description=Restrict Rakazo computer and isolated harness egress
 After=docker.service
 Wants=docker.service
 
@@ -354,7 +363,7 @@ case "$mode" in
     require_root "$@"
     apply_rules
     install_persistence
-    echo "Computer egress restricted: rakazo-c* bridges drop non-public and host-bound traffic."
+    echo "Computer and harness egress restricted: rakazo-c* and rakazo-h* bridges drop non-public and host-bound traffic."
     ;;
   --apply)
     apply_rules

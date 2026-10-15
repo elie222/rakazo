@@ -1524,6 +1524,40 @@ describe("computer execution leases", () => {
     expect(prisma.create).not.toHaveBeenCalled();
   });
 
+  it.each([false, true])("persists exclusive=%s on new and reclaimed leases", async (exclusive) => {
+    for (const reclaim of [false, true]) {
+      const prisma = leasePrisma({ scope: "team", reclaim });
+      await acquireComputerExecutionLease(prisma.client, {
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-1",
+        exclusive,
+      });
+      const write = reclaim ? prisma.updateManyAndReturn : prisma.create;
+      expect(write).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ exclusive }),
+        }),
+      );
+    }
+  });
+
+  it("maps an exclusive conflict during expired-lease reclaim to the existing busy outcome", async () => {
+    const prisma = leasePrisma({ scope: "team" });
+    prisma.updateManyAndReturn.mockRejectedValue(
+      Object.assign(new Error("exclusive conflict"), { code: "P2002" }),
+    );
+    await expect(
+      acquireComputerExecutionLease(prisma.client, {
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-1",
+        exclusive: true,
+      }),
+    ).rejects.toThrow("Computer is busy");
+    expect(prisma.create).not.toHaveBeenCalled();
+  });
+
   it("fences one Team bot's screen and expires only the matching lease", async () => {
     const prisma = leasePrisma({ scope: "team" });
     const lease = await acquireComputerExecutionLease(prisma.client, {
@@ -1727,6 +1761,7 @@ describe("computer execution leases", () => {
         findUniqueOrThrow: vi.fn().mockResolvedValue({ scope: "team", state: "running" }),
         updateMany: vi.fn(),
       },
+      nativeHarnessSession: { deleteMany: vi.fn() },
       message: { deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),

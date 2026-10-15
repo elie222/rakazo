@@ -76,6 +76,7 @@ import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
+import { showRunExecutionProfile } from "../lib/run-execution-profile";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
@@ -1050,6 +1051,12 @@ function ActivityRow({
       time={formatActivityRelativeTime(run.updatedAt)}
       accessibilityLabel={`${title}, ${status}`}
       onPress={onPress}
+      onLongPress={
+        run.executionProfile ? () => showRunExecutionProfile(run.executionProfile!) : undefined
+      }
+      onShowRunDetails={
+        run.executionProfile ? () => showRunExecutionProfile(run.executionProfile!) : undefined
+      }
       avatar={
         <BotAvatar identity={run.botId} color={bot?.color ?? FALLBACK_COLOR} status={run.status} />
       }
@@ -1071,6 +1078,7 @@ function ConversationRow({
   onToggleChildren,
   onPress,
   onLongPress,
+  onShowRunDetails,
   accessibilityLabel,
   accessibilityHint,
 }: {
@@ -1087,6 +1095,7 @@ function ConversationRow({
   onToggleChildren?: () => void;
   onPress: () => void;
   onLongPress?: () => void;
+  onShowRunDetails?: () => void;
   accessibilityLabel: string;
   accessibilityHint?: string;
 }) {
@@ -1102,11 +1111,13 @@ function ConversationRow({
       accessibilityHint={accessibilityHint}
       // Screen readers treat the row as one element, so the chevron is offered as a row action.
       accessibilityState={hasChildren ? { expanded: !collapsed } : undefined}
-      accessibilityActions={
-        hasChildren ? [{ name: "toggleChildren", label: toggleLabel }] : undefined
-      }
+      accessibilityActions={[
+        ...(hasChildren ? [{ name: "toggleChildren", label: toggleLabel }] : []),
+        ...(onShowRunDetails ? [{ name: "runDetails", label: t("Run details") }] : []),
+      ]}
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === "toggleChildren") onToggleChildren?.();
+        if (event.nativeEvent.actionName === "runDetails") onShowRunDetails?.();
       }}
       onPress={onPress}
       onLongPress={onLongPress}

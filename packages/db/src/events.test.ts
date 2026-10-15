@@ -2861,6 +2861,7 @@ describe("clearThread", () => {
       task: { updateMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
+      nativeHarnessSession: { deleteMany: vi.fn() },
       message: { deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),
@@ -2892,6 +2893,9 @@ describe("clearThread", () => {
         executionBotId: null,
         executionLeaseExpiresAt: null,
       },
+    });
+    expect(tx.nativeHarnessSession.deleteMany).toHaveBeenCalledWith({
+      where: { spaceId: "workspace-1", threadId: "thread-1" },
     });
     // Every deleted message counts as compacted, so compaction cannot summarize cleared history.
     expect(tx.thread.update).toHaveBeenCalledWith({
@@ -2925,6 +2929,7 @@ describe("clearThread", () => {
       task: { updateMany: vi.fn() },
       computerExecutionLease: { updateMany: vi.fn() },
       computer: { updateMany: vi.fn() },
+      nativeHarnessSession: { deleteMany: vi.fn() },
       message: { deleteMany: vi.fn() },
       event: {
         deleteMany: vi.fn(),

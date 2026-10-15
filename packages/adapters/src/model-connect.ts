@@ -9,12 +9,8 @@ import {
 } from "@rakazo/contracts";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
-import {
-  CHATGPT_OAUTH_PROVIDER,
-  parseModelSecret,
-  type StoredModelSecret,
-  serializeModelSecret,
-} from "./pi-oauth.js";
+import type { StoredModelSecret } from "./pi-oauth.js";
+import { CHATGPT_OAUTH_PROVIDER, parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleModel,
@@ -32,6 +28,8 @@ export function buildModelConnectPlaintext(
   options?: BuildModelConnectOptions,
 ): string {
   const previous = tryParseModelSecret(previousPlaintext);
+  if (previous?.kind === "native_login" || input.provider.startsWith("native-"))
+    throw new Error("Manage native login accounts through Native login settings.");
   const inherited = previous?.kind === "api_key" ? previous : undefined;
   const cacheCapabilities = input.cacheCapabilities ?? inherited?.cacheCapabilities;
   const contextWindow = input.contextWindow ?? inherited?.contextWindow;
@@ -237,6 +235,7 @@ export function modelCredentialDto(
   if (row.provider !== CONTRACT_OPENAI_COMPAT) {
     if (!plaintext) return credential;
     const parsed = parseModelSecret(plaintext);
+    if (parsed.kind === "native_login") return { ...credential, hasKey: false };
     return {
       ...credential,
       authKind: modelCredentialAuthKind(parsed),

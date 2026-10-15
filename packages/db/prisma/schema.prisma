@@ -35,6 +35,7 @@ model User {
   accounts                    Account[]
   members                     Member[]
   invitations                 Invitation[]
+  executionProfiles           ExecutionProfile[]
   modelCredentials            UserModelCredential[]
   voiceCredentials            UserVoiceCredential[]
   secrets                     Secret[]
@@ -207,6 +208,7 @@ model Space {
   deletingAt                  DateTime?
   deletionClaimId             String?
   memberships                 SpaceMember[]
+  executionProfiles           ExecutionProfile[]
   bots                        Bot[]
   botSections                 BotSection[]
   botDeletions                BotDeletion[]
@@ -302,6 +304,84 @@ model DeploymentSettings {
 
   @@map("deployment_settings")
 }
+
+// Each revision is immutable. Credential IDs deliberately have no foreign key:
+// disconnect/reconnect must leave the binding visible and fail closed, never reset a bot to Pi.
+model ExecutionProfile {
+  id             String @id @default(cuid())
+  seriesId       String
+  revision       Int
+  spaceId        String
+  space          Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  harness        String
+  provider       String
+  credentialId   String
+  protocol       String
+  authScheme      String                 @default("api-key")
+  modelRoles      Json                   @default("{}")
+  endpoint       String?
+  modelId        String
+  runtimeVersion String
+  inputModalities String[] @default([])
+  computerId     String?
+  createdAt      DateTime @default(now())
+  bots           Bot[]
+  nativeSessions NativeHarnessSession[]
+
+  @@unique([id, spaceId, userId])
+  @@unique([spaceId, userId, seriesId, revision])
+  @@index([spaceId, userId, createdAt])
+  @@map("execution_profiles")
+}
+
+// A native session never crosses a bot, visible thread, or immutable profile revision.
+model NativeHarnessSession {
+  id              String @id @default(cuid())
+  spaceId         String
+  userId          String
+  botId           String
+  bot             Bot @relation(fields: [botId], references: [id], onDelete: Cascade)
+  threadId        String
+  thread          Thread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  profileId       String
+  profile         ExecutionProfile @relation(fields: [profileId, spaceId, userId], references: [id, spaceId, userId], onDelete: Cascade)
+  // Opaque, validated native checkpoint; not a credential or conversation archive.
+  nativeSessionId String?
+  credentialSecretId String
+  epoch           String @default(uuid())
+  activeRunId     String?
+  lastRunId          String?
+  activeLeaseFence Int?
+  interruptedRunId String?
+  interrupted     Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  cleanupScope       Json?
+
+  @@unique([botId, threadId, profileId])
+  @@index([spaceId, userId])
+  @@map("native_harness_sessions")
+}
+
+// Exact-scope cleanup survives the deletion of the account, bot, thread, or computer.
+model NativeStateCleanup {
+  id         String   @id @default(cuid())
+  spaceId    String
+  userId     String
+  computerId String
+  scope      Json
+  createdAt  DateTime @default(now())
+  attempts   Int      @default(0)
+  lastError  String?
+
+  @@index([computerId])
+  @@index([createdAt])
+  @@map("native_state_cleanups")
+}
+
 
 model UserModelCredential {
   id          String                 @id @default(cuid())
@@ -419,6 +499,9 @@ model Bot {
   computerSwitching Boolean           @default(false)
   voiceId           String?
   autoSpeak         Boolean           @default(false)
+  executionProfileId String?
+  executionProfile   ExecutionProfile? @relation(fields: [executionProfileId, spaceId, userId], references: [id, spaceId, userId], onDelete: Restrict)
+  nativeHarnessSessions NativeHarnessSession[]
   modelProvider     String?
   modelId           String?
   thinkingLevel     String?
@@ -519,6 +602,7 @@ model ChatGroupMember {
 }
 
 model Thread {
+  nativeHarnessSessions NativeHarnessSession[]
   id                          String     @id @default(cuid())
   spaceId                     String
   space                       Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
@@ -624,6 +708,8 @@ model Run {
   userId               String
   status               String
   trigger              String
+  // Immutable, credential-free configuration pinned by the insert trigger.
+  executionProfileSnapshot Json?
   modelProvider        String?
   modelId              String?
   thinkingLevel        String?
@@ -1017,6 +1103,7 @@ model ComputerExecutionLease {
   runId      String
   fence      Int      @default(0)
   expiresAt  DateTime
+  exclusive  Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

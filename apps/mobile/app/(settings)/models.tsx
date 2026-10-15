@@ -44,7 +44,9 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { MenuPicker } from "../../components/menu-picker";
 import { NativeActionButton } from "../../components/native-action-button";
+import { NativeLoginSettings } from "../../components/native-login-settings";
 import { NativeSwitch } from "../../components/native-switch";
 import { Checkmark, Chevron } from "../../components/row-accessories";
 import type {
@@ -96,6 +98,7 @@ function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string
 const MODEL_SEARCH_THRESHOLD = 10;
 
 type ModelSelection = {
+  credentialId?: string;
   provider?: string;
   modelId?: string;
 };
@@ -110,6 +113,9 @@ export default function Models() {
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
   const [provider, setProvider] = useState("");
+  const [credentialId, setCredentialId] = useState("");
+  const [creatingAccount, setCreatingAccount] = useState(false);
+  const [accountLabel, setAccountLabel] = useState("");
   // The provider whose optional personal-key form is open.
   const [ownKeyProvider, setOwnKeyProvider] = useState<string | null>(null);
   const [showAllProviders, setShowAllProviders] = useState(false);
@@ -211,7 +217,14 @@ export default function Models() {
         : nextMe.defaultProvider) ??
       nextCatalog[0]?.provider ??
       "";
-    const nextCredential = nextCredentials.find((entry) => entry.provider === nextProvider);
+    const matches = nextCredentials.filter((entry) => entry.provider === nextProvider);
+    const nextCredential =
+      matches.find((entry) => entry.id === preferred.credentialId) ??
+      matches.find((entry) => entry.isDefault) ??
+      matches[0];
+    setCredentialId(nextCredential?.id ?? "");
+    setCreatingAccount(false);
+    setAccountLabel(nextCredential?.label ?? "");
     const nextModel =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? preferred.modelId?.trim() ||
@@ -441,13 +454,14 @@ export default function Models() {
   const isCloudflareGateway = provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID;
   const cloudflareRoutingReady =
     !isCloudflareGateway || cloudflareGatewayRouting({ accountId, gatewayId }) !== undefined;
-  const credential = credentials.find((entry) => entry.provider === provider);
+  const providerCredentials = credentials.filter((entry) => entry.provider === provider);
+  const credential = creatingAccount
+    ? undefined
+    : providerCredentials.find((entry) => entry.id === credentialId);
   const currentEntry = catalog.find(
     (entry) => entry.provider === me?.defaultProvider && entry.id === me?.defaultModel,
   );
-  const activeCredential = credentials.find(
-    (entry) => entry.provider === me?.defaultProvider && entry.modelId === me?.defaultModel,
-  );
+  const activeCredential = credentials.find((entry) => entry.isDefault);
   // The banner shows the effective effort — stored level or the runtime
   // default — only when the active model can actually think.
   const activeThinkingLabel =
@@ -456,6 +470,7 @@ export default function Models() {
       ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium", t)
       : null;
   const isActive =
+    Boolean(credential?.isDefault) &&
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
   // Space still bills the host while this provider matches; model id alone is not credentials.
@@ -496,9 +511,18 @@ export default function Models() {
     resetOpenAiCompatibleProbe();
   }
 
-  function chooseProvider(nextProvider: string) {
+  function chooseProvider(nextProvider: string, nextCredentialId?: string) {
     cancelOAuth();
-    const nextCredential = credentials.find((entry) => entry.provider === nextProvider);
+    const matches = credentials.filter((entry) => entry.provider === nextProvider);
+    const nextCredential =
+      nextCredentialId === "new"
+        ? undefined
+        : (matches.find((entry) => entry.id === nextCredentialId) ??
+          matches.find((entry) => entry.isDefault) ??
+          matches[0]);
+    setCredentialId(nextCredential?.id ?? "");
+    setCreatingAccount(nextCredentialId === "new");
+    setAccountLabel(nextCredential?.label ?? "");
     const nextModelId =
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID
         ? (nextCredential?.modelId ?? "")
@@ -542,7 +566,11 @@ export default function Models() {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: (input) => rpc<{ models: string[] }>("models/probeOpenAiCompatible", input),
+      request: (input) =>
+        rpc<{ models: string[] }>("models/probeOpenAiCompatible", {
+          ...input,
+          ...(credential ? { credentialId: credential.id } : {}),
+        }),
       onSuccess: (models) => {
         const next = modelId.trim() || models[0] || "";
         if (next !== modelId) stageCompatibleModelId(next);
@@ -573,6 +601,7 @@ export default function Models() {
     try {
       await rpc("models/setDefault", {
         provider: selected.provider,
+        credentialId: credential.id,
         modelId: activeModelId,
         // Catalog connections keep the space default effort on the preference;
         // openai-compatible still owns its level inside the stored endpoint config.
@@ -585,7 +614,7 @@ export default function Models() {
             }
           : {}),
       });
-      await load({ provider, modelId: activeModelId });
+      await load({ provider, modelId: activeModelId, credentialId: credential.id });
       publishFeedback("model", {
         notice: isOpenAiCompatible
           ? t("Model updated.")
@@ -606,7 +635,7 @@ export default function Models() {
     clearFeedback();
     setPending("disconnect");
     try {
-      await rpc("models/disconnect", { provider: selected.provider });
+      await rpc("models/disconnect", { provider: selected.provider, credentialId: credential.id });
       setApiKey("");
       setThinkingLevel(null);
       await load({ provider });
@@ -632,6 +661,26 @@ export default function Models() {
         reasoning ? COMPATIBLE_THINKING_LEVELS : [],
       ) as ThinkingLevel | null,
     );
+  }
+
+  async function renameAccount() {
+    if (!credential || !accountLabel.trim() || pending) return;
+    setPending("connect");
+    clearFeedback();
+    try {
+      const renamed = await rpc<MobileModelCredential>("models/connect", {
+        provider,
+        credentialId: credential.id,
+        label: accountLabel.trim(),
+        makeDefault: false,
+      });
+      await load({ provider, credentialId: renamed.id });
+      publishFeedback("connection", { notice: t("Saved.") });
+    } catch (err) {
+      publishFeedback("connection", { error: errorText(err, t("Could not rename account")) });
+    } finally {
+      setPending(null);
+    }
   }
 
   async function connectKey() {
@@ -697,11 +746,16 @@ export default function Models() {
     if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
     setPending("connect");
     try {
-      await rpc(
+      const connected = await rpc<MobileModelCredential>(
         "models/connect",
         isOpenAiCompatible
           ? {
               provider: selected.provider,
+              ...(creatingAccount
+                ? { createNew: true, makeDefault: false }
+                : credential
+                  ? { credentialId: credential.id, makeDefault: credential.isDefault }
+                  : {}),
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
               reasoning,
@@ -711,10 +765,15 @@ export default function Models() {
               supportsImages,
               maxImagesPerPrompt: maxImagesPerPromptInput,
               apiKey: apiKey.trim() || undefined,
-              label: selected.providerName ?? selected.provider,
+              label: accountLabel.trim() || selected.providerName || selected.provider,
             }
           : {
               provider: selected.provider,
+              ...(creatingAccount
+                ? { createNew: true, makeDefault: false }
+                : credential
+                  ? { credentialId: credential.id, makeDefault: credential.isDefault }
+                  : {}),
               ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
               ...(provider === CLOUDFLARE_AI_GATEWAY_PROVIDER_ID
                 ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
@@ -725,14 +784,14 @@ export default function Models() {
               // null, so the previous model's effort is not reused.
               ...(!savingLimitOnly || modelChanged ? { thinkingLevel: stagedThinking } : {}),
               maxTokens: parsedMaxTokens ?? null,
-              label: selected.providerName ?? selected.provider,
+              label: accountLabel.trim() || selected.providerName || selected.provider,
             },
       );
       setApiKey("");
-      await load({ provider, modelId });
+      await load({ provider, modelId, credentialId: connected.id });
       publishFeedback("connection", {
         notice:
-          isOpenAiCompatible || savingLimitOnly
+          !connected.isDefault || isOpenAiCompatible || savingLimitOnly
             ? t("Saved.")
             : t("Connected and using {label}.", { label: selected.label }),
       });
@@ -748,14 +807,20 @@ export default function Models() {
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
     await waitForModelOAuth(loginId, controller.signal);
     if (controller.signal.aborted) return;
-    await rpc("models/finishOAuth", { loginId }, { signal: controller.signal });
+    const connected = await rpc<MobileModelCredential>(
+      "models/finishOAuth",
+      { loginId },
+      { signal: controller.signal },
+    );
     if (controller.signal.aborted) return;
     oauthLoginIdRef.current = null;
     setOauth(null);
-    await load({ provider, modelId });
+    await load({ provider, modelId, credentialId: connected.id });
     if (controller.signal.aborted) return;
     publishFeedback("connection", {
-      notice: t("Connected and using {label}.", { label: selected?.label ?? t("this model") }),
+      notice: !connected.isDefault
+        ? t("Saved.")
+        : t("Connected and using {label}.", { label: selected?.label ?? t("this model") }),
     });
   }
 
@@ -771,12 +836,17 @@ export default function Models() {
         "models/beginOAuth",
         {
           provider: selected.provider,
+          ...(creatingAccount
+            ? { createNew: true, makeDefault: false }
+            : credential
+              ? { credentialId: credential.id, makeDefault: credential.isDefault }
+              : {}),
           modelId: selected.id,
           thinkingLevel: clampCatalogThinkingLevel(
             thinkingLevel,
             selected.thinkingLevels,
           ) as ThinkingLevel | null,
-          label: selected.providerName ?? selected.provider,
+          label: accountLabel.trim() || selected.providerName || selected.provider,
         },
         { signal: controller.signal },
       );
@@ -1344,7 +1414,7 @@ export default function Models() {
                 pending === "connect"
                   ? t("Saving…")
                   : builtinLimitSave
-                    ? t("Save limits")
+                    ? t("Save")
                     : credential
                       ? t("Replace API key")
                       : t("Connect API key")
@@ -1501,7 +1571,7 @@ export default function Models() {
         fill={false}
         label={pending === "disconnect" ? t("Disconnecting…") : t("Disconnect")}
         onPress={() => {
-          const name = selected?.providerName ?? selected?.provider ?? "";
+          const name = credential.label;
           Alert.alert(
             t("Disconnect {name}?", { name }),
             t("This removes the connection from every space."),
@@ -1619,11 +1689,52 @@ export default function Models() {
         </View>
 
         {selected ? (
+          <View pointerEvents={busy ? "none" : "auto"}>
+            {providerCredentials.length ? (
+              <View style={styles.card}>
+                <MenuPicker
+                  label={t("Account")}
+                  value={creatingAccount ? "new" : credentialId}
+                  choices={[
+                    ...providerCredentials.map((entry) => ({ key: entry.id, label: entry.label })),
+                    { key: "new", label: t("Add account…") },
+                  ]}
+                  onChange={(key) => chooseProvider(provider, key)}
+                />
+              </View>
+            ) : null}
+            {acceptsKey || subscriptionSignIn ? (
+              <>
+                <Text style={styles.sectionTitle}>{t("Account name")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Account name")}
+                  value={accountLabel}
+                  maxLength={80}
+                  editable={!busy}
+                  onChangeText={setAccountLabel}
+                  placeholder={selected.providerName ?? selected.provider}
+                  placeholderTextColor={native.secondaryLabel}
+                  style={styles.keyInput}
+                />
+                {credential && accountLabel.trim() !== credential.label ? (
+                  <NativeActionButton
+                    label={t("Rename")}
+                    disabled={busy || !accountLabel.trim()}
+                    prominence="plain"
+                    onPress={() => void renameAccount()}
+                  />
+                ) : null}
+              </>
+            ) : null}
+          </View>
+        ) : null}
+        {selected ? (
           isOpenAiCompatible ? (
             <>
               {compatConfig}
               {compatKeySection}
               {saveRow}
+              {connectedStatusRow}
               {feedbackAnchor === "probe" ? null : feedback}
             </>
           ) : credential ? (
@@ -1664,6 +1775,7 @@ export default function Models() {
           feedback
         )}
 
+        <NativeLoginSettings />
         <View style={styles.backupSection}>
           <Text style={styles.backupTitle}>{t("Backup models")}</Text>
           {backupLoading ? (

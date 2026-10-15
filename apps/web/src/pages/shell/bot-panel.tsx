@@ -39,6 +39,7 @@ import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { BotCredentialsSection } from "./bot-credentials";
+import { ExecutionProfileSettings } from "./execution-profile-settings";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -223,12 +224,24 @@ export function BotSettings({
     modelId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
     disabledBuiltinTools?: string[];
+    executionProfileId?: string | null;
   }) => Promise<void>;
   onExport: () => Promise<void>;
   onClear: () => void;
 }) {
   const { t } = useLingui();
   const [advancedOpened, setAdvancedOpened] = useState(false);
+  const [executionProfileId, setExecutionProfileId] = useState(bot.executionProfileId ?? null);
+  const savedExecutionProfileRef = useRef(bot.executionProfileId ?? null);
+  const serverExecutionProfileRef = useRef(bot.executionProfileId ?? null);
+  useEffect(() => {
+    const next = bot.executionProfileId ?? null;
+    if (next === serverExecutionProfileRef.current) return;
+    serverExecutionProfileRef.current = next;
+    const previous = savedExecutionProfileRef.current;
+    savedExecutionProfileRef.current = next;
+    setExecutionProfileId((current) => (current === previous ? next : current));
+  }, [bot.executionProfileId]);
   const ids = useId();
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
@@ -372,9 +385,11 @@ export function BotSettings({
         memoryScope,
         autoSpeak,
         voiceId: voiceId || null,
-        modelProvider: selected?.provider ?? null,
-        modelId: selected?.modelId ?? null,
-        ...(modelMetaReady
+        ...(executionProfileId !== savedExecutionProfileRef.current ? { executionProfileId } : {}),
+        ...(!executionProfileId
+          ? { modelProvider: selected?.provider ?? null, modelId: selected?.modelId ?? null }
+          : {}),
+        ...(modelMetaReady && !executionProfileId
           ? {
               thinkingLevel: thinkingOptions.length
                 ? ((thinkingLevel || null) as ThinkingLevel | null)
@@ -415,6 +430,7 @@ export function BotSettings({
         break;
       }
       savedDescriptionRef.current = nextDescription;
+      savedExecutionProfileRef.current = executionProfileId;
     } catch (err) {
       setError(errorText(err, t`Could not save`));
     } finally {
@@ -554,6 +570,13 @@ export function BotSettings({
             ›
           </span>
         </summary>
+        {advancedOpened ? (
+          <ExecutionProfileSettings
+            value={executionProfileId}
+            currentProfile={bot.executionProfile}
+            onChange={setExecutionProfileId}
+          />
+        ) : null}
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <ErrorBoundary fallback={<SectionLoadFailed />}>
           <Suspense fallback={null}>
@@ -567,55 +590,59 @@ export function BotSettings({
             </Suspense>
           </ErrorBoundary>
         ) : null}
-        <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
-          <Trans>Model</Trans>
-          <NativeSelect
-            id={`${ids}-model`}
-            className="mt-2 w-full"
-            value={selectedModelKey}
-            onChange={(event) => {
-              setModelKey(event.target.value);
-              setThinkingLevel("");
-            }}
-          >
-            <NativeSelectOption value="">
-              {t`Space default`}
-              {me?.defaultModel
-                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-                : ""}
-            </NativeSelectOption>
-            {selectedModelKey &&
-            !connectedOptions.some((option) => option.key === selectedModelKey) ? (
-              <NativeSelectOption value={selectedModelKey}>
-                {selectedModel?.modelId ?? selectedModelKey}
-              </NativeSelectOption>
-            ) : null}
-            {connectedOptions.map((option) => (
-              <NativeSelectOption key={option.key} value={option.key}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </label>
-        {thinkingOptions.length ? (
-          <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
-            <Trans>Thinking</Trans>
-            <NativeSelect
-              id={`${ids}-thinking`}
-              className="mt-2 w-full"
-              value={thinkingLevel}
-              onChange={(event) => setThinkingLevel(event.target.value)}
-            >
-              <NativeSelectOption value="">
-                {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
-              </NativeSelectOption>
-              {thinkingOptions.map((level) => (
-                <NativeSelectOption key={level} value={level}>
-                  {thinkingLevelLabel(level)}
+        {!executionProfileId ? (
+          <>
+            <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
+              <Trans>Model</Trans>
+              <NativeSelect
+                id={`${ids}-model`}
+                className="mt-2 w-full"
+                value={selectedModelKey}
+                onChange={(event) => {
+                  setModelKey(event.target.value);
+                  setThinkingLevel("");
+                }}
+              >
+                <NativeSelectOption value="">
+                  {t`Space default`}
+                  {me?.defaultModel
+                    ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+                    : ""}
                 </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
+                {selectedModelKey &&
+                !connectedOptions.some((option) => option.key === selectedModelKey) ? (
+                  <NativeSelectOption value={selectedModelKey}>
+                    {selectedModel?.modelId ?? selectedModelKey}
+                  </NativeSelectOption>
+                ) : null}
+                {connectedOptions.map((option) => (
+                  <NativeSelectOption key={option.key} value={option.key}>
+                    {option.label}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </label>
+            {thinkingOptions.length ? (
+              <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>
+                <Trans>Thinking</Trans>
+                <NativeSelect
+                  id={`${ids}-thinking`}
+                  className="mt-2 w-full"
+                  value={thinkingLevel}
+                  onChange={(event) => setThinkingLevel(event.target.value)}
+                >
+                  <NativeSelectOption value="">
+                    {t`Default (${thinkingLevelLabel(defaultThinkingLevel)})`}
+                  </NativeSelectOption>
+                  {thinkingOptions.map((level) => (
+                    <NativeSelectOption key={level} value={level}>
+                      {thinkingLevelLabel(level)}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </label>
+            ) : null}
+          </>
         ) : null}
         {memoryProviderConfigured ? (
           <div className="mt-4 text-[14px] text-muted-foreground">

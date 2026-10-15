@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { Bot } from "@rakazo/contracts";
+import type { Bot, ExecutionProfile } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -15,6 +15,10 @@ vi.mock("../../lib/rpc", () => ({
       list: vi.fn().mockResolvedValue([]),
     },
     me: vi.fn().mockResolvedValue(null),
+    executionProfiles: { list: vi.fn().mockResolvedValue([]) },
+    nativeLogins: {
+      list: vi.fn().mockResolvedValue({ enabled: false, accounts: [], computers: [] }),
+    },
   },
 }));
 vi.mock("@lingui/react/macro", () => {
@@ -111,11 +115,11 @@ const onSave = vi.fn(
   async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
 );
 
-async function render(description = "Billing") {
+async function render(description = "Billing", currentBot?: Bot) {
   await act(async () => {
     root.render(
       <BotSettings
-        bot={bot(description)}
+        bot={currentBot ?? bot(description)}
         memoryProviderConfigured={false}
         onSkillsChange={() => undefined}
         onSave={onSave}
@@ -267,5 +271,94 @@ describe("BotSettings description saves", () => {
       description: "Invoices",
       instructions: "Invoices",
     });
+  });
+});
+
+const executionProfile: ExecutionProfile = {
+  id: "profile-a",
+  seriesId: "series-a",
+  spaceId: "space-1",
+  revision: 1,
+  name: "Review",
+  harness: "claude",
+  runtimeVersion: "0.3.300",
+  provider: "anthropic",
+  protocol: "anthropic",
+  credentialId: "account-a",
+  endpoint: "https://api.example.test",
+  modelId: "test-model",
+  authScheme: "api-key",
+  modelRoles: {},
+  inputModalities: [],
+  computerId: null,
+  createdAt: "2026-10-01T00:00:00.000Z",
+};
+
+async function chooseExecutionProfile(value: string) {
+  await act(async () => {
+    const details = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="bot-settings-advanced"]',
+    )!;
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+  });
+  await act(async () => {
+    const select = container.querySelector<HTMLSelectElement>('[id$="-profile"]')!;
+    select.value = value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+describe("BotSettings execution profile binding", () => {
+  beforeEach(() => {
+    vi.mocked(rpc.executionProfiles.list).mockResolvedValue([executionProfile]);
+  });
+  it("does not mutate the execution binding on an unrelated default save", async () => {
+    await render();
+    await clickSave();
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("executionProfileId");
+  });
+  it("binds explicitly and omits overridden model settings", async () => {
+    await render();
+    await chooseExecutionProfile(executionProfile.id);
+    expect(container.querySelector('[id$="-model"]')).toBeNull();
+    await clickSave();
+    expect(onSave.mock.calls[0]?.[0]).toHaveProperty("executionProfileId", executionProfile.id);
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("modelProvider");
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("thinkingLevel");
+    await clickSave();
+    expect(onSave.mock.calls[1]?.[0]).not.toHaveProperty("executionProfileId");
+  });
+  it("explicitly clears a binding to restore Pi and existing model controls", async () => {
+    await render("Billing", {
+      ...bot(),
+      executionProfileId: executionProfile.id,
+      executionProfile,
+    });
+    await chooseExecutionProfile("");
+    await clickSave();
+    expect(onSave.mock.calls[0]?.[0]).toHaveProperty("executionProfileId", null);
+    expect(container.querySelector('[id$="-model"]')).not.toBeNull();
+  });
+  it("retries a rejected binding instead of treating it as persisted", async () => {
+    onSave.mockRejectedValueOnce(new Error("Profile unavailable"));
+    await render();
+    await chooseExecutionProfile(executionProfile.id);
+    await clickSave();
+    await clickSave();
+    expect(onSave.mock.calls[0]?.[0]).toHaveProperty("executionProfileId", executionProfile.id);
+    expect(onSave.mock.calls[1]?.[0]).toHaveProperty("executionProfileId", executionProfile.id);
+  });
+  it("accepts a refreshed server binding when there is no unsaved local choice", async () => {
+    await render();
+    await render("Billing", {
+      ...bot(),
+      executionProfileId: executionProfile.id,
+      executionProfile,
+    });
+    expect(container.querySelector('[id$="-model"]')).toBeNull();
+    await clickSave();
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("executionProfileId");
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("modelProvider");
   });
 });

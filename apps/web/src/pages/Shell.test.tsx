@@ -116,6 +116,17 @@ function pressEnter(textarea: HTMLTextAreaElement) {
 }
 
 describe("Composer", () => {
+  it("offers native audio files without converting them to dictation text", () => {
+    const onAttachmentPick = vi.fn(() => true);
+    const textarea = renderComposer(vi.fn(), { onAttachmentPick });
+    const input = container!.querySelector<HTMLInputElement>('input[type="file"]')!;
+    expect(input.accept.split(",")).toContain("audio/wav");
+    const audio = new File(["RIFF"], "voice.wav", { type: "audio/wav" });
+    Object.defineProperty(input, "files", { configurable: true, value: [audio] });
+    act(() => input.dispatchEvent(new Event("change", { bubbles: true })));
+    expect(onAttachmentPick).toHaveBeenCalledWith([audio]);
+    expect(textarea.value).toBe("");
+  });
   it("clears the draft once the message is sent", async () => {
     const onSend = vi.fn().mockResolvedValue(true);
     const textarea = renderComposer(onSend);

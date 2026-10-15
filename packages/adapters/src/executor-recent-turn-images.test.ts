@@ -83,6 +83,7 @@ async function runWithModel(
   });
   const prisma = {
     run: {
+      findFirst: vi.fn(async () => null),
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {

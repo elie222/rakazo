@@ -15,12 +15,14 @@ import type {
   ModelContextLimits,
   ModelOAuthBegin,
   ModelOAuthSignInMode,
+  NativeLoginDescriptor,
   ThinkingLevel,
 } from "@rakazo/contracts";
 import {
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
   ModelContextLimitsSchema,
+  NativeLoginDescriptorSchema,
   ThinkingLevelSchema,
 } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
@@ -265,6 +267,7 @@ function modelLimits(value: Record<string, unknown>): StoredModelLimits {
 }
 
 export type StoredModelSecret =
+  | NativeLoginDescriptor
   | ({
       kind: "api_key";
       key: string;
@@ -292,6 +295,9 @@ export type PiOAuthConnected = {
   modelId?: string;
   thinkingLevel?: string | null;
   label?: string;
+  credentialId?: string;
+  createNew?: boolean;
+  makeDefault?: boolean;
   signal: AbortSignal;
 };
 
@@ -327,6 +333,9 @@ type Session = {
   modelId?: string;
   thinkingLevel?: string | null;
   label?: string;
+  credentialId?: string;
+  createNew?: boolean;
+  makeDefault?: boolean;
   abort: AbortController;
   state: SessionState;
   credential?: OAuthCredential;
@@ -382,6 +391,11 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
   } catch {
     // Treat malformed JSON as a literal API key.
     return { kind: "api_key", key: plaintext };
+  }
+  if (parsed.kind === "native_login") {
+    const result = NativeLoginDescriptorSchema.safeParse(parsed);
+    if (!result.success) throw new Error(CORRUPT_MODEL_SECRET_MESSAGE);
+    return result.data;
   }
   if (parsed.kind === "openai_compatible") {
     if (typeof parsed.baseUrl !== "string" || !parsed.baseUrl.trim()) {
@@ -459,6 +473,8 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
 }
 
 export function serializeModelSecret(secret: StoredModelSecret): string {
+  if (secret.kind === "native_login")
+    return JSON.stringify(NativeLoginDescriptorSchema.parse(secret));
   if (secret.kind === "oauth") {
     if (secret.maxTokens === undefined) return JSON.stringify(secret.credential);
     return JSON.stringify({
@@ -503,6 +519,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
 }
 
 export function secretValuesToRedact(secret: StoredModelSecret): string[] {
+  if (secret.kind === "native_login") return [];
   if (secret.kind === "api_key") return secret.key ? [secret.key] : [];
   if (secret.kind === "openai_compatible") return secret.apiKey ? [secret.apiKey] : [];
   return [secret.credential.access, secret.credential.refresh].filter(Boolean);
@@ -583,8 +600,10 @@ export async function resolveModelAuth(
   plaintext: string,
   provider: string,
   opts?: ResolveModelOpts,
-): Promise<{ secret: StoredModelSecret; apiKey: string }> {
+): Promise<{ secret: Exclude<StoredModelSecret, NativeLoginDescriptor>; apiKey: string }> {
   const parsed = parseModelSecret(plaintext);
+  if (parsed.kind === "native_login")
+    throw new Error("Native login credentials require their isolated native harness.");
   if (parsed.kind === "api_key") return { secret: parsed, apiKey: parsed.key };
   if (parsed.kind === "openai_compatible") {
     return { secret: parsed, apiKey: parsed.apiKey ?? "" };
@@ -819,6 +838,9 @@ export class PiOAuthLogins {
     modelId?: string;
     thinkingLevel?: string | null;
     label?: string;
+    credentialId?: string;
+    createNew?: boolean;
+    makeDefault?: boolean;
     signal?: AbortSignal;
   }): Promise<PiOAuthBegin> {
     if (!SUBSCRIPTION_SIGN_IN_PROVIDERS[input.provider]) {
@@ -848,6 +870,9 @@ export class PiOAuthLogins {
         modelId: input.modelId,
         thinkingLevel: input.thinkingLevel,
         label: input.label,
+        credentialId: input.credentialId,
+        createNew: input.createNew,
+        makeDefault: input.makeDefault,
         abort,
         state: "pending",
       };
@@ -1023,6 +1048,9 @@ export class PiOAuthLogins {
         modelId: session.modelId,
         thinkingLevel: session.thinkingLevel,
         label: session.label,
+        credentialId: session.credentialId,
+        createNew: session.createNew,
+        makeDefault: session.makeDefault,
         signal: session.abort.signal,
       };
     }

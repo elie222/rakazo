@@ -3,6 +3,27 @@ import { describe, expect, it } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 describe("filterPickedAttachments", () => {
+  it("keeps uploaded audio bytes as a file attachment instead of a transcript", () => {
+    const contentBase64 = "UklGRg==";
+    const result = filterPickedAttachments(0, [
+      {
+        name: "voice.wav",
+        mimeType: inferAttachmentMimeType("voice.wav", "audio/x-wav"),
+        size: 4,
+        contentBase64,
+      },
+    ]);
+    expect(result.skipped).toEqual([]);
+    expect(result.attachments).toEqual([
+      {
+        id: "voice.wav-4-0",
+        name: "voice.wav",
+        mimeType: "audio/wav",
+        contentBase64,
+        previewUri: undefined,
+      },
+    ]);
+  });
   it("skips unsupported mime types and oversize files", () => {
     const result = filterPickedAttachments(0, [
       {

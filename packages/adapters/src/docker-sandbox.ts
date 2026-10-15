@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -12,6 +13,9 @@ import type {
   PageBrowserResult,
   PortableFile,
   ProcessEvent,
+  SandboxNativeStateCleanupRequest,
+  SandboxProcessHandle,
+  SandboxProcessRequest,
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
@@ -226,6 +230,145 @@ export class DockerSandboxProvider implements SandboxProvider {
     if (body.stdout) yield { type: "stdout", data: body.stdout };
     if (body.stderr) yield { type: "stderr", data: body.stderr };
     yield { type: "exit", code: body.code };
+  }
+
+  nativeStateInstallationId(): string {
+    return createHash("sha256").update(this.supervisorToken).digest("hex").slice(0, 32);
+  }
+
+  async cleanupNativeState(
+    computer: ComputerRef,
+    request: SandboxNativeStateCleanupRequest,
+    context: AdapterContext,
+  ): Promise<void> {
+    if (computer.kind !== "docker")
+      throw new Error("Private native state requires a Docker computer.");
+    if (request.expectedInstallationId !== this.nativeStateInstallationId())
+      throw new Error("Private native state belongs to a different installation namespace.");
+    if (!context.botId || !context.runId) throw new Error("Missing isolated runtime identity.");
+    context.signal.throwIfAborted();
+    const response = await fetch(
+      this.url(`/computers/${encodeURIComponent(computer.id)}/native-state`),
+      {
+        method: "DELETE",
+        headers: {
+          ...this.headers(context, computer.botId),
+          "content-type": "application/json",
+          "x-rakazo-runtime-bot-id": context.botId,
+          "x-rakazo-runtime-user-id": context.userId,
+          "x-rakazo-run-id": context.runId,
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.any([context.signal, AbortSignal.timeout(30_000)]),
+        redirect: "error",
+      },
+    );
+    cancelResponseBody(response);
+    if (!response.ok) throw new Error(`Private native state cleanup failed (${response.status}).`);
+  }
+
+  async startProcess(
+    computer: ComputerRef,
+    request: SandboxProcessRequest,
+    context: AdapterContext,
+  ): Promise<SandboxProcessHandle> {
+    if (computer.kind !== "docker" || request.isolation !== "primary-harness") {
+      throw new Error("Isolated harness processes require a Docker computer.");
+    }
+    if (!context.botId || !context.runId) throw new Error("Missing isolated runtime identity.");
+    context.signal.throwIfAborted();
+    const endpoint = this.url(`/computers/${encodeURIComponent(computer.id)}/processes`);
+    const headers = {
+      ...this.headers(context, computer.botId),
+      "content-type": "application/json",
+      "x-rakazo-runtime-bot-id": context.botId,
+      "x-rakazo-runtime-user-id": context.userId,
+      "x-rakazo-run-id": context.runId,
+    };
+    const controller = new AbortController();
+    const signal = AbortSignal.any([context.signal, controller.signal]);
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      signal,
+      redirect: "error",
+    });
+    const processId = response.headers.get("x-rakazo-process-id");
+    if (!response.ok || !processId || !/^[a-zA-Z0-9-]{1,100}$/.test(processId)) {
+      cancelResponseBody(response);
+      throw new Error(`Isolated runtime start failed (${response.status}).`);
+    }
+    const processUrl = `${endpoint}/${encodeURIComponent(processId)}`;
+    let stopped = false;
+    let inputClosed = false;
+    let termination: Promise<void> | undefined;
+    let inputTail = Promise.resolve();
+    let timer: ReturnType<typeof setTimeout>;
+    const terminate = () =>
+      (termination ??= (async () => {
+        stopped = true;
+        clearTimeout(timer);
+        context.signal.removeEventListener("abort", abort);
+        controller.abort(new Error("Isolated runtime terminated."));
+        cancelResponseBody(response);
+        // Cleanup must use an independent deadline: the run's cancellation signal is already aborted.
+        const result = await fetch(processUrl, {
+          method: "DELETE",
+          headers,
+          redirect: "error",
+          signal: AbortSignal.timeout(8_000),
+        });
+        cancelResponseBody(result);
+        if (!result.ok && result.status !== 404)
+          throw new Error("Isolated runtime cleanup failed.");
+      })());
+    const abort = () => {
+      void terminate().catch(() => undefined);
+    };
+    context.signal.addEventListener("abort", abort, { once: true });
+    timer = setTimeout(abort, Math.min(request.timeoutMs ?? 3_600_000, 3_600_000) + 15_000);
+    timer.unref?.();
+    if (context.signal.aborted) abort();
+    let queuedInputBytes = 0;
+    const sendInput = (data: { data?: string; close?: boolean }) => {
+      const bytes = Buffer.byteLength(data.data ?? "", "utf8");
+      if (bytes > 16 * 1024 * 1024)
+        return Promise.reject(new Error("Isolated runtime input frame exceeded its limit."));
+      if (queuedInputBytes + bytes > 32 * 1024 * 1024)
+        return Promise.reject(new Error("Isolated runtime input queue exceeded its limit."));
+      queuedInputBytes += bytes;
+      const operation = inputTail.then(async () => {
+        if (stopped || inputClosed) throw new Error("Isolated runtime input is closed.");
+        if (data.close) inputClosed = true;
+        const result = await fetch(`${processUrl}/input`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(data),
+          redirect: "error",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+        });
+        cancelResponseBody(result);
+        if (!result.ok) throw new Error("Isolated runtime input failed.");
+      });
+      const bounded = operation.finally(() => {
+        queuedInputBytes -= bytes;
+      });
+      inputTail = bounded.catch(() => undefined);
+      return bounded;
+    };
+    return {
+      events: (async function* () {
+        try {
+          yield* readIsolatedProcessEvents(response, signal);
+        } finally {
+          await terminate();
+        }
+      })(),
+      writeStdin: (data) => sendInput({ data }),
+      closeStdin: () => (inputClosed ? Promise.resolve() : sendInput({ close: true })),
+      terminate,
+    };
   }
 
   async pageBrowser(
@@ -583,6 +726,71 @@ export class DockerSandboxProvider implements SandboxProvider {
       for (const file of batch) yield file;
     }
   }
+}
+
+async function* readIsolatedProcessEvents(
+  response: Response,
+  signal: AbortSignal,
+): AsyncIterable<ProcessEvent> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("Isolated runtime returned an empty stream.");
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let buffer = "";
+  let bytes = 0;
+  let exited = false;
+  try {
+    while (!exited) {
+      const { done, value } = await withAbort(reader.read(), signal);
+      if (done) {
+        buffer += decoder.decode();
+        break;
+      }
+      bytes += value.byteLength;
+      if (bytes > MAX_SANDBOX_SUCCESS_RESPONSE_BYTES)
+        throw new Error("Isolated runtime output exceeded its limit.");
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (line) {
+          const event = parseIsolatedProcessEvent(line);
+          yield event;
+          if (event.type === "exit") {
+            exited = true;
+            break;
+          }
+        }
+        newline = buffer.indexOf("\n");
+      }
+      if (buffer.length > 1024 * 1024)
+        throw new Error("Isolated runtime frame exceeded its limit.");
+    }
+    if (!exited) throw new Error("Isolated runtime disconnected before exit.");
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
+function parseIsolatedProcessEvent(line: string): ProcessEvent {
+  let event: { type?: unknown; data?: unknown; code?: unknown };
+  try {
+    event = JSON.parse(line);
+  } catch {
+    throw new Error("Invalid isolated runtime event.");
+  }
+  if (
+    event &&
+    (event.type === "stdout" || event.type === "stderr") &&
+    typeof event.data === "string"
+  ) {
+    return { type: event.type, data: event.data };
+  }
+  if (event?.type === "exit" && Number.isSafeInteger(event.code)) {
+    return { type: "exit", code: event.code as number };
+  }
+  throw new Error("Invalid isolated runtime event.");
 }
 
 async function* readNdjsonProcessEvents(

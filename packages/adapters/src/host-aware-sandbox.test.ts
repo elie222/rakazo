@@ -61,6 +61,66 @@ describe("host-aware sandbox", () => {
     expect(pageBrowser).not.toHaveBeenCalled();
   });
 
+  it("routes isolated runtime only to Docker and never to the desktop host", async () => {
+    const process = {
+      events: (async function* () {})(),
+      writeStdin: vi.fn(),
+      closeStdin: vi.fn(),
+      terminate: vi.fn(),
+    };
+    const start = vi
+      .spyOn(DockerSandboxProvider.prototype, "startProcess")
+      .mockResolvedValue(process);
+    const sandbox = new HostAwareSandbox(
+      new DockerSandboxProvider("http://supervisor.test", "fake-token"),
+      new DesktopSandboxProvider(),
+      async () => true,
+    );
+    const computer: ComputerRef = { id: "id", providerRef: "id", botId: "bot", kind: "docker" };
+    const request = { isolation: "primary-harness" as const, argv: ["node", "--version"] };
+    expect(await sandbox.startProcess?.(computer, request, ctx)).toBe(process);
+    await expect(
+      sandbox.startProcess?.({ ...computer, kind: "desktop" }, request, ctx),
+    ).rejects.toThrow(/Docker/);
+    expect(start).toHaveBeenCalledOnce();
+    expect(
+      new HostAwareSandbox(
+        new FakeSandboxProvider(),
+        new DesktopSandboxProvider(),
+        async () => false,
+      ).startProcess,
+    ).toBeUndefined();
+  });
+
+  it("routes exact private cleanup only through Docker, never a desktop fallback", async () => {
+    const cleanup = vi
+      .spyOn(DockerSandboxProvider.prototype, "cleanupNativeState")
+      .mockResolvedValue();
+    const sandbox = new HostAwareSandbox(
+      new DockerSandboxProvider("http://supervisor.test", "fake-token"),
+      new DesktopSandboxProvider(),
+      async () => true,
+    );
+    const computer: ComputerRef = { id: "id", providerRef: "id", botId: "bot", kind: "docker" };
+    const request = {
+      expectedInstallationId: sandbox.nativeStateInstallationId!(),
+      credentialScope: { harness: "codex" as const, connectionId: "connection", epoch: "old" },
+    };
+    await sandbox.cleanupNativeState?.(computer, request, ctx);
+    expect(cleanup).toHaveBeenCalledExactlyOnceWith(computer, request, ctx);
+    await expect(
+      sandbox.cleanupNativeState?.({ ...computer, kind: "desktop" }, request, ctx),
+    ).rejects.toThrow(/Docker/);
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(
+      new HostAwareSandbox(
+        new FakeSandboxProvider(),
+        new DesktopSandboxProvider(),
+        async () => false,
+      ).cleanupNativeState,
+    ).toBeUndefined();
+  });
+
   it("does not expose page commands when neither provider supports them", () => {
     const sandbox = new HostAwareSandbox(
       new FakeSandboxProvider(),

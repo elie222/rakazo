@@ -4,6 +4,7 @@ import { Button } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { RunExecutionProfileDetails } from "../components/RunExecutionProfileDetails";
 import { rpc } from "../lib/rpc";
 import { formatToolActivityDuration } from "../lib/tool-activity-view";
 import { statusLabel, statusTone } from "./ActivityList";
@@ -219,6 +220,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span>{duration}</span>
+                  {expanded ? <RunExecutionProfileDetails profile={run.executionProfile} /> : null}
                   {chatTo ? (
                     <Link to={chatTo} className="text-foreground underline underline-offset-2">
                       <Trans>View chat</Trans>
