@@ -36,6 +36,10 @@ const MODEL_PROTOCOL_FIELDS: ReadonlySet<string> = new Set([
   "model",
   "stopReason",
   "customType",
+  "mimeType",
+  "data",
+  "thinkingSignature",
+  "textSignature",
 ]);
 const NO_PROTOCOL_FIELDS: ReadonlySet<string> = new Set();
 

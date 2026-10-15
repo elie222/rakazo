@@ -1558,9 +1558,16 @@ export async function replaceThreadUserMessageSecret(
         Object.entries(json).map(([key, item]) => [key, item == null ? null : replaceJson(item)]),
       );
     }
-    return typeof json === "number" && String(json) === value
+    return Number.isSafeInteger(json) && String(json) === value
       ? replacement
       : (json as number | boolean);
+  };
+  const replaceSerialized = (text: string) => {
+    try {
+      return JSON.stringify(replaceJson(JSON.parse(text)));
+    } catch {
+      return replace(text);
+    }
   };
   const jsonNeedle = Prisma.sql`substr(to_jsonb(${value}::text)::text, 2, length(to_jsonb(${value}::text)::text) - 2)`;
   const ids = (rows: Array<{ id: string }>) => rows.map((row) => row.id);
@@ -1619,17 +1626,21 @@ export async function replaceThreadUserMessageSecret(
   }
   await tx.$executeRaw`UPDATE tasks SET prompt = replace(prompt, ${value}, ${replacement})
     WHERE "threadId" = ${threadId} AND strpos(prompt, ${value}) > 0`;
+  const escapedValue = JSON.stringify(value).slice(1, -1);
+  const runIds = ids(
+    await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM runs WHERE "threadId" = ${threadId}
+      AND (strpos(coalesce(checkpoint, ''), ${value}) > 0
+        OR strpos(coalesce(checkpoint, ''), ${escapedValue}) > 0
+        OR strpos(coalesce(error, ''), ${value}) > 0)`,
+  );
   for (const run of await tx.run.findMany({
-    where: {
-      threadId,
-      OR: [{ checkpoint: { contains: value } }, { error: { contains: value } }],
-    },
+    where: { id: { in: runIds } },
     select: { id: true, checkpoint: true, error: true },
   })) {
     await tx.run.update({
       where: { id: run.id },
       data: {
-        checkpoint: run.checkpoint === null ? null : replace(run.checkpoint),
+        checkpoint: run.checkpoint === null ? null : replaceSerialized(run.checkpoint),
         error: run.error === null ? null : replace(run.error),
       },
     });

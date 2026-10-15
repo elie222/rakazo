@@ -797,6 +797,37 @@ describeIntegration("reusable credential lifecycle", () => {
     });
   });
 
+  it("scrubs a pasted value that JSON escapes inside serialized checkpoints", async () => {
+    const value = 'fake"quote\\cred';
+    const escaped = JSON.stringify(value).slice(1, -1);
+    const seeded = await seedRun("pasted-escaped", "Save my code");
+    await createThreadMessage(handles.prisma, {
+      threadId: seeded.thread.id,
+      role: "user",
+      blocks: [{ kind: "text", text: `My code is ${value}` }],
+    });
+    await handles.prisma.run.update({
+      where: { id: seeded.run.id },
+      data: { checkpoint: JSON.stringify({ actions: [{ label: value }] }) },
+    });
+    const registerRedactions = vi.fn();
+    const saved = await securePastedBotSecret({
+      prisma: handles.prisma,
+      secretStore: new EncryptedSecretStore("test-only-credential-lifecycle-encryption-key"),
+      scope: { userId: seeded.me.userId, spaceId: seeded.me.spaceId, botId: seeded.bot.id },
+      threadId: seeded.thread.id,
+      runId: seeded.run.id,
+      registerRedactions,
+      args: { name: "escaped_code", value, auth: { type: "command" } },
+    });
+    expect(saved).toMatchObject({ ok: true, replaced: 1 });
+    expect(registerRedactions.mock.calls[0]?.[0]).toEqual(expect.arrayContaining([value, escaped]));
+    const run = await handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } });
+    expect(JSON.parse(run.checkpoint ?? "null")).toEqual({
+      actions: [{ label: "[saved as escaped_code]" }],
+    });
+  });
+
   async function seedRun(
     label: string,
     prompt: string,

@@ -169,7 +169,7 @@ function percentEncoded(value: string): string | undefined {
 }
 
 function commandRedactionForms(value: string): string[] {
-  const forms = [value, Buffer.from(value).toString("base64")];
+  const forms = [value, JSON.stringify(value).slice(1, -1), Buffer.from(value).toString("base64")];
   const encoded = percentEncoded(value);
   if (encoded !== undefined) forms.push(encoded);
   return forms;
@@ -721,7 +721,6 @@ export async function requestWithBotSecret(input: {
 }
 
 export type LoginField = "username" | "password";
-const MIN_REDACTED_USERNAME = 6;
 
 /**
  * Resolve one field of a saved website login for a page fill. The caller must pass `origin` to
@@ -772,7 +771,7 @@ export async function resolveLoginFill(input: {
     redactions: [
       ...new Set(
         (login.password ? [login.password, encodeURIComponent(login.password)] : []).concat(
-          login.username && login.username.length >= MIN_REDACTED_USERNAME
+          login.username && login.username.length >= MIN_REDACTABLE_SECRET_LENGTH
             ? [login.username, encodeURIComponent(login.username)]
             : [],
         ),

@@ -40,6 +40,7 @@ describe("redactModelContextSecrets", () => {
       {
         role: "assistant",
         content: [
+          { type: "thinking", thinking: "secret", thinkingSignature: '{"type":"secret"}' },
           {
             type: "toolCall",
             id: "call-1",
@@ -60,6 +61,7 @@ describe("redactModelContextSecrets", () => {
       {
         role: "assistant",
         content: [
+          { type: "thinking", thinking: "[redacted]", thinkingSignature: '{"type":"secret"}' },
           {
             type: "toolCall",
             id: "call-1",
