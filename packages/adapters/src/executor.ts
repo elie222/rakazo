@@ -380,6 +380,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   isProgressMessageTruncated,
   isUserProgressClientNonce,
+  midTurnProgressBudgetAllows,
   userProgressClientNonce,
 } from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
@@ -3913,6 +3914,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let discardedMidTurnNarration = false;
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
+        const turnStartedAtMs = attempt.startedAt?.getTime() ?? Date.now();
+        // Durable interim messages only on genuinely long turns, capped per run.
+        const canPublishDurableProgress = () =>
+          runPromotesMidTurnNarration(run.trigger) &&
+          midTurnProgressBudgetAllows(midTurnProgressCount, Date.now() - turnStartedAtMs);
         {
           const priorProgress = await deps.prisma.message.findMany({
             where: { runId: run.id, role: "bot" },
@@ -3990,7 +3996,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           assembled = "";
           hasStreamedText = false;
           pendingProgress = "";
-          if (!runPromotesMidTurnNarration(run.trigger)) {
+          if (!canPublishDurableProgress()) {
             discardedMidTurnNarration = true;
             return;
           }
@@ -6147,6 +6153,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const truncated = isProgressMessageTruncated(rawMessage);
             await flushProgress();
             await publishMidTurnNarration();
+            if (!canPublishDurableProgress()) {
+              return finish({
+                ok: true,
+                note: "This update was not posted. The turn is still fresh, or the chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply.",
+              });
+            }
             await publishMessage(
               deps,
               run,
@@ -6788,7 +6800,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await publishMidTurnNarration();
               if (assembled.trim()) {
                 const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
-                if (narration && runPromotesMidTurnNarration(run.trigger)) {
+                if (narration && canPublishDurableProgress()) {
                   await publishMessage(
                     deps,
                     run,
@@ -7897,7 +7909,7 @@ export function mayOpenModelStream(
 export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply };
 
 export const LONG_WORK_PROGRESS_GUIDANCE =
-  "During long work, send a few short progress updates with message_user so the user can see what you are doing. Keep them brief and high-signal (a sentence or two, not a dump). Do not narrate every tool call. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
+  "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
 
 export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. Do not call message_user unless you have something to report.`;
 
