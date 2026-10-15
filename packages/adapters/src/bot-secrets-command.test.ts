@@ -350,6 +350,7 @@ describe("shell command environment", () => {
     expect(new Set(redactions)).toEqual(
       new Set([
         bad,
+        JSON.stringify(bad).slice(1, -1),
         Buffer.from(bad).toString("base64"),
         "fake-good-token",
         Buffer.from("fake-good-token").toString("base64"),
