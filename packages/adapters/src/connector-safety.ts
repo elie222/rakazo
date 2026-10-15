@@ -44,44 +44,32 @@ const SERIALIZED_MODEL_FIELDS: ReadonlySet<string> = new Set([
   "thinkingSignature",
   "textSignature",
 ]);
-const NO_PROTOCOL_FIELDS: ReadonlySet<string> = new Set();
 
 export function redactModelContextSecrets<T>(value: T, secrets: string[]): T {
-  return redactModelValue(value, secrets, MODEL_PROTOCOL_FIELDS) as T;
+  return redactModelValue(value, secrets, true) as T;
 }
 
-function redactModelValue(
-  value: unknown,
-  secrets: string[],
-  protocolFields: ReadonlySet<string>,
-): unknown {
+function redactModelValue(value: unknown, secrets: string[], protocol: boolean): unknown {
   if (typeof value === "string") return redactSecrets(value, secrets);
   if (typeof value === "number") return secrets.includes(String(value)) ? "[redacted]" : value;
-  if (Array.isArray(value))
-    return value.map((item) => redactModelValue(item, secrets, protocolFields));
+  if (Array.isArray(value)) return value.map((item) => redactModelValue(item, secrets, protocol));
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => {
-      if (typeof item === "string" && protocolFields.has(key)) return [key, item];
-      if (typeof item === "string" && SERIALIZED_MODEL_FIELDS.has(key))
-        return [key, redactSerializedModelValue(item, secrets, protocolFields)];
-      return [
-        key,
-        redactModelValue(item, secrets, key === "arguments" ? NO_PROTOCOL_FIELDS : protocolFields),
-      ];
+      if (protocol && typeof item === "string" && MODEL_PROTOCOL_FIELDS.has(key))
+        return [key, item];
+      if (protocol && typeof item === "string" && SERIALIZED_MODEL_FIELDS.has(key))
+        return [key, redactSerializedModelValue(item, secrets)];
+      return [key, redactModelValue(item, secrets, protocol && key !== "arguments")];
     }),
   );
 }
 
-function redactSerializedModelValue(
-  value: string,
-  secrets: string[],
-  protocolFields: ReadonlySet<string>,
-): string {
+function redactSerializedModelValue(value: string, secrets: string[]): string {
   try {
     const parsed: unknown = JSON.parse(value);
     return parsed && typeof parsed === "object"
-      ? JSON.stringify(redactModelValue(parsed, secrets, protocolFields))
+      ? JSON.stringify(redactModelValue(parsed, secrets, true))
       : value;
   } catch {
     return value;
