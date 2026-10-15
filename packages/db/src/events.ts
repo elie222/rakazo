@@ -1313,9 +1313,6 @@ export async function discardAnsweredSteering(
       runId: input.runId,
       role: "bot",
       blocks: { array_contains: [{ kind: "text" }] },
-      // Progress and promoted narration carry a nonce. Conservatively keep all
-      // nonce-bearing output out of answer detection, including unknown kinds.
-      clientNonce: null,
       NOT: ["ask", "computer", "steps", "subagent"].map((kind) => ({
         blocks: { array_contains: [{ kind }] },
       })),

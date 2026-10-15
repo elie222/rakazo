@@ -151,10 +151,10 @@ describePostgres("steering after a run ends without completing (PostgreSQL)", ()
     expect(continuation.trigger).toBe("follow_up");
   });
 
-  it("replays a claimed request after a progress update or promoted narration", async () => {
+  it("does not replay a claimed request after a progress update or promoted narration", async () => {
     const fixture = await runSteeredByMessage("running");
     await botReplies(fixture.run.id, `user-progress:${fixture.run.id}:0:test`);
-    await expect(failRun(fixture)).resolves.toEqual({ continuationRunId: expect.any(String) });
+    await expect(failRun(fixture)).resolves.toEqual({ continuationRunId: null });
   });
 
   it.each([0, 60_000])("ignores a claim clock offset of %i ms", async (offset) => {

@@ -3232,13 +3232,12 @@ describe("discardAnsweredSteering", () => {
     };
   }
 
-  it("requires a plain reply and a durable claim watermark", async () => {
+  it("requires a text reply and a durable claim watermark", async () => {
     const tx = client(null);
     await discardAnsweredSteering(tx as never, { threadId: "thread-1", runId: "run-1" });
     expect(tx.message.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          clientNonce: null,
           NOT: expect.arrayContaining([
             { blocks: { array_contains: [{ kind: "ask" }] } },
             { blocks: { array_contains: [{ kind: "steps" }] } },
