@@ -14,6 +14,7 @@ import {
   createJobReconciler,
   createMessagingContextLoader,
   createPostgresReconciliationLeadership,
+  createRoutineRetryNoticeReconciler,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
@@ -40,7 +41,6 @@ import {
   pipedreamConfigFromEnv,
   reconcileCloudAgents,
   reconcileComputerUpdates,
-  reconcileRoutineRetryNotices,
   resolveDeploymentModel,
   resolvePiSessionRoot,
   resolveSandboxProvider,
@@ -275,10 +275,9 @@ async function main() {
     reconcileComputerUpdates: () => reconcileComputerUpdates({ prisma, jobs }),
     reconcileRoutineRetryNotices: inMemoryJobs
       ? undefined
-      : () =>
-          reconcileRoutineRetryNotices(pool, (runId) =>
-            executor.notifyRoutineRetryAttemptsExhausted(runId),
-          ),
+      : createRoutineRetryNoticeReconciler(pool, (runId) =>
+          executor.notifyRoutineRetryAttemptsExhausted(runId),
+        ),
   });
   reconciler.start();
 

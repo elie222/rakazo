@@ -18,10 +18,10 @@ vi.mock("graphile-worker", () => ({
 }));
 
 import {
+  createRoutineRetryNoticeReconciler,
   databaseCapacityBackoffMs,
   GraphileJobPublisher,
   GraphileJobWorkerHost,
-  reconcileRoutineRetryNotices,
 } from "./wakeup.js";
 
 function handlers(): BackgroundJobHandlers {
@@ -364,7 +364,7 @@ describe("GraphileJobWorkerHost runner lifecycle", () => {
   });
 });
 
-describe("reconcileRoutineRetryNotices", () => {
+describe("createRoutineRetryNoticeReconciler", () => {
   function pendingNotices(payloads: unknown[] = [wrapJobPayload({ runId: "run-1" })]) {
     const pending = payloads.map((payload, index) => ({
       id: String(index + 1),
@@ -372,7 +372,13 @@ describe("reconcileRoutineRetryNotices", () => {
       payload,
     }));
     const query = vi.fn(async (sql: string, params?: unknown[]) => {
-      if (sql.startsWith("select")) return { rows: [...pending] };
+      if (sql.startsWith("select")) {
+        return {
+          rows: pending
+            .filter((job) => BigInt(job.id) > BigInt(String(params?.[0])))
+            .slice(0, Number(params?.[1])),
+        };
+      }
       const index = pending.findIndex(
         (job) => job.id === params?.[0] && job.revision === params?.[1],
       );
@@ -388,16 +394,16 @@ describe("reconcileRoutineRetryNotices", () => {
       .fn()
       .mockRejectedValueOnce(new Error("database unavailable"))
       .mockResolvedValue(undefined);
-    await reconcileRoutineRetryNotices(pool, notify);
+    await createRoutineRetryNoticeReconciler(pool, notify)();
     expect(pending).toHaveLength(1);
     expect(query).toHaveBeenCalledTimes(1);
 
     // A new pass has no dependence on an event or in-memory retry state.
-    await reconcileRoutineRetryNotices(pool, notify);
+    await createRoutineRetryNoticeReconciler(pool, notify)();
     expect(notify.mock.calls).toEqual([["run-1"], ["run-1"]]);
     expect(pending).toHaveLength(0);
     expect(query).toHaveBeenLastCalledWith(expect.stringContaining("revision = $2"), ["1", 2]);
-    await reconcileRoutineRetryNotices(pool, notify);
+    await createRoutineRetryNoticeReconciler(pool, notify)();
     expect(notify).toHaveBeenCalledTimes(2);
   });
 
@@ -414,7 +420,7 @@ describe("reconcileRoutineRetryNotices", () => {
       .fn()
       .mockRejectedValueOnce(new Error("lookup failed"))
       .mockResolvedValue(undefined);
-    await reconcileRoutineRetryNotices(pool, notify);
+    await createRoutineRetryNoticeReconciler(pool, notify)();
     expect(notify.mock.calls).toEqual([["run-1"], ["run-2"]]);
     expect(pending.map((job) => job.id)).toEqual(["1", "3", "4", "5", "6"]);
   });
@@ -425,18 +431,56 @@ describe("reconcileRoutineRetryNotices", () => {
       .mockImplementationOnce(async () => ({ rows: [...pending] }))
       .mockRejectedValueOnce(new Error("delete failed"));
     const notify = vi.fn(async () => undefined);
-    await reconcileRoutineRetryNotices(pool, notify);
+    await createRoutineRetryNoticeReconciler(pool, notify)();
     expect(pending).toHaveLength(1);
-    await reconcileRoutineRetryNotices(pool, notify);
+    await createRoutineRetryNoticeReconciler(pool, notify)();
     expect(notify).toHaveBeenCalledTimes(2);
     expect(pending).toHaveLength(0);
   });
 
+  it("bounds each pass and advances beyond failures before retrying them", async () => {
+    const { pool } = pendingNotices(
+      Array.from({ length: 21 }, (_, index) => ({ runId: `run-${index + 1}` })),
+    );
+    const notify = vi.fn(async () => {
+      throw new Error("destination unavailable");
+    });
+    const reconcile = createRoutineRetryNoticeReconciler(pool, notify);
+    await reconcile();
+    expect(notify).toHaveBeenCalledTimes(20);
+    await reconcile();
+    expect(notify).toHaveBeenCalledTimes(21);
+    expect(notify).toHaveBeenLastCalledWith("run-21");
+    await reconcile();
+    expect(notify).toHaveBeenCalledTimes(41);
+  });
+
+  it("sends concurrently with a bounded number of active deliveries", async () => {
+    const { pool } = pendingNotices(
+      Array.from({ length: 20 }, (_, index) => ({ runId: `run-${index}` })),
+    );
+    const release = deferred();
+    let active = 0;
+    let peak = 0;
+    const notify = vi.fn(async () => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await release.promise;
+      active -= 1;
+    });
+    const delivering = createRoutineRetryNoticeReconciler(pool, notify)();
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(4));
+    release.resolve();
+    await delivering;
+    expect(notify).toHaveBeenCalledTimes(20);
+    expect(peak).toBe(4);
+  });
+
   it("keeps concurrently replaced work when acknowledging a notice", async () => {
     const { pool, pending } = pendingNotices();
-    await reconcileRoutineRetryNotices(pool, async () => {
+    await createRoutineRetryNoticeReconciler(pool, async () => {
       pending[0] = { id: "1", revision: 3, payload: { runId: "new-run" } };
-    });
+    })();
     expect(pending).toEqual([{ id: "1", revision: 3, payload: { runId: "new-run" } }]);
   });
 });
