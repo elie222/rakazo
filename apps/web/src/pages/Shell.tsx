@@ -467,7 +467,7 @@ export function ShellPage() {
   const enterToSend = useSyncExternalStore(
     subscribeComposerEnterToSend,
     getComposerEnterToSend,
-    () => true,
+    () => false,
   );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);

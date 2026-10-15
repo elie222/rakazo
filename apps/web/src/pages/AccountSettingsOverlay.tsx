@@ -77,16 +77,16 @@ export function GeneralSettingsPanels({
     () => getResponseStreamingPreference() === "on",
   );
   const streamRepliesId = useId();
-  const enterToSend = useSyncExternalStore(
-    subscribeComposerEnterToSend,
-    getComposerEnterToSend,
-    () => true,
-  );
-  const enterToSendId = useId();
   const [showToolActivity, setShowToolActivity] = useState(
     () => getToolActivityPreference() === "on",
   );
   const showToolActivityId = useId();
+  const enterToSend = useSyncExternalStore(
+    subscribeComposerEnterToSend,
+    getComposerEnterToSend,
+    () => false,
+  );
+  const enterToSendId = useId();
   const [loadRemoteImages, setLoadRemoteImages] = useState(
     () => getRemoteImagesPreference() === "on",
   );

@@ -25,8 +25,8 @@ beforeEach(async () => {
 });
 
 describe("defaultComposerEnterToSend", () => {
-  it("sends on precise pointers, newline on coarse pointers", () => {
-    expect(defaultComposerEnterToSend(false)).toBe(true);
+  it("defaults to newline so Enter does not send", () => {
+    expect(defaultComposerEnterToSend(false)).toBe(false);
     expect(defaultComposerEnterToSend(true)).toBe(false);
   });
 });
@@ -39,17 +39,17 @@ describe("normalizeComposerEnterToSend", () => {
     expect(normalizeComposerEnterToSend("off")).toBe(false);
   });
 
-  it("falls back to the pointer default for missing or unknown values", () => {
-    expect(normalizeComposerEnterToSend(null, false)).toBe(true);
+  it("falls back to newline for missing or unknown values", () => {
+    expect(normalizeComposerEnterToSend(null, false)).toBe(false);
     expect(normalizeComposerEnterToSend(null, true)).toBe(false);
-    expect(normalizeComposerEnterToSend("maybe", false)).toBe(true);
+    expect(normalizeComposerEnterToSend("maybe", false)).toBe(false);
   });
 });
 
 describe("get/setComposerEnterToSend", () => {
   it("reads the default, persists the toggle, and notifies subscribers", () => {
     const storage = memoryStorage();
-    expect(mod.getComposerEnterToSend(storage, false)).toBe(true);
+    expect(mod.getComposerEnterToSend(storage, false)).toBe(false);
     let notifications = 0;
     const unsubscribe = mod.subscribeComposerEnterToSend(() => {
       notifications += 1;
