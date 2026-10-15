@@ -643,10 +643,28 @@ describeIntegration("reusable credential lifecycle", () => {
     },
   );
 
-  it.each(["absent", "bot", "stale", "another-thread", "metadata"])(
+  it.each(["absent", "bot", "stale", "another-thread", "metadata", "short"])(
     "rejects a value from %s without saving or rewriting",
     async (source) => {
-      const value = source === "metadata" ? "text" : "fake-unprovided-credential";
+      const value =
+        source === "metadata"
+          ? "fake-statement.pdf"
+          : source === "short"
+            ? "48291"
+            : "fake-unprovided-credential";
+      const originalBlocks =
+        source === "metadata"
+          ? [
+              { kind: "text", text: "No credential here" },
+              {
+                kind: "file",
+                artifactId: "fake-artifact",
+                mimeType: "application/pdf",
+                name: value,
+                size: 1,
+              },
+            ]
+          : [{ kind: "text", text: value }];
       const seeded = await seedRun(`pasted-${source}`, "Save the credential");
       let originalId: string | undefined;
       if (source !== "absent") {
@@ -657,7 +675,7 @@ describeIntegration("reusable credential lifecycle", () => {
         const original = await createThreadMessage(handles.prisma, {
           threadId: other.id,
           role: source === "bot" ? "bot" : "user",
-          blocks: [{ kind: "text", text: source === "metadata" ? "No credential here" : value }],
+          blocks: originalBlocks,
         });
         originalId = original.id;
         if (source === "stale")
@@ -690,16 +708,94 @@ describeIntegration("reusable credential lifecycle", () => {
         const audits = await handles.prisma.event.findMany({
           where: { runId: seeded.run.id, type: "agent.tool.completed" },
         });
-        expect(JSON.stringify(audits)).toContain("recent user message");
+        expect(JSON.stringify(audits)).toContain(
+          source === "short" ? "shorter than 6 characters" : "recent user message",
+        );
         if (originalId)
           expect(
             (await handles.prisma.message.findUniqueOrThrow({ where: { id: originalId } })).blocks,
-          ).toEqual([{ kind: "text", text: source === "metadata" ? "No credential here" : value }]);
+          ).toEqual(originalBlocks);
       } finally {
         runtime.mockRestore();
       }
     },
   );
+
+  it("scrubs a numeric pasted value without touching keys or other numbers", async () => {
+    const value = "482913";
+    const seeded = await seedRun("pasted-numeric", "Save my PIN");
+    const scope = { userId: seeded.me.userId, spaceId: seeded.me.spaceId, botId: seeded.bot.id };
+    const message = await createThreadMessage(handles.prisma, {
+      threadId: seeded.thread.id,
+      role: "user",
+      blocks: [
+        { kind: "text", text: `My PIN is ${value}` },
+        {
+          kind: "file",
+          artifactId: "fake-artifact",
+          mimeType: "text/plain",
+          name: "statement.txt",
+          size: 4829130,
+        },
+      ],
+    });
+    const event = await handles.prisma.event.create({
+      data: {
+        spaceId: seeded.me.spaceId,
+        botId: seeded.bot.id,
+        threadId: seeded.thread.id,
+        seq: seeded.thread.nextEventSeq,
+        type: "agent.tool.started",
+        payload: { [`k${value}`]: 4829130, pin: Number(value) },
+      },
+    });
+    await handles.prisma.thread.update({
+      where: { id: seeded.thread.id },
+      data: { nextEventSeq: { increment: 1 } },
+    });
+    const effect = await handles.prisma.externalEffect.create({
+      data: {
+        spaceId: seeded.me.spaceId,
+        runId: seeded.run.id,
+        kind: "destination.write",
+        idempotencyKey: `${seeded.run.id}:numeric`,
+        status: "rejected",
+        request: { note: `PIN ${value}` },
+        reviewReason: `The request includes PIN ${value}`,
+      },
+    });
+    const saved = await securePastedBotSecret({
+      prisma: handles.prisma,
+      secretStore: new EncryptedSecretStore("test-only-credential-lifecycle-encryption-key"),
+      scope,
+      threadId: seeded.thread.id,
+      runId: seeded.run.id,
+      registerRedactions: vi.fn(),
+      args: { name: "pin_code", value, auth: { type: "command" } },
+    });
+    expect(saved).toMatchObject({ ok: true, replaced: 1 });
+    expect(
+      (await handles.prisma.message.findUniqueOrThrow({ where: { id: message.id } })).blocks,
+    ).toEqual([
+      { kind: "text", text: "My PIN is [saved as pin_code]" },
+      {
+        kind: "file",
+        artifactId: "fake-artifact",
+        mimeType: "text/plain",
+        name: "statement.txt",
+        size: 4829130,
+      },
+    ]);
+    expect(
+      (await handles.prisma.event.findUniqueOrThrow({ where: { id: event.id } })).payload,
+    ).toEqual({ [`k${value}`]: 4829130, pin: "[saved as pin_code]" });
+    expect(
+      await handles.prisma.externalEffect.findUniqueOrThrow({ where: { id: effect.id } }),
+    ).toMatchObject({
+      request: { note: "PIN [saved as pin_code]" },
+      reviewReason: "The request includes PIN [saved as pin_code]",
+    });
+  });
 
   async function seedRun(
     label: string,

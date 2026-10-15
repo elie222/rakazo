@@ -149,6 +149,13 @@ export interface PiAgentRuntimeOptions {
   ) => void;
 }
 
+function redactContextMessages(
+  context: Context,
+  redact: AgentRunRequest["redactModelContext"],
+): Context {
+  return redact ? { ...context, messages: redact(context.messages) } : context;
+}
+
 export class PiAgentRuntime implements AgentRuntime {
   private readonly sessionRecorder?: PiSessionRecorder;
   private readonly modelCallObserver?: ModelCallObserver;
@@ -329,7 +336,10 @@ export class PiAgentRuntime implements AgentRuntime {
         });
         const usageHooks = {
           prepareContext: (ctx: Context, model: Model<Api>) =>
-            contextPolicy.prepareContext(request.redactModelContext?.(ctx) ?? ctx, model),
+            contextPolicy.prepareContext(
+              redactContextMessages(ctx, request.redactModelContext),
+              model,
+            ),
           imageTokens: estimatePiImageTokens,
           recordUsage: request.onUsage,
           onUsage: (usage: AgentUsage) => {
@@ -375,7 +385,10 @@ export class PiAgentRuntime implements AgentRuntime {
                   {
                     ...usageHooks,
                     prepareContext: (ctx, m) =>
-                      contextPolicy.prepareContext(request.redactModelContext?.(ctx) ?? ctx, m),
+                      contextPolicy.prepareContext(
+                        redactContextMessages(ctx, request.redactModelContext),
+                        m,
+                      ),
                     onProviderError: (message) => providerFailures.add(message.content),
                   },
                 ),
@@ -1442,7 +1455,10 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
             { operationKind: "subagent", agentId },
             {
               prepareContext: (ctx, m) =>
-                contextPolicy.prepareContext(host.request.redactModelContext?.(ctx) ?? ctx, m),
+                contextPolicy.prepareContext(
+                  redactContextMessages(ctx, host.request.redactModelContext),
+                  m,
+                ),
               imageTokens: estimatePiImageTokens,
               recordUsage: host.request.onUsage,
               onProviderError: (message) => providerFailures.add(message.content),

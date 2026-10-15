@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { redactConnectorPayload } from "./connector-safety.js";
+import { redactConnectorPayload, redactModelContextSecrets } from "./connector-safety.js";
 
 describe("redactConnectorPayload", () => {
   it("redacts secrets that JSON escapes in property names and values", () => {
@@ -30,5 +30,50 @@ describe("redactConnectorPayload", () => {
     expect(
       redactConnectorPayload({ number: 123, boolean: true, empty: null }, ["123", "true", "null"]),
     ).toEqual({ number: "[redacted]", boolean: "[redacted]", empty: "[redacted]" });
+  });
+});
+
+describe("redactModelContextSecrets", () => {
+  it("redacts message text and tool arguments while keeping the protocol intact", () => {
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "my code is secret" }], timestamp: 1 },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call-1",
+            name: "secure_pasted_secret",
+            arguments: { name: "secret", value: "secret", pin: 482913 },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "secure_pasted_secret",
+        content: [{ type: "text", text: "saved secret" }],
+      },
+    ];
+    expect(redactModelContextSecrets(messages, ["secret", "482913"])).toEqual([
+      { role: "user", content: [{ type: "text", text: "my code is [redacted]" }], timestamp: 1 },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "call-1",
+            name: "secure_pasted_secret",
+            arguments: { name: "[redacted]", value: "[redacted]", pin: "[redacted]" },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "call-1",
+        toolName: "secure_pasted_secret",
+        content: [{ type: "text", text: "saved [redacted]" }],
+      },
+    ]);
   });
 });

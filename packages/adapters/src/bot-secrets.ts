@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@rakazo/adapter-kit";
-import type { BotSecretDestination, MessageBlock } from "@rakazo/contracts";
+import type { BotSecretDestination } from "@rakazo/contracts";
 import {
   BotSecretAuth,
   BotSecretName,
@@ -12,7 +12,11 @@ import {
   SecretHttpRequest,
 } from "@rakazo/contracts";
 import type { Prisma, PrismaClient } from "@rakazo/db";
-import { replaceThreadUserMessageSecret, withTransactionRetry } from "@rakazo/db";
+import {
+  recentUserMessagesContain,
+  replaceThreadUserMessageSecret,
+  withTransactionRetry,
+} from "@rakazo/db";
 import { z } from "zod";
 import { combineSignals, redactConnectorPayload } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -21,6 +25,7 @@ import { persistPreparedSecret } from "./secret-persistence.js";
 import { readBodyCapped, withAbort } from "./web-ssrf.js";
 
 export type BotSecretScope = { userId: string; spaceId: string; botId: string };
+export const MIN_REDACTABLE_SECRET_LENGTH = 6;
 export const RequestSecretAuth = z.discriminatedUnion("type", [
   z.object({ type: z.literal("command") }),
   z.object({
@@ -51,20 +56,11 @@ export async function securePastedBotSecret(input: {
   const parsed = SecurePastedSecretInput.safeParse(input.args);
   if (!parsed.success) return { error: "Invalid pasted credential arguments." };
   const secret = parsed.data;
-  const recent = await input.prisma.message.findMany({
-    where: { threadId: input.threadId, role: "user" },
-    orderBy: { seq: "desc" },
-    take: 20,
-    select: { blocks: true },
-  });
-  if (
-    !recent.some((message) =>
-      (message.blocks as MessageBlock[]).some(
-        (block) =>
-          "text" in block && typeof block.text === "string" && block.text.includes(secret.value),
-      ),
-    )
-  )
+  if (secret.value.length < MIN_REDACTABLE_SECRET_LENGTH)
+    return {
+      error: `Values shorter than ${MIN_REDACTABLE_SECRET_LENGTH} characters cannot be secured from chat. Ask for it with request_secret instead.`,
+    };
+  if (!(await recentUserMessagesContain(input.prisma, input.threadId, secret.value)))
     return { error: "The value must appear in a recent user message in this chat." };
   input.registerRedactions(commandCredentialRedactions({ value: secret.value }));
   try {

@@ -19,7 +19,8 @@ import {
 } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
-import type { Prisma, PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { Prisma } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
 import {
   assertRunCanWriteHistory,
@@ -1521,6 +1522,24 @@ class ChangeLatch {
   }
 }
 
+export async function recentUserMessagesContain(
+  client: Pick<Prisma.TransactionClient, "message">,
+  threadId: string,
+  value: string,
+): Promise<boolean> {
+  const recent = await client.message.findMany({
+    where: { threadId, role: "user" },
+    orderBy: { seq: "desc" },
+    take: 20,
+    select: { blocks: true },
+  });
+  return recent.some((message) =>
+    (message.blocks as MessageBlock[]).some(
+      (block) => "text" in block && typeof block.text === "string" && block.text.includes(value),
+    ),
+  );
+}
+
 export async function replaceThreadUserMessageSecret(
   tx: Prisma.TransactionClient,
   input: { threadId: string; botId: string; runId: string; value: string; replacement: string },
@@ -1529,95 +1548,91 @@ export async function replaceThreadUserMessageSecret(
   if (!value || replacement.includes(value)) throw new Error("Invalid secret replacement");
   await tx.$queryRaw`SELECT id FROM threads WHERE id = ${threadId} FOR UPDATE`;
   const thread = await tx.thread.findUniqueOrThrow({ where: { id: threadId } });
-  const recent = await tx.message.findMany({
-    where: { threadId, role: "user" },
-    orderBy: { seq: "desc" },
-    take: 20,
-    select: { blocks: true },
-  });
-  if (
-    !recent.some((message) =>
-      (message.blocks as MessageBlock[]).some(
-        (block) => "text" in block && typeof block.text === "string" && block.text.includes(value),
-      ),
-    )
-  )
-    return 0;
+  if (!(await recentUserMessagesContain(tx, threadId, value))) return 0;
   const replace = (text: string) => text.split(value).join(replacement);
   const replaceJson = (json: Prisma.JsonValue): Prisma.InputJsonValue => {
     if (typeof json === "string") return replace(json);
     if (Array.isArray(json)) return json.map((item) => (item === null ? null : replaceJson(item)));
     if (json && typeof json === "object") {
       return Object.fromEntries(
-        Object.entries(json).map(([key, item]) => [
-          replace(key),
-          item == null ? null : replaceJson(item),
-        ]),
+        Object.entries(json).map(([key, item]) => [key, item == null ? null : replaceJson(item)]),
       );
     }
-    return typeof json === "number" && String(json).includes(value)
+    return typeof json === "number" && String(json) === value
       ? replacement
       : (json as number | boolean);
   };
-  const messages = await tx.message.findMany({ where: { threadId } });
-  let count = 0;
-  for (const message of messages) {
+  const jsonNeedle = Prisma.sql`substr(to_jsonb(${value}::text)::text, 2, length(to_jsonb(${value}::text)::text) - 2)`;
+  const ids = (rows: Array<{ id: string }>) => rows.map((row) => row.id);
+  const messageIds = ids(
+    await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM messages WHERE "threadId" = ${threadId}
+      AND (strpos(blocks::text, ${jsonNeedle}) > 0 OR strpos(coalesce("replyQuote", ''), ${value}) > 0)`,
+  );
+  for (const message of await tx.message.findMany({ where: { id: { in: messageIds } } })) {
     const blocks = replaceJson(message.blocks);
     const replyQuote = message.replyQuote === null ? null : replace(message.replyQuote);
-    if (
-      JSON.stringify(blocks) !== JSON.stringify(message.blocks) ||
-      replyQuote !== message.replyQuote
-    ) {
-      await tx.message.update({ where: { id: message.id }, data: { blocks, replyQuote } });
-      await appendEventInTransaction(tx, {
-        spaceId: thread.spaceId,
-        threadId,
-        botId: input.botId,
-        runId: input.runId,
-        type: "thread.message.updated",
-        payload: {
-          messageId: message.id,
-          role: message.role,
-          blocks,
-          replyToMessageId: message.replyToMessageId,
-          replyQuote,
-        },
-      });
-      if (message.role === "user" && JSON.stringify(blocks) !== JSON.stringify(message.blocks))
-        count += 1;
-    }
+    await tx.message.update({ where: { id: message.id }, data: { blocks, replyQuote } });
+    await appendEventInTransaction(tx, {
+      spaceId: thread.spaceId,
+      threadId,
+      botId: input.botId,
+      runId: input.runId,
+      type: "thread.message.updated",
+      payload: {
+        messageId: message.id,
+        role: message.role,
+        blocks,
+        replyToMessageId: message.replyToMessageId,
+        replyQuote,
+      },
+    });
   }
-  for (const event of await tx.event.findMany({ where: { threadId } })) {
-    const payload = replaceJson(event.payload);
-    if (JSON.stringify(payload) !== JSON.stringify(event.payload))
-      await tx.event.update({ where: { id: event.id }, data: { payload } });
+  const userMessagesReplaced = await tx.message.count({
+    where: { id: { in: messageIds }, role: "user" },
+  });
+  const eventIds = ids(
+    await tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM events WHERE "threadId" = ${threadId}
+      AND strpos(payload::text, ${jsonNeedle}) > 0`,
+  );
+  for (const event of await tx.event.findMany({ where: { id: { in: eventIds } } })) {
+    await tx.event.update({
+      where: { id: event.id },
+      data: { payload: replaceJson(event.payload) },
+    });
   }
-  for (const effect of await tx.externalEffect.findMany({ where: { run: { threadId } } })) {
-    const request = replaceJson(effect.request);
-    const result = effect.result === null ? undefined : replaceJson(effect.result);
-    if (
-      JSON.stringify(request) !== JSON.stringify(effect.request) ||
-      (result !== undefined && JSON.stringify(result) !== JSON.stringify(effect.result))
-    )
-      await tx.externalEffect.update({ where: { id: effect.id }, data: { request, result } });
+  const effectIds = ids(
+    await tx.$queryRaw<Array<{ id: string }>>`SELECT e.id FROM external_effects e
+      JOIN runs r ON r.id = e."runId" WHERE r."threadId" = ${threadId}
+      AND (strpos(e.request::text, ${jsonNeedle}) > 0
+        OR strpos(coalesce(e.result::text, ''), ${jsonNeedle}) > 0
+        OR strpos(coalesce(e."reviewReason", ''), ${value}) > 0)`,
+  );
+  for (const effect of await tx.externalEffect.findMany({ where: { id: { in: effectIds } } })) {
+    await tx.externalEffect.update({
+      where: { id: effect.id },
+      data: {
+        request: replaceJson(effect.request),
+        result: effect.result === null ? undefined : replaceJson(effect.result),
+        reviewReason: effect.reviewReason === null ? null : replace(effect.reviewReason),
+      },
+    });
   }
   await tx.$executeRaw`UPDATE tasks SET prompt = replace(prompt, ${value}, ${replacement})
     WHERE "threadId" = ${threadId} AND strpos(prompt, ${value}) > 0`;
   for (const run of await tx.run.findMany({
-    where: { threadId },
+    where: {
+      threadId,
+      OR: [{ checkpoint: { contains: value } }, { error: { contains: value } }],
+    },
     select: { id: true, checkpoint: true, error: true },
   })) {
-    let checkpoint = run.checkpoint;
-    if (checkpoint !== null) {
-      try {
-        checkpoint = JSON.stringify(replaceJson(JSON.parse(checkpoint)));
-      } catch {
-        checkpoint = replace(checkpoint);
-      }
-    }
-    const error = run.error === null ? null : replace(run.error);
-    if (checkpoint !== run.checkpoint || error !== run.error)
-      await tx.run.update({ where: { id: run.id }, data: { checkpoint, error } });
+    await tx.run.update({
+      where: { id: run.id },
+      data: {
+        checkpoint: run.checkpoint === null ? null : replace(run.checkpoint),
+        error: run.error === null ? null : replace(run.error),
+      },
+    });
   }
   await tx.thread.update({
     where: { id: threadId },
@@ -1648,5 +1663,5 @@ export async function replaceThreadUserMessageSecret(
         sourceRunId: input.runId,
       },
     });
-  return count;
+  return userMessagesReplaced;
 }
