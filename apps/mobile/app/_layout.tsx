@@ -5,12 +5,11 @@ import {
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Platform, View } from "react-native";
+import { Platform, useWindowDimensions, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,6 +19,7 @@ import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
+import { isCompactWindow } from "../lib/adaptive-layout";
 import {
   currentApiBase,
   loadApiBase,
@@ -39,6 +39,7 @@ import {
 } from "../lib/live-notifications";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
+import { syncOrientation } from "../lib/orientation";
 import {
   getCachedRemoteImagesEnabled,
   loadRemoteImagesPreference,
@@ -87,12 +88,11 @@ function ChatContentProviders({
 }
 
 export default function Layout() {
+  // Phone-sized windows are portrait-only; unfolding a foldable lets the app rotate again.
+  const compactWindow = isCompactWindow(useWindowDimensions());
   useEffect(() => {
-    // The app is portrait-only; the computer screen unlocks rotation while it is open.
-    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-      () => undefined,
-    );
-  }, []);
+    void syncOrientation();
+  }, [compactWindow]);
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
