@@ -18,6 +18,8 @@ export function PeerMessagesOverlay({
   peerBotId,
   peerBotName: initialPeerBotName,
   peerBotColor,
+  spaceId,
+  onOpenSpaceChat,
   onClose,
 }: {
   botId: string;
@@ -26,6 +28,8 @@ export function PeerMessagesOverlay({
   peerBotId: string;
   peerBotName: string;
   peerBotColor: string;
+  spaceId?: string;
+  onOpenSpaceChat: (spaceId: string) => void;
   onClose: () => void;
 }) {
   const { t } = useLingui();
@@ -144,10 +148,15 @@ export function PeerMessagesOverlay({
           </div>
         )}
 
-        <div className="flex items-center gap-4 border-t border-sidebar-border px-[18px] py-3.5">
+        <div className="flex items-center justify-between gap-4 border-t border-sidebar-border px-[18px] py-3.5">
           <p className="text-[13.5px] text-muted-foreground/80">
             <Trans>This chat is view-only</Trans>
           </p>
+          {spaceId ? (
+            <Button variant="outline" size="sm" onClick={() => onOpenSpaceChat(spaceId)}>
+              <Trans>Open chat</Trans>
+            </Button>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

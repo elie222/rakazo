@@ -2803,12 +2803,20 @@ msgid "Message from {peer}"
 msgstr "{peer}의 메시지"
 
 #: src/pages/Shell.tsx
+msgid "Message from {peer} in {spaceName}"
+msgstr ""
+
+#: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "메시지를 입력하세요"
 
 #: src/pages/Shell.tsx
 msgid "Messaged {peer}"
 msgstr "{peer}에게 메시지 보냄"
+
+#: src/pages/Shell.tsx
+msgid "Messaged {peer} in {spaceName}"
+msgstr ""
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
@@ -3218,6 +3226,10 @@ msgstr ""
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
+msgstr ""
+
+#: src/pages/PeerMessagesOverlay.tsx
+msgid "Open chat"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx

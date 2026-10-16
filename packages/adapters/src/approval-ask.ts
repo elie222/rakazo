@@ -9,7 +9,7 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string },
+  options?: { reviewReason?: string; oneTimeOnly?: boolean },
 ): MessageBlock {
   const summary = describeApprovalAction(toolName, args);
   const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
@@ -24,7 +24,11 @@ export function buildApprovalAskBlock(
       ),
       MAX_APPROVAL_SUMMARY_LENGTH,
     ),
-    detail: safeDetail ? truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH) : undefined,
+    detail: safeDetail
+      ? toolName === "message_bot" && options?.oneTimeOnly
+        ? safeDetail
+        : truncate(safeDetail, MAX_APPROVAL_DETAIL_LENGTH)
+      : undefined,
     status: "pending",
     actions:
       toolName === "create_space"
@@ -32,15 +36,23 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : [
-            { id: "allow", label: "Allow once" },
-            { id: "always", label: "Always allow this tool" },
-            { id: "deny", label: "Deny" },
-          ],
+        : options?.oneTimeOnly
+          ? [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ]
+          : [
+              { id: "allow", label: "Allow once" },
+              { id: "always", label: "Always allow this tool" },
+              { id: "deny", label: "Deny" },
+            ],
   };
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
+  if (toolName === "message_bot" && args.target_space_id != null) {
+    return `message_bot from ${String(args.source_space ?? "this Space")} to ${String(args.target_space ?? "another Space")} (${String(args.confirm_name ?? args.bot_id ?? "bot")})`;
+  }
   if (toolName === "destination.write") {
     const collection = args.collection ? String(args.collection) : "records";
     const title = args.title ? ` "${String(args.title)}"` : "";
@@ -66,6 +78,20 @@ function formatApprovalDetail(
   const lines: string[] = [];
   if (reviewReason?.trim()) {
     lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
+  }
+  if (toolName === "message_bot" && args.target_space_id != null) {
+    lines.push(
+      `from Space: ${String(args.source_space ?? "this Space")} (${String(args.source_space_id ?? "unknown")})`,
+    );
+    lines.push(
+      `to Space: ${String(args.target_space ?? "another Space")} (${String(args.target_space_id)})`,
+    );
+    lines.push(
+      `bot: ${String(args.confirm_name ?? "unknown")} (${String(args.bot_id ?? "unknown")})`,
+    );
+    lines.push(`intent: ${String(args.intent ?? "request")}`);
+    lines.push(`message: ${String(args.message ?? "")}`);
+    return lines.join("\n");
   }
   if (toolName === "create_space") {
     lines.push(

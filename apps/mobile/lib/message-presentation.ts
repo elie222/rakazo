@@ -3,6 +3,15 @@ import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
 import { MAX_QUOTABLE_SOURCE_LENGTH, visibleTextFromMarkdown } from "@rakazo/core/message-quote";
 
+type PeerReceiptBlock = Extract<
+  MessageBlock,
+  { kind: "bot_message_sent" | "bot_message_received" }
+>;
+
+export function peerReceiptSpaceName(block: PeerReceiptBlock): string | undefined {
+  return block.kind === "bot_message_sent" ? block.toSpaceName : block.fromSpaceName;
+}
+
 export function isCenteredAgentEvent(blocks: readonly MessageBlock[]): boolean {
   return blocks.some(
     (block) =>

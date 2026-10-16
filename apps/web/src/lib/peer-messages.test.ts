@@ -1,6 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { peerConversations, peerMessagesFrom } from "./peer-messages.js";
+import { peerConversations, peerMessagesFrom, peerReceiptSpace } from "./peer-messages.js";
 
 function message(id: string, createdAt: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
   return { id, threadId: "t_1", seq: 1, role: "bot", blocks, createdAt };
@@ -22,6 +22,37 @@ describe("peer conversations", () => {
       expect.objectContaining({ direction: "sent", peerBotName: "Analyst", text: "chart q3" }),
       expect.objectContaining({ direction: "received", peerBotName: "Analyst", text: "done" }),
     ]);
+  });
+
+  it("maps the counterpart Space from sent and received receipts", () => {
+    expect(
+      peerReceiptSpace({
+        kind: "bot_message_sent",
+        toBotId: "b_2",
+        toBotName: "Analyst",
+        text: "review this",
+        toSpaceId: "space-research",
+        toSpaceName: "Research",
+        toThreadId: "t_research",
+      }),
+    ).toEqual({ id: "space-research", name: "Research" });
+    expect(
+      peerReceiptSpace({
+        kind: "bot_message_received",
+        fromBotId: "b_2",
+        fromBotName: "Analyst",
+        text: "done",
+        fromSpaceId: "space-source",
+        fromSpaceName: "Personal",
+        fromThreadId: "t_source",
+      }),
+    ).toEqual({ id: "space-source", name: "Personal" });
+  });
+
+  it("keeps same-Space receipts without a Space label", () => {
+    const block = sentToAnalyst.blocks[0];
+    if (block?.kind !== "bot_message_sent") throw new Error("expected a sent receipt");
+    expect(peerReceiptSpace(block)).toEqual({ id: undefined, name: undefined });
   });
 
   it("groups an exchange with one peer into a single conversation", () => {

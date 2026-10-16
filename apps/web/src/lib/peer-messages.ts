@@ -19,6 +19,12 @@ export interface PeerConversation {
 
 type PeerBlock = Extract<MessageBlock, { kind: "bot_message_sent" | "bot_message_received" }>;
 
+export function peerReceiptSpace(block: PeerBlock): { id?: string; name?: string } {
+  return block.kind === "bot_message_sent"
+    ? { id: block.toSpaceId, name: block.toSpaceName }
+    : { id: block.fromSpaceId, name: block.fromSpaceName };
+}
+
 export function isPeerBlock(block: MessageBlock): block is PeerBlock {
   return block.kind === "bot_message_sent" || block.kind === "bot_message_received";
 }

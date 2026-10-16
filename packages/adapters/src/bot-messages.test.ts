@@ -4,6 +4,8 @@ import {
   currentBotMessageHop,
   loadBotMessageContext,
   messageBot,
+  parseMessageBotTargetEffectRequest,
+  prepareMessageBotTarget,
   returnBotMessageOutcome,
 } from "./bot-messages.js";
 import type { ExecutorDeps } from "./executor.js";
@@ -18,6 +20,27 @@ const run = {
 };
 const sender = { id: "bot-sender", name: "Researcher" };
 
+function crossSpaceMemberships(
+  targetSpaceId = "space-target",
+  targetSpaceName = "Research",
+  deletingAt: Date | null = null,
+) {
+  return [
+    {
+      spaceId: run.spaceId,
+      userId: run.userId,
+      organizationId: "org-1",
+      space: { id: run.spaceId, name: "Personal", deletingAt: null },
+    },
+    {
+      spaceId: targetSpaceId,
+      userId: run.userId,
+      organizationId: "org-1",
+      space: { id: targetSpaceId, name: targetSpaceName, deletingAt },
+    },
+  ];
+}
+
 function deps(
   options: {
     bots?: unknown[];
@@ -25,6 +48,16 @@ function deps(
     senderRunning?: boolean;
     alreadyDelivered?: unknown;
     targetArchived?: boolean;
+    targetRenamed?: boolean;
+    targetSpaceId?: string;
+    spaceMembers?: unknown[];
+    revokeTargetMembership?: boolean;
+    targetSpaceRenamed?: boolean;
+    inboundMessageId?: string;
+    inboundMessage?: unknown;
+    outboundMessageId?: string;
+    outboundMessage?: unknown;
+    groupMembership?: unknown;
     /** Simulate a unique (threadId, clientNonce) race after both retries miss. */
     uniqueConflictOnCommit?: boolean;
     transactionConflictOnce?: boolean;
@@ -32,13 +65,81 @@ function deps(
 ) {
   const enqueue = vi.fn().mockResolvedValue(undefined);
   const notify = vi.fn().mockResolvedValue(undefined);
+  const groupMemberFindFirst = vi.fn().mockResolvedValue(options.groupMembership ?? null);
   const messageFindUnique = vi
     .fn()
-    .mockImplementation(async (args: { where?: { threadId_clientNonce?: unknown } }) =>
-      args?.where?.threadId_clientNonce
-        ? (options.alreadyDelivered ?? null)
-        : { blocks: options.hopBlocks ?? [] },
+    .mockImplementation(
+      async (args: { where?: { threadId_clientNonce?: unknown; id?: string } }) => {
+        if (args?.where?.threadId_clientNonce) return options.alreadyDelivered ?? null;
+        if (args?.where?.id === options.inboundMessageId) return options.inboundMessage ?? null;
+        if (args?.where?.id === options.outboundMessageId) return options.outboundMessage ?? null;
+        return { blocks: options.hopBlocks ?? [] };
+      },
     );
+  const memberships = (options.spaceMembers ?? []) as Array<{
+    spaceId: string;
+    userId: string;
+  }>;
+  const findMembership = vi.fn(
+    async (
+      { where }: { where: { spaceId_userId: { spaceId: string; userId: string } } },
+      inTransaction = false,
+    ) => {
+      const key = where.spaceId_userId;
+      if (
+        inTransaction &&
+        options.revokeTargetMembership &&
+        key.spaceId === options.targetSpaceId
+      ) {
+        return null;
+      }
+      const membership =
+        memberships.find(
+          (candidate) => candidate.spaceId === key.spaceId && candidate.userId === key.userId,
+        ) ?? null;
+      if (
+        inTransaction &&
+        options.targetSpaceRenamed &&
+        membership &&
+        key.spaceId === options.targetSpaceId
+      ) {
+        const spaceMembership = membership as unknown as {
+          space: { id: string; name: string; deletingAt: Date | null };
+        };
+        return {
+          ...spaceMembership,
+          space: { ...spaceMembership.space, name: "Renamed Research" },
+        };
+      }
+      return membership;
+    },
+  );
+  const findTargetBot = vi.fn(async ({ where }: { where?: { id?: string } }) => {
+    if (options.targetArchived) return null;
+    const bot = (
+      options.bots ?? [
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+      ]
+    ).find((candidate) => (candidate as { id: string }).id === where?.id) as
+      | {
+          id: string;
+          name: string;
+          thread?: { id: string; spaceId?: string; botId?: string } | null;
+        }
+      | undefined;
+    if (!bot) return null;
+    return {
+      id: bot.id,
+      name: options.targetRenamed ? "Renamed Analyst" : bot.name,
+      thread: bot.thread
+        ? {
+            id: bot.thread.id,
+            spaceId: bot.thread.spaceId ?? options.targetSpaceId ?? run.spaceId,
+            botId: bot.thread.botId ?? bot.id,
+          }
+        : null,
+    };
+  });
   const tx = {
     $queryRaw: vi.fn().mockResolvedValue([{ id: "thread" }]),
     run: {
@@ -49,8 +150,10 @@ function deps(
       create: vi.fn().mockResolvedValue({ id: "run-2" }),
     },
     bot: {
-      findFirst: vi.fn().mockResolvedValue(options.targetArchived ? null : { id: "bot-target" }),
+      findFirst: findTargetBot,
     },
+    spaceMember: { findUnique: vi.fn((args: unknown) => findMembership(args as never, true)) },
+    chatGroupMember: { findFirst: groupMemberFindFirst },
     task: { create: vi.fn().mockResolvedValue({ id: "task-1" }) },
     message: {
       findUnique: messageFindUnique,
@@ -63,14 +166,35 @@ function deps(
   let transactionAttempts = 0;
   const prisma = {
     bot: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(
+      findMany: vi.fn(async ({ where }: { where?: { spaceId?: string } }) =>
+        (
           options.bots ?? [
             { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
-          ],
-        ),
+          ]
+        ).map((candidate) => {
+          const bot = candidate as {
+            id: string;
+            thread?: { id: string; spaceId?: string; botId?: string } | null;
+          };
+          return {
+            ...bot,
+            thread: bot.thread
+              ? {
+                  id: bot.thread.id,
+                  spaceId: bot.thread.spaceId ?? where?.spaceId ?? run.spaceId,
+                  botId: bot.thread.botId ?? bot.id,
+                }
+              : null,
+          };
+        }),
+      ),
+      findFirst: findTargetBot,
     },
+    spaceMember: {
+      findUnique: vi.fn((args: unknown) => findMembership(args as never)),
+      findMany: vi.fn().mockResolvedValue(options.spaceMembers ?? []),
+    },
+    chatGroupMember: { findFirst: groupMemberFindFirst },
     message: { findUnique: messageFindUnique, findMany: vi.fn().mockResolvedValue([]) },
     run: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
     $transaction: vi.fn(async (fn: (client: unknown) => unknown) => {
@@ -92,10 +216,52 @@ function deps(
     tx,
     enqueue,
     notify,
+    setAlreadyDelivered(value: unknown) {
+      options.alreadyDelivered = value;
+    },
   };
 }
 
 describe("messaging another bot", () => {
+  it("binds a case-insensitive cross-Space name to its canonical reviewed identity", async () => {
+    const harness = deps({ spaceMembers: crossSpaceMemberships(), targetSpaceId: "space-target" });
+    const prepared = await prepareMessageBotTarget(harness.deps.prisma, run, {
+      target_space: "Research",
+      confirm_name: "analyst",
+      message: "Review the result",
+    });
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) throw new Error(prepared.error);
+    expect(parseMessageBotTargetEffectRequest(prepared.effectRequest)).toMatchObject({
+      binding: { target: { botId: "bot-target", botName: "Analyst" } },
+      args: { bot_id: "bot-target", confirm_name: "Analyst" },
+    });
+  });
+
+  it("preserves case-insensitive local name-only lookup", async () => {
+    const harness = deps();
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "analyst",
+      message: "Review the result",
+    });
+    expect(sent).toMatchObject({ ok: true, botId: "bot-target" });
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("prefers an exact local name when another bot differs only by case", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-lower", name: "analyst", title: "", thread: { id: "thread-lower" } },
+        { id: "bot-target", name: "Analyst", title: "", thread: { id: "thread-target" } },
+      ],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "Analyst",
+      message: "Review the result",
+    });
+    expect(sent).toMatchObject({ ok: true, botId: "bot-target" });
+  });
+
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
@@ -126,6 +292,14 @@ describe("messaging another bot", () => {
     expect(harness.notify).toHaveBeenCalledWith("thread-target", 7);
     expect(harness.notify).toHaveBeenCalledWith("thread-sender", 7);
     expect(harness.tx.message.create).toHaveBeenCalledTimes(2);
+    const outbound = harness.tx.message.create.mock.calls[0]?.[0] as unknown as {
+      data: { blocks: Array<Record<string, unknown>> };
+    };
+    const inbound = harness.tx.message.create.mock.calls[1]?.[0] as unknown as {
+      data: { blocks: Array<Record<string, unknown>> };
+    };
+    expect(outbound.data.blocks[0]).not.toHaveProperty("toSpaceId");
+    expect(inbound.data.blocks[0]).not.toHaveProperty("fromSpaceId");
     expect(
       harness.tx.thread.update.mock.calls.filter(
         ([call]) => (call as { data?: { unread?: boolean } }).data?.unread,
@@ -420,6 +594,182 @@ describe("messaging another bot", () => {
     );
     expect(sent.ok).toBe(true);
   });
+
+  it.each([
+    ["name", "Research"],
+    ["id", "space-target"],
+  ])("delivers to a destination selected by Space %s", async (_kind, targetSpace) => {
+    const harness = deps({
+      spaceMembers: crossSpaceMemberships(),
+      targetSpaceId: "space-target",
+    });
+    const request = {
+      target_space: targetSpace,
+      bot_id: "bot-target",
+      confirm_name: "Analyst",
+      message: "Review this result",
+    };
+
+    const sent = await messageBot(harness.deps, run, sender, request);
+
+    expect(sent).toMatchObject({ ok: true, botId: "bot-target", name: "Analyst" });
+    expect(harness.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          spaceId: "space-target",
+          threadId: "thread-target",
+        }),
+      }),
+    );
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          spaceId: "space-target",
+          threadId: "thread-target",
+        }),
+      }),
+    );
+    const outbound = harness.tx.message.create.mock.calls[0]?.[0] as unknown as {
+      data: { threadId: string; blocks: Array<Record<string, unknown>> };
+    };
+    const inbound = harness.tx.message.create.mock.calls[1]?.[0] as unknown as {
+      data: { threadId: string; blocks: Array<Record<string, unknown>> };
+    };
+    expect(outbound.data.threadId).toBe("thread-sender");
+    expect(outbound.data.blocks[0]).toMatchObject({
+      kind: "bot_message_sent",
+      toSpaceId: "space-target",
+      toSpaceName: "Research",
+      toThreadId: "thread-target",
+    });
+    expect(inbound.data.threadId).toBe("thread-target");
+    expect(inbound.data.blocks[0]).toMatchObject({
+      kind: "bot_message_received",
+      fromSpaceId: "workspace-1",
+      fromSpaceName: "Personal",
+      fromThreadId: "thread-sender",
+    });
+    expect(
+      harness.tx.event.create.mock.calls.map(
+        ([event]) => (event as { data: { spaceId: string } }).data.spaceId,
+      ),
+    ).toEqual(["space-target", "workspace-1"]);
+  });
+
+  it("rejects unknown, inaccessible, ambiguous, and deleting Spaces without falling back", async () => {
+    const cases = [
+      { selector: "Missing", memberships: crossSpaceMemberships().slice(0, 1) },
+      { selector: "research", memberships: crossSpaceMemberships() },
+      {
+        selector: "Research",
+        memberships: [
+          ...crossSpaceMemberships(),
+          {
+            spaceId: "space-other",
+            userId: run.userId,
+            organizationId: "org-1",
+            space: { id: "space-other", name: "Research", deletingAt: null },
+          },
+        ],
+      },
+      {
+        selector: "Research",
+        memberships: crossSpaceMemberships("space-target", "Research", new Date()),
+      },
+    ];
+    for (const { selector, memberships } of cases) {
+      const harness = deps({ spaceMembers: memberships, targetSpaceId: "space-target" });
+      const sent = await messageBot(harness.deps, run, sender, {
+        target_space: selector,
+        bot_id: "bot-target",
+        message: "Do not fall back",
+      });
+      expect(sent).toMatchObject({ ok: false, error: expect.any(String) });
+      expect(harness.tx.message.create).not.toHaveBeenCalled();
+      expect(harness.tx.task.create).not.toHaveBeenCalled();
+      expect(harness.tx.run.create).not.toHaveBeenCalled();
+      expect(harness.tx.event.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it("revalidates destination membership, bot activity, and reviewed names inside the transaction", async () => {
+    for (const options of [
+      { revokeTargetMembership: true },
+      { targetSpaceRenamed: true },
+      { targetArchived: true },
+      { targetRenamed: true },
+    ]) {
+      const harness = deps({
+        ...options,
+        spaceMembers: crossSpaceMemberships(),
+        targetSpaceId: "space-target",
+      });
+      const sent = await messageBot(harness.deps, run, sender, {
+        target_space: "Research",
+        bot_id: "bot-target",
+        confirm_name: "Analyst",
+        message: "Review this result",
+      });
+      expect(sent).toMatchObject({ ok: false, error: expect.any(String) });
+      expect(harness.tx.message.create).not.toHaveBeenCalled();
+      expect(harness.tx.task.create).not.toHaveBeenCalled();
+      expect(harness.tx.run.create).not.toHaveBeenCalled();
+      expect(harness.tx.event.create).not.toHaveBeenCalled();
+      expect(harness.enqueue).not.toHaveBeenCalled();
+    }
+  });
+
+  it("does not duplicate an exact cross-Space retry", async () => {
+    const harness = deps({
+      spaceMembers: crossSpaceMemberships(),
+      targetSpaceId: "space-target",
+    });
+    const request = {
+      target_space: "space-target",
+      bot_id: "bot-target",
+      message: "Review this result",
+      deliveryKey: "same-effect-key",
+    };
+
+    await messageBot(harness.deps, run, sender, request);
+    harness.setAlreadyDelivered({ id: "inbound-existing" });
+    const retry = await messageBot(harness.deps, run, sender, request);
+
+    expect(retry).toMatchObject({ ok: true, replayed: true });
+    expect(harness.tx.message.create).toHaveBeenCalledTimes(2);
+    expect(harness.tx.task.create).toHaveBeenCalledOnce();
+    expect(harness.tx.run.create).toHaveBeenCalledOnce();
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("rejects mismatched bot id and exact name instead of trusting the id", async () => {
+    const harness = deps();
+    const sent = await messageBot(harness.deps, run, sender, {
+      bot_id: "bot-target",
+      confirm_name: "Not Analyst",
+      message: "Do not deliver",
+    });
+
+    expect(sent).toMatchObject({ ok: false, error: expect.any(String) });
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects ambiguous exact bot names rather than selecting the first match", async () => {
+    const harness = deps({
+      bots: [
+        { id: "bot-a", name: "Analyst", title: "", thread: { id: "thread-a" } },
+        { id: "bot-b", name: "Analyst", title: "", thread: { id: "thread-b" } },
+      ],
+    });
+    const sent = await messageBot(harness.deps, run, sender, {
+      confirm_name: "Analyst",
+      message: "Do not guess",
+    });
+
+    expect(sent).toMatchObject({ ok: false, error: expect.any(String) });
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("hop lookup", () => {
@@ -519,6 +869,205 @@ describe("hop lookup", () => {
       repliesToRequest: expected,
     });
   });
+});
+
+describe("cross-Space automatic result returns", () => {
+  const crossRun = {
+    id: "run-recipient",
+    spaceId: "space-target",
+    threadId: "thread-recipient",
+    botId: "bot-recipient",
+    userId: "user-1",
+    sourceMessageId: "inbound-recipient",
+  };
+  const inboundBlock = {
+    kind: "bot_message_received",
+    fromBotId: "bot-source",
+    fromBotName: "Coordinator",
+    text: "Research this question",
+    hop: 1,
+    intent: "request",
+    returnToMessageId: "outbound-source",
+    fromSpaceId: "space-source",
+    fromSpaceName: "Personal",
+    fromThreadId: "thread-source",
+  };
+  const outboundBlock = {
+    kind: "bot_message_sent",
+    toBotId: "bot-recipient",
+    toBotName: "Analyst",
+    text: "Research this question",
+    intent: "request",
+    toSpaceId: "space-target",
+    toSpaceName: "Research",
+    toThreadId: "thread-recipient",
+  };
+
+  function returnHarness(
+    outbound = outboundBlock,
+    sourceThreadId = "thread-source",
+    directThreadId = sourceThreadId,
+    groupMembership?: unknown,
+  ) {
+    const routedInboundBlock = { ...inboundBlock, fromThreadId: sourceThreadId };
+    return deps({
+      bots: [{ id: "bot-source", name: "Coordinator", title: "", thread: { id: directThreadId } }],
+      targetSpaceId: "space-source",
+      groupMembership,
+      spaceMembers: [
+        {
+          spaceId: "space-target",
+          userId: "user-1",
+          organizationId: "org-1",
+          space: { id: "space-target", name: "Research", deletingAt: null },
+        },
+        {
+          spaceId: "space-source",
+          userId: "user-1",
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        },
+      ],
+      inboundMessageId: "inbound-recipient",
+      inboundMessage: {
+        role: "user",
+        runId: crossRun.id,
+        blocks: [routedInboundBlock],
+        thread: { id: crossRun.threadId, spaceId: crossRun.spaceId, botId: crossRun.botId },
+      },
+      outboundMessageId: "outbound-source",
+      outboundMessage: {
+        role: "bot",
+        botId: "bot-source",
+        blocks: [outbound],
+        thread: {
+          id: sourceThreadId,
+          spaceId: "space-source",
+          botId: sourceThreadId === directThreadId ? "bot-source" : null,
+        },
+      },
+    });
+  }
+
+  it("returns the final result to the exact original source thread from verified provenance", async () => {
+    const harness = returnHarness();
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      crossRun,
+      { id: "bot-recipient", name: "Analyst" },
+      "The answer is 42.",
+      "result",
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          spaceId: "space-source",
+          botId: "bot-source",
+          threadId: "thread-source",
+        }),
+      }),
+    );
+    expect(harness.tx.run.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          spaceId: "space-source",
+          botId: "bot-source",
+          threadId: "thread-source",
+        }),
+      }),
+    );
+    const outbound = harness.tx.message.create.mock.calls[0]?.[0] as unknown as {
+      data: { threadId: string; blocks: Array<Record<string, unknown>> };
+    };
+    const inbound = harness.tx.message.create.mock.calls[1]?.[0] as unknown as {
+      data: { threadId: string; blocks: Array<Record<string, unknown>> };
+    };
+    expect(outbound.data.threadId).toBe("thread-recipient");
+    expect(outbound.data.blocks[0]).toMatchObject({
+      kind: "bot_message_sent",
+      toSpaceId: "space-source",
+      toThreadId: "thread-source",
+    });
+    expect(inbound.data.threadId).toBe("thread-source");
+    expect(inbound.data.blocks[0]).toMatchObject({
+      kind: "bot_message_received",
+      fromSpaceId: "space-target",
+      fromSpaceName: "Research",
+      fromThreadId: "thread-recipient",
+      text: "The answer is 42.",
+    });
+    expect(harness.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("returns to the original group thread only while the source bot remains a member", async () => {
+    const harness = returnHarness(outboundBlock, "group-source", "thread-source-direct", {
+      id: "group-membership",
+    });
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      crossRun,
+      { id: "bot-recipient", name: "Analyst" },
+      "The answer is 42.",
+      "result",
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.tx.task.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ spaceId: "space-source", threadId: "group-source" }),
+      }),
+    );
+    expect(harness.tx.chatGroupMember.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          botId: "bot-source",
+          group: expect.objectContaining({ userId: "user-1", archivedAt: null }),
+        }),
+      }),
+    );
+  });
+
+  it("does not return a result to a group after the source bot is removed", async () => {
+    const harness = returnHarness(outboundBlock, "group-source", "thread-source-direct");
+    const returned = await returnBotMessageOutcome(
+      harness.deps,
+      crossRun,
+      { id: "bot-recipient", name: "Analyst" },
+      "The answer is 42.",
+      "result",
+    );
+
+    expect(returned).toBe(true);
+    expect(harness.tx.message.create).not.toHaveBeenCalled();
+    expect(harness.tx.task.create).not.toHaveBeenCalled();
+    expect(harness.tx.run.create).not.toHaveBeenCalled();
+    expect(harness.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["thread", { ...outboundBlock, toThreadId: "other-thread" }],
+    ["Space name", { ...outboundBlock, toSpaceName: "Renamed Research" }],
+  ])(
+    "refuses an automatic return when the persisted outbound %s does not match",
+    async (_label, outbound) => {
+      const harness = returnHarness(outbound);
+      const returned = await returnBotMessageOutcome(
+        harness.deps,
+        crossRun,
+        { id: "bot-recipient", name: "Analyst" },
+        "The answer is 42.",
+        "result",
+      );
+
+      expect(returned).toBe(true);
+      expect(harness.tx.message.create).not.toHaveBeenCalled();
+      expect(harness.tx.task.create).not.toHaveBeenCalled();
+      expect(harness.tx.run.create).not.toHaveBeenCalled();
+      expect(harness.enqueue).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("hardening", () => {

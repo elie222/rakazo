@@ -164,10 +164,17 @@ export function inferScript(
   }
   if (lower.includes("message the bot named") || lower.includes("message bot named")) {
     const name = namedBot(prompt) ?? "Peer";
+    const routedMessage =
+      /named\s+[A-Za-z0-9][A-Za-z0-9_-]{0,39}\s+in\s+space\s+(?:"([^"]+)"|“([^”]+)”|([A-Za-z0-9][A-Za-z0-9 _-]*?))\s+(?:saying|with|:)\s*([\s\S]+)$/i.exec(
+        prompt,
+      );
+    const targetSpace = routedMessage?.[1] ?? routedMessage?.[2] ?? routedMessage?.[3]?.trim();
     const message =
+      routedMessage?.[4]?.trim() ??
       /named\s+[A-Za-z0-9][A-Za-z0-9_-]{0,39}\s+(?:saying|with|:)\s*([\s\S]+)$/i
         .exec(prompt)?.[1]
-        ?.trim() ?? `Please help with: ${prompt}`;
+        ?.trim() ??
+      `Please help with: ${prompt}`;
     return [
       {
         assistant: "messaging that bot now.",
@@ -176,6 +183,7 @@ export function inferScript(
             name: "message_bot",
             args: {
               confirm_name: name,
+              ...(targetSpace ? { target_space: targetSpace } : {}),
               message,
               intent: "request",
             },

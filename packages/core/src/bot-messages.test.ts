@@ -5,6 +5,7 @@ import {
   BOT_MESSAGE_MAX_HOPS,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageAllowsSilence,
+  botMessageContext,
   botMessageHopExhausted,
   buildBotMessageWakePrompt,
   clampBotMessage,
@@ -95,6 +96,23 @@ describe("addressing", () => {
   });
 });
 
+describe("cross-space message provenance", () => {
+  it("retains verified Space and thread routing fields on the inbound context", () => {
+    const inbound = {
+      kind: "bot_message_received",
+      fromBotId: "bot-source",
+      fromBotName: "Coordinator",
+      text: "Research this",
+      hop: 1,
+      fromSpaceId: "space-source",
+      fromSpaceName: "Research",
+      fromThreadId: "thread-source",
+    };
+
+    expect(botMessageContext([inbound as never])).toEqual(inbound);
+  });
+});
+
 describe("directory", () => {
   it("lists teammates with ids and says delivery is asynchronous", () => {
     const directory =
@@ -108,6 +126,10 @@ describe("directory", () => {
     expect(directory).toContain("async");
     expect(directory).toContain("does not end your turn");
     expect(directory).toContain("Later updates only if they add something new");
+    expect(directory).toContain("target_space");
+    expect(directory).toContain("exact Space name or ID");
+    expect(directory).toContain("requires one-time user approval");
+    expect(directory).toContain("only when the user explicitly names");
   });
 
   it("treats directory fields as untrusted prompt data", () => {

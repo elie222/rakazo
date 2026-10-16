@@ -50,6 +50,26 @@ describe("inferScript message_bot", () => {
     );
   });
 
+  it("routes a named bot message to a named Space", () => {
+    expect(inferScript("message bot named Scout in space Research saying X")).toEqual([
+      {
+        assistant: "messaging that bot now.",
+        toolCalls: [
+          {
+            name: "message_bot",
+            args: {
+              confirm_name: "Scout",
+              target_space: "Research",
+              message: "X",
+              intent: "request",
+            },
+          },
+        ],
+        complete: true,
+      },
+    ]);
+  });
+
   it("keeps message_bot when the payload mentions delete or subagent", () => {
     expect(
       inferScript(

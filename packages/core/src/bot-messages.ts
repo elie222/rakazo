@@ -104,6 +104,7 @@ export function renderBotDirectory(bots: readonly BotAddress[]): string | undefi
     ...formatBotRosterLines(bots),
     "</teammate_directory>",
     "Use message_bot for useful updates, questions, and results. Delivery is async and does not end your turn. Continue independent work; do not poll or send ack-only messages. Later updates only if they add something new.",
+    "For cross-Space messages, use target_space only when the user explicitly names the destination, with its exact Space name or ID. Cross-Space delivery requires one-time user approval. This teammate list is scoped to the current Space; do not infer or enumerate other Spaces.",
   ].join("\n");
 }
 

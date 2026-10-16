@@ -1120,6 +1120,11 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "string",
           description: "Exact name of the target bot when bot_id is omitted.",
         },
+        target_space: {
+          type: "string",
+          description:
+            "Optional exact Space name or ID; omit to use this Space. Use only when the user explicitly names another Space. Cross-Space delivery always requires one-time user approval, and does not reveal a broader bot roster.",
+        },
         message: { type: "string", description: "What to send." },
         intent: {
           type: "string",

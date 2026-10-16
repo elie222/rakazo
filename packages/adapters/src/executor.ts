@@ -167,7 +167,14 @@ import {
 } from "./auto-review.js";
 import { createAutoReviewProvider } from "./auto-review-factory.js";
 import { attachedImageArtifactIds, resolveUpdateBotAvatar } from "./bot-avatar.js";
-import { loadBotMessageContext, messageBot, returnBotMessageOutcome } from "./bot-messages.js";
+import type { MessageBotTargetBinding } from "./bot-messages.js";
+import {
+  loadBotMessageContext,
+  messageBot,
+  parseMessageBotTargetEffectRequest,
+  prepareMessageBotTarget,
+  returnBotMessageOutcome,
+} from "./bot-messages.js";
 import {
   allowPrivateHttpSecretOrigins,
   botSecretToolView,
@@ -3879,6 +3886,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           orderBy: APPROVED_EFFECT_REPLAY_ORDER,
           select: { kind: true, request: true },
         });
+        const deniedMessageBotEffects = await deps.prisma.externalEffect.findMany({
+          where: { runId, kind: "message_bot", status: "denied" },
+          select: { request: true },
+        });
+        const deniedCrossSpaceMessage = deniedMessageBotEffects.some((effect) =>
+          Boolean(parseMessageBotTargetEffectRequest(effect.request)),
+        );
         const approvedEffectReplays = createApprovedEffectReplayQueue(approvedEffects);
         const baseComputerInstruction = persistentComputerInstruction({
           heldForTakeover,
@@ -4061,6 +4075,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }
+
           if (PAGE_BROWSER_TOOL_NAMES.has(name) && !pageBrowserAllowed) {
             return { error: "Page browser is unavailable on this computer." };
           }
@@ -4094,6 +4109,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             };
           }
           let effectRequest: unknown = args;
+          let effectIdentityArgs: Record<string, unknown> = args;
+          let messageBotTargetBinding: MessageBotTargetBinding | undefined;
+          let messageBotApprovalArgs: Record<string, unknown> | undefined;
           if (connectorCall.route && deps.connector?.resolveCall) {
             try {
               const resolved = await deps.connector.resolveCall(connectorCall, context);
@@ -4151,11 +4169,71 @@ export function createRunExecutor(deps: ExecutorDeps) {
               CATALOG_APPROVAL_TOOL,
             );
           }
+          effectIdentityArgs = args;
           // Approval applies to the exact persisted request, never to a payload the model
           // reconstructs after the worker resumes. This also makes a changed reconstruction
           // hit the already-approved effect instead of creating a second approval card.
           const nextApprovedTool = approvedEffectReplays.nextToolName();
           const nextApprovedRequest = approvedEffectReplays.nextRequest();
+          let approvedMessageBotRequest =
+            name === "message_bot" && nextApprovedTool === name
+              ? parseMessageBotTargetEffectRequest(nextApprovedRequest)
+              : undefined;
+          if (name === "message_bot" && nextApprovedTool === name && !approvedMessageBotRequest) {
+            // Local approvals persist canonical local arguments, not reconstructed model input.
+            args = approvedReplayArgs(nextApprovedRequest, args, CATALOG_APPROVAL_TOOL);
+            effectRequest = args;
+            effectIdentityArgs = args;
+          }
+          if (approvedMessageBotRequest) {
+            args = approvedMessageBotRequest.args;
+            effectRequest = approvedMessageBotRequest;
+            effectIdentityArgs = approvedMessageBotRequest as unknown as Record<string, unknown>;
+            messageBotTargetBinding = approvedMessageBotRequest.binding;
+            messageBotApprovalArgs = {
+              target_space: approvedMessageBotRequest.binding.target.spaceName,
+              target_space_id: approvedMessageBotRequest.binding.target.spaceId,
+              bot_id: approvedMessageBotRequest.binding.target.botId,
+              confirm_name: approvedMessageBotRequest.binding.target.botName,
+              message: approvedMessageBotRequest.binding.requested.message,
+              intent: approvedMessageBotRequest.binding.requested.intent,
+            };
+          } else if (name === "message_bot" && args.target_space !== undefined) {
+            if (nextApprovedTool === name) {
+              return { error: "Approved cross-Space message is missing its bound destination." };
+            }
+            const rawMessage = typeof args.message === "string" ? args.message : "";
+            const prepared = await prepareMessageBotTarget(deps.prisma, run, {
+              target_space: args.target_space,
+              bot_id: args.bot_id,
+              confirm_name: args.confirm_name,
+              message: redactSecrets(rawMessage, runSecrets).trim(),
+              intent: args.intent,
+            });
+            if (!prepared.ok) return { error: prepared.error };
+            if (prepared.crossSpace) {
+              args = prepared.args;
+              effectRequest = prepared.effectRequest!;
+              effectIdentityArgs = prepared.effectRequest as unknown as Record<string, unknown>;
+              messageBotTargetBinding = prepared.binding;
+              messageBotApprovalArgs = prepared.reviewArgs;
+            } else {
+              args = {
+                bot_id: prepared.args.bot_id,
+                confirm_name: prepared.args.confirm_name,
+                message: prepared.args.message,
+                intent: prepared.args.intent,
+              };
+              effectRequest = args;
+              effectIdentityArgs = args;
+            }
+          }
+          if (messageBotTargetBinding && deniedCrossSpaceMessage) {
+            return {
+              error:
+                "The user denied a cross-Space message in this run. Do not retry or rephrase it; tell the user and ask what they want instead.",
+            };
+          }
           const liveRoute =
             connectorCall.route?.resourceId &&
             connectorCall.route.connectorId &&
@@ -4216,7 +4294,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (resourceError) return { error: resourceError };
             const approvedRequest = approvedEffectReplays.take(nextApprovedTool)!;
             const approvedCatalog = catalogApprovalDetails(approvedRequest, CATALOG_APPROVAL_TOOL);
-            if (approvedCatalog && !catalogRemapped) {
+            if (name === "message_bot" && approvedMessageBotRequest) {
+              const replay = parseMessageBotTargetEffectRequest(approvedRequest);
+              if (!replay) {
+                return { error: "Approved cross-Space message is missing its bound destination." };
+              }
+              approvedMessageBotRequest = replay;
+              args = replay.args;
+              effectRequest = replay;
+              effectIdentityArgs = replay as unknown as Record<string, unknown>;
+              messageBotTargetBinding = replay.binding;
+            } else if (approvedCatalog && !catalogRemapped) {
               // Shrink-to-direct: restore approved inner arguments, not the wrapper envelope.
               const innerArgs = catalogApprovalInnerArgs(approvedCatalog);
               if (!innerArgs) {
@@ -4246,6 +4334,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             }
           }
+          if (!messageBotTargetBinding) effectIdentityArgs = args;
           const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
           // Declared effect of the operation this call dispatches (installed API method and
           // flag). Install config is immutable per route resource, so it cannot drift before
@@ -4259,11 +4348,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
             viaConnector,
             declaredReadOnly,
           );
+          const crossSpaceMessageApproval = Boolean(
+            messageBotTargetBinding && messageBotTargetBinding.target.spaceId !== run.spaceId,
+          );
           const requiresApprovalByDefault =
             requiresUnattendedApproval ||
-            toolRequiresApproval(name, viaConnector, declaredReadOnly);
+            toolRequiresApproval(name, viaConnector, declaredReadOnly) ||
+            crossSpaceMessageApproval;
           const requiresMandatoryApproval =
-            requiresUnattendedApproval || toolRequiresExplicitApproval(name);
+            requiresUnattendedApproval ||
+            toolRequiresExplicitApproval(name) ||
+            crossSpaceMessageApproval;
           const connectorKind = connectorKindFromToolName(
             name,
             connectedPlugins.map((plugin) => plugin.provider),
@@ -4321,11 +4416,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const occurrence =
             name === "request_secret"
               ? 0
-              : nextMutatingEffectOccurrence(replayEffectToolName, args);
+              : nextMutatingEffectOccurrence(replayEffectToolName, effectIdentityArgs);
           const effectKey =
             usesApprovalKey && occurrence === 0
-              ? approvalEffectKey(runId, replayEffectToolName, args)
-              : toolEffectIdempotencyKey(runId, replayEffectToolName, args, occurrence);
+              ? approvalEffectKey(runId, replayEffectToolName, effectIdentityArgs)
+              : toolEffectIdempotencyKey(
+                  runId,
+                  replayEffectToolName,
+                  effectIdentityArgs,
+                  occurrence,
+                );
           // Connector read-only hints must not bypass approval, review, or replay decisions.
           const applied = READ_ONLY_AGENT_TOOLS.has(name)
             ? undefined
@@ -4532,9 +4632,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
               leaseOwner: workerId,
               leaseFence: fence,
               blocks: [
-                buildApprovalAskBlock(applied!.effect.id, name, args, runSecrets, {
-                  reviewReason,
-                }),
+                buildApprovalAskBlock(
+                  applied!.effect.id,
+                  name,
+                  messageBotApprovalArgs ?? args,
+                  runSecrets,
+                  {
+                    reviewReason,
+                    oneTimeOnly: crossSpaceMessageApproval,
+                  },
+                ),
               ],
             });
             // pauseRunForInput returning false after a successful renew means the run row no
@@ -6175,6 +6282,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               {
                 bot_id: args.bot_id ? String(args.bot_id) : undefined,
                 confirm_name: args.confirm_name ? String(args.confirm_name) : undefined,
+                target_space: args.target_space ? String(args.target_space) : undefined,
                 message: redactSecrets(String(args.message ?? ""), runSecrets),
                 intent: args.intent as
                   | "request"
@@ -6185,6 +6293,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   | undefined,
                 deliveryKey: effectKey,
               },
+              messageBotTargetBinding ? { targetBinding: messageBotTargetBinding } : undefined,
             );
             if (!sent.ok) return finish({ error: sent.error });
             return finish({
@@ -7793,6 +7902,11 @@ export function userTurnInstructions(parts: {
       "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
     ),
     spawnBotClause(parts.disabledBuiltinTools),
+    offeredBuiltinClause(
+      parts.disabledBuiltinTools,
+      "message_bot",
+      "With message_bot, omit target_space for a bot in this Space. Set target_space to an exact visible Space name or ID only when the user explicitly names the destination; every cross-Space message needs one-time user approval. Do not infer or enumerate other Spaces, and do not retry a cross-Space message after denial.",
+    ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",

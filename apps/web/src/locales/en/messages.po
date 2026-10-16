@@ -2803,12 +2803,20 @@ msgid "Message from {peer}"
 msgstr "Message from {peer}"
 
 #: src/pages/Shell.tsx
+msgid "Message from {peer} in {spaceName}"
+msgstr "Message from {peer} in {spaceName}"
+
+#: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "Message…"
 
 #: src/pages/Shell.tsx
 msgid "Messaged {peer}"
 msgstr "Messaged {peer}"
+
+#: src/pages/Shell.tsx
+msgid "Messaged {peer} in {spaceName}"
+msgstr "Messaged {peer} in {spaceName}"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
@@ -3219,6 +3227,10 @@ msgstr "Open <0>{0}</0> and enter this code:"
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
 msgstr "Open <0>{0}</0> to finish signing in."
+
+#: src/pages/PeerMessagesOverlay.tsx
+msgid "Open chat"
+msgstr "Open chat"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"

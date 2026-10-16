@@ -8,12 +8,46 @@ import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messagePresentationSegments,
+  peerReceiptSpaceName,
   quotableMessageSegments,
   threadCardWidth,
   truncateQuoteExcerpt,
 } from "./message-presentation";
 
 describe("mobile message presentation", () => {
+  it("uses the counterpart Space name from peer receipts when present", () => {
+    expect(
+      peerReceiptSpaceName({
+        kind: "bot_message_sent",
+        toBotId: "b",
+        toBotName: "Scout",
+        text: "review this",
+        toSpaceId: "space-research",
+        toSpaceName: "Research",
+        toThreadId: "thread-research",
+      }),
+    ).toBe("Research");
+    expect(
+      peerReceiptSpaceName({
+        kind: "bot_message_received",
+        fromBotId: "b",
+        fromBotName: "Scout",
+        text: "done",
+        fromSpaceId: "space-source",
+        fromSpaceName: "Personal",
+        fromThreadId: "thread-source",
+      }),
+    ).toBe("Personal");
+    expect(
+      peerReceiptSpaceName({
+        kind: "bot_message_sent",
+        toBotId: "b",
+        toBotName: "Scout",
+        text: "same Space",
+      }),
+    ).toBeUndefined();
+  });
+
   it("centers handoffs, inter-agent messages, and channel mirrors", () => {
     const blocks = [
       { kind: "handoff", fromBotId: "a", toBotId: "b", text: "Go" },

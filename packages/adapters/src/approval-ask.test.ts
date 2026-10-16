@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { buildApprovalAskBlock } from "./approval-ask.js";
 
 describe("buildApprovalAskBlock", () => {
+  it("shows the complete cross-Space message rather than hiding its ending", () => {
+    const message = `${"x".repeat(6000)}VISIBLE END`;
+    const block = buildApprovalAskBlock(
+      "effect-long",
+      "message_bot",
+      { target_space_id: "space-b", message },
+      [],
+      { oneTimeOnly: true },
+    );
+    if (block.kind !== "ask") throw new Error("expected ask");
+    expect(block.detail).toContain(message);
+  });
   it("binds the approval to its effect and redacts secrets", () => {
     const block = buildApprovalAskBlock(
       "effect-1",
@@ -69,5 +81,37 @@ describe("buildApprovalAskBlock", () => {
     });
     if (block.kind !== "ask") throw new Error("expected ask block");
     expect(block.detail).toContain("stay separate from other spaces");
+  });
+
+  it("shows the exact cross-Space bot destination and payload with no always-allow choice", () => {
+    const block = buildApprovalAskBlock(
+      "effect-cross-space",
+      "message_bot",
+      {
+        source_space: "Personal",
+        source_space_id: "space-source",
+        target_space: "Research",
+        target_space_id: "space-target",
+        bot_id: "bot-target",
+        confirm_name: "Analyst",
+        intent: "request",
+        message: "Review this exact result.",
+      },
+      [],
+      { oneTimeOnly: true },
+    );
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Review before message_bot from Personal to Research (Analyst)",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+      detail: expect.stringContaining("Review this exact result."),
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).toContain("space-target");
+    expect(block.detail).toContain("Analyst (bot-target)");
   });
 });

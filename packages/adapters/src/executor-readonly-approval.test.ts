@@ -58,11 +58,13 @@ function fixture({
   },
   shutdownSignal,
   builtin = false,
+  messageTarget = false,
   disabledBuiltinTools = [],
   existingSharedMemory,
   advanceRevisionAfterRead = false,
 }: {
   builtin?: boolean;
+  messageTarget?: boolean;
   disabledBuiltinTools?: string[];
   existingSharedMemory?: string;
   /** Simulates another writer landing between the save's read and its commit. */
@@ -124,6 +126,17 @@ function fixture({
     trigger,
     leaseFence: 0,
   };
+  const sourceMembership = {
+    spaceId: run.spaceId,
+    organizationId: "org-1",
+    space: { id: run.spaceId, name: "Personal", deletingAt: null },
+  };
+  const targetMembership = {
+    spaceId: "space-target",
+    organizationId: "org-1",
+    space: { id: "space-target", name: "Research", deletingAt: null },
+  };
+  const deliveryTransaction = vi.fn();
   const externalEffect = {
     findMany: vi.fn(
       async ({
@@ -183,7 +196,32 @@ function fixture({
         computerId: "computer-1",
         computer: { id: "computer-1", scope: "dedicated" },
       })),
-      findMany: vi.fn(async () => []),
+      findMany: vi.fn(async ({ where }: { where?: { spaceId?: string } } = {}) =>
+        messageTarget
+          ? [
+              {
+                id: "bot-target",
+                name: "Analyst",
+                title: "",
+                thread: {
+                  id: "thread-target",
+                  spaceId: where?.spaceId ?? "space-target",
+                  botId: "bot-target",
+                },
+              },
+            ]
+          : [],
+      ),
+    },
+    spaceMember: {
+      findUnique: vi.fn(async ({ where }: { where: { spaceId_userId: { spaceId: string } } }) =>
+        where.spaceId_userId.spaceId === run.spaceId
+          ? sourceMembership
+          : where.spaceId_userId.spaceId === targetMembership.spaceId && messageTarget
+            ? targetMembership
+            : null,
+      ),
+      findMany: vi.fn(async () => (messageTarget ? [sourceMembership, targetMembership] : [])),
     },
     attempt: {
       create: vi.fn(async () => ({ id: "attempt-1" })),
@@ -191,7 +229,10 @@ function fixture({
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     thread: { findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })) },
-    message: { findMany: vi.fn(async () => []) },
+    message: {
+      findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => null),
+    },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
@@ -210,8 +251,9 @@ function fixture({
     actionApprovalRule: { findMany: vi.fn(async () => rules) },
     actionAutoReviewPreference: { findUnique: vi.fn(async () => ({ enabled: autoReview })) },
     externalEffect,
+    $transaction: deliveryTransaction,
   };
-  const pauseRunForInput = vi.fn(async () => {
+  const pauseRunForInput = vi.fn(async (_request?: { blocks?: unknown[] }) => {
     run.status = "waiting_input";
     return true;
   });
@@ -281,7 +323,12 @@ function fixture({
       commit,
     },
     memoryProviders: { resolve: async () => null },
-    events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      notify: vi.fn(async () => undefined),
+      pauseRunForInput,
+      finalizeRun,
+    },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets,
     autoReview: autoReviewProvider,
@@ -294,6 +341,7 @@ function fixture({
     commit,
     sharedMemoryState,
     pauseRunForInput,
+    transaction: deliveryTransaction,
     setCalls(next: typeof calls) {
       calls = next;
     },
@@ -326,6 +374,167 @@ describe("disabled builtins", () => {
 describe("connector read-only metadata and approval enforcement", () => {
   beforeEach(() => {
     reviewMock.mockReset();
+  });
+
+  it.each(["Personal", "space-1"])(
+    "replays an approved explicit local destination %s without retargeting",
+    async (target_space) => {
+      const f = fixture({
+        name: "message_bot",
+        builtin: true,
+        messageTarget: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "message_bot" }],
+      });
+      f.transaction.mockResolvedValue({
+        ok: true,
+        runId: "delivered",
+        senderEventSeq: 1,
+        targetEventSeq: 2,
+      });
+      f.setCalls([
+        {
+          args: { target_space, confirm_name: "Analyst", message: "Approved local message" },
+          executionId: "local-first",
+        },
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "approved";
+      f.setCalls([
+        {
+          args: { target_space: "Research", bot_id: "another-bot", message: "Different message" },
+          executionId: "local-replay",
+        },
+      ]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({ ok: true, botId: "bot-target" });
+      expect(f.effects).toHaveLength(1);
+      expect(f.effects[0]!.request).toMatchObject({
+        bot_id: "bot-target",
+        message: "Approved local message",
+      });
+      expect(f.effects[0]!.request).not.toHaveProperty("target_space");
+      expect(f.transaction).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([undefined, "Personal"])(
+    "allows local messaging after a cross-Space denial (%s)",
+    async (target_space) => {
+      const f = fixture({ name: "message_bot", builtin: true, messageTarget: true });
+      f.transaction.mockResolvedValue({
+        ok: true,
+        runId: "delivered",
+        senderEventSeq: 1,
+        targetEventSeq: 2,
+      });
+      f.setCalls([
+        {
+          args: { target_space: "Research", bot_id: "bot-target", message: "Remote request" },
+          executionId: "denied-cross",
+        },
+      ]);
+      await f.run();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "denied";
+      f.setCalls([
+        {
+          args: {
+            ...(target_space ? { target_space } : {}),
+            bot_id: "bot-target",
+            message: "Independent local request",
+          },
+          executionId: "allowed-local",
+        },
+      ]);
+      await f.run();
+      expect(f.results.at(-1)).toMatchObject({ ok: true, botId: "bot-target" });
+      expect(f.transaction).toHaveBeenCalledOnce();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("requires one-time approval for cross-Space bot messages despite always-allow and auto-review", async () => {
+    const f = fixture({
+      name: "message_bot",
+      builtin: true,
+      messageTarget: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "message_bot" }],
+    });
+    f.setCalls([
+      {
+        args: {
+          target_space: "Research",
+          bot_id: "bot-target",
+          confirm_name: "Analyst",
+          message: "Review the result",
+        },
+        executionId: "call-cross-space",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(isApprovalPausedResult(f.results[0])).toBe(true);
+    expect(reviewMock).not.toHaveBeenCalled();
+    expect(f.transaction).not.toHaveBeenCalled();
+    expect(f.effects).toHaveLength(1);
+    expect(f.effects[0]!.request).toMatchObject({
+      kind: "rakazo.message_bot.target.v1",
+      binding: {
+        source: { spaceId: "space-1", threadId: "thread-1", botId: "bot-1", userId: "user-1" },
+        target: {
+          spaceId: "space-target",
+          spaceName: "Research",
+          botId: "bot-target",
+          botName: "Analyst",
+          threadId: "thread-target",
+        },
+        requested: { targetSpace: "Research", message: "Review the result" },
+      },
+    });
+  });
+
+  it("blocks rephrased cross-Space retries after the user denies the first request", async () => {
+    const f = fixture({
+      name: "message_bot",
+      builtin: true,
+      messageTarget: true,
+      autoReview: true,
+    });
+    f.setCalls([
+      {
+        args: { target_space: "Research", bot_id: "bot-target", message: "Review the result" },
+        executionId: "call-cross-space",
+      },
+    ]);
+    await f.run();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.effects).toHaveLength(1);
+    f.effects[0]!.status = "denied";
+    f.setCalls([
+      {
+        args: {
+          target_space: "space-target",
+          bot_id: "bot-target",
+          message: "Please do it anyway",
+        },
+        executionId: "call-rephrased",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.effects).toHaveLength(1);
+    expect(f.transaction).not.toHaveBeenCalled();
+    expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+    expect(f.results.at(-1)).toEqual({
+      error:
+        "The user denied a cross-Space message in this run. Do not retry or rephrase it; tell the user and ask what they want instead.",
+    });
   });
 
   it.each(["shell", "write_file"])(

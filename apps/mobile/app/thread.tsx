@@ -173,6 +173,7 @@ import {
   hasVisibleMessagePresentation,
   isCenteredAgentEvent,
   messagePresentationSegments,
+  peerReceiptSpaceName,
   quotableMessageSegments,
   truncateQuoteExcerpt,
 } from "../lib/message-presentation";
@@ -3196,9 +3197,14 @@ const MessageBubble = memo(function MessageBubble({
     const sent = peerMessage.kind === "bot_message_sent";
     const peer = sent ? peerMessage.toBotName : peerMessage.fromBotName;
     const peerBotId = sent ? peerMessage.toBotId : peerMessage.fromBotId;
-    const label = sent
-      ? t("Messaged {peer}", { peer: peer ?? t("Bot") })
-      : t("Message from {peer}", { peer: peer ?? t("Bot") });
+    const spaceName = peerReceiptSpaceName(peerMessage);
+    const label = spaceName
+      ? sent
+        ? t("Messaged {peer} in {space}", { peer: peer ?? t("Bot"), space: spaceName })
+        : t("Message from {peer} in {space}", { peer: peer ?? t("Bot"), space: spaceName })
+      : sent
+        ? t("Messaged {peer}", { peer: peer ?? t("Bot") })
+        : t("Message from {peer}", { peer: peer ?? t("Bot") });
     const peerColor =
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
