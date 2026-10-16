@@ -49,6 +49,16 @@ export function isProviderTimeout(error: unknown): boolean {
 /** Only provider availability failures may advance the user's explicit chain. */
 export function isRetryableProviderUnavailable(error: unknown): boolean {
   const { text, statuses } = errorFacts(error);
+  if (statuses.has(400) || statuses.has(401)) return false;
+  // Kimi For Coding reports an exhausted usage window as HTTP 403. errorFacts lowercases text.
+  if (
+    statuses.has(403) &&
+    /you['\u2019]ve reached your (?:5-hour usage limit|weekly \(7-day\) usage limit|monthly usage limit|usage limit for this billing cycle)/.test(
+      text,
+    )
+  ) {
+    return true;
+  }
   if (
     [400, 401, 403].some((status) => statuses.has(status)) ||
     /\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*(?:400|401|403)\b/.test(

@@ -8,7 +8,7 @@ import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
-import { provisionPrepared } from "./sandbox-test-support.js";
+import { assertSandboxWorkspaceContract, provisionPrepared } from "./sandbox-test-support.js";
 
 const ctx = {
   operationId: "1",
@@ -71,48 +71,7 @@ describe("sandbox conformance", () => {
         { botId: `portable-${index}`, homePath: `/tmp/portable-${index}` },
         ctx,
       );
-      await provider.prepare(computer, ctx);
-      await provider.writeFile(
-        computer,
-        { path: "notes/result.txt", content: new TextEncoder().encode("portable") },
-        ctx,
-      );
-      expect(await provider.listFiles(computer, "notes", ctx)).toEqual([
-        { path: "notes/result.txt", kind: "file", size: 8 },
-      ]);
-      expect(
-        new TextDecoder().decode(await provider.readFile(computer, "notes/result.txt", ctx)),
-      ).toBe("portable");
-      const binary = Uint8Array.from([0, 255, 1, 128]);
-      await provider.writeFile(
-        computer,
-        { path: "bin/tool", content: binary, executable: true },
-        ctx,
-      );
-      expect(await provider.readFile(computer, "bin/tool", ctx)).toEqual(binary);
-      expect(await provider.listFiles(computer, "bin", ctx)).toEqual([
-        { path: "bin/tool", kind: "file", size: 4, executable: true },
-      ]);
-      const acted = await provider.act(
-        computer,
-        {
-          actions: [
-            { kind: "clipboard", text: "visible" },
-            { kind: "focus", application: "xterm" },
-          ],
-          observe: true,
-        },
-        ctx,
-      );
-      expect(acted.completed).toBe(2);
-      expect(acted.observation?.image.byteLength).toBeGreaterThan(0);
-      const exported = [];
-      for await (const file of provider.exportWorkspace(computer, ctx)) exported.push(file);
-      expect(exported.map((file) => file.path)).toContain("notes/result.txt");
-      expect(exported.find((file) => file.path === "bin/tool")).toMatchObject({
-        content: binary,
-        executable: true,
-      });
+      await assertSandboxWorkspaceContract(provider, computer, ctx);
       await provider.destroy(computer, ctx);
     }
   });

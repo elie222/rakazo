@@ -10,7 +10,7 @@ describe("GroupAvatar", () => {
 
   it("renders single BotAvatar when 1 member", () => {
     const html = renderToString(<GroupAvatar members={[{ name: "Harry", color: "#8B5CF6" }]} />);
-    expect(html).toContain("rakazo-bot-avatar");
+    expect(html).toContain("rakazo-organic-avatar");
   });
 
   it("renders 2 overlapping bot avatars for 2 members", () => {
@@ -37,7 +37,7 @@ describe("GroupAvatar", () => {
       />,
     );
     expect(html).toContain('data-working="true"');
-    expect(html).toContain("rakazo-bot-avatar");
+    expect(html).toContain("rakazo-organic-avatar");
   });
 
   it("renders 3 mini bot avatars for 3 members", () => {

@@ -10,7 +10,7 @@ export const DE_MESSAGES: Record<string, string> = {
   Yesterday: "Gestern",
   You: "Du",
   "Original message unavailable": "Originalnachricht nicht verfügbar",
-  "No archived bots": "Keine archivierten Bots",
+  "No archived chats": "Keine archivierten Chats",
   "Recover computer?": "Computer wiederherstellen?",
   "Recreate a computer that is not working.":
     "Einen nicht funktionierenden Computer neu erstellen.",
@@ -81,6 +81,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Delete space": "Space löschen",
   "Delete {name}?": "{name} löschen?",
   "Expand {name}": "{name} ausklappen",
+  "Mark as Read": "Als gelesen markieren",
+  "Mark as Unread": "Als ungelesen markieren",
   "Long press to pin or move to a section":
     "Lange drücken, um anzuheften oder in einen Abschnitt zu verschieben",
   "Long press to pin, move, or silence notifications":
@@ -496,12 +498,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Agent messages": "Agent-Nachrichten",
   "Alerts from routines": "Meldungen von Routinen",
   Appearance: "Erscheinungsbild",
-  "Archived bots": "Archivierte Bots",
+  Archived: "Archiviert",
   "Avatar style": "Avatar-Stil",
   Avatars: "Avatare",
   Cancel: "Abbrechen",
   "Could not change language": "Sprache konnte nicht geändert werden",
   "Could not delete account": "Konto konnte nicht gelöscht werden",
+  "Could not load chats": "Chats konnten nicht geladen werden",
   "Could not restore bot": "Bot konnte nicht wiederhergestellt werden",
   "Could not sign out": "Abmeldung fehlgeschlagen",
   "Could not update notifications": "Benachrichtigungen konnten nicht aktualisiert werden",

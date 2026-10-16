@@ -109,4 +109,62 @@ describe("resolveMentionPickerKey", () => {
       }),
     ).toEqual({ type: "none" });
   });
+
+  it("inserts a newline on plain Enter when enter-to-send is off", () => {
+    expect(
+      resolveMentionPickerKey({
+        key: "Enter",
+        enterToSend: false,
+        optionCount: 0,
+        highlightedIndex: 0,
+      }),
+    ).toEqual({ type: "none" });
+  });
+
+  it("sends on Ctrl+Enter and Cmd+Enter when enter-to-send is off", () => {
+    expect(
+      resolveMentionPickerKey({
+        key: "Enter",
+        enterToSend: false,
+        ctrlKey: true,
+        optionCount: 0,
+        highlightedIndex: 0,
+      }),
+    ).toEqual({ type: "send" });
+    expect(
+      resolveMentionPickerKey({
+        key: "Enter",
+        enterToSend: false,
+        metaKey: true,
+        optionCount: 0,
+        highlightedIndex: 0,
+      }),
+    ).toEqual({ type: "send" });
+  });
+
+  it("still completes the open picker on Enter when enter-to-send is off", () => {
+    expect(
+      resolveMentionPickerKey({
+        key: "Enter",
+        enterToSend: false,
+        optionCount: 2,
+        highlightedIndex: 0,
+      }),
+    ).toEqual({ type: "complete", index: 0 });
+  });
 });
+
+it.each(["ctrlKey", "metaKey"] as const)(
+  "sends with %s+Enter while the picker is open",
+  (modifier) => {
+    expect(
+      resolveMentionPickerKey({
+        key: "Enter",
+        [modifier]: true,
+        optionCount: 2,
+        highlightedIndex: 0,
+        enterToSend: false,
+      }),
+    ).toEqual({ type: "send" });
+  },
+);

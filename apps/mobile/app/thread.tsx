@@ -83,8 +83,17 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
-import { useReducedMotion } from "react-native-reanimated";
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardHandler,
+} from "react-native-keyboard-controller";
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
@@ -109,6 +118,7 @@ import { SelectTextSheet } from "../components/select-text-sheet";
 import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
+import { createThreadHeaderStyles } from "../components/thread-header-styles";
 import { TimeSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
@@ -144,7 +154,6 @@ import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
-import { transparentColor } from "../lib/color";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
@@ -168,7 +177,7 @@ import {
   truncateQuoteExcerpt,
 } from "../lib/message-presentation";
 import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
+import { HEADER_TITLE_MAX_FONT_SCALE, iosAtLeast } from "../lib/native-controls";
 import {
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
@@ -390,59 +399,6 @@ export default function ThreadRoute() {
   );
 }
 
-function createThreadHeaderStyles() {
-  const tokens = mobileTokens();
-  const transparentBackground = transparentColor(tokens.background);
-  return StyleSheet.create({
-    titleCapsule: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      maxWidth: 220,
-      paddingVertical: 4,
-      paddingStart: 6,
-      paddingEnd: 14,
-      borderRadius: 999,
-    },
-    titleCapsuleFill: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
-    },
-    title: {
-      color: tokens.foreground,
-      fontSize: 18,
-      fontWeight: "600",
-    },
-    circleButton: {
-      flex: 1,
-      borderRadius: 999,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    composerFill: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
-    },
-    headerFade: {
-      position: "absolute",
-      top: 0,
-      left: 0,
-      right: 0,
-      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 58%, ${transparentBackground} 100%)`,
-    },
-    composerFade: {
-      position: "absolute",
-      bottom: "100%",
-      left: -20,
-      right: -20,
-      height: 24,
-      experimental_backgroundImage: `linear-gradient(to top, ${tokens.background} 0%, ${transparentBackground} 100%)`,
-    },
-  });
-}
-
 function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -455,7 +411,31 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = iosAtLeast(26) ? nativeHeaderHeight : 0;
   const insets = useSafeAreaInsets();
-  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  // Frame by frame, including a swipe that drags the keyboard down.
+  const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
+  useKeyboardHandler(
+    {
+      onMove: (event) => {
+        "worklet";
+        keyboardProgress.value = event.progress;
+      },
+      onInteractive: (event) => {
+        "worklet";
+        keyboardProgress.value = event.progress;
+      },
+      onEnd: (event) => {
+        "worklet";
+        keyboardProgress.value = event.progress;
+      },
+    },
+    [],
+  );
+  const composerRestingPadding = Math.max(insets.bottom + 12, 24);
+  // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
+  // dips into the home indicator and then jumps back up.
+  const composerKeyboardPadding = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
+  }));
   const {
     botId,
     groupId,
@@ -854,7 +834,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 muted={currentBot.notifyOnFinish === false}
               />
             ) : null}
-            <Text numberOfLines={1} style={styles.title}>
+            <Text
+              maxFontSizeMultiplier={HEADER_TITLE_MAX_FONT_SCALE}
+              numberOfLines={1}
+              style={styles.title}
+            >
               {displayName || t("Thread")}
             </Text>
           </GlassSurface>
@@ -2279,6 +2263,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             ref={pinnedScroll}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingTop: headerHeight + 8, paddingBottom: 16 }}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             onLayout={(event) => {
@@ -2342,6 +2327,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             // This callback tracks every row input, including reply, reaction and highlight state.
             extraData={renderMessageRow}
             style={messageListStyles.list}
+            // Swiping down hides the keyboard; on iOS it follows the finger.
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
             contentContainerStyle={listContentStyle}
             maintainVisibleContentPosition={messageListPosition}
@@ -2444,12 +2431,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight + 24 }]} />
       ) : null}
       {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
-      <View
-        style={{
-          display: readOnly ? "none" : "flex",
-          flexShrink: 1,
-          paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24),
-        }}
+      <Animated.View
+        style={[{ display: readOnly ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
       >
         {/* Fades messages out above the composer, like the header fade. */}
         <View pointerEvents="none" style={styles.composerFade} />
@@ -2579,7 +2562,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           startVoiceCall={startVoiceCall}
           onSlashAction={runSlashAction}
         />
-      </View>
+      </Animated.View>
       <Modal
         visible={botActionsOpen}
         transparent

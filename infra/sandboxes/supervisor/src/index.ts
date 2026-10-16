@@ -525,7 +525,15 @@ app.post("/computers/:id/browser", async (c) => {
     );
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
-      throw new Error("Page browser unavailable or interrupted");
+      throw new Error(
+        /command timed out/.test(result.stderr)
+          ? `Page browser timed out; the page may be busy or blocked by a dialog. ${
+              body.command === "act"
+                ? "Inspect the screen before continuing."
+                : "Retry once before using other tools."
+            }`
+          : "Page browser unavailable or interrupted",
+      );
     }
     return c.json(JSON.parse(result.stdout));
   } catch (error) {

@@ -579,7 +579,10 @@ function expireClient(run: ReturnType<typeof candidate>, options?: { cancelled?:
       create: vi.fn(async () => ({ id: "task-next" })),
     },
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 9 })) },
-    message: { create: vi.fn(async () => ({ id: "message-expired", seq: 1 })) },
+    message: {
+      create: vi.fn(async () => ({ id: "message-expired", seq: 1 })),
+      findFirst: vi.fn(async () => null),
+    },
     event: {
       findMany: vi.fn(async () => []),
       create: vi.fn(async () => ({ seq: 8 })),

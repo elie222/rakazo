@@ -182,6 +182,17 @@ import {
 import { startCall, useCallSession } from "../lib/call-session";
 import { newClientId } from "../lib/client-id";
 import {
+  beginComposerDraftSubmission,
+  readComposerDraft,
+  settleComposerDraftSubmission,
+  subscribeComposerDraftAccepted,
+  writeComposerDraft,
+} from "../lib/composer-draft";
+import {
+  getComposerEnterToSend,
+  subscribeComposerEnterToSend,
+} from "../lib/composer-enter-to-send-pref";
+import {
   embeddableScreenUrl,
   loadComputerScreen,
   screenIframeSandbox,
@@ -452,6 +463,11 @@ export function ShellPage() {
     subscribeBotsSidebarDensity,
     getBotsSidebarDensity,
     () => "comfortable",
+  );
+  const enterToSend = useSyncExternalStore(
+    subscribeComposerEnterToSend,
+    getComposerEnterToSend,
+    () => false,
   );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
@@ -3703,6 +3719,8 @@ export function ShellPage() {
         {active || activeGroup ? (
           <Composer
             key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            enterToSend={enterToSend}
             activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
             running={composerRunning}
             disabled={Boolean(recordingSkill)}
@@ -4573,7 +4591,7 @@ export function ShellPage() {
             usage={usage}
             onUsageOpen={refreshUsage}
             initialSection={settingsSection}
-            avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
+            avatarStyle={bootstrapMe?.avatarStyle ?? "organic"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             billingEnabled={bootstrapMe?.billingEnabled === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
@@ -4805,7 +4823,7 @@ export function ShellPage() {
   );
 
   return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "robot"}>{shell}</AvatarStyleProvider>
+    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "organic"}>{shell}</AvatarStyleProvider>
   );
 }
 
@@ -5413,6 +5431,8 @@ export const Composer = memo(function Composer({
   agentSkills,
   onSlashOpen,
   onSlashAction,
+  draftKey,
+  enterToSend,
 }: {
   activeName?: string;
   running: boolean;
@@ -5440,15 +5460,32 @@ export const Composer = memo(function Composer({
   agentSkills?: AgentSkillCatalogEntry[];
   onSlashOpen?: () => void;
   onSlashAction?: (action: SlashActionId) => void;
+  draftKey: string;
+  enterToSend: boolean;
 }) {
   const { t } = useLingui();
-  const [draft, setDraft] = useState("");
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
+  const [mentionQuery, setMentionQuery] = useState<string | null>(() => {
+    const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(draft);
+    return mentionMatch ? (mentionMatch[1] ?? "") : null;
+  });
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashQuery, setSlashQuery] = useState<string | null>(() => {
+    const slashMatch = /^\/([^\n]*)$/.exec(draft);
+    return slashMatch ? (slashMatch[1] ?? "") : null;
+  });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
+  useEffect(
+    () =>
+      subscribeComposerDraftAccepted(draftKey, (text) => {
+        setDraft((current) => (current === text ? "" : current));
+        setMentionQuery(null);
+        setSlashQuery(null);
+      }),
+    [draftKey],
+  );
   const retryNonce = useRef<string | null>(null);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
@@ -5583,6 +5620,7 @@ export const Composer = memo(function Composer({
 
   function updateDraft(value: string) {
     markEdited();
+    writeComposerDraft(draftKey, value);
     setDraft(value);
     const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(mentionMatch ? (mentionMatch[1] ?? "") : null);
@@ -5599,7 +5637,9 @@ export const Composer = memo(function Composer({
 
   function insertMention(mention: ComposerMention) {
     markEdited();
-    setDraft((current) => current.replace(/@([\w-]*)$/, ""));
+    const next = draft.replace(/@([\w-]*)$/, "");
+    writeComposerDraft(draftKey, next);
+    setDraft(next);
     setMentionQuery(null);
     setMentionHighlightIndex(0);
     setSelectedMentions((current) =>
@@ -5613,12 +5653,14 @@ export const Composer = memo(function Composer({
   function insertSkill(skill: AgentSkillCatalogEntry) {
     markEdited();
     setSelectedSkill(skill);
+    writeComposerDraft(draftKey, "");
     setDraft("");
     setSlashQuery(null);
   }
 
   function runSlashAction(action: SlashActionId) {
     markEdited();
+    writeComposerDraft(draftKey, "");
     setDraft("");
     setSlashQuery(null);
     onSlashAction?.(action);
@@ -5686,6 +5728,7 @@ export const Composer = memo(function Composer({
     const clientNonce = retryNonce.current ?? newClientNonce();
     retryNonce.current = null;
     const text = serializeComposerPrompt(draft, selectedSkill, selectedMentions);
+    const submission = beginComposerDraftSubmission(draftKey, draft);
     setDraft("");
     setMentionQuery(null);
     setMentionHighlightIndex(0);
@@ -5694,8 +5737,11 @@ export const Composer = memo(function Composer({
     const mentions = selectedMentions;
     setSelectedMentions([]);
     try {
-      if ((await onSend(text, mentions, clientNonce)) !== false) return;
+      const accepted = (await onSend(text, mentions, clientNonce)) !== false;
+      settleComposerDraftSubmission(draftKey, submission, accepted);
+      if (accepted) return;
     } catch {
+      settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
       return;
     }
@@ -6146,6 +6192,9 @@ export const Composer = memo(function Composer({
               const action = resolveMentionPickerKey({
                 key: event.key,
                 shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                enterToSend,
                 isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
                 optionCount: mentionOptions.length,
                 highlightedIndex: activeMentionIndex,

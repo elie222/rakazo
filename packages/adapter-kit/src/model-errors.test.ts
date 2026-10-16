@@ -54,6 +54,16 @@ describe("transient model errors", () => {
     expect(isTransientModelError(error)).toBe(false);
   });
 
+  it.each([
+    "You've reached your 5-hour usage limit.",
+    "You’ve reached your 5-hour usage limit.",
+    "You've reached your weekly (7-day) usage limit.",
+    "You've reached your monthly usage limit.",
+    "You've reached your usage limit for this billing cycle.",
+  ])("treats the exhausted usage window as permanent: %s", (message) => {
+    expect(isTransientModelError({ status: 403, type: "permission_error", message })).toBe(false);
+  });
+
   it("names its error class", () => {
     const error = new TransientModelError("overloaded");
     expect(error).toBeInstanceOf(Error);
@@ -98,6 +108,91 @@ describe("provider availability classification", () => {
     [
       "consent refusal",
       new Error("user declined consent; retry after 3301 seconds; 429 rate limit"),
+      false,
+    ],
+    [
+      "Kimi 403 5-hour usage limit",
+      {
+        status: 403,
+        type: "permission_error",
+        message:
+          "You've reached your 5-hour usage limit. Your quota will reset when the current 5-hour window ends.",
+      },
+      true,
+    ],
+    [
+      "Kimi 403 5-hour usage limit, curly apostrophe",
+      {
+        status: 403,
+        type: "permission_error",
+        message: "You\u2019ve reached your 5-hour usage limit.",
+      },
+      true,
+    ],
+    [
+      "Kimi 403 weekly usage limit",
+      {
+        status: 403,
+        type: "permission_error",
+        message: "You've reached your weekly (7-day) usage limit.",
+      },
+      true,
+    ],
+    [
+      "Kimi 403 monthly usage limit",
+      {
+        status: 403,
+        type: "permission_error",
+        message: "You've reached your monthly usage limit.",
+      },
+      true,
+    ],
+    [
+      "Kimi 403 billing-cycle usage limit",
+      {
+        status: 403,
+        type: "permission_error",
+        message: "You've reached your usage limit for this billing cycle.",
+      },
+      true,
+    ],
+    [
+      "HTTP 401 with nested Kimi 403 usage limit",
+      {
+        status: 401,
+        cause: { status: 403, message: "You've reached your monthly usage limit." },
+      },
+      false,
+    ],
+    [
+      "Kimi 403 monthly usage limit not reached",
+      {
+        status: 403,
+        message: "You have not reached your monthly usage limit; access denied",
+      },
+      false,
+    ],
+    [
+      "Kimi 401",
+      {
+        status: 401,
+        type: "invalid_authentication_error",
+        message: "The API Key appears to be invalid or may have expired.",
+      },
+      false,
+    ],
+    [
+      "Kimi 403 concurrent request limit",
+      {
+        status: 403,
+        message:
+          "You've reached your concurrent request limit. Please wait for your ongoing requests to finish and try again.",
+      },
+      false,
+    ],
+    [
+      "generic 403 permission_error",
+      { status: 403, type: "permission_error", message: "permission denied" },
       false,
     ],
     ["quota exhaustion", { status: 402, message: "provider quota exhausted" }, true],

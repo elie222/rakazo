@@ -23,20 +23,35 @@ export function clampMentionHighlightIndex(index: number, count: number): number
 
 /**
  * Resolve composer key handling while (or after) the mention picker is open.
- * When `optionCount` is 0 the picker is closed or empty: Enter sends (unless Shift).
+ * When `optionCount` is 0 the picker is closed or empty: Enter sends (unless Shift),
+ * or unless `enterToSend` is false — then plain Enter inserts a newline and only
+ * Ctrl/Cmd+Enter sends (handy on touch keyboards, where Shift is one-shot).
  * While IME composition is active, returns `none` so Enter confirms text instead.
  */
 export function resolveMentionPickerKey(input: {
   key: string;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
   isComposing?: boolean;
   optionCount: number;
   highlightedIndex: number;
+  /** When false, plain Enter inserts a newline; Ctrl/Cmd+Enter still sends. Defaults to true. */
+  enterToSend?: boolean;
 }): MentionPickerKeyAction {
   if (input.isComposing) return { type: "none" };
 
-  const { key, shiftKey = false, optionCount } = input;
+  const {
+    key,
+    shiftKey = false,
+    ctrlKey = false,
+    metaKey = false,
+    optionCount,
+    enterToSend = true,
+  } = input;
   const highlightedIndex = clampMentionHighlightIndex(input.highlightedIndex, optionCount);
+
+  if (key === "Enter" && !shiftKey && (ctrlKey || metaKey)) return { type: "send" };
 
   if (optionCount > 0) {
     if (key === "ArrowDown") {
@@ -58,6 +73,7 @@ export function resolveMentionPickerKey(input: {
   }
 
   if (key === "Enter" && !shiftKey) {
+    if (!enterToSend && !ctrlKey && !metaKey) return { type: "none" };
     return { type: "send" };
   }
   return { type: "none" };

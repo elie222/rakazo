@@ -25,6 +25,7 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  localStorage.clear();
 });
 
 const bob: ComposerMention = { kind: "bot", id: "bot-2", name: "Bob" };
@@ -47,7 +48,12 @@ function renderComposer(
     disconnect() {}
   };
   // Reduced motion skips the chip-row resize animation, which jsdom cannot run.
-  window.matchMedia ??= () => ({ matches: true }) as MediaQueryList;
+  window.matchMedia ??= () =>
+    ({
+      matches: true,
+      addEventListener() {},
+      removeEventListener() {},
+    }) as unknown as MediaQueryList;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -68,6 +74,8 @@ function renderComposer(
     onRemoveAttachment: () => {},
     onSend,
     onStop: async () => {},
+    draftKey: "bot:bot-1",
+    enterToSend: true,
     mentionTargets: [bob],
     agentSkills: [summarize],
     ...overrides,
@@ -339,4 +347,143 @@ describe("Composer", () => {
     expect(onSend.mock.calls[1]?.[2]).toBe(onSend.mock.calls[0]?.[2]);
     expect(onSend.mock.calls[2]?.[2]).not.toBe(onSend.mock.calls[0]?.[2]);
   });
+
+  it("restores an unsent draft when the composer remounts", () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const draftKey = "bot:draft-restore-test";
+    const first = renderComposer(onSend, { draftKey });
+    type(first, "unsent thought");
+    expect(window.localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("unsent thought");
+    act(() => root?.unmount());
+    container?.remove();
+    const second = renderComposer(onSend, { draftKey });
+    expect(second.value).toBe("unsent thought");
+  });
+
+  it("keeps Enter as newline and Ctrl+Enter as send when enter-to-send is off", async () => {
+    const onSend = vi.fn().mockResolvedValue(true);
+    const textarea = renderComposer(onSend, {
+      draftKey: "bot:enter-toggle-test",
+      enterToSend: false,
+    });
+    expect(container?.querySelector('[data-testid="composer-enter-to-send-toggle"]')).toBeNull();
+    type(textarea, "line one");
+    pressEnter(textarea);
+    await act(async () => {});
+    expect(onSend).not.toHaveBeenCalled();
+    act(() => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+});
+
+it.each([true, false])(
+  "keeps a pending draft recoverable across unmount (accepted: %s)",
+  async (accepted) => {
+    let finishSend = (_accepted: boolean) => {};
+    const onSend = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+    );
+    const draftKey = "bot:pending-draft";
+    const textarea = renderComposer(onSend, { draftKey });
+    type(textarea, "pending text");
+    pressEnter(textarea);
+    expect(textarea.value).toBe("");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("pending text");
+    act(() => root?.unmount());
+    container?.remove();
+    await act(async () => finishSend(accepted));
+    const restored = renderComposer(vi.fn(), { draftKey });
+    expect(restored.value).toBe(accepted ? "" : "pending text");
+  },
+);
+
+it.each([true, false])(
+  "preserves newer stored edits when a send settles (accepted: %s)",
+  async (accepted) => {
+    let finishSend = (_accepted: boolean) => {};
+    const textarea = renderComposer(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+    );
+    type(textarea, "submitted text");
+    pressEnter(textarea);
+    type(textarea, "newer text");
+    await act(async () => finishSend(accepted));
+    expect(textarea.value).toBe("newer text");
+    expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBe("newer text");
+  },
+);
+
+it.each([true, false])(
+  "settles a submission after returning to its thread (accepted: %s)",
+  async (accepted) => {
+    let finishSend = (_accepted: boolean) => {};
+    const draftKey = "bot:return-before-settle";
+    const first = renderComposer(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishSend = resolve;
+        }),
+      { draftKey },
+    );
+    type(first, "submitted text");
+    pressEnter(first);
+    act(() => root?.unmount());
+    container?.remove();
+    const returned = renderComposer(vi.fn(), { draftKey });
+    expect(returned.value).toBe("submitted text");
+    await act(async () => finishSend(accepted));
+    expect(returned.value).toBe(accepted ? "" : "submitted text");
+    expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe(
+      accepted ? null : "submitted text",
+    );
+  },
+);
+
+it("preserves edits made after returning, even when the text matches the submission", async () => {
+  let finishSend = (_accepted: boolean) => {};
+  const draftKey = "bot:identical-newer-edit";
+  const first = renderComposer(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishSend = resolve;
+      }),
+    { draftKey },
+  );
+  type(first, "submitted text");
+  pressEnter(first);
+  act(() => root?.unmount());
+  container?.remove();
+  const returned = renderComposer(vi.fn(), { draftKey });
+  type(returned, "edited text");
+  type(returned, "submitted text");
+  await act(async () => finishSend(true));
+  expect(returned.value).toBe("submitted text");
+  expect(localStorage.getItem(`rakazo.composerDraft.${draftKey}`)).toBe("submitted text");
+});
+
+it("clears accepted saved text when only an attachment was picked during the send", async () => {
+  let finishSend = (_accepted: boolean) => {};
+  const textarea = renderComposer(
+    () =>
+      new Promise<boolean>((resolve) => {
+        finishSend = resolve;
+      }),
+  );
+  type(textarea, "submitted text");
+  pressEnter(textarea);
+  pickAttachment();
+  await act(async () => finishSend(true));
+  expect(textarea.value).toBe("");
+  expect(localStorage.getItem("rakazo.composerDraft.bot:bot-1")).toBeNull();
 });

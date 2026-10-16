@@ -100,6 +100,11 @@ vi.mock("../lib/ui-appearance", () => ({
 }));
 vi.mock("react-router-dom", () => ({ Link: ({ children }: { children?: ReactNode }) => children }));
 
+import {
+  COMPOSER_ENTER_TO_SEND_STORAGE_KEY,
+  getComposerEnterToSend,
+  setComposerEnterToSend,
+} from "../lib/composer-enter-to-send-pref";
 import { getRemoteImagesEnabled } from "../lib/remote-images-preference";
 import { TOOL_ACTIVITY_STORAGE_KEY } from "../lib/tool-activity-preference";
 import { GeneralSettingsPanels } from "./AccountSettingsOverlay";
@@ -210,6 +215,41 @@ it.each([undefined, true, false])("respects the password-change policy (%s)", as
   } finally {
     await act(async () => root.unmount());
     accountPolicy.passwordChangeEnabled = undefined;
+    vi.unstubAllGlobals();
+  }
+});
+
+it("updates the Enter preference from Settings and reflects external changes", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  setComposerEnterToSend(true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <GeneralSettingsPanels
+          name="Test"
+          avatarStyle="robot"
+          onAvatarStyleChange={async () => undefined}
+        />,
+      );
+    });
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="composer-enter-to-send-toggle"]',
+    );
+    if (!toggle) throw new Error("Missing Enter preference");
+    expect(container.querySelector(`label[for="${toggle.id}"]`)?.textContent).toBe(
+      "Send with Enter",
+    );
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle.click());
+    expect(getComposerEnterToSend()).toBe(false);
+    expect(localStorage.getItem(COMPOSER_ENTER_TO_SEND_STORAGE_KEY)).toBe("0");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    await act(async () => setComposerEnterToSend(true));
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+  } finally {
+    await act(async () => root.unmount());
     vi.unstubAllGlobals();
   }
 });
