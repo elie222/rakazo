@@ -333,6 +333,21 @@ describe("openai-compatible model rows", () => {
     expect(savedCompatibleModelIds(undefined, saved.baseUrl)).toEqual([]);
   });
 
+  it("compares endpoints the way the server stores them", () => {
+    expect(savedCompatibleModelIds(saved, "http://127.0.0.1:8000/v1/")).toEqual(["a", "b"]);
+    expect(savedCompatibleModelIds(saved, "http://127.0.0.1:8000")).toEqual(["a", "b"]);
+    expect(savedCompatibleModelIds(saved, "http://127.0.0.2:8000/v1")).toEqual([]);
+  });
+
+  it("treats half-typed text as a different endpoint without throwing", () => {
+    expect(savedCompatibleModelIds(saved, "http://")).toEqual([]);
+    expect(savedCompatibleModelIds(saved, "127.0.0.1:80")).toEqual([]);
+    expect(savedCompatibleModelIds({ ...saved, baseUrl: "not a url" }, " not a url ")).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
   it("lists saved, ticked and probed ids once each, in that order", () => {
     expect(compatibleModelRows(["a", "b"], ["b", "c"], ["d", "a"])).toEqual(["a", "b", "c", "d"]);
   });

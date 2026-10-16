@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -46,8 +47,7 @@ vi.mock("@lingui/react/macro", () => {
 });
 vi.mock("@rakazo/ui-web", async () => {
   // The real Checkbox and Label so the row's accessible name is computed by Base UI.
-  const { Checkbox, Label } =
-    await vi.importActual<typeof import("@rakazo/ui-web")>("@rakazo/ui-web");
+  const { Checkbox, Label } = await vi.importActual<typeof UiWeb>("@rakazo/ui-web");
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     AlertDialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>

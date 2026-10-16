@@ -937,7 +937,8 @@ export default function Models() {
       />
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
-      {compatibleRows.includes(modelId) ? (
+      {/* The switches stay visible while the default is "Other model…" or a typed id. */}
+      {compatibleRows.length ? (
         <View style={styles.card}>
           {compatibleRows.map((entry) => (
             // The switch sits beside the radio, not inside it: an accessible
@@ -967,21 +968,24 @@ export default function Models() {
               />
             </View>
           ))}
-          <Pressable
-            accessibilityRole="radio"
-            accessibilityState={{ selected: false }}
-            disabled={probing}
-            onPress={() => stageCompatibleModelId("")}
-            style={({ pressed }) => [
-              styles.modelRow,
-              probing && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.modelLabel}>{t("Other model…")}</Text>
-          </Pressable>
+          {compatibleRows.includes(modelId) ? (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ selected: false }}
+              disabled={probing}
+              onPress={() => stageCompatibleModelId("")}
+              style={({ pressed }) => [
+                styles.modelRow,
+                probing && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.modelLabel}>{t("Other model…")}</Text>
+            </Pressable>
+          ) : null}
         </View>
-      ) : (
+      ) : null}
+      {compatibleRows.includes(modelId) ? null : (
         <>
           <TextInput
             accessibilityLabel={t("Model id")}

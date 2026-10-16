@@ -1,4 +1,5 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
+import { normalizeOpenAiCompatibleBaseUrl } from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
 /** Effort choices an OpenAI-compatible endpoint stores when reasoning is enabled. */
@@ -280,12 +281,26 @@ export function filterModelCatalog(
 
 type SavedCompatibleModels = { baseUrl?: string; enabledModelIds?: readonly string[] };
 
+/** The server's endpoint form; half-typed text that is not a URL yet compares as trimmed text. */
+function comparableBaseUrl(baseUrl: string): string {
+  try {
+    return normalizeOpenAiCompatibleBaseUrl(baseUrl);
+  } catch {
+    return baseUrl.trim();
+  }
+}
+
 /** The saved enabled ids, but only while the form still points at the saved endpoint. */
 export function savedCompatibleModelIds(
   credential: SavedCompatibleModels | undefined,
   baseUrl: string,
 ): string[] {
-  if (!credential?.enabledModelIds || credential.baseUrl?.trim() !== baseUrl.trim()) return [];
+  if (
+    !credential?.enabledModelIds ||
+    comparableBaseUrl(credential.baseUrl ?? "") !== comparableBaseUrl(baseUrl)
+  ) {
+    return [];
+  }
   return [...credential.enabledModelIds];
 }
 
