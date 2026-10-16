@@ -26,6 +26,14 @@ describe("chatMermaidConfig", () => {
     expect(config.flowchart.htmlLabels).toBe(false);
     expect(config.suppressErrorRendering).toBe(true);
     expect(config.startOnLoad).toBe(false);
+    // A diagram's %%{init}%% directive cannot turn either back on.
+    expect(config.secure).toEqual(expect.arrayContaining(["securityLevel", "htmlLabels"]));
+  });
+
+  it("fills edge labels with the surface the diagram is drawn on", () => {
+    const native = chatMermaidConfig(darkTokens, "dark", { surface: darkTokens.background });
+    expect(native.themeVariables.background).toBe(darkTokens.background);
+    expect(native.themeVariables.edgeLabelBackground).toBe(darkTokens.background);
   });
 
   it("draws with the app palette so text stays readable in both themes", () => {

@@ -171,12 +171,13 @@ import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Platform, Pressable } from "react-native";
-import type { LinkFavicons } from "./markdown.native";
+import type { LinkFavicons, MermaidDiagramProps } from "./markdown.native";
 import {
   ChatMarkdown,
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownLinkPromptProvider,
+  MermaidDiagramContext,
   RemoteImagesContext,
   RemoteMarkdownImage,
 } from "./markdown.native";
@@ -1249,5 +1250,60 @@ it("shows a full long native URL and opens it only on confirmation", async () =>
   expect(linking.openURL).toHaveBeenCalledWith(url);
   await act(async () => {
     root.unmount();
+  });
+});
+
+describe("native markdown diagrams", () => {
+  const FLOW = "```mermaid\ngraph LR\n  A[Clone] --> B[Branch]\n```";
+
+  // Stands in for the app's WebView, recording what the renderer hands it.
+  function ProbeDiagram({ source, palette, colorScheme, fallback }: MermaidDiagramProps) {
+    return createElement(
+      "diagram-probe",
+      { "data-source": source, "data-scheme": colorScheme, "data-foreground": palette.foreground },
+      fallback,
+    );
+  }
+
+  function renderWithDiagrams(markdown: string, props: { streaming?: boolean } = {}) {
+    return renderToStaticMarkup(
+      <MermaidDiagramContext.Provider value={ProbeDiagram}>
+        <ChatMarkdown palette={lightTokens} colorScheme="light" {...props}>
+          {markdown}
+        </ChatMarkdown>
+      </MermaidDiagramContext.Provider>,
+    );
+  }
+
+  it("hands a mermaid fence to the app's diagram with its code block as the fallback", () => {
+    const html = renderWithDiagrams(FLOW);
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const probe = document.querySelector("diagram-probe");
+    expect(probe?.getAttribute("data-source")).toBe("graph LR\n  A[Clone] --> B[Branch]");
+    expect(probe?.getAttribute("data-scheme")).toBe("light");
+    expect(probe?.getAttribute("data-foreground")).toBe(lightTokens.foreground);
+    expect(probe?.textContent).toContain("A[Clone] --> B[Branch]");
+  });
+
+  it("matches the fence language in any case and ignores the rest of the info string", () => {
+    const html = renderWithDiagrams("```Mermaid title=flow\ngraph TD\n  A --> B\n```");
+    expect(html).toContain("<diagram-probe");
+  });
+
+  it("keeps the code block when the app supplies no diagram", () => {
+    const html = renderToStaticMarkup(<ChatMarkdown>{FLOW}</ChatMarkdown>);
+    expect(html).not.toContain("<diagram-probe");
+    expect(html).toContain("A[Clone] --&gt; B[Branch]");
+  });
+
+  it("keeps the code block while the reply streams", () => {
+    const html = renderWithDiagrams(FLOW, { streaming: true });
+    expect(html).not.toContain("<diagram-probe");
+    expect(html).toContain("A[Clone] --&gt; B[Branch]");
+  });
+
+  it("leaves other fences and an empty mermaid fence as code", () => {
+    expect(renderWithDiagrams("```ts\nconst a = 1;\n```")).not.toContain("<diagram-probe");
+    expect(renderWithDiagrams("```mermaid\n\n```")).not.toContain("<diagram-probe");
   });
 });

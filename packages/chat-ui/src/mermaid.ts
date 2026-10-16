@@ -50,6 +50,7 @@ export function mermaidSvgImage(
 export type ChatMermaidConfig = {
   startOnLoad: false;
   securityLevel: "strict";
+  secure: string[];
   suppressErrorRendering: true;
   htmlLabels: false;
   flowchart: { htmlLabels: false };
@@ -69,18 +70,29 @@ export const CHAT_DIAGRAM_FONT =
  * a code block uses, so every colour comes from the app palette instead.
  *
  * `securityLevel: "strict"` keeps Mermaid's sanitizer on and turns off click handlers, and
- * labels are SVG text rather than HTML. Mermaid's `secure` defaults stop a diagram's own
- * `%%{init}%%` directive from loosening either setting.
+ * labels are SVG text rather than HTML. `secure` lists the keys a diagram's own `%%{init}%%`
+ * directive cannot change: Mermaid's defaults plus `htmlLabels`.
+ *
+ * `surface` is the colour the diagram is drawn on, which edge labels are filled with.
  */
 export function chatMermaidConfig(
   palette: ColorTokens,
   appearance: ResolvedAppearance,
-  fontFamily = CHAT_DIAGRAM_FONT,
+  { fontFamily = CHAT_DIAGRAM_FONT, surface = palette.card } = {},
 ): ChatMermaidConfig {
   const line = palette.mutedForeground;
   return {
     startOnLoad: false,
     securityLevel: "strict",
+    secure: [
+      "secure",
+      "securityLevel",
+      "startOnLoad",
+      "maxTextSize",
+      "suppressErrorRendering",
+      "maxEdges",
+      "htmlLabels",
+    ],
     suppressErrorRendering: true,
     htmlLabels: false,
     flowchart: { htmlLabels: false },
@@ -91,7 +103,7 @@ export function chatMermaidConfig(
       darkMode: appearance === "dark",
       fontFamily,
       fontSize: "14px",
-      background: palette.card,
+      background: surface,
       textColor: palette.foreground,
       lineColor: line,
       primaryColor: palette.accent,
@@ -109,7 +121,7 @@ export function chatMermaidConfig(
       clusterBkg: palette.muted,
       clusterBorder: line,
       titleColor: palette.foreground,
-      edgeLabelBackground: palette.card,
+      edgeLabelBackground: surface,
       noteBkgColor: palette.chatUser,
       noteTextColor: palette.foreground,
       noteBorderColor: line,
@@ -125,7 +137,7 @@ export function chatMermaidConfig(
       loopTextColor: palette.foreground,
       activationBkgColor: palette.chatUser,
       activationBorderColor: line,
-      sequenceNumberColor: palette.card,
+      sequenceNumberColor: surface,
       errorBkgColor: palette.destructive,
       errorTextColor: palette.destructiveForeground,
     },

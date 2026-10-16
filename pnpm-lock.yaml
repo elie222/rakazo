@@ -76,6 +76,9 @@ importers:
       hono:
         specifier: 4.13.7
         version: 4.13.7
+      mermaid:
+        specifier: 12.0.0
+        version: 12.0.0
     devDependencies:
       typescript:
         specifier: 7.0.2
