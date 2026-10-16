@@ -56,6 +56,9 @@ export function renderMermaidSvg(
   const known = rendered.get(key);
   if (known !== undefined) return Promise.resolve(known);
   return inTurn(async () => {
+    // The same diagram twice on screen queues twice; the second takes the first one's drawing.
+    const drawn = rendered.get(key);
+    if (drawn !== undefined) return drawn;
     const mermaid = await loadMermaid();
     mermaid.initialize(chatMermaidConfig(tokensForAppearance(appearance), appearance));
     const id = `rk-mermaid-${++renderCount}`;

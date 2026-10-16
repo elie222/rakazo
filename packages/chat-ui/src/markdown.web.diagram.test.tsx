@@ -66,6 +66,13 @@ describe("web markdown diagrams", () => {
     expect(mermaid.render).toHaveBeenCalledWith(expect.stringMatching(/^rk-mermaid-/), source);
   });
 
+  it("draws a diagram repeated in one message once", async () => {
+    const fence = `\`\`\`mermaid\n${freshDiagram()}\n\`\`\``;
+    await render(`${fence}\n\n${fence}`);
+    expect(container.querySelectorAll('[data-testid="chat-diagram"] img')).toHaveLength(2);
+    expect(mermaid.render).toHaveBeenCalledTimes(1);
+  });
+
   it("configures Mermaid strictly, in the page's theme", async () => {
     document.documentElement.dataset.theme = "light";
     await render(`\`\`\`mermaid\n${freshDiagram()}\n\`\`\``);
