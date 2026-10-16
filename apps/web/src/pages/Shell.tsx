@@ -683,9 +683,10 @@ export function ShellPage() {
   const settingsSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
   const settingsSpace = spaces.find((space) => space.id === settingsSpaceId) ?? null;
   // A space switch from settings reloads with ?settings=<section> to reopen them.
+  // Wait for bootstrap: billing and computer sections depend on its flags.
   useEffect(() => {
     const section = searchParams.get("settings");
-    if (!section) return;
+    if (!section || bootstrapMe === undefined) return;
     const params = new URLSearchParams(searchParams);
     params.delete("settings");
     setSearchParams(params, { replace: true });
@@ -693,7 +694,7 @@ export function ShellPage() {
       setSettingsSection(section);
       setSettingsOpen(true);
     }
-  }, [searchParams, setSearchParams]);
+  }, [bootstrapMe, searchParams, setSearchParams]);
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputerRecoveryHint =

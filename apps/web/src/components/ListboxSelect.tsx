@@ -132,7 +132,7 @@ export function ListboxSelect<T extends string>({
           id={listboxId}
           role="listbox"
           aria-label={label}
-          className="rk-scroll absolute left-0 right-0 top-full z-20 mt-1 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
+          className="rk-scroll absolute left-0 right-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
           {options.map((option, index) => (
             <button
