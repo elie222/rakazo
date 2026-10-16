@@ -84,7 +84,7 @@ test("skills marketplace installs, scopes, imports, and edits recipes", async ({
   await captureScreenshot(page, testInfo, "skills-marketplace-directory");
   await page.getByRole("button", { name: "Import from URL / MD", exact: true }).click();
   await page
-    .locator("textarea")
+    .getByPlaceholder(/^---\nname: my-skill/)
     .fill(
       "---\nname: Weekly review\ndescription: Review weekly progress\n---\nSummarize progress and blockers.",
     );
