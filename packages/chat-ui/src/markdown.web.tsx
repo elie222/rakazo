@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { createContext, memo, useCallback, useContext, useRef, useState } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import type { Components } from "react-markdown";
+import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { HastNode } from "./table-utils";
 import "./markdown.web.css";
@@ -97,8 +98,8 @@ function CodeBlock(props: React.ComponentPropsWithoutRef<"pre">) {
   );
 }
 
-/** Where the fence that streaming closed for display begins, while that fence is still open. */
-const OpenFenceStartContext = createContext<number | undefined>(undefined);
+/** Original markdown while streaming, before any display-only closing fence is appended. */
+const StreamingSourceContext = createContext<string | undefined>(undefined);
 
 /** The source of a ```mermaid fence, or undefined for any other block. */
 function mermaidFenceSource(node: MarkdownHast | undefined): string | undefined {
@@ -141,13 +142,27 @@ function MarkdownPre({
   node,
   ...props
 }: React.ComponentPropsWithoutRef<"pre"> & { node?: MarkdownHast }) {
-  const openFenceStart = useContext(OpenFenceStartContext);
+  const streamingSource = useContext(StreamingSourceContext);
   const diagram = mermaidFenceSource(node);
   if (diagram === undefined) return <CodeBlock {...props} />;
-  const end = node?.position?.end?.offset;
-  // A fence the model is still writing would redraw on every token. It reads as code until it closes.
-  if (openFenceStart !== undefined && (end === undefined || end > openFenceStart)) {
-    return <CodeBlock {...props} />;
+  // Parser offsets identify the fence inside quotes and lists too. Inspect the original source,
+  // since a display-only closing fence must never trigger a diagram render.
+  if (streamingSource !== undefined) {
+    const start = node?.position?.start?.offset;
+    const end = node?.position?.end?.offset;
+    const fence = start === undefined ? "" : streamingSource.slice(start, end);
+    const opening = fence.match(/^(`{3,}|~{3,})/);
+    const lastLine = fence.slice(fence.lastIndexOf("\n") + 1);
+    const closing = lastLine.match(/^(?:[ \t]*>[ \t]?)*[ \t]*(`{3,}|~{3,})[ \t]*$/);
+    if (
+      !fence.includes("\n") ||
+      !opening?.[1] ||
+      !closing?.[1] ||
+      opening[1][0] !== closing[1][0] ||
+      closing[1].length < opening[1].length
+    ) {
+      return <CodeBlock {...props} />;
+    }
   }
   return <MermaidDiagram source={diagram} fallback={<CodeBlock {...props} />} />;
 }
@@ -245,7 +260,7 @@ type MarkdownHast = {
   value?: string;
   properties?: Record<string, unknown>;
   children?: MarkdownHast[];
-  position?: { end?: { offset?: number } };
+  position?: { start?: { offset?: number }; end?: { offset?: number } };
 };
 
 function hastString(value: unknown): string | undefined {
@@ -509,7 +524,6 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
   const source = streaming ? closeUnterminatedFence(children) : children;
-  const openFenceStart = source === children ? undefined : children.length;
 
   return (
     <ConfirmLinkContext.Provider value={request}>
@@ -517,7 +531,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
       >
         <LinkFaviconsPausedContext.Provider value={streaming}>
-          <OpenFenceStartContext.Provider value={openFenceStart}>
+          <StreamingSourceContext.Provider value={streaming ? children : undefined}>
             <MarkdownTableSourceContext.Provider value={source}>
               <ReactMarkdown
                 components={components}
@@ -532,7 +546,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
                 {source}
               </ReactMarkdown>
             </MarkdownTableSourceContext.Provider>
-          </OpenFenceStartContext.Provider>
+          </StreamingSourceContext.Provider>
         </LinkFaviconsPausedContext.Provider>
         {streaming ? <span aria-hidden="true" className="rk-chat-markdown-cursor" /> : null}
       </div>

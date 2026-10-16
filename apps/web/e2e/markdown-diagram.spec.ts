@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { captureScreenshot } from "./helpers";
 
 const fixture = "/e2e/fixtures/markdown-diagram.html";
@@ -136,6 +137,24 @@ test("a fence still streaming reads as code until it closes", async ({ page }) =
     `Drafting:\n\n\`\`\`mermaid\n${flowSource}\n\`\`\`\n\nAnd then done.`,
     false,
   );
+  await expectDrawn(page);
+});
+
+test("a quoted streaming diagram waits for its closing fence", async ({ page }, testInfo) => {
+  await page.goto(`${fixture}?case=plain&stream=1`);
+  const open = `> \`\`\`mermaid\n${flowSource
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n")}`;
+  await streamUpdate(page, open, true);
+  await expect(page.getByTestId("diagram-fixture").locator("blockquote pre")).toContainText(
+    flowSource,
+  );
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("chat-diagram")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "markdown-diagram-quoted-streaming");
+
+  await streamUpdate(page, `${open}\n> \`\`\``, true);
   await expectDrawn(page);
 });
 

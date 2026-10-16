@@ -18,13 +18,28 @@ describe("diagram script route", () => {
     expect(body).toContain('globalThis["mermaid"]');
   });
 
-  it("answers a matching revalidation without the body", async () => {
+  it.each([
+    ["strong", (etag: string) => etag],
+    ["weak", (etag: string) => `W/${etag}`],
+    ["list", (etag: string) => `"other,tag", W/${etag}, "another"`],
+    ["wildcard", () => " * "],
+  ])("answers a matching %s revalidation without the body", async (_name, validator) => {
     const etag = (await app.request(DIAGRAM_SCRIPT_PATH)).headers.get("etag") ?? "";
     const response = await app.request(DIAGRAM_SCRIPT_PATH, {
-      headers: { "if-none-match": etag },
+      headers: { "if-none-match": validator(etag) },
     });
     expect(response.status).toBe(304);
     expect(await response.text()).toBe("");
     expect(response.headers.get("etag")).toBe(etag);
   });
+  it.each(['"other,tag"', 'W/"other"', '"other", "another"'])(
+    "serves the body for a nonmatching validator %s",
+    async (validator) => {
+      const response = await app.request(DIAGRAM_SCRIPT_PATH, {
+        headers: { "if-none-match": validator },
+      });
+      expect(response.status).toBe(200);
+      expect((await response.text()).length).toBeGreaterThan(0);
+    },
+  );
 });

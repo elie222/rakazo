@@ -35,7 +35,12 @@ export function mountDiagramScript(app: Hono) {
       etag,
       "x-content-type-options": "nosniff",
     };
-    if (c.req.header("if-none-match") === etag) return c.body(null, 304, headers);
+    const ifNoneMatch = c.req.header("if-none-match") ?? "";
+    // Match quoted tags as a whole: commas inside an opaque tag are not list separators.
+    const tags = [...ifNoneMatch.matchAll(/(?:^|,)\s*(?:W\/)?("[^"]*")\s*(?=,|$)/g)];
+    if (ifNoneMatch.trim() === "*" || tags.some(([, tag]) => tag === etag)) {
+      return c.body(null, 304, headers);
+    }
     return c.body(body, 200, { ...headers, "content-type": "text/javascript; charset=utf-8" });
   });
 }

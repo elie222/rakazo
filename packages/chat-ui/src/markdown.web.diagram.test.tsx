@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
+import type { Root } from "react-dom/client";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatMarkdown } from "./markdown.web";
 
@@ -104,6 +105,26 @@ describe("web markdown diagrams", () => {
 
     await render(`Drafting\n\n\`\`\`mermaid\n${source}\n\`\`\`\n\nmore`, true);
     expect(container.querySelector('[data-testid="chat-diagram"] img')).not.toBeNull();
+  });
+
+  it.each([
+    ["blockquote", "> ", "> "],
+    ["nested blockquote", "> > ", "> > "],
+    ["list", "- ", "  "],
+    ["quoted list", "> - ", ">   "],
+  ])("waits for a streaming fence inside a %s to close", async (_name, first, rest) => {
+    const source = freshDiagram();
+    const open = `${first}\`\`\`mermaid\n${source
+      .split("\n")
+      .map((line) => rest + line)
+      .join("\n")}`;
+    await render(open, true);
+    expect(container.querySelector("pre")?.textContent).toContain(source);
+    expect(mermaid.parse).not.toHaveBeenCalled();
+
+    await render(`${open}\n${rest}\`\`\`\n\nMore`, true);
+    expect(container.querySelector('[data-testid="chat-diagram"] img')).not.toBeNull();
+    expect(mermaid.render).toHaveBeenCalledTimes(1);
   });
 
   it("leaves other fences and empty mermaid fences as code", async () => {
