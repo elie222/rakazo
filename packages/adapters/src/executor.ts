@@ -3991,16 +3991,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const publishMidTurnNarration = async () => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
           const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
+          const canPublish = canPublishDurableNarration();
+          if (
+            narration &&
+            !canPublish &&
+            !allowSilentEmptyRun &&
+            runPromotesMidTurnNarration(run.trigger)
+          ) {
+            return;
+          }
           messageSegments = extracted.remaining;
           currentTextSegment = "";
           if (!narration) return;
           hasStreamedText = false;
           pendingProgress = "";
-          if (!canPublishDurableNarration()) {
-            if (allowSilentEmptyRun || !runPromotesMidTurnNarration(run.trigger)) {
-              assembled = "";
-              discardedMidTurnNarration = true;
-            }
+          if (!canPublish) {
+            assembled = "";
+            discardedMidTurnNarration = true;
             return;
           }
           assembled = "";

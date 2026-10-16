@@ -23,7 +23,7 @@ vi.mock("./bot-messages.js", () => ({
   returnBotMessageOutcome: vi.fn(async () => undefined),
 }));
 
-async function runSilentPeerTurn(finalText: string) {
+async function runTurn(finalText: string, silent = true) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -32,7 +32,7 @@ async function runSilentPeerTurn(finalText: string) {
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: "bot_message",
+    trigger: silent ? "bot_message" : "user",
     sourceMessageId: "source-1",
     leaseFence: 0,
   };
@@ -141,7 +141,7 @@ async function runSilentPeerTurn(finalText: string) {
 describe("withheld narration on short peer turns", () => {
   it.each(["", "Checked: all clear."])("returns only the post-tool final %j", async (finalText) => {
     vi.mocked(returnBotMessageOutcome).mockClear();
-    const { finalizeRun } = await runSilentPeerTurn(finalText);
+    const { finalizeRun } = await runTurn(finalText);
     expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
     expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
       finalText ? [{ kind: "text", text: finalText }] : [],
@@ -157,5 +157,15 @@ describe("withheld narration on short peer turns", () => {
     } else {
       expect(returnBotMessageOutcome).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe("withheld narration on short reply-producing turns", () => {
+  it.each(["", "Checked: all clear."])("keeps pre-tool text with final %j", async (finalText) => {
+    const { finalizeRun } = await runTurn(finalText, false);
+    const text = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+    expect(text).toBe(`I will check that.${finalText}`);
   });
 });
