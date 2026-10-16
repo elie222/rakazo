@@ -7,7 +7,7 @@ import type {
   WebSearchHit,
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
-import { resolveAuthSecret } from "@rakazo/core";
+import { resolveEncryptionKey } from "@rakazo/core";
 import { z } from "zod";
 import { combineSignals } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -36,7 +36,7 @@ export type ParallelWebOptions = RemoteTransportDependencies & {
 
 /** Optional anonymous MCP backend for the existing builtin web tools. */
 export class ParallelWebProvider implements WebProvider {
-  private readonly sessionKey = resolveAuthSecret();
+  private readonly sessionKey = resolveEncryptionKey();
 
   constructor(private readonly options: ParallelWebOptions = {}) {}
 

@@ -223,18 +223,33 @@ describe("optional Parallel web provider", () => {
     expect(peer.calls[2]!.arguments.session_id).not.toBe(peer.calls[0]!.arguments.session_id);
   });
 
-  it("salts stable session IDs with the deployment auth secret", async () => {
+  it("salts stable session IDs with the deployment encryption secret", async () => {
     const peer = parallelMcpFixture();
     try {
-      vi.stubEnv("BETTER_AUTH_SECRET", "deployment-a-synthetic-secret-32chars");
+      vi.stubEnv("ENCRYPTION_KEY", "deployment-a-synthetic-secret-32chars");
       await createWebProvider("parallel", peer.network).search({ query: "question" }, context);
       await createWebProvider("parallel", peer.network).search({ query: "question" }, context);
-      vi.stubEnv("BETTER_AUTH_SECRET", "deployment-b-synthetic-secret-32chars");
+      vi.stubEnv("ENCRYPTION_KEY", "deployment-b-synthetic-secret-32chars");
       await createWebProvider("parallel", peer.network).search({ query: "question" }, context);
       const sessions = peer.calls.map((call) => call.arguments.session_id);
       expect(sessions[0]).toMatch(/^[a-f0-9]{64}$/);
       expect(sessions[1]).toBe(sessions[0]);
       expect(sessions[2]).not.toBe(sessions[0]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("works in production workers without the API auth secret", async () => {
+    const peer = parallelMcpFixture();
+    try {
+      vi.stubEnv("NODE_ENV", "production");
+      vi.stubEnv("VITEST", "");
+      vi.stubEnv("RAKAZO_ALLOW_DEV_SECRETS", "");
+      vi.stubEnv("BETTER_AUTH_SECRET", "");
+      vi.stubEnv("ENCRYPTION_KEY", "a".repeat(64));
+      await createWebProvider("parallel", peer.network).search({ query: "question" }, context);
+      expect(peer.calls[0]!.arguments.session_id).toMatch(/^[a-f0-9]{64}$/);
     } finally {
       vi.unstubAllEnvs();
     }
