@@ -23,9 +23,14 @@ import {
   DialogClose,
   DialogContent,
   DialogHeader,
+  DialogTitle,
   Input,
   NativeSelect,
   NativeSelectOption,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
 } from "@rakazo/ui-web";
 import { Blocks, ChevronDown, ChevronLeft, ChevronUp, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -676,60 +681,58 @@ export function PluginsOverlay({
         showCloseButton={false}
         className="flex h-[760px] max-h-[calc(100%-2rem)] w-[1080px] max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl bg-card p-0 sm:max-w-[1080px]"
       >
-        <DialogHeader className="flex-row items-center justify-between border-b border-border/40 px-8 py-5">
-          <div className="flex items-center gap-6">
-            <button
-              type="button"
-              onClick={() => {
-                setOverlayTab("connectors");
-                closeDetail();
-              }}
-              className={`flex items-center gap-2 pb-1 text-lg font-semibold transition-colors border-b-2 ${
-                overlayTab === "connectors"
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
+        <Tabs
+          value={overlayTab}
+          onValueChange={(value) => {
+            if (value === "connectors" || value === "skills") {
+              setOverlayTab(value);
+              closeDetail();
+            }
+          }}
+          className="min-h-0 flex-1 gap-0"
+        >
+          <DialogHeader className="flex-row items-center justify-between border-b border-border/40 px-8 py-5">
+            <DialogTitle className="sr-only">
+              <Trans>Integrations</Trans>
+            </DialogTitle>
+            <TabsList variant="line" aria-label={t`Integrations`} className="gap-6">
+              <TabsTrigger
+                value="connectors"
+                onClick={() => {
+                  if (overlayTab === "connectors") closeDetail();
+                }}
+                className="gap-2 text-lg font-semibold"
+              >
+                <Blocks className="h-5 w-5" />
+                <span>Apps &amp; MCP</span>
+              </TabsTrigger>
+              <TabsTrigger value="skills" className="gap-2 text-lg font-semibold">
+                <Sparkles className="h-5 w-5" />
+                <span>Agent Skills</span>
+                {skillsCount > 0 ? (
+                  <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-foreground">
+                    {skillsCount}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            </TabsList>
+            <DialogClose
+              render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
             >
-              <Blocks className="h-5 w-5" />
-              <span>Apps & MCP</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOverlayTab("skills");
-                closeDetail();
-              }}
-              className={`flex items-center gap-2 pb-1 text-lg font-semibold transition-colors border-b-2 ${
-                overlayTab === "skills"
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Sparkles className="h-5 w-5 text-primary" />
-              <span>Agent Skills</span>
-              {skillsCount > 0 ? (
-                <span className="rounded-full bg-accent px-2 py-0.5 text-xs font-normal text-foreground">
-                  {skillsCount}
-                </span>
-              ) : null}
-            </button>
-          </div>
-          <DialogClose
-            render={<Button variant="ghost" size="icon-sm" aria-label={t`Close integrations`} />}
-          >
-            <X />
-          </DialogClose>
-        </DialogHeader>
+              <X />
+            </DialogClose>
+          </DialogHeader>
 
-        {overlayTab === "skills" ? (
-          <div className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+          <TabsContent
+            value="skills"
+            className="rk-scroll min-h-0 flex-1 overflow-y-auto px-8 py-6"
+          >
             <SkillsTab
               activeBotId={activeBotId}
               onSkillsCountChange={(count) => setSkillsCount(count)}
             />
-          </div>
-        ) : (
-          <>
+          </TabsContent>
+          <TabsContent value="connectors" className="flex min-h-0 flex-1 flex-col">
             {!detailItem ? (
               <div className="px-8 pt-4">
                 <Input
@@ -1229,8 +1232,8 @@ export function PluginsOverlay({
                 </>
               )}
             </div>
-          </>
-        )}
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );

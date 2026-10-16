@@ -1999,6 +1999,7 @@ msgstr "Отключение…"
 msgid "Dismiss"
 msgstr "Закрыть"
 
+#: src/components/integrations/SkillsTab.tsx
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Закрыть ошибку"
@@ -2499,6 +2500,7 @@ msgstr "Домен интеграции"
 msgid "Integration options"
 msgstr "Параметры интеграции"
 
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Интеграции"

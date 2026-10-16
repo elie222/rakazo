@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { AgentSkill, AgentSkillCatalogEntry, Bot } from "@rakazo/contracts";
 import { buildSkillMd, getSkillBotScope, parseSkillMd } from "@rakazo/core";
 import {
@@ -15,6 +16,10 @@ import {
   DialogTitle,
   Input,
   Skeleton,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from "@rakazo/ui-web";
 import {
@@ -769,52 +774,33 @@ bots:
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <Tabs
+      value={subTab}
+      onValueChange={(value) => {
+        if (value === "installed" || value === "marketplace" || value === "import")
+          setSubTab(value);
+      }}
+      className="h-full gap-0"
+    >
       {/* Top Navigation Bar inside Skills Tab */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border/40 pb-4">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSubTab("installed")}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-              subTab === "installed"
-                ? "bg-accent text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            }`}
-          >
+        <TabsList aria-label="Agent Skills">
+          <TabsTrigger value="installed">
             <BookOpen className="h-4 w-4" />
             <span>Installed Skills</span>
-            <span className="rounded-full bg-background/80 px-2 py-0.2 text-xs font-semibold">
+            <span className="rounded-full bg-background/80 px-2 text-xs font-semibold">
               {skills.length}
             </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubTab("marketplace")}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-              subTab === "marketplace"
-                ? "bg-accent text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            }`}
-          >
-            <Sparkles className="h-4 w-4 text-primary" />
+          </TabsTrigger>
+          <TabsTrigger value="marketplace">
+            <Sparkles className="h-4 w-4" />
             <span>Marketplace Hub</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setSubTab("import")}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors ${
-              subTab === "import"
-                ? "bg-accent text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            }`}
-          >
+          </TabsTrigger>
+          <TabsTrigger value="import">
             <Download className="h-4 w-4" />
             <span>Import from URL / MD</span>
-          </button>
-        </div>
+          </TabsTrigger>
+        </TabsList>
 
         <div className="flex items-center gap-2">
           <Button
@@ -834,13 +820,15 @@ bots:
       {error && !scopeModalSkill && !installModalSkill && !activeSkill && !isCreatingCustom ? (
         <div className="mb-4 flex items-center justify-between rounded-xl bg-destructive/15 px-4 py-2.5 text-sm text-destructive">
           <span>{error}</span>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t`Dismiss error`}
             onClick={() => setError(null)}
-            className="opacity-70 hover:opacity-100"
           >
             <X className="h-4 w-4" />
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -852,558 +840,533 @@ bots:
       ) : null}
 
       {/* Sub-view: Installed Skills */}
-      {subTab === "installed" ? (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter installed skills by name or keyword..."
-                className="pl-9"
-              />
+      <TabsContent value="installed" className="space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter installed skills by name or keyword..."
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="space-y-3 pt-2">
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+          </div>
+        ) : filteredInstalledSkills.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center">
+            <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
+            <h3 className="text-base font-semibold text-foreground">No skills found</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Install ready-to-use skills from Marketplace Hub or write your own custom skill.
+            </p>
+            <div className="mt-4 flex justify-center gap-3">
+              <Button variant="secondary" size="sm" onClick={() => setSubTab("marketplace")}>
+                <Sparkles className="mr-1.5 h-4 w-4 text-primary" />
+                <span>Explore Marketplace</span>
+              </Button>
+              <Button variant="outline" size="sm" onClick={openNewSkill}>
+                <Plus className="mr-1.5 h-4 w-4" />
+                <span>Create Skill</span>
+              </Button>
             </div>
           </div>
-
-          {loading ? (
-            <div className="space-y-3 pt-2">
-              <Skeleton className="h-20 w-full rounded-xl" />
-              <Skeleton className="h-20 w-full rounded-xl" />
-              <Skeleton className="h-20 w-full rounded-xl" />
-            </div>
-          ) : filteredInstalledSkills.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border/80 p-8 text-center">
-              <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground/50" />
-              <h3 className="text-base font-semibold text-foreground">No skills found</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Install ready-to-use skills from Marketplace Hub or write your own custom skill.
-              </p>
-              <div className="mt-4 flex justify-center gap-3">
-                <Button variant="secondary" size="sm" onClick={() => setSubTab("marketplace")}>
-                  <Sparkles className="mr-1.5 h-4 w-4 text-primary" />
-                  <span>Explore Marketplace</span>
-                </Button>
-                <Button variant="outline" size="sm" onClick={openNewSkill}>
-                  <Plus className="mr-1.5 h-4 w-4" />
-                  <span>Create Skill</span>
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 pb-8">
-              {filteredInstalledSkills.map((skill) => (
-                <div
-                  key={skill.id}
-                  className="flex flex-col justify-between gap-3 rounded-xl border border-border/50 bg-card/60 p-4 transition-colors hover:border-border hover:bg-card/90 sm:flex-row sm:items-center"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-foreground">{skill.name}</span>
-                      <Badge
-                        variant="secondary"
-                        className="rounded-full px-2 py-0 text-[11px] font-normal text-muted-foreground"
-                      >
-                        {skill.source === "builtin"
-                          ? "Built-in"
-                          : skill.source === "plugin"
-                            ? "Plugin"
-                            : "Custom"}
-                      </Badge>
-                      {/* Bot Scope badge */}
-                      {renderBotScopeBadge(skill.content)}
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                      {skill.description}
-                    </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 pb-8">
+            {filteredInstalledSkills.map((skill) => (
+              <div
+                key={skill.id}
+                className="flex flex-col justify-between gap-3 rounded-xl border border-border/50 bg-card/60 p-4 transition-colors hover:border-border hover:bg-card/90 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold text-foreground">{skill.name}</span>
+                    <Badge
+                      variant="secondary"
+                      className="rounded-full px-2 py-0 text-[11px] font-normal text-muted-foreground"
+                    >
+                      {skill.source === "builtin"
+                        ? "Built-in"
+                        : skill.source === "plugin"
+                          ? "Plugin"
+                          : "Custom"}
+                    </Badge>
+                    {/* Bot Scope badge */}
+                    {renderBotScopeBadge(skill.content)}
                   </div>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                    {skill.description}
+                  </p>
+                </div>
 
-                  <div className="flex shrink-0 items-center gap-2">
-                    {/* Bot Scope Selector Trigger - only for user-editable skills */}
-                    {!skill.readOnly ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void openScopeModal(skill)}
-                        className="gap-1.5 rounded-lg text-xs"
-                        title="Configure whether this skill is active globally or on specific bots"
-                      >
-                        <Settings2 className="h-3.5 w-3.5" />
-                        <span>Bot Scope</span>
-                      </Button>
-                    ) : null}
-
-                    {/* View/Edit SKILL.md */}
+                <div className="flex shrink-0 items-center gap-2">
+                  {/* Bot Scope Selector Trigger - only for user-editable skills */}
+                  {!skill.readOnly ? (
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="outline"
                       size="sm"
-                      onClick={() => void openSkillEditor(skill)}
-                      className="rounded-lg text-xs"
+                      onClick={() => void openScopeModal(skill)}
+                      className="gap-1.5 rounded-lg text-xs"
+                      title="Configure whether this skill is active globally or on specific bots"
                     >
-                      {skill.readOnly ? "View Recipe" : "Edit"}
+                      <Settings2 className="h-3.5 w-3.5" />
+                      <span>Bot Scope</span>
                     </Button>
+                  ) : null}
 
-                    {/* Delete button (only for non-readonly skills) */}
-                    {!skill.readOnly ? (
-                      deleteConfirmId === skill.id ? (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => void removeSkill(skill.id)}
-                            className="rounded-lg text-xs"
-                          >
-                            Confirm
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDeleteConfirmId(null)}
-                            className="rounded-lg text-xs"
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      ) : (
+                  {/* View/Edit SKILL.md */}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void openSkillEditor(skill)}
+                    className="rounded-lg text-xs"
+                  >
+                    {skill.readOnly ? "View Recipe" : "Edit"}
+                  </Button>
+
+                  {/* Delete button (only for non-readonly skills) */}
+                  {!skill.readOnly ? (
+                    deleteConfirmId === skill.id ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void removeSkill(skill.id)}
+                          className="rounded-lg text-xs"
+                        >
+                          Confirm
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon-sm"
-                          onClick={() => setDeleteConfirmId(skill.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                          aria-label="Delete skill"
+                          size="sm"
+                          onClick={() => setDeleteConfirmId(null)}
+                          className="rounded-lg text-xs"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          Cancel
                         </Button>
-                      )
-                    ) : null}
-                  </div>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDeleteConfirmId(skill.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label="Delete skill"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </TabsContent>
 
       {/* Sub-view: Marketplace Hub */}
-      {subTab === "marketplace" ? (
-        <div className="space-y-4">
-          {/* Switcher: Curated vs Live SkillsMP */}
-          <div className="flex items-center justify-between border-b border-border/30 pb-3">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setMarketSource("curated")}
-                className={`rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
-                  marketSource === "curated"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-accent/40 text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
-              >
-                Curated High-Performance Skills
-              </button>
-              <button
-                type="button"
-                onClick={() => setMarketSource("skillsmp")}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-colors ${
-                  marketSource === "skillsmp"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-accent/40 text-muted-foreground hover:bg-accent hover:text-foreground"
-                }`}
-              >
-                <Globe className="h-3.5 w-3.5" />
-                <span>SkillsMP Directory (3,000,000+ Skills)</span>
-              </button>
-            </div>
-          </div>
-
-          {marketSource === "curated" ? (
-            <>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="relative min-w-[240px] flex-1">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search curated skills..."
-                    className="pl-9"
-                  />
-                </div>
-
-                {/* Category pills */}
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  {(
-                    [
-                      { id: "all", label: "All" },
-                      { id: "productivity", label: "Productivity" },
-                      { id: "finance", label: "Finance & Real Estate" },
-                      { id: "research", label: "Research" },
-                      { id: "engineering", label: "Code & Security" },
-                      { id: "operations", label: "Operations" },
-                    ] as const
-                  ).map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => setSelectedCategory(cat.id)}
-                      className={`rounded-full px-3 py-1 font-medium transition-colors ${
-                        selectedCategory === cat.id
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      }`}
-                    >
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
+      <TabsContent value="marketplace" className="space-y-4">
+        <Tabs
+          value={marketSource}
+          onValueChange={(value) => {
+            if (value === "curated" || value === "skillsmp") setMarketSource(value);
+          }}
+          className="gap-4"
+        >
+          <TabsList aria-label="Marketplace Hub">
+            <TabsTrigger value="curated">Curated High-Performance Skills</TabsTrigger>
+            <TabsTrigger value="skillsmp">
+              <Globe className="h-3.5 w-3.5" />
+              <span>SkillsMP Directory (3,000,000+ Skills)</span>
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="curated">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search curated skills..."
+                  className="pl-9"
+                />
               </div>
 
-              <div className="grid grid-cols-1 gap-3.5 pb-8 md:grid-cols-2">
-                {filteredCuratedSkills.map((item) => {
-                  const isInstalled = installedSkillNames.has(item.name.toLowerCase());
-                  return (
-                    <Card
-                      key={item.id}
-                      className="flex flex-col justify-between border-border/50 bg-card/60 transition-all hover:border-border hover:bg-card/90"
-                    >
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <CardTitle className="text-base font-semibold text-foreground">
-                            {item.name}
-                          </CardTitle>
-                          <Badge
-                            variant="secondary"
-                            className="rounded-full px-2 py-0.5 text-[10.5px] font-normal uppercase tracking-wider text-muted-foreground"
-                          >
-                            {item.category}
-                          </Badge>
-                        </div>
-                        <div className="text-xs text-muted-foreground/75">By {item.author}</div>
-                      </CardHeader>
-                      <CardContent className="space-y-4 pt-0">
-                        <p className="line-clamp-3 text-sm text-muted-foreground">
-                          {item.description}
-                        </p>
-                        <div className="flex items-center justify-between pt-2">
+              {/* Category pills */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                {(
+                  [
+                    { id: "all", label: "All" },
+                    { id: "productivity", label: "Productivity" },
+                    { id: "finance", label: "Finance & Real Estate" },
+                    { id: "research", label: "Research" },
+                    { id: "engineering", label: "Code & Security" },
+                    { id: "operations", label: "Operations" },
+                  ] as const
+                ).map((cat) => (
+                  <Button
+                    key={cat.id}
+                    type="button"
+                    variant={selectedCategory === cat.id ? "default" : "secondary"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    aria-pressed={selectedCategory === cat.id}
+                    className="rounded-full text-xs"
+                  >
+                    {cat.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3.5 pb-8 md:grid-cols-2">
+              {filteredCuratedSkills.map((item) => {
+                const isInstalled = installedSkillNames.has(item.name.toLowerCase());
+                return (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col justify-between border-border/50 bg-card/60 transition-all hover:border-border hover:bg-card/90"
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-base font-semibold text-foreground">
+                          {item.name}
+                        </CardTitle>
+                        <Badge
+                          variant="secondary"
+                          className="rounded-full px-2 py-0.5 text-[10.5px] font-normal uppercase tracking-wider text-muted-foreground"
+                        >
+                          {item.category}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground/75">By {item.author}</div>
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-0">
+                      <p className="line-clamp-3 text-sm text-muted-foreground">
+                        {item.description}
+                      </p>
+                      <div className="flex items-center justify-between pt-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setError(null);
+                            setActiveSkill({
+                              id: `preview:${item.id}`,
+                              name: item.name,
+                              description: item.description,
+                              content: item.content,
+                              source: "plugin",
+                              readOnly: true,
+                              createdAt: new Date().toISOString(),
+                              updatedAt: new Date().toISOString(),
+                            });
+                            setEditorDraft(item.content);
+                            setIsCreatingCustom(false);
+                          }}
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <span>Preview Recipe</span>
+                        </Button>
+
+                        {isInstalled ? (
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="secondary"
                             size="sm"
-                            onClick={() => {
-                              setError(null);
-                              setActiveSkill({
-                                id: `preview:${item.id}`,
-                                name: item.name,
-                                description: item.description,
-                                content: item.content,
-                                source: "plugin",
-                                readOnly: true,
-                                createdAt: new Date().toISOString(),
-                                updatedAt: new Date().toISOString(),
-                              });
-                              setEditorDraft(item.content);
-                              setIsCreatingCustom(false);
-                            }}
-                            className="text-xs text-muted-foreground hover:text-foreground"
+                            disabled
+                            className="gap-1.5 rounded-lg text-xs font-medium text-foreground"
                           >
-                            <span>Preview Recipe</span>
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Installed</span>
                           </Button>
-
-                          {isInstalled ? (
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              disabled
-                              className="gap-1.5 rounded-lg text-xs font-medium text-foreground"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              <span>Installed</span>
-                            </Button>
-                          ) : (
-                            <Button
-                              type="button"
-                              variant="default"
-                              size="sm"
-                              onClick={() => {
-                                setError(null);
-                                setInstallModalSkill(item);
-                                setInstallScopeGlobal(true);
-                                setInstallScopeBotIds(activeBotId ? [activeBotId] : []);
-                              }}
-                              className="gap-1.5 rounded-lg text-xs font-medium"
-                            >
-                              <Download className="h-3.5 w-3.5" />
-                              <span>Install Skill</span>
-                            </Button>
-                          )}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            /* Live SkillsMP Search */
-            <div className="space-y-4 pb-8">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={skillsmpQuery}
-                    onChange={(e) => setSkillsmpQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") void searchSkillsmp(skillsmpQuery);
-                    }}
-                    placeholder="Search 3,000,000+ skills on SkillsMP (e.g. market research, react, seo, crypto)..."
-                    className="pl-9"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="default"
-                  disabled={skillsmpLoading}
-                  onClick={() => void searchSkillsmp(skillsmpQuery)}
-                  className="gap-1.5"
-                >
-                  <Search className="h-4 w-4" />
-                  <span>{skillsmpLoading ? "Searching…" : "Search SkillsMP"}</span>
-                </Button>
-              </div>
-
-              {skillsmpLoading ? (
-                <div className="space-y-3 pt-2">
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                  <Skeleton className="h-20 w-full rounded-xl" />
-                </div>
-              ) : skillsmpResults.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border/80 p-8 text-center text-sm text-muted-foreground">
-                  No skills found on SkillsMP for "{skillsmpQuery}". Try searching another keyword.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {skillsmpResults.map((item) => (
-                    <Card
-                      key={item.id}
-                      className="flex flex-col justify-between border-border/50 bg-card/60 transition-all hover:border-border hover:bg-card/90"
-                    >
-                      <CardHeader className="pb-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <CardTitle className="text-base font-semibold text-foreground">
-                            {item.name}
-                          </CardTitle>
-                          {item.stars ? (
-                            <Badge variant="secondary" className="gap-1 text-[11px]">
-                              <Star className="h-3 w-3 fill-foreground/70 text-foreground/70" />
-                              <span>{item.stars}</span>
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <div className="text-xs text-muted-foreground/75">
-                          By {item.author} ·{" "}
-                          <a
-                            href={item.skillUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                          >
-                            SkillsMP <ExternalLink className="h-2.5 w-2.5" />
-                          </a>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4 pt-0">
-                        <p className="line-clamp-3 text-sm text-muted-foreground">
-                          {item.description}
-                        </p>
-                        <div className="flex items-center justify-end pt-2">
+                        ) : (
                           <Button
                             type="button"
                             variant="default"
                             size="sm"
-                            onClick={() => void installFromSkillsmp(item)}
+                            onClick={() => {
+                              setError(null);
+                              setInstallModalSkill(item);
+                              setInstallScopeGlobal(true);
+                              setInstallScopeBotIds(activeBotId ? [activeBotId] : []);
+                            }}
                             className="gap-1.5 rounded-lg text-xs font-medium"
                           >
                             <Download className="h-3.5 w-3.5" />
-                            <span>1-Click Install</span>
+                            <span>Install Skill</span>
                           </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-          )}
-        </div>
-      ) : null}
+          </TabsContent>
+          <TabsContent value="skillsmp" className="space-y-4 pb-8">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={skillsmpQuery}
+                  onChange={(e) => setSkillsmpQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void searchSkillsmp(skillsmpQuery);
+                  }}
+                  placeholder="Search 3,000,000+ skills on SkillsMP (e.g. market research, react, seo, crypto)..."
+                  className="pl-9"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="default"
+                disabled={skillsmpLoading}
+                onClick={() => void searchSkillsmp(skillsmpQuery)}
+                className="gap-1.5"
+              >
+                <Search className="h-4 w-4" />
+                <span>{skillsmpLoading ? "Searching…" : "Search SkillsMP"}</span>
+              </Button>
+            </div>
+
+            {skillsmpLoading ? (
+              <div className="space-y-3 pt-2">
+                <Skeleton className="h-20 w-full rounded-xl" />
+                <Skeleton className="h-20 w-full rounded-xl" />
+              </div>
+            ) : skillsmpResults.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border/80 p-8 text-center text-sm text-muted-foreground">
+                No skills found on SkillsMP for "{skillsmpQuery}". Try searching another keyword.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {skillsmpResults.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col justify-between border-border/50 bg-card/60 transition-all hover:border-border hover:bg-card/90"
+                  >
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-base font-semibold text-foreground">
+                          {item.name}
+                        </CardTitle>
+                        {item.stars ? (
+                          <Badge variant="secondary" className="gap-1 text-[11px]">
+                            <Star className="h-3 w-3 fill-foreground/70 text-foreground/70" />
+                            <span>{item.stars}</span>
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <div className="text-xs text-muted-foreground/75">
+                        By {item.author} ·{" "}
+                        <a
+                          href={item.skillUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                        >
+                          SkillsMP <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4 pt-0">
+                      <p className="line-clamp-3 text-sm text-muted-foreground">
+                        {item.description}
+                      </p>
+                      <div className="flex items-center justify-end pt-2">
+                        <Button
+                          type="button"
+                          variant="default"
+                          size="sm"
+                          onClick={() => void installFromSkillsmp(item)}
+                          className="gap-1.5 rounded-lg text-xs font-medium"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          <span>1-Click Install</span>
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </TabsContent>
 
       {/* Sub-view: Import from URL or Raw Markdown */}
-      {subTab === "import" ? (
-        <div className="max-w-2xl space-y-6 pb-8">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">
-              Import Claude Agent Skill (SKILL.md)
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Import skills by pasting any web link (e.g. SkillsMP, GitHub repo, or raw SKILL.md
-              link) or pasting raw markdown.
-            </p>
-          </div>
-
-          <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-5">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Option A: Skill URL or SkillsMP Link
-              </div>
-              <div className="mt-1.5 flex gap-2">
-                <Input
-                  value={importUrl}
-                  onChange={(e) => setImportUrl(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void fetchUrlContent(importUrl);
-                  }}
-                  placeholder="https://skillsmp.com/... or https://github.com/user/repo/... or raw link"
-                  className="flex-1"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={fetchingUrl || !importUrl.trim()}
-                  onClick={() => void fetchUrlContent(importUrl)}
-                  className="shrink-0"
-                >
-                  {fetchingUrl ? "Fetching…" : "Fetch Content"}
-                </Button>
-              </div>
-            </div>
-
-            <div className="relative flex items-center justify-center">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-border/50" />
-              </div>
-              <span className="relative bg-card px-3 text-xs font-medium uppercase text-muted-foreground">
-                Or
-              </span>
-            </div>
-
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Option B: Paste or Edit Raw SKILL.md Content
-              </div>
-              <div className="mt-1.5">
-                <Textarea
-                  rows={10}
-                  value={importMarkdown}
-                  onChange={(e) => setImportMarkdown(e.target.value)}
-                  placeholder={`---\nname: my-skill\ndescription: How and when to use this skill.\n---\n\n# Steps\n...`}
-                  spellCheck={false}
-                  className="h-[260px] w-full resize-none font-mono text-[13px] leading-relaxed"
-                />
-              </div>
-            </div>
-
-            {/* Scope Selection */}
-            <div className="pt-2">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Skill Availability (Bot Scope)
-              </div>
-              <div className="mt-2 space-y-2.5">
-                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
-                  <input
-                    type="radio"
-                    name="import-scope"
-                    checked={importScopeGlobal}
-                    onChange={() => setImportScopeGlobal(true)}
-                    className="accent-primary"
-                  />
-                  <div>
-                    <span className="font-medium text-foreground">
-                      Global (Available to all bots)
-                    </span>
-                  </div>
-                </label>
-
-                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
-                  <input
-                    type="radio"
-                    name="import-scope"
-                    checked={!importScopeGlobal}
-                    onChange={() => setImportScopeGlobal(false)}
-                    className="accent-primary"
-                  />
-                  <div>
-                    <span className="font-medium text-foreground">
-                      Per-Bot (Assign to specific bots only)
-                    </span>
-                  </div>
-                </label>
-
-                {!importScopeGlobal ? (
-                  <div className="ml-6 mt-2 space-y-2 rounded-lg border border-border/40 bg-accent/30 p-3">
-                    {bots.map((bot) => {
-                      const checked = importScopeBotIds.some(
-                        (id) =>
-                          id.toLowerCase() === bot.id.toLowerCase() ||
-                          id.toLowerCase() === bot.name.toLowerCase(),
-                      );
-                      return (
-                        <label
-                          key={bot.id}
-                          htmlFor={`import-bot-${bot.id}`}
-                          className="flex cursor-pointer items-center gap-2.5 text-sm"
-                        >
-                          <Checkbox
-                            id={`import-bot-${bot.id}`}
-                            checked={checked}
-                            onCheckedChange={(val) => {
-                              if (val) {
-                                setImportScopeBotIds((prev) => [...prev, bot.id]);
-                              } else {
-                                setImportScopeBotIds((prev) =>
-                                  prev.filter(
-                                    (id) =>
-                                      id.toLowerCase() !== bot.id.toLowerCase() &&
-                                      id.toLowerCase() !== bot.name.toLowerCase(),
-                                  ),
-                                );
-                              }
-                            }}
-                          />
-                          <BotAvatar color={bot.color} identity={bot.id} size={20} />
-                          <span className="font-medium text-foreground">{bot.name}</span>
-                          {bot.title ? (
-                            <span className="text-xs text-muted-foreground">({bot.title})</span>
-                          ) : null}
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="default"
-              disabled={
-                importing ||
-                (!importUrl.trim() && !importMarkdown.trim()) ||
-                (!importScopeGlobal && importScopeBotIds.length === 0)
-              }
-              onClick={() => void executeImport()}
-              className="gap-2 rounded-lg"
-            >
-              <Download className="h-4 w-4" />
-              <span>{importing ? "Importing…" : "Import & Install Skill"}</span>
-            </Button>
-          </div>
+      <TabsContent value="import" className="max-w-2xl space-y-6 pb-8">
+        <div>
+          <h3 className="text-base font-semibold text-foreground">
+            Import Claude Agent Skill (SKILL.md)
+          </h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Import skills by pasting any web link (e.g. SkillsMP, GitHub repo, or raw SKILL.md link)
+            or pasting raw markdown.
+          </p>
         </div>
-      ) : null}
+
+        <div className="space-y-4 rounded-xl border border-border/60 bg-card/40 p-5">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Option A: Skill URL or SkillsMP Link
+            </div>
+            <div className="mt-1.5 flex gap-2">
+              <Input
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void fetchUrlContent(importUrl);
+                }}
+                placeholder="https://skillsmp.com/... or https://github.com/user/repo/... or raw link"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={fetchingUrl || !importUrl.trim()}
+                onClick={() => void fetchUrlContent(importUrl)}
+                className="shrink-0"
+              >
+                {fetchingUrl ? "Fetching…" : "Fetch Content"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="relative flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border/50" />
+            </div>
+            <span className="relative bg-card px-3 text-xs font-medium uppercase text-muted-foreground">
+              Or
+            </span>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Option B: Paste or Edit Raw SKILL.md Content
+            </div>
+            <div className="mt-1.5">
+              <Textarea
+                rows={10}
+                value={importMarkdown}
+                onChange={(e) => setImportMarkdown(e.target.value)}
+                placeholder={`---\nname: my-skill\ndescription: How and when to use this skill.\n---\n\n# Steps\n...`}
+                spellCheck={false}
+                className="h-[260px] w-full resize-none font-mono text-[13px] leading-relaxed"
+              />
+            </div>
+          </div>
+
+          {/* Scope Selection */}
+          <div className="pt-2">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Skill Availability (Bot Scope)
+            </div>
+            <div className="mt-2 space-y-2.5">
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                <input
+                  type="radio"
+                  name="import-scope"
+                  checked={importScopeGlobal}
+                  onChange={() => setImportScopeGlobal(true)}
+                  className="accent-primary"
+                />
+                <div>
+                  <span className="font-medium text-foreground">
+                    Global (Available to all bots)
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                <input
+                  type="radio"
+                  name="import-scope"
+                  checked={!importScopeGlobal}
+                  onChange={() => setImportScopeGlobal(false)}
+                  className="accent-primary"
+                />
+                <div>
+                  <span className="font-medium text-foreground">
+                    Per-Bot (Assign to specific bots only)
+                  </span>
+                </div>
+              </label>
+
+              {!importScopeGlobal ? (
+                <div className="ml-6 mt-2 space-y-2 rounded-lg border border-border/40 bg-accent/30 p-3">
+                  {bots.map((bot) => {
+                    const checked = importScopeBotIds.some(
+                      (id) =>
+                        id.toLowerCase() === bot.id.toLowerCase() ||
+                        id.toLowerCase() === bot.name.toLowerCase(),
+                    );
+                    return (
+                      <label
+                        key={bot.id}
+                        htmlFor={`import-bot-${bot.id}`}
+                        className="flex cursor-pointer items-center gap-2.5 text-sm"
+                      >
+                        <Checkbox
+                          id={`import-bot-${bot.id}`}
+                          checked={checked}
+                          onCheckedChange={(val) => {
+                            if (val) {
+                              setImportScopeBotIds((prev) => [...prev, bot.id]);
+                            } else {
+                              setImportScopeBotIds((prev) =>
+                                prev.filter(
+                                  (id) =>
+                                    id.toLowerCase() !== bot.id.toLowerCase() &&
+                                    id.toLowerCase() !== bot.name.toLowerCase(),
+                                ),
+                              );
+                            }
+                          }}
+                        />
+                        <BotAvatar color={bot.color} identity={bot.id} size={20} />
+                        <span className="font-medium text-foreground">{bot.name}</span>
+                        {bot.title ? (
+                          <span className="text-xs text-muted-foreground">({bot.title})</span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="default"
+            disabled={
+              importing ||
+              (!importUrl.trim() && !importMarkdown.trim()) ||
+              (!importScopeGlobal && importScopeBotIds.length === 0)
+            }
+            onClick={() => void executeImport()}
+            className="gap-2 rounded-lg"
+          >
+            <Download className="h-4 w-4" />
+            <span>{importing ? "Importing…" : "Import & Install Skill"}</span>
+          </Button>
+        </div>
+      </TabsContent>
 
       {/* Scope Settings Modal for Installed Skill */}
       {scopeModalSkill ? (
@@ -1760,6 +1723,6 @@ bots:
           </DialogContent>
         </Dialog>
       ) : null}
-    </div>
+    </Tabs>
   );
 }

@@ -1999,6 +1999,7 @@ msgstr "Verbindung wird getrennt…"
 msgid "Dismiss"
 msgstr ""
 
+#: src/components/integrations/SkillsTab.tsx
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr ""
@@ -2499,6 +2500,7 @@ msgstr ""
 msgid "Integration options"
 msgstr ""
 
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Integrationen"

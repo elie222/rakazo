@@ -1999,6 +1999,7 @@ msgstr "正在断开…"
 msgid "Dismiss"
 msgstr ""
 
+#: src/components/integrations/SkillsTab.tsx
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "关闭错误"
@@ -2499,6 +2500,7 @@ msgstr ""
 msgid "Integration options"
 msgstr ""
 
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "集成"

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { AgentSkillCatalogEntry, Bot } from "@rakazo/contracts";
+import type * as UiWebModule from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -31,8 +32,13 @@ vi.mock("../../lib/rpc", () => ({
   },
 }));
 
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { Tabs, TabsContent, TabsList, TabsTrigger } = await importOriginal<typeof UiWebModule>();
   return {
+    Tabs,
+    TabsContent,
+    TabsList,
+    TabsTrigger,
     Badge: ({ children, className }: { children: ReactNode; className?: string }) => (
       <span className={className} data-testid="badge">
         {children}

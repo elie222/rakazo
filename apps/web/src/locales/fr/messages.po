@@ -1999,6 +1999,7 @@ msgstr "Déconnexion en cours…"
 msgid "Dismiss"
 msgstr "Fermer"
 
+#: src/components/integrations/SkillsTab.tsx
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Fermer l'erreur"
@@ -2499,6 +2500,7 @@ msgstr "Domaine d'intégration"
 msgid "Integration options"
 msgstr "Options d'intégration"
 
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Intégrations"

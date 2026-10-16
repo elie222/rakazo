@@ -1999,6 +1999,7 @@ msgstr "Disconnecting…"
 msgid "Dismiss"
 msgstr "Dismiss"
 
+#: src/components/integrations/SkillsTab.tsx
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Dismiss error"
@@ -2499,6 +2500,7 @@ msgstr "Integration domain"
 msgid "Integration options"
 msgstr "Integration options"
 
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Integrations"

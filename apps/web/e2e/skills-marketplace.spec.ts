@@ -20,13 +20,23 @@ test("skills marketplace installs, scopes, imports, and edits recipes", async ({
   await page.goto("/app");
   await page.waitForURL(/\/app\/[^/]+$/);
   await page.getByText("Integrations", { exact: true }).click();
-  await page.getByRole("button", { name: /Agent Skills/ }).click();
+  await page.getByRole("tab", { name: /Agent Skills/ }).click();
   await expect(
     page.getByPlaceholder("Filter installed skills by name or keyword..."),
   ).toBeVisible();
+  const installedTab = page.getByRole("tab", { name: /Installed Skills/ });
+  await installedTab.focus();
+  await installedTab.press("End");
+  const importTab = page.getByRole("tab", { name: "Import from URL / MD", exact: true });
+  await expect(importTab).toBeFocused();
+  await importTab.press("Enter");
+  await expect(importTab).toHaveAttribute("aria-selected", "true");
+  await importTab.press("Home");
+  await installedTab.press("Enter");
+  await expect(installedTab).toHaveAttribute("aria-selected", "true");
   await captureScreenshot(page, testInfo, "skills-installed");
 
-  await page.getByRole("button", { name: "Marketplace Hub", exact: true }).click();
+  await page.getByRole("tab", { name: "Marketplace Hub", exact: true }).click();
   await expect(page.getByText("Lean output", { exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "skills-marketplace-curated");
   await page.getByRole("button", { name: "Preview Recipe", exact: true }).first().click();
@@ -45,7 +55,7 @@ test("skills marketplace installs, scopes, imports, and edits recipes", async ({
   await expect(
     page.getByRole("dialog", { name: "Install Skill: Lean output", exact: true }),
   ).toBeHidden();
-  await page.getByRole("button", { name: /Installed Skills/ }).click();
+  await page.getByRole("tab", { name: /Installed Skills/ }).click();
   await page.getByPlaceholder("Filter installed skills by name or keyword...").fill("Lean output");
   await page.getByRole("button", { name: "Bot Scope", exact: true }).click();
   dialog = page.getByRole("dialog").last();
@@ -78,11 +88,11 @@ test("skills marketplace installs, scopes, imports, and edits recipes", async ({
       json: { success: true, data: { skills: [] } },
     }),
   );
-  await page.getByRole("button", { name: "Marketplace Hub", exact: true }).click();
-  await page.getByRole("button", { name: /SkillsMP Directory/ }).click();
+  await page.getByRole("tab", { name: "Marketplace Hub", exact: true }).click();
+  await page.getByRole("tab", { name: /SkillsMP Directory/ }).click();
   await expect(page.getByText(/No skills found on SkillsMP/)).toBeVisible();
   await captureScreenshot(page, testInfo, "skills-marketplace-directory");
-  await page.getByRole("button", { name: "Import from URL / MD", exact: true }).click();
+  await page.getByRole("tab", { name: "Import from URL / MD", exact: true }).click();
   await page
     .getByPlaceholder(/^---\nname: my-skill/)
     .fill(
