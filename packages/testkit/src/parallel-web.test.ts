@@ -17,8 +17,13 @@ vi.mock("../../adapters/src/computer-lifecycle.js", async (original) => ({
 
 afterEach(() => vi.unstubAllEnvs());
 
-function executorFixture(runtime: AgentRuntime, disabledBuiltinTools: string[] = []) {
-  const peer = parallelMcpFixture();
+/** Exercise the deployment-selected provider through ordinary executor dispatch. */
+function executorFixture(
+  runtime: AgentRuntime,
+  disabledBuiltinTools: string[] = [],
+  result?: unknown,
+) {
+  const peer = parallelMcpFixture({ result });
   const run = {
     id: "run",
     botId: "bot",
@@ -97,73 +102,95 @@ function executorFixture(runtime: AgentRuntime, disabledBuiltinTools: string[] =
 }
 
 describe("Parallel through the ordinary bot caller", () => {
-  it("passes search evidence and page markdown through executor dispatch into real Pi's next model steps", async () => {
-    const model = await startModelEmulator({
-      steps: [
-        {
-          expect: (request) => {
-            expect(request.tools?.some((tool) => tool.function.name === "web_search")).toBe(true);
+  it.each([false, true])(
+    "passes large MCP envelopes through executor dispatch into real Pi's next model steps (text-only=%s)",
+    async (textOnly) => {
+      const model = await startModelEmulator({
+        steps: [
+          {
+            expect: (request) => {
+              expect(request.tools?.some((tool) => tool.function.name === "web_search")).toBe(true);
+            },
+            response: {
+              type: "tool",
+              id: "search",
+              name: "web_search",
+              arguments: { query: "current question", maxResults: 1 },
+            },
           },
-          response: {
-            type: "tool",
-            id: "search",
-            name: "web_search",
-            arguments: { query: "current question", maxResults: 1 },
+          {
+            expect: (request) => {
+              expect(
+                JSON.stringify(request.messages.findLast((message) => message.role === "tool")),
+              ).toContain("Useful evidence");
+            },
+            response: {
+              type: "tool",
+              id: "fetch",
+              name: "web_fetch",
+              arguments: { url: "https://example.test/page", maxChars: 100 },
+            },
           },
-        },
-        {
-          expect: (request) => {
-            expect(
-              JSON.stringify(request.messages.findLast((message) => message.role === "tool")),
-            ).toContain("Useful evidence");
+          {
+            expect: (request) => {
+              const result = JSON.stringify(
+                request.messages.findLast((message) => message.role === "tool"),
+              );
+              expect(result).toContain("Page text");
+              expect(result).toContain("[Content truncated]");
+              expect(result).not.toContain("Invalid Parallel MCP response");
+              expect(result.length).toBeLessThan(1_000);
+            },
+            response: { type: "text", text: "The source supports the answer." },
           },
-          response: {
-            type: "tool",
-            id: "fetch",
-            name: "web_fetch",
-            arguments: { url: "https://example.test/page" },
-          },
-        },
-        {
-          expect: (request) => {
-            expect(
-              JSON.stringify(request.messages.findLast((message) => message.role === "tool")),
-            ).toContain("Page text");
-          },
-          response: { type: "text", text: "The source supports the answer." },
-        },
-      ],
-    });
-    try {
-      const pi = new PiAgentRuntime();
-      const runtime: AgentRuntime = {
-        describe: () => pi.describe(),
-        abort: (id) => pi.abort(id),
-        run: (request, context) =>
-          pi.run(
-            { ...request, model: { ...model.model, contextWindow: 200_000, maxTokens: 2048 } },
-            context,
+        ],
+      });
+      try {
+        const pi = new PiAgentRuntime();
+        const runtime: AgentRuntime = {
+          describe: () => pi.describe(),
+          abort: (id) => pi.abort(id),
+          run: (request, context) =>
+            pi.run(
+              { ...request, model: { ...model.model, contextWindow: 200_000, maxTokens: 2048 } },
+              context,
+            ),
+        };
+        const data = {
+          results: [
+            {
+              url: "https://example.test/page",
+              title: "Source",
+              excerpts: ["Useful evidence"],
+              full_content: "Page text ".repeat(120_000),
+            },
+          ],
+        };
+        const result = {
+          content: [{ type: "text", text: JSON.stringify(data) }],
+          ...(textOnly ? {} : { structuredContent: data }),
+        };
+        expect(Buffer.byteLength(JSON.stringify(result))).toBeGreaterThan(1_000_000);
+        const fixture = executorFixture(runtime, [], result);
+        await fixture.execute();
+        expect(fixture.finalizeRun).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: "completed" }),
+        );
+        model.assertComplete();
+        expect(fixture.peer.calls.map((call) => call.name)).toEqual(["web_search", "web_fetch"]);
+        expect(
+          fixture.peer.requests.every(
+            (request) =>
+              request.url === "https://search.parallel.ai/mcp" &&
+              request.headers.get("user-agent")?.startsWith("Rakazo/") &&
+              !request.headers.has("authorization"),
           ),
-      };
-      const fixture = executorFixture(runtime);
-      await fixture.execute();
-      expect(fixture.finalizeRun).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: "completed" }),
-      );
-      model.assertComplete();
-      expect(fixture.peer.calls.map((call) => call.name)).toEqual(["web_search", "web_fetch"]);
-      expect(
-        fixture.peer.requests.every(
-          (request) =>
-            request.url === "https://search.parallel.ai/mcp" &&
-            request.headers.get("user-agent")?.startsWith("Rakazo/") &&
-            !request.headers.has("authorization"),
-        ),
-      ).toBe(true);
-    } finally {
-      await model.close();
-    }
-  });
+        ).toBe(true);
+      } finally {
+        await model.close();
+      }
+    },
+  );
 
   it("refuses disabled builtin calls before reaching the MCP transport", async () => {
     const results: unknown[] = [];

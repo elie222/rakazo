@@ -2,6 +2,7 @@ import type { AdapterContext } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { ParallelWebProvider } from "./parallel-web.js";
 import { parallelMcpFixture } from "./parallel-web.test-support.js";
+import { callRemoteMcpTool } from "./remote-mcp.js";
 import { createWebProvider, resolveWebProviderKind } from "./web-provider-factory.js";
 import { webFetchFromTool, webSearchFromTool } from "./web-tools.js";
 
@@ -15,6 +16,154 @@ const context: AdapterContext = {
 };
 
 describe("optional Parallel web provider", () => {
+  it.each(["structured", "text", "duplicated", "utf8"])(
+    "bounds readable large %s MCP envelopes through the selected caller",
+    async (mode) => {
+      const text =
+        mode === "utf8"
+          ? "界".repeat(400_000)
+          : "Page text ".repeat(mode === "duplicated" ? 60_000 : 120_000);
+      const data = {
+        results: [
+          {
+            url: "https://example.test/page",
+            title: "Large source",
+            excerpts: ["Useful evidence"],
+            full_content: text,
+          },
+        ],
+      };
+      const result = {
+        content: mode === "structured" ? [] : [{ type: "text", text: JSON.stringify(data) }],
+        ...(mode === "text" ? {} : { structuredContent: data }),
+        _meta: { source: "fixture" },
+      };
+      expect(Buffer.byteLength(JSON.stringify(result))).toBeGreaterThan(1_000_000);
+      if (mode === "duplicated") {
+        expect(Buffer.byteLength(JSON.stringify(data))).toBeLessThan(1_000_000);
+        expect(Buffer.byteLength(JSON.stringify(result.content))).toBeLessThan(1_000_000);
+      }
+      const peer = parallelMcpFixture({ result });
+      const provider = createWebProvider("parallel", peer.network);
+      for (const maxChars of [100, 50_000]) {
+        expect(
+          await webFetchFromTool(provider, context, { url: "https://example.test/page", maxChars }),
+        ).toEqual({
+          url: "https://example.test/page",
+          title: "Large source",
+          text: `${text.slice(0, maxChars)}\n\n[Content truncated]`,
+          truncated: true,
+        });
+      }
+      expect(
+        await webSearchFromTool(provider, context, { query: "question", maxResults: 1 }),
+      ).toEqual({
+        results: [
+          { url: "https://example.test/page", title: "Large source", snippet: "Useful evidence" },
+        ],
+      });
+      expect(peer.calls.map((call) => call.name)).toEqual(["web_fetch", "web_fetch", "web_search"]);
+    },
+  );
+
+  it("keeps shared envelope limits and metadata for callers without a projection", async () => {
+    const data = {
+      content: [{ type: "text", text: "small" }],
+      _meta: { source: "fixture" },
+      isError: true,
+    };
+    const peer = parallelMcpFixture({ result: data });
+    expect(
+      await callRemoteMcpTool(
+        { ...peer.network, endpoint: "https://search.parallel.ai/mcp" },
+        "web_fetch",
+        {},
+      ),
+    ).toEqual(data);
+    const large = parallelMcpFixture({
+      result: { ...data, content: [{ type: "text", text: "界".repeat(400_000) }] },
+    });
+    const limited = (await callRemoteMcpTool(
+      { ...large.network, endpoint: "https://search.parallel.ai/mcp" },
+      "web_fetch",
+      {},
+    )) as { truncated: boolean; content: string };
+    expect(limited.truncated).toBe(true);
+    expect(Buffer.byteLength(limited.content)).toBeLessThanOrEqual(1_000_000);
+    const projected = (await callRemoteMcpTool(
+      { ...peer.network, endpoint: "https://search.parallel.ai/mcp" },
+      "web_fetch",
+      {},
+      () => ({ content: "界".repeat(400_000) }),
+    )) as { truncated: boolean; content: string };
+    expect(projected.truncated).toBe(true);
+    expect(Buffer.byteLength(projected.content)).toBeLessThanOrEqual(1_000_000);
+  });
+
+  it("rejects a truncated serialized envelope instead of returning JSON as page text", async () => {
+    const peer = parallelMcpFixture({
+      result: { content: [{ type: "text", text: '{"results":[{"full_content":"Page text' }] },
+    });
+    expect(
+      await webFetchFromTool(createWebProvider("parallel", peer.network), context, {
+        url: "https://example.test/page",
+        maxChars: 100,
+      }),
+    ).toEqual({ error: "Invalid Parallel MCP response" });
+  });
+
+  it("bounds long excerpts and result counts without consuming irrelevant full content", async () => {
+    const data = {
+      results: [
+        {
+          url: "https://example.test/first",
+          title: "First",
+          excerpts: ["a".repeat(600_000), "b".repeat(600_000)],
+        },
+        { url: "https://example.test/second", title: "Second", excerpts: ["second"] },
+      ],
+    };
+    const peer = parallelMcpFixture({ result: { content: [], structuredContent: data } });
+    const provider = createWebProvider("parallel", peer.network);
+    expect(await webSearchFromTool(provider, context, { query: "q", maxResults: 1 })).toEqual({
+      results: [{ url: "https://example.test/first", title: "First", snippet: "a".repeat(8_000) }],
+    });
+    expect(
+      await webFetchFromTool(provider, context, {
+        url: "https://example.test/first",
+        maxChars: 100,
+      }),
+    ).toMatchObject({
+      title: "First",
+      text: `${"a".repeat(100)}\n\n[Content truncated]`,
+      truncated: true,
+    });
+  });
+
+  it("preserves exact-length content, leading whitespace and excerpt separators", async () => {
+    for (const [full_content, excerpts, expected, truncated] of [
+      ["x".repeat(100), [], "x".repeat(100), false],
+      [`${" ".repeat(101)}body`, [], `${" ".repeat(100)}\n\n[Content truncated]`, true],
+      [undefined, ["", "readable"], "\n\nreadable", false],
+    ] as const) {
+      const peer = parallelMcpFixture({
+        result: {
+          content: [],
+          structuredContent: {
+            results: [
+              { url: "https://example.test/page", title: "Source", full_content, excerpts },
+            ],
+          },
+        },
+      });
+      expect(
+        await webFetchFromTool(createWebProvider("parallel", peer.network), context, {
+          url: "https://example.test/page",
+          maxChars: 100,
+        }),
+      ).toMatchObject({ text: expected, truncated });
+    }
+  });
   it.each([false, true])(
     "maps MCP results through the selected web tool (text-only=%s)",
     async (textOnly) => {

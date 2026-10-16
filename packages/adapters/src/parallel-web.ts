@@ -16,8 +16,9 @@ import { assertSafeWebUrl, withAbort } from "./web-ssrf.js";
 
 const ENDPOINT = "https://search.parallel.ai/mcp";
 const USER_AGENT = "Rakazo/0.1 (+https://github.com/elie222/rakazo; web tools)";
+const MAX_SNIPPET_CHARS = 8_000;
 const pageSchema = z.object({
-  url: z.string(),
+  url: z.string().max(8_192),
   title: z.string().nullable().optional(),
   excerpts: z.array(z.string()),
   full_content: z.string().nullable().optional(),
@@ -36,6 +37,7 @@ export type ParallelWebOptions = RemoteTransportDependencies & {
 export class ParallelWebProvider implements WebProvider {
   constructor(private readonly options: ParallelWebOptions = {}) {}
 
+  /** Advertise the same optional web capabilities as other WebProvider adapters. */
   describe() {
     return {
       id: "parallel",
@@ -45,6 +47,7 @@ export class ParallelWebProvider implements WebProvider {
     };
   }
 
+  /** Return bounded search evidence through the existing builtin tool contract. */
   async search(request: WebSearchRequest, context: AdapterContext): Promise<WebSearchHit[]> {
     const query = request.query.trim();
     if (!query) throw new Error("query is required");
@@ -57,6 +60,7 @@ export class ParallelWebProvider implements WebProvider {
       { objective: query, search_queries: [query] },
       context,
       signal,
+      clampMaxResults(request.maxResults),
     );
     return response.results
       .filter((page) => publicPageUrl(page.url) !== undefined)
@@ -68,7 +72,9 @@ export class ParallelWebProvider implements WebProvider {
       }));
   }
 
+  /** Extract readable page text before the shared serialized-envelope limit. */
   async fetch(request: WebFetchRequest, context: AdapterContext): Promise<WebFetchResult> {
+    const maxChars = clampMaxChars(request.maxChars);
     const signal = this.signal(
       combineSignals(request.signal, context.signal),
       this.options.fetchTimeoutMs,
@@ -80,6 +86,8 @@ export class ParallelWebProvider implements WebProvider {
       { urls: [url.href], full_content: true },
       context,
       signal,
+      1,
+      maxChars,
     );
     const page = response.results[0];
     if (!page)
@@ -89,8 +97,6 @@ export class ParallelWebProvider implements WebProvider {
     const pageUrl = publicPageUrl(page.url);
     if (!pageUrl) throw new Error("Parallel returned an invalid page URL");
     const text = page.full_content ?? page.excerpts.join("\n\n");
-    if (!text.trim()) throw new Error("Parallel returned empty page content");
-    const maxChars = clampMaxChars(request.maxChars);
     const truncated = text.length > maxChars;
     return {
       url: pageUrl,
@@ -100,16 +106,20 @@ export class ParallelWebProvider implements WebProvider {
     };
   }
 
+  /** Combine caller cancellation with the provider deadline. */
   private signal(parent: AbortSignal, timeoutMs = 30_000) {
     parent.throwIfAborted();
     return combineSignals(parent, AbortSignal.timeout(timeoutMs));
   }
 
+  /** Parse and project complete MCP results while the guarded transport owns them. */
   private async call(
     name: string,
     args: Record<string, unknown>,
     context: AdapterContext,
     signal: AbortSignal,
+    maxResults: number,
+    maxChars?: number,
   ) {
     signal.throwIfAborted();
     // One continuing bot conversation shares rate-limit accounting without sending raw IDs.
@@ -127,38 +137,89 @@ export class ParallelWebProvider implements WebProvider {
         { ...this.options, endpoint: ENDPOINT, headers: { "User-Agent": USER_AGENT }, signal },
         name,
         { ...args, session_id: sessionId },
+        (raw) => {
+          const response = parseParallelResponse(raw);
+          const page = response.results[0];
+          if (
+            maxChars !== undefined &&
+            page &&
+            !(page.full_content != null
+              ? /\S/.test(page.full_content)
+              : page.excerpts.some((part) => /\S/.test(part)))
+          )
+            throw new Error("Parallel returned empty page content");
+          return {
+            results: response.results
+              .filter((page) => maxChars !== undefined || publicPageUrl(page.url) !== undefined)
+              .slice(0, maxResults)
+              .map((page) => ({
+                url: page.url,
+                title: page.title?.slice(0, 1_000),
+                excerpts: [
+                  joinPrefix(
+                    page.excerpts,
+                    maxChars === undefined ? MAX_SNIPPET_CHARS : maxChars + 1,
+                  ),
+                ],
+                // Keep one extra character to preserve the fetch truncation flag.
+                full_content:
+                  maxChars === undefined ? undefined : page.full_content?.slice(0, maxChars + 1),
+              })),
+            errors: response.errors
+              ?.slice(0, 1)
+              .map((error) => ({ error_type: error.error_type.slice(0, 1_000) })),
+          };
+        },
       ),
       signal,
     );
-    const envelope = z
-      .object({
-        isError: z.boolean().optional(),
-        structuredContent: z.unknown().optional(),
-        content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional(),
-      })
-      .safeParse(raw);
-    if (!envelope.success) throw new Error("Invalid Parallel MCP response");
-    const text =
-      envelope.data.content
-        ?.filter((item) => item.type === "text")
-        .map((item) => item.text ?? "")
-        .join("\n") ?? "";
-    if (envelope.data.isError)
-      throw new Error(`Parallel: ${text.slice(0, 1000) || "tool request failed"}`);
-    let data = envelope.data.structuredContent;
-    if (data === undefined) {
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error("Invalid Parallel MCP response");
-      }
-    }
-    const response = responseSchema.safeParse(data);
+    const response = responseSchema.safeParse(raw);
+    // A limited serialized envelope is never page text or a valid response.
     if (!response.success) throw new Error("Invalid Parallel MCP response");
     return response.data;
   }
 }
 
+/** Validate complete structured data or JSON text, never a serialized prefix. */
+function parseParallelResponse(raw: unknown) {
+  const envelope = z
+    .object({
+      isError: z.boolean().optional(),
+      structuredContent: z.unknown().optional(),
+      content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional(),
+    })
+    .safeParse(raw);
+  if (!envelope.success) throw new Error("Invalid Parallel MCP response");
+  const texts =
+    envelope.data.content?.filter((item) => item.type === "text").map((item) => item.text ?? "") ??
+    [];
+  if (envelope.data.isError)
+    throw new Error(`Parallel: ${joinPrefix(texts, 1000, "\n") || "tool request failed"}`);
+  let data = envelope.data.structuredContent;
+  if (data === undefined) {
+    try {
+      data = JSON.parse(texts.join("\n"));
+    } catch {
+      throw new Error("Invalid Parallel MCP response");
+    }
+  }
+  const response = responseSchema.safeParse(data);
+  if (!response.success) throw new Error("Invalid Parallel MCP response");
+  return response.data;
+}
+
+/** Join only the requested prefix instead of allocating an unbounded excerpt string. */
+function joinPrefix(parts: string[], maxChars: number, separator = "\n\n"): string {
+  let text = "";
+  for (const [index, part] of parts.entries()) {
+    if (text.length >= maxChars) break;
+    if (index > 0) text += separator.slice(0, maxChars - text.length);
+    text += part.slice(0, maxChars - text.length);
+  }
+  return text;
+}
+
+/** Keep citations public HTTP(S) URLs without embedded credentials. */
 function publicPageUrl(value: string): string | undefined {
   try {
     const url = new URL(value);

@@ -18,6 +18,7 @@ export function resolveWebProviderKind(source: NodeJS.ProcessEnv = process.env):
   return raw;
 }
 
+/** Compose the explicitly selected backend, retaining the keyless HTTP default. */
 export function createWebProvider(
   kind: string = resolveWebProviderKind(),
   options?: ConstructorParameters<typeof KeylessHttpWebProvider>[0],
