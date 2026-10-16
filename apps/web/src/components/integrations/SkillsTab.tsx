@@ -478,6 +478,7 @@ export function SkillsTab({
       await rpc.agentSkills.update({
         skillId: scopeModalSkill.id,
         content: updatedContent,
+        expectedContent: scopeModalSkill.content,
       });
 
       setScopeModalSkill(null);
@@ -720,10 +721,7 @@ bots:
   function renderBotScopeBadge(content?: string) {
     if (!content) {
       return (
-        <Badge
-          variant="secondary"
-          className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-        >
+        <Badge variant="secondary" className="gap-1 border border-border bg-muted text-foreground">
           <Globe className="h-3 w-3" />
           Global
         </Badge>
@@ -732,10 +730,7 @@ bots:
     const scope = getSkillBotScope(content);
     if (scope.isGlobal) {
       return (
-        <Badge
-          variant="secondary"
-          className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-        >
+        <Badge variant="secondary" className="gap-1 border border-border bg-muted text-foreground">
           <Globe className="h-3 w-3" />
           Global (All Bots)
         </Badge>
@@ -841,7 +836,7 @@ bots:
       ) : null}
 
       {successMessage ? (
-        <div className="mb-4 flex items-center gap-2 rounded-xl bg-emerald-500/15 px-4 py-2.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
+        <div className="mb-4 flex items-center gap-2 rounded-xl bg-success/15 px-4 py-2.5 text-sm font-medium text-success">
           <Check className="h-4 w-4" />
           <span>{successMessage}</span>
         </div>
@@ -1114,7 +1109,7 @@ bots:
                               variant="secondary"
                               size="sm"
                               disabled
-                              className="gap-1.5 rounded-lg text-xs font-medium text-emerald-500"
+                              className="gap-1.5 rounded-lg text-xs font-medium text-foreground"
                             >
                               <Check className="h-3.5 w-3.5" />
                               <span>Installed</span>
@@ -1319,9 +1314,6 @@ bots:
                     <span className="font-medium text-foreground">
                       Global (Available to all bots)
                     </span>
-                    <p className="text-xs text-muted-foreground">
-                      Every current and future bot in this workspace can use this skill.
-                    </p>
                   </div>
                 </label>
 
@@ -1342,9 +1334,6 @@ bots:
 
                 {!importScopeGlobal ? (
                   <div className="ml-6 mt-2 space-y-2 rounded-lg border border-border/40 bg-accent/30 p-3">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      Select which bots will have access to this skill:
-                    </p>
                     {bots.map((bot) => {
                       const checked = importScopeBotIds.some(
                         (id) =>
@@ -1428,9 +1417,6 @@ bots:
                   />
                   <div>
                     <span className="font-medium text-foreground">Global (All Bots)</span>
-                    <p className="text-xs text-muted-foreground">
-                      All present and future bots will load and follow this skill.
-                    </p>
                   </div>
                 </label>
 
@@ -1449,9 +1435,6 @@ bots:
 
                 {!scopeIsGlobal ? (
                   <div className="ml-6 space-y-2.5 rounded-xl border border-border/50 bg-accent/25 p-3.5">
-                    <p className="text-xs font-semibold text-muted-foreground">
-                      Select authorized bots:
-                    </p>
                     {bots.map((bot) => {
                       const checked = scopeBotIds.some(
                         (id) =>
@@ -1546,9 +1529,6 @@ bots:
                     />
                     <div>
                       <span className="font-medium text-foreground">Global (All Bots)</span>
-                      <p className="text-xs text-muted-foreground">
-                        Available workspace-wide to all bots in this space.
-                      </p>
                     </div>
                   </label>
 

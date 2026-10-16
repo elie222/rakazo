@@ -31,6 +31,13 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const marker = `Edited in e2e ${stamp}`;
   await docEditor.fill(`# Memory\n\n${marker}\n`);
   await captureScreenshot(page, testInfo, "83-space-memory-editor");
+  await spaceDocs.getByRole("button", { name: "Expand", exact: true }).click();
+  const fullEditor = page.getByRole("dialog").last();
+  await expect(fullEditor.getByRole("textbox", { name: "MEMORY.md", exact: true })).toHaveValue(
+    new RegExp(marker),
+  );
+  await captureScreenshot(page, testInfo, "83a-space-memory-fullscreen");
+  await fullEditor.getByRole("button", { name: "Cancel", exact: true }).click();
   let releaseSave!: () => void;
   const saveGate = new Promise<void>((resolve) => {
     releaseSave = resolve;

@@ -596,6 +596,7 @@ export const CreateAgentSkillInput = z
 export const UpdateAgentSkillInput = z
   .object({
     skillId: Id,
+    expectedContent: z.string().max(100_000).optional(),
     content: z.string().min(1).max(100_000).optional(),
     name: z.string().min(1).max(80).optional(),
     description: z.string().min(1).max(2000).optional(),

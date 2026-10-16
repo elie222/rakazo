@@ -82,6 +82,29 @@ describe("built-in skill precedence in the API", () => {
     },
   );
 
+  it("atomically refuses scope writes after a concurrent recipe edit", async () => {
+    const row = savedSkill("Review");
+    const original = row.content;
+    const { service, agentSkill } = setup([row]);
+    agentSkill.updateMany.mockImplementationOnce(async ({ where }) => {
+      row.content = "A newer recipe";
+      expect(where).toMatchObject({
+        content: original,
+        userId: actor.userId,
+        spaceId: actor.spaceId,
+      });
+      return { count: 0 };
+    });
+    await expect(
+      service.update(actor, {
+        skillId: row.id,
+        content: original,
+        expectedContent: original,
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(row.content).toBe("A newer recipe");
+  });
+
   it("preserves plugin precedence and read-only enforcement", async () => {
     const { service, agentSkill } = setup([savedSkill(" Interrogate ", "plugin")]);
     await expect(service.get(actor, { name: "interrogate" })).resolves.toMatchObject({

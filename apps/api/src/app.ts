@@ -40,6 +40,7 @@ import {
   EmailEmulator,
   ExpoPushProvider,
   endSessionPushToken,
+  fetchSafeWebText,
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
@@ -673,72 +674,12 @@ export async function createApp(
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
 
-  // Helper function to block private, loopback, and internal network addresses from SSRF
-  function isBlockedRemoteHost(hostname: string): boolean {
-    const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-    if (
-      lower === "localhost" ||
-      lower === "0.0.0.0" ||
-      lower === "127.0.0.1" ||
-      lower === "::1" ||
-      lower === "::" ||
-      lower.endsWith(".local") ||
-      lower.endsWith(".internal") ||
-      lower === "metadata.google.internal"
-    ) {
-      return true;
-    }
-    if (lower.startsWith("fe80:") || lower.startsWith("fc00:") || lower.startsWith("fd00:")) {
-      return true;
-    }
-    const ipv4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(lower);
-    if (ipv4) {
-      const a = Number(ipv4[1]);
-      const b = Number(ipv4[2]);
-      if (a === 127 || a === 10 || a === 0) return true;
-      if (a === 172 && b >= 16 && b <= 31) return true;
-      if (a === 192 && b === 168) return true;
-      if (a === 169 && b === 254) return true;
-    }
-    return false;
-  }
-
-  const MAX_SKILL_FETCH_BYTES = 1024 * 1024; // 1 MB limit
-  const SKILL_FETCH_TIMEOUT_MS = 10_000; // 10s deadline
-
-  async function readBodyWithLimit(
-    response: Response,
-    maxBytes = MAX_SKILL_FETCH_BYTES,
-  ): Promise<string> {
-    const contentLength = response.headers.get("content-length");
-    if (contentLength && Number(contentLength) > maxBytes) {
-      throw new Error(`Response exceeds maximum size of ${maxBytes} bytes`);
-    }
-    if (!response.body) return "";
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let totalBytes = 0;
-    let result = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        totalBytes += value.byteLength;
-        if (totalBytes > maxBytes) {
-          try {
-            await reader.cancel();
-          } catch {
-            // ignore cancel error
-          }
-          throw new Error(`Response exceeded maximum size of ${maxBytes} bytes`);
-        }
-        result += decoder.decode(value, { stream: true });
-      }
-    }
-    result += decoder.decode();
-    return result;
-  }
+  const skillFetchOptions = {
+    timeoutMs: 10_000,
+    maxBytes: 1024 * 1024,
+    allowedProtocols: ["https:"],
+    userAgent: "Rakazo/0.1",
+  };
 
   // Skill proxy endpoint: requires authentication and guards against SSRF / internal endpoints
   app.get("/api/skills/fetch-url", async (c) => {
@@ -749,9 +690,9 @@ export async function createApp(
     if (!rawUrl) return c.json({ error: "Missing url parameter" }, 400);
 
     try {
-      let target = rawUrl.trim();
+      let target = new URL(rawUrl.trim());
 
-      if (/^https?:\/\/skillsmp\.com\/?$/i.test(target)) {
+      if (target.hostname === "skillsmp.com" && target.pathname === "/") {
         return c.json(
           {
             error:
@@ -762,32 +703,26 @@ export async function createApp(
       }
 
       // Convert SkillsMP creator detail page
-      if (target.includes("skillsmp.com/creators/")) {
-        const parts = target.split("skillsmp.com/creators/")[1]?.split("/") ?? [];
+      if (target.hostname === "skillsmp.com" && target.pathname.startsWith("/creators/")) {
+        const parts = target.pathname.slice("/creators/".length).split("/");
         if (parts.length >= 3) {
           const author = parts[0] ?? "";
           const repo = parts[1] ?? "";
           const skillPathSlug = parts.slice(2).join("/");
           try {
-            const searchRes = await fetch(
+            const searchRes = await fetchSafeWebText(
               `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(skillPathSlug)}`,
-              {
-                signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
-                headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
-              },
+              skillFetchOptions,
             );
-            if (searchRes.ok) {
-              const bodyText = await readBodyWithLimit(searchRes);
-              const data = JSON.parse(bodyText) as {
-                success?: boolean;
-                data?: { skills?: Array<{ githubUrl: string }> };
-              };
-              const match = data.data?.skills?.find(
-                (s) => s.githubUrl.includes(author) || s.githubUrl.includes(repo),
-              );
-              if (match?.githubUrl) {
-                target = match.githubUrl;
-              }
+            const data = JSON.parse(searchRes.body) as {
+              success?: boolean;
+              data?: { skills?: Array<{ githubUrl: string }> };
+            };
+            const match = data.data?.skills?.find(
+              (s) => s.githubUrl.includes(author) || s.githubUrl.includes(repo),
+            );
+            if (match?.githubUrl) {
+              target = new URL(match.githubUrl);
             }
           } catch {
             // fallback to direct fetch
@@ -795,63 +730,20 @@ export async function createApp(
         }
       }
 
-      // Convert GitHub tree/blob URLs to raw content
-      if (target.includes("github.com")) {
-        if (target.includes("/blob/")) {
-          target = target.replace("github.com", "raw.githubusercontent.com").replace("/blob/", "/");
-        } else if (target.includes("/tree/")) {
-          target = `${target.replace("github.com", "raw.githubusercontent.com").replace("/tree/", "/")}/SKILL.md`;
-        } else if (!target.endsWith("/SKILL.md") && !target.endsWith(".md")) {
-          target = `${target.replace(/\/+$/, "")}/raw/main/SKILL.md`;
+      // Only rewrite actual GitHub URLs, never a matching path or query on another host.
+      if (target.hostname === "github.com") {
+        if (target.pathname.includes("/blob/") || target.pathname.includes("/tree/")) {
+          const tree = target.pathname.includes("/tree/");
+          target.hostname = "raw.githubusercontent.com";
+          target.pathname = target.pathname.replace(/\/(blob|tree)\//, "/");
+          if (tree) target.pathname = `${target.pathname.replace(/\/+$/, "")}/SKILL.md`;
+        } else if (!target.pathname.endsWith(".md")) {
+          target.pathname = `${target.pathname.replace(/\/+$/, "")}/raw/main/SKILL.md`;
         }
       }
 
-      let parsed: URL;
-      try {
-        parsed = new URL(target);
-      } catch {
-        return c.json({ error: "Invalid URL" }, 400);
-      }
-
-      if (parsed.protocol !== "https:") {
-        return c.json({ error: "Only HTTPS URLs are allowed" }, 400);
-      }
-      if (parsed.username || parsed.password) {
-        return c.json({ error: "URLs with credentials are not allowed" }, 400);
-      }
-      if (isBlockedRemoteHost(parsed.hostname)) {
-        return c.json({ error: "Access to private or internal destinations is blocked" }, 403);
-      }
-
-      let currentUrl = target;
-      let res = await fetch(currentUrl, {
-        signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
-        redirect: "manual",
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
-      });
-
-      let redirects = 0;
-      while ([301, 302, 307, 308].includes(res.status) && redirects < 5) {
-        const loc = res.headers.get("location");
-        if (!loc) break;
-        const nextUrl = new URL(loc, currentUrl);
-        if (nextUrl.protocol !== "https:" || isBlockedRemoteHost(nextUrl.hostname)) {
-          return c.json({ error: "Redirect destination is blocked" }, 403);
-        }
-        currentUrl = nextUrl.toString();
-        redirects++;
-        res = await fetch(currentUrl, {
-          signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
-          redirect: "manual",
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
-        });
-      }
-
-      if (!res.ok) {
-        return c.json({ error: `Upstream HTTP ${res.status}: ${res.statusText}` }, 400);
-      }
-      const text = await readBodyWithLimit(res);
-      return c.json({ ok: true, content: text, resolvedUrl: currentUrl });
+      const result = await fetchSafeWebText(target.href, skillFetchOptions);
+      return c.json({ ok: true, content: result.body, resolvedUrl: result.url });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);
     }
@@ -864,18 +756,11 @@ export async function createApp(
 
     const q = c.req.query("q") ?? "";
     try {
-      const res = await fetch(
+      const result = await fetchSafeWebText(
         `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q || "agent")}`,
-        {
-          signal: AbortSignal.timeout(SKILL_FETCH_TIMEOUT_MS),
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; RakazoAgent/1.0)" },
-        },
+        skillFetchOptions,
       );
-      if (!res.ok) {
-        return c.json({ error: `SkillsMP HTTP ${res.status}` }, 400);
-      }
-      const text = await readBodyWithLimit(res);
-      const data = JSON.parse(text);
+      const data = JSON.parse(result.body);
       return c.json(data);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "SkillsMP search failed" }, 500);

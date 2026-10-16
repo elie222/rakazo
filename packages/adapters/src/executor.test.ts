@@ -1855,7 +1855,7 @@ describe("createRunExecutor", () => {
     );
   });
 
-  it("expands @skill mentions in the routine prompt at fire time", async () => {
+  it("expands @skill mentions in the routine prompt for name-scoped bots at fire time", async () => {
     const scheduledAt = new Date(Date.now() - 1_000);
     const enqueue = vi.fn(async () => undefined);
     let createdPrompt = "";
@@ -1866,6 +1866,7 @@ describe("createRunExecutor", () => {
     const skillContent = `---
 name: Daily standup
 description: Prepare standup notes
+bots: [Chief]
 ---
 
 1. Summarize wins.
@@ -1887,6 +1888,7 @@ description: Prepare standup notes
       bot: {
         findUnique: vi.fn(async () => ({
           id: "bot-1",
+          name: "Chief",
           thread: { id: "thread-1" },
         })),
       },

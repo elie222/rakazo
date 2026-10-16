@@ -126,6 +126,32 @@ describe("web SSRF policy", () => {
     expect(fetched).toEqual(["https://example.test/"]);
   });
 
+  it("rejects HTTPS downgrades before connecting to the redirect", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://example.test/final" },
+        }),
+    );
+    await expect(
+      fetchSafeWebText("https://example.test/start", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+        allowedProtocols: ["https:"],
+      }),
+    ).rejects.toThrow(/protocol/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await expect(
+      fetchSafeWebText("http://example.test/start", {
+        fetch: fetchMock,
+        resolveHostname: publicResolver,
+        allowedProtocols: ["https:"],
+      }),
+    ).rejects.toThrow(/protocol/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the first maxBytes of a longer body when truncating", async () => {
     const fetchMock: typeof fetch = async () =>
       new Response("a".repeat(5000), { status: 200, headers: { "content-length": "5000" } });

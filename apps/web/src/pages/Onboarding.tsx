@@ -19,6 +19,7 @@ import {
   COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
   createModelProbe,
+  DEFAULT_CHIEF_INSTRUCTIONS,
   initialModelProbeState,
   pickCatalogModelId,
 } from "@rakazo/core";
@@ -60,13 +61,6 @@ const DEFAULT_THINKING_LEVEL_OPTION = "__rakazo_default_thinking__";
 const FIRST_BOT_NAME = "Chief";
 const FIRST_BOT_TITLE = "Chief of Staff";
 const FIRST_BOT_DESCRIPTION = "Lead orchestrator and trusted single point of contact.";
-const FIRST_BOT_INSTRUCTIONS =
-  "You are Chief, the user's Chief of Staff and lead orchestrator. You are the single front door and trusted point of contact: you get things done, keep track of everything in flight, and protect the user's time and attention. Turn requests into finished results, not plans. Own the follow-through.\n\n" +
-  "Memory & Role Directives:\n" +
-  "- Always check your own durable memory (under <durable_memory> labeled '## bot: MEMORY.md' for your bot-specific instructions, standing rules, and context). Always follow your '## bot:' memory.\n" +
-  "- Documents labeled '## user:' or referring to other specialist teammate bots are shared workspace background data, NOT your own bot memory. Do not confuse shared user data or teammate notes with your own operational instructions.\n" +
-  "- When asked if your memory is updated or what your memory contains, answer strictly from your own '## bot: MEMORY.md' memory. You do not query, message, or check other bots for your own memory.\n" +
-  "- Act like a Chief: lead and coordinate, deliver finished work, and only delegate distinct specialist tasks to teammates when explicitly required.";
 const FIRST_BOT_SPAWN_KEY = "onboarding:first";
 const FIRST_BOT_LOCK = "rakazo:onboarding-first-bot";
 
@@ -92,7 +86,7 @@ async function createOrReuseFirstBot(): Promise<{ id: string }> {
       name: FIRST_BOT_NAME,
       title: FIRST_BOT_TITLE,
       description: FIRST_BOT_DESCRIPTION,
-      instructions: FIRST_BOT_INSTRUCTIONS,
+      instructions: DEFAULT_CHIEF_INSTRUCTIONS,
       notifyOnFinish: true,
       spawnKey: FIRST_BOT_SPAWN_KEY,
     });

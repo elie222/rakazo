@@ -223,6 +223,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       actor: Actor,
       input: {
         skillId: string;
+        expectedContent?: string;
         content?: string;
         name?: string;
         description?: string;
@@ -258,6 +259,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
             spaceId: actor.spaceId,
             userId: actor.userId,
             source: "user",
+            ...(input.expectedContent !== undefined ? { content: input.expectedContent } : {}),
           },
           data: {
             name: resolved.name,
@@ -265,7 +267,14 @@ export function createAgentSkillsService(prisma: PrismaClient) {
             content: resolved.content,
           },
         });
-        if (updated.count !== 1) throw new IsolationError();
+        if (updated.count !== 1) {
+          if (input.expectedContent !== undefined) {
+            throw new ORPCError("CONFLICT", {
+              message: "Skill changed while editing. Reopen it and try again.",
+            });
+          }
+          throw new IsolationError();
+        }
       } catch (error) {
         if (error instanceof IsolationError) throw error;
         if (
