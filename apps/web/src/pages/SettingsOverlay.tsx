@@ -16,7 +16,9 @@ import type { ComponentType } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
 import { ListboxSelect } from "../components/ListboxSelect";
+import { rpcForSpace } from "../lib/rpc";
 import type { SettingsSection } from "../lib/settings-section";
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,
@@ -30,6 +32,9 @@ import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
 export type { SettingsSection };
 
+/** Sections whose settings belong to a space; only these show the space picker. */
+const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set(["models", "memory", "voice"]);
+
 type NavItem = {
   id: SettingsSection;
   label: string;
@@ -39,6 +44,7 @@ type NavItem = {
 export function SettingsOverlay({
   space,
   spaces = [],
+  currentSpaceId,
   onSpaceChange,
   email,
   name,
@@ -58,10 +64,12 @@ export function SettingsOverlay({
   onClose,
   onVoiceStatusMaybeChanged,
 }: {
-  /** The space these settings act on; settings follow the selected space. */
+  /** The space the per-space sections act on; it need not be the selected space. */
   space?: { id: string; name: string } | null;
   spaces?: { id: string; name: string }[];
-  onSpaceChange?: (spaceId: string, section: SettingsSection) => void;
+  /** The space the app is showing; its memory config comes from the shell. */
+  currentSpaceId?: string | null;
+  onSpaceChange?: (spaceId: string) => void;
   email?: string | null;
   name: string;
   usage?: {
@@ -96,6 +104,27 @@ export function SettingsOverlay({
   const showComputer =
     keepComputerRecovery || (isDeploymentOwner && computersAreUnavailable(sandboxProvider));
   const panelBusy = memoryBusy || voiceBusy;
+  const spaceScoped = SPACE_SECTIONS.has(section);
+  const spaceId = spaceScoped ? (space?.id ?? null) : null;
+  // The shell only holds the selected space's memory config; another space's loads here.
+  const otherSpace = Boolean(spaceId && currentSpaceId && spaceId !== currentSpaceId);
+  const [otherMemoryConfig, setOtherMemoryConfig] = useState<SpaceMemoryConfig | null>();
+  useEffect(() => {
+    if (!otherSpace || !spaceId) return;
+    let cancelled = false;
+    setOtherMemoryConfig(undefined);
+    rpcForSpace(spaceId)
+      .memory.providerConfig()
+      .then((config) => {
+        if (!cancelled) setOtherMemoryConfig(config);
+      })
+      .catch(() => {
+        if (!cancelled) setOtherMemoryConfig(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [otherSpace, spaceId]);
   const releaseComputerRecovery = useCallback(() => {
     window.clearTimeout(recoveryHoldTimer.current);
     recoveryHoldTimer.current = undefined;
@@ -235,7 +264,7 @@ export function SettingsOverlay({
                 <DialogTitle className="text-2xl font-medium text-foreground">
                   {sectionTitle}
                 </DialogTitle>
-                {space && spaces.length > 1 && onSpaceChange ? (
+                {!spaceScoped ? null : space && spaces.length > 1 && onSpaceChange ? (
                   <ListboxSelect
                     className="w-56"
                     testId="settings-space"
@@ -244,7 +273,7 @@ export function SettingsOverlay({
                     value={space.id}
                     disabled={panelBusy}
                     onChange={(next) => {
-                      if (next !== space.id) leaveSettings(() => onSpaceChange(next, section));
+                      if (next !== space.id) leaveSettings(() => onSpaceChange(next));
                     }}
                   />
                 ) : space ? (
@@ -262,59 +291,66 @@ export function SettingsOverlay({
               </DialogClose>
             </div>
 
-            <div
-              className={`min-h-0 flex-1 ${
-                section === "models" || section === "voice" || section === "memory"
-                  ? "flex flex-col overflow-hidden"
-                  : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-5 sm:px-8 sm:pb-8"
-              }`}
-            >
-              {section === "general" ? (
-                <GeneralSettingsPanels
-                  email={email}
-                  name={name}
-                  avatarStyle={avatarStyle}
-                  onAvatarStyleChange={onAvatarStyleChange}
-                  messagingEnabled={messagingEnabled}
-                  onOpenMessaging={
-                    onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
-                  }
-                  isDeploymentOwner={isDeploymentOwner}
-                />
-              ) : null}
-              {section === "usage" ? (
-                <UsageSettingsPanel usage={usage} panelRef={usageRef} />
-              ) : null}
-              {section === "computer" && showComputer ? (
-                <ComputerSettingsPanel
-                  sandboxProvider={sandboxProvider}
-                  onSandboxProviderChange={(next) => {
-                    onSandboxProviderChange?.(next);
-                    holdComputerRecovery();
-                  }}
-                  onRecoveryDismissed={releaseComputerRecovery}
-                />
-              ) : null}
-              {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
-              {section === "updates" ? (
-                <UpdatesSettingsPanel isDeploymentOwner={isDeploymentOwner} />
-              ) : null}
-              {section === "models" ? (
-                <ModelSettingsOverlay embedded onClose={requestClose} />
-              ) : null}
-              {section === "memory" ? (
-                <MemorySettingsOverlay
-                  embedded
-                  onClose={requestClose}
-                  config={memoryConfig}
-                  onConfigChange={onMemoryConfigChange}
-                  onBusyChange={setMemoryBusy}
-                />
-              ) : null}
-              {section === "voice" ? (
-                <VoiceSettingsOverlay embedded onClose={requestClose} onBusyChange={setVoiceBusy} />
-              ) : null}
-            </div>
+            <SpaceRpcProvider spaceId={spaceId}>
+              <div
+                key={spaceId ?? "selected"}
+                className={`min-h-0 flex-1 ${
+                  section === "models" || section === "voice" || section === "memory"
+                    ? "flex flex-col overflow-hidden"
+                    : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-5 sm:px-8 sm:pb-8"
+                }`}
+              >
+                {section === "general" ? (
+                  <GeneralSettingsPanels
+                    email={email}
+                    name={name}
+                    avatarStyle={avatarStyle}
+                    onAvatarStyleChange={onAvatarStyleChange}
+                    messagingEnabled={messagingEnabled}
+                    onOpenMessaging={
+                      onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
+                    }
+                    isDeploymentOwner={isDeploymentOwner}
+                  />
+                ) : null}
+                {section === "usage" ? (
+                  <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                ) : null}
+                {section === "computer" && showComputer ? (
+                  <ComputerSettingsPanel
+                    sandboxProvider={sandboxProvider}
+                    onSandboxProviderChange={(next) => {
+                      onSandboxProviderChange?.(next);
+                      holdComputerRecovery();
+                    }}
+                    onRecoveryDismissed={releaseComputerRecovery}
+                  />
+                ) : null}
+                {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
+                {section === "updates" ? (
+                  <UpdatesSettingsPanel isDeploymentOwner={isDeploymentOwner} />
+                ) : null}
+                {section === "models" ? (
+                  <ModelSettingsOverlay embedded onClose={requestClose} />
+                ) : null}
+                {section === "memory" ? (
+                  <MemorySettingsOverlay
+                    embedded
+                    onClose={requestClose}
+                    config={otherSpace ? otherMemoryConfig : memoryConfig}
+                    onConfigChange={otherSpace ? setOtherMemoryConfig : onMemoryConfigChange}
+                    onBusyChange={setMemoryBusy}
+                  />
+                ) : null}
+                {section === "voice" ? (
+                  <VoiceSettingsOverlay
+                    embedded
+                    onClose={requestClose}
+                    onBusyChange={setVoiceBusy}
+                  />
+                ) : null}
+              </div>
+            </SpaceRpcProvider>
           </div>
         </div>
       </DialogContent>

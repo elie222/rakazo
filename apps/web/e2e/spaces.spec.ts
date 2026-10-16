@@ -221,7 +221,7 @@ test("deleting the last bot in a space stays in the app after first use", async 
   await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
 });
 
-test("a space's menu opens settings for that space, and settings can switch space", async ({
+test("a space's menu opens its settings in place, and settings can switch space", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -235,25 +235,27 @@ test("a space's menu opens settings for that space, and settings can switch spac
   await dialog.getByRole("button", { name: "Create space", exact: true }).click();
   await completeOnboarding(page);
   await expect(sidebar.getByText("Support", { exact: true })).toBeVisible();
+  const chatUrl = page.url();
 
-  // Support is selected; Personal's menu switches to Personal and opens its settings.
+  // Support is selected; Personal's menu opens Personal's settings without leaving Support.
   await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
   await page.getByRole("menuitem", { name: "Settings" }).click();
   const settings = page.getByTestId("user-settings");
+  await expect(settings).toHaveAttribute("data-settings-section", "models");
   const picker = settings.getByTestId("settings-space");
-  await expect(picker).toHaveText("Personal", { timeout: 15_000 });
+  await expect(picker).toHaveText("Personal");
+  expect(page.url()).toBe(chatUrl);
   await captureScreenshot(page, testInfo, "space-settings-from-menu");
 
-  await settings.getByTestId("settings-nav-models").click();
   await picker.click();
   await expect(settings.getByRole("option", { name: "Support", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "space-settings-switcher");
   await settings.getByRole("option", { name: "Support", exact: true }).click();
+  await expect(picker).toHaveText("Support");
+  await expect(settings).toHaveAttribute("data-settings-section", "models");
+  expect(page.url()).toBe(chatUrl);
 
-  await expect(page.getByTestId("user-settings")).toHaveAttribute(
-    "data-settings-section",
-    "models",
-    { timeout: 15_000 },
-  );
-  await expect(page.getByTestId("settings-space")).toHaveText("Support");
+  // Sections that are not per space show no picker.
+  await settings.getByTestId("settings-nav-general").click();
+  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
 });

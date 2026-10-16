@@ -51,29 +51,51 @@ export function withSpaceHeaders(
   return headers;
 }
 
-const link = new RPCLink<RpcClientContext>({
-  url: () =>
-    typeof window === "undefined"
-      ? "http://127.0.0.1:5173/rpc"
-      : `${window.location.origin}${window.location.pathname === LOCAL_SETTINGS_PAGE ? LOCAL_SETTINGS_RPC : "/rpc"}`,
-  fetch: async (input, init, options) => {
-    const request = new Request(input, init);
-    if (typeof window !== "undefined" && window.location.pathname === LOCAL_SETTINGS_PAGE) {
-      const bridge = desktopBridge()?.localSettings;
-      if (!bridge) throw new Error("Local settings require the desktop app");
-      const result = await bridge.request(new URL(request.url).pathname, await request.text());
-      return new Response(result.body, {
-        status: result.status,
-        headers: { "content-type": "application/json" },
-      });
-    }
-    const spaceId =
-      options.context.spaceId === undefined ? selectedSpaceId() : options.context.spaceId;
-    return fetch(request, {
-      headers: withSpaceHeaders(request.headers, spaceId),
-      credentials: "include",
-    });
-  },
-});
+export type RpcClient = ContractRouterClient<AppContract, RpcClientContext>;
 
-export const rpc: ContractRouterClient<AppContract, RpcClientContext> = createORPCClient(link);
+/** `boundSpaceId` pins every call to one space; otherwise the selected space is used. */
+function createLink(boundSpaceId?: string) {
+  return new RPCLink<RpcClientContext>({
+    url: () =>
+      typeof window === "undefined"
+        ? "http://127.0.0.1:5173/rpc"
+        : `${window.location.origin}${window.location.pathname === LOCAL_SETTINGS_PAGE ? LOCAL_SETTINGS_RPC : "/rpc"}`,
+    fetch: async (input, init, options) => {
+      const request = new Request(input, init);
+      if (typeof window !== "undefined" && window.location.pathname === LOCAL_SETTINGS_PAGE) {
+        const bridge = desktopBridge()?.localSettings;
+        if (!bridge) throw new Error("Local settings require the desktop app");
+        const result = await bridge.request(new URL(request.url).pathname, await request.text());
+        return new Response(result.body, {
+          status: result.status,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const spaceId =
+        options.context.spaceId !== undefined
+          ? options.context.spaceId
+          : (boundSpaceId ?? selectedSpaceId());
+      return fetch(request, {
+        headers: withSpaceHeaders(request.headers, spaceId),
+        credentials: "include",
+      });
+    },
+  });
+}
+
+export const rpc: RpcClient = createORPCClient(createLink());
+
+const spaceClients = new Map<string, RpcClient>();
+
+/**
+ * A client whose calls act on one space regardless of which space is selected,
+ * so settings for another space can load and save without switching to it.
+ */
+export function rpcForSpace(spaceId: string): RpcClient {
+  let client = spaceClients.get(spaceId);
+  if (!client) {
+    client = createORPCClient(createLink(spaceId));
+    spaceClients.set(spaceId, client);
+  }
+  return client;
+}

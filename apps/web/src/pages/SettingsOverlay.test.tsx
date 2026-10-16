@@ -35,6 +35,7 @@ vi.mock("./AccountSettingsOverlay", () => ({
   UpdatesSettingsPanel: () => null,
   UsageSettingsPanel: () => null,
 }));
+vi.mock("../lib/rpc", () => ({ rpc: {}, rpcForSpace: () => ({}) }));
 vi.mock("./BillingSettingsPanel", () => ({ BillingSettingsPanel: () => null }));
 vi.mock("./MemorySettingsOverlay", () => ({ MemorySettingsOverlay: () => null }));
 vi.mock("./ModelSettingsOverlay", () => ({ ModelSettingsOverlay: () => null }));
@@ -77,7 +78,7 @@ async function render(props: Partial<React.ComponentProps<typeof SettingsOverlay
   };
 }
 
-it("names the space the settings act on and switches it, keeping the section", async () => {
+it("names the space a space-scoped section acts on and switches it in place", async () => {
   const onSpaceChange = vi.fn();
   const { container, cleanup } = await render({
     space: acme,
@@ -96,7 +97,7 @@ it("names the space the settings act on and switches it, keeping the section", a
 
     await act(async () => options[1]?.click());
 
-    await vi.waitFor(() => expect(onSpaceChange).toHaveBeenCalledWith("space-b", "models"));
+    await vi.waitFor(() => expect(onSpaceChange).toHaveBeenCalledWith("space-b"));
   } finally {
     await cleanup();
   }
@@ -107,11 +108,26 @@ it("shows the space name without a switcher when there is only one space", async
     space: acme,
     spaces: [acme],
     onSpaceChange: vi.fn(),
+    initialSection: "models",
   });
   try {
     const label = container.querySelector('[data-testid="settings-space"]');
     expect(label?.tagName).toBe("P");
     expect(label?.textContent).toBe("Acme");
+  } finally {
+    await cleanup();
+  }
+});
+
+it("shows no space picker on sections that are not per space", async () => {
+  const { container, cleanup } = await render({
+    space: acme,
+    spaces,
+    onSpaceChange: vi.fn(),
+    initialSection: "general",
+  });
+  try {
+    expect(container.querySelector('[data-testid="settings-space"]')).toBeNull();
   } finally {
     await cleanup();
   }
