@@ -1,14 +1,6 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AvatarStyle, SpaceMemoryConfig } from "@rakazo/contracts";
-import {
-  Button,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  NativeSelect,
-  NativeSelectOption,
-} from "@rakazo/ui-web";
+import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
 import {
   Brain,
   CloudDownload,
@@ -23,6 +15,7 @@ import {
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import { ListboxSelect } from "../components/ListboxSelect";
 import type { SettingsSection } from "../lib/settings-section";
 import {
   ComputerSettingsPanel,
@@ -243,23 +236,17 @@ export function SettingsOverlay({
                   {sectionTitle}
                 </DialogTitle>
                 {space && spaces.length > 1 && onSpaceChange ? (
-                  <NativeSelect
-                    data-testid="settings-space"
-                    aria-label={t`Space`}
+                  <ListboxSelect
                     className="w-56"
+                    testId="settings-space"
+                    label={t`Space`}
+                    options={spaces.map((option) => ({ value: option.id, label: option.name }))}
                     value={space.id}
                     disabled={panelBusy}
-                    onChange={(event) => {
-                      const next = event.target.value;
+                    onChange={(next) => {
                       if (next !== space.id) leaveSettings(() => onSpaceChange(next, section));
                     }}
-                  >
-                    {spaces.map((option) => (
-                      <NativeSelectOption key={option.id} value={option.id}>
-                        {option.name}
-                      </NativeSelectOption>
-                    ))}
-                  </NativeSelect>
+                  />
                 ) : space ? (
                   <p data-testid="settings-space" className="text-sm text-muted-foreground">
                     {space.name}

@@ -27,12 +27,6 @@ vi.mock("@rakazo/ui-web", () => ({
     "children"
   >) => <div {...props}>{children}</div>,
   DialogTitle: ({ children }: { children?: ReactNode }) => <h2>{children}</h2>,
-  NativeSelect: ({ children, ...props }: React.ComponentProps<"select">) => (
-    <select {...props}>{children}</select>
-  ),
-  NativeSelectOption: ({ children, ...props }: React.ComponentProps<"option">) => (
-    <option {...props}>{children}</option>
-  ),
 }));
 
 vi.mock("./AccountSettingsOverlay", () => ({
@@ -92,15 +86,15 @@ it("names the space the settings act on and switches it, keeping the section", a
     initialSection: "models",
   });
   try {
-    const select = container.querySelector<HTMLSelectElement>('[data-testid="settings-space"]');
-    if (!select) throw new Error("Missing space switcher");
-    expect(select.value).toBe("space-a");
-    expect([...select.options].map((option) => option.textContent)).toEqual(["Acme", "Beta"]);
+    const trigger = container.querySelector<HTMLButtonElement>('[data-testid="settings-space"]');
+    if (!trigger) throw new Error("Missing space switcher");
+    expect(trigger.textContent).toBe("Acme");
 
-    await act(async () => {
-      select.value = "space-b";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await act(async () => trigger.click());
+    const options = [...container.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+    expect(options.map((option) => option.textContent)).toEqual(["Acme", "Beta"]);
+
+    await act(async () => options[1]?.click());
 
     await vi.waitFor(() => expect(onSpaceChange).toHaveBeenCalledWith("space-b", "models"));
   } finally {

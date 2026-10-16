@@ -4158,6 +4158,10 @@ msgstr ""
 msgid "Something went wrong. Try again."
 msgstr "Algo deu errado. Tente novamente."
 
+#: src/pages/SettingsOverlay.tsx
+msgid "Space"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
 msgstr "O espaço mudou. Reabra Modelos para carregar a lista de backups."

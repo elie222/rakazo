@@ -220,3 +220,40 @@ test("deleting the last bot in a space stays in the app after first use", async 
   await sidebar.getByRole("button", { name: /^Archived/ }).click();
   await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
 });
+
+test("a space's menu opens settings for that space, and settings can switch space", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `spaces-settings-${stamp}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+
+  const sidebar = page.locator("aside").first();
+  await openNewSpace(page);
+  const dialog = page.getByRole("dialog", { name: "New space" });
+  await dialog.getByLabel("Name").fill("Support");
+  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
+  await completeOnboarding(page);
+  await expect(sidebar.getByText("Support", { exact: true })).toBeVisible();
+
+  // Support is selected; Personal's menu switches to Personal and opens its settings.
+  await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  const settings = page.getByTestId("user-settings");
+  const picker = settings.getByTestId("settings-space");
+  await expect(picker).toHaveText("Personal", { timeout: 15_000 });
+  await captureScreenshot(page, testInfo, "space-settings-from-menu");
+
+  await settings.getByTestId("settings-nav-models").click();
+  await picker.click();
+  await expect(settings.getByRole("option", { name: "Support", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "space-settings-switcher");
+  await settings.getByRole("option", { name: "Support", exact: true }).click();
+
+  await expect(page.getByTestId("user-settings")).toHaveAttribute(
+    "data-settings-section",
+    "models",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("settings-space")).toHaveText("Support");
+});

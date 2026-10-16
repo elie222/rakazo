@@ -4158,6 +4158,10 @@ msgstr "软件更新"
 msgid "Something went wrong. Try again."
 msgstr "出了点问题。请重试。"
 
+#: src/pages/SettingsOverlay.tsx
+msgid "Space"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
 msgstr "空间已更改。重新打开“模型”以加载备用列表。"

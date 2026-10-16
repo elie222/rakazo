@@ -4158,6 +4158,10 @@ msgstr "Обновление программного обеспечения"
 msgid "Something went wrong. Try again."
 msgstr "Что-то пошло не так. Попробуйте ещё раз."
 
+#: src/pages/SettingsOverlay.tsx
+msgid "Space"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
 msgstr "Пространство изменилось. Откройте раздел «Модели» снова, чтобы загрузить список резервных моделей."
