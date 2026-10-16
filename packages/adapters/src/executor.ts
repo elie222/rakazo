@@ -3997,7 +3997,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           hasStreamedText = false;
           pendingProgress = "";
           if (!canPublishDurableNarration()) {
-            if (!runPromotesMidTurnNarration(run.trigger)) {
+            if (allowSilentEmptyRun || !runPromotesMidTurnNarration(run.trigger)) {
               assembled = "";
               discardedMidTurnNarration = true;
             }
