@@ -359,6 +359,32 @@ function retryHarness(scenario: RetryScenario = {}) {
 }
 
 describe("running a routine retry", () => {
+  it.each(["preference lookup", "delivery"])(
+    "propagates abandoned retry %s failures so the job can retry the notice",
+    async (failure) => {
+      const { executor, prisma, send, enqueue } = retryHarness({ active: false });
+      const error = new Error("temporarily unavailable");
+      if (failure === "preference lookup") {
+        prisma.routine.findUnique.mockResolvedValueOnce({
+          notify: true,
+          active: false,
+          crons: ["0 9 * * *"],
+          nextRunAt: null,
+          bot: { archivedAt: null },
+        });
+        prisma.routine.findUnique.mockRejectedValueOnce(error);
+      }
+      if (failure === "delivery") send.mockRejectedValueOnce(error);
+
+      await expect(executor.retryRoutineRun("run-1")).rejects.toThrow(error);
+      await executor.retryRoutineRun("run-1");
+
+      expect(send).toHaveBeenCalledTimes(failure === "delivery" ? 2 : 1);
+      expect(enqueue).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     ["paused", { active: false }],
     ["archived", { archived: true }],

@@ -3294,7 +3294,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         select: { id: true },
       });
       if (laterRun) return;
-      const notifyAbandonedRetry = () => notifyFailedRoutineRun(deps, failed);
+      const notifyAbandonedRetry = () =>
+        notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
       if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
         await notifyAbandonedRetry();
         return;
