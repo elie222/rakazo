@@ -3668,7 +3668,7 @@ describe("openai-compatible enabled models", () => {
     userId?: string;
     modelProvider?: string;
     provider?: string;
-    modelId?: { notIn?: string[] };
+    modelId?: string | { notIn?: string[] };
   };
 
   function secretText(enabledModelIds?: string[], reasoning?: boolean) {
@@ -3691,7 +3691,9 @@ describe("openai-compatible enabled models", () => {
           (where.spaceId === undefined || pin.spaceId === where.spaceId) &&
           (where.userId === undefined || pin.userId === where.userId) &&
           !(where.archivedAt === null && pin.archived) &&
-          !where.modelId?.notIn?.includes(pin.modelId),
+          (typeof where.modelId === "string"
+            ? pin.modelId === where.modelId
+            : !where.modelId?.notIn?.includes(pin.modelId)),
       )
       .map(({ name, spaceId, modelId }) => ({ name, spaceId, modelId }));
   }
@@ -3832,7 +3834,7 @@ describe("openai-compatible enabled models", () => {
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
-          where.modelId?.notIn ? pins.bots(where) : [bot],
+          where.modelProvider ? pins.bots(where) : [bot],
         ),
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
           Object.assign(
@@ -4159,6 +4161,39 @@ describe("openai-compatible enabled models", () => {
     );
     expect(state.preference.modelId).toBe("m-a");
     expect(enabledInDto()).toContain("m-b");
+  });
+
+  it.each([
+    ["a same-space bot on another non-default id", { name: "Ada", modelId: "m-z" }],
+    ["a bot in another space", { name: "Elsewhere", modelId: "m-w", spaceId: "space-2" }],
+    [
+      "another space's bot on the outgoing default",
+      { name: "Far", modelId: "m-a", spaceId: "space-2" },
+    ],
+  ])("lets setDefault on a legacy secret ignore %s", async (_case, bot) => {
+    const { call, state } = fixture({
+      plaintext: secretText(),
+      defaultModel: "m-a",
+      bots: [bot],
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-x" });
+
+    expect(result.status).toBe(200);
+    expect(state.preference.modelId).toBe("m-x");
+  });
+
+  it("skips the pin check when the outgoing default stays in the stored list", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-x"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-a" }],
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-x" });
+
+    expect(result.status).toBe(200);
+    expect(prisma.routine.findMany).not.toHaveBeenCalled();
   });
 
   it("refuses setDefault on a legacy secret away from a pinned default", async () => {

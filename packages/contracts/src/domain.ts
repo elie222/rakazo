@@ -1084,7 +1084,7 @@ export const ModelConnectInputSchema = z
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
     supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
-    enabledModelIds: z.array(z.string().trim().min(1).max(256)).max(500).optional(),
+    enabledModelIds: z.array(z.string().trim().min(1)).max(500).optional(),
   })
   .superRefine((value, ctx) => {
     if (!modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow)) {

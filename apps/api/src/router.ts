@@ -6909,73 +6909,83 @@ function nextRoutineDate(crons: string[], timezone: string): Date {
   return next;
 }
 
-/**
- * Names of the actor's active bots and routines (plus "backup models"), in every space, that
- * pin an openai-compatible id outside their own space's effective list once `stored` is the
- * connection's list and `actorDefault` is the actor space's default. The secret is per user
- * and account-wide; each other space keeps its own saved default. Catalog-listed compatible
- * ids pass today's gates without the connection's list, so they are never reported.
- */
-async function modelPinUsers(
+/** Catalog-listed compatible ids pass today's gates without the connection's list. */
+function catalogCompatibleModelIds() {
+  return listPiCatalog()
+    .filter((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+    .map((entry) => entry.id);
+}
+
+/** The actor's active compatible bot, routine and backup pins matching `filter`. */
+async function compatibleModelPins(
   deps: RouterDeps,
   actor: Actor,
-  stored: string[],
-  actorDefault: string,
+  filter: { spaceId?: string; modelId: string | { notIn: string[] } },
 ) {
   const provider = OPENAI_COMPATIBLE_PROVIDER_ID;
-  const excluded = [
-    ...stored,
-    ...listPiCatalog()
-      .filter((entry) => entry.provider === provider)
-      .map((entry) => entry.id),
-  ];
-  const modelId = { notIn: excluded };
+  const where = { userId: actor.userId, ...filter };
   const pin = { spaceId: true, modelId: true } as const;
-  const [preferences, bots, routines, backups] = await Promise.all([
-    deps.prisma.spaceModelPreference.findMany({
-      where: { userId: actor.userId, credential: { userId: actor.userId, provider } },
-      select: { spaceId: true, modelId: true },
-    }),
+  const [bots, routines, backups] = await Promise.all([
     deps.prisma.bot.findMany({
-      where: { userId: actor.userId, archivedAt: null, modelProvider: provider, modelId },
+      where: { ...where, archivedAt: null, modelProvider: provider },
       select: { ...pin, name: true },
     }),
     deps.prisma.routine.findMany({
-      where: { userId: actor.userId, modelProvider: provider, modelId },
+      where: { ...where, modelProvider: provider },
       select: { ...pin, name: true },
     }),
-    deps.prisma.spaceBackupModel.findMany({
-      where: { userId: actor.userId, provider, modelId },
-      select: pin,
-    }),
+    deps.prisma.spaceBackupModel.findMany({ where: { ...where, provider }, select: pin }),
   ]);
-  const defaults = new Map(preferences.map((row) => [row.spaceId, usableModelId(row.modelId)]));
-  defaults.set(actor.spaceId, usableModelId(actorDefault));
-  const dangling = (row: { spaceId: string; modelId: string | null }) =>
-    row.modelId !== null && row.modelId !== defaults.get(row.spaceId);
-  const names = [...bots, ...routines].filter(dangling).map((row) => row.name);
-  if (backups.some(dangling)) names.push("backup models");
-  return [...new Set(names)];
+  return { named: [...bots, ...routines], backups };
 }
 
-/** Refuse a compatible connection change that would leave one of the actor's pins dangling. */
+type ModelPinRow = { spaceId: string; modelId: string | null };
+
+/** Refusal naming the bots and routines (plus "backup models") left on a dropped model. */
+function refuseModelPins(
+  pins: { named: Array<ModelPinRow & { name: string }>; backups: ModelPinRow[] },
+  dangling: (row: ModelPinRow) => boolean,
+) {
+  const names = pins.named.filter(dangling).map((row) => row.name);
+  if (pins.backups.some(dangling)) names.push("backup models");
+  if (names.length === 0) return;
+  throw new ORPCError("BAD_REQUEST", {
+    message: `In use by ${[...new Set(names)].join(", ")}. Pick another model for them first.`,
+  });
+}
+
+/**
+ * Refuse a compatible connect whose saved list would leave one of the actor's pins, in any
+ * space, outside that space's effective list (`stored` plus the space's own default; the
+ * actor's space gets `actorDefault`). The secret is per user and account-wide.
+ */
 async function assertNoDanglingModelPins(
   deps: RouterDeps,
   actor: Actor,
   stored: string[],
   actorDefault: string,
 ) {
-  const users = await modelPinUsers(deps, actor, stored, actorDefault);
-  if (users.length === 0) return;
-  throw new ORPCError("BAD_REQUEST", {
-    message: `In use by ${users.join(", ")}. Pick another model for them first.`,
-  });
+  const [preferences, pins] = await Promise.all([
+    deps.prisma.spaceModelPreference.findMany({
+      where: {
+        userId: actor.userId,
+        credential: { userId: actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID },
+      },
+      select: { spaceId: true, modelId: true },
+    }),
+    compatibleModelPins(deps, actor, {
+      modelId: { notIn: [...stored, ...catalogCompatibleModelIds()] },
+    }),
+  ]);
+  const defaults = new Map(preferences.map((row) => [row.spaceId, usableModelId(row.modelId)]));
+  defaults.set(actor.spaceId, usableModelId(actorDefault));
+  refuseModelPins(pins, (row) => row.modelId !== null && row.modelId !== defaults.get(row.spaceId));
 }
 
 /**
  * `models.setDefault` on an openai-compatible connection: a listed secret only accepts an
- * effective id, and moving off a default that is effective only through the per-space
- * union (legacy secret, or a default outside the stored list) must not strand its pins.
+ * effective id. It changes only this space's default and never the secret, so the only pins
+ * it can strand are this space's pins on an outgoing default that is outside the stored list.
  */
 async function assertCompatibleDefaultChange(
   deps: RouterDeps,
@@ -6990,8 +7000,12 @@ async function assertCompatibleDefaultChange(
     throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
   }
   const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
-  if (!outgoing) return;
-  await assertNoDanglingModelPins(deps, actor, stored ?? [], requested);
+  if (!outgoing || catalogCompatibleModelIds().includes(outgoing)) return;
+  const pins = await compatibleModelPins(deps, actor, {
+    spaceId: actor.spaceId,
+    modelId: outgoing,
+  });
+  refuseModelPins(pins, () => true);
 }
 
 /** A routine may only name a model the space has connected. */
