@@ -23,7 +23,7 @@ vi.mock("../../lib/rpc", () => ({
       get: skillsApi.getSkill,
       create: skillsApi.createSkill,
       update: skillsApi.updateSkill,
-      delete: skillsApi.deleteSkill,
+      remove: skillsApi.deleteSkill,
     },
     bots: {
       list: skillsApi.listBots,
@@ -174,7 +174,7 @@ describe("SkillsTab", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     skillsApi.listSkills.mockResolvedValue(mockSkills);
     skillsApi.getSkill.mockImplementation(async ({ skillId }: { skillId: string }) => {
       const found = mockSkills.find((s) => s.id === skillId);
@@ -346,6 +346,7 @@ describe("SkillsTab", () => {
     await act(async () => {
       button("Confirm").click();
     });
+    expect(skillsApi.deleteSkill).toHaveBeenCalledWith({ skillId: "custom-1" });
     expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
       "Could not delete skill",
     );

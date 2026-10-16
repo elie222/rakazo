@@ -114,7 +114,7 @@ import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
-import { findCreatorSkillUrl } from "./skill-import.js";
+import { findCreatorSkillUrl, githubSkillContentUrl } from "./skill-import.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import {
@@ -727,19 +727,13 @@ export async function createApp(
         }
       }
 
-      // Only rewrite actual GitHub URLs, never a matching path or query on another host.
-      if (target.hostname === "github.com") {
-        if (target.pathname.includes("/blob/") || target.pathname.includes("/tree/")) {
-          const tree = target.pathname.includes("/tree/");
-          target.hostname = "raw.githubusercontent.com";
-          target.pathname = target.pathname.replace(/\/(blob|tree)\//, "/");
-          if (tree) target.pathname = `${target.pathname.replace(/\/+$/, "")}/SKILL.md`;
-        } else if (!target.pathname.endsWith(".md")) {
-          target.pathname = `${target.pathname.replace(/\/+$/, "")}/raw/main/SKILL.md`;
-        }
-      }
-
-      const result = await fetchSafeWebText(target.href, skillFetchOptions);
+      target = githubSkillContentUrl(target);
+      const result = await fetchSafeWebText(target.href, {
+        ...skillFetchOptions,
+        ...(target.hostname === "api.github.com"
+          ? { headers: { accept: "application/vnd.github.raw+json" } }
+          : {}),
+      });
       return c.json({ ok: true, content: result.body, resolvedUrl: result.url });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);

@@ -28,3 +28,24 @@ export function findCreatorSkillUrl(
   }
   return undefined;
 }
+
+/** Repository roots use the Contents API's default branch; explicit refs stay explicit. */
+export function githubSkillContentUrl(input: URL): URL {
+  const url = new URL(input);
+  if (
+    url.hostname !== "github.com" ||
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.port
+  )
+    return url;
+  const [owner, repo, view, ...path] = url.pathname.split("/").filter(Boolean);
+  if (!owner || !repo) return url;
+  if (!view) return new URL(`https://api.github.com/repos/${owner}/${repo}/contents/SKILL.md`);
+  if (view === "blob" || view === "tree") {
+    url.hostname = "raw.githubusercontent.com";
+    url.pathname = `/${[owner, repo, ...path, ...(view === "tree" ? ["SKILL.md"] : [])].join("/")}`;
+  }
+  return url;
+}
