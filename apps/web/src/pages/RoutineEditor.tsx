@@ -4,6 +4,7 @@ import type { ModelCatalogEntry, ModelCredential, Routine } from "@rakazo/contra
 import {
   type CronFreq,
   type CronPreset,
+  credentialForModel,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
@@ -264,9 +265,10 @@ export function RoutineEditor({
         (entry) => entry.provider === selectedModel.provider && entry.id === selectedModel.modelId,
       )
     : undefined;
-  const selectedCredential = credentials.find(
-    (entry) =>
-      entry.provider === selectedModel?.provider && entry.modelId === selectedModel?.modelId,
+  const selectedCredential = credentialForModel(
+    credentials,
+    selectedModel?.provider,
+    selectedModel?.modelId,
   );
   const thinkingOptions = (
     selectedCredential?.thinkingLevels ??

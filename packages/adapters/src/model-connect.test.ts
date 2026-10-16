@@ -316,8 +316,29 @@ describe("modelCredentialDto", () => {
       baseUrl: "https://example.invalid/v1",
       modelId: "qwen3-4b",
       reasoning: false,
+      enabledModelIds: ["qwen3-4b"],
       thinkingLevels: ["off"],
     });
+  });
+
+  it.each([
+    { name: "legacy secret", enabledModelIds: undefined, expected: ["Y"] },
+    { name: "listed secret with the default", enabledModelIds: ["Y", "X"], expected: ["Y", "X"] },
+    { name: "listed secret without the default", enabledModelIds: ["X"], expected: ["Y", "X"] },
+  ])("exposes the effective enabled models for a $name", ({ enabledModelIds, expected }) => {
+    const plaintext = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: "https://example.invalid/v1",
+      ...(enabledModelIds ? { enabledModelIds } : {}),
+    });
+    const row = {
+      id: "cred-listed",
+      provider: "openai-compatible",
+      label: "Server",
+      isDefault: true,
+      defaultModel: "Y",
+    };
+    expect(modelCredentialDto(row, plaintext).enabledModelIds).toEqual(expected);
   });
 
   it("projects image support for the selected model only", () => {
@@ -484,6 +505,7 @@ it.each([true, false])(
       kind: "openai_compatible",
       baseUrl: "http://localhost:8000/v1",
       reasoning,
+      enabledModelIds: ["arbitrary-model"],
     });
     expect(
       modelCredentialDto(
@@ -578,6 +600,50 @@ describe("compatible connection updates", () => {
     expect(parseModelSecret(nextVision)).toMatchObject({
       visionModelIds: ["arbitrary-model", "another-vision-model"],
     });
+  });
+  it("stores the enabled models de-duplicated with the default first", () => {
+    const saved = parseModelSecret(
+      buildModelConnectPlaintext({
+        ...input,
+        enabledModelIds: [" other-model ", "arbitrary-model", "other-model", "third-model"],
+      }),
+    );
+    expect(saved).toMatchObject({
+      enabledModelIds: ["arbitrary-model", "other-model", "third-model"],
+    });
+  });
+  it("inherits the enabled models on the same endpoint when the input omits them", () => {
+    const configured = buildModelConnectPlaintext({ ...input, enabledModelIds: ["other-model"] });
+    const updated = buildModelConnectPlaintext(
+      { ...input, modelId: "third-model", reasoning: false },
+      configured,
+    );
+    expect(parseModelSecret(updated)).toMatchObject({
+      enabledModelIds: ["third-model", "arbitrary-model", "other-model"],
+    });
+  });
+  it("drops the enabled models when the endpoint changes", () => {
+    const configured = buildModelConnectPlaintext({ ...input, enabledModelIds: ["other-model"] });
+    const moved = buildModelConnectPlaintext(
+      { ...input, baseUrl: "http://localhost:8001/v1" },
+      configured,
+    );
+    expect(parseModelSecret(moved)).toMatchObject({ enabledModelIds: ["arbitrary-model"] });
+  });
+  it("keeps the client list plus the default when the previous secret is unreadable", () => {
+    const saved = parseModelSecret(
+      buildModelConnectPlaintext(
+        { ...input, apiKey: "fake-replacement-key", enabledModelIds: ["other-model"] },
+        undefined,
+        { omitVisionModelIds: true },
+      ),
+    );
+    expect(saved).toMatchObject({ enabledModelIds: ["arbitrary-model", "other-model"] });
+  });
+  it("lets an explicit list replace the inherited one", () => {
+    const configured = buildModelConnectPlaintext({ ...input, enabledModelIds: ["other-model"] });
+    const updated = buildModelConnectPlaintext({ ...input, enabledModelIds: [] }, configured);
+    expect(parseModelSecret(updated)).toMatchObject({ enabledModelIds: ["arbitrary-model"] });
   });
   it("persists the image limit while preserving it on connection updates", () => {
     const configured = buildModelConnectPlaintext({

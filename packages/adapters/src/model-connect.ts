@@ -7,6 +7,7 @@ import {
   isCloudflareAiGatewayProvider,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
+import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
@@ -83,6 +84,14 @@ export function buildModelConnectPlaintext(
     const includeVisionModelIds =
       !options?.omitVisionModelIds &&
       (input.supportsImages !== undefined || previousVisionModelIds !== undefined);
+    const enabledModelIds = enabledOpenAiCompatibleModelIds(
+      {
+        kind: "openai_compatible",
+        baseUrl: prepared.baseUrl,
+        enabledModelIds: input.enabledModelIds ?? compatiblePrevious?.enabledModelIds,
+      },
+      prepared.modelId,
+    );
     const compatibleCacheCapabilities =
       input.cacheCapabilities ?? compatiblePrevious?.cacheCapabilities;
     const secret: StoredModelSecret = {
@@ -97,6 +106,7 @@ export function buildModelConnectPlaintext(
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(prepared.apiKey ? { apiKey: prepared.apiKey } : {}),
       ...(includeVisionModelIds ? { visionModelIds } : {}),
+      enabledModelIds,
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
     };
     return serializeModelSecret(secret);
@@ -278,6 +288,7 @@ export function modelCredentialDto(
     ...(parsed.maxImagesPerPrompt !== undefined
       ? { maxImagesPerPrompt: parsed.maxImagesPerPrompt }
       : {}),
+    enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel),
     thinkingLevels: getSupportedThinkingLevels(
       openAiCompatibleModel(row.defaultModel ?? "custom", parsed.baseUrl, parsed.reasoning),
     ) as ThinkingLevel[],

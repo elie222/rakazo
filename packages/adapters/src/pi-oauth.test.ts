@@ -140,12 +140,22 @@ describe("model secrets", () => {
       serializeModelSecret({
         kind: "openai_compatible",
         baseUrl: "http://127.0.0.1:8000/v1",
+        enabledModelIds: ["local/default", "local/other"],
       }),
     );
     expect(parsed).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
+      enabledModelIds: ["local/default", "local/other"],
     });
+  });
+
+  it("leaves enabledModelIds undefined on an openai-compatible secret saved without it", () => {
+    const parsed = parseModelSecret(
+      JSON.stringify({ kind: "openai_compatible", baseUrl: "http://127.0.0.1:8000/v1" }),
+    );
+    expect(parsed).toEqual({ kind: "openai_compatible", baseUrl: "http://127.0.0.1:8000/v1" });
+    expect(parsed.kind === "openai_compatible" && parsed.enabledModelIds).toBeUndefined();
   });
 
   it("rejects credential JSON that declares a kind but misses its fields", () => {

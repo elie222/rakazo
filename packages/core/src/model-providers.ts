@@ -141,6 +141,7 @@ type CredentialModelRef = {
   provider: string;
   label: string;
   modelId?: string | null;
+  enabledModelIds?: readonly string[] | null;
 };
 
 function modelToken(value: string): string {
@@ -194,10 +195,46 @@ export function resolveSelectableModelId(
   return trimmed;
 }
 
+function freeFormChoice(credential: CredentialModelRef, modelId: string): ConnectedModelChoice {
+  return {
+    key: modelOptionKey(credential.provider, modelId),
+    provider: credential.provider,
+    modelId,
+    label: `${credential.label} · ${modelId}`,
+  };
+}
+
+function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
+  return providerModels.map((entry) => {
+    const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
+    return {
+      key: modelOptionKey(entry.provider, modelId),
+      provider: entry.provider,
+      modelId,
+      label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+    };
+  });
+}
+
+/** The connected credential that runs `modelId`: an enabled id or the connection default. */
+export function credentialForModel<C extends CredentialModelRef>(
+  credentials: readonly C[],
+  provider: string | null | undefined,
+  modelId: string | null | undefined,
+): C | undefined {
+  if (!provider || !modelId) return undefined;
+  return credentials.find(
+    (credential) =>
+      credential.provider === provider &&
+      (credential.modelId === modelId || (credential.enabledModelIds?.includes(modelId) ?? false)),
+  );
+}
+
 /**
  * Models a connected provider can run. Catalog entries submit their API ids.
  * A saved display label expands to those ids instead of becoming the only choice.
  * A custom id that is not a catalog label stays a single free-form option.
+ * A connection with enabled ids offers one free-form option per id.
  */
 export function connectedModelChoices(
   credentials: readonly CredentialModelRef[],
@@ -214,25 +251,13 @@ export function connectedModelChoices(
     const resolvedInCatalog = providerModels.some(
       (entry) => resolveSelectableModelId(providerModels, entry.provider, entry.id) === resolved,
     );
+    const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
-      raw && !resolvedInCatalog
-        ? [
-            {
-              key: modelOptionKey(credential.provider, resolved || raw),
-              provider: credential.provider,
-              modelId: resolved || raw,
-              label: `${credential.label} · ${resolved || raw}`,
-            },
-          ]
-        : providerModels.map((entry) => {
-            const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
-            return {
-              key: modelOptionKey(entry.provider, modelId),
-              provider: entry.provider,
-              modelId,
-              label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
-            };
-          });
+      enabled.length > 0
+        ? enabled.map((id) => freeFormChoice(credential, id))
+        : raw && !resolvedInCatalog
+          ? [freeFormChoice(credential, resolved || raw)]
+          : catalogChoices(providerModels);
     for (const choice of next) {
       if (seen.has(choice.key)) continue;
       seen.add(choice.key);

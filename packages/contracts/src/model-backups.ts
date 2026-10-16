@@ -36,17 +36,18 @@ export function connectedBackupOptions(
       credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID && credential.modelId?.trim(),
   );
   if (compatibleCredential?.modelId) {
-    const entry = catalog.find(
-      (candidate) =>
-        candidate.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-        candidate.id === compatibleCredential.modelId,
-    );
-    options.push({
-      provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-      modelId: compatibleCredential.modelId,
-      label: entry?.label ?? compatibleCredential.modelId,
-      providerName: entry?.providerName ?? OPENAI_COMPATIBLE_PROVIDER_ID,
-    });
+    for (const modelId of compatibleCredential.enabledModelIds ?? [compatibleCredential.modelId]) {
+      const entry = catalog.find(
+        (candidate) =>
+          candidate.provider === OPENAI_COMPATIBLE_PROVIDER_ID && candidate.id === modelId,
+      );
+      options.push({
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        modelId,
+        label: entry?.label ?? modelId,
+        providerName: entry?.providerName ?? OPENAI_COMPATIBLE_PROVIDER_ID,
+      });
+    }
   }
   return options;
 }

@@ -32,6 +32,7 @@ import type {
   MemoryProviderResolver,
   PiOAuthLogins,
   RemoteConnectorDependencies,
+  StoredModelSecret,
   TicketChangeNotifier,
 } from "@rakazo/adapters";
 import {
@@ -62,6 +63,7 @@ import {
   deploymentAutoReviewDefault,
   destroyBot,
   displayBotWorkspacePath,
+  enabledOpenAiCompatibleModelIds,
   enqueueTakeoverContinuation,
   ensureComputerWorkspaceLayout,
   expireComputerControl,
@@ -1221,6 +1223,7 @@ export function createRouter(deps: RouterDeps) {
               continue;
             const error = await validateConnectedModelChoice(
               deps.prisma,
+              deps.secrets,
               context.actor,
               choice.provider,
               choice.modelId,
@@ -1269,6 +1272,17 @@ export function createRouter(deps: RouterDeps) {
           throw new ORPCError("BAD_REQUEST", {
             message: error instanceof Error ? error.message : "Invalid model connection",
           });
+        }
+        if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+          // Limits: this runs before persistModelCredential's transaction. A pin saved in
+          // between can fall outside the stored list and then fails at run time with
+          // "Unknown model for that provider". Closing it needs every pin write (bots,
+          // routines, backups) serializable.
+          await assertNoDanglingModelPins(
+            deps,
+            context.actor,
+            enabledOpenAiCompatibleModelIds(parseModelSecret(plaintext), input.modelId),
+          );
         }
         return persistModelCredential(
           deps,
@@ -1434,9 +1448,20 @@ export function createRouter(deps: RouterDeps) {
                     Boolean(preference.thinkingLevel),
                 )
               : Boolean(input.thinkingLevel);
-          const thinking = needsThinking
-            ? await prepareAllowedThinkingLevels(deps, context.actor, input.provider, input.modelId)
-            : { allowed: undefined, secret: undefined };
+          const compatible = input.provider === OPENAI_COMPATIBLE_PROVIDER_ID;
+          // Compatible defaults always load the secret so the transaction rechecks it.
+          const thinking =
+            needsThinking || compatible
+              ? await prepareAllowedThinkingLevels(
+                  deps,
+                  context.actor,
+                  input.provider,
+                  input.modelId,
+                )
+              : { allowed: undefined, secret: undefined };
+          if (compatible) {
+            await assertCompatibleDefaultChange(deps, context.actor, input.modelId, thinking);
+          }
           return deps.prisma.$transaction(
             async (tx) => {
               const { preferences, candidates } = await loadSpaceModelState(tx);
@@ -1669,8 +1694,20 @@ export function createRouter(deps: RouterDeps) {
           const inCatalog = knownModels.some(
             (item) => item.provider === input.modelProvider && item.id === input.modelId,
           );
-          if (!inCatalog && credential.defaultModel !== input.modelId) {
-            throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
+          if (!inCatalog) {
+            const error =
+              input.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID
+                ? await validateConnectedModelChoice(
+                    deps.prisma,
+                    deps.secrets,
+                    context.actor,
+                    input.modelProvider,
+                    input.modelId,
+                  )
+                : credential.defaultModel !== input.modelId
+                  ? "Unknown model for that provider"
+                  : undefined;
+            if (error) throw new ORPCError("BAD_REQUEST", { message: error });
           }
           if (inCatalog) {
             const authError = await validateStoredModelAuth(
@@ -1702,35 +1739,12 @@ export function createRouter(deps: RouterDeps) {
           const effectiveProvider = provider ?? me.defaultProvider;
           const effectiveModelId = modelId ?? me.defaultModel;
           if (effectiveProvider && effectiveModelId) {
-            const entry = listPiCatalog().find(
-              (item) => item.provider === effectiveProvider && item.id === effectiveModelId,
+            const { allowed } = await prepareAllowedThinkingLevels(
+              deps,
+              context.actor,
+              effectiveProvider,
+              effectiveModelId,
             );
-            let allowed = entry?.thinkingLevels;
-            if (effectiveProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-              allowed = ["off"];
-              const credential = await findModelCredential(
-                deps.prisma,
-                context.actor,
-                effectiveProvider,
-              );
-              if (credential && credential.defaultModel === effectiveModelId) {
-                const secret = await deps.prisma.secret.findFirst({
-                  where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
-                  select: { ciphertext: true },
-                });
-                if (secret) {
-                  try {
-                    allowed =
-                      modelCredentialDto(
-                        credential,
-                        await deps.secrets.load(secret.ciphertext, credential.secretId),
-                      ).thinkingLevels ?? allowed;
-                  } catch {
-                    // Unreadable connections must not advertise reasoning support.
-                  }
-                }
-              }
-            }
             if (allowed && !allowed.includes(input.thinkingLevel)) {
               throw new ORPCError("BAD_REQUEST", {
                 message: `Thinking level must be one of: ${allowed.join(", ")}`,
@@ -6381,42 +6395,50 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
 /**
  * Thinking levels a caller may set for a provider/model. Catalog models answer from
  * `thinkingLevels`; unknown catalog ids return undefined (no check). OpenAI-compatible
- * connections only advertise levels when the stored endpoint's saved model matches.
+ * connections advertise the endpoint's levels for every enabled model id.
  */
 async function prepareAllowedThinkingLevels(
   deps: RouterDeps,
   actor: Actor,
   provider: string,
   modelId: string,
-): Promise<{ allowed: string[] | undefined; secret?: { id: string; ciphertext: string } }> {
+): Promise<{
+  allowed: string[] | undefined;
+  secret?: { id: string; ciphertext: string };
+  enabledModelIds?: string[];
+  storedEnabledModelIds?: string[];
+}> {
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
     return {
       allowed: listPiCatalog().find((item) => item.provider === provider && item.id === modelId)
         ?.thinkingLevels,
     };
   }
-  let allowed: string[] | undefined = ["off"];
-  let savedSecret: { id: string; ciphertext: string } | undefined;
   const credential = await findModelCredential(deps.prisma, actor, provider);
-  if (credential && credential.defaultModel === modelId) {
-    const secret = await deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: actor.userId, spaceId: null },
-      select: { ciphertext: true },
-    });
-    if (secret) {
-      savedSecret = { id: credential.secretId, ciphertext: secret.ciphertext };
-      try {
-        allowed =
-          modelCredentialDto(
-            credential,
-            await deps.secrets.load(secret.ciphertext, credential.secretId),
-          ).thinkingLevels ?? allowed;
-      } catch {
-        // Unreadable connections must not advertise reasoning support.
-      }
+  if (!credential) return { allowed: ["off"] };
+  const secret = await deps.prisma.secret.findFirst({
+    where: { id: credential.secretId, userId: actor.userId, spaceId: null },
+    select: { ciphertext: true },
+  });
+  let parsed: StoredModelSecret | undefined;
+  let levels: string[] | undefined;
+  if (secret) {
+    try {
+      const plaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
+      parsed = parseModelSecret(plaintext);
+      levels = modelCredentialDto(credential, plaintext).thinkingLevels;
+    } catch {
+      // Unreadable connections must not advertise reasoning support.
     }
   }
-  return { allowed, secret: savedSecret };
+  const enabled = enabledOpenAiCompatibleModelIds(parsed, credential.defaultModel);
+  return {
+    allowed: enabled.includes(modelId.trim()) ? (levels ?? ["off"]) : ["off"],
+    secret: secret ? { id: credential.secretId, ciphertext: secret.ciphertext } : undefined,
+    enabledModelIds: enabled,
+    storedEnabledModelIds:
+      parsed?.kind === "openai_compatible" ? parsed.enabledModelIds : undefined,
+  };
 }
 
 async function allowedThinkingLevels(
@@ -6854,6 +6876,72 @@ function nextRoutineDate(crons: string[], timezone: string): Date {
   return next;
 }
 
+/**
+ * Names of the active bots and routines in the actor's space (plus "backup models") that pin an
+ * openai-compatible id outside `enabled`. Catalog-listed compatible ids pass today's gates
+ * without the connection's list, so they are never reported.
+ */
+async function modelPinUsers(deps: RouterDeps, actor: Actor, enabled: string[]) {
+  const excluded = [
+    ...enabled,
+    ...listPiCatalog()
+      .filter((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+      .map((entry) => entry.id),
+  ];
+  const pinned = {
+    spaceId: actor.spaceId,
+    modelProvider: OPENAI_COMPATIBLE_PROVIDER_ID,
+    modelId: { notIn: excluded },
+  };
+  const [bots, routines, backups] = await Promise.all([
+    deps.prisma.bot.findMany({ where: { ...pinned, archivedAt: null }, select: { name: true } }),
+    deps.prisma.routine.findMany({ where: pinned, select: { name: true } }),
+    deps.prisma.spaceBackupModel.findMany({
+      where: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        modelId: { notIn: excluded },
+      },
+      select: { modelId: true },
+    }),
+  ]);
+  const names = [...bots, ...routines].map((row) => row.name);
+  if (backups.length > 0) names.push("backup models");
+  return [...new Set(names)];
+}
+
+/** Refuse a compatible connection change that would leave a pin in this space dangling. */
+async function assertNoDanglingModelPins(deps: RouterDeps, actor: Actor, enabled: string[]) {
+  const users = await modelPinUsers(deps, actor, enabled);
+  if (users.length === 0) return;
+  throw new ORPCError("BAD_REQUEST", {
+    message: `In use by ${users.join(", ")}. Pick another model for them first.`,
+  });
+}
+
+/**
+ * `models.setDefault` on an openai-compatible connection: a listed secret only accepts an
+ * effective id, and moving off a default that is effective only through the per-space
+ * union (legacy secret, or a default outside the stored list) must not strand its pins.
+ */
+async function assertCompatibleDefaultChange(
+  deps: RouterDeps,
+  actor: Actor,
+  modelId: string,
+  thinking: { enabledModelIds?: string[]; storedEnabledModelIds?: string[] },
+) {
+  const requested = modelId.trim();
+  const enabled = thinking.enabledModelIds ?? [];
+  const stored = thinking.storedEnabledModelIds;
+  if (stored && !enabled.includes(requested)) {
+    throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
+  }
+  const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
+  if (!outgoing) return;
+  await assertNoDanglingModelPins(deps, actor, [requested, ...(stored ?? [])]);
+}
+
 /** A routine may only name a model the space has connected. */
 async function assertRoutineModel(
   deps: RouterDeps,
@@ -6863,6 +6951,7 @@ async function assertRoutineModel(
   if (!model.modelProvider || !model.modelId) return;
   const message = await validateConnectedModelChoice(
     deps.prisma,
+    deps.secrets,
     actor,
     model.modelProvider,
     model.modelId,

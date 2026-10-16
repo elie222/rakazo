@@ -263,6 +263,7 @@ import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import {
+  enabledOpenAiCompatibleModelIds,
   isCatalogModelChoice,
   pinnedModelCredentialError,
   routineRunModelPin,
@@ -288,6 +289,7 @@ import {
   parseModelSecret,
   persistStoredModelSecret,
   resolveModelAuth,
+  type StoredModelSecret,
   secretValuesToRedact,
   serializeModelSecret,
   withModelCredentialLock,
@@ -2961,6 +2963,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
   ): Promise<AgentRunRequest["model"]> => {
     const validationError = await validateConnectedModelChoice(
       deps.prisma,
+      deps.secretStore,
       scope,
       provider,
       modelId,
@@ -2968,12 +2971,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
     if (validationError) throw new Error(validationError);
     const credential = await findModelCredential(deps.prisma, scope, provider, modelId);
     if (!credential) throw new Error("Connect that model provider first");
-    // Free-form selections must keep the preference that owns this modelId. A
-    // intervening delete/change can make findModelCredential fall back to another
-    // same-provider credential; reject that mismatch instead of mixing baseUrl.
-    if (!isCatalogModelChoice(provider, modelId) && credential.defaultModel !== modelId) {
-      throw new Error("Unknown model for that provider");
-    }
     const resolved = await resolveModelKey(
       deps,
       scope.userId,
@@ -2983,6 +2980,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       modelId,
       registerSecrets,
       requireStoredSecret,
+      true,
     );
     return {
       provider,
@@ -8406,6 +8404,32 @@ function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefi
  */
 const CODEX_LIVE_RUN_WAIT_MS = 8_000;
 
+// Free-form compatible ids must be enabled on the connection whose baseUrl
+// this run uses, in the run's own space; a stale pin fails here. Legacy secrets
+// (no list) keep main's behavior: bot runs resolve any id, and connected-model
+// lookups require the saved default so a fallback to another same-provider
+// credential never mixes baseUrl. The connect guard surfaces legacy pins before
+// a list is first saved.
+function assertCompatibleModelEnabled(
+  credential: { provider: string; defaultModel?: string | null },
+  secret: StoredModelSecret,
+  provider: string,
+  modelId: string,
+  requireDefaultForLegacy: boolean,
+) {
+  if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) return;
+  if (secret.kind !== "openai_compatible" || isCatalogModelChoice(provider, modelId)) return;
+  if (secret.enabledModelIds !== undefined) {
+    if (!enabledOpenAiCompatibleModelIds(secret, credential.defaultModel).includes(modelId)) {
+      throw new UnavailableModelForAuthError("Unknown model for that provider");
+    }
+    return;
+  }
+  if (requireDefaultForLegacy && credential.defaultModel !== modelId) {
+    throw new Error("Unknown model for that provider");
+  }
+}
+
 async function resolveModelKey(
   deps: ExecutorDeps,
   userId: string,
@@ -8421,6 +8445,7 @@ async function resolveModelKey(
   modelId: string,
   registerSecrets?: (values: string[]) => void,
   requireStoredSecret = false,
+  requireDefaultForLegacyCompatible = false,
 ): Promise<{
   apiKey?: string;
   accountId?: string;
@@ -8503,6 +8528,13 @@ async function resolveModelKey(
         if (!liveListed) throw new UnavailableModelForAuthError(authError);
       }
       resolved ??= await resolveAuth();
+      assertCompatibleModelEnabled(
+        credential,
+        resolved.secret,
+        provider,
+        modelId,
+        requireDefaultForLegacyCompatible,
+      );
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;

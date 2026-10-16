@@ -282,6 +282,7 @@ export type StoredModelSecret =
       maxTokens?: number;
       contextWindow?: number;
       visionModelIds?: string[];
+      enabledModelIds?: string[];
       maxImagesPerPrompt?: number;
     } & StoredModelLimits);
 
@@ -373,6 +374,14 @@ function parsedMaxTokens(value: unknown): number | undefined {
     : undefined;
 }
 
+function parsedModelIds(value: unknown): string[] | undefined {
+  return Array.isArray(value)
+    ? value.filter(
+        (modelId): modelId is string => typeof modelId === "string" && modelId.trim().length > 0,
+      )
+    : undefined;
+}
+
 export function parseModelSecret(plaintext: string): StoredModelSecret {
   const trimmed = plaintext.trim();
   if (!trimmed.startsWith("{")) return { kind: "api_key", key: plaintext };
@@ -398,11 +407,8 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       parsed.contextWindow <= MAX_MODEL_CONTEXT_WINDOW
         ? parsed.contextWindow
         : undefined;
-    const visionModelIds = Array.isArray(parsed.visionModelIds)
-      ? parsed.visionModelIds.filter(
-          (modelId): modelId is string => typeof modelId === "string" && modelId.trim().length > 0,
-        )
-      : undefined;
+    const visionModelIds = parsedModelIds(parsed.visionModelIds);
+    const enabledModelIds = parsedModelIds(parsed.enabledModelIds);
     const maxImagesPerPrompt =
       typeof parsed.maxImagesPerPrompt === "number" &&
       Number.isInteger(parsed.maxImagesPerPrompt) &&
@@ -419,6 +425,7 @@ export function parseModelSecret(plaintext: string): StoredModelSecret {
       ...(maxTokens !== undefined ? { maxTokens } : {}),
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(visionModelIds ? { visionModelIds } : {}),
+      ...(enabledModelIds ? { enabledModelIds } : {}),
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
       ...modelLimits(parsed),
     };
@@ -478,6 +485,7 @@ export function serializeModelSecret(secret: StoredModelSecret): string {
       ...(secret.maxTokens !== undefined ? { maxTokens: secret.maxTokens } : {}),
       ...(secret.contextWindow !== undefined ? { contextWindow: secret.contextWindow } : {}),
       ...(secret.visionModelIds !== undefined ? { visionModelIds: secret.visionModelIds } : {}),
+      ...(secret.enabledModelIds !== undefined ? { enabledModelIds: secret.enabledModelIds } : {}),
       ...(secret.maxImagesPerPrompt !== undefined
         ? { maxImagesPerPrompt: secret.maxImagesPerPrompt }
         : {}),

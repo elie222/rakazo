@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   clampCatalogThinkingLevel,
   connectedModelChoices,
+  credentialForModel,
   featuredModelProviders,
   filterModelCatalog,
   pickCatalogModelId,
@@ -224,6 +225,45 @@ describe("connected model choices", () => {
         label: "DeepSeek · my-finetune",
       },
     ]);
+  });
+
+  it("offers one choice per enabled model id on a compatible connection", () => {
+    const choices = connectedModelChoices(
+      [
+        {
+          provider: "openai-compatible",
+          label: "Local server",
+          modelId: "alpha",
+          enabledModelIds: ["alpha", "beta", "gamma", "beta"],
+        },
+      ],
+      deepseek,
+    );
+    expect(choices).toEqual(
+      ["alpha", "beta", "gamma"].map((id) => ({
+        key: `openai-compatible::${id}`,
+        provider: "openai-compatible",
+        modelId: id,
+        label: `Local server · ${id}`,
+      })),
+    );
+  });
+
+  it("finds a credential by enabled model id or by its default model", () => {
+    const compatible = {
+      provider: "openai-compatible",
+      label: "Local server",
+      modelId: "alpha",
+      enabledModelIds: ["alpha", "beta"],
+    };
+    const legacy = { provider: "deepseek", label: "DeepSeek", modelId: "my-finetune" };
+    const credentials = [legacy, compatible];
+    expect(credentialForModel(credentials, "openai-compatible", "beta")).toBe(compatible);
+    expect(credentialForModel(credentials, "openai-compatible", "alpha")).toBe(compatible);
+    expect(credentialForModel(credentials, "deepseek", "my-finetune")).toBe(legacy);
+    expect(credentialForModel(credentials, "openai-compatible", "delta")).toBeUndefined();
+    expect(credentialForModel(credentials, "deepseek", "beta")).toBeUndefined();
+    expect(credentialForModel(credentials, null, "alpha")).toBeUndefined();
   });
 
   it("resolves a saved display label to the API id used on save", () => {
