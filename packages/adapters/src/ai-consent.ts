@@ -31,16 +31,16 @@ export function aiRecipient(input: {
   baseUrl?: string;
 }): Omit<AiRecipient, "allowed"> | null {
   if (input.provider === "scripted") return null;
-  if (
-    input.use === "voice" &&
-    input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID &&
-    !process.env[VOICE_OPENAI_COMPAT_BASE_URL_ENV]?.trim()
-  )
-    return null;
-  const endpoint =
-    input.use === "voice" && input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID
-      ? resolveVoiceOpenAiCompatBaseUrl()
-      : (input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined));
+  let endpoint = input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined);
+  if (input.use === "voice" && input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID) {
+    if (!process.env[VOICE_OPENAI_COMPAT_BASE_URL_ENV]?.trim()) return null;
+    try {
+      endpoint = resolveVoiceOpenAiCompatBaseUrl();
+    } catch {
+      // Voice verification reports configuration errors; keep other recipients available.
+      return null;
+    }
+  }
   const origin = endpoint ? new URL(endpoint).origin : undefined;
   const name = recipientName(input.provider, input.use);
   // Bind custom connections to the full endpoint without exposing private URL components.

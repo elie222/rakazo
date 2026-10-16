@@ -57,11 +57,14 @@ describe("mobile AI recipient disclosure", () => {
       recipient.key,
     );
   });
-  it("omits a removed voice server without breaking other disclosures", () => {
-    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "");
-    expect(aiRecipient({ provider: "openai-compatible", use: "voice" })).toBeNull();
-    expect(aiRecipient({ provider: "openai", use: "voice" })?.name).toBe("OpenAI");
-  });
+  it.each(["", "not a URL", "ftp://127.0.0.1", "https://user:password@example.com"])(
+    "omits an unusable voice server without breaking other disclosures (%s)",
+    (url) => {
+      vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", url);
+      expect(aiRecipient({ provider: "openai-compatible", use: "voice" })).toBeNull();
+      expect(aiRecipient({ provider: "openai", use: "voice" })?.name).toBe("OpenAI");
+    },
+  );
   it("supports local models without a hosted dependency", () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

@@ -51,6 +51,16 @@ describe("consent grants", () => {
       }),
     ]);
   });
+  it("keeps other consent recipients available with a malformed voice URL", async () => {
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "not a URL");
+    const { deps, actor } = setup();
+    vi.mocked(deps.prisma.spaceVoicePreference.findMany).mockResolvedValue([
+      { credential: { provider: "openai-compatible" } },
+      { credential: { provider: "openai" } },
+    ] as never);
+    const status = await aiConsentStatus(deps, actor);
+    expect(status.recipients).toEqual([expect.objectContaining({ name: "OpenAI", use: "voice" })]);
+  });
   it("includes reachable helper models and cloud services for a targeted send", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";
