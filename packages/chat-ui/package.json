@@ -17,6 +17,7 @@
     "@rakazo/ui-web": "workspace:*",
     "@ronradtke/react-native-markdown-display": "9.0.3",
     "linkify-it": "5.0.2",
+    "mermaid": "12.0.0",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1"
   },
