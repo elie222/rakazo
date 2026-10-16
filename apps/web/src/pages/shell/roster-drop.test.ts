@@ -121,7 +121,7 @@ describe("resolveRosterDrop", () => {
           chat: group(
             "g1",
             null,
-            Array.from({ length: GROUP_MEMBER_MAX }, (_, index) => `member-${index}`),
+            Array.from({ length: GROUP_MEMBER_MAX }, (_, i) => `m${i}`),
           ),
         },
         sameParent: false,

@@ -43,7 +43,12 @@ async function runTurn(finalText: string, silent = true) {
   const narration = "I will check that.";
   const runtimeRun = vi.fn(async function* (_request: AgentRunRequest) {
     yield { type: "text" as const, text: narration };
-    yield { type: "tool" as const, name: "read_file", args: {}, executionId: "call-1" };
+    yield {
+      type: "tool" as const,
+      name: "read_file",
+      args: {},
+      executionId: "call-1",
+    };
     if (finalText) yield { type: "text" as const, text: finalText };
     yield { type: "done" as const, text: narration + finalText };
   });
@@ -91,13 +96,18 @@ async function runTurn(finalText: string, silent = true) {
       findUnique: vi.fn(async () => null),
       findFirst: vi.fn(async () => null),
     },
-    task: { findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Look again" })) },
+    task: {
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: run.taskId,
+        prompt: "Look again",
+      })),
+    },
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: {
-      findFirst: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(
-        async () => null,
-      ),
+      findFirst: vi.fn<
+        (...args: unknown[]) => Promise<Record<string, unknown> | null>
+      >(async () => null),
     },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
@@ -114,13 +124,25 @@ async function runTurn(finalText: string, silent = true) {
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
+    computerExecutionLease: {
+      updateManyAndReturn: vi.fn(async () => [{ fence: 1 }]),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "dedicated" }]),
+    $transaction: vi.fn(
+      async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> =>
+        fn(prisma),
+    ),
   };
   const finalizeRun = vi.fn(async (_input: { blocks: MessageBlock[] }) => ({
     continuationRunId: null,
   }));
   const executor = createRunExecutor({
     prisma,
-    runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
+    runtime: {
+      describe: () => ({ capabilities: { scripted: false } }),
+      run: runtimeRun,
+    },
     sandbox: {
       describe: () => ({ capabilities: { graphical: false } }),
       writeFile: vi.fn(async () => undefined),
@@ -138,38 +160,52 @@ async function runTurn(finalText: string, silent = true) {
 
   await executor.continueRun(run.id, "worker-1");
   expect(runtimeRun).toHaveBeenCalled();
-  expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
+  expect(finalizeRun).not.toHaveBeenCalledWith(
+    expect.objectContaining({ outcome: "failed" }),
+  );
   return { finalizeRun };
 }
 
 describe("withheld narration on short peer turns", () => {
-  it.each(["", "Checked: all clear."])("returns only the post-tool final %j", async (finalText) => {
-    vi.mocked(returnBotMessageOutcome).mockClear();
-    const { finalizeRun } = await runTurn(finalText);
-    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
-    expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
-      finalText ? [{ kind: "text", text: finalText }] : [],
-    );
-    if (finalText) {
-      expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        finalText,
-        "result",
+  it.each(["", "Checked: all clear."])(
+    "returns only the post-tool final %j",
+    async (finalText) => {
+      vi.mocked(returnBotMessageOutcome).mockClear();
+      const { finalizeRun } = await runTurn(finalText);
+      expect(finalizeRun).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: "completed" }),
       );
-    } else {
-      expect(returnBotMessageOutcome).not.toHaveBeenCalled();
-    }
-  });
+      expect(
+        finalizeRun.mock.calls[0]![0].blocks.filter(
+          (block) => block.kind === "text",
+        ),
+      ).toEqual(finalText ? [{ kind: "text", text: finalText }] : []);
+      if (finalText) {
+        expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+          finalText,
+          "result",
+        );
+      } else {
+        expect(returnBotMessageOutcome).not.toHaveBeenCalled();
+      }
+    },
+  );
 });
 
 describe("withheld narration on short reply-producing turns", () => {
-  it.each(["", "Checked: all clear."])("keeps pre-tool text with final %j", async (finalText) => {
-    const { finalizeRun } = await runTurn(finalText, false);
-    const text = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
-      .map((block) => block.text)
-      .join("");
-    expect(text).toBe(`I will check that.${finalText}`);
-  });
+  it.each(["", "Checked: all clear."])(
+    "keeps pre-tool text with final %j",
+    async (finalText) => {
+      const { finalizeRun } = await runTurn(finalText, false);
+      const text = finalizeRun.mock.calls[0]![0].blocks.filter(
+        (block) => block.kind === "text",
+      )
+        .map((block) => block.text)
+        .join("");
+      expect(text).toBe(`I will check that.${finalText}`);
+    },
+  );
 });
