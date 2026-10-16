@@ -1711,8 +1711,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   );
 
   const openBot = useCallback(
-    (id: string, botName: string) =>
-      router.push({ pathname: "/thread", params: { botId: id, name: botName } }),
+    (id: string, botName: string, spaceId?: string) =>
+      router.push({
+        pathname: "/thread",
+        params: { botId: id, name: botName, ...(spaceId ? { spaceId } : {}) },
+      }),
     [router],
   );
 
@@ -2047,7 +2050,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       react: (message, reaction) => rowActionsRef.current.react(message, reaction),
       answer: (message, answer, username) =>
         rowActionsRef.current.answer(message, answer, username),
-      openBot: (id, name) => rowActionsRef.current.openBot(id, name),
+      openBot: (...args) => rowActionsRef.current.openBot(...args),
       openComputer: (id, name) => rowActionsRef.current.openComputer(id, name),
       previewMarkdown: (target) => rowActionsRef.current.previewMarkdown(target),
       previewImage: (target) => rowActionsRef.current.previewImage(target),
@@ -2786,7 +2789,7 @@ type MessageRowActions = {
   speak: (message: MobileMessage) => void;
   react: (message: MobileMessage, reaction: MessageReaction) => void;
   answer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
-  openBot: (id: string, name: string) => void;
+  openBot: (id: string, name: string, spaceId?: string) => void;
   openComputer: (id: string, name: string) => void;
   previewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   previewImage: (target: ImageArtifactPreviewTarget) => void;
@@ -3115,7 +3118,7 @@ const MessageBubble = memo(function MessageBubble({
   members?: MobileSnapshot["members"];
   canAnswer: boolean;
   onAnswer: (message: MobileMessage, answer: string, username?: string) => Promise<void>;
-  onOpenBot: (botId: string, name: string) => void;
+  onOpenBot: (botId: string, name: string, spaceId?: string) => void;
   onOpenComputer: (botId: string, name: string) => void;
   onChoiceDismissed?: (question: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
@@ -3370,7 +3373,9 @@ const MessageBubble = memo(function MessageBubble({
       <Pressable
         {...actionProps}
         onPress={
-          removed ? undefined : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"))
+          removed
+            ? undefined
+            : () => onOpenBot(special.botId ?? "", special.name ?? t("Bot"), special.spaceId)
         }
         style={{
           width: "90%",

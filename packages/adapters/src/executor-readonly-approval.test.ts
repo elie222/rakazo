@@ -95,6 +95,15 @@ function fixture({
     content: existingSharedMemory as string | undefined,
     revision: existingSharedMemory === undefined ? 0 : 1,
   };
+  const targetSpaceMembershipState = { active: false };
+  const sourceSpaceMembership = {
+    spaceId: "space-1",
+    space: { id: "space-1", name: "Personal", deletingAt: null },
+  };
+  const destinationSpaceMembership = {
+    spaceId: "space-2",
+    space: { id: "space-2", name: "Research", deletingAt: null },
+  };
   const commit = vi.fn(
     async (request: { path: string; content: string; expectedRevision?: number }) => {
       if (
@@ -165,6 +174,13 @@ function fixture({
     ),
   };
   const prisma = {
+    spaceMember: {
+      findUnique: vi.fn(async () => ({ organizationId: "org-1", ...sourceSpaceMembership })),
+      findMany: vi.fn(async () => [
+        sourceSpaceMembership,
+        ...(targetSpaceMembershipState.active ? [destinationSpaceMembership] : []),
+      ]),
+    },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
@@ -176,6 +192,7 @@ function fixture({
     bot: {
       findUniqueOrThrow: vi.fn(async () => ({
         id: run.botId,
+        spaceId: run.spaceId,
         name: bot.name,
         title: bot.title,
         description: bot.description,
@@ -234,6 +251,26 @@ function fixture({
     }
     yield { type: "done" as const, text: "Done" };
   });
+  const enqueue = vi.fn(async () => undefined);
+  const messageCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: "message-1",
+    ...data,
+  }));
+  const eventCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+    seq: data.seq,
+    ...data,
+  }));
+  const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+    callback({
+      thread: {
+        update: vi.fn(async () => ({ nextMessageSeq: 1, nextEventSeq: 1 })),
+      },
+      run: { findUnique: vi.fn(async () => ({ status: "running", startedAt: new Date() })) },
+      message: { create: messageCreate },
+      event: { create: eventCreate },
+    }),
+  );
+  Object.assign(prisma, { $transaction: transaction });
   const executor = createRunExecutor({
     prisma,
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
@@ -281,8 +318,13 @@ function fixture({
       commit,
     },
     memoryProviders: { resolve: async () => null },
-    events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    events: {
+      append: vi.fn(async () => undefined),
+      pauseRunForInput,
+      finalizeRun,
+      notify: vi.fn(async () => undefined),
+    },
+    jobs: { enqueue },
     secrets,
     autoReview: autoReviewProvider,
     shutdownSignal,
@@ -294,6 +336,14 @@ function fixture({
     commit,
     sharedMemoryState,
     pauseRunForInput,
+    enqueue,
+    messageCreate,
+    eventCreate,
+    transaction,
+    spaceMember: prisma.spaceMember,
+    setTargetSpaceActive(active: boolean) {
+      targetSpaceMembershipState.active = active;
+    },
     setCalls(next: typeof calls) {
       calls = next;
     },
@@ -320,6 +370,214 @@ describe("disabled builtins", () => {
     expect(f.commit).not.toHaveBeenCalled();
     expect(f.execute).not.toHaveBeenCalled();
     expect(f.effects).toEqual([]);
+  });
+});
+
+describe("cross-space spawn approval", () => {
+  beforeEach(() => {
+    reviewMock.mockReset();
+  });
+
+  const spawnArgs = { name: "Scout", target_space: "Research" };
+
+  it("requires one-time explicit approval and stores the approved destination ID", async () => {
+    const f = fixture({
+      name: "spawn_bot",
+      builtin: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "spawn_bot" }],
+    });
+    f.setTargetSpaceActive(true);
+    f.setCalls([{ args: spawnArgs, executionId: "spawn-call-1" }]);
+    const db = await import("@rakazo/db");
+    const createReposSpy = vi.spyOn(db, "createRepos");
+
+    try {
+      await f.run();
+
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.effects).toHaveLength(1);
+      expect(f.effects[0]?.request).toEqual({ name: "Scout", target_space: "space-2" });
+      expect(f.pauseRunForInput).toHaveBeenCalledWith(
+        expect.objectContaining({
+          blocks: [
+            expect.objectContaining({
+              kind: "ask",
+              text: "Create bot “Scout” in “Research”?",
+              detail: expect.stringContaining("Destination: Research"),
+              actions: [
+                { id: "allow", label: "Allow once" },
+                { id: "deny", label: "Deny" },
+              ],
+            }),
+          ],
+        }),
+      );
+      expect(reviewMock).not.toHaveBeenCalled();
+      expect(f.enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+      expect(f.messageCreate).not.toHaveBeenCalled();
+      expect(createReposSpy).not.toHaveBeenCalled();
+      expect(isApprovalPausedResult(f.results.at(-1))).toBe(true);
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("pins an explicitly resolved same-space target to its ID before spawning", async () => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-2",
+      name: "Scout",
+      title: "",
+      threadId: "child-thread-2",
+    });
+    const db = await import("@rakazo/db");
+    const createReposSpy = vi.spyOn(db, "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof db.createRepos>);
+    const f = fixture({ name: "spawn_bot", builtin: true });
+    f.spaceMember.findMany
+      .mockResolvedValueOnce([
+        { spaceId: "space-1", space: { id: "space-1", name: "Personal", deletingAt: null } },
+        { spaceId: "space-2", space: { id: "space-2", name: "Research", deletingAt: null } },
+      ])
+      .mockResolvedValueOnce([
+        { spaceId: "space-1", space: { id: "space-1", name: "Renamed source", deletingAt: null } },
+        { spaceId: "space-2", space: { id: "space-2", name: "Personal", deletingAt: null } },
+      ]);
+    f.setCalls([
+      { args: { name: "Scout", target_space: "Personal" }, executionId: "same-space-spawn" },
+    ]);
+
+    try {
+      await f.run();
+
+      expect(f.pauseRunForInput).not.toHaveBeenCalled();
+      expect(f.effects[0]?.request).toEqual({ name: "Scout", target_space: "space-1" });
+      expect(createBot).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user-1", spaceId: "space-1" }),
+        expect.objectContaining({ name: "Scout" }),
+      );
+      expect(f.results.at(-1)).toMatchObject({ ok: true, botId: "child-2" });
+      expect(f.results.at(-1)).not.toHaveProperty("spaceId");
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("creates in the approved space after re-resolving its stable ID", async () => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-2",
+      name: "Scout",
+      title: "",
+      threadId: "child-thread-2",
+    });
+    const db = await import("@rakazo/db");
+    const createReposSpy = vi.spyOn(db, "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof db.createRepos>);
+    const f = fixture({
+      name: "spawn_bot",
+      builtin: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "spawn_bot" }],
+    });
+    f.setTargetSpaceActive(true);
+    f.setCalls([{ args: spawnArgs, executionId: "spawn-call-1" }]);
+
+    try {
+      await f.run();
+      f.effects[0]!.status = "approved";
+      f.setCalls([{ args: spawnArgs, executionId: "spawn-replay" }]);
+      await f.run();
+
+      expect(createBot).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user-1", spaceId: "space-2" }),
+        expect.objectContaining({ name: "Scout" }),
+      );
+      const input = createBot.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(input.parentBotId).toBeUndefined();
+      expect(input.initialMessage).toBeUndefined();
+      expect(f.effects[0]?.status).toBe("completed");
+      expect(f.results.at(-1)).toMatchObject({ ok: true, botId: "child-2", spaceId: "space-2" });
+      expect(f.messageCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            blocks: [
+              expect.objectContaining({ kind: "child_bot", botId: "child-2", spaceId: "space-2" }),
+            ],
+          }),
+        }),
+      );
+      expect(f.enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+      expect(reviewMock).not.toHaveBeenCalled();
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("refuses an approved target whose membership was revoked before execution", async () => {
+    const f = fixture({
+      name: "spawn_bot",
+      builtin: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "spawn_bot" }],
+    });
+    const db = await import("@rakazo/db");
+    const createReposSpy = vi.spyOn(db, "createRepos");
+    try {
+      f.setTargetSpaceActive(true);
+      f.setCalls([{ args: spawnArgs, executionId: "spawn-call-1" }]);
+      await f.run();
+      f.effects[0]!.status = "approved";
+      f.setTargetSpaceActive(false);
+      f.setCalls([{ args: spawnArgs, executionId: "spawn-replay" }]);
+
+      await f.run();
+
+      expect(f.results.at(-1)).toEqual({
+        error: "No active space you can access in this organization matches “space-2”.",
+      });
+      expect(f.spaceMember.findMany).toHaveBeenCalledTimes(2);
+      expect(f.enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.messageCreate).not.toHaveBeenCalled();
+      expect(createReposSpy).not.toHaveBeenCalled();
+      expect(reviewMock).not.toHaveBeenCalled();
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("does not execute a denied spawn even when auto-review and always-allow are enabled", async () => {
+    const f = fixture({
+      name: "spawn_bot",
+      builtin: true,
+      autoReview: true,
+      rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "spawn_bot" }],
+    });
+    const db = await import("@rakazo/db");
+    const createReposSpy = vi.spyOn(db, "createRepos");
+    try {
+      f.setTargetSpaceActive(true);
+      f.setCalls([{ args: spawnArgs, executionId: "spawn-call-1" }]);
+      await f.run();
+      f.effects[0]!.status = "denied";
+      f.setCalls([{ args: spawnArgs, executionId: "spawn-replay" }]);
+
+      await f.run();
+
+      expect(f.results.at(-1)).toEqual({
+        error:
+          "The user denied this action. Do not retry or rephrase it; tell the user and ask what they want instead.",
+      });
+      expect(f.enqueue).not.toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(f.messageCreate).not.toHaveBeenCalled();
+      expect(createReposSpy).not.toHaveBeenCalled();
+      expect(reviewMock).not.toHaveBeenCalled();
+    } finally {
+      createReposSpy.mockRestore();
+    }
   });
 });
 

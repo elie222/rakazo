@@ -78,6 +78,28 @@ describe("scripted runtime", () => {
     expect(script?.some((t) => t.toolCalls?.some((c) => c.args.name === "Scout"))).toBe(true);
   });
 
+  it.each(['"Customer support"', "Customer support"])(
+    "spawns a named bot in the explicit destination %s",
+    (destination) => {
+      const script = inferScript(`create a bot named Scout in space ${destination}`);
+      expect(script?.flatMap((turn) => turn.toolCalls ?? [])).toContainEqual({
+        name: "spawn_bot",
+        args: {
+          name: "Scout",
+          title: "Scout specialist",
+          instructions: "You are Scout.",
+          prompt: "Start on the assigned work.",
+          target_space: "Customer support",
+        },
+      });
+    },
+  );
+
+  it("does not omit an explicit empty destination", () => {
+    const script = inferScript("create a bot named Scout in space");
+    expect(script?.flatMap((turn) => turn.toolCalls ?? [])[0]?.args.target_space).toBe("");
+  });
+
   it("proposes a named space", () => {
     const script = inferScript("create a space named Customer support");
     expect(

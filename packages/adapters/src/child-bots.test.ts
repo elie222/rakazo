@@ -23,6 +23,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { browserProfilePathForScreen } from "@rakazo/core/node/desktop-runtime";
 import type { createRepos, PrismaClient } from "@rakazo/db";
+import { IsolationError } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   archiveBot,
@@ -131,7 +132,7 @@ describe("spawned bot creation", () => {
     expect(enqueue).toHaveBeenCalledOnce();
   });
 
-  it("passes computerMode through to createBot", async () => {
+  it("defaults to the current space and passes computerMode through to createBot", async () => {
     const createBot = vi.fn().mockResolvedValue({
       id: "child-2",
       name: "Painter",
@@ -177,6 +178,452 @@ describe("spawned bot creation", () => {
       threadId: "thread-2",
     });
     createReposSpy.mockRestore();
+  });
+
+  it.each([
+    {
+      label: "unknown or inaccessible targets",
+      targetSpace: "Research",
+      memberships: [
+        {
+          spaceId: "space-source",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        },
+      ],
+    },
+    {
+      label: "foreign organization IDs",
+      targetSpace: "space-foreign",
+      memberships: [
+        {
+          spaceId: "space-source",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        },
+      ],
+    },
+    {
+      label: "ambiguous names",
+      targetSpace: "Research",
+      memberships: [
+        {
+          spaceId: "space-source",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        },
+        {
+          spaceId: "space-target-a",
+          space: { id: "space-target-a", name: "Research", deletingAt: null },
+        },
+        {
+          spaceId: "space-target-b",
+          space: { id: "space-target-b", name: "Research", deletingAt: null },
+        },
+      ],
+    },
+    {
+      label: "archived targets",
+      targetSpace: "Archived",
+      memberships: [
+        {
+          spaceId: "space-source",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        },
+        {
+          spaceId: "space-archived",
+          space: { id: "space-archived", name: "Archived", deletingAt: new Date() },
+        },
+      ],
+    },
+  ])("does not fall back to the source for $label", async ({ targetSpace, memberships }) => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-3",
+      name: "Researcher",
+      title: "",
+      threadId: "thread-3",
+    });
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+    const findMany = vi.fn().mockResolvedValue(memberships);
+    const prisma = {
+      spaceMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        }),
+        findMany,
+      },
+    } as unknown as PrismaClient;
+
+    try {
+      const result = await spawnBot(
+        { prisma, jobs: { enqueue: vi.fn() } as unknown as JobPublisher },
+        {
+          spawnedBy: {
+            id: "parent-1",
+            name: "Chief",
+            spaceId: "space-source",
+            userId: "user-1",
+          },
+          runId: "run-1",
+          spawnKey: "tool-call-invalid-target",
+          name: "Researcher",
+          targetSpace,
+        } as Parameters<typeof spawnBot>[1],
+      );
+
+      expect(result).toMatchObject({ error: expect.any(String) });
+      expect(createBot).not.toHaveBeenCalled();
+      expect(findMany).toHaveBeenCalledWith({
+        where: {
+          userId: "user-1",
+          organizationId: "org-1",
+          space: { deletingAt: null },
+        },
+        select: {
+          spaceId: true,
+          space: { select: { id: true, name: true, deletingAt: true } },
+        },
+      });
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("creates an explicitly targeted bot in the authorized destination without source links", async () => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-cross-space",
+      name: "Researcher",
+      title: "",
+      threadId: "thread-cross-space",
+    });
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+    const prisma = {
+      spaceMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          { spaceId: "space-source", space: { id: "space-source", name: "Personal" } },
+          { spaceId: "space-target", space: { id: "space-target", name: "Research" } },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    try {
+      const result = await spawnBot(
+        {
+          prisma,
+          jobs: { enqueue: vi.fn() } as unknown as JobPublisher,
+        },
+        {
+          spawnedBy: {
+            id: "parent-1",
+            name: "Chief",
+            spaceId: "space-source",
+            userId: "user-1",
+          },
+          runId: "run-source",
+          spawnKey: "tool-call-cross-space",
+          name: "Researcher",
+          targetSpace: "Research",
+        } as Parameters<typeof spawnBot>[1],
+      );
+
+      expect(createBot).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user-1", spaceId: "space-target" }),
+        expect.objectContaining({ name: "Researcher", spawnKey: "tool-call-cross-space" }),
+      );
+      const createInput = createBot.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(createInput.parentBotId).toBeUndefined();
+      expect(createInput.initialMessage).toBeUndefined();
+      expect(result).toMatchObject({ ok: true, spaceId: "space-target" });
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("preserves same-space lineage when the current space is explicitly targeted", async () => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-same-space",
+      name: "Planner",
+      title: "",
+      threadId: "thread-same-space",
+    });
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+    const prisma = {
+      spaceMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            spaceId: "space-source",
+            space: { id: "space-source", name: "Personal", deletingAt: null },
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    try {
+      const result = await spawnBot(
+        { prisma, jobs: { enqueue: vi.fn() } as unknown as JobPublisher },
+        {
+          spawnedBy: { id: "parent-1", name: "Chief", spaceId: "space-source", userId: "user-1" },
+          runId: "run-source",
+          spawnKey: "same-space-target",
+          name: "Planner",
+          targetSpace: "Personal",
+        },
+      );
+
+      expect(createBot).toHaveBeenCalledWith(
+        expect.objectContaining({ spaceId: "space-source", userId: "user-1" }),
+        expect.objectContaining({
+          parentBotId: "parent-1",
+          initialMessage: expect.objectContaining({ runId: "run-source" }),
+        }),
+      );
+      expect(result).not.toHaveProperty("spaceId");
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("does not return a duplicate target bot after create-time membership loss", async () => {
+    const createBot = vi.fn().mockRejectedValue(new IsolationError());
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "child-target",
+      name: "Scout",
+      title: "Researcher",
+      thread: { id: "thread-target" },
+    });
+    const prisma = {
+      spaceMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            spaceId: "space-source",
+            space: { id: "space-source", name: "Personal", deletingAt: null },
+          },
+          {
+            spaceId: "space-target",
+            space: { id: "space-target", name: "Research", deletingAt: null },
+          },
+        ]),
+      },
+      bot: { findUnique },
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn();
+
+    try {
+      const result = await spawnBot(
+        { prisma, jobs: { enqueue } as unknown as JobPublisher },
+        {
+          spawnedBy: { id: "parent-1", name: "Chief", spaceId: "space-source", userId: "user-1" },
+          runId: "run-source",
+          spawnKey: "revoked-target-retry",
+          name: "Scout",
+          targetSpace: "space-target",
+        },
+      );
+
+      expect(result).toEqual({ error: "You no longer have access to the target space." });
+      expect(findUnique).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("reconciles a duplicate cross-space spawn using the destination key", async () => {
+    const createBot = vi.fn().mockRejectedValue(new Error("unique spawn key"));
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+    const findUnique = vi.fn().mockResolvedValue({
+      id: "child-target",
+      name: "Scout",
+      title: "Researcher",
+      thread: { id: "thread-target" },
+    });
+    const prisma = {
+      spaceMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            spaceId: "space-source",
+            space: { id: "space-source", name: "Personal", deletingAt: null },
+          },
+          {
+            spaceId: "space-target",
+            space: { id: "space-target", name: "Research", deletingAt: null },
+          },
+        ]),
+      },
+      bot: { findUnique },
+    } as unknown as PrismaClient;
+
+    try {
+      const result = await spawnBot(
+        { prisma, jobs: { enqueue: vi.fn() } as unknown as JobPublisher },
+        {
+          spawnedBy: { id: "parent-1", name: "Chief", spaceId: "space-source", userId: "user-1" },
+          runId: "run-source",
+          spawnKey: "cross-space-retry",
+          name: "Scout",
+          targetSpace: "Research",
+        },
+      );
+
+      expect(createBot).toHaveBeenCalledWith(
+        expect.objectContaining({ spaceId: "space-target", userId: "user-1" }),
+        expect.objectContaining({ name: "Scout", spawnKey: "cross-space-retry" }),
+      );
+      const createInput = createBot.mock.calls[0]?.[1] as Record<string, unknown>;
+      expect(createInput.parentBotId).toBeUndefined();
+      expect(createInput.initialMessage).toBeUndefined();
+      expect(findUnique).toHaveBeenCalledWith({
+        where: {
+          spaceId_spawnKey: { spaceId: "space-target", spawnKey: "cross-space-retry" },
+        },
+        include: { thread: true },
+      });
+      expect(result).toEqual({
+        ok: true,
+        duplicate: true,
+        botId: "child-target",
+        name: "Scout",
+        title: "Researcher",
+        threadId: "thread-target",
+        spaceId: "space-target",
+      });
+    } finally {
+      createReposSpy.mockRestore();
+    }
+  });
+
+  it("queues a destination-scoped first task once across a retry", async () => {
+    const createBot = vi.fn().mockResolvedValue({
+      id: "child-cross-space",
+      name: "Researcher",
+      title: "",
+      threadId: "thread-cross-space",
+    });
+    const createReposSpy = vi.spyOn(await import("@rakazo/db"), "createRepos").mockReturnValue({
+      createBot,
+    } as unknown as ReturnType<typeof createRepos>);
+    const existingRun = { id: "run-cross-space", spaceId: "space-target" };
+    const runFindUnique = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(existingRun);
+    const threadUpdate = vi.fn().mockResolvedValue({ nextMessageSeq: 5 });
+    const messageCreate = vi.fn().mockResolvedValue({ id: "message-target" });
+    const taskCreate = vi.fn().mockResolvedValue({ id: "task-target" });
+    const runCreate = vi.fn().mockResolvedValue(existingRun);
+    const transaction = vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "member-target" }]),
+        spaceMember: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue({ organizationId: "org-1", space: { deletingAt: null } }),
+        },
+        thread: { update: threadUpdate },
+        message: { create: messageCreate },
+        task: { create: taskCreate },
+        run: { create: runCreate, findUnique: runFindUnique },
+      }),
+    );
+    const prisma = {
+      spaceMember: {
+        findUnique: vi.fn().mockResolvedValue({
+          organizationId: "org-1",
+          space: { id: "space-source", name: "Personal", deletingAt: null },
+        }),
+        findMany: vi.fn().mockResolvedValue([
+          {
+            spaceId: "space-source",
+            space: { id: "space-source", name: "Personal", deletingAt: null },
+          },
+          {
+            spaceId: "space-target",
+            space: { id: "space-target", name: "Research", deletingAt: null },
+          },
+        ]),
+      },
+      run: { findUnique: runFindUnique },
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const deps = { prisma, jobs: { enqueue } as unknown as JobPublisher };
+    const input = {
+      spawnedBy: { id: "parent-1", name: "Chief", spaceId: "space-source", userId: "user-1" },
+      runId: "run-source",
+      spawnKey: "cross-space-task",
+      name: "Researcher",
+      prompt: "Research the requested topic.",
+      targetSpace: "space-target",
+    };
+
+    try {
+      const first = await spawnBot(deps, input);
+      const retry = await spawnBot(deps, input);
+
+      expect(first).toMatchObject({ ok: true, spaceId: "space-target" });
+      expect(retry).toMatchObject({ ok: true, spaceId: "space-target" });
+      expect(runFindUnique).toHaveBeenCalledWith({
+        where: {
+          spaceId_clientNonce: { spaceId: "space-target", clientNonce: "spawn:cross-space-task" },
+        },
+      });
+      expect(taskCreate).toHaveBeenCalledOnce();
+      expect(taskCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          spaceId: "space-target",
+          botId: "child-cross-space",
+          threadId: "thread-cross-space",
+          userId: "user-1",
+          prompt: "Research the requested topic.",
+          status: "queued",
+        }),
+      });
+      expect(runCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          spaceId: "space-target",
+          botId: "child-cross-space",
+          threadId: "thread-cross-space",
+          taskId: "task-target",
+          userId: "user-1",
+          status: "queued",
+          trigger: "spawn",
+          clientNonce: "spawn:cross-space-task",
+        }),
+      });
+      expect(messageCreate.mock.calls[0]?.[0].data).toMatchObject({
+        threadId: "thread-cross-space",
+        seq: 4,
+        role: "user",
+        blocks: [{ kind: "text", text: "Research the requested topic." }],
+      });
+      expect(messageCreate.mock.calls[0]?.[0].data.runId).toBeUndefined();
+      expect(transaction).toHaveBeenCalledTimes(2);
+      expect(enqueue).toHaveBeenCalledTimes(2);
+    } finally {
+      createReposSpy.mockRestore();
+    }
   });
 });
 describe("spawned bot archival", () => {

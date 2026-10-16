@@ -1111,6 +1111,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
           title: raw.title ? String(raw.title) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
+          ...(raw.target_space !== undefined ? { target_space: String(raw.target_space) } : {}),
           computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
         };
       }
@@ -1698,6 +1699,7 @@ function builtinParameters(tool: ConnectorTool) {
       title: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
+      target_space: Type.Optional(Type.String({ minLength: 1 })),
       computer_mode: Type.Optional(stringEnum(["team", "dedicated"], {})),
     });
   }

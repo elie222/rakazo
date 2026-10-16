@@ -1012,7 +1012,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "create_space",
     description:
-      "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. This always shows the user a confirmation card before creation. Creating the space is the whole action; do not create bots in it unless the user asks later.",
+      "Propose a new space in the current organization when the user asks for a separate data boundary. A space can contain many bots and groups, but its chats, files, memory, tools, and integrations stay isolated from other spaces. This always shows the user a confirmation card before creation. Creating the space is this tool's whole action; if the user also asked for a bot there, after space creation succeeds call spawn_bot with target_space set to the returned space ID, which requires its own one-time approval.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1029,7 +1029,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "spawn_bot",
     description:
-      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
+      "Create a full, regular bot — the same kind the user creates from the + button. It gets its own thread, computer, and memory, and appears as a peer in the bot list. Omit target_space to use this space; otherwise pass the exact name or ID of an active space you can access in this organization. Creating in another space always requires one-time approval and keeps the new bot's data and connections isolated. Do not also call run_subagent. Creating the bot is the whole action. Only set prompt if the user asked that new bot to start work immediately.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1039,6 +1039,12 @@ export const builtinAgentTools: ConnectorTool[] = [
         prompt: {
           type: "string",
           description: "Optional first task to run in the new bot's thread.",
+        },
+        target_space: {
+          type: "string",
+          minLength: 1,
+          description:
+            "Optional active space name or ID in this organization; omit to use this bot's current space.",
         },
         computer_mode: {
           type: "string",

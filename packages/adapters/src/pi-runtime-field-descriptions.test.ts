@@ -120,6 +120,17 @@ describe("string enums keep their allowed values in a plain enum", () => {
     expect(computerMode?.description).toMatch(/dedicated \(Private\)/);
   });
 
+  it("shows the optional spawn_bot target space and validates it as a non-empty string", () => {
+    expect(spawnBot).toBeDefined();
+    const targetSpace = wire(spawnBot!).properties.target_space;
+    expect(targetSpace?.type).toBe("string");
+    expect(targetSpace?.description).toMatch(/space name or ID/i);
+    expect(() =>
+      validate(spawnBot!, { name: "Researcher", target_space: "Research" }),
+    ).not.toThrow();
+    expect(() => validate(spawnBot!, { name: "Researcher", target_space: "" })).toThrow();
+  });
+
   it("still validates spawn_bot's computer_mode through Pi", () => {
     for (const args of [
       { name: "Media Manager" },

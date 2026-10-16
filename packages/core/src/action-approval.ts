@@ -104,8 +104,10 @@ export function toolRequiresApproval(
 }
 
 /** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
-export function toolRequiresExplicitApproval(toolName: string): boolean {
-  return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName);
+export function toolRequiresExplicitApproval(toolName: string, crossSpaceSpawn = false): boolean {
+  return (
+    EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName) || (toolName === "spawn_bot" && crossSpaceSpawn)
+  );
 }
 
 /** External webhook runs may inspect state unattended, but side effects always need the owner. */

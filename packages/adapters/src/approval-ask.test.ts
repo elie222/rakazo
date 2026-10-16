@@ -22,6 +22,24 @@ describe("buildApprovalAskBlock", () => {
     expect(JSON.stringify(block)).not.toContain("token-secret");
   });
 
+  it("requires a one-time approval that names the destination for cross-space bot creation", () => {
+    const block = buildApprovalAskBlock("effect-1", "spawn_bot", { name: "Scout" }, [], {
+      targetSpaceName: "Research",
+    } as never);
+
+    expect(block).toMatchObject({
+      kind: "ask",
+      text: "Create bot “Scout” in “Research”?",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    });
+    if (block.kind !== "ask") throw new Error("expected ask block");
+    expect(block.detail).toContain("Destination: Research");
+    expect(block.actions?.some((action) => action.id === "always")).toBe(false);
+  });
+
   it("bounds model-controlled summaries and details", () => {
     const block = buildApprovalAskBlock(
       "effect-1",

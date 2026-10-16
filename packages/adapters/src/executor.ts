@@ -191,7 +191,7 @@ import {
   browserSnapshotFromTool,
 } from "./browser-tools.js";
 import { agentConnectionTools, builtinAgentTools, sharedMemorySaveError } from "./builtin-tools.js";
-import { archiveSpawnedBot, spawnBot } from "./child-bots.js";
+import { archiveSpawnedBot, resolveSpawnTargetSpace, spawnBot } from "./child-bots.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { cloudAgentsEnabled } from "./cloud-agent-factory.js";
 import { executeCloudAgentTool } from "./cloud-agent-service.js";
@@ -4246,6 +4246,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             }
           }
+          let crossSpaceSpawnTarget: { spaceId: string; name: string } | undefined;
+          if (name === "spawn_bot" && Object.hasOwn(args, "target_space")) {
+            if (typeof args.target_space !== "string") {
+              return { error: "target_space must be a space name or ID." };
+            }
+            const resolved = await resolveSpawnTargetSpace(deps.prisma, {
+              currentSpaceId: run.spaceId,
+              userId: run.userId,
+              targetSpace: args.target_space,
+              idOnly: nextApprovedTool === "spawn_bot",
+            });
+            if ("error" in resolved) return { error: resolved.error };
+            if (resolved.spaceId !== run.spaceId) crossSpaceSpawnTarget = resolved;
+            // Persist and replay the resolved destination by stable ID, not its mutable name.
+            args = { ...args, target_space: resolved.spaceId };
+            effectRequest = args;
+          }
           const viaConnector = !BUILTIN_AGENT_TOOL_NAMES.has(name);
           // Declared effect of the operation this call dispatches (installed API method and
           // flag). Install config is immutable per route resource, so it cannot drift before
@@ -4261,9 +4278,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
           const requiresApprovalByDefault =
             requiresUnattendedApproval ||
-            toolRequiresApproval(name, viaConnector, declaredReadOnly);
+            toolRequiresApproval(name, viaConnector, declaredReadOnly) ||
+            Boolean(crossSpaceSpawnTarget);
           const requiresMandatoryApproval =
-            requiresUnattendedApproval || toolRequiresExplicitApproval(name);
+            requiresUnattendedApproval ||
+            toolRequiresExplicitApproval(name, Boolean(crossSpaceSpawnTarget));
           const connectorKind = connectorKindFromToolName(
             name,
             connectedPlugins.map((plugin) => plugin.provider),
@@ -4534,6 +4553,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               blocks: [
                 buildApprovalAskBlock(applied!.effect.id, name, args, runSecrets, {
                   reviewReason,
+                  ...(crossSpaceSpawnTarget ? { targetSpaceName: crossSpaceSpawnTarget.name } : {}),
                 }),
               ],
             });
@@ -6030,6 +6050,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               title: args.title ? String(args.title) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
+              resolvedTargetSpaceId:
+                typeof args.target_space === "string" ? args.target_space : undefined,
               computerMode,
             });
             if ("error" in spawned) return finish(spawned);
@@ -6041,6 +6063,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   botId: spawned.botId,
                   name: spawned.name,
                   title: spawned.title,
+                  ...(spawned.spaceId ? { spaceId: spawned.spaceId } : {}),
                   status: "created",
                 },
               ]);
@@ -7722,7 +7745,7 @@ function scratchpadClause(disabled?: ReadonlySet<string>): string | undefined {
 function spawnBotClause(disabled?: ReadonlySet<string>): string | undefined {
   if (!builtinOffered(disabled, "spawn_bot")) return undefined;
   const demo = builtinOffered(disabled, "run_subagent") ? " Do not run_subagent to demo it." : "";
-  return `spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop.${demo}`;
+  return `spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. Omit target_space to use this space; otherwise pass the exact name or ID of an active space in this organization that the user can access. If an explicit target is unknown or ambiguous, report the error instead of falling back. Cross-space creation always pauses for explicit one-time approval and cannot be auto-reviewed or always allowed; the new bot keeps its own space's memory, files, tools, and integrations. If the user asked to create a bot, call spawn_bot once and stop.${demo}`;
 }
 
 function offeredBuiltinClause(
@@ -7790,7 +7813,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "create_space",
-      "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
+      "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds. If the user also asked for a bot in that new space, after creation succeeds call spawn_bot with target_space set to the returned space ID; the bot requires a separate explicit approval.",
     ),
     spawnBotClause(parts.disabledBuiltinTools),
     offeredBuiltinClause(

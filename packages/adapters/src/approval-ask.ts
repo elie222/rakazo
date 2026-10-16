@@ -9,17 +9,18 @@ export function buildApprovalAskBlock(
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string },
+  options?: { reviewReason?: string; targetSpaceName?: string },
 ): MessageBlock {
-  const summary = describeApprovalAction(toolName, args);
-  const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
+  const crossSpaceSpawn = toolName === "spawn_bot" && Boolean(options?.targetSpaceName);
+  const summary = describeApprovalAction(toolName, args, options?.targetSpaceName);
+  const detail = formatApprovalDetail(toolName, args, options);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
   return {
     kind: "ask",
     approvalEffectId: effectId,
     text: truncate(
       redactSecrets(
-        toolName === "create_space" ? `${summary}?` : `Review before ${summary}`,
+        toolName === "create_space" || crossSpaceSpawn ? `${summary}?` : `Review before ${summary}`,
         secrets,
       ),
       MAX_APPROVAL_SUMMARY_LENGTH,
@@ -32,15 +33,24 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : [
-            { id: "allow", label: "Allow once" },
-            { id: "always", label: "Always allow this tool" },
-            { id: "deny", label: "Deny" },
-          ],
+        : crossSpaceSpawn
+          ? [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ]
+          : [
+              { id: "allow", label: "Allow once" },
+              { id: "always", label: "Always allow this tool" },
+              { id: "deny", label: "Deny" },
+            ],
   };
 }
 
-function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
+function describeApprovalAction(
+  toolName: string,
+  args: Record<string, unknown>,
+  targetSpaceName?: string,
+): string {
   if (toolName === "destination.write") {
     const collection = args.collection ? String(args.collection) : "records";
     const title = args.title ? ` "${String(args.title)}"` : "";
@@ -54,6 +64,10 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
     const name = args.name ? String(args.name) : "Untitled";
     return `Create space “${name}”`;
   }
+  if (toolName === "spawn_bot" && targetSpaceName) {
+    const name = args.name ? String(args.name) : "Untitled";
+    return `Create bot “${name}” in “${targetSpaceName}”`;
+  }
   const target = pickScopeLabel(args);
   return target ? `${toolName} → ${target}` : toolName;
 }
@@ -61,11 +75,14 @@ function describeApprovalAction(toolName: string, args: Record<string, unknown>)
 function formatApprovalDetail(
   toolName: string,
   args: Record<string, unknown>,
-  reviewReason?: string,
+  options?: { reviewReason?: string; targetSpaceName?: string },
 ): string | undefined {
   const lines: string[] = [];
-  if (reviewReason?.trim()) {
-    lines.push(reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
+  if (options?.reviewReason?.trim()) {
+    lines.push(options.reviewReason.trim().replace(/\u2014|\u2013/g, "-"));
+  }
+  if (toolName === "spawn_bot" && options?.targetSpaceName) {
+    lines.push(`Destination: ${options.targetSpaceName}`);
   }
   if (toolName === "create_space") {
     lines.push(
