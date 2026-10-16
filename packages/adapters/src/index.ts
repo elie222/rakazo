@@ -90,6 +90,7 @@ export * from "./model-selection.js";
 export * from "./model-vision.js";
 export * from "./none-sandbox.js";
 export * from "./openai-compatible-url.js";
+export * from "./openai-compatible-voice.js";
 export * from "./openai-voice.js";
 export * from "./page-browser-session.js";
 export * from "./pi-catalog-availability.js";
