@@ -11,6 +11,7 @@ import {
   MAX_SUPERVISOR_REQUEST_BYTES,
   resolveDockerSocketPath,
   supervisorApp,
+  supervisorFileWriteSchema,
   supervisorRequestBodyLimit,
   waitForScreenReady,
 } from "./index.js";
@@ -220,6 +221,26 @@ describe("sandbox supervisor HTTP boundary", () => {
       expect(response.status).toBe(413);
       await expect(response.json()).resolves.toEqual({ error: "Request body is too large." });
     }
+  });
+
+  it("allows configured uploads through both the file schema and body guard", () => {
+    const limit = 25 * 1024 * 1024;
+    const content = Buffer.alloc(20 * 1024 * 1024).toString("base64");
+    const payload = { path: "attachments/large.txt", content };
+    expect(supervisorFileWriteSchema(limit).safeParse(payload).success).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(
+      supervisorRequestBodyLimit("POST", "/computers/id/files", limit),
+    );
+    expect(supervisorFileWriteSchema().safeParse(payload).success).toBe(false);
+    expect(
+      supervisorFileWriteSchema(limit).safeParse({
+        path: "large.txt",
+        content: "A".repeat(Math.ceil(limit / 3) * 4 + 1),
+      }).success,
+    ).toBe(false);
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/actions", limit)).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
   });
 
   it("keeps the larger file-write allowance scoped to that exact POST route", () => {

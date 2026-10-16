@@ -227,7 +227,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "{count} agents working": "{count} Agents arbeiten",
   "{from} messaged {to}": "{from} hat {to} geschrieben",
   "{name} (max {count} attachments)": "{name} (max. {count} Anhänge)",
-  "{name} (over 10 MiB)": "{name} (über 10 MiB)",
+  "{name} (over {limit})": "{name} (über {limit})",
   "{name} (permission denied)": "{name} (Zugriff verweigert)",
   "{name} (unsupported type)": "{name} (Dateityp nicht unterstützt)",
   "{name} is working": "{name} arbeitet",

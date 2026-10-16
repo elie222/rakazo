@@ -11,6 +11,7 @@ import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
   ATTACHMENT_MAX_BYTES,
+  attachmentSizeLabel,
 } from "@rakazo/contracts";
 import {
   attachmentExtensionForMimeType,
@@ -33,6 +34,7 @@ export async function attachWorkspaceFileToThread(
   deps: {
     prisma: PrismaClient;
     artifacts: ArtifactStore;
+    maxUploadSizeBytes?: number;
   },
   input: {
     spaceId: string;
@@ -54,8 +56,10 @@ export async function attachWorkspaceFileToThread(
   }
   const name = (input.name?.trim() || fileName).slice(0, ARTIFACT_NAME_MAX_LENGTH);
   validateAttachmentMimeType(mimeType);
-  if (input.bytes.byteLength > ATTACHMENT_MAX_BYTES) {
-    throw new Error("file exceeds the 10 MiB attachment limit");
+  if (input.bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
+    throw new Error(
+      `file exceeds the ${attachmentSizeLabel(deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)} attachment limit`,
+    );
   }
 
   const context = {
@@ -114,6 +118,7 @@ export async function materializeCurrentTurnFiles(
   deps: {
     prisma: PrismaClient;
     artifacts: ArtifactStore;
+    maxUploadSizeBytes?: number;
     sandbox: SandboxProvider;
   },
   blocks: MessageBlock[] | undefined,
@@ -149,8 +154,10 @@ export async function materializeCurrentTurnFiles(
     const row = byId.get(block.artifactId);
     if (!row) throw new Error(`Attached file is unavailable: ${block.name}`);
     const bytes = await deps.artifacts.get(row.storageKey, input.context);
-    if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
-      throw new Error(`Attached file exceeds the 10 MiB limit: ${row.name}`);
+    if (bytes.byteLength > (deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)) {
+      throw new Error(
+        `Attached file exceeds the ${attachmentSizeLabel(deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES)} limit: ${row.name}`,
+      );
     }
     const relativePath = `attachments/${row.id}${attachmentExtensionForMimeType(row.mimeType)}`;
     input.markWorkspaceDirty?.();

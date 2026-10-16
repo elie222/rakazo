@@ -1,7 +1,7 @@
 import type { AttachmentMimeType, MessageBlock } from "@rakazo/contracts";
 import {
-  ATTACHMENT_MAX_BASE64_LENGTH,
   ATTACHMENT_MAX_BYTES,
+  attachmentSizeLabel,
   isAllowedAttachmentMimeType,
   isAttachmentImageMimeType,
 } from "@rakazo/contracts";
@@ -32,11 +32,34 @@ function isWellFormedBase64(value: string): boolean {
   return /^[A-Za-z0-9+/]*$/.test(body);
 }
 
-export function decodeAttachmentBase64(contentBase64: string): Uint8Array {
+export function uploadSizeFromEnv(source: { MAX_UPLOAD_SIZE_MB?: string }): number {
+  const value = source.MAX_UPLOAD_SIZE_MB?.trim();
+  if (!value) return ATTACHMENT_MAX_BYTES;
+  const mb = Number(value);
+  // Leave room for base64 expansion and the JSON envelope in the HTTP body guard.
+  if (
+    !/^\d+$/.test(value) ||
+    !Number.isSafeInteger(mb) ||
+    mb <= 0 ||
+    mb > Math.floor(Number.MAX_SAFE_INTEGER / (2 * 1024 * 1024))
+  ) {
+    throw new Error(
+      "MAX_UPLOAD_SIZE_MB must be a positive integer number of MiB within the safe byte range",
+    );
+  }
+  return mb * 1024 * 1024;
+}
+
+export function decodeAttachmentBase64(
+  contentBase64: string,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): Uint8Array {
   const normalized = contentBase64.trim();
   if (!normalized) throw new AttachmentValidationError("Attachment content is empty");
-  if (normalized.length > ATTACHMENT_MAX_BASE64_LENGTH) {
-    throw new AttachmentValidationError("Attachment exceeds the 10 MiB limit");
+  if (normalized.length > Math.ceil(maxBytes / 3) * 4) {
+    throw new AttachmentValidationError(
+      `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
+    );
   }
   if (normalized.length % 4 !== 0 || !isWellFormedBase64(normalized)) {
     throw new AttachmentValidationError("Attachment content is not valid base64");
@@ -48,8 +71,10 @@ export function decodeAttachmentBase64(contentBase64: string): Uint8Array {
     throw new AttachmentValidationError("Attachment content is not valid base64");
   }
   if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
-  if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
-    throw new AttachmentValidationError("Attachment exceeds the 10 MiB limit");
+  if (bytes.byteLength > maxBytes) {
+    throw new AttachmentValidationError(
+      `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
+    );
   }
   return new Uint8Array(bytes);
 }

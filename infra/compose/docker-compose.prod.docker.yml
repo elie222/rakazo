@@ -59,6 +59,7 @@ services:
         max-size: "10m"
         max-file: "3"
     environment:
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       NODE_ENV: production
       DATA_DIR: /data
       SUPERVISOR_HOST: "0.0.0.0"

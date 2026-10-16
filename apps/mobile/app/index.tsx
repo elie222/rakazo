@@ -26,6 +26,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
@@ -43,6 +44,7 @@ import {
   formatActivityRelativeTime,
 } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
+import { readableGutter } from "../lib/adaptive-layout";
 import type {
   MobileBot,
   MobileBotSection,
@@ -442,6 +444,11 @@ function Home() {
       : groups.find((group) => group.id === organizeTarget.id)
     : null;
   const insets = useSafeAreaInsets();
+  // An unfolded or tablet window keeps the inbox in a centred column.
+  const columnInset = readableGutter(
+    useWindowDimensions().width,
+    Math.max(insets.left, insets.right),
+  );
   // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
   const nativeHeader = iosAtLeast(26);
   const navigation = useNavigation();
@@ -900,7 +907,15 @@ function Home() {
   return (
     <View style={styles.screen}>
       {nativeHeader ? null : (
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 8 }]}>
+        <View
+          style={[
+            styles.header,
+            {
+              paddingTop: Math.max(insets.top, 20) + 8,
+              paddingHorizontal: 16 + columnInset,
+            },
+          ]}
+        >
           <View style={styles.circleButton}>
             <HeaderButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
               <Text style={styles.profileInitials}>{initials}</Text>
@@ -978,6 +993,7 @@ function Home() {
         indicatorStyle={appearance === "dark" ? "white" : "black"}
         contentContainerStyle={[
           styles.list,
+          { paddingHorizontal: columnInset },
           // iOS moves the active search bar to the bottom and removes the navigation inset.
           nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
         ]}

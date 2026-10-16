@@ -12,6 +12,17 @@ import {
 } from "./attachments.js";
 
 describe("attachment helpers", () => {
+  it("enforces configured limits before and after base64 decoding", () => {
+    const limit = 1024 * 1024;
+    for (const size of [limit, limit + 1, limit + 3]) {
+      const payload = Buffer.alloc(size).toString("base64");
+      if (size === limit) expect(decodeAttachmentBase64(payload, limit).byteLength).toBe(limit);
+      else expect(() => decodeAttachmentBase64(payload, limit)).toThrow("1 MiB limit");
+    }
+    const larger = Buffer.alloc(11 * limit).toString("base64");
+    expect(decodeAttachmentBase64(larger, 12 * limit).byteLength).toBe(11 * limit);
+    expect(() => decodeAttachmentBase64(larger)).toThrow("10 MiB limit");
+  });
   it("accepts zip archives and rejects unsupported mime types and empty payloads", () => {
     expect(() => validateAttachmentMimeType("application/zip")).not.toThrow();
     expect(() => validateAttachmentMimeType("application/octet-stream")).toThrow(

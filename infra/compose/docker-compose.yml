@@ -21,6 +21,7 @@ services:
       context: ../..
       dockerfile: infra/sandboxes/supervisor/Dockerfile
     environment:
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       DATA_DIR: /data
       SUPERVISOR_HOST: "0.0.0.0"
       SUPERVISOR_PORT: "7091"

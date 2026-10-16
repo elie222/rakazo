@@ -2,7 +2,12 @@ import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactListCursorError, deleteArtifactFamily, listSpaceArtifacts } from "./artifacts.js";
+import {
+  ArtifactListCursorError,
+  createOwnedArtifact,
+  deleteArtifactFamily,
+  listSpaceArtifacts,
+} from "./artifacts.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -373,5 +378,28 @@ describe("deleteArtifactFamily", () => {
       ),
     ).resolves.toEqual({ ok: true });
     expect(client.calls).toEqual(["remove:blob-root", "delete:root"]);
+  });
+});
+
+describe("configured artifact upload limit", () => {
+  it("rejects oversized attachments before storage and accepts uploads above the old cap", async () => {
+    const stored = new Error("reached storage");
+    const put = vi.fn().mockRejectedValue(stored);
+    const deps = {
+      prisma: {} as PrismaClient,
+      artifacts: { put } as unknown as ArtifactStore,
+      maxUploadSizeBytes: 12 * 1024 * 1024,
+    };
+    const upload = (size: number) =>
+      createOwnedArtifact(deps, actor, {
+        botId: "bot-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.alloc(size).toString("base64"),
+      });
+    await expect(upload(deps.maxUploadSizeBytes + 1)).rejects.toThrow("12 MiB limit");
+    expect(put).not.toHaveBeenCalled();
+    await expect(upload(deps.maxUploadSizeBytes)).rejects.toBe(stored);
+    expect(put).toHaveBeenCalledOnce();
   });
 });

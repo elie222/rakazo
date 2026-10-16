@@ -33,6 +33,7 @@ services:
     command: ["pnpm", "--filter", "@rakazo/sandbox-supervisor", "start"]
     user: root
     environment:
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       NODE_ENV: production
       DATA_DIR: /data
       SUPERVISOR_HOST: "0.0.0.0"
@@ -71,6 +72,7 @@ services:
       - -lc
       - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
     environment: &app-environment
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       NODE_ENV: production
       DATABASE_URL: postgres://rakazo:topology-only-password@postgres:5432/rakazo
       DATA_DIR: /data

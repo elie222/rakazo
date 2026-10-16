@@ -294,6 +294,28 @@ Billing stays off, with no paywall, unless `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_
 `STRIPE_PRICE_ID` are all set (see `.env.example`). Setting only some of them stops the API at
 startup.
 
+### Pi tracing
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` on the worker to enable optional OpenTelemetry traces
+(for example, `http://otel-collector:4318`). The OTLP/HTTP exporter appends `/v1/traces`
+to the base endpoint and honors standard `OTEL_EXPORTER_OTLP_HEADERS` (comma-separated
+`key=value` pairs) and `OTEL_SERVICE_NAME` (default `rakazo-worker`). Compose workers
+read these settings from `.env`. With an empty or unset endpoint, no tracing SDK loads
+or initializes. No collector or hosted service is required to run Rakazo.
+
+Traces contain a `rakazo.agent.run` span with `pi.ai.request` model-call spans and
+`pi.agent.tool` steps, including duration, token usage, cost when known, and success/error
+status. Each span carries `rakazo.bot.id`, `rakazo.run.id`, and `rakazo.routine.id`
+when the run belongs to a routine. Helper model calls inherit the same correlation.
+Pi 0.87.1 exposes built-in telemetry through its newer harness; Rakazo’s legacy Agent
+adapter maps its model and tool lifecycle through the same Pi telemetry contract.
+
+Prompt, response, tool arguments and tool results are excluded by default.
+`OTEL_CAPTURE_CONTENT=true` includes them: enable only with a trusted collector and
+appropriate retention/access controls, since this content can contain secrets or personal
+data. Unknown attributes and exception messages/stacks stay excluded. Export is batched,
+best effort, and flushed when the worker shuts down; collector failures do not fail runs.
+
 ### Logging
 
 Backend services write structured logs to stdout. `LOG_LEVEL` is `debug`, `info`, `warn`, `error`,
@@ -877,3 +899,11 @@ The optional marketing site in `apps/www` can be hosted separately.
 ## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
+
+## Upload size
+
+`MAX_UPLOAD_SIZE_MB` sets the per-file chat attachment and computer file transfer limit
+in MiB (1 MiB = 1,048,576 bytes). It defaults to `10` and must be a positive integer.
+Set it in `.env` and restart the API, worker, and Docker supervisor (when used). Web, desktop, and mobile use the
+limit advertised by the server. If a reverse proxy limits request bodies, allow
+room for base64 encoding (about 4/3 of the file size) and the JSON envelope.

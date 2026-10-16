@@ -28,6 +28,7 @@ export async function createOwnedArtifact(
   deps: {
     prisma: PrismaClient;
     artifacts: ArtifactStore;
+    maxUploadSizeBytes?: number;
   },
   actor: Actor,
   input: {
@@ -47,7 +48,7 @@ export async function createOwnedArtifact(
       ? "application/zip"
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
-  const bytes = decodeAttachmentBase64(input.contentBase64);
+  const bytes = decodeAttachmentBase64(input.contentBase64, deps.maxUploadSizeBytes);
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");

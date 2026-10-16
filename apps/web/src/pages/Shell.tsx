@@ -27,8 +27,9 @@ import type {
 } from "@rakazo/contracts";
 import {
   ATTACHMENT_ALLOWED_MIME_TYPES,
-  ATTACHMENT_MAX_BYTES,
   ATTACHMENT_MAX_COUNT,
+  attachmentMaxBytes,
+  attachmentSizeLabel,
   canReactToThreadMessage,
   MESSAGE_REACTIONS,
   normalizeCreateBotProfile,
@@ -2111,8 +2112,10 @@ export function ShellPage() {
           skipped.push(t`${file.name} (max ${ATTACHMENT_MAX_COUNT} attachments)`);
           continue;
         }
-        if (file.size > ATTACHMENT_MAX_BYTES) {
-          skipped.push(t`${file.name} (over 10 MiB)`);
+        if (file.size > attachmentMaxBytes(bootstrapMe)) {
+          skipped.push(
+            t`${file.name} (over ${attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))})`,
+          );
           continue;
         }
         const mimeType = inferAttachmentMimeType(file.name, file.type);
@@ -2132,7 +2135,7 @@ export function ShellPage() {
       if (fileInputRef.current) fileInputRef.current.value = "";
       return next.length > 0;
     },
-    [pendingAttachments, t],
+    [pendingAttachments, bootstrapMe, t],
   );
   const removeAttachment = useCallback((attachment: PendingAttachment) => {
     revokePendingAttachmentPreviews([attachment]);

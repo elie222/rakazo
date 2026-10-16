@@ -219,6 +219,7 @@ describe("billing", () => {
 describe("model setup gate", () => {
   function modelGateDeps(options: {
     agentRuntime: string;
+    maxUploadSizeBytes?: number;
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
@@ -246,6 +247,7 @@ describe("model setup gate", () => {
       prisma,
       env: {
         agentRuntime: options.agentRuntime,
+        maxUploadSizeBytes: options.maxUploadSizeBytes,
         defaultProvider: "openrouter",
         defaultModel: "test-model",
         deploymentModelConfigured: options.deploymentModelConfigured,
@@ -276,6 +278,18 @@ describe("model setup gate", () => {
     );
     return response;
   }
+
+  it.each([undefined, 25 * 1024 * 1024])(
+    "advertises the effective upload limit in me (%s)",
+    async (maxUploadSizeBytes) => {
+      const { actor, handler } = modelGateDeps({ agentRuntime: "scripted", maxUploadSizeBytes });
+      const response = await call(handler, actor, "me", null);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        json: { maxUploadSizeBytes: maxUploadSizeBytes ?? 10 * 1024 * 1024 },
+      });
+    },
+  );
 
   it("refuses to start a run when no model is configured", async () => {
     const { actor, handler } = modelGateDeps({ agentRuntime: "pi" });
@@ -1524,7 +1538,7 @@ describe("computer terminal and file transfer", () => {
     controlBotId: "bot-1",
   };
 
-  function setup(computer: Record<string, unknown> = {}) {
+  function setup(computer: Record<string, unknown> = {}, maxUploadSizeBytes?: number) {
     const sandbox = {
       execute: vi.fn(async function* () {
         yield { type: "exit" as const, code: 0 };
@@ -1567,6 +1581,7 @@ describe("computer terminal and file transfer", () => {
       sandbox,
       jobs: { enqueue: vi.fn().mockResolvedValue(undefined) },
       env: {
+        maxUploadSizeBytes,
         webOrigin: "http://127.0.0.1:5173",
         screenProxySecret: "fake-test-secret",
         sandboxProvider: "docker",
@@ -1707,6 +1722,34 @@ describe("computer terminal and file transfer", () => {
       body: { json: { url: null } },
     });
     expect(sandbox.connectTerminal).not.toHaveBeenCalled();
+  });
+
+  it("enforces the configured computer upload limit and advertises it to the sandbox", async () => {
+    const limit = 1024 * 1024;
+    const { call, sandbox } = setup(controlled, limit);
+    await expect(
+      call("uploadFile", {
+        path: "notes.txt",
+        contentBase64: Buffer.alloc(limit + 1).toString("base64"),
+      }),
+    ).resolves.toMatchObject({
+      status: 400,
+      body: { json: { message: "File exceeds the 1 MiB upload limit." } },
+    });
+    expect(sandbox.writeFile).not.toHaveBeenCalled();
+    await expect(
+      call("uploadFile", {
+        path: "notes.txt",
+        contentBase64: Buffer.alloc(limit).toString("base64"),
+      }),
+    ).resolves.toMatchObject({ status: 200 });
+    await call("downloadFile", { path: "notes.txt" });
+    expect(sandbox.readFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { maxBytes: limit },
+    );
   });
 
   it("uploads into the bot workspace only under control", async () => {

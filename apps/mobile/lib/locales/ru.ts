@@ -666,7 +666,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Settings: Usage": "Настройки: Использование",
   "Skipped {items}": "Пропущен {items}",
   "{name} (max {count} attachments)": "{name} (не более {count} вложений)",
-  "{name} (over 10 MiB)": "{name} (более 10 МБ)",
+  "{name} (over {limit})": "{name} (более {limit})",
   "{name} (permission denied)": "{name} (в разрешении отказано)",
   "{name} (unsupported type)": "{name} (неподдерживаемый тип)",
   "Saved {name} locally": "{name} сохранен локально.",

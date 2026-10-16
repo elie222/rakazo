@@ -32,8 +32,10 @@ import {
   historyCompactJob,
   MEMORY_REVISION_CONFLICT_ERROR,
   routineJobKey,
+  routineRetryJob,
   routineWakeupJob,
   runContinueJob,
+  TransientModelError,
 } from "@rakazo/adapter-kit";
 import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
 import {
@@ -2630,6 +2632,10 @@ export function desktopProtectionGuardMessage(reason: string): string {
 
 /** Cap the roster so a large Space cannot flood the prompt. */
 const BOT_DIRECTORY_LIMIT = 40;
+/** A routine run stopped by a transient model error gets one more try this much later. */
+const ROUTINE_RETRY_DELAY_MS = 12 * 60_000;
+/** The retry is skipped when the routine's next occurrence is this close; that run covers it. */
+const ROUTINE_RETRY_NEXT_RUN_WINDOW_MS = 30 * 60_000;
 const MISSING_MODEL_MESSAGE = "Connect a model in Settings before running bots.";
 
 function runtimeFallbackModel(runtime: AgentRuntime) {
@@ -2637,6 +2643,7 @@ function runtimeFallbackModel(runtime: AgentRuntime) {
 }
 
 export interface ExecutorDeps {
+  maxUploadSizeBytes?: number;
   contextStrategy?: AgentContextStrategy;
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -3243,6 +3250,176 @@ export function createRunExecutor(deps: ExecutorDeps) {
       }
     },
 
+    async notifyRoutineRetryAttemptsExhausted(runId: string) {
+      const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
+      if (
+        !failed?.routineId ||
+        failed.trigger !== "routine" ||
+        failed.status !== "failed" ||
+        failed.retryOfRunId
+      ) {
+        return;
+      }
+      const supersedingRun = await deps.prisma.run.findFirst({
+        where: {
+          OR: [
+            { retryOfRunId: failed.id },
+            { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (supersedingRun) return;
+      await notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+    },
+
+    async retryRoutineRun(runId: string) {
+      const failed = await deps.prisma.run.findUnique({ where: { id: runId } });
+      if (
+        !failed?.routineId ||
+        failed.trigger !== "routine" ||
+        failed.status !== "failed" ||
+        failed.retryOfRunId
+      ) {
+        return;
+      }
+      const routine = await deps.prisma.routine.findUnique({
+        where: { id: failed.routineId },
+        select: {
+          active: true,
+          crons: true,
+          nextRunAt: true,
+          bot: { select: { archivedAt: true } },
+        },
+      });
+      const laterRun = await deps.prisma.run.findFirst({
+        where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
+        select: { id: true },
+      });
+      if (laterRun) return;
+      const notifyAbandonedRetry = () =>
+        notifyFailedRoutineRun(deps, failed, { retryOnFailure: true });
+      if (routine && routineNextRunIsNear(routine.nextRunAt, Date.now())) {
+        await notifyAbandonedRetry();
+        return;
+      }
+      // A one-time routine turns itself off when it fires, so only a recurring one counts as paused.
+      if (
+        !routine ||
+        (!routine.active && !isOneShotRoutineCrons(routine.crons)) ||
+        routine.bot.archivedAt
+      ) {
+        await notifyAbandonedRetry();
+        return;
+      }
+      const task = await deps.prisma.task.findUnique({
+        where: { id: failed.taskId },
+        select: { prompt: true },
+      });
+      if (!task) {
+        await notifyAbandonedRetry();
+        return;
+      }
+      let retry: { id: string; taskId: string } | null;
+      try {
+        retry = await deps.prisma.$transaction(async (tx) => {
+          // Claim the still-eligible routine without changing its state. One-shot routines
+          // may already be inactive; match their crons so an edit cannot revive a paused routine.
+          const claimed = await tx.routine.updateMany({
+            where: {
+              id: failed.routineId!,
+              active: routine.active,
+              ...(!routine.active ? { crons: { equals: routine.crons } } : {}),
+              bot: { archivedAt: null },
+            },
+            data: { active: routine.active },
+          });
+          if (claimed.count !== 1) return null;
+          const laterRun = await tx.run.findFirst({
+            where: { routineId: failed.routineId!, createdAt: { gt: failed.createdAt } },
+            select: { id: true },
+          });
+          if (laterRun) return null;
+          const targetThread = await tx.thread.findFirst({
+            where: {
+              id: failed.threadId,
+              spaceId: failed.spaceId,
+              OR: [
+                { botId: failed.botId },
+                {
+                  group: {
+                    archivedAt: null,
+                    members: { some: { botId: failed.botId } },
+                  },
+                },
+              ],
+            },
+            select: { id: true },
+          });
+          if (!targetThread) return null;
+          const retryTask = await tx.task.create({
+            data: {
+              spaceId: failed.spaceId,
+              botId: failed.botId,
+              threadId: failed.threadId,
+              userId: failed.userId,
+              prompt: task.prompt,
+              status: "queued",
+            },
+          });
+          return tx.run.create({
+            data: {
+              spaceId: failed.spaceId,
+              botId: failed.botId,
+              threadId: failed.threadId,
+              taskId: retryTask.id,
+              userId: failed.userId,
+              status: "queued",
+              trigger: "routine",
+              routineId: failed.routineId,
+              retryOfRunId: failed.id,
+              ...(failed.modelPinned
+                ? {
+                    modelProvider: failed.modelProvider,
+                    modelId: failed.modelId,
+                    thinkingLevel: failed.thinkingLevel,
+                    modelPinned: true,
+                  }
+                : {}),
+            },
+          });
+        });
+      } catch (error) {
+        // retryOfRunId is unique: another delivery of this job already queued the retry.
+        if (isUniqueViolation(error)) return;
+        throw error;
+      }
+      if (!retry) {
+        const laterRun = await deps.prisma.run.findFirst({
+          where: { routineId: failed.routineId, createdAt: { gt: failed.createdAt } },
+          select: { id: true },
+        });
+        if (laterRun) return;
+        await notifyAbandonedRetry();
+        return;
+      }
+      try {
+        await deps.jobs.enqueue(runContinueJob(retry.id));
+      } catch (error) {
+        // Remove the retry so the job queue's own retry of this job can queue it again.
+        const queuedRetry = retry;
+        await deps.prisma.$transaction(async (tx) => {
+          const removed = await tx.run.deleteMany({
+            where: { id: queuedRetry.id, status: "queued" },
+          });
+          if (removed.count === 1) {
+            await tx.task.deleteMany({ where: { id: queuedRetry.taskId, status: "queued" } });
+          }
+        });
+        throw error;
+      }
+    },
+
     async continueRun(runId: string, workerId: string) {
       const run = await deps.prisma.run.findUnique({ where: { id: runId } });
       if (!run) return;
@@ -3772,6 +3949,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 {
                   prisma: deps.prisma,
                   artifacts: deps.artifacts,
+                  maxUploadSizeBytes: deps.maxUploadSizeBytes,
                   sandbox: deps.sandbox,
                 },
                 turnBlocks,
@@ -4856,7 +5034,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   computer,
                   resolveBotWorkspacePath(computerMode, bot.id, dataPath),
                   context,
-                  { maxBytes: ATTACHMENT_MAX_BYTES },
+                  { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
                 );
                 rows = parsePlotData(dataPath, new TextDecoder().decode(bytes));
               }
@@ -4904,7 +5082,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 attached = true;
               } else if (args.attach !== false && deps.artifacts) {
                 const result = await attachWorkspaceFileToThread(
-                  { prisma: deps.prisma, artifacts: deps.artifacts },
+                  {
+                    prisma: deps.prisma,
+                    artifacts: deps.artifacts,
+                    maxUploadSizeBytes: deps.maxUploadSizeBytes,
+                  },
                   {
                     spaceId: run.spaceId,
                     userId: run.userId,
@@ -4939,7 +5121,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             let bytes: Uint8Array;
             try {
               bytes = await deps.sandbox.readFile(computer, storedPath, context, {
-                maxBytes: ATTACHMENT_MAX_BYTES,
+                maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
               });
             } catch {
               return failAttach("file not found or unreadable");
@@ -4948,7 +5130,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!mimeType) return failAttach("unsupported attachment type");
             try {
               const attached = await attachWorkspaceFileToThread(
-                { prisma: deps.prisma, artifacts: deps.artifacts },
+                {
+                  prisma: deps.prisma,
+                  artifacts: deps.artifacts,
+                  maxUploadSizeBytes: deps.maxUploadSizeBytes,
+                },
                 {
                   spaceId: run.spaceId,
                   userId: run.userId,
@@ -6541,6 +6727,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               botId: bot.id,
               threadId: thread.id,
               runId,
+              routineId: run.routineId,
               sourceMessageId: run.sourceMessageId,
               onUsage: async (event) => {
                 await recordUsage(deps.prisma, event, {
@@ -6687,6 +6874,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                                   {
                                     prisma: deps.prisma,
                                     artifacts: deps.artifacts,
+                                    maxUploadSizeBytes: deps.maxUploadSizeBytes,
                                     sandbox: deps.sandbox,
                                   },
                                   item.blocks,
@@ -7273,7 +7461,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               { forceUnread: true },
             ).catch((returnError) => getLogger().error("bot message failure return", returnError));
           }
-          if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId) {
+          const retrying =
+            !failed.continuationRunId && (await scheduleRoutineRetry(deps, run, error));
+          if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {
             await notifyRun(deps, run, {
               kind: "failure",
               title: `${bot.name} failed`,
@@ -7438,7 +7628,12 @@ export async function runNotificationsEnabled(
 async function runNotice(
   prisma: PrismaClient,
   run: { spaceId: string; userId: string; botId: string; threadId: string },
+  routineId?: string | null,
 ): Promise<{ enabled: boolean; groupId: string | null }> {
+  // A routine carries its own notify setting, which decides on its failures.
+  const routine = routineId
+    ? await prisma.routine.findUnique({ where: { id: routineId }, select: { notify: true } })
+    : null;
   const source = await prisma.run.findFirst({
     where: {
       botId: run.botId,
@@ -7453,22 +7648,105 @@ async function runNotice(
   });
   if (!source) return { enabled: false, groupId: null };
   return {
-    enabled: Boolean(source.thread.groupId || source.bot.notifyOnFinish),
+    enabled: routine ? routine.notify : Boolean(source.thread.groupId || source.bot.notifyOnFinish),
     groupId: source.thread.groupId,
   };
 }
 
+function routineNextRunIsNear(nextRunAt: Date | null, retryAt: number): boolean {
+  return Boolean(nextRunAt && nextRunAt.getTime() - retryAt <= ROUTINE_RETRY_NEXT_RUN_WINDOW_MS);
+}
+
+/**
+ * Queue one later retry of a routine run that a transient model error stopped before it posted
+ * a message or called a tool. Effects are keyed to their run, so a retry after either could
+ * repeat them. Returns whether a retry was queued.
+ */
+async function scheduleRoutineRetry(
+  deps: ExecutorDeps,
+  run: {
+    id: string;
+    threadId: string;
+    trigger: string;
+    routineId: string | null;
+    retryOfRunId: string | null;
+  },
+  error: unknown,
+): Promise<boolean> {
+  if (
+    run.trigger !== "routine" ||
+    !run.routineId ||
+    run.retryOfRunId ||
+    !(error instanceof TransientModelError)
+  ) {
+    return false;
+  }
+  try {
+    const retryAt = Date.now() + ROUTINE_RETRY_DELAY_MS;
+    const [routine, toolCalls, botMessages] = await Promise.all([
+      deps.prisma.routine.findUnique({
+        where: { id: run.routineId },
+        select: { nextRunAt: true },
+      }),
+      deps.prisma.event.count({ where: { runId: run.id, type: "agent.tool.called" } }),
+      deps.prisma.message.count({
+        where: { threadId: run.threadId, runId: run.id, role: "bot" },
+      }),
+    ]);
+    if (!routine || toolCalls > 0 || botMessages > 0) return false;
+    if (routineNextRunIsNear(routine.nextRunAt, retryAt)) return false;
+    await deps.jobs.enqueue(routineRetryJob(run.id, new Date(retryAt)));
+    return true;
+  } catch (scheduleError) {
+    getLogger().error("routine retry schedule", scheduleError);
+    return false;
+  }
+}
+
+async function notifyFailedRoutineRun(
+  deps: ExecutorDeps,
+  failed: Parameters<typeof notifyRun>[1] & { error: string | null },
+  options: { retryOnFailure?: boolean } = {},
+) {
+  const bot = await deps.prisma.bot.findUniqueOrThrow({
+    where: { id: failed.botId },
+    select: { name: true },
+  });
+  await notifyRun(
+    deps,
+    failed,
+    {
+      kind: "failure",
+      title: `${bot.name} failed`,
+      body: (failed.error ?? "").slice(0, 180),
+      botId: failed.botId,
+      threadId: failed.threadId,
+    },
+    options,
+  );
+}
+
 async function notifyRun(
   deps: ExecutorDeps,
-  run: { spaceId: string; userId: string; botId: string; threadId: string; trigger: string },
+  run: {
+    spaceId: string;
+    userId: string;
+    botId: string;
+    threadId: string;
+    trigger: string;
+    routineId?: string | null;
+  },
   message: NotificationMessage,
+  options: { retryOnFailure?: boolean } = {},
 ) {
   if (
     !deps.notifications ||
     (isBackgroundRunTrigger(run.trigger) && message.kind !== "help" && message.kind !== "takeover")
   )
     return;
-  const notice = await runNotice(deps.prisma, run).catch((error) => {
+  const routineId = message.kind === "failure" ? run.routineId : null;
+  const notice = await runNotice(deps.prisma, run, routineId).catch((error) => {
+    if (options.retryOnFailure) throw error;
     getLogger().error("notification preference lookup", error);
     return null;
   });
@@ -7483,6 +7761,7 @@ async function notifyRun(
       signal: new AbortController().signal,
     })
     .catch((error) => {
+      if (options.retryOnFailure) throw error;
       getLogger().error("run notification", error);
     });
 }

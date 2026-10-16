@@ -452,6 +452,7 @@ export interface AgentRunRequest {
   botId: string;
   threadId: string;
   runId: string;
+  routineId?: string | null;
   sourceMessageId?: string | null;
   prompt: string;
   instructions: string;
@@ -629,6 +630,8 @@ export interface VoiceTranscribeRequest {
 export interface BackgroundJobPayloads {
   "run.continue": { runId: string };
   "routine.wakeup": { routineId: string; scheduledFor: string };
+  /** Run a failed routine run once more; the payload names the failed run. */
+  "routine.retry": { runId: string };
   "computer.sleep": { computerId: string };
   "computer.update": { updateId: string };
   "computer.control-expire": { computerId: string; leaseId: string };

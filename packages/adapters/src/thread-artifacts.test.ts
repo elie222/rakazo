@@ -14,6 +14,57 @@ import {
 } from "./thread-artifacts.js";
 
 describe("current-turn thread files", () => {
+  it("materializes uploads above 10 MiB when allowed by the server", async () => {
+    const bytes = new Uint8Array(11 * 1024 * 1024);
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "file-1",
+              storageKey: "stored-1",
+              name: "notes.txt",
+              mimeType: "text/plain",
+              size: bytes.length,
+            },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: { get: vi.fn().mockResolvedValue(bytes) } as unknown as ArtifactStore,
+      sandbox: { writeFile } as unknown as SandboxProvider,
+      maxUploadSizeBytes: 12 * 1024 * 1024,
+    };
+    const blocks: MessageBlock[] = [
+      {
+        kind: "file",
+        artifactId: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        size: bytes.length,
+      },
+    ];
+    const input = {
+      context: {
+        operationId: "run-1",
+        traceId: "run-1",
+        spaceId: "space-1",
+        userId: "user-1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      },
+      computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef,
+      computerMode: "team" as const,
+    };
+    await expect(materializeCurrentTurnFiles(deps, blocks, input)).resolves.toHaveLength(1);
+    expect(writeFile).toHaveBeenCalledOnce();
+    writeFile.mockClear();
+    await expect(
+      materializeCurrentTurnFiles({ ...deps, maxUploadSizeBytes: 2 * 1024 * 1024 }, blocks, input),
+    ).rejects.toThrow("2 MiB limit");
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
   it("removes stored bytes when artifact metadata cannot be created", async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const failure = new Error("database unavailable");
