@@ -352,7 +352,8 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 ### OpenAI-compatible voice (local TTS)
 
 Settings → Voice includes an **OpenAI-compatible** provider for speak-only TTS against a local
-gateway such as Voice Studio (`POST /v1/audio/speech`). Paste the gateway Bearer token in Voice
+gateway such as Voice Studio (`POST /v1/audio/speech`). The provider appears only when
+`RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL` is set; there is no default address. Paste the gateway Bearer token in Voice
 settings. Point the API/worker at the server with:
 
 ```env

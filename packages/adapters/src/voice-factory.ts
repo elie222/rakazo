@@ -5,6 +5,7 @@ import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
 import {
   OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
   OpenAICompatibleVoiceProvider,
+  VOICE_OPENAI_COMPAT_BASE_URL_ENV,
 } from "./openai-compatible-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
@@ -37,8 +38,7 @@ export const VOICE_CATALOG = [
   {
     id: OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
     name: "OpenAI-compatible",
-    description:
-      "Local or self-hosted TTS via POST /v1/audio/speech. Set RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL.",
+    description: "Speech from your configured server.",
     transcribe: false,
   },
 ] as const;
@@ -53,9 +53,12 @@ export function scriptedVoiceEnabled() {
 }
 
 export function listVoiceCatalog() {
-  return scriptedVoiceEnabled()
-    ? [...VOICE_CATALOG, SCRIPTED_VOICE_CATALOG_ENTRY]
-    : [...VOICE_CATALOG];
+  const catalog = VOICE_CATALOG.filter(
+    (entry) =>
+      entry.id !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID ||
+      Boolean(process.env[VOICE_OPENAI_COMPAT_BASE_URL_ENV]?.trim()),
+  );
+  return scriptedVoiceEnabled() ? [...catalog, SCRIPTED_VOICE_CATALOG_ENTRY] : catalog;
 }
 
 export function voiceCatalogEntry(id: string) {
@@ -65,7 +68,7 @@ export function voiceCatalogEntry(id: string) {
 
 export function isVoiceProviderId(value: string): value is VoiceProviderId {
   if (value === "scripted") return scriptedVoiceEnabled();
-  return VOICE_CATALOG.some((entry) => entry.id === value);
+  return listVoiceCatalog().some((entry) => entry.id === value);
 }
 
 /** Construct the provider adapter selected by a persisted voice credential. */
@@ -80,6 +83,7 @@ export function createVoiceProvider(kind: string): VoiceProvider {
     case "fish-audio":
       return new FishAudioVoiceProvider();
     case OPENAI_COMPATIBLE_VOICE_PROVIDER_ID:
+      if (!isVoiceProviderId(kind)) break;
       return new OpenAICompatibleVoiceProvider();
     case "scripted":
       if (!scriptedVoiceEnabled()) break;

@@ -31,12 +31,6 @@ export const VOICE_OPENAI_COMPAT_BASE_URL_ENV = "RAKAZO_VOICE_OPENAI_COMPAT_BASE
 /** Optional TTS model id when the gateway expects one (default tts-1). */
 export const VOICE_OPENAI_COMPAT_TTS_MODEL_ENV = "RAKAZO_VOICE_OPENAI_COMPAT_TTS_MODEL";
 
-/**
- * Default points at a Voice Studio (or similar) on the Docker host.
- * Containers need host.docker.internal (Docker Desktop) or extra_hosts / a LAN IP.
- */
-export const DEFAULT_VOICE_OPENAI_COMPAT_BASE_URL = "http://host.docker.internal:3900";
-
 const DEFAULT_TTS_MODEL = "tts-1";
 
 /** Same static set as hosted OpenAI TTS so local gateways that accept those ids work out of the box. */
@@ -57,16 +51,17 @@ const COMPAT_VOICES: VoiceInfo[] = [
 export function resolveVoiceOpenAiCompatBaseUrl(
   raw: string | undefined = process.env[VOICE_OPENAI_COMPAT_BASE_URL_ENV],
 ): string {
-  const source = (raw ?? "").trim() || DEFAULT_VOICE_OPENAI_COMPAT_BASE_URL;
+  const source = raw?.trim();
+  if (!source) throw new Error("OpenAI-compatible voice server is not configured.");
   return normalizeOpenAiCompatibleBaseUrl(source);
 }
 
 function resolveTtsModel(requestModel: string | undefined): string {
-  const fromRequest = requestModel?.trim();
-  if (fromRequest && /^[A-Za-z0-9._:-]+$/.test(fromRequest)) return fromRequest;
-  const fromEnv = process.env[VOICE_OPENAI_COMPAT_TTS_MODEL_ENV]?.trim();
-  if (fromEnv && /^[A-Za-z0-9._:-]+$/.test(fromEnv)) return fromEnv;
-  return DEFAULT_TTS_MODEL;
+  return (
+    requestModel?.trim() ||
+    process.env[VOICE_OPENAI_COMPAT_TTS_MODEL_ENV]?.trim() ||
+    DEFAULT_TTS_MODEL
+  );
 }
 
 function speechApiRoot(apiKey: string | undefined | null): string {
@@ -105,6 +100,7 @@ export class OpenAICompatibleVoiceProvider implements VoiceProvider {
     try {
       const res = await fetch(`${base}/models`, {
         headers: { authorization: `Bearer ${apiKey}` },
+        redirect: "error",
         signal: voiceDeadline(context.signal, 20_000),
       });
       if (res.ok || res.status === 404 || res.status === 405) return { ok: true };
@@ -134,6 +130,7 @@ export class OpenAICompatibleVoiceProvider implements VoiceProvider {
     const signal = voiceDeadline(request.signal ?? context.signal, 60_000);
     const res = await fetch(`${base}/audio/speech`, {
       method: "POST",
+      redirect: "error",
       headers: {
         authorization: `Bearer ${request.apiKey}`,
         "content-type": "application/json",

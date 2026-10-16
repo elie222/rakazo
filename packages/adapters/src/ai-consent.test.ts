@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { aiRecipient } from "./ai-consent.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+});
 
 describe("mobile AI recipient disclosure", () => {
   it("identifies both gateways without querying or changing their routing", () => {
@@ -38,6 +41,26 @@ describe("mobile AI recipient disclosure", () => {
         baseUrl: "https://example.com/other",
       })?.key,
     ).not.toBe(recipient.key);
+  });
+  it("names the voice server and requires fresh consent when its endpoint changes", () => {
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "http://127.0.0.1:3900/private?token=secret");
+    const recipient = aiRecipient({ provider: "openai-compatible", use: "voice" })!;
+    expect(recipient.name).toBe("OpenAI-compatible (http://127.0.0.1:3900)");
+    expect(JSON.stringify(recipient)).not.toMatch(/private|token|secret/);
+    expect(recipient.privacyUrl).toBeUndefined();
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "http://127.0.0.1:4000");
+    expect(aiRecipient({ provider: "openai-compatible", use: "voice" })?.key).not.toBe(
+      recipient.key,
+    );
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "http://127.0.0.1:3900/other");
+    expect(aiRecipient({ provider: "openai-compatible", use: "voice" })?.key).not.toBe(
+      recipient.key,
+    );
+  });
+  it("omits a removed voice server without breaking other disclosures", () => {
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "");
+    expect(aiRecipient({ provider: "openai-compatible", use: "voice" })).toBeNull();
+    expect(aiRecipient({ provider: "openai", use: "voice" })?.name).toBe("OpenAI");
   });
   it("supports local models without a hosted dependency", () => {
     const fetch = vi.fn();
