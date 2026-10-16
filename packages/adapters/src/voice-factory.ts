@@ -2,6 +2,11 @@ import type { VoiceProvider } from "@rakazo/adapter-kit";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
 import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
+import {
+  OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
+  OpenAICompatibleVoiceProvider,
+  VOICE_OPENAI_COMPAT_BASE_URL_ENV,
+} from "./openai-compatible-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
 
@@ -30,6 +35,12 @@ export const VOICE_CATALOG = [
     description: "Voice models, cloning, and expressive speech with optional transcription.",
     transcribe: true,
   },
+  {
+    id: OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
+    name: "OpenAI-compatible",
+    description: "Speech from your configured server.",
+    transcribe: false,
+  },
 ] as const;
 
 export { SCRIPTED_VOICE_CATALOG_ENTRY };
@@ -42,9 +53,12 @@ export function scriptedVoiceEnabled() {
 }
 
 export function listVoiceCatalog() {
-  return scriptedVoiceEnabled()
-    ? [...VOICE_CATALOG, SCRIPTED_VOICE_CATALOG_ENTRY]
-    : [...VOICE_CATALOG];
+  const catalog = VOICE_CATALOG.filter(
+    (entry) =>
+      entry.id !== OPENAI_COMPATIBLE_VOICE_PROVIDER_ID ||
+      Boolean(process.env[VOICE_OPENAI_COMPAT_BASE_URL_ENV]?.trim()),
+  );
+  return scriptedVoiceEnabled() ? [...catalog, SCRIPTED_VOICE_CATALOG_ENTRY] : catalog;
 }
 
 export function voiceCatalogEntry(id: string) {
@@ -54,7 +68,7 @@ export function voiceCatalogEntry(id: string) {
 
 export function isVoiceProviderId(value: string): value is VoiceProviderId {
   if (value === "scripted") return scriptedVoiceEnabled();
-  return VOICE_CATALOG.some((entry) => entry.id === value);
+  return listVoiceCatalog().some((entry) => entry.id === value);
 }
 
 /** Construct the provider adapter selected by a persisted voice credential. */
@@ -68,6 +82,9 @@ export function createVoiceProvider(kind: string): VoiceProvider {
       return new CartesiaVoiceProvider();
     case "fish-audio":
       return new FishAudioVoiceProvider();
+    case OPENAI_COMPATIBLE_VOICE_PROVIDER_ID:
+      if (!isVoiceProviderId(kind)) break;
+      return new OpenAICompatibleVoiceProvider();
     case "scripted":
       if (!scriptedVoiceEnabled()) break;
       return new ScriptedVoiceProvider();
@@ -75,7 +92,7 @@ export function createVoiceProvider(kind: string): VoiceProvider {
       break;
   }
   throw new Error(
-    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio.`,
+    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio | openai-compatible.`,
   );
 }
 

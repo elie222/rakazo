@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import type { AiDataUse, AiRecipient } from "@rakazo/contracts";
+import {
+  OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
+  resolveVoiceOpenAiCompatBaseUrl,
+  VOICE_OPENAI_COMPAT_BASE_URL_ENV,
+} from "./openai-compatible-voice.js";
 import { localBaseUrl } from "./pi-local-provider.js";
 import { listPiCatalog } from "./pi-models.js";
 import { voiceCatalogEntry } from "./voice-factory.js";
@@ -26,7 +31,16 @@ export function aiRecipient(input: {
   baseUrl?: string;
 }): Omit<AiRecipient, "allowed"> | null {
   if (input.provider === "scripted") return null;
-  const endpoint = input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined);
+  let endpoint = input.baseUrl ?? (input.provider === "local" ? localBaseUrl() : undefined);
+  if (input.use === "voice" && input.provider === OPENAI_COMPATIBLE_VOICE_PROVIDER_ID) {
+    if (!process.env[VOICE_OPENAI_COMPAT_BASE_URL_ENV]?.trim()) return null;
+    try {
+      endpoint = resolveVoiceOpenAiCompatBaseUrl();
+    } catch {
+      // Voice verification reports configuration errors; keep other recipients available.
+      return null;
+    }
+  }
   const origin = endpoint ? new URL(endpoint).origin : undefined;
   const name = recipientName(input.provider, input.use);
   // Bind custom connections to the full endpoint without exposing private URL components.

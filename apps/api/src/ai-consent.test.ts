@@ -1,6 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION } from "@rakazo/contracts";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./thread-target.js", () => ({
   resolveThreadTarget: async () => ({ kind: "bot", botId: "bot" }),
@@ -32,7 +32,35 @@ function setup() {
   } as unknown as RouterDeps;
   return { deps, upsert, actor: { userId: "user", spaceId: "space" } as Actor };
 }
+afterEach(() => vi.unstubAllEnvs());
+
 describe("consent grants", () => {
+  it("discloses the configured local voice address through the consent API", async () => {
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "http://127.0.0.1:3900");
+    const { deps, actor } = setup();
+    vi.mocked(deps.prisma.spaceVoicePreference.findFirst).mockResolvedValue({
+      credential: { provider: "openai-compatible" },
+      voiceId: "alloy",
+    } as never);
+    const status = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+    expect(status.recipients).toEqual([
+      expect.objectContaining({
+        name: "OpenAI-compatible (http://127.0.0.1:3900)",
+        use: "voice",
+        allowed: false,
+      }),
+    ]);
+  });
+  it("keeps other consent recipients available with a malformed voice URL", async () => {
+    vi.stubEnv("RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL", "not a URL");
+    const { deps, actor } = setup();
+    vi.mocked(deps.prisma.spaceVoicePreference.findMany).mockResolvedValue([
+      { credential: { provider: "openai-compatible" } },
+      { credential: { provider: "openai" } },
+    ] as never);
+    const status = await aiConsentStatus(deps, actor);
+    expect(status.recipients).toEqual([expect.objectContaining({ name: "OpenAI", use: "voice" })]);
+  });
   it("includes reachable helper models and cloud services for a targeted send", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";

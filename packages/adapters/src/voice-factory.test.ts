@@ -3,6 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
 import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
+import {
+  OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
+  OpenAICompatibleVoiceProvider,
+  VOICE_OPENAI_COMPAT_BASE_URL_ENV,
+  VOICE_OPENAI_COMPAT_TTS_MODEL_ENV,
+} from "./openai-compatible-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import {
   SCRIPTED_MPEG,
@@ -39,27 +45,39 @@ afterEach(() => {
 describe("createVoiceProvider", () => {
   it("exposes the hosted catalog behind one factory", () => {
     process.env.AGENT_RUNTIME = "pi";
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
     expect(VOICE_CATALOG.map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",
       "fish-audio",
+      "openai-compatible",
     ]);
     expect(listVoiceCatalog().map((entry) => entry.id)).toEqual([
       "elevenlabs",
       "openai",
       "cartesia",
       "fish-audio",
+      "openai-compatible",
     ]);
     expect(createVoiceProvider("elevenlabs").describe().id).toBe("elevenlabs");
     expect(createVoiceProvider("openai").describe().capabilities.transcribe).toBe(true);
     expect(createVoiceProvider("cartesia").describe().capabilities.transcribe).toBe(false);
     expect(createVoiceProvider("fish-audio").describe().capabilities.transcribe).toBe(true);
+    expect(createVoiceProvider("openai-compatible").describe().capabilities.transcribe).toBe(false);
+    expect(isVoiceProviderId("openai-compatible")).toBe(true);
     expect(isVoiceProviderId("elevenlabs")).toBe(true);
     expect(isVoiceProviderId("scripted")).toBe(false);
     expect(isVoiceProviderId("piper")).toBe(false);
     expect(() => createVoiceProvider("piper")).toThrow(/unknown voice provider/i);
     expect(() => createVoiceProvider("scripted")).toThrow(/unknown voice provider/i);
+  });
+
+  it.each([undefined, "", "   "])("hides and disables unconfigured local voice (%s)", (url) => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, url);
+    expect(listVoiceCatalog().some((entry) => entry.id === "openai-compatible")).toBe(false);
+    expect(isVoiceProviderId("openai-compatible")).toBe(false);
+    expect(() => createVoiceProvider("openai-compatible")).toThrow(/unknown voice provider/i);
   });
 
   it("adds the scripted fixture only when the agent runtime is scripted", () => {
@@ -694,15 +712,126 @@ function modelHeader(init: RequestInit): string | undefined {
   return new Headers(headers).get("model") ?? undefined;
 }
 
+describe("OpenAICompatibleVoiceProvider", () => {
+  it("posts speech to the env base URL /audio/speech with Bearer auth", async () => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://host.docker.internal:3900");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([9, 8]).buffer,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const clip = await new OpenAICompatibleVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "alloy", apiKey: "omni-test-key" },
+      ctx,
+    );
+
+    expect(clip.mimeType).toBe("audio/mpeg");
+    expect([...clip.bytes]).toEqual([9, 8]);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "http://host.docker.internal:3900/v1/audio/speech",
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer omni-test-key");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: "tts-1",
+      voice: "alloy",
+      input: "Hi",
+      response_format: "mp3",
+    });
+  });
+
+  it.each([undefined, "", "   "])("refuses speech without a configured URL (%s)", async (url) => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, url);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      new OpenAICompatibleVoiceProvider().synthesize(
+        { text: "Hi", voiceId: "nova", apiKey: "sk-test" },
+        ctx,
+      ),
+    ).rejects.toThrow("not configured");
+    await expect(new OpenAICompatibleVoiceProvider().verify("sk-test", ctx)).resolves.toMatchObject(
+      { ok: false },
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [undefined, " local/my-tts ", "local/my-tts"],
+    [" custom/model-v2 ", "local/my-tts", "custom/model-v2"],
+    ["  ", "local/my-tts", "local/my-tts"],
+    [undefined, "  ", "tts-1"],
+  ])("preserves model IDs in JSON (%s, %s)", async (model, configured, expected) => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
+    vi.stubEnv(VOICE_OPENAI_COMPAT_TTS_MODEL_ENV, configured);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([1])));
+    vi.stubGlobal("fetch", fetchMock);
+    await new OpenAICompatibleVoiceProvider().synthesize(
+      { text: "Hi", voiceId: "alloy", apiKey: "sk-test", model },
+      ctx,
+    );
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body)).model).toBe(expected);
+  });
+
+  it("rejects redirects during verification and synthesis", async () => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
+    const fetchMock = vi.fn().mockImplementation(async (_url: string, init: RequestInit) => {
+      expect(init.redirect).toBe("error");
+      throw new TypeError("fetch failed: unexpected redirect");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new OpenAICompatibleVoiceProvider();
+    await expect(provider.verify("sk-test", ctx)).resolves.toMatchObject({ ok: false });
+    await expect(
+      provider.synthesize({ text: "Hi", voiceId: "alloy", apiKey: "sk-test" }, ctx),
+    ).rejects.toThrow("unexpected redirect");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts verify when /models is missing on a TTS-only gateway", async () => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
+    await expect(new OpenAICompatibleVoiceProvider().verify("sk-test", ctx)).resolves.toEqual({
+      ok: true,
+    });
+  });
+
+  it("rejects verify when the gateway rejects the Bearer token", async () => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ error: "bad key" }), { status: 401 })),
+    );
+    await expect(new OpenAICompatibleVoiceProvider().verify("sk-bad", ctx)).resolves.toMatchObject({
+      ok: false,
+    });
+  });
+
+  it("returns a static voice catalog without a network round trip", async () => {
+    vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
+    const voices = await new OpenAICompatibleVoiceProvider().listVoices("sk-test", ctx);
+    expect(voices.some((voice) => voice.id === "alloy")).toBe(true);
+    expect(createVoiceProvider(OPENAI_COMPATIBLE_VOICE_PROVIDER_ID).describe().id).toBe(
+      OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
+    );
+  });
+});
+
 describe("hosted voice response limits", () => {
   it.each([
     ["ElevenLabs", () => new ElevenLabsVoiceProvider(), "voice"],
     ["OpenAI", () => new OpenAIVoiceProvider(), "alloy"],
     ["Cartesia", () => new CartesiaVoiceProvider(), "sonic"],
     ["Fish Audio", () => new FishAudioVoiceProvider(), "voice"],
+    ["OpenAI-compatible", () => new OpenAICompatibleVoiceProvider(), "alloy"],
   ])(
     "rejects an oversized %s speech response before buffering it",
     async (_name, create, voiceId) => {
+      vi.stubEnv(VOICE_OPENAI_COMPAT_BASE_URL_ENV, "http://127.0.0.1:3900");
       const cancel = vi.fn().mockResolvedValue(undefined);
       vi.stubGlobal(
         "fetch",
