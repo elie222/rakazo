@@ -19,6 +19,7 @@ import {
   COMPATIBLE_THINKING_LEVELS,
   clampCatalogThinkingLevel,
   createModelProbe,
+  DEFAULT_CHIEF_INSTRUCTIONS,
   initialModelProbeState,
   pickCatalogModelId,
 } from "@rakazo/core";
@@ -58,6 +59,8 @@ import { errorText } from "../lib/user-error";
 const CUSTOM_MODEL_OPTION = "__rakazo_custom_model__";
 const DEFAULT_THINKING_LEVEL_OPTION = "__rakazo_default_thinking__";
 const FIRST_BOT_NAME = "Chief";
+const FIRST_BOT_TITLE = "Chief of Staff";
+const FIRST_BOT_DESCRIPTION = "Lead orchestrator and trusted single point of contact.";
 const FIRST_BOT_SPAWN_KEY = "onboarding:first";
 const FIRST_BOT_LOCK = "rakazo:onboarding-first-bot";
 
@@ -81,9 +84,9 @@ async function createOrReuseFirstBot(): Promise<{ id: string }> {
   try {
     const created = await rpc.bots.create({
       name: FIRST_BOT_NAME,
-      title: "",
-      description: "",
-      instructions: "",
+      title: FIRST_BOT_TITLE,
+      description: FIRST_BOT_DESCRIPTION,
+      instructions: DEFAULT_CHIEF_INSTRUCTIONS,
       notifyOnFinish: true,
       spawnKey: FIRST_BOT_SPAWN_KEY,
     });

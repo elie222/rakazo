@@ -64,6 +64,7 @@ import {
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
+  DEFAULT_CHIEF_INSTRUCTIONS,
   endsSentence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -74,6 +75,7 @@ import {
   isCallClientNonce,
   isMessagingChannelRun,
   isOneShotRoutineCrons,
+  isSkillEnabledForBot,
   isTerminal,
   messagingChannelId,
   messagingChannelPrivacyBlock,
@@ -3146,7 +3148,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
         spaceId: routine.spaceId,
         userId: routine.userId,
       });
-      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+      const activeSkillRecords = skillRecords.filter((skill) =>
+        isSkillEnabledForBot(skill, routine.botId, bot.name),
+      );
+      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, activeSkillRecords);
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
           where: {
@@ -5452,6 +5457,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 name: args.name ? String(args.name) : undefined,
                 skillId: args.skillId ? String(args.skillId) : undefined,
               },
+              { id: bot.id, name: bot.name },
             );
           }
           if (name === "skill_create") {
@@ -6386,14 +6392,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   "\n",
                 )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
             : undefined;
-        const agentSkillsLine = formatSkillsCatalogInstruction(agentSkills);
+        const activeAgentSkills = agentSkills.filter((skill) =>
+          isSkillEnabledForBot(skill, bot.id, bot.name),
+        );
+        const agentSkillsLine = formatSkillsCatalogInstruction(activeAgentSkills);
         const missingImagesInstruction = missingTurnImagesInstruction(
           turnBlocks,
           currentTurnImages,
         );
         const taskPrompt = expandSkillReferencesInPrompt(
           [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
-          agentSkills,
+          activeAgentSkills,
         );
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
@@ -7916,19 +7925,27 @@ export function threadContextForRun<T>(
     : { ...context, includeSemanticRecall: true };
 }
 
+export { DEFAULT_CHIEF_INSTRUCTIONS } from "@rakazo/core";
+
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
-  bot: { name: string; title: string; description: string; instructions: string },
+  bot: { name: string; title: string; description: string; instructions?: string | null },
   trigger: string,
 ): string {
+  const isChief = Boolean(bot.name?.trim().toLowerCase() === "chief");
+  const defaultInstructions = isChief ? DEFAULT_CHIEF_INSTRUCTIONS : "";
+  const effectiveInstructions = bot.instructions?.trim() || defaultInstructions;
+
   if (trigger !== "created") {
-    return bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`;
+    return (
+      effectiveInstructions || `${bot.name ?? ""}: ${bot.title ?? ""}\n${bot.description ?? ""}`
+    );
   }
-  const instructions = bot.instructions.trim();
+  const instructions = effectiveInstructions;
   return [
-    `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${bot.title.trim() || "(none)"}`,
-    `Description: ${bot.description.trim() || "(none)"}`,
+    `Name: ${bot.name?.trim() || "(none)"}`,
+    `Title: ${bot.title?.trim() || (isChief ? "Chief of Staff" : "(none)")}`,
+    `Description: ${bot.description?.trim() || (isChief ? "Lead orchestrator and trusted single point of contact." : "(none)")}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");
 }

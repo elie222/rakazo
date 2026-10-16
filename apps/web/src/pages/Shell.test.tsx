@@ -33,6 +33,7 @@ const summarize: AgentSkillCatalogEntry = {
   id: "skill-1",
   name: "summarize",
   description: "Summarize a document",
+  content: "",
   source: "user",
   readOnly: false,
 };

@@ -85,6 +85,13 @@ export function parseSkillMd(content: string): ParsedSkillMd | { error: string }
   if (description.length > 2000) {
     return { error: "Skill description must be at most 2000 characters." };
   }
+  if (
+    "bots" in frontmatter &&
+    typeof frontmatter.bots !== "string" &&
+    !Array.isArray(frontmatter.bots)
+  ) {
+    return { error: "Skill frontmatter bots must be a string or an array." };
+  }
   return { name, description, body, frontmatter };
 }
 
@@ -104,6 +111,9 @@ export function buildSkillMd(input: {
     throw new Error("Skill description must be at most 2000 characters.");
   }
   const merged: Record<string, unknown> = { ...(input.frontmatter ?? {}) };
+  if (merged.bots !== undefined && typeof merged.bots !== "string" && !Array.isArray(merged.bots)) {
+    throw new Error("Skill frontmatter bots must be a string or an array.");
+  }
   merged.name = name;
   merged.description = description;
   // Stable order: name, description, then remaining keys alphabetically.
@@ -522,4 +532,81 @@ function formatYamlLine(key: string, value: unknown): string {
     return `${key}:\n${nested}`;
   }
   return `${key}: ${JSON.stringify(String(value))}`;
+}
+
+/**
+ * Check if a skill should be available to a specific bot.
+ * - If no `bots` frontmatter is set, the skill is global (available to all bots).
+ * - If `bots` includes "all" or "*", it is global.
+ * - If `bots` is an array or string of bot IDs / bot names, it matches botId or botName.
+ */
+export function isSkillEnabledForBot(
+  skill: { content?: string },
+  botId: string,
+  botName?: string,
+): boolean {
+  if (!skill.content) return true;
+  const parsed = parseSkillMd(skill.content);
+  if ("error" in parsed) return true;
+  const bots = parsed.frontmatter.bots;
+  if (!bots) return true;
+  if (Array.isArray(bots)) {
+    if (bots.length === 0) return true;
+    if (bots.some((b) => String(b).trim().toLowerCase() === "all" || String(b).trim() === "*")) {
+      return true;
+    }
+    return bots.some((b) => {
+      const val = String(b).trim();
+      return val === botId || (Boolean(botName) && val.toLowerCase() === botName!.toLowerCase());
+    });
+  }
+  if (typeof bots === "string") {
+    const trimmed = bots.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower === "all" || lower === "*") return true;
+    if (trimmed === botId || (Boolean(botName) && lower === botName!.toLowerCase())) return true;
+    const parts = trimmed.split(",").map((s) => s.trim());
+    return parts.some(
+      (p) => p === botId || (Boolean(botName) && p.toLowerCase() === botName!.toLowerCase()),
+    );
+  }
+  return true;
+}
+
+/**
+ * Extract bot scope from SKILL.md content.
+ */
+export function getSkillBotScope(content: string): { isGlobal: boolean; botIds: string[] } {
+  const parsed = parseSkillMd(content);
+  if ("error" in parsed) return { isGlobal: true, botIds: [] };
+  const bots = parsed.frontmatter.bots;
+  if (!bots) return { isGlobal: true, botIds: [] };
+  if (Array.isArray(bots)) {
+    if (
+      bots.length === 0 ||
+      bots.some((b) => String(b).trim().toLowerCase() === "all" || String(b).trim() === "*")
+    ) {
+      return { isGlobal: true, botIds: [] };
+    }
+    return {
+      isGlobal: false,
+      botIds: bots
+        .map(String)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+  }
+  if (typeof bots === "string") {
+    const trimmed = bots.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower === "all" || lower === "*") return { isGlobal: true, botIds: [] };
+    return {
+      isGlobal: false,
+      botIds: trimmed
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+  }
+  return { isGlobal: true, botIds: [] };
 }
