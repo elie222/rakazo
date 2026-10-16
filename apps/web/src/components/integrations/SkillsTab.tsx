@@ -337,6 +337,7 @@ export function SkillsTab({
   const [fetchingUrl, setFetchingUrl] = useState(false);
 
   const generation = useRef(0);
+  const searchGeneration = useRef(0);
 
   async function loadData() {
     const gen = ++generation.current;
@@ -358,6 +359,7 @@ export function SkillsTab({
     void loadData();
     return () => {
       generation.current += 1;
+      searchGeneration.current += 1;
     };
   }, []);
 
@@ -368,6 +370,7 @@ export function SkillsTab({
 
   // Live search SkillsMP
   async function searchSkillsmp(queryText: string) {
+    const gen = ++searchGeneration.current;
     setSkillsmpLoading(true);
     setError(null);
     try {
@@ -379,13 +382,14 @@ export function SkillsTab({
         success?: boolean;
         data?: { skills?: SkillsmpSearchResult[] };
       };
-      if (json.data?.skills) {
-        setSkillsmpResults(json.data.skills);
-      }
+      if (gen !== searchGeneration.current) return;
+      setSkillsmpResults(Array.isArray(json.data?.skills) ? json.data.skills : []);
     } catch (err) {
+      if (gen !== searchGeneration.current) return;
+      setSkillsmpResults([]);
       setError(errorText(err, "Could not reach SkillsMP API"));
     } finally {
-      setSkillsmpLoading(false);
+      if (gen === searchGeneration.current) setSkillsmpLoading(false);
     }
   }
 
@@ -506,6 +510,7 @@ export function SkillsTab({
 
   // New skill
   function openNewSkill() {
+    setError(null);
     setIsCreatingCustom(true);
     setActiveSkill(null);
     setEditorDraft(`---
@@ -533,7 +538,11 @@ bots:
         await rpc.agentSkills.create({ content: editorDraft });
         flashSuccess("New skill created!");
       } else if (activeSkill) {
-        await rpc.agentSkills.update({ skillId: activeSkill.id, content: editorDraft });
+        await rpc.agentSkills.update({
+          skillId: activeSkill.id,
+          content: editorDraft,
+          expectedContent: activeSkill.content,
+        });
         flashSuccess("Skill updated!");
       }
       setActiveSkill(null);
@@ -822,7 +831,7 @@ bots:
       </div>
 
       {/* Notifications */}
-      {error ? (
+      {error && !scopeModalSkill && !installModalSkill && !activeSkill && !isCreatingCustom ? (
         <div className="mb-4 flex items-center justify-between rounded-xl bg-destructive/15 px-4 py-2.5 text-sm text-destructive">
           <span>{error}</span>
           <button
@@ -1085,6 +1094,7 @@ bots:
                             variant="ghost"
                             size="sm"
                             onClick={() => {
+                              setError(null);
                               setActiveSkill({
                                 id: `preview:${item.id}`,
                                 name: item.name,
@@ -1120,6 +1130,7 @@ bots:
                               variant="default"
                               size="sm"
                               onClick={() => {
+                                setError(null);
                                 setInstallModalSkill(item);
                                 setInstallScopeGlobal(true);
                                 setInstallScopeBotIds(activeBotId ? [activeBotId] : []);
@@ -1404,6 +1415,11 @@ bots:
                 <span>Configure Bot Scope: {scopeModalSkill.name}</span>
               </DialogTitle>
             </DialogHeader>
+            {error ? (
+              <div role="alert" className="text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
 
             <div className="space-y-4 pt-2">
               <div className="space-y-3">
@@ -1510,6 +1526,11 @@ bots:
                 <span>Install Skill: {installModalSkill.name}</span>
               </DialogTitle>
             </DialogHeader>
+            {error ? (
+              <div role="alert" className="text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
 
             <div className="space-y-4 pt-1">
               <p className="text-sm text-muted-foreground">{installModalSkill.description}</p>
@@ -1634,6 +1655,11 @@ bots:
                 </span>
               </DialogTitle>
             </DialogHeader>
+            {error ? (
+              <div role="alert" className="text-sm text-destructive">
+                {error}
+              </div>
+            ) : null}
 
             <div className="flex flex-1 min-h-0 flex-col space-y-3 pt-1">
               <p className="shrink-0 text-xs text-muted-foreground">

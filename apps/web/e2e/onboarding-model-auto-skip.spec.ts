@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { DEFAULT_CHIEF_INSTRUCTIONS } from "@rakazo/core";
 import { captureScreenshot, signup } from "./helpers";
 
 test("onboarding skips model connect when a default model is already available", async ({
@@ -49,9 +50,9 @@ test("onboarding skips model connect when a default model is already available",
   expect((await createRequest).postDataJSON()).toMatchObject({
     json: {
       name: "Chief",
-      title: "",
-      description: "",
-      instructions: "",
+      title: "Chief of Staff",
+      description: "Lead orchestrator and trusted single point of contact.",
+      instructions: DEFAULT_CHIEF_INSTRUCTIONS,
       spawnKey: "onboarding:first",
     },
   });

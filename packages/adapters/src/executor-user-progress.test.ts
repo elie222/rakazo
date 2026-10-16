@@ -105,9 +105,9 @@ async function runTurn(finalText: string, silent = true) {
     computer: { updateMany: vi.fn(async () => ({ count: 1 })) },
     connection: { findMany: vi.fn(async () => []) },
     spaceModelPreference: {
-      findFirst: vi.fn<
-        (...args: unknown[]) => Promise<Record<string, unknown> | null>
-      >(async () => null),
+      findFirst: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(
+        async () => null,
+      ),
     },
     secret: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
@@ -130,8 +130,7 @@ async function runTurn(finalText: string, silent = true) {
     },
     $queryRaw: vi.fn(async () => [{ id: "row-1", scope: "dedicated" }]),
     $transaction: vi.fn(
-      async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> =>
-        fn(prisma),
+      async (fn: (tx: unknown) => Promise<unknown>): Promise<unknown> => fn(prisma),
     ),
   };
   const finalizeRun = vi.fn(async (_input: { blocks: MessageBlock[] }) => ({
@@ -160,52 +159,38 @@ async function runTurn(finalText: string, silent = true) {
 
   await executor.continueRun(run.id, "worker-1");
   expect(runtimeRun).toHaveBeenCalled();
-  expect(finalizeRun).not.toHaveBeenCalledWith(
-    expect.objectContaining({ outcome: "failed" }),
-  );
+  expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   return { finalizeRun };
 }
 
 describe("withheld narration on short peer turns", () => {
-  it.each(["", "Checked: all clear."])(
-    "returns only the post-tool final %j",
-    async (finalText) => {
-      vi.mocked(returnBotMessageOutcome).mockClear();
-      const { finalizeRun } = await runTurn(finalText);
-      expect(finalizeRun).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: "completed" }),
+  it.each(["", "Checked: all clear."])("returns only the post-tool final %j", async (finalText) => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    const { finalizeRun } = await runTurn(finalText);
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+      finalText ? [{ kind: "text", text: finalText }] : [],
+    );
+    if (finalText) {
+      expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        finalText,
+        "result",
       );
-      expect(
-        finalizeRun.mock.calls[0]![0].blocks.filter(
-          (block) => block.kind === "text",
-        ),
-      ).toEqual(finalText ? [{ kind: "text", text: finalText }] : []);
-      if (finalText) {
-        expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
-          expect.anything(),
-          expect.anything(),
-          expect.anything(),
-          finalText,
-          "result",
-        );
-      } else {
-        expect(returnBotMessageOutcome).not.toHaveBeenCalled();
-      }
-    },
-  );
+    } else {
+      expect(returnBotMessageOutcome).not.toHaveBeenCalled();
+    }
+  });
 });
 
 describe("withheld narration on short reply-producing turns", () => {
-  it.each(["", "Checked: all clear."])(
-    "keeps pre-tool text with final %j",
-    async (finalText) => {
-      const { finalizeRun } = await runTurn(finalText, false);
-      const text = finalizeRun.mock.calls[0]![0].blocks.filter(
-        (block) => block.kind === "text",
-      )
-        .map((block) => block.text)
-        .join("");
-      expect(text).toBe(`I will check that.${finalText}`);
-    },
-  );
+  it.each(["", "Checked: all clear."])("keeps pre-tool text with final %j", async (finalText) => {
+    const { finalizeRun } = await runTurn(finalText, false);
+    const text = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+    expect(text).toBe(`I will check that.${finalText}`);
+  });
 });

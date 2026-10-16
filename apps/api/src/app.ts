@@ -114,6 +114,7 @@ import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
+import { findCreatorSkillUrl } from "./skill-import.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
 import {
@@ -716,14 +717,10 @@ export async function createApp(
             );
             const data = JSON.parse(searchRes.body) as {
               success?: boolean;
-              data?: { skills?: Array<{ githubUrl: string }> };
+              data?: { skills?: unknown };
             };
-            const match = data.data?.skills?.find(
-              (s) => s.githubUrl.includes(author) || s.githubUrl.includes(repo),
-            );
-            if (match?.githubUrl) {
-              target = new URL(match.githubUrl);
-            }
+            const match = findCreatorSkillUrl(data.data?.skills, author, repo);
+            if (match) target = match;
           } catch {
             // fallback to direct fetch
           }

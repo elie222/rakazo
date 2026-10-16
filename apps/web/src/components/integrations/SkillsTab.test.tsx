@@ -188,6 +188,7 @@ describe("SkillsTab", () => {
       root.unmount();
     });
     container.remove();
+    vi.unstubAllGlobals();
   });
 
   async function renderComponent() {
@@ -299,5 +300,138 @@ describe("SkillsTab", () => {
         content: expect.stringContaining("bots:"),
       }),
     );
+  });
+  function button(text: string) {
+    const found = Array.from(container.querySelectorAll("button")).find(
+      (entry) => entry.textContent?.trim() === text,
+    );
+    if (!found) throw new Error(`Missing button: ${text}`);
+    return found;
+  }
+
+  it("rejects stale recipe writes and keeps the error and draft inside the editor", async () => {
+    skillsApi.updateSkill.mockRejectedValue(
+      new Error("Skill changed while editing. Reopen it and try again."),
+    );
+    await renderComponent();
+    await act(async () => {
+      button("Edit").click();
+    });
+    const original = container.querySelector("textarea")?.value;
+    await act(async () => {
+      button("Save Skill").click();
+    });
+    expect(skillsApi.updateSkill).toHaveBeenCalledWith({
+      skillId: "custom-1",
+      content: original,
+      expectedContent: original,
+    });
+    const dialog = container.querySelector('[role="dialog"]');
+    expect(dialog?.querySelector('[role="alert"]')?.textContent).toContain(
+      "Skill changed while editing",
+    );
+    expect(dialog?.querySelector("textarea")?.value).toBe(original);
+  });
+
+  it("shows deletion and installation failures inside their open dialogs", async () => {
+    skillsApi.deleteSkill.mockRejectedValue(new Error("Could not delete skill"));
+    skillsApi.createSkill.mockRejectedValue(new Error("Could not install skill"));
+    await renderComponent();
+    await act(async () => {
+      button("Edit").click();
+    });
+    await act(async () => {
+      button("Delete Skill").click();
+    });
+    await act(async () => {
+      button("Confirm").click();
+    });
+    expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
+      "Could not delete skill",
+    );
+    await act(async () => {
+      button("Cancel").click();
+    });
+    // Cancel the delete confirmation first, then close the recipe editor.
+    await act(async () => {
+      button("Cancel").click();
+    });
+    await act(async () => {
+      button("Marketplace Hub").click();
+    });
+    const install = Array.from(container.querySelectorAll("button")).find(
+      (entry) => entry.textContent?.trim() === "Install Skill",
+    );
+    await act(async () => {
+      install?.click();
+    });
+    await act(async () => {
+      button("Confirm Install").click();
+    });
+    expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain(
+      "Could not install skill",
+    );
+  });
+
+  it("ignores older directory searches and clears prior results when the latest has no skills", async () => {
+    const pending: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            pending.push(resolve);
+          }),
+      ),
+    );
+    await renderComponent();
+    await act(async () => {
+      button("Marketplace Hub").click();
+    });
+    const directory = Array.from(container.querySelectorAll("button")).find((entry) =>
+      entry.textContent?.includes("SkillsMP Directory"),
+    );
+    await act(async () => {
+      directory?.click();
+    });
+    const search = container.querySelector<HTMLInputElement>(
+      'input[placeholder^="Search 3,000,000"]',
+    );
+    if (!search) throw new Error("Missing directory search");
+    await act(async () => {
+      search.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(pending).toHaveLength(2);
+    const result = (name: string) =>
+      Response.json({
+        data: {
+          skills: [
+            {
+              id: name,
+              name,
+              author: "Demo",
+              description: "Recipe",
+              githubUrl: "https://github.com/example/recipes",
+              skillUrl: "https://skillsmp.com/skills/demo",
+            },
+          ],
+        },
+      });
+    await act(async () => {
+      pending[1]?.(result("Newest recipe"));
+    });
+    await act(async () => {
+      pending[0]?.(result("Older recipe"));
+    });
+    expect(container.textContent).toContain("Newest recipe");
+    expect(container.textContent).not.toContain("Older recipe");
+    await act(async () => {
+      button("Search SkillsMP").click();
+    });
+    await act(async () => {
+      pending[2]?.(Response.json({ success: true }));
+    });
+    expect(container.textContent).not.toContain("Newest recipe");
+    expect(container.textContent).toContain("No skills found");
   });
 });
