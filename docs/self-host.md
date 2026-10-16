@@ -349,6 +349,24 @@ way by default.
 Only configure an endpoint you control: prompts, attachments, and tool results sent to that model
 leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the provider.
 
+### OpenAI-compatible voice (local TTS)
+
+Settings → Voice includes an **OpenAI-compatible** provider for speak-only TTS against a local
+gateway such as Voice Studio (`POST /v1/audio/speech`). Paste the gateway Bearer token in Voice
+settings. Point the API/worker at the server with:
+
+```env
+RAKAZO_VOICE_OPENAI_COMPAT_BASE_URL=http://host.docker.internal:3900
+# Optional model id in the speech request body (default tts-1)
+# RAKAZO_VOICE_OPENAI_COMPAT_TTS_MODEL=tts-1
+```
+
+This is separate from **Settings → Models** OpenAI-compatible base URLs. Containerized API/worker
+processes must reach the host gateway: on Docker Desktop, `host.docker.internal` works; on Linux,
+add `extra_hosts: ["host.docker.internal:host-gateway"]` or use a stable LAN RFC1918 address.
+Tailscale or other public hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` (and HTTPS when a
+Bearer token is sent). Transcription is not implemented for this provider yet.
+
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
