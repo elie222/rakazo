@@ -197,17 +197,19 @@ function MemoryDocumentList({
                   <span className="font-mono">
                     {t`${draft.split("\n").length} lines · ${draft.length} chars`}
                   </span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="xs"
                     onClick={() => setExpandedDoc(doc)}
-                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-foreground/80 hover:bg-accent hover:text-foreground"
+                    className="gap-1 text-muted-foreground"
                     title={t`Expand to Fullscreen Editor`}
                   >
-                    <Maximize2 className="h-3 w-3" />
+                    <Maximize2 className="size-3" />
                     <span>
                       <Trans>Expand</Trans>
                     </span>
-                  </button>
+                  </Button>
                 </div>
                 <Textarea
                   aria-label={doc.path}
