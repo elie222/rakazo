@@ -1,6 +1,7 @@
 import type { WebProvider } from "@rakazo/adapter-kit";
 import { FakeWebProvider } from "./fake-web.js";
 import { KeylessHttpWebProvider } from "./keyless-http-web.js";
+import { ParallelWebProvider } from "./parallel-web.js";
 
 /**
  * Resolve the deployment web provider.
@@ -22,6 +23,8 @@ export function createWebProvider(
   options?: ConstructorParameters<typeof KeylessHttpWebProvider>[0],
 ): WebProvider {
   switch (kind) {
+    case "parallel":
+      return new ParallelWebProvider(options);
     case "fake":
       return new FakeWebProvider();
     case "keyless-http":
