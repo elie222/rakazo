@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 import type {
   AdapterContext,
   WebFetchRequest,
@@ -7,6 +7,7 @@ import type {
   WebSearchHit,
   WebSearchRequest,
 } from "@rakazo/adapter-kit";
+import { resolveAuthSecret } from "@rakazo/core";
 import { z } from "zod";
 import { combineSignals } from "./connector-safety.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -35,6 +36,8 @@ export type ParallelWebOptions = RemoteTransportDependencies & {
 
 /** Optional anonymous MCP backend for the existing builtin web tools. */
 export class ParallelWebProvider implements WebProvider {
+  private readonly sessionKey = resolveAuthSecret();
+
   constructor(private readonly options: ParallelWebOptions = {}) {}
 
   /** Advertise the same optional web capabilities as other WebProvider adapters. */
@@ -122,8 +125,9 @@ export class ParallelWebProvider implements WebProvider {
     maxChars?: number,
   ) {
     signal.throwIfAborted();
-    // One continuing bot conversation shares rate-limit accounting without sending raw IDs.
-    const sessionId = createHash("sha256")
+    // Scope conversation accounting to this deployment without disclosing raw IDs.
+    const sessionId = createHmac("sha256", this.sessionKey)
+      .update("rakazo:parallel:web-session:v1\0")
       .update(
         JSON.stringify([
           context.spaceId,

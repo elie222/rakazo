@@ -368,7 +368,10 @@ then return search excerpts and extracted page markdown through HTTPS MCP at
 `https://search.parallel.ai/mcp`. Search uses Fast mode without an account or API key.
 
 This option sends search queries and requested page URLs to Parallel, which retrieves pages
-on its servers. Anonymous access has service limits; rate-limit and provider errors are returned
+on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
+`BETTER_AUTH_SECRET`, so deployments with distinct secrets send distinct session IDs. Rotating
+that secret resets the session IDs; the existing development-only auth-secret fallback also
+applies here. Anonymous access has service limits; rate-limit and provider errors are returned
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
