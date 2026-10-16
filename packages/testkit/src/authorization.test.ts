@@ -530,6 +530,74 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await phone.me()).toBe(200);
   });
 
+  it("marks account and RPC replies as not cacheable, including errors", async () => {
+    const email = `phone-no-store-${stamp}@rakazo.test`;
+    const phone = await phoneSession(app, email);
+    const rpc = (path: string, headers: Record<string, string>) =>
+      app.request(`/rpc/${path}`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ json: {} }),
+      });
+    const signIn = (password: string) =>
+      app.request("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "rakazo://" },
+        body: JSON.stringify({ email, password }),
+      });
+    const responses = {
+      signIn: await signIn("password12"),
+      wrongPassword: await signIn("wrong-pass"),
+      blockedAuthPath: await app.request("/api/auth/organization/list"),
+      oversizedAuthBody: await app.request("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": String(1024 * 1024) },
+        body: "{}",
+      }),
+      me: await rpc("me", phone.headers),
+      signedOutMe: await rpc("me", { origin: "rakazo://" }),
+      unknownProcedure: await rpc("not-a-procedure", phone.headers),
+    };
+
+    expect(
+      Object.fromEntries(
+        Object.entries(responses).map(([name, response]) => [
+          name,
+          [response.status, response.headers.get("cache-control")],
+        ]),
+      ),
+    ).toEqual({
+      signIn: [200, "no-store"],
+      wrongPassword: [401, "no-store"],
+      blockedAuthPath: [404, "no-store"],
+      oversizedAuthBody: [413, "no-store"],
+      me: [200, "no-store"],
+      signedOutMe: [401, "no-store"],
+      unknownProcedure: [404, "no-store"],
+    });
+  });
+
+  it("uses the bearer session over another account's session cookie", async () => {
+    const a = await phoneSession(app, `phone-cookie-a-${stamp}@rakazo.test`);
+    const b = await phoneSession(app, `phone-cookie-b-${stamp}@rakazo.test`);
+    const both = { ...b.headers, cookie: a.cookie, "content-type": "application/json" };
+    const me = () =>
+      app.request("/rpc/me", { method: "POST", headers: both, body: JSON.stringify({ json: {} }) });
+
+    const signedIn = await me();
+    expect(signedIn.status).toBe(200);
+    expect(await signedIn.json()).toMatchObject({ json: { userId: b.userId } });
+
+    const signedOut = await app.request("/api/auth/sign-out", {
+      method: "POST",
+      headers: both,
+      body: "{}",
+    });
+    expect(signedOut.status).toBe(200);
+    expect((await me()).status).toBe(401);
+    expect(await a.me()).toBe(200);
+  });
+
   it("drops a push token when the session that registered it is revoked", async () => {
     const email = `push-sessions-${stamp}@rakazo.test`;
     const phone = await signup(app, email, "Push Sessions");
@@ -1730,7 +1798,8 @@ async function phoneSession(app: App, email: string) {
     headers: { "content-type": "application/json", origin: "rakazo://" },
     body: JSON.stringify({ email, password: "password12", name: "Phone" }),
   });
-  const { token } = (await response.json()) as { token: string };
+  const { token, user } = (await response.json()) as { token: string; user: { id: string } };
+  const cookie = sessionCookieHeader(response);
   const headers = { origin: "rakazo://", authorization: `Bearer ${token}` };
   const me = async () =>
     (
@@ -1740,7 +1809,7 @@ async function phoneSession(app: App, email: string) {
         body: JSON.stringify({ json: {} }),
       })
     ).status;
-  return { headers, me };
+  return { headers, me, cookie, userId: user.id };
 }
 
 async function signin(app: App, email: string, password = "password12") {

@@ -37,8 +37,11 @@ export async function createOwnedArtifact(
     description?: string;
     mimeType: string;
     contentBase64: string;
+    clientNonce?: string;
   },
 ) {
+  const replayed = await findReplayedArtifact(deps.prisma, actor, input);
+  if (replayed) return createdArtifact(replayed);
   const mimeType =
     inferAttachmentMimeType(input.name, input.mimeType) === "application/zip"
       ? "application/zip"
@@ -48,7 +51,7 @@ export async function createOwnedArtifact(
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");
-  const row = await withResolvedArtifactVersion(
+  const { row, replay } = await withResolvedArtifactVersion(
     deps.prisma,
     {
       spaceId: actor.spaceId,
@@ -57,8 +60,11 @@ export async function createOwnedArtifact(
       groupId: input.groupId,
       name: input.name,
     },
-    (tx, { rootArtifactId, version }) =>
-      tx.artifact.create({
+    async (tx, { rootArtifactId, version }) => {
+      // A retry of the same upload has the same name and target, so it waits on the same lock.
+      const raced = await findReplayedArtifact(tx, actor, input);
+      if (raced) return { row: raced, replay: true };
+      const created = await tx.artifact.create({
         data: {
           spaceId: actor.spaceId,
           userId: actor.userId,
@@ -72,12 +78,39 @@ export async function createOwnedArtifact(
           storageKey: stored.id,
           rootArtifactId,
           version,
+          clientNonce: input.clientNonce,
         },
-      }),
+      });
+      return { row: created, replay: false };
+    },
   ).catch(async (error) => {
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;
   });
+  if (replay) await deps.artifacts.remove(stored.id, context).catch(() => undefined);
+  return createdArtifact(row);
+}
+
+/** The artifact an earlier upload with this nonce created; a nonce reused for another chat is refused. */
+async function findReplayedArtifact(
+  db: Pick<Prisma.TransactionClient, "artifact">,
+  actor: Actor,
+  input: { botId: string; groupId?: string; clientNonce?: string },
+) {
+  if (!input.clientNonce) return null;
+  const row = await db.artifact.findFirst({
+    where: { spaceId: actor.spaceId, userId: actor.userId, clientNonce: input.clientNonce },
+  });
+  if (!row) return null;
+  // A group upload is stored under whichever member bot was first, which can change between retries.
+  const sameTarget = input.groupId
+    ? row.groupId === input.groupId
+    : row.botId === input.botId && row.groupId === null;
+  if (!sameTarget) throw new IsolationError();
+  return row;
+}
+
+function createdArtifact(row: Prisma.ArtifactGetPayload<Record<string, never>>) {
   return {
     id: row.id,
     botId: row.botId,

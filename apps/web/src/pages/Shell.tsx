@@ -182,6 +182,17 @@ import {
 import { startCall, useCallSession } from "../lib/call-session";
 import { newClientId } from "../lib/client-id";
 import {
+  beginComposerDraftSubmission,
+  readComposerDraft,
+  settleComposerDraftSubmission,
+  subscribeComposerDraftAccepted,
+  writeComposerDraft,
+} from "../lib/composer-draft";
+import {
+  getComposerEnterToSend,
+  subscribeComposerEnterToSend,
+} from "../lib/composer-enter-to-send-pref";
+import {
   embeddableScreenUrl,
   loadComputerScreen,
   screenIframeSandbox,
@@ -285,6 +296,8 @@ import {
   ChoiceCard,
   McpApprovalCard,
 } from "./shell/message-cards";
+import type { RosterDropTarget } from "./shell/roster-drop";
+import { resolveRosterDrop } from "./shell/roster-drop";
 import { commitSpaceRename, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { WindowChrome } from "./WindowChrome";
 
@@ -453,6 +466,11 @@ export function ShellPage() {
     getBotsSidebarDensity,
     () => "comfortable",
   );
+  const enterToSend = useSyncExternalStore(
+    subscribeComposerEnterToSend,
+    getComposerEnterToSend,
+    () => false,
+  );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<ThreadMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -576,6 +594,7 @@ export function ShellPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const mobileSidebarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
   const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
+  const [rosterDropKey, setRosterDropKey] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   const focusPromptAbortRef = useRef<AbortController | null>(null);
@@ -1615,6 +1634,46 @@ export function ShellPage() {
       );
     },
     [userId],
+  );
+  // Drags only act on bots of the active space; other spaces are read-only here.
+  const draggedBot = draggedBotId ? bots.find((bot) => bot.id === draggedBotId) : undefined;
+  const rosterDropAction = useCallback(
+    (target: RosterDropTarget, sameParent: boolean) =>
+      draggedBot ? resolveRosterDrop({ dragged: draggedBot, target, sameParent }) : null,
+    [draggedBot],
+  );
+  const applyRosterDrop = useCallback(
+    (target: RosterDropTarget, sameParent: boolean, groupBotIds: string[]) => {
+      const action = rosterDropAction(target, sameParent);
+      setDraggedBotId(null);
+      setRosterDropKey(null);
+      if (!action || !draggedBot) return;
+      setSendError(null);
+      if (action.action === "reorder") {
+        reorderRosterBot(draggedBot.id, action.targetBotId, groupBotIds);
+        return;
+      }
+      const request =
+        action.action === "move"
+          ? rpc.bots.update({ botId: draggedBot.id, sectionId: action.sectionId })
+          : rpc.groups.update({
+              groupId: action.groupId,
+              botIds: action.botIds,
+              expectedBotIds: action.botIds.filter((id) => id !== draggedBot.id),
+            });
+      void request
+        .then(async () => {
+          await refreshBots();
+          if (action.action === "join" && activeGroupId.current === action.groupId) {
+            await refreshGroupThread(action.groupId);
+          }
+        })
+        .catch((error) => {
+          setSendError(errorText(error, t`Could not save`));
+          void refreshBots().catch(() => undefined);
+        });
+    },
+    [draggedBot, refreshBots, reorderRosterBot, rosterDropAction, t],
   );
   const toggleRosterParent = useCallback(
     (botId: string) => {
@@ -2964,15 +3023,40 @@ export function ShellPage() {
                     row.item.kind === "bot" && row.parentId === parentId ? [row.item.chat.id] : [],
                   );
                 const hasSpaceActions = group.canRenameSpace || group.canDeleteSpace;
+                const headerDropTarget: RosterDropTarget | null =
+                  group.spaceId === bootstrapMe?.spaceId &&
+                  !group.emptySpaceId &&
+                  (group.sectionId || group.key.endsWith("unassigned"))
+                    ? { kind: "section", sectionId: group.sectionId }
+                    : null;
+                const headerDropKey = `header:${group.key}`;
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
                     {group.title || hasSpaceActions ? (
+                      // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
                       <div
-                        className={
+                        role="group"
+                        data-roster-drop={rosterDropKey === headerDropKey ? "true" : undefined}
+                        className={`${
                           group.title && hasSpaceActions
                             ? "grid pt-3 pb-0.5"
                             : `flex items-center pt-3 pb-0.5${group.title ? "" : " justify-end"}`
-                        }
+                        } rounded-lg ${rosterDropKey === headerDropKey ? "bg-sidebar-accent" : ""}`}
+                        onDragOver={(event) => {
+                          if (!headerDropTarget || !rosterDropAction(headerDropTarget, false))
+                            return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          if (rosterDropKey !== headerDropKey) setRosterDropKey(headerDropKey);
+                        }}
+                        onDragLeave={() => {
+                          if (rosterDropKey === headerDropKey) setRosterDropKey(null);
+                        }}
+                        onDrop={(event) => {
+                          if (!headerDropTarget) return;
+                          event.preventDefault();
+                          applyRosterDrop(headerDropTarget, false, groupBotIds);
+                        }}
                       >
                         {group.title ? (
                           <button
@@ -3102,6 +3186,23 @@ export function ShellPage() {
                                 (item.chat.status !== "idle" ? item.chat.status : "")
                               : item.chat.preview ||
                                 item.chat.members.map((member) => member.name).join(", ")));
+                        const rowDropTarget: RosterDropTarget | null =
+                          item.chat.spaceId !== bootstrapMe?.spaceId
+                            ? null
+                            : item.kind === "bot"
+                              ? { kind: "bot", chat: item.chat }
+                              : {
+                                  kind: "group",
+                                  chat: {
+                                    id: item.chat.id,
+                                    memberIds: item.chat.members.map((member) => member.botId),
+                                  },
+                                };
+                        const rowSameParent =
+                          Boolean(draggedBotId) &&
+                          groupBotIds.includes(draggedBotId ?? "") &&
+                          rosterParent.get(draggedBotId ?? "") === parentId;
+                        const rowDropKey = `row:${item.kind}:${item.chat.id}`;
                         return (
                           <div
                             key={`${item.kind}:${item.chat.id}`}
@@ -3159,27 +3260,27 @@ export function ShellPage() {
                               }}
                               onDragOver={(event) => {
                                 if (
-                                  item.kind === "bot" &&
-                                  draggedBotId &&
-                                  groupBotIds.includes(draggedBotId) &&
-                                  rosterParent.get(draggedBotId) === parentId
-                                ) {
-                                  event.preventDefault();
-                                  event.dataTransfer.dropEffect = "move";
-                                }
-                              }}
-                              onDrop={(event) => {
-                                if (
-                                  item.kind !== "bot" ||
-                                  !draggedBotId ||
-                                  rosterParent.get(draggedBotId) !== parentId
+                                  !rowDropTarget ||
+                                  !rosterDropAction(rowDropTarget, rowSameParent)
                                 )
                                   return;
                                 event.preventDefault();
-                                reorderRosterBot(draggedBotId, item.chat.id, groupBotIds);
-                                setDraggedBotId(null);
+                                event.dataTransfer.dropEffect = "move";
+                                if (rosterDropKey !== rowDropKey) setRosterDropKey(rowDropKey);
                               }}
-                              onDragEnd={() => setDraggedBotId(null)}
+                              onDragLeave={() => {
+                                if (rosterDropKey === rowDropKey) setRosterDropKey(null);
+                              }}
+                              onDrop={(event) => {
+                                if (!rowDropTarget) return;
+                                event.preventDefault();
+                                applyRosterDrop(rowDropTarget, rowSameParent, groupBotIds);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedBotId(null);
+                                setRosterDropKey(null);
+                              }}
+                              data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
                               onKeyDown={(event) => {
                                 if (
                                   item.kind !== "bot" ||
@@ -3219,7 +3320,9 @@ export function ShellPage() {
                               } text-start ${
                                 item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                               } ${
-                                selected ? "bg-sidebar-accent" : "group-hover/row:bg-sidebar-accent"
+                                selected || rosterDropKey === rowDropKey
+                                  ? "bg-sidebar-accent"
+                                  : "group-hover/row:bg-sidebar-accent"
                               }`}
                               style={
                                 treeActive
@@ -3703,6 +3806,8 @@ export function ShellPage() {
         {active || activeGroup ? (
           <Composer
             key={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            draftKey={inGroup ? `group:${groupId}` : `bot:${active?.id}`}
+            enterToSend={enterToSend}
             activeName={inGroup ? (activeGroup?.name ?? activeSnapshot?.groupName) : active?.name}
             running={composerRunning}
             disabled={Boolean(recordingSkill)}
@@ -3730,7 +3835,7 @@ export function ShellPage() {
                       botId: active.id,
                       botName: active.name,
                       botColor: active.color,
-                      transcribe: Boolean(voiceStatus?.transcribe),
+                      transcribe: voiceStatus ? Boolean(voiceStatus.transcribe) : undefined,
                     });
                   }
                 : undefined
@@ -4573,7 +4678,7 @@ export function ShellPage() {
             usage={usage}
             onUsageOpen={refreshUsage}
             initialSection={settingsSection}
-            avatarStyle={bootstrapMe?.avatarStyle ?? "robot"}
+            avatarStyle={bootstrapMe?.avatarStyle ?? "organic"}
             isDeploymentOwner={bootstrapMe?.isDeploymentOwner === true}
             billingEnabled={bootstrapMe?.billingEnabled === true}
             sandboxProvider={bootstrapMe?.sandboxProvider}
@@ -4805,7 +4910,7 @@ export function ShellPage() {
   );
 
   return (
-    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "robot"}>{shell}</AvatarStyleProvider>
+    <AvatarStyleProvider value={bootstrapMe?.avatarStyle ?? "organic"}>{shell}</AvatarStyleProvider>
   );
 }
 
@@ -5413,6 +5518,8 @@ export const Composer = memo(function Composer({
   agentSkills,
   onSlashOpen,
   onSlashAction,
+  draftKey,
+  enterToSend,
 }: {
   activeName?: string;
   running: boolean;
@@ -5440,15 +5547,32 @@ export const Composer = memo(function Composer({
   agentSkills?: AgentSkillCatalogEntry[];
   onSlashOpen?: () => void;
   onSlashAction?: (action: SlashActionId) => void;
+  draftKey: string;
+  enterToSend: boolean;
 }) {
   const { t } = useLingui();
-  const [draft, setDraft] = useState("");
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [draft, setDraft] = useState(() => readComposerDraft(draftKey));
+  const [mentionQuery, setMentionQuery] = useState<string | null>(() => {
+    const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(draft);
+    return mentionMatch ? (mentionMatch[1] ?? "") : null;
+  });
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
-  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashQuery, setSlashQuery] = useState<string | null>(() => {
+    const slashMatch = /^\/([^\n]*)$/.exec(draft);
+    return slashMatch ? (slashMatch[1] ?? "") : null;
+  });
   const [selectedSkill, setSelectedSkill] = useState<AgentSkillCatalogEntry | null>(null);
   const [selectedMentions, setSelectedMentions] = useState<ComposerMention[]>([]);
   const editRevision = useRef(0);
+  useEffect(
+    () =>
+      subscribeComposerDraftAccepted(draftKey, (text) => {
+        setDraft((current) => (current === text ? "" : current));
+        setMentionQuery(null);
+        setSlashQuery(null);
+      }),
+    [draftKey],
+  );
   const retryNonce = useRef<string | null>(null);
   const replyId = replyTarget?.id ?? null;
   const quote = replyTarget ? (replyQuote ?? null) : null;
@@ -5583,6 +5707,7 @@ export const Composer = memo(function Composer({
 
   function updateDraft(value: string) {
     markEdited();
+    writeComposerDraft(draftKey, value);
     setDraft(value);
     const mentionMatch = /(?:^|\s)@([\w-]*)$/.exec(value);
     setMentionQuery(mentionMatch ? (mentionMatch[1] ?? "") : null);
@@ -5599,7 +5724,9 @@ export const Composer = memo(function Composer({
 
   function insertMention(mention: ComposerMention) {
     markEdited();
-    setDraft((current) => current.replace(/@([\w-]*)$/, ""));
+    const next = draft.replace(/@([\w-]*)$/, "");
+    writeComposerDraft(draftKey, next);
+    setDraft(next);
     setMentionQuery(null);
     setMentionHighlightIndex(0);
     setSelectedMentions((current) =>
@@ -5613,12 +5740,14 @@ export const Composer = memo(function Composer({
   function insertSkill(skill: AgentSkillCatalogEntry) {
     markEdited();
     setSelectedSkill(skill);
+    writeComposerDraft(draftKey, "");
     setDraft("");
     setSlashQuery(null);
   }
 
   function runSlashAction(action: SlashActionId) {
     markEdited();
+    writeComposerDraft(draftKey, "");
     setDraft("");
     setSlashQuery(null);
     onSlashAction?.(action);
@@ -5686,6 +5815,7 @@ export const Composer = memo(function Composer({
     const clientNonce = retryNonce.current ?? newClientNonce();
     retryNonce.current = null;
     const text = serializeComposerPrompt(draft, selectedSkill, selectedMentions);
+    const submission = beginComposerDraftSubmission(draftKey, draft);
     setDraft("");
     setMentionQuery(null);
     setMentionHighlightIndex(0);
@@ -5694,8 +5824,11 @@ export const Composer = memo(function Composer({
     const mentions = selectedMentions;
     setSelectedMentions([]);
     try {
-      if ((await onSend(text, mentions, clientNonce)) !== false) return;
+      const accepted = (await onSend(text, mentions, clientNonce)) !== false;
+      settleComposerDraftSubmission(draftKey, submission, accepted);
+      if (accepted) return;
     } catch {
+      settleComposerDraftSubmission(draftKey, submission, false);
       // A rejected callback leaves acceptance unknown; do not restore a possible send.
       return;
     }
@@ -6146,6 +6279,9 @@ export const Composer = memo(function Composer({
               const action = resolveMentionPickerKey({
                 key: event.key,
                 shiftKey: event.shiftKey,
+                ctrlKey: event.ctrlKey,
+                metaKey: event.metaKey,
+                enterToSend,
                 isComposing: event.nativeEvent.isComposing || event.keyCode === 229,
                 optionCount: mentionOptions.length,
                 highlightedIndex: activeMentionIndex,

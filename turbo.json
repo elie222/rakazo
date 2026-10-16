@@ -27,7 +27,8 @@
     "dev": {
       "cache": false,
       "env": ["PUBLIC_POSTHOG_HOST", "PUBLIC_POSTHOG_KEY"],
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["RAKAZO_HOST", "RAKAZO_DEV_HOST", "RAKAZO_ALLOWED_HOSTS"]
     }
   }
 }

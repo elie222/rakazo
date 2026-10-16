@@ -1976,6 +1976,51 @@ describe("Pi connector tool dispatch", () => {
     expect(result.content[2]).toEqual({ type: "text", text: "bbbbb…" });
   });
 
+  it("delivers a skill read larger than the tool result bound verbatim", async () => {
+    const skill = {
+      name: "large-skill",
+      description: "Large skill",
+      source: "user",
+      readOnly: false,
+      content: `---\nname: large-skill\n---\n${"1. Step kept for skill_update.\n".repeat(600)}`,
+    };
+    fakeAgentState.invoke = { name: "skill_read", args: { name: skill.name } };
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "large-skill",
+        prompt: "edit the skill",
+        instructions: "Read the skill before updating it.",
+        history: [],
+        tools: [
+          {
+            name: "skill_read",
+            description: "Load a skill by exact name",
+            inputSchema: { type: "object", properties: { name: { type: "string" } } },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => skill),
+      },
+      {
+        operationId: "large-skill",
+        traceId: "large-skill",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust so the fake agent executes the tool.
+    }
+
+    const result = fakeAgentState.toolResult as { content: Array<{ type: string; text: string }> };
+    expect(result.content[0]!.text.length).toBeGreaterThan(TOOL_RESULT_TEXT_LIMIT);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(skill);
+  });
+
   it("serialises object content instead of writing [object Object] for write_file", async () => {
     fakeAgentState.invoke = {
       name: "write_file",

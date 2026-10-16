@@ -1,8 +1,33 @@
-const URL_PATTERN = /https?:\/\/[^\s<>"')\]]+/gi;
+const URL_PATTERN = /https?:\/\/[^\s<>"'\]]+/gi;
+
+const URL_START = /https?:\/\/[^\s<>"'\]]/gi;
+
+function linkEnd(text: string, start: number, limit: number): number {
+  let depth = 0;
+  for (let i = start; i < limit; i++) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")" && --depth < 0) return i;
+  }
+  return limit;
+}
+
+function findLinks(text: string): string[] {
+  const links: string[] = [];
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const limit = match.index + match[0].length;
+    let start = match.index;
+    while (start < limit) {
+      const end = linkEnd(text, start, limit);
+      links.push(text.slice(start, end).replace(/[.,;:!?]+$/, ""));
+      URL_START.lastIndex = end;
+      start = URL_START.exec(text)?.index ?? limit;
+    }
+  }
+  return links;
+}
 
 export function extractLinksFromText(text: string): string[] {
-  const matches = text.match(URL_PATTERN) ?? [];
-  return [...new Set(matches.map((url) => url.replace(/[.,;:!?)]+$/, "")))];
+  return [...new Set(findLinks(text))];
 }
 
 export function matchesSearchQuery(

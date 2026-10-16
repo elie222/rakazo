@@ -3,6 +3,7 @@ import {
   authErrorMessage,
   credentialIssue,
   isNetworkFailure,
+  isServerUnreachable,
   isTechnicalErrorMessage,
   userErrorMessage,
 } from "./user-error.js";
@@ -13,6 +14,28 @@ const authCopy = {
   email: "Enter a valid email",
   password: "Enter a password",
 };
+
+describe("isServerUnreachable", () => {
+  it("counts no connection, timeouts and gateway errors, through causes", () => {
+    expect(isServerUnreachable(new TypeError("Network request failed"))).toBe(true);
+    const timeout = Object.assign(new Error("Request timed out"), { name: "TimeoutError" });
+    expect(isServerUnreachable(timeout)).toBe(true);
+    for (const status of [502, 503, 504]) {
+      expect(isServerUnreachable(Object.assign(new Error("Bad gateway"), { status }))).toBe(true);
+    }
+    expect(isServerUnreachable(new Error("Could not reach the server", { cause: timeout }))).toBe(
+      true,
+    );
+  });
+
+  it("leaves answers from the server alone", () => {
+    for (const status of [400, 401, 403, 404, 409, 422, 500]) {
+      expect(isServerUnreachable(Object.assign(new Error("No"), { status }))).toBe(false);
+    }
+    expect(isServerUnreachable(new Error("Request canceled"))).toBe(false);
+    expect(isServerUnreachable(null)).toBe(false);
+  });
+});
 
 describe("isNetworkFailure", () => {
   it("recognizes every platform's unreachable-server wording", () => {

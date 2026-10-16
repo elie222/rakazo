@@ -14,6 +14,7 @@ import {
   supervisorRequestBodyLimit,
   waitForScreenReady,
 } from "./index.js";
+import type { ScreenAssignment } from "./supervisor-logic.js";
 import {
   assertRequestIdentity,
   attemptComputerControl,
@@ -21,11 +22,13 @@ import {
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
+  completeWarmReleasedScreen,
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionStep,
   containerActionSteps,
   createDockerStreamDemuxer,
+  currentComputerScreens,
   DOCKER_BROWSER_ALIASES,
   demuxDockerStream,
   ensureScreenCommand,
@@ -35,11 +38,11 @@ import {
   isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
+  oldestIdleScreen,
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
   resetManagedScreensCommand,
-  type ScreenAssignment,
   sandboxCommandTimedOut,
   sandboxTimeoutCommand,
   screenReleaseStopCommand,
@@ -717,14 +720,56 @@ describe("sandbox supervisor input containment", () => {
       /cannot allocate another screen/,
     );
 
-    clearComputerScreenRegistry(registry, containerId);
+    const boots = new Map([
+      [containerId, "boot-1"],
+      ["other-container", "boot-2"],
+    ]);
+    clearComputerScreenRegistry(registry, boots, containerId);
     expect(registry.has(containerId)).toBe(false);
+    expect(boots.has(containerId)).toBe(false);
+    expect(boots.get("other-container")).toBe("boot-2");
+    // Cleanup also removes a marker if the registry is already absent.
+    clearComputerScreenRegistry(registry, boots, "other-container");
+    expect(boots.size).toBe(0);
 
     const fresh = new Map<string, ScreenAssignment>();
     registry.set(containerId, fresh);
     for (let index = 0; index < 8; index += 1) {
       expect(nextScreenIndex(fresh, `bot-fresh-${index}`)).toBe(index);
     }
+  });
+
+  it("drops a screen registry recorded before the container restarted", () => {
+    const registry = new Map<string, Map<string, ScreenAssignment>>();
+    const boots = new Map<string, string>();
+    const containerId = "container-1";
+    const assigned = new Map<string, ScreenAssignment>();
+    registry.set(containerId, assigned);
+    boots.set(containerId, "2026-10-11T18:00:00.000Z");
+    expect(nextScreenIndex(assigned, "writer")).toBe(0);
+    // The container died mid-release (e.g. OOM kill): the slot is stuck releasing.
+    expect(releaseAssignedScreen(assigned, "writer")).toBe(0);
+    expect(() => nextScreenIndex(assigned, "writer")).toThrow(/still being released/);
+
+    expect(currentComputerScreens(registry, boots, containerId, "2026-10-11T18:00:00.000Z")).toBe(
+      assigned,
+    );
+    expect(currentComputerScreens(registry, boots, containerId, undefined)).toBe(assigned);
+
+    expect(
+      currentComputerScreens(registry, boots, containerId, "2026-10-11T18:19:21.000Z"),
+    ).toBeUndefined();
+    expect(registry.has(containerId)).toBe(false);
+    expect(boots.has(containerId)).toBe(false);
+  });
+
+  it("keeps a registry whose boot was never recorded", () => {
+    const registry = new Map<string, Map<string, ScreenAssignment>>();
+    const assigned = new Map<string, ScreenAssignment>();
+    registry.set("container-1", assigned);
+    expect(
+      currentComputerScreens(registry, new Map(), "container-1", "2026-10-11T18:19:21.000Z"),
+    ).toBe(assigned);
   });
 
   it("does not release a screen reclaimed by a newer execution fence", () => {
@@ -735,6 +780,49 @@ describe("sandbox supervisor input containment", () => {
     expect(nextScreenIndex(assigned, "researcher")).toBe(1);
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
     completeReleasedScreen(assigned, "writer", 0);
+  });
+
+  it("retains warm slots, clears their idle marker on reuse, and evicts only the oldest idle Team slot", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    assigned.get("writer")!.viewToken = "view-token";
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
+    completeWarmReleasedScreen(assigned, "writer", 0, 100);
+
+    expect(assigned.get("writer")).toEqual({
+      index: 0,
+      leaseId: "run-1:1",
+      viewToken: "view-token",
+      idleAt: 100,
+    });
+    expect(nextScreenIndex(assigned, "researcher", "team-run:1", 3)).toBe(1);
+    expect(releaseAssignedScreen(assigned, "researcher", "team-run:1")).toBe(1);
+    completeWarmReleasedScreen(assigned, "researcher", 1, 200);
+    expect(nextScreenIndex(assigned, "controlled", "run-controlled:1", 3)).toBe(2);
+    assigned.get("controlled")!.controlled = true;
+    assigned.get("controlled")!.idleAt = 50;
+    expect(oldestIdleScreen(assigned, 3)).toBe("writer");
+
+    expect(nextScreenIndex(assigned, "writer", "run-2:2", 3)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(oldestIdleScreen(assigned, 3)).toBe("researcher");
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
+    expect(assigned.get("writer")?.releasing).toBeUndefined();
+  });
+
+  it("keeps a warm slot evictable when a viewer repeats the completed run lease", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1", 1)).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
+    completeWarmReleasedScreen(assigned, "writer", 0, 100);
+
+    expect(nextScreenIndex(assigned, "writer", "run-1:1", 1)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBe(100);
+    expect(oldestIdleScreen(assigned, 1)).toBe("writer");
+
+    expect(nextScreenIndex(assigned, "writer", "run-2:2", 1)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(oldestIdleScreen(assigned, 1)).toBeUndefined();
   });
 
   it("releases a retained screen after the same run resumes", () => {

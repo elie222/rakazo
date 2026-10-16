@@ -59,7 +59,7 @@ describe("Account delete", () => {
     expect(signOut).toContain("setSignOutError");
     expect(signOut).toContain('t("Could not sign out")');
     expect(signOut).not.toContain("setDeleteError");
-    const signOutControl = sliceBetween(screen, 't("Sign out")', 't("Archived bots")');
+    const signOutControl = sliceBetween(screen, 't("Sign out")', 't("Archived")');
     expect(signOutControl).toContain("signOutError");
     expect(signOutControl).toContain('accessibilityRole="alert"');
     expect(signOutControl).not.toContain("deleteError");

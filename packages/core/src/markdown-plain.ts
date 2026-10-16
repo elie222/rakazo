@@ -234,11 +234,21 @@ function htmlTagClose(text: string, open: number): number {
   return quote && text.length > open + 1 ? text.length - 1 : -1;
 }
 
+// A tag opens with `!`, `?`, or a name of letters, digits and hyphens followed by
+// whitespace, `/` or `>` and then attribute-like content; `a<b+1` and `y && z` are prose.
+const HTML_TAG_START =
+  /(?:[!?]|\/?[A-Za-z][A-Za-z0-9-]*(?:[/>]|\s+(?:[/>]|[A-Za-z_:@][^\s"'<>/=&]*(?:[\s=/>]|$))))/y;
+
+function isHtmlTagStart(text: string, at: number): boolean {
+  HTML_TAG_START.lastIndex = at + 1;
+  return HTML_TAG_START.test(text);
+}
+
 function stripHtmlTags(text: string): string {
   let out = "";
   let i = 0;
   while (i < text.length) {
-    if (text[i] === "<") {
+    if (text[i] === "<" && isHtmlTagStart(text, i)) {
       const close = htmlTagClose(text, i);
       if (close !== -1) {
         out += " ";

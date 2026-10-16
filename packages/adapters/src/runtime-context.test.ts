@@ -93,6 +93,55 @@ describe("runtime context policy", () => {
     expect(prepared.messages.at(-1)).toEqual(context.messages.at(-1));
     expect(policy.getDecision()!.estimatedInputTokens).toBeLessThanOrEqual(8192 - 1024);
   });
+  it("keeps an earlier skill read verbatim while shortening other old tool evidence", () => {
+    const { request, context } = fixture(2);
+    const call = (id: string, name: string) =>
+      ({
+        role: "assistant",
+        content: [{ type: "toolCall", id, name, arguments: {} }],
+        timestamp: 101,
+      }) as unknown as Message;
+    const result = (id: string, name: string, body: string) =>
+      ({
+        role: "toolResult",
+        toolCallId: id,
+        toolName: name,
+        content: [{ type: "text", text: body }],
+        isError: false,
+        timestamp: 102,
+      }) as Message;
+    const skill = JSON.stringify({
+      name: "daily-brief",
+      description: "Daily brief",
+      source: "user",
+      readOnly: false,
+      content: `---\nname: daily-brief\n---\n${"1. Step kept for skill_update.\n".repeat(80)}`,
+    });
+    const shellOutput = "synthetic shell output ".repeat(100);
+    context.messages.push(
+      call("read", "skill_read"),
+      result("read", "skill_read", skill),
+      call("shell-1", "shell"),
+      result("shell-1", "shell", shellOutput),
+      call("shell-2", "shell"),
+      result("shell-2", "shell", shellOutput),
+    );
+    const policy = createRuntimeContextPolicy({
+      ...request,
+      contextStrategy: DEFAULT_CONTEXT_STRATEGY,
+    });
+    const prepared = policy.prepareContext(context, model);
+    const body = (id: string) => {
+      const message = prepared.messages.find(
+        (message) => message.role === "toolResult" && message.toolCallId === id,
+      ) as Extract<Message, { role: "toolResult" }>;
+      return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+    };
+    expect(skill.length).toBeGreaterThan(2500);
+    expect(body("read")).toBe(skill);
+    expect(body("shell-1")).toContain("[Tool result truncated to fit context");
+    expect(body("shell-2")).toBe(shellOutput);
+  });
   it("leaves the baseline provider payload untouched", () => {
     const { request, context } = fixture();
     const policy = createRuntimeContextPolicy({ ...request, contextStrategy: "current" });

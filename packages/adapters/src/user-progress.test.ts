@@ -8,6 +8,9 @@ import {
   finalBlocksAfterMidTurnProgress,
   isProgressMessageTruncated,
   isUserProgressClientNonce,
+  MID_TURN_PROGRESS_MAX_PER_RUN,
+  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
+  midTurnProgressBudgetAllows,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -35,6 +38,24 @@ describe("isProgressMessageTruncated", () => {
     const long = "x".repeat(USER_PROGRESS_MESSAGE_MAX_LENGTH + 1);
     expect(isProgressMessageTruncated(long)).toBe(true);
     expect(clampUserProgressMessage(long).endsWith("…")).toBe(true);
+  });
+});
+
+describe("midTurnProgressBudgetAllows", () => {
+  it("stays silent while a turn is still fresh", () => {
+    expect(midTurnProgressBudgetAllows(0, MID_TURN_PROGRESS_MIN_TURN_AGE_MS - 1)).toBe(false);
+  });
+
+  it("allows a few beats once a turn is long", () => {
+    const age = MID_TURN_PROGRESS_MIN_TURN_AGE_MS;
+    expect(midTurnProgressBudgetAllows(0, age)).toBe(true);
+    expect(midTurnProgressBudgetAllows(MID_TURN_PROGRESS_MAX_PER_RUN - 1, age)).toBe(true);
+  });
+
+  it("stops posting once the per-run cap is reached", () => {
+    const age = MID_TURN_PROGRESS_MIN_TURN_AGE_MS * 10;
+    expect(midTurnProgressBudgetAllows(MID_TURN_PROGRESS_MAX_PER_RUN, age)).toBe(false);
+    expect(midTurnProgressBudgetAllows(MID_TURN_PROGRESS_MAX_PER_RUN + 1, age)).toBe(false);
   });
 });
 

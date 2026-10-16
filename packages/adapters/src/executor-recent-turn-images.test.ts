@@ -4,14 +4,44 @@ import { describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 
+const lifecycleMocks = vi.hoisted(() => ({
+  renewComputerExecutionLease: vi.fn(async () => true),
+}));
+
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
   acquireComputerExecutionLease: async () => null,
+  acquireDedicatedScreenLeaseFence: async (
+    _prisma: unknown,
+    input: { computerId: string; botId: string; runId: string },
+  ) => ({
+    computerId: input.computerId,
+    botId: input.botId,
+    runId: input.runId,
+    fence: 7,
+  }),
   provisionComputer: async () => ({ id: "computer-1", kind: "desktop" }),
+  renewComputerExecutionLease: lifecycleMocks.renewComputerExecutionLease,
 }));
 
 const TEXT_ONLY_MODEL = "deepseek/deepseek-v4-flash-0731";
 const VISION_MODEL = "openai/gpt-4o";
+
+type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void };
+type Gate = { reached: Deferred<void>; release: Deferred<void> };
+type RunHooks = {
+  runtimeGate?: Gate;
+  notificationGate?: Gate;
+  computerLeaseRenewal?: () => Promise<boolean>;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 function historyMessages(): Array<{
   id: string;
@@ -55,7 +85,13 @@ async function runWithModel(
   switchModel?: { provider: string; modelId: string },
   backupReadFails = false,
   scripted = false,
+  finalizeSuccessfully = true,
+  hooks?: RunHooks,
 ) {
+  lifecycleMocks.renewComputerExecutionLease.mockReset();
+  lifecycleMocks.renewComputerExecutionLease.mockImplementation(
+    hooks?.computerLeaseRenewal ?? (async () => true),
+  );
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -68,9 +104,14 @@ async function runWithModel(
     leaseFence: 0,
   };
   const get = vi.fn(async () => new Uint8Array([1, 2, 3, 4]));
+  const releaseScreen = vi.fn(async (..._args: unknown[]) => undefined);
   let request: AgentRunRequest | undefined;
   const runtimeRun = vi.fn(async function* (next: AgentRunRequest) {
     request = next;
+    if (hooks?.runtimeGate) {
+      hooks.runtimeGate.reached.resolve(undefined);
+      await hooks.runtimeGate.release.promise;
+    }
     if (switchModel) {
       const onModelChange = (
         next as AgentRunRequest & {
@@ -85,6 +126,7 @@ async function runWithModel(
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
+      findFirst: vi.fn(async () => ({ bot: { notifyOnFinish: true }, thread: { groupId: null } })),
       updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         Object.assign(run, data);
         return { count: 1 };
@@ -163,13 +205,21 @@ async function runWithModel(
       ]),
     },
   };
-  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const finalizeRun = vi.fn(async () =>
+    finalizeSuccessfully ? { continuationRunId: null } : null,
+  );
+  const notificationSend = vi.fn(async () => {
+    if (!hooks?.notificationGate) return;
+    hooks.notificationGate.reached.resolve(undefined);
+    await hooks.notificationGate.release.promise;
+  });
   const executor = createRunExecutor({
     prisma,
     deploymentModelKey: "fake-deployment-key",
     runtime: { describe: () => ({ capabilities: { scripted } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ capabilities: { graphical: false } }),
+      releaseScreen,
       writeFile: vi.fn(async () => undefined),
       async *exportWorkspace() {
         yield* [];
@@ -181,14 +231,18 @@ async function runWithModel(
     artifacts: { get },
     events: { append: vi.fn(async () => undefined), finalizeRun },
     jobs: { enqueue: vi.fn(async () => undefined) },
+    notifications: hooks?.notificationGate ? { send: notificationSend } : undefined,
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
-  await executor.continueRun(run.id, "worker-1");
+  const execution = executor.continueRun(run.id, "worker-1");
+  if (hooks?.runtimeGate) await hooks.runtimeGate.reached.promise;
+  else if (hooks?.notificationGate) await hooks.notificationGate.reached.promise;
+  else await execution;
   expect(runtimeRun).toHaveBeenCalled();
   expect(finalizeRun).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: "failed" }));
   if (!request) throw new Error("runtime was not called");
-  return { request, get, prisma, run };
+  return { request, get, prisma, run, releaseScreen, execution, notificationSend };
 }
 
 describe("recent turn images follow model vision", () => {
@@ -290,5 +344,70 @@ describe("recent turn images follow model vision", () => {
       },
       data: { modelProvider: backup.provider, modelId: backup.modelId },
     });
+  });
+});
+
+describe("screen lifecycle after run completion", () => {
+  it("keeps only a successfully finalized run's screen warm and uses a dedicated screen fence", async () => {
+    const completed = await runWithModel(VISION_MODEL);
+    expect(completed.releaseScreen).toHaveBeenCalledOnce();
+    expect(completed.releaseScreen.mock.calls[0]?.[1]).toMatchObject({
+      keepScreenWarm: true,
+      screenLeaseId: "run-1:7",
+    });
+
+    const unfinished = await runWithModel(VISION_MODEL, undefined, false, false, false);
+    expect(unfinished.releaseScreen).toHaveBeenCalledOnce();
+    expect(unfinished.releaseScreen.mock.calls[0]?.[1]).not.toHaveProperty("keepScreenWarm");
+    expect(unfinished.releaseScreen.mock.calls[0]?.[1]).toMatchObject({ screenLeaseId: "run-1:7" });
+  });
+
+  it("ignores in-flight lease renewal after successful completion", async () => {
+    vi.useFakeTimers();
+    const runtimeGate = { reached: deferred<void>(), release: deferred<void>() };
+    const notificationGate = { reached: deferred<void>(), release: deferred<void>() };
+    const renewalStarted = deferred<void>();
+    const renewalResult = deferred<boolean>();
+    let completed: Awaited<ReturnType<typeof runWithModel>> | undefined;
+
+    try {
+      completed = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+        runtimeGate,
+        notificationGate,
+        computerLeaseRenewal: () => {
+          renewalStarted.resolve(undefined);
+          return renewalResult.promise;
+        },
+      });
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await renewalStarted.promise;
+      expect(lifecycleMocks.renewComputerExecutionLease).toHaveBeenCalledOnce();
+
+      runtimeGate.release.resolve(undefined);
+      await notificationGate.reached.promise;
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      renewalResult.resolve(false);
+      await vi.advanceTimersByTimeAsync(0);
+      notificationGate.release.resolve(undefined);
+      await completed.execution;
+
+      const releaseContext = completed.releaseScreen.mock.calls[0]?.[1] as {
+        keepScreenWarm?: boolean;
+        signal: AbortSignal;
+      };
+      expect({
+        renewals: lifecycleMocks.renewComputerExecutionLease.mock.calls.length,
+        signalAborted: releaseContext.signal.aborted,
+        keepScreenWarm: releaseContext.keepScreenWarm,
+      }).toEqual({ renewals: 1, signalAborted: false, keepScreenWarm: true });
+    } finally {
+      runtimeGate.release.resolve(undefined);
+      renewalResult.resolve(false);
+      notificationGate.release.resolve(undefined);
+      if (completed) await completed.execution;
+      vi.useRealTimers();
+    }
   });
 });

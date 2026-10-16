@@ -19,17 +19,17 @@
   },
   "dependencies": {
     "@rakazo/adapter-kit": "workspace:*",
-    "@prisma/adapter-pg": "7.10.0",
-    "@prisma/client": "7.10.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "@rakazo/contracts": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/logging": "workspace:*",
-    "pg": "8.23.0",
+    "pg": "8.23.1",
     "dotenv": "17.4.2"
   },
   "devDependencies": {
     "@types/pg": "8.23.1",
-    "prisma": "7.10.0",
+    "prisma": "7.10.1",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }

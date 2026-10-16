@@ -10,6 +10,11 @@ export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env):
   if (requested === "daytona" && !optional(source.DAYTONA_API_KEY)) return "none";
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
   if (requested === "box" && !optional(source.BOX_API_KEY)) return "none";
+  if (
+    requested === "railway" &&
+    (!optional(source.RAILWAY_API_TOKEN) || !optional(source.RAILWAY_ENVIRONMENT_ID))
+  )
+    return "none";
   // Production without a supervisor token cannot run Docker computers; boot as none instead of exiting.
   if (
     requested === "docker" &&
@@ -34,6 +39,9 @@ export function sandboxProviderOptionsFromEnv(
   | "createosBaseUrl"
   | "createosShape"
   | "createosRootfs"
+  | "railwayApiToken"
+  | "railwayEnvironmentId"
+  | "railwayMaxWorkspaceFileBytes"
   | "boxApiKey"
   | "boxApiUrl"
 > {
@@ -46,6 +54,9 @@ export function sandboxProviderOptionsFromEnv(
     createosBaseUrl: source.CREATEOS_SANDBOX_BASE_URL,
     createosShape: source.CREATEOS_SANDBOX_SHAPE,
     createosRootfs: source.CREATEOS_SANDBOX_ROOTFS,
+    railwayApiToken: source.RAILWAY_API_TOKEN,
+    railwayEnvironmentId: source.RAILWAY_ENVIRONMENT_ID,
+    railwayMaxWorkspaceFileBytes: source.RAILWAY_MAX_WORKSPACE_FILE_BYTES,
     boxApiKey: source.BOX_API_KEY,
     boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
   };

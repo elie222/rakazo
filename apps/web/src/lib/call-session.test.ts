@@ -93,6 +93,25 @@ describe("call session", () => {
     expect(listen).toHaveBeenCalledWith(expect.objectContaining({ transcribe: true }));
   });
 
+  it("releases the microphone after an empty give-up without retrying automatically", async () => {
+    startCall({ botId: "call-bot", botName: "Ada", transcribe: false });
+    await Promise.resolve();
+    const watcher = vi.mocked(dictation.subscribe).mock.calls.at(-1)?.[0];
+    const error = "The browser keeps dropping the microphone. Start dictation again to retry.";
+    watcher?.({ status: "idle", transcript: "", error });
+
+    expect(getSnapshot()?.caption).toBe(error);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(listen).toHaveBeenCalledOnce();
+    expect(send).not.toHaveBeenCalled();
+
+    // Playback requests the microphone again without resetting its guard first.
+    const speech = vi.mocked(speaker.subscribe).mock.calls.at(-1)?.[0];
+    speech?.({ status: "speaking", caption: "Are you there?" });
+    await Promise.resolve();
+    expect(listen).toHaveBeenCalledTimes(2);
+  });
+
   it("sends what it heard to the bot on the call, not the bot on screen", async () => {
     startCall({ botId: "call-bot", botName: "Ada", transcribe: false });
     await heard("book the flight");

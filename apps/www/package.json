@@ -16,16 +16,16 @@
     "@astrojs/sitemap": "3.7.4",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
-    "@vercel/functions": "3.9.7",
-    "astro": "7.3.2",
-    "posthog-js": "1.430.1",
+    "@vercel/functions": "3.10.1",
+    "astro": "7.4.0",
+    "posthog-js": "1.438.12",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "zod": "4.6.2"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",

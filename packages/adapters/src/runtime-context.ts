@@ -18,6 +18,14 @@ interface ProjectionEntry {
   catalogIds?: string[];
 }
 const projections = new Map<string, ProjectionEntry[]>();
+/** A skill read is the source text the agent rewrites with skill_update; never shorten it. */
+export const VERBATIM_TOOL_RESULTS: ReadonlySet<string> = new Set(["skill_read"]);
+// History reads are exact evidence and keep their own offset-aware shortening elsewhere.
+const UNSHORTENED_TOOL_RESULTS = new Set([
+  "read_history",
+  "search_history",
+  ...VERBATIM_TOOL_RESULTS,
+]);
 const messageHash = (message: Message) =>
   createHash("sha256")
     .update(JSON.stringify(providerContextPrefix("", [], [message])))
@@ -345,8 +353,7 @@ export function createRuntimeContextPolicy(
         if (
           message.role !== "toolResult" ||
           index >= latestToolCall ||
-          message.toolName === "read_history" ||
-          message.toolName === "search_history"
+          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
         )
           return message;
         const source = text(message);

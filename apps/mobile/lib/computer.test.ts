@@ -41,6 +41,35 @@ describe("embeddableScreenUrl", () => {
     expect(embeddableScreenUrl(url, "https://api.rakazo.test")).toBe(url);
   });
 
+  it.each(["screen.example", "8.8.8.8", "172.32.0.1", "100.63.255.255", "100.128.0.1"])(
+    "rejects public HTTP screens on %s",
+    (host) => {
+      expect(embeddableScreenUrl(`http://${host}/embed.html`, "https://api.example")).toBeNull();
+    },
+  );
+
+  it.each([
+    "localhost",
+    "127.0.0.1",
+    "[::1]",
+    "server.local",
+    "10.0.2.2",
+    "192.168.1.20",
+    "172.16.0.1",
+    "172.31.255.255",
+    "100.64.0.1",
+    "100.127.255.255",
+  ])("keeps LAN and local HTTP screens on %s", (host) => {
+    const url = `http://${host}:16080/embed.html`;
+    expect(embeddableScreenUrl(url, "http://localhost:3100")).toBe(url);
+  });
+
+  it("rejects loopback HTTP screens rewritten to a public API host", () => {
+    expect(
+      embeddableScreenUrl("http://localhost:16080/embed.html", "https://api.example"),
+    ).toBeNull();
+  });
+
   it("keeps loopback screens when the API is also loopback", () => {
     const url = "http://127.0.0.1:16080/embed.html?view_only=true";
     expect(embeddableScreenUrl(url, "http://127.0.0.1:3100")).toBe(url);

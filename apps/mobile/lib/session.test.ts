@@ -2,16 +2,19 @@ import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { artifactCacheSession } from "./artifact-cache-session";
 import { AVATAR_STYLE_KEY, getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style.js";
+import { clearNetworkCache } from "./network-cache.js";
 import {
   clearSessionToken,
   currentSessionGeneration,
   loadSessionToken,
   loadVerifiedIntegrationsScope,
+  registerSessionDiskCache,
   restoreSessionToken,
   saveAvatarStyleIfCurrent,
   saveSessionToken,
   saveVerifiedIntegrationsScope,
   snapshotSessionToken,
+  subscribeSessionGeneration,
   tokenFromAuthResponse,
 } from "./session.js";
 import { clearFailedSends } from "./thread-feedback.js";
@@ -25,6 +28,7 @@ vi.mock("./live-notifications.js", () => ({
   stopLiveNotifications: vi.fn(async () => undefined),
 }));
 vi.mock("./thread-feedback.js", () => ({ clearFailedSends: vi.fn() }));
+vi.mock("./network-cache.js", () => ({ clearNetworkCache: vi.fn() }));
 
 describe("mobile session storage", () => {
   beforeEach(async () => {
@@ -32,6 +36,56 @@ describe("mobile session storage", () => {
     vi.mocked(SecureStore.setItemAsync).mockReset();
     vi.mocked(SecureStore.deleteItemAsync).mockReset();
     await restoreSessionToken("");
+  });
+
+  it("hides the previous bearer while a replacement token is being stored", async () => {
+    vi.mocked(SecureStore.getItemAsync).mockResolvedValue("fake-old-token");
+    let finish!: () => void;
+    vi.mocked(SecureStore.setItemAsync).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const listener = vi.fn();
+    const unsubscribe = subscribeSessionGeneration(listener);
+    const saving = saveSessionToken("fake-new-token");
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    expect(await snapshotSessionToken()).toEqual({ ok: true, value: "" });
+    finish();
+    await saving;
+  });
+
+  it("wipes the outbox on sign-in, sign-out and server-session restoration", async () => {
+    vi.mocked(clearFailedSends).mockClear();
+    await saveSessionToken("fake-a");
+    await clearSessionToken();
+    await restoreSessionToken("fake-b");
+    expect(vi.mocked(clearFailedSends).mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("deletes registered disk caches on sign-in, sign-out and restore", async () => {
+    const clear = vi.fn();
+    registerSessionDiskCache(clear);
+    await saveSessionToken("fake-a");
+    expect(clear).toHaveBeenCalledTimes(1);
+    await clearSessionToken();
+    expect(clear).toHaveBeenCalledTimes(2);
+    await restoreSessionToken("fake-b");
+    expect(clear.mock.calls.length).toBeGreaterThan(2);
+  });
+
+  it("still signs out and runs every other wipe when one disk cache throws", async () => {
+    const after = vi.fn();
+    registerSessionDiskCache(() => {
+      throw new Error("disk unavailable");
+    });
+    registerSessionDiskCache(after);
+    await expect(clearSessionToken()).resolves.toBe(true);
+    expect(after).toHaveBeenCalledOnce();
+    expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith("rakazo.integrations-scope");
   });
 
   it("stores and clears only the session token key", async () => {
@@ -57,6 +111,18 @@ describe("mobile session storage", () => {
     }
   });
 
+  it("clears the system network cache on session save, clear and restore", async () => {
+    for (const change of [
+      () => saveSessionToken("fake-cache-token"),
+      () => clearSessionToken(),
+      () => restoreSessionToken("fake-cache-token"),
+    ]) {
+      vi.mocked(clearNetworkCache).mockClear();
+      await change();
+      expect(clearNetworkCache).toHaveBeenCalled();
+    }
+  });
+
   it("forgets unsent messages on sign-out", async () => {
     vi.mocked(clearFailedSends).mockClear();
     await clearSessionToken();
@@ -64,11 +130,11 @@ describe("mobile session storage", () => {
   });
 
   it("forgets the cached avatar style on sign-out", async () => {
-    await saveAvatarStyle("organic");
+    await saveAvatarStyle("robot");
     await clearSessionToken();
 
     expect(SecureStore.deleteItemAsync).toHaveBeenCalledWith(AVATAR_STYLE_KEY);
-    expect(getCachedAvatarStyle()).toBe("robot");
+    expect(getCachedAvatarStyle()).toBe("organic");
   });
 
   it("ignores an avatar style response from a session that was cleared", async () => {
@@ -78,7 +144,7 @@ describe("mobile session storage", () => {
 
     await expect(saveAvatarStyleIfCurrent(generation, "organic")).resolves.toBe(false);
     expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(AVATAR_STYLE_KEY, "organic");
-    expect(getCachedAvatarStyle()).toBe("robot");
+    expect(getCachedAvatarStyle()).toBe("organic");
   });
 
   it("does not let an in-flight style write land after sign-out", async () => {
@@ -105,7 +171,7 @@ describe("mobile session storage", () => {
       await clearing;
 
       expect(disk.has(AVATAR_STYLE_KEY)).toBe(false);
-      expect(getCachedAvatarStyle()).toBe("robot");
+      expect(getCachedAvatarStyle()).toBe("organic");
     } finally {
       releaseWrite();
       vi.mocked(SecureStore.setItemAsync).mockReset();

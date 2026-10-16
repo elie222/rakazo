@@ -63,6 +63,7 @@ import {
   destroyBot,
   displayBotWorkspacePath,
   enqueueTakeoverContinuation,
+  ensureComputerWorkspaceLayout,
   expireComputerControl,
   forgetBotSecret,
   hasActiveComputerControl,
@@ -2170,7 +2171,15 @@ export function createRouter(deps: RouterDeps) {
         if (target.kind === "bot") {
           await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         }
-        return sendThreadMessage(deps, context.actor, target, input);
+        return sendThreadMessage(
+          deps,
+          context.actor,
+          target,
+          input,
+          target.kind === "bot"
+            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
+            : undefined,
+        );
       }),
       react: authed.threads.react.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
@@ -2485,8 +2494,19 @@ export function createRouter(deps: RouterDeps) {
         const bot = await repos.getBot(context.actor, input.botId);
         if (!bot.computer) throw new IsolationError();
         if (bot.computer.state === "running" && bot.computer.providerRef) {
-          scheduleComputerSleep(deps.jobs, bot.computer.id);
-          return computerStatus(deps, context.actor, input.botId);
+          try {
+            await ensureComputerWorkspaceLayout(
+              deps.sandbox,
+              toComputerRef(bot.computer),
+              parseComputerMode(bot.computer.scope),
+              bot.id,
+              computerContext(context.actor, bot.id, "boot"),
+            );
+            scheduleComputerSleep(deps.jobs, bot.computer.id);
+            return computerStatus(deps, context.actor, input.botId);
+          } catch (error) {
+            await clearGoneSandbox(deps, bot.computer, error);
+          }
         }
         const ctx = computerContext(context.actor, bot.id, "boot");
         const manualRunId = `boot:${randomUUID()}`;
@@ -2924,7 +2944,9 @@ export function createRouter(deps: RouterDeps) {
             data: { updatedAt: new Date() },
           });
           scheduleComputerSleep(deps.jobs, computer.id);
-          entries = await deps.sandbox.listFiles(toComputerRef(computer), storedPath, ctx);
+          const ref = toComputerRef(computer);
+          await ensureComputerWorkspaceLayout(deps.sandbox, ref, computerMode, bot.id, ctx);
+          entries = await deps.sandbox.listFiles(ref, storedPath, ctx);
         } else {
           entries = await deps.home.list(computer.homeKey, storedPath, ctx);
         }
@@ -6335,7 +6357,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     computerHost: computerHostFor(setup.settings?.computerHost, deps.env.sandboxProvider),
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
-    avatarStyle: user.avatarStyle === "organic" ? "organic" : "robot",
+    avatarStyle: user.avatarStyle === "robot" ? "robot" : "organic",
     billingEnabled: Boolean(deps.billing) && !actor.isDeploymentOwner,
   };
 }
@@ -6429,12 +6451,41 @@ async function releaseComputerControl(
   actor: Actor,
   botId: string,
   reason?: ComputerReleaseReason,
+  expectedRunId?: string,
 ): Promise<void> {
-  const bot = await createRepos(deps.prisma).getBot(actor, botId);
-  if (!bot.computer) throw new IsolationError();
+  let bot = await createRepos(deps.prisma).getBot(actor, botId);
+  if (!bot.computer) {
+    if (expectedRunId !== undefined) return;
+    throw new IsolationError();
+  }
+  const unopenedTakeover =
+    expectedRunId !== undefined &&
+    bot.computer.controlHolder === "none" &&
+    bot.computer.controlBotId === null &&
+    bot.computer.controlLeaseId === null &&
+    bot.computer.controlRunId === expectedRunId;
+  if (unopenedTakeover) {
+    const released = await deps.events.finalizeComputerControlRelease({
+      spaceId: actor.spaceId,
+      computerId: bot.computer.id,
+      botId: bot.id,
+      runId: expectedRunId,
+      leaseId: null,
+      holder: "bot",
+      reason: reason ?? "released",
+    });
+    if (released) {
+      await enqueueTakeoverContinuation(deps.jobs, released.runId);
+      scheduleComputerSleep(deps.jobs, bot.computer.id);
+      return;
+    }
+    bot = await createRepos(deps.prisma).getBot(actor, botId);
+    if (!bot.computer) return;
+  }
   const controlBotId = bot.computer.controlBotId;
   const controlLeaseId = bot.computer.controlLeaseId;
   if (bot.computer.controlHolder !== "user" || !controlBotId || controlBotId !== bot.id) return;
+  if (expectedRunId !== undefined && bot.computer.controlRunId !== expectedRunId) return;
   if (!hasActiveComputerControl(bot.computer) || !controlLeaseId) {
     // Stale controlHolder=user. Prefer expiry (revokes provider control). If a lease id
     // remains after a failed revoke, keep it so reconciliation can retry.

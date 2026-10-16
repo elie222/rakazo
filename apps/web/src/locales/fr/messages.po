@@ -1612,6 +1612,7 @@ msgstr "Impossible d'exécuter la routine"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "Impossible d'enregistrer"
@@ -2402,7 +2403,7 @@ msgstr "Bonjour, c'est ainsi que je sonnerai quand je lirai les réponses à voi
 msgid "Hide bots"
 msgstr "Masquer les bots"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "Masquer le mot de passe"
 
@@ -4005,6 +4006,10 @@ msgstr "L'envoyer"
 msgid "Send reset link"
 msgstr "Envoyer le lien de réinitialisation"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Send with Enter"
+msgstr "Envoyer avec Entrée"
+
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Envoi en cours…"
@@ -4064,8 +4069,8 @@ msgid "Shared"
 msgstr "Partagé"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
-msgstr "Conversation partagée avec 2 à 6 bots. Ils répondent tous dans le même fil."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
+msgstr "Conversation partagée avec {GROUP_MEMBER_MIN} à {GROUP_MEMBER_MAX} bots. Ils répondent tous dans le même fil."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared documents"
@@ -4095,7 +4100,7 @@ msgstr "Afficher la liste"
 msgid "Show more"
 msgstr "Afficher plus"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "Afficher le mot de passe"
 

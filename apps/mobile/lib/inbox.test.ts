@@ -36,6 +36,10 @@ describe("filterBots", () => {
     expect(filterBots(bots, "zero").map((item) => item.id)).toEqual(["inbox"]);
     expect(filterBots(bots, "PIXEL").map((item) => item.id)).toEqual(["seo"]);
   });
+
+  it("skips a missing title", () => {
+    expect(filterBots([{ id: "old", name: "Old", preview: "" }], "undefined")).toEqual([]);
+  });
 });
 
 describe("botTag", () => {
@@ -48,6 +52,7 @@ describe("botTag", () => {
     expect(botTag("", "Chief")).toBe("");
     expect(botTag("Chief", "Chief")).toBe("");
     expect(botTag("Lets me know whats happening in my inbox", "Slack bot")).toBe("");
+    expect(botTag(undefined, "Chief")).toBe("");
   });
 });
 

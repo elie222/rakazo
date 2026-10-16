@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 
-import { resolveComposerSendPlan } from "@rakazo/core";
+import { AiConsentBlocked, resolveComposerSendPlan } from "@rakazo/core";
 import type { ReactNode } from "react";
 import { act, createElement } from "react";
 import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
-import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailedSendBubble } from "../components/failed-send-bubble";
 import type { ComposerSnapshot, SendPayload } from "./thread-feedback";
 import {
   clearFailedSends,
-  deliverSend,
+  configureUnsentSends,
+  confirmEchoes,
+  restoreUnsentSends,
+  sendWaitingMessages,
   settleComposer,
   useThreadFeedback,
 } from "./thread-feedback";
@@ -53,14 +55,17 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}) }));
-vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+vi.mock("./i18n", () => ({
+  t: (text: string) => text,
+  useI18n: () => ({ t: (text: string) => text }),
+}));
 
 let feedback: ReturnType<typeof useThreadFeedback>;
 let nonces = 0;
 const retry = vi.fn();
 function Probe({ threadKey }: { threadKey: string }) {
   feedback = useThreadFeedback(threadKey, () => `nonce-${++nonces}`);
-  return feedback.failedSends.map((attempt) => (
+  return feedback.unsentSends.map((attempt) => (
     <FailedSendBubble
       key={attempt.clientNonce}
       attempt={attempt}
@@ -116,258 +121,220 @@ describe("composer settlement", () => {
   });
 });
 
-describe("thread feedback", () => {
+describe("scoped mobile outbox", () => {
   let root: Root;
   let container: HTMLDivElement;
-  function render(threadKey: string) {
-    act(() => root.render(<Probe threadKey={threadKey} />));
-  }
+  let reachable = true;
+  const scope = {
+    apiBase: "https://api.example.test",
+    userId: "user-a",
+    cacheSession: "ns-a",
+    spaceId: "space-a",
+  };
+  const request = vi.fn();
+  const disk = {
+    admit: vi.fn(() => true),
+    hydrate: vi.fn(async () => undefined),
+    forget: vi.fn(),
+    load: vi.fn(() => []),
+    save: vi.fn(),
+    clear: vi.fn(),
+  };
+  const notDelivered = vi.fn();
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    clearFailedSends();
     vi.clearAllMocks();
-    Platform.OS = "ios";
+    reachable = true;
+    scope.spaceId = "space-a";
+    request.mockImplementation(async (proc) =>
+      proc === "artifacts/create" ? { id: "artifact-a" } : { seq: 42 },
+    );
+    configureUnsentSends({
+      request,
+      scope: () => scope,
+      serverReachable: () => reachable,
+      disk,
+      errorText: String,
+      notDelivered,
+    });
+    restoreUnsentSends();
     container = document.createElement("div");
-    document.body.append(container);
     root = createRoot(container);
-    render("bot-1");
+    act(() => root.render(<Probe threadKey="bot-1" />));
   });
   afterEach(() => {
     act(() => root.unmount());
-    act(() => clearFailedSends());
-    container.remove();
+    clearFailedSends();
     vi.unstubAllGlobals();
   });
-
-  it("renders the outgoing payload and caption, and pressing it retries", () => {
+  it("shows the optimistic payload before confirmation, then replaces it with the echo", async () => {
+    let finish!: (value: { seq: number }) => void;
+    request.mockImplementation(async (proc) =>
+      proc === "artifacts/create"
+        ? { id: "artifact-a" }
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+    );
     const attempt = feedback.sendAttempt(payload());
-    act(() => feedback.sendFailed(attempt));
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
     expect(container.textContent).toContain("Hello");
-    expect(container.textContent).toContain("photo.png");
-    expect(container.textContent).toContain("Quoted message");
-    const button = container.querySelector("button")!;
-    expect(button.getAttribute("aria-label")).toBe("Hello, photo.png. Not sent · Tap to retry");
-    expect(button.getAttribute("aria-description")).toBe("Long press to delete");
-    act(() => button.click());
-    expect(retry).toHaveBeenCalledOnce();
-    act(() => feedback.start(attempt));
-    expect(button.disabled).toBe(true);
     expect(container.textContent).toContain("Sending…");
-    expect(button.getAttribute("aria-label")).toBe("Hello, photo.png. Sending…");
-    expect(button.hasAttribute("aria-description")).toBe(false);
-    expect(feedback.start(attempt)).toBe(false);
-    act(() => feedback.sendFailed(attempt));
-    expect(button.disabled).toBe(false);
-  });
-
-  it("keeps the first delivery out of the failed bubbles until it fails", async () => {
-    const attempt = feedback.sendAttempt(payload());
-    let reject!: (error: Error) => void;
-    const pending = new Promise<never>((_resolve, rejectRequest) => {
-      reject = rejectRequest;
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    const writes = disk.save.mock.calls.length;
+    act(() => confirmEchoes("bot-1", []));
+    expect(disk.save).toHaveBeenCalledTimes(writes);
+    await act(async () => {
+      finish({ seq: 42 });
+      await sending;
     });
-    const request = vi.fn().mockReturnValue(pending);
-    act(() => {
-      feedback.start(attempt);
-    });
-    const delivery = deliverSend(attempt.payload, attempt, request);
-    expect(attempt.sending).toBe(true);
+    act(() => confirmEchoes("bot-1", [42]));
     expect(container.textContent).toBe("");
-    expect(feedback.failedSends).toEqual([]);
-    reject(new Error("Quota exceeded"));
-    await expect(delivery).rejects.toThrow("Quota exceeded");
-    act(() => {
-      attempt.error = "Quota exceeded";
-      feedback.sendFailed(attempt);
+  });
+  it("keeps sends ordered, persisted and scoped while offline, and retries on reconnect", async () => {
+    reachable = false;
+    const first = feedback.sendAttempt(payload("First"));
+    const second = feedback.sendAttempt(payload("Second"));
+    await act(async () => {
+      await feedback.send(first);
+      await feedback.send(second);
     });
+    expect(request).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Not sent · Tap to retry");
-  });
-
-  it("reuses the frozen target, nonce, routine nonces, and uploaded artifact ids on retry", async () => {
-    const frozen = payload();
-    frozen.groupTarget = "rerouted-group";
-    frozen.botTarget = undefined;
-    frozen.reroutedToGroup = true;
-    frozen.plan.shouldRunRoutines = true;
-    frozen.plan.routineIds = ["routine-1"];
-    const attempt = feedback.sendAttempt(frozen);
-    const request = vi.fn().mockImplementation(async (method: string) => {
-      if (method === "artifacts/create") return { id: "artifact-1" };
-      if (method === "threads/send") throw new Error("Response lost");
+    expect(disk.save).toHaveBeenLastCalledWith([first, second]);
+    reachable = true;
+    await act(async () => {
+      await sendWaitingMessages();
     });
-    await expect(deliverSend(frozen, attempt, request)).rejects.toThrow("Response lost");
-    act(() => feedback.sendFailed(attempt));
-    render("bot-2");
-    request.mockImplementation(async (method: string) =>
-      method === "artifacts/create" ? { id: "artifact-2" } : undefined,
+    expect(
+      request.mock.calls.filter(([proc]) => proc === "threads/send").map(([, body]) => body.text),
+    ).toEqual(["First", "Second"]);
+  });
+  it("drops late failures and further uploads after a session wipe", async () => {
+    let finish!: (value: { id: string }) => void;
+    request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
     );
-    await deliverSend(attempt.payload, attempt, request);
-    const sends = request.mock.calls.filter(([method]) => method === "threads/send");
-    expect(sends).toHaveLength(2);
-    expect(sends[0]).toEqual(sends[1]);
-    expect(sends[1]![1]).toMatchObject({
-      groupId: "rerouted-group",
-      text: "Hello",
-      clientNonce: attempt.clientNonce,
-      artifactIds: ["artifact-1"],
-    });
-    expect(sends[1]![1].replyToMessageId).toBeUndefined();
-    expect(request.mock.calls.filter(([method]) => method === "artifacts/create")).toHaveLength(1);
-    const routines = request.mock.calls.filter(([method]) => method === "routines/testRun");
-    expect(routines[0]).toEqual(routines[1]);
-    expect(routines[1]![1].clientNonce).toBe(`routine-mention:${attempt.clientNonce}:routine-1`);
-    act(() => feedback.sent(attempt));
-    render("bot-1");
-    expect(feedback.failedSends).toEqual([]);
-  });
-
-  it("retains completed uploads when a later attachment fails", async () => {
-    const frozen = payload();
-    frozen.attachments.push({ ...frozen.attachments[0]!, id: "attachment-2" });
-    const attempt = feedback.sendAttempt(frozen);
-    const request = vi
-      .fn()
-      .mockResolvedValueOnce({ id: "artifact-1" })
-      .mockRejectedValueOnce(new Error("Upload interrupted"));
-    await expect(deliverSend(frozen, attempt, request)).rejects.toThrow("Upload interrupted");
-    request.mockResolvedValueOnce({ id: "artifact-2" }).mockResolvedValueOnce(undefined);
-    await deliverSend(frozen, attempt, request);
-    expect(request).toHaveBeenCalledTimes(4);
-    expect(request.mock.calls[3]![1]).toMatchObject({ artifactIds: ["artifact-1", "artifact-2"] });
-  });
-
-  it("offers native retry, destructive delete, and cancel with the failure reason", () => {
     const attempt = feedback.sendAttempt(payload());
-    attempt.error = "Quota exceeded";
-    act(() => feedback.sendFailed(attempt));
-    act(() =>
-      container
-        .querySelector("button")!
-        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
-    );
-    const showSheet = vi.mocked(ActionSheetIOS.showActionSheetWithOptions);
-    expect(showSheet).toHaveBeenCalledWith(
-      {
-        message: "Quota exceeded",
-        options: ["Try Again", "Delete", "Cancel"],
-        destructiveButtonIndex: 1,
-        cancelButtonIndex: 2,
-      },
-      expect.any(Function),
-    );
-    const choose = showSheet.mock.calls[0]![1];
-    act(() => choose(2));
-    expect(feedback.failedSends).toEqual([attempt]);
-    act(() => choose(0));
-    expect(retry).toHaveBeenCalledOnce();
-    act(() => choose(1));
-    expect(feedback.failedSends).toEqual([]);
-  });
-
-  it("shows the latest failure reason in the Android alert", () => {
-    Platform.OS = "android";
-    const attempt = feedback.sendAttempt(payload());
+    let sending!: Promise<boolean>;
     act(() => {
-      attempt.error = "Quota exceeded";
-      feedback.sendFailed(attempt);
+      sending = feedback.send(attempt);
     });
-    act(() => feedback.start(attempt));
-    act(() => {
-      attempt.error = "Bot archived";
-      feedback.sendFailed(attempt);
-    });
-    act(() =>
-      container
-        .querySelector("button")!
-        .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true })),
-    );
-    expect(Alert.alert).toHaveBeenCalledWith("Not sent · Tap to retry", "Bot archived", [
-      { text: "Try Again", onPress: retry },
-      { text: "Delete", style: "destructive", onPress: expect.any(Function) },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  });
-
-  it("gives new and edited messages fresh nonces and upload caches", () => {
-    const failed = feedback.sendAttempt(payload());
-    failed.artifactIds.set("attachment-1", "artifact-1");
-    act(() => feedback.sendFailed(failed));
-    for (const text of ["Hello", "Edited"]) {
-      const fresh = feedback.sendAttempt(payload(text));
-      expect(fresh.clientNonce).not.toBe(failed.clientNonce);
-      expect(fresh.artifactIds.size).toBe(0);
-    }
-  });
-
-  it("keeps failures scoped to the origin and does not replace another failed message", () => {
-    const first = feedback.sendAttempt(payload());
-    const second = feedback.sendAttempt(payload("Another"));
-    act(() => {
-      feedback.sendFailed(first);
-      feedback.sendFailed(second);
-    });
-    render("bot-2");
-    expect(feedback.failedSends).toEqual([]);
-    expect(container.textContent).toBe("");
-    render("bot-1");
-    expect(feedback.failedSends).toEqual([first, second]);
-    act(() => feedback.discard(first));
-    expect(feedback.failedSends).toEqual([second]);
-  });
-
-  it("keeps a send that fails after switching bots replaced the thread screen", () => {
-    const attempt = feedback.sendAttempt(payload());
-    act(() => {
-      feedback.start(attempt);
-    });
-    const leaving = feedback;
-    act(() => root.unmount());
-    act(() => {
-      attempt.error = "Network request failed";
-      leaving.sendFailed(attempt);
-    });
-    root = createRoot(container);
-    render("bot-2");
-    expect(feedback.failedSends).toEqual([]);
-    expect(container.textContent).toBe("");
-    act(() => root.unmount());
-    root = createRoot(container);
-    render("bot-1");
-    expect(feedback.failedSends).toEqual([attempt]);
-    expect(container.querySelector("button")!.getAttribute("aria-label")).toBe(
-      "Hello, photo.png. Not sent · Tap to retry",
-    );
-    act(() => feedback.start(attempt));
-    act(() => feedback.sent(attempt));
-    expect(container.textContent).toBe("");
-  });
-
-  it("forgets unsent messages on sign-out, including one still in flight", () => {
-    const failed = feedback.sendAttempt(payload());
-    const inFlight = feedback.sendAttempt(payload("Another"));
-    act(() => {
-      feedback.sendFailed(failed);
-      feedback.start(inFlight);
-    });
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     act(() => clearFailedSends());
+    await act(async () => {
+      finish({ id: "artifact-a" });
+      await sending;
+    });
+    expect(request).toHaveBeenCalledOnce();
+    expect(notDelivered).not.toHaveBeenCalled();
     expect(container.textContent).toBe("");
-    act(() => feedback.sendFailed(inFlight));
-    expect(feedback.failedSends).toEqual([]);
-    const next = feedback.sendAttempt(payload("Next account"));
-    act(() => feedback.sendFailed(next));
-    expect(feedback.failedSends).toEqual([next]);
+    expect(disk.clear).toHaveBeenCalled();
   });
-
-  it("keeps load failures separate from sends and clears them when a refresh reaches the server", () => {
-    act(() => feedback.setError("Could not reach the server"));
-    act(() => feedback.sendFailed(feedback.sendAttempt(payload())));
-    expect(feedback.error).toBe("Could not reach the server");
-    act(() => feedback.refreshed());
-    expect(feedback.error).toBeNull();
-    act(() => feedback.setError("Load failed"));
-    render("bot-2");
-    expect(feedback.error).toBeNull();
-    act(() => feedback.setError("Current load failed"));
-    act(() => feedback.refreshed("bot-1"));
-    expect(feedback.error).toBe("Current load failed");
+  it("reports real errors and reuses uploaded artifacts on manual retry", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request
+      .mockResolvedValueOnce({ id: "artifact-a" })
+      .mockRejectedValueOnce(new Error("Quota exceeded"));
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(notDelivered).toHaveBeenCalledWith(attempt);
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(request.mock.calls.filter(([proc]) => proc === "artifacts/create")).toHaveLength(1);
+    const sends = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(sends[0]).toEqual(sends[1]);
+  });
+  it.each([false, true])("pauses the ordered queue on HTTP 429 (wrapped: %s)", async (wrapped) => {
+    reachable = false;
+    const first = feedback.sendAttempt(payload("First"));
+    const second = feedback.sendAttempt(payload("Second"));
+    await act(async () => {
+      await feedback.send(first);
+      await feedback.send(second);
+    });
+    reachable = true;
+    const error = Object.assign(new Error("Slow down"), { status: 429 });
+    request.mockRejectedValueOnce(wrapped ? new AiConsentBlocked("Consent check", error) : error);
+    await act(async () => {
+      await sendWaitingMessages();
+    });
+    expect(first.state).toBe("queued");
+    expect(second.state).toBe("queued");
+    expect(request).toHaveBeenCalledOnce();
+    expect(notDelivered).not.toHaveBeenCalled();
+  });
+  it("retries after a reconnect that arrived during an in-flight send", async () => {
+    let rejectUpload!: (error: unknown) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectUpload = reject;
+        }),
+    );
+    const attempt = feedback.sendAttempt(payload("Held"));
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    await vi.waitFor(() => expect(rejectUpload).toBeTypeOf("function"));
+    const replay = sendWaitingMessages();
+    await act(async () => {
+      rejectUpload(Object.assign(new Error("unavailable"), { status: 503 }));
+      await sending;
+      await replay;
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+    expect(request.mock.calls.filter(([proc]) => proc === "threads/send")).toHaveLength(1);
+    expect(notDelivered).not.toHaveBeenCalled();
+  });
+  it("allows Retry after a consent conflict before dispatch", async () => {
+    const attempt = feedback.sendAttempt(payload());
+    request.mockRejectedValueOnce(
+      new AiConsentBlocked(
+        "Review consent again",
+        Object.assign(new Error("Changed"), { status: 409 }),
+      ),
+    );
+    await act(async () => {
+      await feedback.send(attempt);
+    });
+    expect(attempt.state).toBe("failed");
+    await act(async () => {
+      await feedback.send(attempt, true);
+    });
+    expect(attempt.acceptedSeq).toBe(42);
+  });
+  it("keeps the original Space while selection changes during an upload", async () => {
+    let finish!: (value: { id: string }) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const attempt = feedback.sendAttempt(payload());
+    let sending!: Promise<boolean>;
+    act(() => {
+      sending = feedback.send(attempt);
+    });
+    await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+    scope.spaceId = "space-b";
+    await act(async () => {
+      finish({ id: "artifact-a" });
+      await sending;
+    });
+    const [send] = request.mock.calls.filter(([proc]) => proc === "threads/send");
+    expect(send?.[3]).toBe("space-a");
+    expect(attempt.acceptedSeq).toBe(42);
   });
 });

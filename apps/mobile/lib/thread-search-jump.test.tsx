@@ -66,6 +66,10 @@ describe("mobile search jump", () => {
         const jumpScrollTarget = useRef<string | null>(null);
         const scope = {
           rpc,
+          liveSavedChatsScope: async () => ({}),
+          isIntegrationsScopeCurrent: () => true,
+          snapshotOrigin: useRef(null),
+          setShowingSaved: vi.fn(),
           historyEpoch: useRef(0),
           jumpGeneration: useRef(0),
           activeGroupId: useRef(targetKey === "groupId" ? "target-1" : undefined),

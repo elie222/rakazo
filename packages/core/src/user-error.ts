@@ -40,6 +40,27 @@ export function isNetworkFailure(error: unknown): boolean {
   return false;
 }
 
+/** True for the gateway answers a proxy gives while the server is down or restarting. */
+export function isUnreachableStatus(status: number): boolean {
+  return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * True when a request may never have reached the server (no connection, a timeout, or a gateway
+ * error), so sending it again later is safe and right; false when the server answered.
+ */
+export function isServerUnreachable(error: unknown): boolean {
+  if (isNetworkFailure(error)) return true;
+  let current = error;
+  for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
+    if (current.name === "TimeoutError") return true;
+    const status = (current as { status?: unknown }).status;
+    if (typeof status === "number" && isUnreachableStatus(status)) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
 export function isTechnicalErrorMessage(message: string): boolean {
   return TECHNICAL_MESSAGE.some((pattern) => pattern.test(message));
 }

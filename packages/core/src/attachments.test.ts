@@ -142,3 +142,30 @@ describe("peer message history", () => {
     ).toBe("[to Analyst] chart it");
   });
 });
+
+describe("ask history", () => {
+  it("shows an answered ask with the chosen label so a later turn does not ask again", () => {
+    const actions = [
+      { id: "choice-1", label: "Berlin" },
+      { id: "choice-2", label: "Paris" },
+    ];
+    expect(blocksToAgentHistoryText([{ kind: "ask", text: "Which city?", actions }])).toBe(
+      "Which city?",
+    );
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "Which city?", actions, status: "answered", answer: "choice-2" },
+      ]),
+    ).toBe("Which city?\nAnswer: Paris");
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "Which city?", status: "answered", answer: "Lisbon" },
+      ]),
+    ).toBe("Which city?\nAnswer: Lisbon");
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "API key", input: "secret", status: "answered", answer: "" },
+      ]),
+    ).toBe("API key");
+  });
+});

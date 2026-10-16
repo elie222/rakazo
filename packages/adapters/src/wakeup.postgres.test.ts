@@ -140,6 +140,121 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
+  async function keyedRow(key: string): Promise<{
+    attempts: number;
+    maxAttempts: number;
+    runAt: Date;
+    payload: string;
+  } | null> {
+    const result = await testPool().query<{
+      attempts: number;
+      max_attempts: number;
+      run_at: Date;
+      payload: unknown;
+    }>(
+      "select attempts, max_attempts, run_at, payload from graphile_worker._private_jobs where key = $1",
+      [key],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      attempts: Number(row.attempts),
+      maxAttempts: Number(row.max_attempts),
+      runAt: new Date(row.run_at),
+      payload: JSON.stringify(row.payload),
+    };
+  }
+
+  it("keeps attempts and run_at while a keyed job is still in backoff", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-backoff:${Date.now()}`;
+    const runAt = new Date(Date.now() + 60 * 60 * 1000);
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "backed-off" },
+        availableAt: runAt,
+        replaceKey: key,
+        maxAttempts: 5,
+      });
+      await testPool().query(
+        "update graphile_worker._private_jobs set attempts = 2, run_at = $2 where key = $1",
+        [key, runAt],
+      );
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "pulled-forward" },
+        availableAt: new Date(),
+        replaceKey: key,
+        keepExisting: true,
+      });
+      const kept = await keyedRow(key);
+      expect(kept?.attempts).toBe(2);
+      expect(kept?.maxAttempts).toBe(5);
+      expect(kept?.runAt.getTime()).toBe(runAt.getTime());
+      expect(kept?.payload).toContain("backed-off");
+      expect(kept?.payload).not.toContain("pulled-forward");
+    } finally {
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
+  it("re-enqueues an exhausted job with fresh attempts", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-exhausted:${Date.now()}`;
+    const revivedAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "exhausted" },
+        availableAt: new Date(Date.now() + 60 * 60 * 1000),
+        replaceKey: key,
+        maxAttempts: 3,
+      });
+      await testPool().query(
+        "update graphile_worker._private_jobs set attempts = max_attempts where key = $1",
+        [key],
+      );
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "revived" },
+        availableAt: revivedAt,
+        replaceKey: key,
+        keepExisting: true,
+      });
+      const revived = await keyedRow(key);
+      expect(revived?.attempts).toBe(0);
+      expect(revived?.runAt.getTime()).toBe(revivedAt.getTime());
+      expect(revived?.payload).toContain("revived");
+    } finally {
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
+  it("enqueues a keepExisting job when the key is missing", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-missing:${Date.now()}`;
+    const runAt = new Date(Date.now() + 3 * 60 * 60 * 1000);
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "fresh" },
+        availableAt: runAt,
+        replaceKey: key,
+        keepExisting: true,
+      });
+      const inserted = await keyedRow(key);
+      expect(inserted?.attempts).toBe(0);
+      expect(inserted?.runAt.getTime()).toBe(runAt.getTime());
+      expect(inserted?.payload).toContain("fresh");
+    } finally {
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
   it("persists a handler failure and retries the job successfully", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const host = new GraphileJobWorkerHost(testPool(), { concurrency: 1, pollInterval: 25 });

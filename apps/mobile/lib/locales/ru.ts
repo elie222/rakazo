@@ -1,12 +1,16 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Couldn't refresh — showing the last loaded messages.":
+    "Не удалось обновить — показаны последние загруженные сообщения.",
   "Try Again": "Повторить",
+  "Too many unsent messages": "Слишком много неотправленных сообщений",
+  "Not sent": "Не отправлено",
   "Not sent · Tap to retry": "Не отправлено · Нажмите, чтобы повторить",
   Photo: "Фото",
   Today: "Сегодня",
   Yesterday: "Вчера",
   You: "Вы",
   "Original message unavailable": "Исходное сообщение недоступно",
-  "No archived bots": "Нет архивированных ботов",
+  "No archived chats": "Нет архивированных чатов",
   "Recover computer?": "Восстановить компьютер?",
   "Recreate a computer that is not working.": "Пересоздать неработающий компьютер.",
   "Restore the last saved workspace.": "Восстановить последнее сохранённое рабочее пространство.",
@@ -132,7 +136,7 @@ export const RU_MESSAGES: Record<string, string> = {
     "Архивирование сохраняет всё и обратимо. Удаление необратимо.",
   "Collapse {name}": "Свернуть {name}",
   "Expand {name}": "Развернуть {name}",
-  "Archived bots": "Архивированные боты",
+  Archived: "В архиве",
   "Archived. Chat, memory, and files kept.": "В архиве. Чат, память и файлы сохраняются.",
   Asleep: "Спит",
   Attach: "Вложение",
@@ -261,6 +265,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not reach that server": "Не удалось связаться с этим сервером",
   "Could not reach this model server": "Не удалось связаться с сервером этой модели.",
   "Could not remove source": "Не удалось удалить источник",
+  "Could not load chats": "Не удалось загрузить чаты",
   "Could not restore bot": "Не удалось восстановить бота",
   "Could not revoke connection": "Не удалось отменить соединение",
   "Could not save bot": "Не удалось сохранить бота",
@@ -371,6 +376,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Loading preview…": "Загрузка предварительного просмотра…",
   "Loading tools…": "Загрузка инструментов…",
   "Loading…": "Загрузка…",
+  "Mark as Read": "Отметить как прочитанное",
+  "Mark as Unread": "Отметить как непрочитанное",
   "Long press to pin or move to a section":
     "Нажмите и удерживайте, чтобы закрепить или переместить в раздел",
   "Long press to pin, move, or silence notifications":

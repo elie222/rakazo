@@ -18,6 +18,25 @@ describe("resolveSandboxProvider", () => {
     expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "box" })).toBe("none");
   });
 
+  it("requires both Railway credentials and an environment", () => {
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "railway" })).toBe("none");
+    expect(resolveSandboxProvider({ SANDBOX_PROVIDER: "railway", RAILWAY_API_TOKEN: "test" })).toBe(
+      "none",
+    );
+    const env = {
+      SANDBOX_PROVIDER: "railway",
+      RAILWAY_API_TOKEN: "test",
+      RAILWAY_ENVIRONMENT_ID: "environment",
+      RAILWAY_MAX_WORKSPACE_FILE_BYTES: "1024",
+    };
+    expect(resolveSandboxProvider(env)).toBe("railway");
+    expect(sandboxProviderOptionsFromEnv(env)).toMatchObject({
+      railwayApiToken: "test",
+      railwayEnvironmentId: "environment",
+      railwayMaxWorkspaceFileBytes: "1024",
+    });
+  });
+
   it("keeps CreateOS when its API key is set", () => {
     expect(
       resolveSandboxProvider({

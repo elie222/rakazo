@@ -854,6 +854,8 @@ export const appContract = {
             description: z.string().max(ARTIFACT_DESCRIPTION_MAX_LENGTH).optional(),
             mimeType: z.string().min(1),
             contentBase64: z.string().min(1).max(ATTACHMENT_MAX_BASE64_LENGTH),
+            /** Unique per upload; a retry with the same nonce returns the artifact it created. */
+            clientNonce: z.string().min(1).max(200).optional(),
           }),
         ),
       )

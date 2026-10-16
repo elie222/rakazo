@@ -593,8 +593,14 @@ export async function createApp(
       credentials: true,
     }),
   );
+  // Session and account replies must never be stored by a client or an HTTP cache.
+  for (const path of ["/api/auth/*", "/rpc/*"]) {
+    app.use(path, async (c, next) => {
+      await next();
+      c.header("cache-control", "no-store");
+    });
+  }
   app.get("/api/auth/capabilities", (c) => {
-    c.header("cache-control", "no-store");
     return c.json({
       sso: env.oidc
         ? { name: env.oidc.name, availability: auth.ssoAvailability() ?? "checking" }

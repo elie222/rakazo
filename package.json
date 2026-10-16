@@ -35,11 +35,11 @@
     "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.13",
+    "@biomejs/biome": "2.5.15",
     "@types/node": "24.13.3",
     "cross-env": "10.1.0",
-    "tsx": "4.23.13",
-    "turbo": "2.10.12",
+    "tsx": "4.23.15",
+    "turbo": "2.11.8",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   },

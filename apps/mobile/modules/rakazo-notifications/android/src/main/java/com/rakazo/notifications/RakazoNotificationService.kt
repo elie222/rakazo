@@ -454,7 +454,7 @@ private fun isWorking(run: RunRecord): Boolean =
   run.status == "queued" || run.status == "leased" || run.status == "running"
 
 private fun avatarStyle(endpoint: String, token: String, spaceId: String): String =
-  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "robot")
+  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "organic")
 
 private fun latestReply(endpoint: String, token: String, spaceId: String, run: RunRecord): String? {
   val target = JSONObject().apply {
@@ -690,12 +690,19 @@ private fun htmlTagClose(text: String, open: Int): Int {
   return if (quote != null && text.length > open + 1) text.length - 1 else -1
 }
 
-/** `<...>` spans drop to a single space. Mirrors stripHtmlTags. */
+private val HTML_TAG_START =
+  Regex("""(?:[!?]|/?[A-Za-z][A-Za-z0-9-]*(?:[/>]|\s+(?:[/>]|[A-Za-z_:@][^\s"'<>/=&]*(?:[\s=/>]|$))))""")
+
+/** A tag opens with `!`, `?`, or a name followed by whitespace, `/` or `>` and attribute-like content. Mirrors isHtmlTagStart. */
+private fun isHtmlTagStart(text: String, at: Int): Boolean =
+  HTML_TAG_START.matchAt(text, at + 1) != null
+
+/** `<...>` spans that open like a tag drop to a single space. Mirrors stripHtmlTags. */
 private fun stripHtmlTags(text: String): String {
   val out = StringBuilder()
   var i = 0
   while (i < text.length) {
-    if (text[i] == '<') {
+    if (text[i] == '<' && isHtmlTagStart(text, i)) {
       val close = htmlTagClose(text, i)
       if (close != -1) {
         out.append(' ')

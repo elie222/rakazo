@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@axiomhq/js": "2.0.0",
-    "hono": "4.13.7"
+    "hono": "4.13.13"
   },
   "devDependencies": {
     "typescript": "7.0.2",

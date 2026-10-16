@@ -11,7 +11,7 @@
     "test": "vitest run --root ../.. packages/adapters/src"
   },
   "dependencies": {
-    "@asciidev/box-sdk": "0.0.34",
+    "@asciidev/box-sdk": "0.0.37",
     "@chat-adapter/slack": "4.40.0",
     "@chat-adapter/state-memory": "4.40.0",
     "@chat-adapter/telegram": "4.40.0",
@@ -34,22 +34,25 @@
     "chat-adapter-sendblue": "0.2.0",
     "d3-dsv": "3.0.1",
     "graphile-worker": "0.17.3",
-    "jsdom": "30.0.1",
-    "koffi": "3.2.1",
-    "nodemailer": "10.0.3",
-    "pg": "8.23.0",
-    "sendblue": "3.16.1",
+    "jsdom": "30.1.3",
+    "koffi": "3.3.3",
+    "nodemailer": "10.1.2",
+    "pg": "8.23.1",
+    "railway": "3.16.0",
+    "sendblue": "3.20.0",
     "sharp": "0.35.4",
-    "shell-quote": "1.10.0",
-    "undici": "8.10.2",
-    "zod": "4.6.2"
+    "shell-quote": "1.12.0",
+    "undici": "8.12.2",
+    "ws": "8.22.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@chat-adapter/tests": "4.40.0",
     "@types/d3-dsv": "3.0.7",
     "@types/jsdom": "30.0.0",
-    "@types/nodemailer": "8.0.1",
+    "@types/nodemailer": "8.0.2",
     "@types/pg": "8.23.1",
+    "@types/ws": "8.18.2",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }

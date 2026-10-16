@@ -1,0 +1,27 @@
+---
+import { richParts } from "../grok-alternative";
+
+type Props = {
+  text: string;
+};
+
+const { text } = Astro.props;
+const parts = richParts(text);
+---
+
+{
+  parts.map((part) =>
+    part.kind === "link" ? (
+      <a
+        href={part.href}
+        {...(part.href.startsWith("http")
+          ? { target: "_blank", rel: "noreferrer" }
+          : {})}
+      >
+        {part.label}
+      </a>
+    ) : (
+      part.value
+    ),
+  )
+}

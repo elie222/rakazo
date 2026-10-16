@@ -15,8 +15,14 @@ export function FailedSendBubble({
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
-  const { payload, sending } = attempt;
-  const caption = sending ? t("Sending…") : t("Not sent · Tap to retry");
+  const { payload, state } = attempt;
+  const sending = state === "pending";
+  const retryable = state === "failed" || state === "queued";
+  const caption = sending
+    ? t("Sending…")
+    : retryable
+      ? t("Not sent · Tap to retry")
+      : t("Not sent");
   const messageLabel = [payload.displayText, ...payload.attachments.map(({ name }) => name)]
     .filter(Boolean)
     .join(", ");
@@ -27,18 +33,20 @@ export function FailedSendBubble({
       ActionSheetIOS.showActionSheetWithOptions(
         {
           message: attempt.error,
-          options: [t("Try Again"), t("Delete"), t("Cancel")],
-          destructiveButtonIndex: 1,
-          cancelButtonIndex: 2,
+          options: retryable
+            ? [t("Try Again"), t("Delete"), t("Cancel")]
+            : [t("Delete"), t("Cancel")],
+          destructiveButtonIndex: retryable ? 1 : 0,
+          cancelButtonIndex: retryable ? 2 : 1,
         },
         (index) => {
-          if (index === 0) onRetry();
-          if (index === 1) onDelete();
+          if (retryable && index === 0) onRetry();
+          if (index === (retryable ? 1 : 0)) onDelete();
         },
       );
     } else {
       Alert.alert(caption, attempt.error, [
-        { text: t("Try Again"), onPress: onRetry },
+        ...(retryable ? [{ text: t("Try Again"), onPress: onRetry }] : []),
         { text: t("Delete"), style: "destructive", onPress: onDelete },
         { text: t("Cancel"), style: "cancel" },
       ]);
@@ -52,7 +60,7 @@ export function FailedSendBubble({
       accessibilityHint={sending ? undefined : t("Long press to delete")}
       accessibilityState={{ disabled: sending }}
       disabled={sending}
-      onPress={onRetry}
+      onPress={retryable ? onRetry : undefined}
       onLongPress={showActions}
       style={{ alignSelf: "flex-end", maxWidth: "90%", marginTop: 12, gap: 4 }}
     >

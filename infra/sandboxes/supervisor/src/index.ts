@@ -59,11 +59,13 @@ import {
   browserProfilePathForScreen,
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
+  completeWarmReleasedScreen,
   computerActionSchema,
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionSteps,
   createDockerStreamDemuxer,
+  currentComputerScreens,
   demuxDockerStream,
   ensureScreenCommand,
   hasComputerIdentity,
@@ -72,6 +74,7 @@ import {
   isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
+  oldestIdleScreen,
   parseObservation,
   preferComputerControl,
   quiesceBrowserProfilesCommand,
@@ -110,6 +113,8 @@ const teamScreenLimit = resolveTeamScreenLimit();
 // IPs, so computer control must use a published loopback port instead.
 const controlViaLoopback = process.env.SANDBOX_CONTROL_VIA_LOOPBACK === "true";
 const computerScreens = new Map<string, Map<string, ScreenAssignment>>();
+// Container start time each screen registry was built under; see currentComputerScreens.
+const computerScreenBoots = new Map<string, string>();
 
 export const MAX_SUPERVISOR_REQUEST_BYTES = 1024 * 1024;
 export const MAX_SUPERVISOR_FILE_REQUEST_BYTES = 16 * 1024 * 1024 + 64 * 1024;
@@ -291,7 +296,10 @@ app.post("/computers", async (c) => {
         let container: Docker.Container | undefined;
         try {
           if (existing) {
-            await existing.remove({ force: true }).catch(() => undefined);
+            await withComputerScreenLock(existing.id, async () => {
+              await existing.remove({ force: true }).catch(() => undefined);
+              clearComputerScreenRegistry(computerScreens, computerScreenBoots, existing.id);
+            });
           }
           container = await docker.createContainer(
             containerCreateOptions({
@@ -519,7 +527,15 @@ app.post("/computers/:id/browser", async (c) => {
     );
     // A nonzero exit or malformed output cannot establish which mutations ran.
     if (result.code !== 0 || Buffer.byteLength(result.stdout) > 512 * 1024) {
-      throw new Error("Page browser unavailable or interrupted");
+      throw new Error(
+        /command timed out/.test(result.stderr)
+          ? `Page browser timed out; the page may be busy or blocked by a dialog. ${
+              body.command === "act"
+                ? "Inspect the screen before continuing."
+                : "Retry once before using other tools."
+            }`
+          : "Page browser unavailable or interrupted",
+      );
     }
     return c.json(JSON.parse(result.stdout));
   } catch (error) {
@@ -750,9 +766,19 @@ app.post("/computers/:id/screen-mode", async (c) => {
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     const { container, info } = await managedContainer(id, botId, spaceId);
     const { layout, viewToken } = await withComputerScreenLock(id, async () => {
-      const screen = await ensureManagedScreen(id, container, info, botId, screenId, screenLeaseId);
+      const screen = await ensureManagedScreen(id, container, botId, screenId, screenLeaseId);
       if (body.interactive || body.revokeControl !== false) {
-        await setInteractiveScreen(container, body.interactive, body.controlToken, screen.layout);
+        const changed = await setInteractiveScreen(
+          container,
+          body.interactive,
+          body.controlToken,
+          screen.layout,
+        );
+        const slot = computerScreens.get(id)?.get(screen.screenKey);
+        if (slot && changed) {
+          if (body.interactive) slot.controlled = true;
+          else delete slot.controlled;
+        }
       }
       return screen;
     });
@@ -791,7 +817,6 @@ app.post("/computers/:id/terminal", async (c) => {
       const screen = await ensureManagedScreen(
         id,
         container,
-        info,
         botId,
         c.req.header("x-rakazo-screen-id"),
         c.req.header("x-rakazo-screen-lease-id"),
@@ -876,23 +901,57 @@ app.delete("/computers/:id/screen", async (c) => {
     containerFound = true;
     const screenId = c.req.header("x-rakazo-screen-id") || c.req.header("x-rakazo-bot-id") || id;
     const cancelRunWork = c.req.header("x-rakazo-cancel-run-work") === "1";
+    const keepScreenWarm = c.req.header("x-rakazo-preserve-screen") === "1" && !cancelRunWork;
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     await withComputerScreenLock(id, async () => {
-      const assigned = computerScreens.get(id);
+      const info = await container.inspect();
+      const assigned = currentComputerScreens(
+        computerScreens,
+        computerScreenBoots,
+        id,
+        info.State?.StartedAt,
+      );
       const index = assigned ? releaseAssignedScreen(assigned, screenId, screenLeaseId) : undefined;
-      const stop = screenReleaseStopCommand(index, {
-        hasRegistry: Boolean(assigned),
-        cancelRunWork,
-        screenId,
-      });
-      if (assigned && index !== undefined) {
-        await teardownReleasedScreen(assigned, screenId, index, () =>
-          runContainerCommand(container, ["bash", "-c", stop]),
-        );
-      } else if (stop) {
-        const result = await runContainerCommand(container, ["bash", "-c", stop]);
-        if (result.code !== 0) {
-          throw new Error(result.stderr || "computer screen failed to stop");
+      if (keepScreenWarm) {
+        if (assigned && index !== undefined) {
+          let controlReleased = false;
+          try {
+            const control = await runContainerCommand(container, [
+              "bash",
+              "-c",
+              interactiveScreenCommand(false, undefined, screenPorts(index)),
+            ]);
+            controlReleased = control.code === 0;
+          } catch {
+            // If revocation is uncertain, full teardown is safer than retaining control.
+          }
+          if (controlReleased) {
+            completeWarmReleasedScreen(assigned, screenId, index, Date.now());
+          } else {
+            await teardownReleasedScreen(assigned, screenId, index, () =>
+              runContainerCommand(container, [
+                "bash",
+                "-c",
+                stopExtraScreenCommand(index, screenId),
+              ]),
+            );
+          }
+        }
+      } else {
+        const stop = screenReleaseStopCommand(index, {
+          hasRegistry: Boolean(assigned),
+          cancelRunWork,
+          screenId,
+        });
+        if (assigned && index !== undefined) {
+          await teardownReleasedScreen(assigned, screenId, index, () =>
+            runContainerCommand(container, ["bash", "-c", stop]),
+          );
+        } else if (stop) {
+          const result = await runContainerCommand(container, ["bash", "-c", stop]);
+          if (result.code !== 0) {
+            throw new Error(result.stderr || "computer screen failed to stop");
+          }
         }
       }
       // Keep an emptied registry. A missing one means the supervisor lost track of the
@@ -935,10 +994,10 @@ app.post("/computers/:id/stop", async (c) => {
         } finally {
           // Failed profiles remain on the durable home for recovery after restart.
           await container.stop();
-          clearComputerScreenRegistry(computerScreens, id);
+          clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
         }
       }
-      clearComputerScreenRegistry(computerScreens, id);
+      clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
     });
     if (botId && screenNetworkMode !== "internal") {
       await reclaimComputerNetwork(container, botId).catch((error) => {
@@ -964,7 +1023,7 @@ app.delete("/computers/:id", async (c) => {
       const { container } = await managedContainer(id, botId, c.req.header("x-rakazo-space-id"));
       await withComputerScreenLock(id, async () => {
         await container.remove({ force: true }).catch(() => undefined);
-        clearComputerScreenRegistry(computerScreens, id);
+        clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
       });
       if (screenNetworkMode !== "internal") {
         await removeBotNetwork(botId);
@@ -1144,21 +1203,48 @@ async function managedScreen(
   screenId: string | undefined,
   screenLeaseId: string | undefined,
 ) {
-  const { container, info } = await managedContainer(id, botId, spaceId);
+  const { container } = await managedContainer(id, botId, spaceId);
   return withComputerScreenLock(id, () =>
-    ensureManagedScreen(id, container, info, botId, screenId, screenLeaseId),
+    ensureManagedScreen(id, container, botId, screenId, screenLeaseId),
   );
 }
 
 async function ensureManagedScreen(
   id: string,
   container: Docker.Container,
-  info: Docker.ContainerInspectInfo,
   botId: string | undefined,
   screenId: string | undefined,
   screenLeaseId: string | undefined,
 ) {
-  let assigned = computerScreens.get(id);
+  // Docker can restart independently of the supervisor's screen lock.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const screen = await ensureManagedScreenAttempt(id, container, botId, screenId, screenLeaseId);
+    const info = await container.inspect();
+    if (info.State?.StartedAt === screen.info.State?.StartedAt) {
+      // Confirm the pending boot marker only after setup completes against the same boot.
+      if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
+      return { ...screen, info };
+    }
+    clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
+  }
+  throw new Error("computer restarted during screen setup");
+}
+
+async function ensureManagedScreenAttempt(
+  id: string,
+  container: Docker.Container,
+  botId: string | undefined,
+  screenId: string | undefined,
+  screenLeaseId: string | undefined,
+) {
+  // Callers hold the screen lock: an inspection before waiting can describe an older boot.
+  const info = await container.inspect();
+  let assigned = currentComputerScreens(
+    computerScreens,
+    computerScreenBoots,
+    id,
+    info.State?.StartedAt,
+  );
   if (!assigned) {
     const reset = await runContainerCommand(container, [
       "bash",
@@ -1168,8 +1254,32 @@ async function ensureManagedScreen(
     if (reset.code !== 0) throw new Error(reset.stderr || "computer screens failed to reset");
     assigned = new Map();
     computerScreens.set(id, assigned);
+    // Remember the inspected boot even if setup or teardown fails before confirmation.
+    if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
   }
   const screenKey = screenId || botId || id;
+  if (!assigned.has(screenKey)) {
+    const usedIndexes = new Set([...assigned.values()].map((slot) => slot.index));
+    const hasFreeIndex = Array.from({ length: teamScreenLimit }, (_, index) => index).some(
+      (index) => !usedIndexes.has(index),
+    );
+    if (!hasFreeIndex) {
+      const evictedScreenId = oldestIdleScreen(assigned, teamScreenLimit);
+      const evicted = evictedScreenId ? assigned.get(evictedScreenId) : undefined;
+      if (evictedScreenId && evicted) {
+        const evictedIndex = releaseAssignedScreen(assigned, evictedScreenId, evicted.leaseId);
+        if (evictedIndex !== undefined) {
+          await teardownReleasedScreen(assigned, evictedScreenId, evictedIndex, () =>
+            runContainerCommand(container, [
+              "bash",
+              "-c",
+              stopExtraScreenCommand(evictedIndex, evictedScreenId),
+            ]),
+          );
+        }
+      }
+    }
+  }
   const index = nextScreenIndex(assigned, screenKey, screenLeaseId, teamScreenLimit);
   const layout = screenPorts(index);
   const slot = assigned.get(screenKey)!;
@@ -1190,7 +1300,7 @@ async function ensureManagedScreen(
     await teardownReleasedScreen(assigned, screenKey, index, () =>
       runContainerCommand(container, ["bash", "-c", stopExtraScreenCommand(index, screenKey)]),
     );
-    if (assigned.size === 0) computerScreens.delete(id);
+    if (assigned.size === 0) clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
     const detail = [ensured.stderr, browserLog.stdout].filter(Boolean).join("\n").trim();
     throw new Error(detail || `computer screen ${layout.display} failed to start`);
   }

@@ -119,6 +119,13 @@ tags:
 - assertNotVisible: "React"
 - assertNotVisible: "More"
 - takeScreenshot: "15-thread"
+- tapOn: "Message Researcher"
+- inputText: "Keyboard visibility check"
+- assertVisible: "Keyboard visibility check"
+- assertVisible: "Send"
+- takeScreenshot: "15d-thread-keyboard"
+- eraseText
+- hideKeyboard
 - longPressOn: "The fixture workspace is ready."
 - assertVisible: "Reply"
 - assertVisible: "React"
@@ -167,6 +174,13 @@ tags:
 - assertNotVisible: "React"
 - assertNotVisible: "More"
 - takeScreenshot: "19-group-thread"
+- tapOn: "Message Launch team"
+- inputText: "Group keyboard visibility check"
+- assertVisible: "Group keyboard visibility check"
+- assertVisible: "Send"
+- takeScreenshot: "19b-group-thread-keyboard"
+- eraseText
+- hideKeyboard
 - longPressOn: "The fixture launch plan is ready."
 - assertVisible: "Reply"
 - assertVisible: "React"

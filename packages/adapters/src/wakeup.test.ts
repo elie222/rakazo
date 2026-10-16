@@ -115,6 +115,121 @@ describe("InMemoryJobQueue", () => {
     await queue.close();
   });
 
+  it("leaves a keyed job in place when asked to keep the existing one", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "backed-off" },
+      availableAt: new Date(Date.now() + 5_000),
+      replaceKey: "run:run-1",
+    });
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "pulled-forward" },
+      replaceKey: "run:run-1",
+      keepExisting: true,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["run.continue"]).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(target["run.continue"]).toHaveBeenCalledTimes(1);
+    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    await queue.close();
+  });
+
+  it("keeps attempts and run_at when the keyed job is still in backoff", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    const runAt = new Date(Date.now() + 5_000);
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "backed-off" },
+      availableAt: runAt,
+      replaceKey: "run:run-1",
+      maxAttempts: 3,
+    });
+    queue.recordFailedAttempt("run:run-1");
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "pulled-forward" },
+      availableAt: new Date(Date.now() + 1_000),
+      replaceKey: "run:run-1",
+      keepExisting: true,
+    });
+    expect(queue.keyedJob("run:run-1")).toEqual({
+      attempts: 1,
+      maxAttempts: 3,
+      availableAt: runAt,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["run.continue"]).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(target["run.continue"]).toHaveBeenCalledTimes(1);
+    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "backed-off" });
+    await queue.close();
+  });
+
+  it("re-enqueues an exhausted keyed job with fresh attempts", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "exhausted" },
+      availableAt: new Date(Date.now() + 60_000),
+      replaceKey: "run:run-1",
+      maxAttempts: 1,
+    });
+    queue.recordFailedAttempt("run:run-1");
+    const revivedAt = new Date(Date.now() + 1_000);
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "revived" },
+      availableAt: revivedAt,
+      replaceKey: "run:run-1",
+      keepExisting: true,
+    });
+    expect(queue.keyedJob("run:run-1")).toEqual({
+      attempts: 0,
+      maxAttempts: 25,
+      availableAt: revivedAt,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["run.continue"]).toHaveBeenCalledTimes(1);
+    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "revived" });
+    await queue.close();
+  });
+
+  it("enqueues a keepExisting job when none is queued for that key", async () => {
+    vi.useFakeTimers();
+    const queue = new InMemoryJobQueue();
+    const target = handlers();
+    await queue.start(target);
+    const runAt = new Date(Date.now() + 1_000);
+    await queue.enqueue({
+      name: "run.continue",
+      payload: { runId: "fresh" },
+      availableAt: runAt,
+      replaceKey: "run:missing",
+      keepExisting: true,
+    });
+    expect(queue.keyedJob("run:missing")).toEqual({
+      attempts: 0,
+      maxAttempts: 25,
+      availableAt: runAt,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(target["run.continue"]).toHaveBeenCalledTimes(1);
+    expect(target["run.continue"]).toHaveBeenCalledWith({ runId: "fresh" });
+    await queue.close();
+  });
+
   it.each([
     ["stop", "stop"],
     ["close", "close"],

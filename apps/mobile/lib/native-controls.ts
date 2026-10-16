@@ -11,6 +11,11 @@ export function iosAtLeast(major: number) {
   return Number.isFinite(parsed) && parsed >= major;
 }
 
+/** Height of an iOS 26 glass bar button; custom header titles match it. */
+export const HEADER_CONTROL_SIZE = 44;
+/** Header titles stop growing at Dynamic Type xxxLarge so they keep that height. */
+export const HEADER_TITLE_MAX_FONT_SCALE = 1.35;
+
 export type ActionProminence = "primary" | "secondary" | "plain" | "quiet" | "destructive";
 
 export type NativeActionButtonProps = {

@@ -2,6 +2,30 @@ import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 
+describe("inferScript ask resumes", () => {
+  it.each([
+    ["ask me before continuing", "Berlin", false],
+    ["which city should we visit?", "Berlin", false],
+    ["need a decision before continuing", "Berlin", false],
+    ["show tappable choices", "Selected choice choice-1: Berlin", true],
+    ["show choice buttons", "Selected choice choice-1: Berlin", true],
+    ["pick from these cities", "Selected choice choice-1: Berlin", true],
+  ])("completes an answered %s fixture", (prompt, answer, hasChoices) => {
+    const initial = inferScript(prompt);
+    expect(initial[0]?.ask?.text).toBe("Which city should I use?");
+    expect(Boolean(initial[0]?.ask?.actions?.length)).toBe(hasChoices);
+    expect(initial.some((turn) => turn.complete)).toBe(false);
+
+    const resumed = inferScript(`${prompt}\n\nWhich city should I use?\nAnswer: ${answer}`);
+    expect(resumed).toEqual([{ assistant: expect.any(String), complete: true }]);
+    expect(resumed.some((turn) => turn.ask)).toBe(false);
+  });
+
+  it("still asks when Answer: occurs inline instead of on a resume line", () => {
+    expect(inferScript("ask me for the Answer: city")[0]?.ask).toBeDefined();
+  });
+});
+
 describe("inferScript message_bot", () => {
   const messageBotScript = (confirmName: string, message: string) => [
     {

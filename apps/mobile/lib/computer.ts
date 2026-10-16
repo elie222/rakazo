@@ -1,4 +1,5 @@
 import type { ComputerMode, ComputerStatus as ContractComputerStatus } from "@rakazo/contracts";
+import { isLanOrLocalHost } from "./endpoint";
 import { t } from "./i18n";
 
 export const COMPUTER_HEARTBEAT_MS = 60_000;
@@ -63,6 +64,7 @@ export function embeddableScreenUrl(url: string | null, apiBase: string): string
     if (isLocalHostname(parsed.hostname) && !isLocalHostname(api.hostname)) {
       parsed.hostname = api.hostname;
     }
+    if (parsed.protocol === "http:" && !isLanOrLocalHost(parsed.hostname)) return null;
     return parsed.toString();
   } catch {
     return null;

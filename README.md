@@ -77,7 +77,7 @@ The installer downloads the Compose files, creates `.env` with random secrets, a
 It preserves an existing `.env` when rerun.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
-Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, `createos`, or `box`
+Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, `createos`, `box`, or `railway`
 with the matching API key.
 
 Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
@@ -168,6 +168,23 @@ To use CreateOS, set `SANDBOX_PROVIDER=createos` and `CREATEOS_SANDBOX_API_KEY`.
 Optional `CREATEOS_SANDBOX_BASE_URL`, `CREATEOS_SANDBOX_SHAPE`, and
 `CREATEOS_SANDBOX_ROOTFS` default to `https://api.sb.createos.sh`, `s-2vcpu-2gb`,
 and `desktop:1`.
+
+To use Railway computers, set `SANDBOX_PROVIDER=railway`, `RAILWAY_API_TOKEN`
+and `RAILWAY_ENVIRONMENT_ID` on the API and worker. Choose the sandbox environment
+explicitly; Railway's automatic environment ID identifies the hosted app's environment.
+Use the narrowest Railway API token that works: prefer a project token if sufficient
+for sandbox operations and supported by the client's authentication. This provider
+currently uses bearer authentication, so use a team/workspace token rather than a
+personal account token.
+The live screen and desktop require `PRIVATE` networking so Railway's public domain
+can serve the screen. Computers use this mode and can reach other services in the
+same Railway project/environment, as well as the public internet. We recommend a
+dedicated Railway project (or at least a separate environment) for sandboxes,
+separate from the app and database. Recreate existing `ISOLATED` computers before use.
+The desktop is installed on first start. Stopping a computer saves its portable
+home and destroys the sandbox; the next start restores that home in a new sandbox.
+Railway sandbox usage is metered.
+Workspace exports reject files above 64 MiB without truncating them. Set `RAILWAY_MAX_WORKSPACE_FILE_BYTES` to change this limit.
 
 ## Desktop and mobile
 

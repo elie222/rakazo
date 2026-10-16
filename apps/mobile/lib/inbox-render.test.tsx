@@ -8,8 +8,9 @@ import { createRoot } from "react-dom/client";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import type { MobileBot } from "./api";
-import { formatThreadTime } from "./inbox";
+import { botTag, formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
+import { inboxRowActionList } from "./inbox-swipe";
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
@@ -43,6 +44,9 @@ function measure(before: boolean) {
     ConversationRow: () => null,
     BotAvatar: () => null,
     WorkingIndicator: () => null,
+    // Rows in the current space carry the iOS swipe host; it must not defeat the memo.
+    InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
+    inboxRowActionList,
   };
   const compile = (text: string) =>
     ts.transpileModule(text, {
@@ -61,6 +65,8 @@ function measure(before: boolean) {
     useCallback,
     BotRow,
     appearance: "light",
+    botAction: action,
+    SWIPE_ROWS: true,
     day: new Date(2026, 9, 10).getTime(),
     chooseInboxSpace: action,
     collapsedRosterParents: new Set(),
@@ -68,6 +74,7 @@ function measure(before: boolean) {
     me: { spaceId: "space-1" },
     openBot: action,
     openGroup: action,
+    groupAction: action,
     openSearchHit: action,
     organizeBot: action,
     organizeGroup: action,
@@ -185,7 +192,12 @@ it.each(["midnight", "focus", "foreground"])(
       BotAvatar: () => null,
       GroupAvatar: () => null,
       WorkingIndicator: () => null,
+      InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
+      inboxRowActionList,
       appearance: "light",
+      botAction: action,
+      groupAction: action,
+      SWIPE_ROWS: true,
       chooseInboxSpace: action,
       collapsedRosterParents: new Set(),
       confirmDeleteSpace: action,
@@ -274,3 +286,67 @@ it.each(["midnight", "focus", "foreground"])(
     }
   },
 );
+
+it("renders saved bot rows without a title or notification setting", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const scope = {
+    React,
+    memo,
+    useI18n: () => ({ t: (text: string) => text }),
+    previewSnippet: (text: string) => text,
+    formatThreadTime,
+    botTag,
+    ACTIVE_RUN_STATUSES: ["running"],
+    mobileBotAvatarPresentation: () => ({ kind: "color", color: "gray" }),
+    FALLBACK_COLOR: "gray",
+    ConversationRow: ({
+      tag,
+      preview,
+      accessibilityLabel,
+      avatar,
+    }: {
+      tag: string;
+      preview: string;
+      accessibilityLabel: string;
+      avatar: ReactElement;
+    }) => (
+      <span>
+        {[tag, preview, accessibilityLabel].join("|")}
+        {avatar}
+      </span>
+    ),
+    BotAvatar: ({ muted }: { muted: boolean }) => (muted ? " muted" : null),
+    WorkingIndicator: () => null,
+  };
+  const rowSource = source.slice(
+    source.indexOf("const BotRow = memo("),
+    source.indexOf("const GroupRow = memo("),
+  );
+  const compiled = ts.transpileModule(`${rowSource}\nreturn BotRow;`, {
+    compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  // Inboxes saved before titles and notification settings were kept have bots without them.
+  const bots = [
+    { id: "bot-a", name: "Alpha", title: "Research", preview: "", notifyOnFinish: true },
+    { id: "bot-b", name: "Beta", preview: "" },
+    { id: "bot-c", name: "Gamma", title: "", preview: "", notifyOnFinish: false },
+  ];
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        bots.map((bot) => <BotRow key={bot.id} bot={bot} day={0} onPress={() => undefined} />),
+      ),
+    );
+    expect(Array.from(container.querySelectorAll("span"), (span) => span.textContent)).toEqual([
+      "Research|Research|Alpha, Research, Research",
+      "|No messages yet|Beta, No messages yet",
+      "|No messages yet|Gamma, notifications silenced, No messages yet muted",
+    ]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

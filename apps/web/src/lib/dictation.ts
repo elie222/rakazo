@@ -1,5 +1,7 @@
 import { readBoundedResponseBytes } from "@rakazo/core";
+import { getActiveUiLocale } from "./i18n.js";
 import { selectedSpaceId, withSpaceHeaders } from "./rpc.js";
+import type { UiLocale } from "./ui-locale.js";
 import { errorText } from "./user-error.js";
 
 export type DictationMode = "hold" | "endpoint";
@@ -58,6 +60,21 @@ function electronSpeechHost(): boolean {
   return typeof agent === "string" && agent.includes("Electron");
 }
 
+/**
+ * Phones cannot hold a speech session open: `start()` replays the system tone on every
+ * restart and the session ends at each pause, so Web Speech there means one beep per
+ * phrase and a transcript that keeps getting cut. Server transcription records silently,
+ * so prefer it on mobile browsers wherever a provider can transcribe.
+ */
+export function prefersServerDictation(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const agent = typeof navigator.userAgent === "string" ? navigator.userAgent : "";
+  if (/android|iphone|ipod|ipad|mobile/i.test(agent)) return true;
+  // iPadOS 13+ reports a desktop Safari user agent, so fall back to touch support.
+  const touchPoints = typeof navigator.maxTouchPoints === "number" ? navigator.maxTouchPoints : 0;
+  return touchPoints > 1 && /macintosh/i.test(agent);
+}
+
 /** Connected server transcription should take over after Web Speech cannot run. */
 export function webSpeechNeedsServerFallback(
   error: string | undefined,
@@ -66,13 +83,54 @@ export function webSpeechNeedsServerFallback(
   return transcribe && typeof error === "string" && WEB_SPEECH_SERVICE_ERRORS.has(error);
 }
 
+/**
+ * Web Speech ends the session on its own, and every start() plays the recognizer's tone.
+ * When the browser cannot hold the microphone the sessions end the moment they begin, so
+ * an immediate restart turns into a stream of beeps. Back off, then hand the microphone
+ * over instead of hammering it.
+ */
+const RESTART_SHORT_SESSION_MS = 400;
+const RESTART_BACKOFF_AFTER = 2;
+const RESTART_BACKOFF_MS = 900;
+const RESTART_GIVE_UP_AFTER = 4;
+const RESTART_GIVE_UP_ERROR =
+  "The browser keeps dropping the microphone. Start dictation again to retry.";
+
+/** Web Speech wants a BCP-47 tag; the app's UI locale is a short code. */
+const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
+  en: "en-US",
+  de: "de-DE",
+  es: "es-ES",
+  fr: "fr-FR",
+  hi: "hi-IN",
+  ko: "ko-KR",
+  "pt-BR": "pt-BR",
+  ru: "ru-RU",
+  tr: "tr-TR",
+  "zh-CN": "zh-CN",
+};
+
+/** The tag the recognizer needs for a UI locale, when we know one. */
+export function speechLocaleTag(locale: UiLocale): string | undefined {
+  return SPEECH_LOCALE_TAGS[locale];
+}
+
+/**
+ * Language hint for server transcription: the primary subtag of the app's own locale
+ * (`es`, `pt`, `zh`). Undefined leaves detection to the provider.
+ */
+export function transcriptionLanguage(): string | undefined {
+  const tag = speechLocaleTag(getActiveUiLocale());
+  return tag ? tag.split("-")[0]?.toLowerCase() : undefined;
+}
+
 function normalizedTranscript(text: string): string {
   return text.trim().replace(/\s+/g, " ");
 }
 
-function startsWithWholePrefix(serverText: string, prefix: string): boolean {
+function startsWithWholePrefix(text: string, prefix: string): boolean {
   const head = prefix.toLowerCase();
-  const tail = serverText.toLowerCase();
+  const tail = text.toLowerCase();
   if (!tail.startsWith(head)) return false;
   // Index by code point. A supplementary-plane letter is two UTF-16 units, and
   // the first half alone is not a letter.
@@ -82,13 +140,22 @@ function startsWithWholePrefix(serverText: string, prefix: string): boolean {
   return !/[\p{L}\p{N}_]/u.test(String.fromCodePoint(point));
 }
 
-export function combineTranscript(prefix: string, serverText: string): string {
+/** Join carried Web Speech with a restarted session at their longest whole-word overlap. */
+export function combineTranscript(prefix: string, speechText: string): string {
   const head = normalizedTranscript(prefix);
-  const tail = serverText.trim();
+  const tail = speechText.trim();
   if (!head) return tail;
   if (!tail) return head;
   if (startsWithWholePrefix(tail, head)) return tail;
-  return `${head} ${normalizedTranscript(tail)}`;
+  const normalizedTail = normalizedTranscript(tail);
+  for (let start = 0; start < head.length; start += 1) {
+    if (start > 0 && !/\s/u.test(head[start - 1] ?? "")) continue;
+    const overlap = head.slice(start);
+    if (startsWithWholePrefix(normalizedTail, overlap)) {
+      return head.slice(0, start) + normalizedTail;
+    }
+  }
+  return `${head} ${normalizedTail}`;
 }
 
 function speechRecognitionCtor(): SpeechRecognitionCtor | undefined {
@@ -115,6 +182,7 @@ export class Dictation {
   private chunks: Blob[] = [];
   private token = 0;
   private silenceTimer: ReturnType<typeof setTimeout> | undefined;
+  private restartTimer: ReturnType<typeof setTimeout> | undefined;
   private transcribeAbort: AbortController | null = null;
   private audioContext: AudioContext | null = null;
   private vadTimer: ReturnType<typeof setInterval> | undefined;
@@ -144,6 +212,8 @@ export class Dictation {
     this.stopVad();
     clearTimeout(this.silenceTimer);
     this.silenceTimer = undefined;
+    clearTimeout(this.restartTimer);
+    this.restartTimer = undefined;
     const rec = this.recognition;
     this.recognition = null;
     if (rec) {
@@ -183,6 +253,12 @@ export class Dictation {
     this.onFinal = opts.onFinal;
     this.set({ status: "listening", transcript: "" });
     const transcribe = Boolean(opts.transcribe);
+    // An unknown capability is not a refusal: a device whose browser cannot hold the
+    // microphone open goes to the server even before the voice status has loaded.
+    if (prefersServerDictation() && opts.transcribe !== false) {
+      await this.listenRecorder(mine, opts.mode, opts.endpointMs ?? ENDPOINT_SILENCE_MS, spaceId);
+      return;
+    }
     if (webSpeechAvailable()) {
       this.listenWebSpeech(
         opts.mode,
@@ -220,13 +296,21 @@ export class Dictation {
     rec.lang = navigator.language || "en-US";
     // Chrome numbers results per session, so a restart starts over: keep the earlier text.
     let carried = "";
+    let sessionStartedAt = Date.now();
+    let shortSessions = 0;
+    let sessionHeardSpeech = false;
     rec.onresult = (event) => {
       if (!live || this.token !== mine) return;
-      let session = "";
-      for (let i = 0; i < event.results.length; i += 1) {
-        session += event.results[i]?.[0]?.transcript ?? "";
+      // Each result index is a separate phrase. Matching text within this session
+      // may be a real repetition; only deduplicate against a previous session.
+      const session = normalizedTranscript(
+        Array.from(event.results, (result) => result?.[0]?.transcript ?? "").join(" "),
+      );
+      if (session.trim()) {
+        sessionHeardSpeech = true;
+        shortSessions = 0;
       }
-      const transcript = `${carried} ${session}`.trim();
+      const transcript = combineTranscript(carried, session);
       this.set({ status: "listening", transcript });
       if (mode !== "endpoint") return;
       // Every result means the caller was just heard, so the quiet gap is measured from
@@ -263,16 +347,42 @@ export class Dictation {
       }
       // Chrome ends the session on its own — after a pause, or its ~60s cap — and that
       // says nothing about whether the caller finished. Only the silence window above
-      // ends an utterance; here we just pick the microphone back up.
+      // ends an utterance; here we just pick the microphone back up — unless it keeps
+      // ending straight away, which means the browser cannot hold the microphone at all.
       carried = this.snapshot.transcript;
-      try {
-        rec.start();
-      } catch {
-        this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
+      shortSessions =
+        !sessionHeardSpeech && Date.now() - sessionStartedAt < RESTART_SHORT_SESSION_MS
+          ? shortSessions + 1
+          : 0;
+      if (shortSessions >= RESTART_GIVE_UP_AFTER) {
+        live = false;
+        if (transcribe) {
+          this.fallbackToServer(rec, mine, mode, endpointMs, spaceId);
+          return;
+        }
+        this.releaseRecognition(rec);
+        this.failListening(mine, RESTART_GIVE_UP_ERROR, true);
+        return;
       }
+      const restart = () => {
+        if (!live || this.token !== mine) return;
+        try {
+          sessionStartedAt = Date.now();
+          sessionHeardSpeech = false;
+          rec.start();
+        } catch {
+          this.set({ ...IDLE, error: "Dictation ended unexpectedly." });
+        }
+      };
+      if (shortSessions >= RESTART_BACKOFF_AFTER) {
+        this.restartTimer = setTimeout(restart, RESTART_BACKOFF_MS);
+        return;
+      }
+      restart();
     };
     this.recognition = rec;
     try {
+      sessionStartedAt = Date.now();
       rec.start();
     } catch {
       if (!live || this.token !== mine) return;
@@ -456,7 +566,11 @@ export class Dictation {
           method: "POST",
           headers: withSpaceHeaders({ "content-type": "application/json" }, spaceId),
           credentials: "include",
-          body: JSON.stringify({ audioBase64, mimeType: blob.type }),
+          body: JSON.stringify({
+            audioBase64,
+            mimeType: blob.type,
+            language: transcriptionLanguage(),
+          }),
           signal: abort.signal,
         }),
         abort.signal,
@@ -471,7 +585,13 @@ export class Dictation {
         this.failListening(mine, body.error ?? "Could not transcribe that recording.");
         return;
       }
-      this.finish(combineTranscript(this.snapshot.transcript, body.text ?? ""), mine);
+      // The recorder captures fresh audio, so matching words are intentional repetitions.
+      const prefix = normalizedTranscript(this.snapshot.transcript);
+      const text = body.text ?? "";
+      this.finish(
+        prefix ? [prefix, normalizedTranscript(text)].filter(Boolean).join(" ") : text,
+        mine,
+      );
     } catch (error) {
       // User cancel bumps token in stop() before aborting, so a matching token
       // means the deadline timer fired. Browsers may reject fetch as AbortError
@@ -500,21 +620,22 @@ export class Dictation {
     this.finish(this.snapshot.transcript, this.token);
   }
 
-  private failListening(mine: number, message: string) {
+  private failListening(mine: number, message: string, showError = false) {
     if (this.token !== mine) return;
     const prefix = normalizedTranscript(this.snapshot.transcript);
     if (prefix) {
-      this.finish(prefix, mine);
+      this.finish(prefix, mine, showError ? message : undefined);
       return;
     }
     this.set({ ...IDLE, error: message });
   }
 
-  private finish(text: string, mine: number) {
+  private finish(text: string, mine: number, error?: string) {
     if (this.token !== mine) return;
     const trimmed = text.trim();
     const onFinal = this.onFinal;
     this.stop("submit");
+    if (error) this.set({ ...IDLE, error });
     if (trimmed) onFinal?.(trimmed);
   }
 }

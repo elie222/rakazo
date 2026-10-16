@@ -421,6 +421,42 @@ describe("Docker sandbox", () => {
       }),
     );
   });
+
+  it("preserves only a completed, non-cancelled screen and releases the view on cancellation", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer-1",
+      botId: "bot",
+      kind: "docker",
+      providerRef: "computer-1",
+    } as const;
+
+    await provider.releaseScreen(computer, { ...context, keepScreenWarm: true });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-rakazo-preserve-screen": "1",
+    });
+
+    await provider.releaseScreen(computer, {
+      ...context,
+      keepScreenWarm: true,
+      cancelRunWork: true,
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+      "x-rakazo-cancel-run-work": "1",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).not.toHaveProperty("x-rakazo-preserve-screen");
+
+    const abort = new AbortController();
+    abort.abort();
+    await provider.releaseScreen(computer, {
+      ...context,
+      keepScreenWarm: true,
+      signal: abort.signal,
+    });
+    expect(fetchMock.mock.calls[2]?.[1]?.headers).not.toHaveProperty("x-rakazo-preserve-screen");
+  });
 });
 
 describe("Docker page browser", () => {
@@ -494,6 +530,25 @@ describe("Docker sandbox stopped containers", () => {
       "http://supervisor.test/computers/computer/screen-mode",
       "http://supervisor.test/computers/computer",
     ]);
+  });
+
+  it("reports a deleted container gone so lease cleanup can clear its stale reference", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json(
+        { error: "(HTTP code 404) no such container - No such container: computer" },
+        { status: 400 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await provider.setScreenControl(computer, false, context, "lease-1").then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(isSandboxGoneError(error)).toBe(true);
   });
 
   it("reports a stopped container gone when granting interactive control", async () => {

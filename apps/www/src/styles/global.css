@@ -3209,6 +3209,68 @@ button.product-demo__dock-icon {
   line-height: 1.5;
 }
 
+.guide ul.other-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 22px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.other-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.guide .other-card a.other-card__link,
+.guide .other-card a.other-card__link:hover,
+.guide .other-card a.other-card__link:focus-visible {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.guide .other-card a.other-card__link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.other-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1280 / 800;
+  object-fit: cover;
+  object-position: top;
+  background: var(--surface-soft);
+}
+
+.other-card__name {
+  display: block;
+  padding: 14px 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.other-card p {
+  margin: 6px 16px 16px;
+  color: var(--body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+@media (max-width: 720px) {
+  .guide ul.other-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .tldr {
   margin: 8px 0 28px;
   padding: 18px 20px;

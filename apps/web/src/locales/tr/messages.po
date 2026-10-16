@@ -1612,6 +1612,7 @@ msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "Kaydedilemedi"
@@ -2402,7 +2403,7 @@ msgstr "Merhaba, yanıtları sesli okuduğumda böyle duyulacağım."
 msgid "Hide bots"
 msgstr ""
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr ""
 
@@ -4005,6 +4006,10 @@ msgstr "Gönder"
 msgid "Send reset link"
 msgstr "Sıfırlama bağlantısı gönder"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Send with Enter"
+msgstr "Enter ile gönder"
+
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Gönderiliyor…"
@@ -4064,7 +4069,7 @@ msgid "Shared"
 msgstr "Ortak"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -4095,7 +4100,7 @@ msgstr ""
 msgid "Show more"
 msgstr "Daha fazla göster"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr ""
 

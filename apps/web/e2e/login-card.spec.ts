@@ -33,7 +33,8 @@ test("saves a website login from a username and password card without echoing ei
   await expect(card).toBeVisible({ timeout: 15_000 });
   await expect(card.getByText("https://login.example.test", { exact: true })).toBeVisible();
   const usernameField = card.getByLabel("Username");
-  const passwordField = card.getByLabel("Password");
+  // Exact: the password reveal button is labelled "Show password".
+  const passwordField = card.getByLabel("Password", { exact: true });
   await expect(passwordField).toHaveAttribute("type", "password");
   const save = card.getByRole("button", { name: "Save", exact: true });
 

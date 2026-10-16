@@ -43,6 +43,18 @@ describe("foreground AI consent", () => {
     });
     await expect(check).rejects.toBeInstanceOf(AiConsentBlocked);
   });
+  it("keeps the preflight failure as the cause so an unreachable server stays recognizable", async () => {
+    const offline = new TypeError("Network request failed");
+    const check = ensureAiDataConsent({
+      uses: ["model"],
+      status: async () => {
+        throw offline;
+      },
+      prompt: vi.fn(),
+      allow: vi.fn(),
+    });
+    await expect(check).rejects.toMatchObject({ cause: offline });
+  });
   it("does not grant anything when declined", async () => {
     const allow = vi.fn();
     await expect(

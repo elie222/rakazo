@@ -8,6 +8,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
   CodexCatalogCache,
+  ComputerBusyError,
   ComputerScreenUnavailableError,
   EncryptedSecretStore,
   IntegrationProviderSettings,
@@ -141,23 +142,26 @@ describe("account preferences", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("coerces unknown stored avatar styles to robot on me", async () => {
-    const { actor, handler } = preferencesDeps("custom-cdn");
+  it.each(["robot", "organic", "custom-cdn"])(
+    "returns the stored style or organic fallback for %s",
+    async (style) => {
+      const { actor, handler } = preferencesDeps(style);
 
-    const { response } = await handler.handle(
-      new Request("http://127.0.0.1/rpc/me", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: null }),
-      }),
-      { prefix: "/rpc", context: { actor } },
-    );
+      const { response } = await handler.handle(
+        new Request("http://127.0.0.1/rpc/me", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: null }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
 
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      json: expect.objectContaining({ avatarStyle: "robot" }),
-    });
-  });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        json: expect.objectContaining({ avatarStyle: style === "robot" ? "robot" : "organic" }),
+      });
+    },
+  );
 });
 
 describe("billing", () => {
@@ -1522,6 +1526,10 @@ describe("computer terminal and file transfer", () => {
 
   function setup(computer: Record<string, unknown> = {}) {
     const sandbox = {
+      execute: vi.fn(async function* () {
+        yield { type: "exit" as const, code: 0 };
+      }),
+      listFiles: vi.fn().mockResolvedValue([]),
       connectTerminal: vi.fn().mockResolvedValue({
         url: "https://screen.example/vnc.html?path=websockify%3Ftoken%3Dterminal-1",
       }),
@@ -1579,6 +1587,73 @@ describe("computer terminal and file transfer", () => {
     };
     return { sandbox, prisma, call };
   }
+
+  it("prepares an unused bot's folders before listing a running Team Computer", async () => {
+    const { sandbox, call } = setup();
+    let prepared = false;
+    sandbox.execute.mockImplementation(async function* () {
+      prepared = true;
+      yield { type: "exit" as const, code: 0 };
+    });
+    sandbox.listFiles.mockImplementation(async () => {
+      if (!prepared) throw new Error("workspace folder does not exist");
+      return [];
+    });
+
+    await expect(call("files", { path: "" })).resolves.toEqual({
+      status: 200,
+      body: { json: [] },
+    });
+    expect(sandbox.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sandbox-ref-1" }),
+      { argv: ["mkdir", "-p", "shared", "bots/bot-1"] },
+      expect.anything(),
+    );
+    expect(sandbox.listFiles).toHaveBeenCalledWith(
+      expect.anything(),
+      "bots/bot-1",
+      expect.anything(),
+    );
+  });
+
+  it("prepares the bot's folders when boot reuses an already running Team Computer", async () => {
+    const { sandbox, call } = setup();
+    await expect(call("boot", {})).resolves.toMatchObject({ status: 200 });
+    expect(sandbox.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "sandbox-ref-1" }),
+      { argv: ["mkdir", "-p", "shared", "bots/bot-1"] },
+      expect.anything(),
+    );
+  });
+
+  it("clears a reclaimed sandbox before boot attempts provisioning again", async () => {
+    const { sandbox, prisma, call } = setup();
+    sandbox.execute.mockImplementation(async function* () {
+      yield await Promise.reject(
+        Object.assign(new Error("Sandbox is probably not running anymore"), {
+          name: "SandboxNotFoundError",
+        }),
+      );
+    });
+    const findUniqueOrThrow = vi.fn().mockRejectedValue(new ComputerBusyError());
+    prisma.computer.findUniqueOrThrow = findUniqueOrThrow;
+
+    await expect(call("boot", {})).resolves.toMatchObject({ status: 409 });
+    expect(prisma.computer.updateMany).toHaveBeenCalledWith({
+      where: { id: "computer-1", providerRef: "sandbox-ref-1" },
+      data: { state: "stopped", providerRef: null },
+    });
+    expect(findUniqueOrThrow).toHaveBeenCalledWith({ where: { id: "computer-1" } });
+  });
+
+  it("does not discard a live sandbox when folder preparation fails", async () => {
+    const { sandbox, prisma, call } = setup();
+    sandbox.execute.mockImplementation(async function* () {
+      yield { type: "exit" as const, code: 1 };
+    });
+    await expect(call("boot", {})).resolves.toMatchObject({ status: 500 });
+    expect(prisma.computer.updateMany).not.toHaveBeenCalled();
+  });
 
   it("opens a terminal only for the user holding this bot's control lease", async () => {
     const released = setup();

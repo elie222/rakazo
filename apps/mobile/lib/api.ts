@@ -27,6 +27,8 @@ import {
   cancelResponseBody,
   ensureAiDataConsent,
   isRunTerminalEvent,
+  isServerUnreachable,
+  isUnreachableStatus,
   mergeThreadHistory,
   prependThreadHistoryPage,
   progressMessageId,
@@ -53,9 +55,11 @@ import {
   replaceSessionTokenIfCurrent,
   restoreSessionToken,
   saveSessionToken,
+  saveVerifiedIntegrationsScope,
   snapshotSessionToken,
   tokenFromAuthResponse,
 } from "./session";
+import { clearUnsentSends } from "./thread-feedback";
 import { authErrorText, errorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
@@ -78,6 +82,7 @@ export function subscribeApiBase(listener: () => void): () => void {
 }
 
 function setCachedApiBase(url: string): void {
+  if (cachedApiBase !== undefined && cachedApiBase !== url) clearUnsentSends();
   cachedApiBase = url;
   for (const listener of apiBaseListeners) listener();
 }
@@ -95,7 +100,29 @@ function bumpSpaceSelectionGeneration(): void {
 
 /** Keeps a timeout or cancel reason; turns transport and parsing detail into copy. */
 function requestError(error: unknown, signal: AbortSignal): unknown {
-  return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error));
+  return signal.aborted ? (signal.reason ?? error) : new Error(errorText(error), { cause: error });
+}
+
+let serverReachable = true;
+const serverReachableListeners = new Set<() => void>();
+
+/** False from a request that could not reach the server until the server answers again. */
+export function isServerReachable(): boolean {
+  return serverReachable;
+}
+
+/** Calls `listener` each time the server stops or starts answering. */
+export function subscribeServerReachable(listener: () => void): () => void {
+  serverReachableListeners.add(listener);
+  return () => {
+    serverReachableListeners.delete(listener);
+  };
+}
+
+function noteServerReachable(reachable: boolean): void {
+  if (reachable === serverReachable) return;
+  serverReachable = reachable;
+  for (const listener of [...serverReachableListeners]) listener();
 }
 
 export function currentApiBase() {
@@ -438,6 +465,7 @@ export async function authHeaders(
 }
 
 export type ApiRequestContext = {
+  sessionGeneration?: number;
   apiBase: string;
   headers: Record<string, string>;
 };
@@ -448,12 +476,15 @@ export function aiConsentCoalesceKey(requestContext: ApiRequestContext): string 
 }
 
 export async function captureApiRequestContext(): Promise<ApiRequestContext> {
+  const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
   const headers = await authHeaders(selectedSpaceId());
   if (apiBase !== currentApiBase()) {
     throw new Error(t("The server changed while starting the request"));
   }
-  return { apiBase, headers };
+  if (generation !== currentSessionGeneration())
+    throw new Error(t("Something went wrong. Try again."));
+  return { apiBase, headers, sessionGeneration: generation };
 }
 
 async function authenticateWithEmail(
@@ -694,6 +725,7 @@ export async function rpc<T>(
 ): Promise<T> {
   const requestSpaceGeneration = spaceSelectionGeneration;
   const requestSessionGeneration = currentSessionGeneration();
+  const requestApiBase = options.requestContext?.apiBase ?? currentApiBase();
   const uses = aiDataUsesForProcedure(proc, body);
   const consentContext =
     options.requestContext ?? (uses.length ? await captureApiRequestContext() : undefined);
@@ -719,7 +751,12 @@ export async function rpc<T>(
     options.timeoutMs === null
       ? undefined
       : setTimeout(
-          () => controller.abort(new Error("Request timed out")),
+          () =>
+            controller.abort(
+              Object.defineProperty(new Error("Request timed out"), "name", {
+                value: "TimeoutError",
+              }),
+            ),
           options.timeoutMs ?? RPC_TIMEOUT_MS,
         );
   // Bind recovery to the Space + selection epoch this request was sent with:
@@ -728,6 +765,11 @@ export async function rpc<T>(
   const requestHeaders = consentContext?.headers ?? (await authHeaders());
   const requestSpaceId = requestHeaders["x-rakazo-space-id"];
   try {
+    if (
+      consentContext?.sessionGeneration !== undefined &&
+      consentContext.sessionGeneration !== currentSessionGeneration()
+    )
+      throw new Error(t("Something went wrong. Try again."));
     let res: Response;
     try {
       res = await fetch(`${consentContext?.apiBase ?? currentApiBase()}/rpc/${proc}`, {
@@ -746,6 +788,11 @@ export async function rpc<T>(
       // location; say what happened instead.
       throw requestError(error, controller.signal);
     }
+    if (
+      requestSessionGeneration === currentSessionGeneration() &&
+      requestApiBase === currentApiBase()
+    )
+      noteServerReachable(!isUnreachableStatus(res.status));
     if (proc === "aiConsent/status" && res.status === 404) {
       cancelResponseBody(res);
       throw new Error(t("Update your server to use AI data sharing in this mobile version."));
@@ -850,9 +897,30 @@ export async function rpc<T>(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw new Error(message);
+      throw Object.defineProperty(new Error(message), "status", { value: res.status });
+    }
+    const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
+    if (
+      proc === "me" &&
+      typeof verifiedUser?.userId === "string" &&
+      typeof verifiedUser.spaceId === "string"
+    ) {
+      await saveVerifiedIntegrationsScope(requestSessionGeneration, {
+        apiBase: requestApiBase,
+        userId: verifiedUser.userId,
+        spaceId: requestSpaceId || verifiedUser.spaceId,
+        selectionId: requestSpaceId ?? null,
+      });
     }
     return parsed.json as T;
+  } catch (error) {
+    if (
+      requestSessionGeneration === currentSessionGeneration() &&
+      requestApiBase === currentApiBase() &&
+      isServerUnreachable(error)
+    )
+      noteServerReachable(false);
+    throw error;
   } finally {
     if (timer) clearTimeout(timer);
     options.signal?.removeEventListener("abort", cancel);
@@ -1092,17 +1160,25 @@ export async function subscribeThread(
   onEvent: (event: ThreadEvent) => void,
   signal: AbortSignal,
 ) {
-  const res = await fetch(`${currentApiBase()}/rpc/threads/subscribe`, {
+  const context = await captureApiRequestContext();
+  const current = () =>
+    context.apiBase === currentApiBase() &&
+    context.sessionGeneration === currentSessionGeneration();
+  const res = await fetch(`${context.apiBase}/rpc/threads/subscribe`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       accept: "text/event-stream",
       origin: "rakazo://",
-      ...(await authHeaders()),
+      ...context.headers,
     },
     body: JSON.stringify({ json: { ...target, cursor } }),
     signal,
+  }).catch((error: unknown) => {
+    if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
+    throw error;
   });
+  if (current()) noteServerReachable(!isUnreachableStatus(res.status));
   if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -1111,7 +1187,10 @@ export async function subscribeThread(
     // A half-open socket never reports done, so give up on silence and let the caller reconnect.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const read = await Promise.race([
-      reader.read(),
+      reader.read().catch((error) => {
+        if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
+        throw error;
+      }),
       new Promise<"idle">((resolve) => {
         timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
       }),

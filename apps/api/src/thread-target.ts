@@ -161,6 +161,7 @@ async function replayExistingSend(
   deps: { prisma: PrismaClient; events: ThreadEvents; jobs: JobPublisher },
   threadId: string,
   clientNonce: string | undefined,
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
   if (!clientNonce) return null;
   const message = await findSendReceipt(deps.prisma, threadId, clientNonce);
@@ -192,6 +193,13 @@ async function replayExistingSend(
     : message.sourceRuns.length
       ? message.sourceRuns
       : [linkedRun!];
+  const pendingSteering = releaseTakeover
+    ? await deps.prisma.steeringMessage.findFirst({
+        where: { messageId: message.id, claimedAt: null },
+        select: { runId: true },
+      })
+    : null;
+  if (releaseTakeover && pendingSteering?.runId) await releaseTakeover(pendingSteering.runId);
   await enqueueRunsNeedingContinue(deps.jobs, runs);
   const latestEvent = await deps.prisma.event.findFirst({
     where: { threadId },
@@ -617,8 +625,14 @@ export async function sendThreadMessage(
     replyQuote?: string;
     clientNonce?: string;
   },
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
-  const existing = await replayExistingSend(deps, target.threadId, input.clientNonce);
+  const existing = await replayExistingSend(
+    deps,
+    target.threadId,
+    input.clientNonce,
+    releaseTakeover,
+  );
   if (existing) return existing;
   // Live events carry the call id so a spoken turn joins the call card on first
   // paint; without it the bubble shows loose until a refetch reads the nonce.
@@ -1000,7 +1014,12 @@ export async function sendThreadMessage(
     });
 
   const committed = await withSerializableRetry(commit).catch(async (error) => {
-    const winner = await replayExistingSend(deps, target.threadId, input.clientNonce);
+    const winner = await replayExistingSend(
+      deps,
+      target.threadId,
+      input.clientNonce,
+      releaseTakeover,
+    );
     if (winner) return { replay: winner } as const;
     throw error;
   });
@@ -1009,6 +1028,11 @@ export async function sendThreadMessage(
     // Subscribers catch up from the durable event cursor after a missed realtime wake.
     getLogger().error("thread send realtime notification", error);
   });
+  if (releaseTakeover) {
+    for (const run of committed.runs) {
+      if (steersUserMessage(run)) await releaseTakeover(run.id);
+    }
+  }
   await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
   return sendResult(committed.message, committed.runs);
 }

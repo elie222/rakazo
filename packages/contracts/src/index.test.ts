@@ -286,6 +286,13 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
+  it.each([1, 2, 10, 11])("enforces group member bounds for %i bots", (count) => {
+    const botIds = Array.from({ length: count }, (_, index) => `bot-${index}`);
+    const accepted = count >= 2 && count <= 10;
+    expect(CreateGroupInput.safeParse({ name: "Draft team", botIds }).success).toBe(accepted);
+    expect(UpdateGroupInput.safeParse({ groupId: "group-1", botIds }).success).toBe(accepted);
+  });
+
   it("keeps model OAuth start results mode-specific", () => {
     const shared = {
       loginId: "login-1",

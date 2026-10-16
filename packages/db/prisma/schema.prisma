@@ -30,7 +30,7 @@ model User {
   image                       String?
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
-  avatarStyle                 String                       @default("robot")
+  avatarStyle                 String                       @default("organic")
   sessions                    Session[]
   accounts                    Account[]
   members                     Member[]
@@ -1049,7 +1049,10 @@ model Artifact {
   rootArtifact   Artifact?  @relation("ArtifactVersions", fields: [rootArtifactId], references: [id], onDelete: Cascade)
   versions       Artifact[] @relation("ArtifactVersions")
   version        Int        @default(1)
+  // Client-chosen per upload so a retried upload that already landed returns this row.
+  clientNonce    String?
 
+  @@unique([spaceId, userId, clientNonce])
   @@index([spaceId, botId])
   @@index([groupId])
   @@index([rootArtifactId])

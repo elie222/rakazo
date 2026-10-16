@@ -1612,6 +1612,7 @@ msgstr "Не удалось запустить задачу"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "Не удалось сохранить"
@@ -2402,7 +2403,7 @@ msgstr "Привет, вот как я буду звучать, когда бу�
 msgid "Hide bots"
 msgstr "Скрыть ботов"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "Скрыть пароль"
 
@@ -4005,6 +4006,10 @@ msgstr "Отправить"
 msgid "Send reset link"
 msgstr "Отправить ссылку для сброса"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Send with Enter"
+msgstr "Отправлять по Enter"
+
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Отправка…"
@@ -4064,8 +4069,8 @@ msgid "Shared"
 msgstr "Общий"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
-msgstr "Общий чат с 2-6 ботами. Все отвечают в одной ветке."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
+msgstr "Общий чат с {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} ботами. Все отвечают в одной ветке."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared documents"
@@ -4095,7 +4100,7 @@ msgstr ""
 msgid "Show more"
 msgstr "Показать ещё"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "Показать пароль"
 

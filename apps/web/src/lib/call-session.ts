@@ -49,7 +49,7 @@ let state: CallState | null = null;
 let callId = "";
 /** Requests for this call that must persist before its server-side hang-up. */
 const pendingCallSends = new Map<string, Set<Promise<unknown>>>();
-let transcribe = false;
+let transcribe: boolean | undefined;
 let thread: ThreadSnapshot | null = null;
 let feed: AbortController | null = null;
 /** Every bot message already spoken this call: a streaming message updates many times. */
@@ -101,7 +101,7 @@ export function startCall(call: {
   botId: string;
   botName: string;
   botColor?: string;
-  transcribe: boolean;
+  transcribe?: boolean;
 }): void {
   endCall();
   callId = randomId();
@@ -142,7 +142,10 @@ export function startCall(call: {
       set({ heard: pendingSecretAsk(thread) ? "" : heard.transcript });
       watchInterim(heard.transcript);
     } else clearInterim();
-    if (heard.error) set({ caption: heard.error });
+    if (heard.error) {
+      if (heard.status === "idle") micOpen = false;
+      set({ caption: heard.error });
+    }
   });
   watchThread(call.botId);
   emit();

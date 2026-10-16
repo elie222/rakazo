@@ -45,8 +45,12 @@ import {
   subscribeRemoteImages,
 } from "../lib/remote-images-preference";
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
+import { clearSavedChats } from "../lib/saved-chats";
+import { registerSessionDiskCache } from "../lib/session";
+import { startUnsentSends } from "../lib/unsent-sends";
 
 configureForegroundNotifications();
+registerSessionDiskCache(clearSavedChats);
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -125,6 +129,11 @@ export default function Layout() {
     if (!ready) return;
     // A session revoked or expired on the server ends here, from whichever screen noticed it.
     return subscribeSessionRejected(() => replaceWithSignIn());
+  }, [ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    return startUnsentSends();
   }, [ready]);
 
   useEffect(() => {
