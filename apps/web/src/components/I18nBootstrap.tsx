@@ -1,5 +1,7 @@
 import { i18n } from "@lingui/core";
 import { I18nProvider } from "@lingui/react";
+import { useLingui } from "@lingui/react/macro";
+import { InputRevealLabelsProvider } from "@rakazo/ui-web";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { bootstrapI18n, getActiveUiLocale } from "../lib/i18n";
@@ -31,7 +33,19 @@ export function I18nBootstrap({ children }: { children: ReactNode }) {
 
   return (
     <I18nProvider i18n={i18n}>
-      <MarkdownLinkPrompt>{children}</MarkdownLinkPrompt>
+      <KitLabels>
+        <MarkdownLinkPrompt>{children}</MarkdownLinkPrompt>
+      </KitLabels>
     </I18nProvider>
+  );
+}
+
+/** Translations for the text the UI kit draws itself. */
+function KitLabels({ children }: { children: ReactNode }) {
+  const { t } = useLingui();
+  return (
+    <InputRevealLabelsProvider show={t`Show password`} hide={t`Hide password`}>
+      {children}
+    </InputRevealLabelsProvider>
   );
 }

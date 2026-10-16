@@ -13,6 +13,7 @@ import { clearThread, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
+  acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
   computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
@@ -1848,6 +1849,53 @@ describe("computer execution leases", () => {
   it("keeps the screen lease on the run id and fence", () => {
     expect(screenLeaseIdForRun({ runId: "run-1", fence: 8 }, "run-1")).toBe("run-1:8");
     expect(screenLeaseIdForRun(null, "run-1", 0)).toBe("run-1:0");
+  });
+
+  it("increments dedicated screen fences and refuses an unowned run", async () => {
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "run-1" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "run-2" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([]);
+    const updateManyAndReturn = vi
+      .fn()
+      .mockResolvedValueOnce([{ fence: 4 }])
+      .mockResolvedValueOnce([{ fence: 5 }]);
+    const tx = {
+      $queryRaw: queryRaw,
+      computerExecutionLease: {
+        updateManyAndReturn,
+        create: vi.fn(),
+      },
+      run: { aggregate: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+    } as unknown as PrismaClient;
+    const base = {
+      computerId: "computer-1",
+      botId: "bot-1",
+      workerId: "worker-1",
+      runFence: 1,
+    };
+
+    const first = await acquireDedicatedScreenLeaseFence(prisma, { ...base, runId: "run-1" });
+    const second = await acquireDedicatedScreenLeaseFence(prisma, { ...base, runId: "run-2" });
+    expect(screenLeaseIdForRun(first, "run-1")).toBe("run-1:4");
+    expect(screenLeaseIdForRun(second, "run-2")).toBe("run-2:5");
+    expect(updateManyAndReturn).toHaveBeenCalledTimes(2);
+    expect(tx.run.aggregate).not.toHaveBeenCalled();
+
+    await expect(
+      acquireDedicatedScreenLeaseFence(prisma, { ...base, runId: "run-unowned" }),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateManyAndReturn).toHaveBeenCalledTimes(2);
   });
 
   it("acquires a team lease on a stale suspending computer", async () => {

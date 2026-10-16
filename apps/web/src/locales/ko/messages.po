@@ -1596,6 +1596,7 @@ msgstr "루틴을 실행할 수 없습니다"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "저장하지 못했습니다."
@@ -2377,7 +2378,7 @@ msgstr "안녕하세요. 답변을 소리 내어 읽을 때 이런 목소리로 
 msgid "Hide bots"
 msgstr ""
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "비밀번호 숨기기"
 
@@ -4035,7 +4036,7 @@ msgid "Shared"
 msgstr "함께 사용"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -4066,7 +4067,7 @@ msgstr ""
 msgid "Show more"
 msgstr "더 보기"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "비밀번호 표시"
 

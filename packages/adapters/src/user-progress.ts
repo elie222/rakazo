@@ -4,6 +4,23 @@ import { isToolActivityBlock } from "@rakazo/core";
 /** Keep mid-turn progress beats short; prefer a few high-signal updates. */
 export const USER_PROGRESS_MESSAGE_MAX_LENGTH = 500;
 
+/** Durable interim chat messages wait until a turn is genuinely long. */
+export const MID_TURN_PROGRESS_MIN_TURN_AGE_MS = 60_000;
+
+/** Cap on durable interim chat messages (message_user + promoted narration) per run. */
+export const MID_TURN_PROGRESS_MAX_PER_RUN = 3;
+
+/**
+ * Whether the run may post another durable interim chat message right now.
+ * Short turns stay silent in durable chat; long turns keep a few replyable
+ * beats without flooding the thread.
+ */
+export function midTurnProgressBudgetAllows(publishedCount: number, turnAgeMs: number): boolean {
+  return (
+    publishedCount < MID_TURN_PROGRESS_MAX_PER_RUN && turnAgeMs >= MID_TURN_PROGRESS_MIN_TURN_AGE_MS
+  );
+}
+
 export function clampUserProgressMessage(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return "";

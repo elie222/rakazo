@@ -480,6 +480,96 @@ export function screenLeaseIdForRun(
   return screenLeaseId(lease?.runId ?? runId, lease?.fence ?? fence);
 }
 
+/**
+ * Dedicated computers do not take an active computer-execution lease, but a retained screen
+ * needs an increasing fence across runs. Keep the sequence in the expired per-computer/bot row.
+ */
+export async function acquireDedicatedScreenLeaseFence(
+  prisma: PrismaClient,
+  input: {
+    computerId: string;
+    runId: string;
+    botId: string;
+    workerId: string;
+    runFence: number;
+  },
+): Promise<ComputerExecutionLease> {
+  return prisma.$transaction(async (tx) => {
+    // Lock in a fixed order and fail fast if assignment or worker ownership is changing.
+    const assignedBot = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM bots
+      WHERE id = ${input.botId}
+        AND "computerId" = ${input.computerId}
+        AND "computerSwitching" = false
+      FOR UPDATE SKIP LOCKED`;
+    if (assignedBot.length !== 1) throw new ComputerBusyError();
+
+    const computer = await tx.$queryRaw<Array<{ id: string; scope: string }>>`
+      SELECT id, scope FROM computers WHERE id = ${input.computerId} FOR UPDATE SKIP LOCKED`;
+    if (computer.length !== 1 || computer[0]?.scope !== "dedicated") {
+      throw new ComputerBusyError();
+    }
+
+    const currentRun = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM runs
+      WHERE id = ${input.runId}
+        AND "botId" = ${input.botId}
+        AND status = 'running'
+        AND "leaseOwner" = ${input.workerId}
+        AND "leaseFence" = ${input.runFence}
+        AND "leaseExpiresAt" > ${new Date()}
+      FOR UPDATE SKIP LOCKED`;
+    if (currentRun.length !== 1) throw new ComputerBusyError();
+
+    const expiredAt = new Date(0);
+    const now = new Date();
+    const [existing] = await tx.computerExecutionLease.updateManyAndReturn({
+      where: {
+        computerId: input.computerId,
+        botId: input.botId,
+        expiresAt: { lte: now },
+      },
+      data: { runId: input.runId, expiresAt: expiredAt, fence: { increment: 1 } },
+      select: { fence: true },
+    });
+    if (existing) {
+      return {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: existing.fence,
+      };
+    }
+
+    const history = await tx.run.aggregate({
+      where: { botId: input.botId },
+      _max: { leaseFence: true },
+    });
+    const fence = Math.max(input.runFence, history._max.leaseFence ?? 0) + 1;
+    try {
+      const created = await tx.computerExecutionLease.create({
+        data: {
+          computerId: input.computerId,
+          botId: input.botId,
+          runId: input.runId,
+          fence,
+          expiresAt: expiredAt,
+        },
+        select: { fence: true },
+      });
+      return {
+        computerId: input.computerId,
+        botId: input.botId,
+        runId: input.runId,
+        fence: created.fence,
+      };
+    } catch (error) {
+      if (isUniqueConstraintError(error)) throw new ComputerBusyError();
+      throw error;
+    }
+  });
+}
+
 export async function acquireComputerExecutionLease(
   prisma: PrismaClient,
   input: {

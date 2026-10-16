@@ -22,9 +22,6 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   const composer = page.getByRole("combobox", { name: "Message Chief" });
   await composer.fill("message the bot named Researcher saying peer-exchange-alpha");
   await composer.press("Enter");
-  await expect(page.getByText("messaging that bot now.").first()).toBeVisible({
-    timeout: 60_000,
-  });
 
   await expect
     .poll(

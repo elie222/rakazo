@@ -209,6 +209,7 @@ import { BACKGROUND_WORK_LAUNCH, scheduleComputerSleep } from "./computer-idle.j
 import type { ComputerExecutionLease } from "./computer-lifecycle.js";
 import {
   acquireComputerExecutionLease,
+  acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
   holdComputerExecutionLeaseForTakeover,
   provisionComputer,
@@ -380,6 +381,7 @@ import {
   finalBlocksAfterMidTurnProgress,
   isProgressMessageTruncated,
   isUserProgressClientNonce,
+  midTurnProgressBudgetAllows,
   userProgressClientNonce,
 } from "./user-progress.js";
 import { createWebProvider } from "./web-provider-factory.js";
@@ -3296,7 +3298,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
       if (started.count !== 1) return;
       const leaseTarget = await deps.prisma.bot.findUniqueOrThrow({
         where: { id: run.botId },
-        select: { computerId: true, computerSwitching: true },
+        select: {
+          computerId: true,
+          computerSwitching: true,
+          computer: { select: { scope: true } },
+        },
       });
       if (!leaseTarget.computerId) throw new Error("Bot has no computer");
       if (leaseTarget.computerSwitching) {
@@ -3304,6 +3310,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         return;
       }
       let computerLease: ComputerExecutionLease | null = null;
+      let computerScreenLease: ComputerExecutionLease | null = null;
       try {
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
@@ -3311,6 +3318,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           botId: run.botId,
           resumeHeldLease,
         });
+        computerScreenLease = computerLease;
+        if (!computerScreenLease && leaseTarget.computer?.scope === "dedicated") {
+          computerScreenLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
+            computerId: leaseTarget.computerId,
+            runId,
+            botId: run.botId,
+            workerId,
+            runFence: fence,
+          });
+        }
       } catch (error) {
         if (!(error instanceof ComputerBusyError)) throw error;
         await requeueComputerRun(deps, runId, workerId, fence, resumeCheckpoint, heldForTakeover);
@@ -3326,28 +3343,38 @@ export function createRunExecutor(deps: ExecutorDeps) {
         });
 
       let leaseValid = true;
+      let runCompleted = false;
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
-      let screenRelease: { computer: ComputerRef; context: AdapterContext } | undefined;
+      let screenRelease:
+        | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
+        | undefined;
       let runAbortController: AbortController | null = null;
       let detachShutdown: (() => void) | undefined;
       const heartbeat = setInterval(() => {
+        if (runCompleted) return;
         void Promise.all([
           renewRunLease(deps, runId, workerId, fence),
           renewComputerExecutionLease(deps.prisma, computerLease),
         ])
           .then(([runRenewed, computerRenewed]) => {
+            if (runCompleted) return;
             if (!runRenewed || !computerRenewed) {
               leaseValid = false;
               runAbortController?.abort();
             }
           })
           .catch(() => {
+            if (runCompleted) return;
             leaseValid = false;
             runAbortController?.abort();
           });
       }, 60_000);
       heartbeat.unref?.();
+      const stopHeartbeatAfterCompletion = () => {
+        runCompleted = true;
+        clearInterval(heartbeat);
+      };
 
       const runSecrets = [...deps.secrets];
       try {
@@ -3481,7 +3508,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           userId: run.userId,
           botId: bot.id,
           runId,
-          screenLeaseId: screenLeaseIdForRun(computerLease, runId, fence),
+          screenLeaseId: screenLeaseIdForRun(computerScreenLease, runId, fence),
           signal: runAbortController.signal,
           connectedConnections: connectedPlugins.map((row) => ({
             id: row.id,
@@ -3733,7 +3760,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);
         const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
-        screenRelease = { computer, context };
+        screenRelease = { computer, context, keepWarm: false };
         scheduleComputerSleep(deps.jobs, storedComputer.id);
         const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
           checkpointRunComputerWorkspace(deps, storedComputer, computer, context),
@@ -3913,6 +3940,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let discardedMidTurnNarration = false;
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
+        const turnStartedAtMs = run.startedAt?.getTime() ?? Date.now();
+        // Durable interim messages only on genuinely long turns, capped per run.
+        const canPublishDurableProgress = () =>
+          midTurnProgressBudgetAllows(midTurnProgressCount, Date.now() - turnStartedAtMs);
+        const canPublishDurableNarration = () =>
+          runPromotesMidTurnNarration(run.trigger) && canPublishDurableProgress();
         {
           const priorProgress = await deps.prisma.message.findMany({
             where: { runId: run.id, role: "bot" },
@@ -3984,16 +4017,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const publishMidTurnNarration = async () => {
           const extracted = extractNarrationText(messageSegments, currentTextSegment);
           const narration = clampUserProgressMessage(redactSecrets(extracted.text, runSecrets));
+          const canPublish = canPublishDurableNarration();
+          if (
+            narration &&
+            !canPublish &&
+            !allowSilentEmptyRun &&
+            runPromotesMidTurnNarration(run.trigger)
+          ) {
+            return;
+          }
           messageSegments = extracted.remaining;
           currentTextSegment = "";
           if (!narration) return;
-          assembled = "";
           hasStreamedText = false;
           pendingProgress = "";
-          if (!runPromotesMidTurnNarration(run.trigger)) {
+          if (!canPublish) {
+            assembled = "";
             discardedMidTurnNarration = true;
             return;
           }
+          assembled = "";
           await publishMessage(
             deps,
             run,
@@ -6147,6 +6190,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const truncated = isProgressMessageTruncated(rawMessage);
             await flushProgress();
             await publishMidTurnNarration();
+            if (!canPublishDurableProgress()) {
+              return finish({
+                ok: true,
+                note: "This update was not posted. The turn is still fresh, or the chat already has enough interim messages for this run. Do not send more progress updates — keep working and put everything in your final reply.",
+              });
+            }
             await publishMessage(
               deps,
               run,
@@ -6788,7 +6837,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               await publishMidTurnNarration();
               if (assembled.trim()) {
                 const narration = clampUserProgressMessage(redactSecrets(assembled, runSecrets));
-                if (narration && runPromotesMidTurnNarration(run.trigger)) {
+                if (narration && canPublishDurableNarration()) {
                   await publishMessage(
                     deps,
                     run,
@@ -6887,6 +6936,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     : [{ kind: "text", text: stuckText }],
                 });
                 if (!stopped) return;
+                stopHeartbeatAfterCompletion();
                 if (stopped.continuationRunId) {
                   await deps.jobs
                     .enqueue(runContinueJob(stopped.continuationRunId))
@@ -7128,6 +7178,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             ),
           });
           if (!completed) return;
+          stopHeartbeatAfterCompletion();
+          if (screenRelease) screenRelease.keepWarm = true;
           if (completed.continuationRunId) {
             await deps.jobs
               .enqueue(runContinueJob(completed.continuationRunId))
@@ -7283,8 +7335,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         clearInterval(heartbeat);
         if (!retainComputerLease) {
           if (screenRelease) {
+            const releaseContext = screenRelease.keepWarm
+              ? { ...screenRelease.context, keepScreenWarm: true }
+              : screenRelease.context;
             await deps.sandbox
-              .releaseScreen?.(screenRelease.computer, screenRelease.context)
+              .releaseScreen?.(screenRelease.computer, releaseContext)
               .catch(() => undefined);
           }
           await releaseComputerExecutionLease(deps.prisma, computerLease).catch(() => undefined);
@@ -7897,7 +7952,7 @@ export function mayOpenModelStream(
 export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply };
 
 export const LONG_WORK_PROGRESS_GUIDANCE =
-  "During long work, send a few short progress updates with message_user so the user can see what you are doing. Keep them brief and high-signal (a sentence or two, not a dump). Do not narrate every tool call. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
+  "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
 
 export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. Do not call message_user unless you have something to report.`;
 

@@ -54,7 +54,7 @@ jobs:
   playwright:
     name: Web E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     concurrency:
       group: ${{ inputs.publish_report && 'playwright-publication' || format('playwright-{0}', github.run_id) }}
       cancel-in-progress: false

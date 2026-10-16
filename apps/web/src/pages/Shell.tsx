@@ -296,6 +296,8 @@ import {
   ChoiceCard,
   McpApprovalCard,
 } from "./shell/message-cards";
+import type { RosterDropTarget } from "./shell/roster-drop";
+import { resolveRosterDrop } from "./shell/roster-drop";
 import { commitSpaceRename, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { WindowChrome } from "./WindowChrome";
 
@@ -592,6 +594,7 @@ export function ShellPage() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const mobileSidebarSwipeRef = useRef<{ startX: number; startY: number } | null>(null);
   const [draggedBotId, setDraggedBotId] = useState<string | null>(null);
+  const [rosterDropKey, setRosterDropKey] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const [botsSidebarCollapsed, setBotsSidebarCollapsed] = useState(false);
   const focusPromptAbortRef = useRef<AbortController | null>(null);
@@ -1631,6 +1634,46 @@ export function ShellPage() {
       );
     },
     [userId],
+  );
+  // Drags only act on bots of the active space; other spaces are read-only here.
+  const draggedBot = draggedBotId ? bots.find((bot) => bot.id === draggedBotId) : undefined;
+  const rosterDropAction = useCallback(
+    (target: RosterDropTarget, sameParent: boolean) =>
+      draggedBot ? resolveRosterDrop({ dragged: draggedBot, target, sameParent }) : null,
+    [draggedBot],
+  );
+  const applyRosterDrop = useCallback(
+    (target: RosterDropTarget, sameParent: boolean, groupBotIds: string[]) => {
+      const action = rosterDropAction(target, sameParent);
+      setDraggedBotId(null);
+      setRosterDropKey(null);
+      if (!action || !draggedBot) return;
+      setSendError(null);
+      if (action.action === "reorder") {
+        reorderRosterBot(draggedBot.id, action.targetBotId, groupBotIds);
+        return;
+      }
+      const request =
+        action.action === "move"
+          ? rpc.bots.update({ botId: draggedBot.id, sectionId: action.sectionId })
+          : rpc.groups.update({
+              groupId: action.groupId,
+              botIds: action.botIds,
+              expectedBotIds: action.botIds.filter((id) => id !== draggedBot.id),
+            });
+      void request
+        .then(async () => {
+          await refreshBots();
+          if (action.action === "join" && activeGroupId.current === action.groupId) {
+            await refreshGroupThread(action.groupId);
+          }
+        })
+        .catch((error) => {
+          setSendError(errorText(error, t`Could not save`));
+          void refreshBots().catch(() => undefined);
+        });
+    },
+    [draggedBot, refreshBots, reorderRosterBot, rosterDropAction, t],
   );
   const toggleRosterParent = useCallback(
     (botId: string) => {
@@ -2980,15 +3023,40 @@ export function ShellPage() {
                     row.item.kind === "bot" && row.parentId === parentId ? [row.item.chat.id] : [],
                   );
                 const hasSpaceActions = group.canRenameSpace || group.canDeleteSpace;
+                const headerDropTarget: RosterDropTarget | null =
+                  group.spaceId === bootstrapMe?.spaceId &&
+                  !group.emptySpaceId &&
+                  (group.sectionId || group.key.endsWith("unassigned"))
+                    ? { kind: "section", sectionId: group.sectionId }
+                    : null;
+                const headerDropKey = `header:${group.key}`;
                 return (
                   <div key={group.key} data-sidebar-group={group.key}>
                     {group.title || hasSpaceActions ? (
+                      // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
                       <div
-                        className={
+                        role="group"
+                        data-roster-drop={rosterDropKey === headerDropKey ? "true" : undefined}
+                        className={`${
                           group.title && hasSpaceActions
                             ? "grid pt-3 pb-0.5"
                             : `flex items-center pt-3 pb-0.5${group.title ? "" : " justify-end"}`
-                        }
+                        } rounded-lg ${rosterDropKey === headerDropKey ? "bg-sidebar-accent" : ""}`}
+                        onDragOver={(event) => {
+                          if (!headerDropTarget || !rosterDropAction(headerDropTarget, false))
+                            return;
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          if (rosterDropKey !== headerDropKey) setRosterDropKey(headerDropKey);
+                        }}
+                        onDragLeave={() => {
+                          if (rosterDropKey === headerDropKey) setRosterDropKey(null);
+                        }}
+                        onDrop={(event) => {
+                          if (!headerDropTarget) return;
+                          event.preventDefault();
+                          applyRosterDrop(headerDropTarget, false, groupBotIds);
+                        }}
                       >
                         {group.title ? (
                           <button
@@ -3118,6 +3186,23 @@ export function ShellPage() {
                                 (item.chat.status !== "idle" ? item.chat.status : "")
                               : item.chat.preview ||
                                 item.chat.members.map((member) => member.name).join(", ")));
+                        const rowDropTarget: RosterDropTarget | null =
+                          item.chat.spaceId !== bootstrapMe?.spaceId
+                            ? null
+                            : item.kind === "bot"
+                              ? { kind: "bot", chat: item.chat }
+                              : {
+                                  kind: "group",
+                                  chat: {
+                                    id: item.chat.id,
+                                    memberIds: item.chat.members.map((member) => member.botId),
+                                  },
+                                };
+                        const rowSameParent =
+                          Boolean(draggedBotId) &&
+                          groupBotIds.includes(draggedBotId ?? "") &&
+                          rosterParent.get(draggedBotId ?? "") === parentId;
+                        const rowDropKey = `row:${item.kind}:${item.chat.id}`;
                         return (
                           <div
                             key={`${item.kind}:${item.chat.id}`}
@@ -3175,27 +3260,27 @@ export function ShellPage() {
                               }}
                               onDragOver={(event) => {
                                 if (
-                                  item.kind === "bot" &&
-                                  draggedBotId &&
-                                  groupBotIds.includes(draggedBotId) &&
-                                  rosterParent.get(draggedBotId) === parentId
-                                ) {
-                                  event.preventDefault();
-                                  event.dataTransfer.dropEffect = "move";
-                                }
-                              }}
-                              onDrop={(event) => {
-                                if (
-                                  item.kind !== "bot" ||
-                                  !draggedBotId ||
-                                  rosterParent.get(draggedBotId) !== parentId
+                                  !rowDropTarget ||
+                                  !rosterDropAction(rowDropTarget, rowSameParent)
                                 )
                                   return;
                                 event.preventDefault();
-                                reorderRosterBot(draggedBotId, item.chat.id, groupBotIds);
-                                setDraggedBotId(null);
+                                event.dataTransfer.dropEffect = "move";
+                                if (rosterDropKey !== rowDropKey) setRosterDropKey(rowDropKey);
                               }}
-                              onDragEnd={() => setDraggedBotId(null)}
+                              onDragLeave={() => {
+                                if (rosterDropKey === rowDropKey) setRosterDropKey(null);
+                              }}
+                              onDrop={(event) => {
+                                if (!rowDropTarget) return;
+                                event.preventDefault();
+                                applyRosterDrop(rowDropTarget, rowSameParent, groupBotIds);
+                              }}
+                              onDragEnd={() => {
+                                setDraggedBotId(null);
+                                setRosterDropKey(null);
+                              }}
+                              data-roster-drop={rosterDropKey === rowDropKey ? "true" : undefined}
                               onKeyDown={(event) => {
                                 if (
                                   item.kind !== "bot" ||
@@ -3235,7 +3320,9 @@ export function ShellPage() {
                               } text-start ${
                                 item.kind === "bot" ? "cursor-grab active:cursor-grabbing" : ""
                               } ${
-                                selected ? "bg-sidebar-accent" : "group-hover/row:bg-sidebar-accent"
+                                selected || rosterDropKey === rowDropKey
+                                  ? "bg-sidebar-accent"
+                                  : "group-hover/row:bg-sidebar-accent"
                               }`}
                               style={
                                 treeActive
