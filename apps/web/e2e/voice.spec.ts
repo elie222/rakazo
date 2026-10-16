@@ -19,7 +19,7 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await expect(page.getByTestId("voice-settings")).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Dictate", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "OpenAI-compatible", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /OpenAI-compatible/ })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "voice-settings");
   await page.getByRole("button", { name: "Close voice settings" }).click();
   await expect(page.getByTestId("voice-settings")).toHaveCount(0);
