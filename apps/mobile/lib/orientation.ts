@@ -1,31 +1,31 @@
 import * as ScreenOrientation from "expo-screen-orientation";
 import { Dimensions } from "react-native";
-import { isCompactWindow } from "./adaptive-layout";
+import { isCompactScreen } from "./adaptive-layout";
 
 let rotationHolds = 0;
 let applied: Promise<unknown> = Promise.resolve();
 
 /**
- * Phone-sized windows stay portrait. An unfolded foldable or a tablet rotates freely, and so
- * does any window while a full-screen viewer holds rotation.
+ * Phone-sized screens stay portrait. An unfolded foldable or a tablet rotates freely, and so
+ * does any screen while a full-screen viewer holds rotation.
  */
 export function appOrientationLock(
-  window: { width: number; height: number },
+  screen: { width: number; height: number },
   rotationHeld: boolean,
 ): ScreenOrientation.OrientationLock {
-  return rotationHeld || !isCompactWindow(window)
+  return rotationHeld || !isCompactScreen(screen)
     ? ScreenOrientation.OrientationLock.DEFAULT
     : ScreenOrientation.OrientationLock.PORTRAIT_UP;
 }
 
 /**
- * Applies the lock the current window and holds call for. Calls run one after another and
+ * Applies the lock the current screen and holds call for. Calls run one after another and
  * each reads the state when it runs, so a slow earlier call cannot undo a newer one.
  */
 export function syncOrientation(): Promise<unknown> {
   applied = applied.then(() =>
     ScreenOrientation.lockAsync(
-      appOrientationLock(Dimensions.get("window"), rotationHolds > 0),
+      appOrientationLock(Dimensions.get("screen"), rotationHolds > 0),
     ).catch(() => undefined),
   );
   return applied;

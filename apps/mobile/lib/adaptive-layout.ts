@@ -1,13 +1,13 @@
-/** Material's compact window bound in dp: a phone held upright, or a foldable's cover screen. */
-const COMPACT_WINDOW = 600;
+/** Compact screen bound in dp: a phone held upright, or a foldable's cover screen. */
+const COMPACT_SCREEN = 600;
 /** Widest the thread and inbox columns grow on an unfolded foldable or a tablet. */
 export const READABLE_COLUMN_WIDTH = 720;
 
-type WindowSize = { width: number; height: number };
+type ScreenSize = { width: number; height: number };
 
-/** The shorter side decides, so an unfolded screen stays expanded in either orientation. */
-export function isCompactWindow(window: WindowSize): boolean {
-  return Math.min(window.width, window.height) < COMPACT_WINDOW;
+/** Use the full screen: Android window insets can move the short side below the bound on rotation. */
+export function isCompactScreen(screen: ScreenSize): boolean {
+  return Math.min(screen.width, screen.height) < COMPACT_SCREEN;
 }
 
 /**
