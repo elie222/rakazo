@@ -79,6 +79,7 @@ import {
   listBotSecretMetadata,
   listPiCatalog,
   listScratchpadItems,
+  loadStoredModelSecret,
   McpOAuthBroker,
   mapScratchpadItem,
   modelCredentialAuthKindsForSpace,
@@ -1277,11 +1278,14 @@ export function createRouter(deps: RouterDeps) {
           // Limits: this runs before persistModelCredential's transaction. A pin saved in
           // between can fall outside the stored list and then fails at run time with
           // "Unknown model for that provider". Closing it needs every pin write (bots,
-          // routines, backups) serializable.
+          // routines, backups) serializable. Concurrent saves of the same connection are
+          // last-write-wins, as before this list existed, so one save's ticks can be dropped.
+          const saved = parseModelSecret(plaintext);
           await assertNoDanglingModelPins(
             deps,
             context.actor,
-            enabledOpenAiCompatibleModelIds(parseModelSecret(plaintext), input.modelId),
+            saved.kind === "openai_compatible" ? (saved.enabledModelIds ?? []) : [],
+            input.modelId ?? "",
           );
         }
         return persistModelCredential(
@@ -6416,25 +6420,47 @@ async function prepareAllowedThinkingLevels(
   }
   const credential = await findModelCredential(deps.prisma, actor, provider);
   if (!credential) return { allowed: ["off"] };
-  const secret = await deps.prisma.secret.findFirst({
-    where: { id: credential.secretId, userId: actor.userId, spaceId: null },
-    select: { ciphertext: true },
-  });
+  const secret = await loadStoredModelSecret(
+    deps.prisma,
+    deps.secrets,
+    actor.userId,
+    credential.secretId,
+  );
+  return {
+    ...compatibleThinkingLevels(
+      credential,
+      secret.status === "loaded" ? secret.plaintext : undefined,
+      modelId,
+    ),
+    secret:
+      secret.status === "missing"
+        ? undefined
+        : { id: credential.secretId, ciphertext: secret.ciphertext },
+  };
+}
+
+/**
+ * Thinking levels for `modelId` on an openai-compatible connection whose secret is
+ * `plaintext`: the endpoint's levels for any enabled id, otherwise only "off".
+ */
+function compatibleThinkingLevels(
+  row: Parameters<typeof modelCredentialDto>[0],
+  plaintext: string | undefined,
+  modelId: string,
+) {
   let parsed: StoredModelSecret | undefined;
   let levels: string[] | undefined;
-  if (secret) {
+  if (plaintext !== undefined) {
     try {
-      const plaintext = await deps.secrets.load(secret.ciphertext, credential.secretId);
       parsed = parseModelSecret(plaintext);
-      levels = modelCredentialDto(credential, plaintext).thinkingLevels;
+      levels = modelCredentialDto(row, plaintext).thinkingLevels;
     } catch {
       // Unreadable connections must not advertise reasoning support.
     }
   }
-  const enabled = enabledOpenAiCompatibleModelIds(parsed, credential.defaultModel);
+  const enabled = enabledOpenAiCompatibleModelIds(parsed, row.defaultModel);
   return {
     allowed: enabled.includes(modelId.trim()) ? (levels ?? ["off"]) : ["off"],
-    secret: secret ? { id: credential.secretId, ciphertext: secret.ciphertext } : undefined,
     enabledModelIds: enabled,
     storedEnabledModelIds:
       parsed?.kind === "openai_compatible" ? parsed.enabledModelIds : undefined,
@@ -6773,9 +6799,16 @@ async function persistModelCredential(
     requestedModelId ??
     defaultCatalogModelId(input.provider, input.plaintext) ??
     usableModelId(deps.env.defaultModel);
-  const allowedThinking = defaultModel
-    ? await allowedThinkingLevels(deps, actor, input.provider, defaultModel)
-    : undefined;
+  // A compatible connect may enable its new default, so judge it by the secret being saved.
+  const allowedThinking = !defaultModel
+    ? undefined
+    : input.provider === OPENAI_COMPATIBLE_PROVIDER_ID
+      ? compatibleThinkingLevels(
+          { id: "", provider: input.provider, label: "", isDefault: true, defaultModel },
+          input.plaintext,
+          defaultModel,
+        ).allowed
+      : await allowedThinkingLevels(deps, actor, input.provider, defaultModel);
   const stored = await deps.secrets.put(input.plaintext, {
     operationId: "cred",
     traceId: "cred",
@@ -6877,43 +6910,62 @@ function nextRoutineDate(crons: string[], timezone: string): Date {
 }
 
 /**
- * Names of the active bots and routines in the actor's space (plus "backup models") that pin an
- * openai-compatible id outside `enabled`. Catalog-listed compatible ids pass today's gates
- * without the connection's list, so they are never reported.
+ * Names of the actor's active bots and routines (plus "backup models"), in every space, that
+ * pin an openai-compatible id outside their own space's effective list once `stored` is the
+ * connection's list and `actorDefault` is the actor space's default. The secret is per user
+ * and account-wide; each other space keeps its own saved default. Catalog-listed compatible
+ * ids pass today's gates without the connection's list, so they are never reported.
  */
-async function modelPinUsers(deps: RouterDeps, actor: Actor, enabled: string[]) {
+async function modelPinUsers(
+  deps: RouterDeps,
+  actor: Actor,
+  stored: string[],
+  actorDefault: string,
+) {
+  const provider = OPENAI_COMPATIBLE_PROVIDER_ID;
   const excluded = [
-    ...enabled,
+    ...stored,
     ...listPiCatalog()
-      .filter((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
+      .filter((entry) => entry.provider === provider)
       .map((entry) => entry.id),
   ];
-  const pinned = {
-    spaceId: actor.spaceId,
-    modelProvider: OPENAI_COMPATIBLE_PROVIDER_ID,
-    modelId: { notIn: excluded },
-  };
-  const [bots, routines, backups] = await Promise.all([
-    deps.prisma.bot.findMany({ where: { ...pinned, archivedAt: null }, select: { name: true } }),
-    deps.prisma.routine.findMany({ where: pinned, select: { name: true } }),
+  const modelId = { notIn: excluded };
+  const pin = { spaceId: true, modelId: true } as const;
+  const [preferences, bots, routines, backups] = await Promise.all([
+    deps.prisma.spaceModelPreference.findMany({
+      where: { userId: actor.userId, credential: { userId: actor.userId, provider } },
+      select: { spaceId: true, modelId: true },
+    }),
+    deps.prisma.bot.findMany({
+      where: { userId: actor.userId, archivedAt: null, modelProvider: provider, modelId },
+      select: { ...pin, name: true },
+    }),
+    deps.prisma.routine.findMany({
+      where: { userId: actor.userId, modelProvider: provider, modelId },
+      select: { ...pin, name: true },
+    }),
     deps.prisma.spaceBackupModel.findMany({
-      where: {
-        spaceId: actor.spaceId,
-        userId: actor.userId,
-        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-        modelId: { notIn: excluded },
-      },
-      select: { modelId: true },
+      where: { userId: actor.userId, provider, modelId },
+      select: pin,
     }),
   ]);
-  const names = [...bots, ...routines].map((row) => row.name);
-  if (backups.length > 0) names.push("backup models");
+  const defaults = new Map(preferences.map((row) => [row.spaceId, usableModelId(row.modelId)]));
+  defaults.set(actor.spaceId, usableModelId(actorDefault));
+  const dangling = (row: { spaceId: string; modelId: string | null }) =>
+    row.modelId !== null && row.modelId !== defaults.get(row.spaceId);
+  const names = [...bots, ...routines].filter(dangling).map((row) => row.name);
+  if (backups.some(dangling)) names.push("backup models");
   return [...new Set(names)];
 }
 
-/** Refuse a compatible connection change that would leave a pin in this space dangling. */
-async function assertNoDanglingModelPins(deps: RouterDeps, actor: Actor, enabled: string[]) {
-  const users = await modelPinUsers(deps, actor, enabled);
+/** Refuse a compatible connection change that would leave one of the actor's pins dangling. */
+async function assertNoDanglingModelPins(
+  deps: RouterDeps,
+  actor: Actor,
+  stored: string[],
+  actorDefault: string,
+) {
+  const users = await modelPinUsers(deps, actor, stored, actorDefault);
   if (users.length === 0) return;
   throw new ORPCError("BAD_REQUEST", {
     message: `In use by ${users.join(", ")}. Pick another model for them first.`,
@@ -6939,7 +6991,7 @@ async function assertCompatibleDefaultChange(
   }
   const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
   if (!outgoing) return;
-  await assertNoDanglingModelPins(deps, actor, [requested, ...(stored ?? [])]);
+  await assertNoDanglingModelPins(deps, actor, stored ?? [], requested);
 }
 
 /** A routine may only name a model the space has connected. */

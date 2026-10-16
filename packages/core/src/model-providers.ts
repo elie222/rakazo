@@ -277,3 +277,42 @@ export function filterModelCatalog(
     matchesSearchQuery(query, entry.label, entry.id, entry.providerName ?? entry.provider),
   );
 }
+
+type SavedCompatibleModels = { baseUrl?: string; enabledModelIds?: readonly string[] };
+
+/** The saved enabled ids, but only while the form still points at the saved endpoint. */
+export function savedCompatibleModelIds(
+  credential: SavedCompatibleModels | undefined,
+  baseUrl: string,
+): string[] {
+  if (!credential?.enabledModelIds || credential.baseUrl?.trim() !== baseUrl.trim()) return [];
+  return [...credential.enabledModelIds];
+}
+
+/** One row per model the endpoint may run: saved ids, then local ticks, then probed ids. */
+export function compatibleModelRows(
+  savedIds: readonly string[],
+  enabledIds: readonly string[],
+  probedIds: readonly string[],
+): string[] {
+  return [...new Set([...savedIds, ...enabledIds, ...probedIds])];
+}
+
+export function toggleEnabledModelId(
+  enabledIds: readonly string[],
+  id: string,
+  enabled: boolean,
+): string[] {
+  return enabled ? [...new Set([...enabledIds, id])] : enabledIds.filter((entry) => entry !== id);
+}
+
+/**
+ * Whether "Use this model" may switch the default to `modelId`. The server
+ * refuses ids outside a saved list; an unread list (undefined) is not checked.
+ */
+export function canUseCompatibleModelAsDefault(
+  savedIds: readonly string[] | undefined,
+  modelId: string,
+): boolean {
+  return savedIds === undefined || savedIds.includes(modelId);
+}

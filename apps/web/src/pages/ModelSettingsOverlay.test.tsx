@@ -442,7 +442,7 @@ async function renderCompatibleWithProbe(probed: string[]) {
   return view;
 }
 
-it("sends every ticked model, including the default, when an OpenAI-compatible endpoint saves", async () => {
+it("sends the ticked models other than the default when an OpenAI-compatible endpoint saves", async () => {
   const view = await renderCompatibleWithProbe(["model-a", "model-b", "model-c"]);
   try {
     expect(modelCheckbox(view.container, "model-b").checked).toBe(false);
@@ -457,7 +457,7 @@ it("sends every ticked model, including the default, when an OpenAI-compatible e
       expect.objectContaining({
         provider: "openai-compatible",
         modelId: "model-a",
-        enabledModelIds: ["model-a", "model-b"],
+        enabledModelIds: ["model-b"],
       }),
     );
   } finally {
@@ -504,6 +504,10 @@ it("lists saved models as checked rows before the server is probed", async () =>
 async function chooseDefault(container: HTMLElement, id: string) {
   const select = container.querySelector("select[aria-label='Models from server']");
   if (!(select instanceof HTMLSelectElement)) throw new Error("Missing model select");
+  // Setting a value with no matching option would silently stage "" instead.
+  if (![...select.options].some((option) => option.value === id)) {
+    throw new Error(`Not a default option: ${id}`);
+  }
   await act(async () => {
     select.value = id;
     select.dispatchEvent(new Event("change", { bubbles: true }));
@@ -513,6 +517,9 @@ async function chooseDefault(container: HTMLElement, id: string) {
 it("allows Use this model only for a saved enabled model", async () => {
   const unsaved = await renderCompatibleWithProbe(["model-a", "model-b"]);
   try {
+    await act(async () => {
+      modelCheckbox(unsaved.container, "model-b").click();
+    });
     await chooseDefault(unsaved.container, "model-b");
     expect(buttons(unsaved.container, "Use this model")[0]?.disabled).toBe(true);
   } finally {
@@ -578,7 +585,7 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
       buttons(view.container, "Save")[0]?.click();
     });
     expect(models.connect).toHaveBeenCalledWith(
-      expect.objectContaining({ enabledModelIds: ["model-a"] }),
+      expect.objectContaining({ modelId: "model-a", enabledModelIds: [] }),
     );
     expect(view.container.textContent).toContain("In use by Helper");
     expect(modelCheckbox(view.container, "model-b").checked).toBe(false);
@@ -612,4 +619,60 @@ it("compiles the provider-row model count to the catalog's existing message", as
   expect(code).toContain(`message: ${JSON.stringify(countMessage)}`);
   expect(code).not.toContain("{enabledCount");
   expect(catalog).toContain(`msgid ${JSON.stringify(countMessage)}`);
+});
+
+it("allows Use this model when the saved list could not be read", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  const { enabledModelIds: _unread, ...unreadable } = compatibleCredential;
+  models.credentials.mockResolvedValue([unreadable]);
+  models.probeOpenAiCompatible.mockResolvedValue({ models: ["model-a", "model-b"] });
+  const view = await renderSettings();
+  try {
+    await act(async () => {
+      buttons(view.container, "Find models")[0]?.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      modelCheckbox(view.container, "model-b").click();
+    });
+    await chooseDefault(view.container, "model-b");
+    expect(buttons(view.container, "Use this model")[0]?.disabled).toBe(false);
+  } finally {
+    await view.unmount();
+  }
+});
+
+function baseUrlField(container: HTMLElement) {
+  const input = [...container.querySelectorAll("input")].find(
+    (entry) => entry.value === compatibleCredential.baseUrl,
+  );
+  if (!(input instanceof HTMLInputElement)) throw new Error("Missing server URL field");
+  return input;
+}
+
+it("drops the saved ticks and rows when the server URL changes, and restores them on the saved URL", async () => {
+  vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
+  models.list.mockResolvedValue([compatibleEntry]);
+  models.credentials.mockResolvedValue([
+    { ...compatibleCredential, enabledModelIds: ["model-a", "model-b"] },
+  ]);
+  const view = await renderSettings();
+  try {
+    const field = baseUrlField(view.container);
+    await typeInto(field, "http://other.test/v1");
+    expect(() => modelCheckbox(view.container, "model-b")).toThrow();
+    await act(async () => {
+      buttons(view.container, "Save")[0]?.click();
+    });
+    expect(models.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: "http://other.test/v1", enabledModelIds: [] }),
+    );
+    await typeInto(field, compatibleCredential.baseUrl);
+    expect(modelCheckbox(view.container, "model-b").checked).toBe(true);
+  } finally {
+    await view.unmount();
+  }
 });

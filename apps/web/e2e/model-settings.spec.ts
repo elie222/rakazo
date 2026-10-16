@@ -1,6 +1,8 @@
-import { createServer, type IncomingMessage } from "node:http";
+import type { IncomingMessage } from "node:http";
+import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { expect, type Route, test } from "@playwright/test";
+import type { Route } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
@@ -260,7 +262,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     );
     expect(
       savedCredentials.find((entry) => entry.modelId === LOCAL_MODEL_ID)?.enabledModelIds,
-    ).toEqual(expect.arrayContaining([LOCAL_MODEL_ID, SECOND_MODEL_ID]));
+    ).toEqual([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
 
     await page.getByLabel("OpenAI-compatible server URL").fill("");
     await expect(page.getByRole("button", { name: "Find models" })).toBeDisabled();

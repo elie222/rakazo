@@ -20,12 +20,16 @@ import {
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
+  canUseCompatibleModelAsDefault,
   clampCatalogThinkingLevel,
+  compatibleModelRows,
   createModelProbe,
   featuredModelProviders,
   filterModelCatalog,
   initialModelProbeState,
   pickCatalogModelId,
+  savedCompatibleModelIds,
+  toggleEnabledModelId,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
@@ -457,11 +461,11 @@ export default function Models() {
     activeCredential?.reasoning
       ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium", t)
       : null;
-  // Every model the endpoint may run: the saved list plus anything found on the server.
-  // A saved model stays listed after a refused save, whatever the local ticks say.
-  const compatibleModelRows = [
-    ...new Set([...(credential?.enabledModelIds ?? []), ...enabledModelIds, ...probeModels]),
-  ];
+  const compatibleRows = compatibleModelRows(
+    savedCompatibleModelIds(credential, baseUrl),
+    enabledModelIds,
+    probeModels,
+  );
   const isActive =
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
@@ -494,6 +498,8 @@ export default function Models() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
+    setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }
@@ -712,7 +718,8 @@ export default function Models() {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
-              enabledModelIds: [...new Set([modelId.trim(), ...enabledModelIds])],
+              // The server adds the default itself.
+              enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
               reasoning,
               thinkingLevel: stagedThinking,
               maxTokens: parsedMaxTokens,
@@ -930,9 +937,9 @@ export default function Models() {
       />
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
-      {compatibleModelRows.includes(modelId) ? (
+      {compatibleRows.includes(modelId) ? (
         <View style={styles.card}>
-          {compatibleModelRows.map((entry) => (
+          {compatibleRows.map((entry) => (
             // The switch sits beside the radio, not inside it: an accessible
             // Pressable would merge it into the row and hide it from VoiceOver.
             <View key={entry} style={styles.modelRow}>
@@ -954,11 +961,7 @@ export default function Models() {
                 accessibilityLabel={entry}
                 value={entry === modelId || enabledModelIds.includes(entry)}
                 onValueChange={(value) =>
-                  setEnabledModelIds((current) =>
-                    value
-                      ? [...new Set([...current, entry])]
-                      : current.filter((id) => id !== entry),
-                  )
+                  setEnabledModelIds((current) => toggleEnabledModelId(current, entry, value))
                 }
                 disabled={busy || entry === modelId}
               />
@@ -1503,7 +1506,8 @@ export default function Models() {
         disabled={
           busy ||
           (isOpenAiCompatible &&
-            (!modelId.trim() || !credential.enabledModelIds?.includes(modelId.trim())))
+            (!modelId.trim() ||
+              !canUseCompatibleModelAsDefault(credential.enabledModelIds, modelId.trim())))
         }
         label={
           pending === "default"

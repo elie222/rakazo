@@ -6,6 +6,7 @@ import {
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
   inboundRoutineModelPin,
+  loadStoredModelSecret,
   modelCredentialAuthKindsForSpace,
   pinnedModelCredentialError,
   readStoredModelAuth,
@@ -1185,5 +1186,45 @@ describe("enabled openai-compatible models", () => {
     await expect(validate(compatiblePrisma("Y", "down"), "X")).rejects.toBeInstanceOf(
       SecretStoreUnavailableError,
     );
+  });
+});
+
+describe("loadStoredModelSecret", () => {
+  const prisma = {
+    secret: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === "missing" ? null : { id: where.id, ciphertext: `cipher-${where.id}` },
+      ),
+    },
+  };
+  const store = {
+    load: vi.fn(async (ciphertext: string) => {
+      if (ciphertext === "cipher-down") throw new SecretStoreUnavailableError();
+      if (ciphertext === "cipher-corrupt") throw new Error("bad ciphertext");
+      return "fake-plaintext";
+    }),
+  };
+  const load = (secretId: string) =>
+    loadStoredModelSecret(prisma as never, store, "user-1", secretId);
+
+  it("reports missing, unreadable and loaded secrets with the ciphertext ref", async () => {
+    await expect(load("missing")).resolves.toEqual({ status: "missing" });
+    await expect(load("corrupt")).resolves.toEqual({
+      status: "unreadable",
+      ciphertext: "cipher-corrupt",
+    });
+    await expect(load("ok")).resolves.toEqual({
+      status: "loaded",
+      ciphertext: "cipher-ok",
+      plaintext: "fake-plaintext",
+    });
+    expect(prisma.secret.findFirst).toHaveBeenCalledWith({
+      where: { id: "ok", userId: "user-1", spaceId: null },
+      select: { id: true, ciphertext: true },
+    });
+  });
+
+  it("propagates a secret store outage", async () => {
+    await expect(load("down")).rejects.toBeInstanceOf(SecretStoreUnavailableError);
   });
 });

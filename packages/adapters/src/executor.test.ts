@@ -1050,6 +1050,31 @@ function pinnedRoutineRunPrisma(modelId: string) {
   };
 }
 
+async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
+  const runtimeRun = vi.fn();
+  const enqueue = vi.fn(async () => undefined);
+  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const executor = compatibleExecutor(
+    {
+      ...pinnedRoutineRunPrisma(modelId),
+      ...compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
+    },
+    plaintext,
+    {
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
+      memoryProviders: { resolve: vi.fn(async () => null) },
+      memory: { read: vi.fn(async () => ({ documents: [] })) },
+      events: { append: vi.fn(async () => undefined), finalizeRun },
+      jobs: { enqueue },
+      secrets: [],
+    },
+  );
+  // The fixture has no computer stack, so a run that passes model resolution
+  // stops at computer setup (requeued, not finalized).
+  await executor.continueRun("run-1", "worker-1").catch(() => undefined);
+  return { finalizeRun, runtimeRun, enqueue };
+}
+
 describe("parseUpdateBotPatch", () => {
   it("accepts notifyOnFinish on its own", () => {
     expect(parseUpdateBotPatch({ notifyOnFinish: false }, "Chief")).toEqual({
@@ -2806,34 +2831,29 @@ description: Prepare standup notes
     });
   });
 
-  it("fails a pinned run on a model missing from the enabled list before the model call", async () => {
-    const plaintext = compatibleSecret(["space-model", "second-model"]);
-    const runtimeRun = vi.fn();
-    const enqueue = vi.fn(async () => undefined);
-    const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
-    const executor = compatibleExecutor(
-      {
-        ...pinnedRoutineRunPrisma("removed-model"),
-        ...compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
-      },
+  it.each([
+    ["a model missing from the enabled list", compatibleSecret(["space-model", "second-model"])],
+    ["a non-default model on a connection saved before lists", compatibleSecret()],
+  ])("fails a pinned routine run on %s before the model call", async (_case, plaintext) => {
+    const { finalizeRun, runtimeRun, enqueue } = await continuePinnedRoutineRun(
       plaintext,
-      {
-        runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
-        memoryProviders: { resolve: vi.fn(async () => null) },
-        memory: { read: vi.fn(async () => ({ documents: [] })) },
-        events: { append: vi.fn(async () => undefined), finalizeRun },
-        jobs: { enqueue },
-        secrets: [],
-      },
+      "removed-model",
     );
-
-    await executor.continueRun("run-1", "worker-1");
 
     expect(finalizeRun).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", error: "Unknown model for that provider" }),
     );
     expect(runtimeRun).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("lets a pinned routine run past model setup on a non-default enabled model", async () => {
+    const { finalizeRun } = await continuePinnedRoutineRun(
+      compatibleSecret(["space-model", "second-model"]),
+      "second-model",
+    );
+
+    expect(finalizeRun).not.toHaveBeenCalled();
   });
 
   it("resolves a legacy-secret bot pinned on a non-default model, as before lists", async () => {

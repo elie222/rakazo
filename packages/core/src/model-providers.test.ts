@@ -1,14 +1,18 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  canUseCompatibleModelAsDefault,
   clampCatalogThinkingLevel,
+  compatibleModelRows,
   connectedModelChoices,
   credentialForModel,
   featuredModelProviders,
   filterModelCatalog,
   pickCatalogModelId,
   resolveSelectableModelId,
+  savedCompatibleModelIds,
   selectedProviderOutsideSearchResults,
+  toggleEnabledModelId,
 } from "./model-providers.js";
 
 function provider(provider: string): ModelCatalogEntry {
@@ -316,5 +320,32 @@ describe("filterModelCatalog", () => {
 
   it("returns nothing when no model matches", () => {
     expect(filterModelCatalog(models, "gemini")).toEqual([]);
+  });
+});
+
+describe("openai-compatible model rows", () => {
+  const saved = { baseUrl: "http://127.0.0.1:8000/v1", enabledModelIds: ["a", "b"] };
+
+  it("keeps the saved list only for the saved endpoint", () => {
+    expect(savedCompatibleModelIds(saved, " http://127.0.0.1:8000/v1 ")).toEqual(["a", "b"]);
+    expect(savedCompatibleModelIds(saved, "http://other.test/v1")).toEqual([]);
+    expect(savedCompatibleModelIds({ baseUrl: saved.baseUrl }, saved.baseUrl)).toEqual([]);
+    expect(savedCompatibleModelIds(undefined, saved.baseUrl)).toEqual([]);
+  });
+
+  it("lists saved, ticked and probed ids once each, in that order", () => {
+    expect(compatibleModelRows(["a", "b"], ["b", "c"], ["d", "a"])).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("ticks and unticks an id without duplicates", () => {
+    expect(toggleEnabledModelId(["a"], "b", true)).toEqual(["a", "b"]);
+    expect(toggleEnabledModelId(["a", "b"], "b", true)).toEqual(["a", "b"]);
+    expect(toggleEnabledModelId(["a", "b"], "a", false)).toEqual(["b"]);
+  });
+
+  it("allows a default only from a saved list, and any default when the list is unread", () => {
+    expect(canUseCompatibleModelAsDefault(["a", "b"], "b")).toBe(true);
+    expect(canUseCompatibleModelAsDefault(["a"], "b")).toBe(false);
+    expect(canUseCompatibleModelAsDefault(undefined, "b")).toBe(true);
   });
 });

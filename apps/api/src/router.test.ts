@@ -3654,9 +3654,16 @@ describe("openai-compatible enabled models", () => {
   const compatible = "openai-compatible";
   const baseUrl = "https://10.0.0.5:8443/v1";
   const catalogId = listPiCatalog().find((entry) => entry.provider === compatible)!.id;
-  type Pin = { name: string; modelId: string; archived?: boolean };
+  /** A pin row; space and user default to the actor's. */
+  type Pin = {
+    name: string;
+    modelId: string;
+    archived?: boolean;
+    spaceId?: string;
+    userId?: string;
+  };
   type PinWhere = {
-    spaceId: string;
+    spaceId?: string;
     archivedAt?: null;
     userId?: string;
     modelProvider?: string;
@@ -3674,35 +3681,32 @@ describe("openai-compatible enabled models", () => {
     });
   }
 
-  const outside = (where: PinWhere, modelId: string) =>
-    where.spaceId === actor.spaceId && !where.modelId?.notIn?.includes(modelId);
+  /** Applies the subset of a Prisma pin `where` the router uses. */
+  function matching(pins: Pin[] | undefined, where: PinWhere) {
+    return (pins ?? [])
+      .map((pin) => ({ spaceId: actor.spaceId, userId: actor.userId, ...pin }))
+      .filter(
+        (pin) =>
+          (where.modelProvider ?? where.provider) === compatible &&
+          (where.spaceId === undefined || pin.spaceId === where.spaceId) &&
+          (where.userId === undefined || pin.userId === where.userId) &&
+          !(where.archivedAt === null && pin.archived) &&
+          !where.modelId?.notIn?.includes(pin.modelId),
+      )
+      .map(({ name, spaceId, modelId }) => ({ name, spaceId, modelId }));
+  }
 
   function pinStores(options: { bots?: Pin[]; routines?: Pin[]; backups?: string[] }) {
-    const named = (pins: Pin[] | undefined, where: PinWhere) =>
-      (pins ?? [])
-        .filter(
-          (pin) =>
-            where.modelProvider === compatible &&
-            outside(where, pin.modelId) &&
-            !(where.archivedAt === null && pin.archived),
-        )
-        .map((pin) => ({ name: pin.name }));
+    const backups = options.backups?.map((modelId) => ({ name: "", modelId }));
     return {
-      bots: (where: PinWhere) => named(options.bots, where),
+      bots: (where: PinWhere) => matching(options.bots, where),
       routine: {
-        findMany: vi.fn(async ({ where }: { where: PinWhere }) => named(options.routines, where)),
+        findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
+          matching(options.routines, where),
+        ),
       },
       spaceBackupModel: {
-        findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
-          (options.backups ?? [])
-            .filter(
-              (modelId) =>
-                where.userId === actor.userId &&
-                where.provider === compatible &&
-                outside(where, modelId),
-            )
-            .map((modelId) => ({ modelId })),
-        ),
+        findMany: vi.fn(async ({ where }: { where: PinWhere }) => matching(backups, where)),
       },
     };
   }
@@ -3742,12 +3746,21 @@ describe("openai-compatible enabled models", () => {
     };
   }
 
-  function preferenceStore(state: {
-    credential: Record<string, unknown>;
-    preference: Record<string, unknown>;
-  }) {
+  function preferenceStore(
+    state: { credential: Record<string, unknown>; preference: Record<string, unknown> },
+    otherSpaceDefaults: Record<string, string> = {},
+  ) {
     const withCredential = () => ({ ...state.preference, credential: state.credential });
+    const elsewhere = Object.entries(otherSpaceDefaults).map(([spaceId, modelId]) => ({
+      ...state.preference,
+      id: `pref-${spaceId}`,
+      spaceId,
+      modelId,
+      isDefault: true,
+      credential: state.credential,
+    }));
     type PreferenceWhere = {
+      spaceId?: string;
       isDefault?: boolean;
       modelId?: string;
       credential?: { provider?: string };
@@ -3756,7 +3769,9 @@ describe("openai-compatible enabled models", () => {
       findMany: vi.fn(async ({ where }: { where: PreferenceWhere }) =>
         where.credential?.provider && where.credential.provider !== compatible
           ? []
-          : [withCredential()],
+          : [withCredential(), ...elsewhere].filter(
+              (row) => where.spaceId === undefined || row.spaceId === where.spaceId,
+            ),
       ),
       findFirst: vi.fn(async ({ where }: { where: PreferenceWhere }) => {
         const preference = withCredential();
@@ -3777,6 +3792,8 @@ describe("openai-compatible enabled models", () => {
     plaintext: string | null;
     defaultModel: string;
     preferenceIsDefault?: boolean;
+    /** The actor's compatible default in other spaces, by space id. */
+    otherSpaceDefaults?: Record<string, string>;
     botModelId?: string;
     bots?: Pin[];
     routines?: Pin[];
@@ -3824,7 +3841,7 @@ describe("openai-compatible enabled models", () => {
           ),
         ),
       },
-      spaceModelPreference: preferenceStore(state),
+      spaceModelPreference: preferenceStore(state, options.otherSpaceDefaults),
       userModelCredential: {
         findMany: vi.fn(async ({ where }: { where: { provider?: string } }) =>
           where.provider === compatible ? [state.credential] : [],
@@ -3949,6 +3966,83 @@ describe("openai-compatible enabled models", () => {
 
     expect(result.status).toBe(200);
     expect(secrets.put).toHaveBeenCalledOnce();
+  });
+
+  it("ignores another user's bot in the same space", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Teammate bot", modelId: "m-b", userId: "user-2" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses when the actor's bot in another space pins a removed id", async () => {
+    const { call, secrets } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      otherSpaceDefaults: { "space-2": "m-a" },
+      bots: [{ name: "Elsewhere", modelId: "m-b", spaceId: "space-2" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result).toEqual({ status: 400, message: refusal("Elsewhere") });
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pin in another space on that space's own default", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      otherSpaceDefaults: { "space-2": "m-b" },
+      bots: [{ name: "Elsewhere", modelId: "m-b", spaceId: "space-2" }],
+      routines: [{ name: "Elsewhere digest", modelId: "m-b", spaceId: "space-2" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("keeps a thinking level on a newly enabled default judged by the saved secret", async () => {
+    const { call, state, prisma } = fixture({ plaintext: null, defaultModel: "m-z" });
+    state.preference.thinkingLevel = "high";
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      apiKey: "sk-fake-replacement-key",
+      modelId: "m-z",
+      enabledModelIds: ["m-z"],
+      reasoning: true,
+      thinkingLevel: "high",
+    });
+
+    expect(result.status).toBe(200);
+    expect(prisma.spaceModelPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ modelId: "m-z", thinkingLevel: "high" }),
+      }),
+    );
   });
 
   it("refuses an old client's key replacement over an unreadable secret that would drop a pin", async () => {

@@ -17,11 +17,15 @@ import {
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
+  canUseCompatibleModelAsDefault,
   clampCatalogThinkingLevel,
+  compatibleModelRows,
   createModelProbe,
   filterModelCatalog,
   initialModelProbeState,
   pickCatalogModelId,
+  savedCompatibleModelIds,
+  toggleEnabledModelId,
 } from "@rakazo/core";
 import {
   AlertDialog,
@@ -340,11 +344,11 @@ export function ModelSettingsOverlay({
     baseUrl: effectiveBaseUrl,
     modelId,
   });
-  // Every model the endpoint may run: the saved list plus anything found on the server.
-  // A saved model stays listed after a refused save, whatever the local ticks say.
-  const compatibleModelRows = [
-    ...new Set([...(credential?.enabledModelIds ?? []), ...enabledModelIds, ...probeModels]),
-  ];
+  const compatibleRows = compatibleModelRows(
+    savedCompatibleModelIds(credential, baseUrl),
+    enabledModelIds,
+    probeModels,
+  );
   const defaultModelOptions = [...new Set([...enabledModelIds, modelId])];
   const builtinLimitSave = !isOpenAiCompatible && Boolean(credential) && apiKey.trim().length === 0;
 
@@ -362,6 +366,8 @@ export function ModelSettingsOverlay({
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
+    setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
     setError(null);
@@ -612,7 +618,8 @@ export function ModelSettingsOverlay({
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
-              enabledModelIds: [...new Set([modelId.trim(), ...enabledModelIds])],
+              // The server adds the default itself.
+              enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
               reasoning,
               thinkingLevel: stagedThinking,
               maxTokens: parsedMaxTokens,
@@ -1138,7 +1145,8 @@ export function ModelSettingsOverlay({
           disabled={
             busy ||
             (isOpenAiCompatible &&
-              (!modelId.trim() || !credential.enabledModelIds?.includes(modelId.trim())))
+              (!modelId.trim() ||
+                !canUseCompatibleModelAsDefault(credential.enabledModelIds, modelId.trim())))
           }
           onClick={() => void setModelDefault()}
         >
@@ -1298,7 +1306,7 @@ export function ModelSettingsOverlay({
                     <span>
                       <Trans>Model</Trans>
                     </span>
-                    {compatibleModelRows.includes(modelId) ? (
+                    {compatibleRows.includes(modelId) ? (
                       <NativeSelect
                         className="mt-2 w-full text-foreground"
                         value={modelId}
@@ -1337,9 +1345,9 @@ export function ModelSettingsOverlay({
                         className="mt-2 h-10 text-foreground"
                       />
                     )}
-                    {compatibleModelRows.length ? (
+                    {compatibleRows.length ? (
                       <div className="mt-3 grid gap-2">
-                        {compatibleModelRows.map((id) => (
+                        {compatibleRows.map((id) => (
                           <Label key={id} className="font-normal text-foreground">
                             <Checkbox
                               checked={id === modelId || enabledModelIds.includes(id)}
@@ -1347,9 +1355,7 @@ export function ModelSettingsOverlay({
                               onCheckedChange={(checked) => {
                                 selectionRevisionRef.current += 1;
                                 setEnabledModelIds((current) =>
-                                  checked
-                                    ? [...new Set([...current, id])]
-                                    : current.filter((entry) => entry !== id),
+                                  toggleEnabledModelId(current, id, checked),
                                 );
                                 setNotice(null);
                               }}
@@ -1359,7 +1365,7 @@ export function ModelSettingsOverlay({
                         ))}
                       </div>
                     ) : null}
-                    {probeModels.length && !compatibleModelRows.includes(modelId) ? (
+                    {probeModels.length && !compatibleRows.includes(modelId) ? (
                       <Button
                         type="button"
                         variant="link"

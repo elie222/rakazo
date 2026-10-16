@@ -250,6 +250,35 @@ export type StoredModelAuthRead =
   | { status: "unreadable" }
   | { status: "rejected"; message: string };
 
+export type LoadedModelSecret =
+  | { status: "missing" }
+  | { status: "unreadable"; ciphertext: string }
+  | { status: "loaded"; ciphertext: string; plaintext: string };
+
+/**
+ * Read a user's account-wide model secret. A missing row or an undecryptable ciphertext is
+ * reported, not thrown; a store outage (`SecretStoreUnavailableError`) propagates.
+ */
+export async function loadStoredModelSecret(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<SecretStore, "load">,
+  userId: string,
+  secretId: string,
+): Promise<LoadedModelSecret> {
+  const secret = await prisma.secret.findFirst({
+    where: { id: secretId, userId, spaceId: null },
+    select: { id: true, ciphertext: true },
+  });
+  if (!secret) return { status: "missing" };
+  try {
+    const plaintext = await secretStore.load(secret.ciphertext, secret.id);
+    return { status: "loaded", ciphertext: secret.ciphertext, plaintext };
+  } catch (error) {
+    if (error instanceof SecretStoreUnavailableError) throw error;
+    return { status: "unreadable", ciphertext: secret.ciphertext };
+  }
+}
+
 /** Load credential auth outside transactions; retain the ref for a transactional recheck. */
 export async function prepareStoredModelAuth(
   prisma: Pick<PrismaClient, "secret">,
@@ -261,18 +290,12 @@ export async function prepareStoredModelAuth(
   live?: CodexLiveCatalog,
   liveOpts?: CodexLiveReadOptions,
 ): Promise<{ ref: string | null; auth: StoredModelAuthRead }> {
-  const secret = await prisma.secret.findFirst({
-    where: { id: secretId, userId, spaceId: null },
-    select: { id: true, ciphertext: true },
-  });
-  if (!secret) return { ref: null, auth: { status: "unreadable" } };
-  let plaintext: string;
-  try {
-    plaintext = await secretStore.load(secret.ciphertext, secret.id);
-  } catch (error) {
-    if (error instanceof SecretStoreUnavailableError) throw error;
+  const secret = await loadStoredModelSecret(prisma, secretStore, userId, secretId);
+  if (secret.status === "missing") return { ref: null, auth: { status: "unreadable" } };
+  if (secret.status === "unreadable") {
     return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
+  const { plaintext } = secret;
   let message: string | undefined;
   try {
     message = validateModelAuthAvailability(provider, modelId, plaintext);
@@ -343,15 +366,12 @@ async function loadModelSecret(
   userId: string,
   secretId: string,
 ): Promise<StoredModelSecret | undefined> {
-  const secret = await prisma.secret.findFirst({
-    where: { id: secretId, userId, spaceId: null },
-    select: { id: true, ciphertext: true },
-  });
-  if (!secret) return undefined;
+  const secret = await loadStoredModelSecret(prisma, secretStore, userId, secretId);
+  if (secret.status !== "loaded") return undefined;
   try {
-    return parseModelSecret(await secretStore.load(secret.ciphertext, secret.id));
-  } catch (error) {
-    if (error instanceof SecretStoreUnavailableError) throw error;
+    return parseModelSecret(secret.plaintext);
+  } catch {
+    // A secret that decrypts but does not parse is as unreadable as a corrupt one.
     return undefined;
   }
 }

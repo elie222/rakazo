@@ -283,13 +283,13 @@ import {
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
+import type { StoredModelSecret } from "./pi-oauth.js";
 import {
   isRetiredModelCredentialError,
   matchesFailedOAuthSecret,
   parseModelSecret,
   persistStoredModelSecret,
   resolveModelAuth,
-  type StoredModelSecret,
   secretValuesToRedact,
   serializeModelSecret,
   withModelCredentialLock,
@@ -2979,8 +2979,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       provider,
       modelId,
       registerSecrets,
-      requireStoredSecret,
-      true,
+      { requireStoredSecret, requireDefaultForLegacyCompatible: true },
     );
     return {
       provider,
@@ -3707,6 +3706,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             runModelProvider,
             runModelId,
             (values) => runSecrets.push(...values),
+            { requireDefaultForLegacyCompatible: run.modelPinned === true },
           );
         } catch (error) {
           // A dead or account-switched credential is already deleted. Retrying
@@ -8405,11 +8405,11 @@ function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefi
 const CODEX_LIVE_RUN_WAIT_MS = 8_000;
 
 // Free-form compatible ids must be enabled on the connection whose baseUrl
-// this run uses, in the run's own space; a stale pin fails here. Legacy secrets
-// (no list) keep main's behavior: bot runs resolve any id, and connected-model
-// lookups require the saved default so a fallback to another same-provider
-// credential never mixes baseUrl. The connect guard surfaces legacy pins before
-// a list is first saved.
+// this run uses, in the run's own space; a stale pin fails here. Connections
+// saved before enabled lists existed keep their previous rules: bot runs resolve
+// any id, while pinned runs and connected-model lookups require the saved
+// default so a fallback to another same-provider credential never mixes
+// baseUrl. The connect guard surfaces those pins before a list is first saved.
 function assertCompatibleModelEnabled(
   credential: { provider: string; defaultModel?: string | null },
   secret: StoredModelSecret,
@@ -8426,7 +8426,7 @@ function assertCompatibleModelEnabled(
     return;
   }
   if (requireDefaultForLegacy && credential.defaultModel !== modelId) {
-    throw new Error("Unknown model for that provider");
+    throw new UnavailableModelForAuthError("Unknown model for that provider");
   }
 }
 
@@ -8444,8 +8444,10 @@ async function resolveModelKey(
   provider: string,
   modelId: string,
   registerSecrets?: (values: string[]) => void,
-  requireStoredSecret = false,
-  requireDefaultForLegacyCompatible = false,
+  {
+    requireStoredSecret = false,
+    requireDefaultForLegacyCompatible = false,
+  }: { requireStoredSecret?: boolean; requireDefaultForLegacyCompatible?: boolean } = {},
 ): Promise<{
   apiKey?: string;
   accountId?: string;
