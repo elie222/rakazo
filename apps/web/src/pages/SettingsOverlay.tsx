@@ -1,6 +1,14 @@
 import { useLingui } from "@lingui/react/macro";
 import type { AvatarStyle, SpaceMemoryConfig } from "@rakazo/contracts";
-import { Button, Dialog, DialogClose, DialogContent, DialogTitle } from "@rakazo/ui-web";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  NativeSelect,
+  NativeSelectOption,
+} from "@rakazo/ui-web";
 import {
   Brain,
   CloudDownload,
@@ -15,6 +23,7 @@ import {
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import type { SettingsSection } from "../lib/settings-section";
 import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,
@@ -26,15 +35,7 @@ import { MemorySettingsOverlay } from "./MemorySettingsOverlay";
 import { ModelSettingsOverlay } from "./ModelSettingsOverlay";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
-export type SettingsSection =
-  | "general"
-  | "models"
-  | "memory"
-  | "voice"
-  | "usage"
-  | "computer"
-  | "billing"
-  | "updates";
+export type { SettingsSection };
 
 type NavItem = {
   id: SettingsSection;
@@ -43,6 +44,9 @@ type NavItem = {
 };
 
 export function SettingsOverlay({
+  space,
+  spaces = [],
+  onSpaceChange,
   email,
   name,
   usage,
@@ -61,6 +65,10 @@ export function SettingsOverlay({
   onClose,
   onVoiceStatusMaybeChanged,
 }: {
+  /** The space these settings act on; settings follow the selected space. */
+  space?: { id: string; name: string } | null;
+  spaces?: { id: string; name: string }[];
+  onSpaceChange?: (spaceId: string, section: SettingsSection) => void;
   email?: string | null;
   name: string;
   usage?: {
@@ -230,9 +238,34 @@ export function SettingsOverlay({
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex items-start justify-between gap-4 px-6 pt-6 sm:px-8 sm:pt-7">
-              <DialogTitle className="text-2xl font-medium text-foreground">
-                {sectionTitle}
-              </DialogTitle>
+              <div className="flex min-w-0 flex-col gap-2">
+                <DialogTitle className="text-2xl font-medium text-foreground">
+                  {sectionTitle}
+                </DialogTitle>
+                {space && spaces.length > 1 && onSpaceChange ? (
+                  <NativeSelect
+                    data-testid="settings-space"
+                    aria-label={t`Space`}
+                    className="w-56"
+                    value={space.id}
+                    disabled={panelBusy}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      if (next !== space.id) leaveSettings(() => onSpaceChange(next, section));
+                    }}
+                  >
+                    {spaces.map((option) => (
+                      <NativeSelectOption key={option.id} value={option.id}>
+                        {option.name}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                ) : space ? (
+                  <p data-testid="settings-space" className="text-sm text-muted-foreground">
+                    {space.name}
+                  </p>
+                ) : null}
+              </div>
               <DialogClose
                 aria-label={closeLabel}
                 disabled={panelBusy}

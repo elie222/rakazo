@@ -226,6 +226,8 @@ import {
 } from "../lib/roster-status";
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
+import type { SettingsSection } from "../lib/settings-section";
+import { isSettingsSection } from "../lib/settings-section";
 import { sharedInflight } from "../lib/shared-inflight";
 import {
   activeThreadRuns,
@@ -273,7 +275,6 @@ import {
   RoutineListRow,
   routineNeedsOneShotArm,
 } from "./RoutineEditor";
-import type { SettingsSection } from "./SettingsOverlay";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
 import { BotCreatePicker } from "./shell/bot-picker";
@@ -679,6 +680,20 @@ export function ShellPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
+  const settingsSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId;
+  const settingsSpace = spaces.find((space) => space.id === settingsSpaceId) ?? null;
+  // A space switch from settings reloads with ?settings=<section> to reopen them.
+  useEffect(() => {
+    const section = searchParams.get("settings");
+    if (!section) return;
+    const params = new URLSearchParams(searchParams);
+    params.delete("settings");
+    setSearchParams(params, { replace: true });
+    if (isSettingsSection(section)) {
+      setSettingsSection(section);
+      setSettingsOpen(true);
+    }
+  }, [searchParams, setSearchParams]);
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputerRecoveryHint =
@@ -2436,6 +2451,16 @@ export function ShellPage() {
   function openSettings(section: SettingsSection = "general") {
     setSettingsSection(section);
     setSettingsOpen(true);
+  }
+
+  // Settings act on the selected space. Another space is a space switch, which
+  // reloads like one, so the reopened settings and the request header agree.
+  function openSpaceSettings(spaceId: string, section: SettingsSection = "general") {
+    if (spaceId === (selectedSpaceId() ?? bootstrapMe?.spaceId)) {
+      openSettings(section);
+      return;
+    }
+    if (selectSpace(spaceId)) window.location.assign(`/app?settings=${section}`);
   }
 
   async function createBot(input: {
@@ -4405,6 +4430,17 @@ export function ShellPage() {
               sideOffset={0}
               className="w-[220px]"
             >
+              {spaceMenuTarget ? (
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSpaceMenu(null);
+                    openSpaceSettings(spaceMenuTarget.id);
+                  }}
+                >
+                  <Settings />
+                  {t`Settings`}
+                </DropdownMenuItem>
+              ) : null}
               {spaceMenuTarget?.canRename ? (
                 <DropdownMenuItem
                   onClick={() => {
@@ -4673,6 +4709,9 @@ export function ShellPage() {
       <Suspense fallback={null}>
         {settingsOpen ? (
           <SettingsOverlay
+            space={settingsSpace}
+            spaces={spaces}
+            onSpaceChange={(spaceId, section) => openSpaceSettings(spaceId, section)}
             name={userName}
             email={session.data?.user.email}
             usage={usage}
