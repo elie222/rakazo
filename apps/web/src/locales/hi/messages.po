@@ -1138,6 +1138,10 @@ msgstr "पासवर्ड की पुष्टि करें"
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "पुष्टि करें कि यह URL इस ब्राउज़र सत्र से पहुँच योग्य है, फिर फिर से परीक्षण करें।"
 
+#: src/pages/SettingsOverlay.tsx
+msgid "Confirmations"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx

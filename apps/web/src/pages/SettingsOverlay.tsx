@@ -9,11 +9,13 @@ import {
   Gauge,
   Monitor,
   Settings,
+  ShieldCheck,
   Volume2,
   XIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
 import { ListboxSelect } from "../components/ListboxSelect";
 import { rpcForSpace } from "../lib/rpc";
@@ -33,7 +35,12 @@ import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 export type { SettingsSection };
 
 /** Sections whose settings belong to a space; only these show the space picker. */
-const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set(["models", "memory", "voice"]);
+const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set([
+  "models",
+  "memory",
+  "voice",
+  "confirmations",
+]);
 
 type NavItem = {
   id: SettingsSection;
@@ -168,6 +175,7 @@ export function SettingsOverlay({
     { id: "models", label: t`Models`, icon: Cpu },
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "voice", label: t`Voice`, icon: Volume2 },
+    { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
     ...(billingEnabled ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
@@ -313,6 +321,7 @@ export function SettingsOverlay({
                     isDeploymentOwner={isDeploymentOwner}
                   />
                 ) : null}
+                {section === "confirmations" ? <ApprovalRulesSettings /> : null}
                 {section === "usage" ? (
                   <UsageSettingsPanel usage={usage} panelRef={usageRef} />
                 ) : null}

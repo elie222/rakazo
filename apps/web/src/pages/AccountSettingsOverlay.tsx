@@ -5,7 +5,6 @@ import type { RefObject } from "react";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 import { AccountAccess } from "../components/AccountAccess";
-import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { SuccessPop } from "../components/ai/primitives";
 import { ComputersUnavailableHint } from "../components/ComputersUnavailableHint";
 import { DesktopUpdateSection } from "../components/DesktopUpdates";
@@ -307,7 +306,6 @@ export function GeneralSettingsPanels({
               <Trans>Load web images automatically</Trans>
             </Label>
           </div>
-          <ApprovalRulesSettings />
         </div>
       </details>
     </div>

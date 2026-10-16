@@ -62,7 +62,7 @@ export function useModelOAuthSignIn(options: {
   }
 
   async function finishSubscriptionSignIn(loginId: string, controller: AbortController) {
-    await waitForModelOAuth(loginId, controller.signal);
+    await waitForModelOAuth(loginId, controller.signal, rpc);
     if (controller.signal.aborted) return;
     await rpc.models.finishOAuth({ loginId }, { signal: controller.signal });
     if (controller.signal.aborted) return;

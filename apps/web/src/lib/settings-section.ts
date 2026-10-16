@@ -3,6 +3,7 @@ export const SETTINGS_SECTIONS = [
   "models",
   "memory",
   "voice",
+  "confirmations",
   "usage",
   "computer",
   "billing",

@@ -3,7 +3,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contracts";
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 
 function describeRule(rule: ActionApprovalRule): string {
@@ -26,6 +26,7 @@ function describeRule(rule: ActionApprovalRule): string {
 }
 
 export function ApprovalRulesSettings() {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const autoReviewId = useId();
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
