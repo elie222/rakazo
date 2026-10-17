@@ -47,6 +47,7 @@ import type {
   MemorySearchResult,
   MemorySnapshot,
   MessagingInboundEvent,
+  MessagingInboundMessage,
   MessagingPlatformDescriptor,
   MessagingSendRequest,
   MessagingSendResult,
@@ -401,6 +402,15 @@ export interface MessagingSurface {
    * message delivery, and silently no-ops on platforms without support.
    */
   sendTyping(threadId: string, context: AdapterContext): Promise<void>;
+  /**
+   * Up to `limit` messages posted in a thread before the `before` handle,
+   * oldest first, normalized like inbound events. Absent when no platform can.
+   */
+  fetchThreadHistory?(
+    threadId: string,
+    options: { before: string; limit: number },
+    context: AdapterContext,
+  ): Promise<MessagingInboundMessage[]>;
   /**
    * Start the surface eagerly instead of waiting for the first inbound
    * webhook or outbound send to touch it. Needed for adapters that pull

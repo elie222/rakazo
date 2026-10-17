@@ -28,6 +28,7 @@ import {
   createConnectorStack,
   createJobReconciler,
   createMessagingContextLoader,
+  createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
   createRunExecutor,
   createRunSandbox,
@@ -98,6 +99,7 @@ import { requestLogging } from "@rakazo/logging/hono";
 import { MarkdownMemoryStore } from "@rakazo/memory";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { storeInboundAttachment } from "./artifacts.js";
 import { createBillingService } from "./billing.js";
 import { mountBillingRoutes } from "./billing-webhook.js";
 import type { AppEnv } from "./env.js";
@@ -835,6 +837,13 @@ export async function createApp(
         events,
         jobs,
         send: createMessagingTeamChatSender(messaging),
+        fetchThreadHistory: createMessagingTeamChatHistory(messaging),
+        storeAttachment: ({ spaceId, userId, ...input }) =>
+          storeInboundAttachment(
+            { prisma, artifacts, maxUploadSizeBytes: env.maxUploadSizeBytes },
+            { spaceId, userId },
+            input,
+          ),
         providerId: "slack",
         botId: env.teamChatBotId,
         judge,
