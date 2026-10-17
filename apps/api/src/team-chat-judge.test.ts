@@ -45,6 +45,7 @@ describe("team chat engagement judge", () => {
   it("persists cache-read and cache-write tokens from usage events", async () => {
     const create = vi.fn(async () => ({ id: "usage-1" }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       spaceModelPreference: { findFirst: vi.fn(async () => null) },
       usageRecord: { create },
@@ -112,5 +113,51 @@ describe("team chat engagement judge", () => {
         agentId: null,
       },
     });
+  });
+
+  it("judges standing rules in the bot owner's saved timezone", async () => {
+    const findUnique = vi.fn(async () => ({ timezone: "Pacific/Auckland" }));
+    const prisma = {
+      user: { findUnique },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      spaceModelPreference: { findFirst: vi.fn(async () => null) },
+      usageRecord: { create: vi.fn(async () => ({ id: "usage-1" })) },
+    };
+    let instructions = "";
+    const runtime = {
+      run: async function* (request: { instructions: string }) {
+        instructions = request.instructions;
+        yield { type: "done", text: '{"act":false}' };
+      },
+    };
+    const judge = new ModelTeamChatEngagementJudge({
+      prisma: prisma as never,
+      runtime: runtime as never,
+      secrets: {} as never,
+      deploymentProvider: "google",
+      deploymentModel: "gemini-3.8-flash",
+      deploymentModelKey: "test-key",
+    });
+
+    await judge.decide({
+      bot: {
+        id: "bot-1",
+        spaceId: "space-1",
+        userId: "user-1",
+        name: "Arthur",
+        modelProvider: null,
+        modelId: null,
+      },
+      channelId: "C1",
+      rules: "Only reply during work hours.",
+      messages: [],
+    });
+
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      select: { timezone: true },
+    });
+    expect(instructions).toContain("Current date and time for the user:");
+    expect(instructions).toContain("(Pacific/Auckland)");
   });
 });
