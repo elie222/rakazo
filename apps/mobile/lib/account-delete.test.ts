@@ -19,7 +19,7 @@ describe("Account delete", () => {
     expect(screen).not.toContain("dangerZone");
     expect(screen).not.toContain("styles.deleteButton");
     expect(screen).not.toContain("styles.password");
-    const row = sliceBetween(screen, "function requestDeletion(", "function applyLocale(");
+    const row = sliceBetween(screen, "function requestDeletion(", "async function handleDeletion(");
     expect(row).toContain("promptAccountDeletion({");
     expect(row).toContain('deleteLabel: t("Delete")');
     expect(row).toContain("onSubmit: (password) => void handleDeletion(password, true)");
