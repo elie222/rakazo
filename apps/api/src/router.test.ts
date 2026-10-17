@@ -27,9 +27,11 @@ import { createRouter, enqueueBotIntroRun, HEARTBEAT_MS, SESSION_RECHECK_MS } fr
 describe("account preferences", () => {
   function preferencesDeps(avatarStyle: string) {
     const update = vi.fn().mockResolvedValue({});
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
     const prisma = {
       user: {
         update,
+        updateMany,
         findUniqueOrThrow: vi.fn().mockResolvedValue({
           email: "user@rakazo.test",
           name: "Test User",
@@ -56,7 +58,7 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -181,6 +183,40 @@ describe("account preferences", () => {
       expect(setup.update).not.toHaveBeenCalled();
     },
   );
+
+  it("adopts a detected timezone only while none is saved", async () => {
+    const setup = preferencesDeps("robot");
+    const { response } = await setup.handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { timezone: "Pacific/Auckland" } }),
+      }),
+      { prefix: "/rpc", context: { actor: setup.actor } },
+    );
+
+    expect(response?.status).toBe(200);
+    expect(setup.updateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", timezone: null },
+      data: { timezone: "Pacific/Auckland" },
+    });
+    expect(setup.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects adopting an unknown timezone", async () => {
+    const setup = preferencesDeps("robot");
+    const { response } = await setup.handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { timezone: "Mars/Olympus_Mons" } }),
+      }),
+      { prefix: "/rpc", context: { actor: setup.actor } },
+    );
+
+    expect(response?.status).toBeGreaterThanOrEqual(400);
+    expect(setup.updateMany).not.toHaveBeenCalled();
+  });
 
   it("reports an unset timezone as null", async () => {
     const { actor, handler } = preferencesDeps("robot");

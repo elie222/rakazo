@@ -249,7 +249,7 @@ export function GeneralSettingsPanels({
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          {timezone && !sameTimeZone(timezone, deviceTimezone) ? (
+          {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
             <Button
               variant="outline"
               size="sm"

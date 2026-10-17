@@ -36,6 +36,7 @@ function executorFixture(
     leaseFence: 0,
   };
   const prisma = {
+    user: { findUnique: async () => null },
     run: {
       findUnique: async () => run,
       findUniqueOrThrow: async () => run,
