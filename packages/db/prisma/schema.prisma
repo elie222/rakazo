@@ -399,6 +399,9 @@ model Bot {
   title             String            @default("")
   description       String            @default("")
   instructions      String            @default("")
+  selfUpdateInstructions Boolean @default(false)
+  instructionHistory Json @default("[]")
+  pendingInstructionsRunId String?
   color             String
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
@@ -640,6 +643,8 @@ model Run {
   sourceMessage        Message?         @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?         @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  // The failed routine run this run retries. Unique, so a run is retried at most once.
+  retryOfRunId         String?          @unique
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?

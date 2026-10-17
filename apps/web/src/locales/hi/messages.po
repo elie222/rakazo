@@ -40,9 +40,10 @@ msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (अधिकतम {ATTACHMENT_MAX_COUNT} अटैचमेंट)"
 
 #. placeholder {0}: file.name
+#. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: src/pages/Shell.tsx
-msgid "{0} (over 10 MiB)"
-msgstr "{0} (10 MiB से अधिक)"
+msgid "{0} (over {1})"
+msgstr "{0} ({1} से अधिक)"
 
 #. placeholder {0}: preset.n
 #: src/pages/RoutineSchedule.tsx
@@ -157,6 +158,86 @@ msgstr "{name} पूरा हुआ"
 msgid "{name} stopped"
 msgstr "{name} रोक दिया गया"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} could not find the requested model."
+msgstr "{provider} को अनुरोधित मॉडल नहीं मिला।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} is rate limiting requests. Try again shortly."
+msgstr "{provider} अनुरोधों की दर सीमित कर रहा है। थोड़ी देर में फिर कोशिश करें।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its daily limit."
+msgstr "{provider} की कुंजी की दैनिक सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its limit."
+msgstr "{provider} की कुंजी की सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its monthly limit."
+msgstr "{provider} की कुंजी की मासिक सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its weekly limit."
+msgstr "{provider} की कुंजी की साप्ताहिक सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its credit limit."
+msgstr "{provider} की क्रेडिट सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily credit limit."
+msgstr "{provider} की दैनिक क्रेडिट सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily spending limit."
+msgstr "{provider} की दैनिक खर्च सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly credit limit."
+msgstr "{provider} की मासिक क्रेडिट सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly spending limit."
+msgstr "{provider} की मासिक खर्च सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its spending limit."
+msgstr "{provider} की खर्च सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly credit limit."
+msgstr "{provider} की साप्ताहिक क्रेडिट सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly spending limit."
+msgstr "{provider} की साप्ताहिक खर्च सीमा पूरी हो गई।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} rejected the API key. Check your connection settings."
+msgstr "{provider} ने API कुंजी अस्वीकार कर दी। अपनी कनेक्शन सेटिंग जाँचें।"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} took too long to respond. Try again."
+msgstr "{provider} ने जवाब देने में बहुत समय लिया। फिर कोशिश करें।"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "{remaining} शेष · बॉट देख रहा है, कार्रवाई नहीं कर रहा"
@@ -176,6 +257,11 @@ msgstr ""
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
 msgstr ""
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Resets {date}."
+msgstr "{summary} {date} को रीसेट होगा।"
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -523,6 +609,10 @@ msgstr "API कुंजी हेडर"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "रूप"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "लागू करें"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -1596,6 +1686,7 @@ msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "सहेजा नहीं जा सका"
@@ -1946,6 +2037,10 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Details"
+msgstr "विवरण"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
@@ -1976,15 +2071,20 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "डिस्कनेक्ट हो रहा है…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
-msgstr ""
+msgstr "खारिज करें"
 
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "खारिज किया गया"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2059,6 +2159,10 @@ msgstr "डुप्लिकेट"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "उदा. Hivenet Agent, Presales, टाइमशीट बॉट"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "संपादित करें"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2219,9 +2323,10 @@ msgstr "विफल।"
 msgid "Failure handling"
 msgstr "विफलता प्रबंधन"
 
+#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
-msgid "File is too large to upload."
-msgstr ""
+msgid "File exceeds the {0} upload limit."
+msgstr "फ़ाइल अपलोड की {0} सीमा से बड़ी है।"
 
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
@@ -2377,7 +2482,7 @@ msgstr "नमस्ते, उत्तर पढ़कर सुनाते �
 msgid "Hide bots"
 msgstr ""
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr ""
 
@@ -2464,6 +2569,19 @@ msgstr "इंस्टेंस API कुंजी"
 #: src/pages/RoutineEditor.tsx
 msgid "Instruction"
 msgstr "निर्देश"
+
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "निर्देशों का इतिहास"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "निर्देश"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "निर्देश अपडेट किए गए"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
@@ -3562,6 +3680,10 @@ msgstr "नियंत्रण छोड़ें"
 msgid "Release interrupted computer?"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
+msgid "Reload"
+msgstr "फिर से लोड करें"
+
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -3706,6 +3828,7 @@ msgstr "पैनल का आकार बदलें"
 msgid "Restart to update"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "बहाल करें"
@@ -3717,6 +3840,10 @@ msgstr "अंतिम सहेजे गए कार्यक्षेत्
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "अंतिम सहेजे गए वर्कस्पेस को बहाल करें। कंप्यूटर पर बिना सहेजा काम खो जाएगा।"
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "बहाल किया गया"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4035,7 +4162,7 @@ msgid "Shared"
 msgstr "साझा"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -4066,7 +4193,7 @@ msgstr ""
 msgid "Show more"
 msgstr "और दिखाएँ"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr ""
 
@@ -4357,6 +4484,11 @@ msgstr ""
 msgid "The connection timed out."
 msgstr "कनेक्शन का समय समाप्त हो गया।"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model provider returned an error."
+msgstr "मॉडल प्रदाता ने एक त्रुटि लौटाई।"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "प्रोवाइडर अनुरोधों की दर सीमित कर रहा है।"
@@ -4549,6 +4681,10 @@ msgstr "असाइन नहीं किया गया"
 msgid "Unavailable"
 msgstr ""
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "पूर्ववत करें"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4599,6 +4735,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr ""
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "निर्देश अपडेट करें?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
@@ -4833,13 +4973,33 @@ msgstr "आप यह विंडो बंद कर सकते हैं।
 msgid "You have control"
 msgstr "नियंत्रण आपके पास है"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your Anthropic"
+msgstr "आपका Anthropic"
+
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "आपका ईमेल पता"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your model provider"
+msgstr "आपका मॉडल प्रदाता"
+
 #: src/pages/Auth.tsx
 msgid "Your name"
 msgstr "आपका नाम"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenAI"
+msgstr "आपका OpenAI"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenRouter"
+msgstr "आपका OpenRouter"
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

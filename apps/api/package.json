@@ -11,8 +11,8 @@
     "secrets:infisical": "tsx src/cli/secrets-infisical.ts"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.1",
-    "@orpc/server": "1.15.0",
+    "@hono/node-server": "2.1.5",
+    "@orpc/server": "1.15.7",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/auth": "workspace:*",
@@ -21,7 +21,7 @@
     "@rakazo/db": "workspace:*",
     "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
-    "hono": "4.13.7"
+    "hono": "4.13.13"
   },
   "devDependencies": {
     "typescript": "7.0.2",

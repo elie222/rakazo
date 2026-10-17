@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
+import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import de from "../../scripts/translations-de.json";
 import es from "../../scripts/translations-es.json";
@@ -11,6 +12,43 @@ import tr from "../../scripts/translations-tr.json";
 import zhCN from "../../scripts/translations-zh-CN.json";
 
 describe("lingui catalogs", () => {
+  it("localizes provider error guidance and retains its placeholders", () => {
+    const messages = [
+      ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "Your OpenRouter",
+      "Your OpenAI",
+      "Your Anthropic",
+      "Your model provider",
+      "The model provider returned an error.",
+      "{provider} is rate limiting requests. Try again shortly.",
+      "{summary} Resets {date}.",
+      "{provider} rejected the API key. Check your connection settings.",
+      "{provider} could not find the requested model.",
+      "{provider} took too long to respond. Try again.",
+      "Details",
+    ];
+    for (const locale of ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      for (const message of messages) {
+        const entry = catalog
+          .split("\n\n")
+          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+        const translated = entry?.split("msgstr ")[1];
+        expect(translated, `${locale}: ${message}`).toBeTruthy();
+        // "Details" is also the German label.
+        if (locale !== "de" || message !== "Details") {
+          expect(translated, `${locale}: ${message}`).not.toBe(JSON.stringify(message));
+        }
+        for (const placeholder of message.match(/\{\w+\}/g) ?? []) {
+          expect(translated).toContain(placeholder);
+        }
+      }
+    }
+  });
+
   beforeEach(() => {
     i18n.load("en", {});
     i18n.activate("en");

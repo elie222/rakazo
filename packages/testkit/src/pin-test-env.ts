@@ -6,6 +6,8 @@ if (!process.env.VERIFY_PROVIDERS) {
   process.env.AGENT_RUNTIME = "scripted";
   process.env.SANDBOX_PROVIDER = "fake";
   process.env.CLOUD_AGENT_PROVIDER = "emulator";
+  process.env.MEDIA_GENERATION_PROVIDER = "disabled";
+  delete process.env.MEDIA_GENERATION_API_KEY;
   delete process.env.CURSOR_API_KEY;
   process.env.WAKEUP_DRIVER = "memory";
   delete process.env.COMPOSIO_API_KEY;
@@ -15,6 +17,11 @@ if (!process.env.VERIFY_PROVIDERS) {
     delete process.env.REALTIME_DATABASE_URL;
   }
 }
+delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
+delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
+delete process.env.OTEL_CAPTURE_CONTENT;
 delete process.env.AXIOM_TOKEN;
 delete process.env.AXIOM_DATASET;
 if (!process.env.VERIFY_LOGGING) {

@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@rakazo/db", () => ({
   appendEventInTransaction: vi.fn(),
+  writeBotInstructions: vi.fn(),
 }));
 
+import { writeBotInstructions } from "@rakazo/db";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 
 describe("botProfileLabelsChanged", () => {
@@ -17,6 +19,82 @@ describe("botProfileLabelsChanged", () => {
 });
 
 describe("commitBotUpdate", () => {
+  it("does not publish or notify when a restore rejects its baseline", async () => {
+    vi.mocked(writeBotInstructions).mockRejectedValueOnce(new Error("Instructions changed"));
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([]), bot: { update: vi.fn() } };
+    const notify = vi.fn();
+    const appendEvent = vi.fn();
+    await expect(
+      commitBotUpdate(
+        {
+          prisma: {
+            $transaction: async (run: (client: typeof tx) => Promise<unknown>) => run(tx),
+          } as never,
+          notify,
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: {},
+          emitBotUpdated: true,
+          expectedInstructions: "Stale instructions",
+          instructionRestore: { versionId: "version-1" },
+        },
+        appendEvent,
+      ),
+    ).rejects.toThrow("Instructions changed");
+    expect(tx.bot.update).not.toHaveBeenCalled();
+    expect(appendEvent).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(
+    "publishes a restore atomically after taking the thread lock (undo=%s)",
+    async (undo) => {
+      const updated = { id: "bot-1", name: "Chief", title: "Chief", description: "" };
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([]),
+        bot: { update: vi.fn().mockResolvedValue(updated) },
+      };
+      const transaction = vi.fn(async (run: (client: typeof tx) => Promise<unknown>) => run(tx));
+      const notify = vi.fn().mockResolvedValue(undefined);
+      const appendEvent = vi.fn().mockResolvedValue({ seq: 10 });
+      await commitBotUpdate(
+        {
+          prisma: { $transaction: transaction } as never,
+          notify,
+          spaceId: "space-1",
+          threadId: "thread-1",
+          botId: "bot-1",
+          data: {},
+          emitBotUpdated: true,
+          expectedInstructions: "Current instructions",
+          instructionRestore: { versionId: "version-1", undo },
+        },
+        appendEvent,
+      );
+      expect(writeBotInstructions).toHaveBeenLastCalledWith(tx, {
+        botId: "bot-1",
+        instructions: undefined,
+        reason: "Restore",
+        expectedInstructions: "Current instructions",
+        versionId: "version-1",
+        undo,
+      });
+      expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(writeBotInstructions).mock.invocationCallOrder.at(-1) ?? 0,
+      );
+      expect(vi.mocked(writeBotInstructions).mock.invocationCallOrder.at(-1)).toBeLessThan(
+        appendEvent.mock.invocationCallOrder[0] ?? 0,
+      );
+      expect(appendEvent).toHaveBeenCalledWith(
+        tx,
+        expect.objectContaining({ type: "bot.updated" }),
+      );
+      expect(notify).toHaveBeenCalledWith("thread-1", 10);
+      expect(appendEvent.mock.invocationCallOrder[0]).toBeLessThan(
+        notify.mock.invocationCallOrder[0] ?? 0,
+      );
+    },
+  );
   it("writes the bot row and bot.updated in one transaction when labels change", async () => {
     const updated = {
       id: "bot-1",
@@ -25,7 +103,7 @@ describe("commitBotUpdate", () => {
       description: "Helps with keyword research",
     };
     const botUpdate = vi.fn().mockResolvedValue(updated);
-    const tx = { bot: { update: botUpdate } };
+    const tx = { $queryRaw: vi.fn().mockResolvedValue([]), bot: { update: botUpdate } };
     const transaction = vi.fn(async (run: (client: typeof tx) => Promise<unknown>) => run(tx));
     const notify = vi.fn().mockResolvedValue(undefined);
     const appendEvent = vi.fn().mockResolvedValue({ seq: 9 });
@@ -51,6 +129,10 @@ describe("commitBotUpdate", () => {
 
     expect(transaction).toHaveBeenCalledOnce();
     expect(botUpdate).toHaveBeenCalledOnce();
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      botUpdate.mock.invocationCallOrder[0] ?? 0,
+    );
     expect(appendEvent).toHaveBeenCalledWith(tx, {
       spaceId: "space-1",
       threadId: "thread-1",
@@ -71,6 +153,7 @@ describe("commitBotUpdate", () => {
     const appendEvent = vi.fn().mockRejectedValue(new Error("event store unavailable"));
     const transaction = vi.fn(async (run: (client: unknown) => Promise<unknown>) =>
       run({
+        $queryRaw: vi.fn().mockResolvedValue([]),
         bot: {
           update: vi.fn().mockResolvedValue({
             id: "bot-1",

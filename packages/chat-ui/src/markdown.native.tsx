@@ -638,7 +638,11 @@ function TableScrollView({
           ]}
           contentContainerStyle={{ flexGrow: 0 }}
         >
-          <View style={{ width: contentWidth, minWidth: contentWidth, flexShrink: 0 }}>
+          <View
+            // iOS won't scroll while an ancestor, like a pressable bubble, holds the touch.
+            onStartShouldSetResponder={() => Platform.OS === "ios" && overflows}
+            style={{ width: contentWidth, minWidth: contentWidth, flexShrink: 0 }}
+          >
             {children}
           </View>
         </ScrollView>

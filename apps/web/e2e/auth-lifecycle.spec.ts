@@ -122,8 +122,21 @@ test("logout protects bot deep links and sign-in restores the session", async ({
   ).toHaveCount(0);
   await captureScreenshot(page, testInfo, "36-account-menu");
 
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  // Sign-out usually overlaps a bot refresh that the server rejects; when it does, wait
+  // for it so an unhandled rejection would surface before the assertion.
+  const refreshRejected = page
+    .waitForResponse(
+      (response) => response.url().includes("/rpc/spaces/list") && response.status() === 401,
+      { timeout: 5_000 },
+    )
+    .catch(() => undefined);
   await page.getByRole("button", { name: "Log out" }).click();
+  await refreshRejected;
   await expect(page.getByRole("heading", { name: "Sign in to Rakazo" })).toBeVisible();
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 250)));
+  expect(pageErrors).toEqual([]);
   await page.goto("/");
   await expect(page.locator('[data-rakazo-surface="welcome"]')).toBeVisible();
   await expect(page.getByText(/Your team of always-on agents/)).toBeVisible();

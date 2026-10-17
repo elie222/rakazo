@@ -1191,26 +1191,28 @@ export function ModelSettingsOverlay({
         <p className="px-6 pt-1 text-[13.5px] text-muted-foreground/70 sm:px-8">{description}</p>
       )}
 
-      <div className={`mx-6 sm:mx-8 ${embedded ? "mt-4" : "mt-5"}`}>
-        <div className="flex items-baseline gap-3">
-          <span className="shrink-0 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
-            <Trans>Active model</Trans>
-          </span>
-          <span className="truncate text-[15px] text-foreground">
-            {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
-          </span>
-          <span className="truncate text-[13px] text-muted-foreground">
-            {currentEntry?.providerName ?? me?.defaultProvider ?? (
-              <Trans>Configured by deployment</Trans>
-            )}
-          </span>
-          {activeThinkingLabel ? (
-            <span className="shrink-0 text-[13px] text-muted-foreground">
-              <Trans>Thinking: {activeThinkingLabel}</Trans>
+      {me?.needsModel ? null : (
+        <div className={`mx-6 sm:mx-8 ${embedded ? "mt-4" : "mt-5"}`}>
+          <div className="flex items-baseline gap-3">
+            <span className="shrink-0 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
+              <Trans>Active model</Trans>
             </span>
-          ) : null}
+            <span className="truncate text-[15px] text-foreground">
+              {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
+            </span>
+            <span className="truncate text-[13px] text-muted-foreground">
+              {currentEntry?.providerName ?? me?.defaultProvider ?? (
+                <Trans>Configured by deployment</Trans>
+              )}
+            </span>
+            {activeThinkingLabel ? (
+              <span className="shrink-0 text-[13px] text-muted-foreground">
+                <Trans>Thinking: {activeThinkingLabel}</Trans>
+              </span>
+            ) : null}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden px-6 py-6 sm:px-8 md:flex-row">
         <div className="flex min-h-0 shrink-0 flex-col md:w-[310px]">

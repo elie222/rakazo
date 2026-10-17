@@ -32,8 +32,20 @@ describe("Android mobile platform contract", () => {
     expect(thread).not.toContain("automaticOffset");
     expect(thread).not.toContain("KeyboardStickyView");
     expect(thread).toContain("useSafeAreaInsets");
-    expect(thread).toContain("useKeyboardState");
-    expect(thread).toContain("keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24)");
+    // The composer's bottom padding follows the keyboard instead of switching once it has hidden.
+    expect(thread).toContain("useKeyboardHandler");
+    expect(thread).toContain("onInteractive");
+    expect(thread).toMatch(
+      /const composerRestingPadding =\s*Platform\.OS === "ios" \? insets\.bottom : Math\.max\(insets\.bottom \+ 12, 24\)/,
+    );
+    expect(thread).toContain(
+      "interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12])",
+    );
+    expect(thread).not.toContain("useKeyboardState");
+    // Both the live list and the pinned page hide the keyboard on a drag.
+    expect(
+      thread.split('keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}'),
+    ).toHaveLength(3);
   });
 
   it("requests live-update promotion and exposes its Android settings", () => {

@@ -3,18 +3,18 @@ import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
-import {
-  filterPickedAttachments,
-  type PickedAttachment,
-  type PickSkip,
-} from "./pick-attachments-filter.js";
+import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
+import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 
-async function readUriAsBase64(uri: string): Promise<{ contentBase64: string; size: number }> {
+async function readUriAsBase64(
+  uri: string,
+  maxBytes: number,
+): Promise<{ contentBase64: string; size: number }> {
   const file = new File(uri);
   const knownSize = file.info().size;
-  if (typeof knownSize === "number" && knownSize > ATTACHMENT_MAX_BYTES) {
+  if (typeof knownSize === "number" && knownSize > maxBytes) {
     return { contentBase64: "", size: knownSize };
   }
   const contentBase64 = await file.base64();
@@ -22,7 +22,10 @@ async function readUriAsBase64(uri: string): Promise<{ contentBase64: string; si
   return { contentBase64, size };
 }
 
-export async function pickFromLibrary(existingCount = 0): Promise<{
+export async function pickFromLibrary(
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
@@ -36,14 +39,17 @@ export async function pickFromLibrary(existingCount = 0): Promise<{
     result.assets.map(async (asset) => {
       const name = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
       const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-      const { contentBase64, size } = await readUriAsBase64(asset.uri);
+      const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
       return { name, mimeType, size, contentBase64, previewUri: asset.uri };
     }),
   );
-  return filterPickedAttachments(existingCount, candidates);
+  return filterPickedAttachments(existingCount, candidates, maxBytes);
 }
 
-export async function takePhoto(existingCount = 0): Promise<{
+export async function takePhoto(
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
@@ -57,13 +63,18 @@ export async function takePhoto(existingCount = 0): Promise<{
   if (!asset) return { attachments: [], skipped: [] };
   const name = asset.fileName ?? `photo-${Date.now()}.jpg`;
   const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-  const { contentBase64, size } = await readUriAsBase64(asset.uri);
-  return filterPickedAttachments(existingCount, [
-    { name, mimeType, size, contentBase64, previewUri: asset.uri },
-  ]);
+  const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
+  return filterPickedAttachments(
+    existingCount,
+    [{ name, mimeType, size, contentBase64, previewUri: asset.uri }],
+    maxBytes,
+  );
 }
 
-export async function pickDocuments(existingCount = 0): Promise<{
+export async function pickDocuments(
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): Promise<{
   attachments: PickedAttachment[];
   skipped: PickSkip[];
 }> {
@@ -77,9 +88,9 @@ export async function pickDocuments(existingCount = 0): Promise<{
     assets.map(async (asset) => {
       const name = asset.name ?? "file";
       const mimeType = inferAttachmentMimeType(name, asset.mimeType ?? undefined);
-      const { contentBase64, size } = await readUriAsBase64(asset.uri);
+      const { contentBase64, size } = await readUriAsBase64(asset.uri, maxBytes);
       return { name, mimeType, size, contentBase64 };
     }),
   );
-  return filterPickedAttachments(existingCount, candidates);
+  return filterPickedAttachments(existingCount, candidates, maxBytes);
 }

@@ -11,7 +11,6 @@ import {
 import { bearer } from "better-auth/plugins";
 import { isCurrentOidcAccount } from "./oidc.js";
 
-export const OIDC_FRESH_AGE = 5 * 60;
 export const oidcProofKey = (sessionId: string) => `oidc-reauth-${sessionId}`;
 
 export function accountSecurity(
@@ -85,13 +84,16 @@ export function accountSecurity(
         {
           matcher: (ctx) => ctx.path === "/delete-user" || ctx.path === "/delete-user/callback",
           handler: createAuthMiddleware(async (ctx) => {
+            // Deletion codes are submitted through the CSRF-protected POST endpoint.
+            // Never delete an account through a navigable GET callback.
+            if (ctx.path === "/delete-user/callback") throw new APIError("FORBIDDEN");
             const session = await sessionForAuthHook(ctx);
             if (!session) throw new APIError("UNAUTHORIZED");
             const credential = await ctx.context.internalAdapter.findCredentialAccount(
               session.user.id,
             );
             if (credential?.password) {
-              if (ctx.path === "/delete-user/callback" || !ctx.body?.password) {
+              if (!ctx.body?.password) {
                 throw new APIError("BAD_REQUEST", {
                   message: "Invalid password",
                   code: "INVALID_PASSWORD",
@@ -100,7 +102,7 @@ export function accountSecurity(
               return;
             }
             // Better Auth consumes and validates email deletion tokens against this user.
-            if (ctx.body?.token || ctx.query?.token) return;
+            if (ctx.body?.token) return;
             const proof = await ctx.context.internalAdapter.findVerificationValue(
               oidcProofKey(session.session.id),
             );

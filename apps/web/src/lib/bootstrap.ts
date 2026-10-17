@@ -1,9 +1,14 @@
 import type { AppBootstrap } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, attachmentMaxBytes } from "@rakazo/contracts";
 import { initialBootstrapTarget } from "./bootstrap-target";
 import { markOnce } from "./performance";
 import { rpc } from "./rpc";
 
 let ticketBoardEnabled = false;
+let maxUploadSizeBytes = ATTACHMENT_MAX_BYTES;
+export function getMaxUploadSizeBytes() {
+  return maxUploadSizeBytes;
+}
 const capabilityListeners = new Set<() => void>();
 export function getTicketBoardEnabled() {
   return ticketBoardEnabled;
@@ -47,6 +52,7 @@ function requestBootstrap(botId?: string) {
   return rpc.bootstrap(botId ? { botId } : {}).then((bootstrap) => {
     markOnce("rk:renderer:bootstrap-response");
     ticketBoardEnabled = bootstrap.me.ticketBoardEnabled;
+    maxUploadSizeBytes = attachmentMaxBytes(bootstrap.me);
     for (const listener of capabilityListeners) listener();
     return bootstrap;
   });

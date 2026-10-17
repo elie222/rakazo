@@ -14,6 +14,135 @@ import {
 } from "./thread-artifacts.js";
 
 describe("current-turn thread files", () => {
+  it("rejects generated output above a lower configured attachment limit before storage", async () => {
+    const put = vi.fn();
+    await expect(
+      attachWorkspaceFileToThread(
+        {
+          prisma: {} as PrismaClient,
+          artifacts: { put } as unknown as ArtifactStore,
+          maxUploadSizeBytes: 3,
+        },
+        {
+          spaceId: "space",
+          userId: "owner",
+          botId: "bot",
+          runId: "run",
+          filePath: "generated.mp4",
+          bytes: new Uint8Array(4),
+          operationId: "op",
+        },
+      ),
+    ).rejects.toThrow("attachment limit");
+    expect(put).not.toHaveBeenCalled();
+  });
+  it("materializes uploads above 10 MiB when allowed by the server", async () => {
+    const bytes = new Uint8Array(11 * 1024 * 1024);
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma: {
+        artifact: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "file-1",
+              storageKey: "stored-1",
+              name: "notes.txt",
+              mimeType: "text/plain",
+              size: bytes.length,
+            },
+          ]),
+        },
+      } as unknown as PrismaClient,
+      artifacts: { get: vi.fn().mockResolvedValue(bytes) } as unknown as ArtifactStore,
+      sandbox: { writeFile } as unknown as SandboxProvider,
+      maxUploadSizeBytes: 12 * 1024 * 1024,
+    };
+    const blocks: MessageBlock[] = [
+      {
+        kind: "file",
+        artifactId: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        size: bytes.length,
+      },
+    ];
+    const input = {
+      context: {
+        operationId: "run-1",
+        traceId: "run-1",
+        spaceId: "space-1",
+        userId: "user-1",
+        botId: "bot-1",
+        signal: new AbortController().signal,
+      },
+      computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef,
+      computerMode: "team" as const,
+    };
+    await expect(materializeCurrentTurnFiles(deps, blocks, input)).resolves.toHaveLength(1);
+    expect(writeFile).toHaveBeenCalledOnce();
+    writeFile.mockClear();
+    await expect(
+      materializeCurrentTurnFiles({ ...deps, maxUploadSizeBytes: 2 * 1024 * 1024 }, blocks, input),
+    ).rejects.toThrow("2 MiB limit");
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "checkpoints attachment creation in its transaction (failure: %s)",
+    async (fail) => {
+      const row = {
+        id: "artifact",
+        name: "generated.mp4",
+        mimeType: "video/mp4",
+        size: 4,
+        storageKey: "stored",
+      };
+      const artifact = {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue(row),
+      };
+      const tx = { artifact, $queryRaw: vi.fn().mockResolvedValue([]) };
+      const remove = vi.fn().mockResolvedValue(undefined);
+      const onAttached = vi.fn(async (client, attached) => {
+        expect(client).toBe(tx);
+        expect(attached).toBe(row);
+        if (fail) throw new Error("checkpoint failed");
+      });
+      const result = attachWorkspaceFileToThread(
+        {
+          prisma: {
+            artifact,
+            $transaction: async (work: (client: typeof tx) => Promise<unknown>) => work(tx),
+          } as unknown as PrismaClient,
+          artifacts: {
+            put: vi.fn().mockResolvedValue({ id: "stored" }),
+            remove,
+          } as unknown as ArtifactStore,
+        },
+        {
+          spaceId: "space",
+          userId: "owner",
+          botId: "bot",
+          runId: "run",
+          filePath: "generated.mp4",
+          bytes: new Uint8Array([1, 2, 3, 4]),
+          operationId: "op",
+          onAttached,
+        },
+      );
+      if (fail) {
+        await expect(result).rejects.toThrow("checkpoint failed");
+        expect(remove).toHaveBeenCalledWith("stored", expect.anything());
+      } else {
+        await expect(result).resolves.toMatchObject({
+          artifactId: "artifact",
+          block: { kind: "file", mimeType: "video/mp4" },
+        });
+        expect(remove).not.toHaveBeenCalled();
+      }
+      expect(onAttached).toHaveBeenCalledTimes(1);
+    },
+  );
   it("removes stored bytes when artifact metadata cannot be created", async () => {
     const remove = vi.fn().mockResolvedValue(undefined);
     const failure = new Error("database unavailable");
@@ -53,6 +182,7 @@ describe("current-turn thread files", () => {
   });
 
   it.each([
+    ["video/mp4", ".mp4"],
     ["application/pdf", ".pdf"],
     ["application/zip", ".zip"],
   ])(

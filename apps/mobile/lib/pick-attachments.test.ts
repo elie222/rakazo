@@ -1,8 +1,34 @@
+import { attachmentMaxBytes } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 describe("filterPickedAttachments", () => {
+  it("uses the server limit and falls back for older servers", () => {
+    const candidate = {
+      name: "large.txt",
+      mimeType: "text/plain",
+      size: 11 * 1024 * 1024,
+      contentBase64: "",
+    };
+    expect(
+      filterPickedAttachments(
+        0,
+        [candidate],
+        attachmentMaxBytes({ maxUploadSizeBytes: 12 * 1024 * 1024 }),
+      ).attachments,
+    ).toHaveLength(1);
+    expect(filterPickedAttachments(0, [candidate], attachmentMaxBytes({})).skipped[0]?.reason).toBe(
+      "over 10 MiB",
+    );
+    expect(
+      filterPickedAttachments(
+        0,
+        [candidate],
+        attachmentMaxBytes({ maxUploadSizeBytes: 2 * 1024 * 1024 }),
+      ).skipped[0]?.reason,
+    ).toBe("over 2 MiB");
+  });
   it("skips unsupported mime types and oversize files", () => {
     const result = filterPickedAttachments(0, [
       {

@@ -6,6 +6,7 @@ import {
   MAX_RPC_REQUEST_BYTES,
   mountApiRequestBodyLimits,
   requestBodyLimit,
+  rpcRequestMaxBytes,
 } from "./request-body-limit.js";
 
 function testApp(maxSize: number, parse = vi.fn(async (request: Request) => request.json())) {
@@ -16,6 +17,24 @@ function testApp(maxSize: number, parse = vi.fn(async (request: Request) => requ
 }
 
 describe("API request body limits", () => {
+  it("expands the HTTP envelope for a larger configured upload", async () => {
+    const limit = 25 * 1024 * 1024;
+    const app = new Hono();
+    mountApiRequestBodyLimits(app, limit);
+    app.post("/rpc/artifacts/create", (c) => c.json({ ok: true }));
+    const request = (length: number) =>
+      app.request("/rpc/artifacts/create", {
+        method: "POST",
+        headers: { "content-length": String(length) },
+        body: "{}",
+      });
+    expect((await request(Math.ceil(limit / 3) * 4 + 100)).status).toBe(200);
+    const rejected = await request(rpcRequestMaxBytes(limit) + 1);
+    expect(rejected.status).toBe(413);
+    expect(await rejected.json()).toEqual({
+      error: "Request body is too large. Upload limit: 25 MiB per file.",
+    });
+  });
   it("keeps the RPC allowance above the largest supported attachment envelope", () => {
     expect(MAX_RPC_REQUEST_BYTES).toBeGreaterThan(ATTACHMENT_MAX_BASE64_LENGTH);
     expect(MAX_AUTH_REQUEST_BYTES).toBeLessThan(MAX_RPC_REQUEST_BYTES);

@@ -25,6 +25,8 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
+  "generate_image",
+  "generate_video",
   "destination.write",
   "delete_bot",
   "archive_bot",
@@ -35,7 +37,7 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_reply",
   "cloud_agent_cancel",
 ]);
-const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space"]);
+const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space", "propose_instructions_update"]);
 
 const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "browser_snapshot",

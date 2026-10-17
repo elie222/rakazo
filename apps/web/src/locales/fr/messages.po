@@ -40,9 +40,10 @@ msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (max {ATTACHMENT_MAX_COUNT} pièces jointes)"
 
 #. placeholder {0}: file.name
+#. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: src/pages/Shell.tsx
-msgid "{0} (over 10 MiB)"
-msgstr "{0} (plus de 10 MiB)"
+msgid "{0} (over {1})"
+msgstr "{0} (plus de {1})"
 
 #. placeholder {0}: preset.n
 #: src/pages/RoutineSchedule.tsx
@@ -157,6 +158,86 @@ msgstr "{name} terminé"
 msgid "{name} stopped"
 msgstr "{name} arrêté"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} could not find the requested model."
+msgstr "{provider} ne trouve pas le modèle demandé."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} is rate limiting requests. Try again shortly."
+msgstr "{provider} limite les requêtes. Réessayez dans un instant."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its daily limit."
+msgstr "{provider} a atteint sa limite quotidienne de clé."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its limit."
+msgstr "{provider} a atteint sa limite de clé."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its monthly limit."
+msgstr "{provider} a atteint sa limite mensuelle de clé."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its weekly limit."
+msgstr "{provider} a atteint sa limite hebdomadaire de clé."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its credit limit."
+msgstr "{provider} a atteint sa limite de crédit."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily credit limit."
+msgstr "{provider} a atteint sa limite quotidienne de crédit."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily spending limit."
+msgstr "{provider} a atteint sa limite quotidienne de dépenses."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly credit limit."
+msgstr "{provider} a atteint sa limite mensuelle de crédit."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly spending limit."
+msgstr "{provider} a atteint sa limite mensuelle de dépenses."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its spending limit."
+msgstr "{provider} a atteint sa limite de dépenses."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly credit limit."
+msgstr "{provider} a atteint sa limite hebdomadaire de crédit."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly spending limit."
+msgstr "{provider} a atteint sa limite hebdomadaire de dépenses."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} rejected the API key. Check your connection settings."
+msgstr "{provider} a refusé la clé API. Vérifiez vos paramètres de connexion."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} took too long to respond. Try again."
+msgstr "{provider} a mis trop de temps à répondre. Réessayez."
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "{remaining} restant · le bot observe, il n'agit pas"
@@ -176,6 +257,11 @@ msgstr ""
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
 msgstr ""
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Resets {date}."
+msgstr "{summary} Réinitialisation le {date}."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -523,6 +609,10 @@ msgstr "En-tête de clé API"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Apparence"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "Appliquer"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -1596,6 +1686,7 @@ msgstr "Impossible d'exécuter la routine"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "Impossible d'enregistrer"
@@ -1946,6 +2037,10 @@ msgstr "Application de bureau"
 msgid "Desktop update"
 msgstr "Mise à jour du bureau"
 
+#: src/pages/Shell.tsx
+msgid "Details"
+msgstr "Détails"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr "MCP direct"
@@ -1976,6 +2071,7 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Déconnexion en cours…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1985,6 +2081,10 @@ msgstr "Fermer"
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Fermer l'erreur"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "Ignoré"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2059,6 +2159,10 @@ msgstr "Dupliquer"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "ex. Agent Hivenet, Préventes, bot de feuilles de temps"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "Modifier"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2219,9 +2323,10 @@ msgstr "Échoué."
 msgid "Failure handling"
 msgstr "Gestion des échecs"
 
+#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
-msgid "File is too large to upload."
-msgstr ""
+msgid "File exceeds the {0} upload limit."
+msgstr "Le fichier dépasse la limite de téléversement de {0}."
 
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
@@ -2377,7 +2482,7 @@ msgstr "Bonjour, c'est ainsi que je sonnerai quand je lirai les réponses à voi
 msgid "Hide bots"
 msgstr "Masquer les bots"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "Masquer le mot de passe"
 
@@ -2464,6 +2569,19 @@ msgstr "Clé API de l'instance"
 #: src/pages/RoutineEditor.tsx
 msgid "Instruction"
 msgstr "Instruction"
+
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "Historique des instructions"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "Instructions"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "Instructions mises à jour"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
@@ -3562,6 +3680,10 @@ msgstr "Rendre le contrôle"
 msgid "Release interrupted computer?"
 msgstr "Libérer l'ordinateur interrompu ?"
 
+#: src/components/InstructionSettings.tsx
+msgid "Reload"
+msgstr "Recharger"
+
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -3706,6 +3828,7 @@ msgstr "Redimensionner le panneau"
 msgid "Restart to update"
 msgstr "Redémarrez pour mettre à jour"
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Restaurer"
@@ -3717,6 +3840,10 @@ msgstr "Restaurer le dernier espace de travail enregistré."
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Restaurez le dernier espace de travail enregistré. Les travaux non enregistrés sur l'ordinateur seront perdus."
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "Restauré"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4035,8 +4162,8 @@ msgid "Shared"
 msgstr "Partagé"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
-msgstr "Conversation partagée avec 2 à 6 bots. Ils répondent tous dans le même fil."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
+msgstr "Conversation partagée avec {GROUP_MEMBER_MIN} à {GROUP_MEMBER_MAX} bots. Ils répondent tous dans le même fil."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared documents"
@@ -4066,7 +4193,7 @@ msgstr "Afficher la liste"
 msgid "Show more"
 msgstr "Afficher plus"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "Afficher le mot de passe"
 
@@ -4357,6 +4484,11 @@ msgstr "L'API n'est pas revenue. Actualisez cette page."
 msgid "The connection timed out."
 msgstr "La connexion a expiré."
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model provider returned an error."
+msgstr "Le fournisseur de modèles a renvoyé une erreur."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "Le fournisseur limite le débit des requêtes."
@@ -4549,6 +4681,10 @@ msgstr "Non assigné"
 msgid "Unavailable"
 msgstr "Indisponible"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "Annuler"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr "Désinstaller"
@@ -4599,6 +4735,10 @@ msgstr "Échec de la mise à jour"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Mise à jour terminée avec des erreurs"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "Mettre à jour les instructions ?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
@@ -4833,13 +4973,33 @@ msgstr "Vous pouvez fermer cette fenêtre."
 msgid "You have control"
 msgstr "Vous avez le contrôle"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your Anthropic"
+msgstr "Votre Anthropic"
+
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Votre adresse e-mail"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your model provider"
+msgstr "Votre fournisseur de modèles"
+
 #: src/pages/Auth.tsx
 msgid "Your name"
 msgstr "Votre nom"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenAI"
+msgstr "Votre OpenAI"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenRouter"
+msgstr "Votre OpenRouter"
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

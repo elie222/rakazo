@@ -40,9 +40,10 @@ msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0}（最多 {ATTACHMENT_MAX_COUNT} 个附件）"
 
 #. placeholder {0}: file.name
+#. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: src/pages/Shell.tsx
-msgid "{0} (over 10 MiB)"
-msgstr "{0}（超过 10 MiB）"
+msgid "{0} (over {1})"
+msgstr "{0}（超过 {1}）"
 
 #. placeholder {0}: preset.n
 #: src/pages/RoutineSchedule.tsx
@@ -157,6 +158,86 @@ msgstr "{name} 已完成"
 msgid "{name} stopped"
 msgstr "{name} 已停止"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} could not find the requested model."
+msgstr "{provider}找不到请求的模型。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} is rate limiting requests. Try again shortly."
+msgstr "{provider}正在限制请求频率。请稍后重试。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its daily limit."
+msgstr "{provider}的密钥已达到每日限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its limit."
+msgstr "{provider}的密钥已达到限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its monthly limit."
+msgstr "{provider}的密钥已达到每月限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its weekly limit."
+msgstr "{provider}的密钥已达到每周限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its credit limit."
+msgstr "{provider}已达到额度上限。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily credit limit."
+msgstr "{provider}已达到每日额度上限。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily spending limit."
+msgstr "{provider}已达到每日支出限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly credit limit."
+msgstr "{provider}已达到每月额度上限。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly spending limit."
+msgstr "{provider}已达到每月支出限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its spending limit."
+msgstr "{provider}已达到支出限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly credit limit."
+msgstr "{provider}已达到每周额度上限。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly spending limit."
+msgstr "{provider}已达到每周支出限额。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} rejected the API key. Check your connection settings."
+msgstr "{provider}拒绝了 API 密钥。请检查连接设置。"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} took too long to respond. Try again."
+msgstr "{provider}响应超时。请重试。"
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "剩余 {remaining} · Bot 只看不操作"
@@ -176,6 +257,11 @@ msgstr ""
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
 msgstr ""
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Resets {date}."
+msgstr "{summary} 将于{date}重置。"
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -523,6 +609,10 @@ msgstr "API 密钥请求头"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "外观"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "应用"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -1596,6 +1686,7 @@ msgstr "无法运行例行任务"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "无法保存"
@@ -1946,6 +2037,10 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Details"
+msgstr "详情"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
@@ -1976,15 +2071,20 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "正在断开…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
 msgid "Dismiss"
-msgstr ""
+msgstr "忽略"
 
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "关闭错误"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "已忽略"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2059,6 +2159,10 @@ msgstr "复制"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "例如 Hivenet Agent、Presales、工时表机器人"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "编辑"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2219,9 +2323,10 @@ msgstr "失败。"
 msgid "Failure handling"
 msgstr "失败处理"
 
+#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
-msgid "File is too large to upload."
-msgstr ""
+msgid "File exceeds the {0} upload limit."
+msgstr "文件超过 {0} 的上传限制。"
 
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
@@ -2377,7 +2482,7 @@ msgstr "你好，这是我朗读回复时的声音。"
 msgid "Hide bots"
 msgstr ""
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "隐藏密码"
 
@@ -2464,6 +2569,19 @@ msgstr "实例 API 密钥"
 #: src/pages/RoutineEditor.tsx
 msgid "Instruction"
 msgstr "指令"
+
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "指令历史"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "指令"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "指令已更新"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
@@ -3562,6 +3680,10 @@ msgstr "交还控制权"
 msgid "Release interrupted computer?"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
+msgid "Reload"
+msgstr "重新加载"
+
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -3706,6 +3828,7 @@ msgstr "调整面板大小"
 msgid "Restart to update"
 msgstr ""
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "恢复"
@@ -3717,6 +3840,10 @@ msgstr "恢复上次保存的工作区。"
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "还原上次保存的工作区。电脑上未保存的工作会丢失。"
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "已恢复"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4035,7 +4162,7 @@ msgid "Shared"
 msgstr "共享"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -4066,7 +4193,7 @@ msgstr ""
 msgid "Show more"
 msgstr "显示更多"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "显示密码"
 
@@ -4357,6 +4484,11 @@ msgstr "API 未恢复。请刷新此页面。"
 msgid "The connection timed out."
 msgstr "连接超时。"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model provider returned an error."
+msgstr "模型提供商返回了错误。"
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "提供方正在限制请求频率。"
@@ -4549,6 +4681,10 @@ msgstr "未分配"
 msgid "Unavailable"
 msgstr "不可用"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "撤销"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr ""
@@ -4599,6 +4735,10 @@ msgstr "更新失败"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "更新完成但有错误"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "更新指令？"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
@@ -4833,13 +4973,33 @@ msgstr "可以关闭此窗口。"
 msgid "You have control"
 msgstr "你已接管"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your Anthropic"
+msgstr "你的 Anthropic"
+
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "你的邮箱"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your model provider"
+msgstr "你的模型提供商"
+
 #: src/pages/Auth.tsx
 msgid "Your name"
 msgstr "你的名字"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenAI"
+msgstr "你的 OpenAI"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenRouter"
+msgstr "你的 OpenRouter"
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

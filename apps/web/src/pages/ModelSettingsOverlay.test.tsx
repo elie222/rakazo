@@ -283,6 +283,28 @@ it("leaves the key field empty until a key is saved", async () => {
   }
 });
 
+it("shows the active model only once a model is connected", async () => {
+  vi.mocked(rpc.me).mockResolvedValue({
+    ...account("deepseek", "deepseek-chat"),
+    needsModel: true,
+  });
+  const view = await renderSettings();
+  try {
+    expect(view.container.textContent).not.toContain("Active model");
+  } finally {
+    await view.unmount();
+  }
+
+  vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  const connected = await renderSettings();
+  try {
+    expect(connected.container.textContent).toContain("Active model");
+    expect(connected.container.textContent).toContain("DeepSeek Chat");
+  } finally {
+    await connected.unmount();
+  }
+});
+
 it("shows Cloudflare account and gateway fields for a new and a saved connection", async () => {
   const entry = {
     provider: "cloudflare-ai-gateway",

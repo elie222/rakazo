@@ -25,7 +25,7 @@ export function dockerBinaryCandidates(platform: string, env: NodeJS.ProcessEnv)
       "/opt/homebrew/bin/docker",
       "/Applications/Docker.app/Contents/Resources/bin/docker",
     );
-    if (env.HOME) candidates.push(path.join(env.HOME, ".orbstack", "bin", "docker"));
+    if (env.HOME) candidates.push(path.posix.join(env.HOME, ".orbstack", "bin", "docker"));
   } else if (platform === "win32") {
     const programFiles = env.ProgramFiles ?? "C:\\Program Files";
     candidates.push(

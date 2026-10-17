@@ -6,6 +6,7 @@ import {
   historyCompactJobKey,
   messagingDeliverJob,
   parseBackgroundJob,
+  routineRetryJob,
 } from "./background-jobs.js";
 import type { BackgroundJobHandlers } from "./types.js";
 
@@ -13,6 +14,7 @@ function handlers(): BackgroundJobHandlers {
   return {
     "run.continue": vi.fn(async () => undefined),
     "routine.wakeup": vi.fn(async () => undefined),
+    "routine.retry": vi.fn(async () => undefined),
     "computer.update": vi.fn(async () => undefined),
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
@@ -49,6 +51,20 @@ describe("background job contracts", () => {
     expect(target["routine.wakeup"]).toHaveBeenCalledWith({
       routineId: "routine-1",
       scheduledFor: "2026-08-15T12:00:00.000Z",
+    });
+  });
+
+  it("validates and dispatches a routine retry keyed to the failed run", async () => {
+    const target = handlers();
+    await dispatchBackgroundJob(target, "routine.retry", { runId: "run-1" });
+    expect(target["routine.retry"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(() => parseBackgroundJob("routine.retry", { runId: "" })).toThrow();
+    const availableAt = new Date("2026-08-15T12:12:00.000Z");
+    expect(routineRetryJob("run-1", availableAt)).toEqual({
+      name: "routine.retry",
+      payload: { runId: "run-1" },
+      availableAt,
+      replaceKey: "routine.retry:run-1",
     });
   });
 

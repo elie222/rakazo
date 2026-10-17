@@ -7,7 +7,7 @@ import {
   lineLimit,
   padding,
 } from "@expo/ui/swift-ui/modifiers";
-import { Text as RNText, StyleSheet, View } from "react-native";
+import { Text as RNText, StyleSheet, useWindowDimensions, View } from "react-native";
 import { useResolvedAppearance } from "../lib/native";
 import {
   HEADER_CONTROL_SIZE,
@@ -21,13 +21,16 @@ import {
  */
 export function GlassTitle({ title }: { title: string }) {
   const scheme = useResolvedAppearance();
+  // Bar titles stay between the default text size and xxxLarge; the sizer must match the text.
+  const { fontScale } = useWindowDimensions();
+  const scale = Math.min(Math.max(fontScale, 1), HEADER_TITLE_MAX_FONT_SCALE);
   if (!title.trim()) return null;
   return (
     <View accessibilityLabel={title} accessibilityRole="header" accessible style={styles.frame}>
       <RNText
-        maxFontSizeMultiplier={HEADER_TITLE_MAX_FONT_SCALE}
+        allowFontScaling={false}
         numberOfLines={1}
-        style={styles.sizer}
+        style={[styles.sizer, { fontSize: 17 * scale }]}
       >
         {title}
       </RNText>
@@ -35,7 +38,7 @@ export function GlassTitle({ title }: { title: string }) {
         <Text
           modifiers={[
             font({ textStyle: "body", weight: "semibold" }),
-            dynamicTypeSize({ max: "xxxLarge" }),
+            dynamicTypeSize({ min: "large", max: "xxxLarge" }),
             lineLimit(1),
             padding({ horizontal: 16 }),
             frame({ height: HEADER_CONTROL_SIZE }),
@@ -71,7 +74,6 @@ const styles = StyleSheet.create({
   },
   sizer: {
     opacity: 0,
-    fontSize: 17,
     fontWeight: "600",
   },
 });

@@ -40,9 +40,10 @@ msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (макс. {ATTACHMENT_MAX_COUNT} вложений)"
 
 #. placeholder {0}: file.name
+#. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: src/pages/Shell.tsx
-msgid "{0} (over 10 MiB)"
-msgstr "{0} (более 10 МБ)"
+msgid "{0} (over {1})"
+msgstr "{0} (более {1})"
 
 #. placeholder {0}: preset.n
 #: src/pages/RoutineSchedule.tsx
@@ -157,6 +158,86 @@ msgstr "{name}: завершено"
 msgid "{name} stopped"
 msgstr "{name}: остановлено"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} could not find the requested model."
+msgstr "{provider} не смог найти запрошенную модель."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} is rate limiting requests. Try again shortly."
+msgstr "{provider} ограничивает частоту запросов. Повторите попытку чуть позже."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its daily limit."
+msgstr "{provider}: достигнут дневной лимит ключа."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its limit."
+msgstr "{provider}: достигнут лимит ключа."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its monthly limit."
+msgstr "{provider}: достигнут месячный лимит ключа."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} key hit its weekly limit."
+msgstr "{provider}: достигнут недельный лимит ключа."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its credit limit."
+msgstr "{provider}: достигнут кредитный лимит."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily credit limit."
+msgstr "{provider}: достигнут дневной кредитный лимит."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its daily spending limit."
+msgstr "{provider}: достигнут дневной лимит расходов."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly credit limit."
+msgstr "{provider}: достигнут месячный кредитный лимит."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its monthly spending limit."
+msgstr "{provider}: достигнут месячный лимит расходов."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its spending limit."
+msgstr "{provider}: достигнут лимит расходов."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly credit limit."
+msgstr "{provider}: достигнут недельный кредитный лимит."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} reached its weekly spending limit."
+msgstr "{provider}: достигнут недельный лимит расходов."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} rejected the API key. Check your connection settings."
+msgstr "{provider} отклонил API-ключ. Проверьте настройки подключения."
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{provider} took too long to respond. Try again."
+msgstr "{provider} не ответил вовремя. Повторите попытку."
+
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "Осталось: {remaining} · бот наблюдает, но не действует"
@@ -176,6 +257,11 @@ msgstr ""
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
 msgstr ""
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "{summary} Resets {date}."
+msgstr "{summary} Сброс: {date}."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -523,6 +609,10 @@ msgstr "Заголовок ключа API"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Внешний вид"
+
+#: src/components/AskCard.tsx
+msgid "Apply"
+msgstr "Применить"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -1596,6 +1686,7 @@ msgstr "Не удалось запустить задачу"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "Не удалось сохранить"
@@ -1946,6 +2037,10 @@ msgstr "Настольное приложение"
 msgid "Desktop update"
 msgstr "Обновление настольного приложения"
 
+#: src/pages/Shell.tsx
+msgid "Details"
+msgstr "Подробности"
+
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr "Прямой MCP"
@@ -1976,6 +2071,7 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Отключение…"
 
+#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1985,6 +2081,10 @@ msgstr "Закрыть"
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Закрыть ошибку"
+
+#: src/components/AskCard.tsx
+msgid "Dismissed"
+msgstr "Отклонено"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2059,6 +2159,10 @@ msgstr "Дублировать"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "напр. Hivenet Agent, Presales, бот табелей"
+
+#: src/components/AskCard.tsx
+msgid "Edit"
+msgstr "Изменить"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2219,9 +2323,10 @@ msgstr "Неуспешный."
 msgid "Failure handling"
 msgstr "Обработка сбоев"
 
+#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
-msgid "File is too large to upload."
-msgstr ""
+msgid "File exceeds the {0} upload limit."
+msgstr "Файл превышает ограничение загрузки в {0}."
 
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
@@ -2377,7 +2482,7 @@ msgstr "Привет, вот как я буду звучать, когда бу�
 msgid "Hide bots"
 msgstr "Скрыть ботов"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Hide password"
 msgstr "Скрыть пароль"
 
@@ -2464,6 +2569,19 @@ msgstr "Ключ API экземпляра"
 #: src/pages/RoutineEditor.tsx
 msgid "Instruction"
 msgstr "Инструкция"
+
+#: src/components/InstructionSettings.tsx
+msgid "Instruction history"
+msgstr "История инструкций"
+
+#: src/components/AskCard.tsx
+#: src/components/InstructionSettings.tsx
+msgid "Instructions"
+msgstr "Инструкции"
+
+#: src/components/AskCard.tsx
+msgid "Instructions updated"
+msgstr "Инструкции обновлены"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
@@ -3562,6 +3680,10 @@ msgstr "Передать управление"
 msgid "Release interrupted computer?"
 msgstr "Освободить прерванный компьютер?"
 
+#: src/components/InstructionSettings.tsx
+msgid "Reload"
+msgstr "Перезагрузить"
+
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -3706,6 +3828,7 @@ msgstr "Изменить размер панели"
 msgid "Restart to update"
 msgstr "Перезапустить для обновления"
 
+#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Восстановить"
@@ -3717,6 +3840,10 @@ msgstr "Восстановить последнее сохранённое ра�
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Восстановите последнее сохраненное рабочее пространство. Несохраненная работа на компьютере теряется."
+
+#: src/components/AskCard.tsx
+msgid "Restored"
+msgstr "Восстановлено"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4035,8 +4162,8 @@ msgid "Shared"
 msgstr "Общий"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with 2-6 bots. They all reply in the same thread."
-msgstr "Общий чат с 2-6 ботами. Все отвечают в одной ветке."
+msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
+msgstr "Общий чат с {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} ботами. Все отвечают в одной ветке."
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared documents"
@@ -4066,7 +4193,7 @@ msgstr ""
 msgid "Show more"
 msgstr "Показать ещё"
 
-#: src/pages/Auth.tsx
+#: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "Показать пароль"
 
@@ -4357,6 +4484,11 @@ msgstr "API не вернулся. Обновите эту страницу."
 msgid "The connection timed out."
 msgstr "Время ожидания соединения истекло."
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "The model provider returned an error."
+msgstr "Поставщик моделей вернул ошибку."
+
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
 msgstr "Поставщик ограничивает частоту запросов."
@@ -4549,6 +4681,10 @@ msgstr "Без раздела"
 msgid "Unavailable"
 msgstr "Недоступно"
 
+#: src/components/AskCard.tsx
+msgid "Undo"
+msgstr "Отменить"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
 msgstr "Удалить"
@@ -4599,6 +4735,10 @@ msgstr "Обновление не выполнено"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Обновление завершено с ошибками"
+
+#: src/components/AskCard.tsx
+msgid "Update instructions?"
+msgstr "Обновить инструкции?"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
@@ -4833,13 +4973,33 @@ msgstr "Вы можете закрыть это окно."
 msgid "You have control"
 msgstr "Вы управляете"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your Anthropic"
+msgstr "Ваш Anthropic"
+
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Ваш адрес электронной почты"
 
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your model provider"
+msgstr "Ваш поставщик моделей"
+
 #: src/pages/Auth.tsx
 msgid "Your name"
 msgstr "Ваше имя"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenAI"
+msgstr "Ваш OpenAI"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Your OpenRouter"
+msgstr "Ваш OpenRouter"
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

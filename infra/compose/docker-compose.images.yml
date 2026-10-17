@@ -61,6 +61,7 @@ services:
     pids_limit: 256
     mem_limit: 512m
     environment:
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       NODE_ENV: production
       DATA_DIR: /data
       SUPERVISOR_HOST: "0.0.0.0"

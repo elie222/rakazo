@@ -34,6 +34,7 @@ import {
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
+import { InstructionSettings } from "../../components/InstructionSettings";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
 import { rpc } from "../../lib/rpc";
@@ -360,9 +361,7 @@ export function BotSettings({
       const patch = {
         name: nextName || bot.name,
         title: nextTitle,
-        // One field feeds both, so it only goes on the wire when it changed: a
-        // model, thinking or voice save must not overwrite longer instructions,
-        // nor fail on a description that is already above its own limit.
+        // Keep untouched profile fields off the wire.
         ...botProfilePatch(savedDescriptionRef.current, nextDescription),
         // Unchanged color stays off the wire so a legacy named value cannot fail a name save.
         ...(nextColor !== bot.color ? { color: nextColor } : {}),
@@ -553,6 +552,7 @@ export function BotSettings({
             ›
           </span>
         </summary>
+        <InstructionSettings key={bot.id} bot={bot} />
         <ComputerModePicker value={computerMode} onChange={setComputerMode} />
         <ErrorBoundary fallback={<SectionLoadFailed />}>
           <Suspense fallback={null}>
