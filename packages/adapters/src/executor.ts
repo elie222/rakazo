@@ -4125,7 +4125,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Rehydrate from this run's prior progress rows so a resume after ask/takeover
         // still knows progress was already published (skip hollow finals; status outcome).
         let publishedMidTurnUserMessage = false;
-        // Routine runs discard promoted narration instead of posting it as chat.
+        // Routine, background and bot-to-bot runs discard promoted narration instead of
+        // posting it as chat.
         let discardedMidTurnNarration = false;
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
@@ -8456,8 +8457,13 @@ export function runAllowsSilentEmpty(trigger: string): boolean {
   return trigger === "routine" || isBackgroundRunTrigger(trigger);
 }
 
+/**
+ * Whether text written before a tool call is saved as a chat bubble. Bot-to-bot runs
+ * discard it: nobody reads those threads live, and the receiver's final reply is what
+ * goes back to the sender.
+ */
 export function runPromotesMidTurnNarration(trigger: string): boolean {
-  return trigger !== "routine" && !isBackgroundRunTrigger(trigger);
+  return trigger !== "routine" && trigger !== "bot_message" && !isBackgroundRunTrigger(trigger);
 }
 
 export const TICKET_SILENT_REPLY_GUIDANCE =
