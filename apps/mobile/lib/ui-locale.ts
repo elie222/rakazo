@@ -2,11 +2,6 @@ export const UI_LOCALES = ["en", "zh-CN", "ru", "de"] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
 
-/** Locales offered on the mobile Account language picker. */
-export const ACCOUNT_UI_LOCALES = ["en", "zh-CN"] as const satisfies readonly UiLocale[];
-
-export type AccountUiLocale = (typeof ACCOUNT_UI_LOCALES)[number];
-
 export const UI_LOCALE_STORAGE_KEY = "rakazo.uiLocale";
 
 export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
