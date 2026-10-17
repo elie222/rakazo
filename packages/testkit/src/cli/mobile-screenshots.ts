@@ -87,12 +87,25 @@ async function main() {
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
     for (const { name: flow, window } of FLOWS) {
-      if (window) resizeEmulator(window.size, window.density);
+      // A failed reset is reported without hiding why the flow failed.
+      let flowFailed = false;
+      let flowError: unknown;
       try {
+        if (window) resizeEmulator(window.size, window.density);
         await runFlow(flow, fixture);
-      } finally {
-        if (window) resizeEmulator("reset", "reset");
+      } catch (error) {
+        flowFailed = true;
+        flowError = error;
       }
+      if (window) {
+        try {
+          resizeEmulator("reset", "reset");
+        } catch (resetError) {
+          if (!flowFailed) throw resetError;
+          console.error("Could not reset the emulator window", resetError);
+        }
+      }
+      if (flowFailed) throw flowError;
     }
     await writeFile(
       path.join(REPORT_DIR, "summary.json"),
