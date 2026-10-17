@@ -49,6 +49,7 @@ const CATALOG_MAX_MODELS_RESPONSE_BYTES = 8 * 1024 * 1024;
 const CATALOG_MAX_MODEL_IDS = 8_000;
 const MAX_MODEL_ID_LENGTH = 256;
 
+/** Select response-size and model-count caps, using larger caps for pinned catalogs. */
 function modelsProbeLimits(catalogProbe?: boolean): { maxBytes: number; maxModelIds: number } {
   return catalogProbe
     ? { maxBytes: CATALOG_MAX_MODELS_RESPONSE_BYTES, maxModelIds: CATALOG_MAX_MODEL_IDS }
