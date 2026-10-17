@@ -22,7 +22,7 @@
     "@rakazo/logging": "workspace:*",
     "@rakazo/memory": "workspace:*",
     "hono": "4.13.13",
-    "mermaid": "12.0.0"
+    "mermaid": "11.17.2"
   },
   "devDependencies": {
     "typescript": "7.0.2",
