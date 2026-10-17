@@ -4,7 +4,14 @@ import { normalizeCreateBotProfile } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
-import { Redirect, useFocusEffect, useNavigation, usePathname, useRouter } from "expo-router";
+import {
+  Redirect,
+  useFocusEffect,
+  useGlobalSearchParams,
+  useNavigation,
+  usePathname,
+  useRouter,
+} from "expo-router";
 import type { ReactNode } from "react";
 import {
   createContext,
@@ -110,10 +117,18 @@ const FALLBACK_COLOR = botColors[3];
 // A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
 const TAGLESS_LIST_WIDTH = 360;
 const CompactRowsContext = createContext(false);
+// The chat open beside the list, so its row can show as selected.
+const SelectedChatContext = createContext<string | null>(null);
 // Swipe actions are iOS list behaviour; other platforms keep the long-press sheet.
 const SWIPE_ROWS = Platform.OS === "ios";
 
-type InboxItem = InboxSpaceItem | { type: "search"; hit: SearchHit };
+type PinnedChat =
+  | { kind: "bot"; bot: MobileBot | SpaceBot }
+  | { kind: "group"; group: MobileGroup | SpaceGroup };
+type InboxItem =
+  | InboxSpaceItem
+  | { type: "search"; hit: SearchHit }
+  | { type: "pinned"; chats: PinnedChat[] };
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -415,11 +430,20 @@ function Home({ embedded }: { embedded: boolean }) {
     if (query.trim() && searching) {
       return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
     }
+    // Pinned chats of the current space sit as tiles above the list instead of in it.
+    const pinned: PinnedChat[] = [
+      ...visible.filter((bot) => bot.pinned).map((bot) => ({ kind: "bot" as const, bot })),
+      ...visibleGroups
+        .filter((group) => group.pinned)
+        .map((group) => ({ kind: "group" as const, group })),
+    ];
+    const listedBots = visible.filter((bot) => !bot.pinned);
+    const listedGroups = visibleGroups.filter((group) => !group.pinned);
     const sidebarSpaces =
       spaces.length > 0
         ? spaces.map((space) =>
             space.id === me?.spaceId
-              ? { ...space, bots: visible, groups: visibleGroups, botSections }
+              ? { ...space, bots: listedBots, groups: listedGroups, botSections }
               : {
                   ...space,
                   bots: filterBots(space.bots, query),
@@ -437,13 +461,14 @@ function Home({ embedded }: { embedded: boolean }) {
                 name: t("Personal"),
                 isDefault: true,
                 hasContent: true,
-                bots: visible,
-                groups: visibleGroups,
+                bots: listedBots,
+                groups: listedGroups,
                 botSections,
               },
             ]
           : [];
-    return spaceInboxItems(sidebarSpaces, collapsedRosterParents);
+    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsedRosterParents);
+    return pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     botSections,
     collapsedRosterParents,
@@ -476,6 +501,13 @@ function Home({ embedded }: { embedded: boolean }) {
   const navigation = useNavigation();
   const router = useRouter();
   const pathname = usePathname();
+  const openParams = useGlobalSearchParams<{ botId?: string; groupId?: string }>();
+  const selectedChatId =
+    pathname === "/thread"
+      ? (openParams.botId ?? null)
+      : pathname === "/group-thread"
+        ? (openParams.groupId ?? null)
+        : null;
   // Beside the list, a chat replaces the open one instead of stacking on it.
   const openChat = useCallback(
     (href: Href) => {
@@ -841,6 +873,14 @@ function Home({ embedded }: { embedded: boolean }) {
     ({ item }: { item: InboxItem }) =>
       item.type === "search" ? (
         <SearchRow hit={item.hit} onPress={openSearchHit} />
+      ) : item.type === "pinned" ? (
+        <PinnedTiles
+          chats={item.chats}
+          onOpenBot={openBot}
+          onOpenGroup={openGroup}
+          onLongPressBot={organizeBot}
+          onLongPressGroup={organizeGroup}
+        />
       ) : item.type === "heading" ? (
         item.space ? (
           <View style={styles.spaceHeading}>
@@ -1014,99 +1054,102 @@ function Home({ embedded }: { embedded: boolean }) {
         </View>
       )}
 
-      <CompactRowsContext.Provider value={compactRows}>
-        <FlatList<InboxItem>
-          style={{ flex: 1 }}
-          data={listData}
-          keyExtractor={(item) => {
-            if (item.type === "heading") return `heading-${item.key}`;
-            if (item.type === "bot") return item.bot.id;
-            if (item.type === "group") return `group-${item.group.id}`;
-            return searchHitListKey(item.hit);
-          }}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          indicatorStyle={appearance === "dark" ? "white" : "black"}
-          contentContainerStyle={[
-            styles.list,
-            { paddingHorizontal: columnInset },
-            // iOS moves the active search bar to the bottom and removes the navigation inset.
-            nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
-          ]}
-          contentInsetAdjustmentBehavior="automatic"
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                void refreshBots();
-                void loadActivity();
-              }}
-              tintColor={native.secondaryLabel}
-              colors={[tokens.mutedForeground]}
-              progressBackgroundColor={tokens.muted}
-            />
-          }
-          ListHeaderComponent={
-            <>
-              {searching && !nativeHeader ? (
-                <TextInput
-                  autoFocus
-                  value={query}
-                  onChangeText={setQuery}
-                  placeholder={t("Search")}
-                  placeholderTextColor={tokens.mutedForeground}
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  returnKeyType="search"
-                  keyboardAppearance={appearance}
-                  clearButtonMode="while-editing"
-                  style={styles.searchField}
-                />
-              ) : null}
+      <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>
+        <CompactRowsContext.Provider value={compactRows}>
+          <FlatList<InboxItem>
+            style={{ flex: 1 }}
+            data={listData}
+            keyExtractor={(item) => {
+              if (item.type === "pinned") return "pinned";
+              if (item.type === "heading") return `heading-${item.key}`;
+              if (item.type === "bot") return item.bot.id;
+              if (item.type === "group") return `group-${item.group.id}`;
+              return searchHitListKey(item.hit);
+            }}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            indicatorStyle={appearance === "dark" ? "white" : "black"}
+            contentContainerStyle={[
+              styles.list,
+              { paddingHorizontal: columnInset },
+              // iOS moves the active search bar to the bottom and removes the navigation inset.
+              nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
+            ]}
+            contentInsetAdjustmentBehavior="automatic"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  void refreshBots();
+                  void loadActivity();
+                }}
+                tintColor={native.secondaryLabel}
+                colors={[tokens.mutedForeground]}
+                progressBackgroundColor={tokens.muted}
+              />
+            }
+            ListHeaderComponent={
+              <>
+                {searching && !nativeHeader ? (
+                  <TextInput
+                    autoFocus
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder={t("Search")}
+                    placeholderTextColor={tokens.mutedForeground}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    returnKeyType="search"
+                    keyboardAppearance={appearance}
+                    clearButtonMode="while-editing"
+                    style={styles.searchField}
+                  />
+                ) : null}
 
-              {error ? <Text style={styles.error}>{error}</Text> : null}
-              {spaceRecoveryId ? (
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={spaceBusy}
-                  onPress={() => void chooseInboxSpace(spaceRecoveryId)}
-                  style={styles.recoveryAction}
-                >
-                  <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
-                </Pressable>
-              ) : null}
-              {activityMode &&
-              !searching &&
-              !query.trim() &&
-              (activity.active.length > 0 || activity.recent.length > 0) ? (
-                <ActivitySection activity={activity} bots={bots} />
-              ) : null}
-            </>
-          }
-          ListEmptyComponent={
-            <Text style={styles.empty}>
-              {query.trim() && searching
-                ? searchLoading
-                  ? t("Searching…")
-                  : t("No results")
-                : query.trim()
-                  ? t("No matching bots")
-                  : searching
-                    ? t("Search conversations, files, and routines")
-                    : // Before any load (an offline launch with nothing saved) the bots are unknown.
-                      me
-                      ? t("Tap + to create a bot")
-                      : null}
-            </Text>
-          }
-          ListFooterComponent={
-            inboxNeedsCreateHint(listData) ? (
-              <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
-            ) : null
-          }
-          renderItem={renderItem}
-        />
-      </CompactRowsContext.Provider>
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                {spaceRecoveryId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={spaceBusy}
+                    onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+                    style={styles.recoveryAction}
+                  >
+                    <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+                  </Pressable>
+                ) : null}
+                {activityMode &&
+                !searching &&
+                !query.trim() &&
+                (activity.active.length > 0 || activity.recent.length > 0) ? (
+                  <ActivitySection activity={activity} bots={bots} />
+                ) : null}
+              </>
+            }
+            ListEmptyComponent={
+              <Text style={styles.empty}>
+                {query.trim() && searching
+                  ? searchLoading
+                    ? t("Searching…")
+                    : t("No results")
+                  : query.trim()
+                    ? t("No matching bots")
+                    : searching
+                      ? t("Search conversations, files, and routines")
+                      : // Before any load (an offline launch with nothing saved) the bots are unknown.
+                        me
+                        ? t("Tap + to create a bot")
+                        : null}
+              </Text>
+            }
+            ListFooterComponent={
+              inboxNeedsCreateHint(listData) ? (
+                <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+              ) : null
+            }
+            renderItem={renderItem}
+          />
+        </CompactRowsContext.Provider>
+      </SelectedChatContext.Provider>
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}
@@ -1213,6 +1256,7 @@ function ActivityRow({
 }
 
 function ConversationRow({
+  chatId,
   title,
   preview,
   time,
@@ -1231,6 +1275,7 @@ function ConversationRow({
   accessibilityLabel,
   accessibilityHint,
 }: {
+  chatId?: string;
   title: string;
   preview: string;
   time: string;
@@ -1252,6 +1297,8 @@ function ConversationRow({
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
   const compact = useContext(CompactRowsContext);
+  const openChatId = useContext(SelectedChatContext);
+  const selected = chatId !== undefined && openChatId === chatId;
   const toggleLabel = collapsed
     ? t("Expand {name}", { name: title })
     : t("Collapse {name}", { name: title });
@@ -1279,6 +1326,7 @@ function ConversationRow({
       style={({ pressed }) => [
         styles.row,
         compact ? styles.compactRow : null,
+        selected ? styles.rowSelected : null,
         depth > 0 ? { paddingInlineStart: (compact ? 12 : 16) + depth * 16 } : null,
         pressed && styles.rowPressed,
       ]}
@@ -1388,6 +1436,65 @@ const SearchRow = memo(function SearchRow({
   );
 });
 
+/** Pinned chats as large avatars above the list, opened with a tap and organised with a long press. */
+const PinnedTiles = memo(function PinnedTiles({
+  chats,
+  onOpenBot,
+  onOpenGroup,
+  onLongPressBot,
+  onLongPressGroup,
+}: {
+  chats: PinnedChat[];
+  onOpenBot: (bot: MobileBot | SpaceBot) => void;
+  onOpenGroup: (group: MobileGroup | SpaceGroup) => void;
+  onLongPressBot: (bot: MobileBot | SpaceBot) => void;
+  onLongPressGroup: (group: MobileGroup | SpaceGroup) => void;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
+  const selectedId = useContext(SelectedChatContext);
+  return (
+    <View style={styles.pinnedTiles}>
+      {chats.map((chat) => {
+        const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
+        const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
+        const unread = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
+        return (
+          <Pressable
+            key={`${chat.kind}-${id}`}
+            accessibilityRole="button"
+            accessibilityLabel={name}
+            accessibilityState={{ selected: selectedId === id }}
+            onPress={() => (chat.kind === "bot" ? onOpenBot(chat.bot) : onOpenGroup(chat.group))}
+            onLongPress={() =>
+              chat.kind === "bot" ? onLongPressBot(chat.bot) : onLongPressGroup(chat.group)
+            }
+            style={({ pressed }) => [
+              styles.pinnedTile,
+              selectedId === id ? { backgroundColor: native.fill } : null,
+              pressed && styles.rowPressed,
+            ]}
+          >
+            {chat.kind === "bot" ? (
+              <BotAvatar
+                color={chat.bot.color || FALLBACK_COLOR}
+                identity={chat.bot.id}
+                size={64}
+                status={chat.bot.status}
+                muted={chat.bot.notifyOnFinish === false}
+              />
+            ) : (
+              <GroupAvatar members={chat.group.members} size={64} />
+            )}
+            <Text style={[styles.pinnedName, unread && styles.pinnedUnread]} numberOfLines={1}>
+              {name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+});
+
 const BotRow = memo(function BotRow({
   bot,
   day,
@@ -1433,6 +1540,7 @@ const BotRow = memo(function BotRow({
   const runAction = (action: InboxRowAction) => onAction?.(action, bot);
   const row = (
     <ConversationRow
+      chatId={bot.id}
       title={bot.name}
       preview={preview}
       time={time}
@@ -1495,6 +1603,7 @@ const GroupRow = memo(function GroupRow({
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow
+      chatId={group.id}
       title={group.name}
       preview={preview}
       time={time}
@@ -1611,6 +1720,38 @@ function createHomeStyles() {
       paddingHorizontal: 16,
       paddingVertical: 10,
       gap: 12,
+    },
+    rowSelected: {
+      marginHorizontal: 8,
+      paddingHorizontal: 8,
+      borderRadius: 16,
+      backgroundColor: native.fill,
+    },
+    pinnedTiles: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      paddingHorizontal: 8,
+      paddingTop: 4,
+      paddingBottom: 12,
+    },
+    pinnedTile: {
+      width: "33.33%",
+      alignItems: "center",
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+      borderRadius: 16,
+      gap: 6,
+    },
+    pinnedName: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      fontWeight: "500",
+      textAlign: "center",
+      writingDirection: "auto",
+    },
+    pinnedUnread: {
+      color: native.label,
+      fontWeight: "700",
     },
     compactRow: {
       paddingHorizontal: 12,
