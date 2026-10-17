@@ -519,6 +519,20 @@ export default function BotSettingsScreen() {
               contentContainerStyle={{ gap: 10, marginTop: 8 }}
               accessibilityRole="radiogroup"
             >
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityLabel={t("Default")}
+                accessibilityState={{ checked: avatarShape(color) === null }}
+                onPress={() => setColor((current) => avatarColor(current))}
+                style={{
+                  padding: 4,
+                  borderRadius: 14,
+                  borderWidth: 2,
+                  borderColor: avatarShape(color) === null ? tokens.foreground : "transparent",
+                }}
+              >
+                <BotAvatar color={avatarColor(color)} identity={bot.id} size={36} />
+              </Pressable>
               {Array.from({ length: BOT_AVATAR_SHAPE_COUNT }, (_, shape) => (
                 <Pressable
                   key={shape}

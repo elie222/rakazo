@@ -26,6 +26,11 @@ export function createThreadHeaderStyles() {
       fontSize: 18,
       fontWeight: "600",
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 20,
+    },
     circleButton: {
       flex: 1,
       borderRadius: 999,

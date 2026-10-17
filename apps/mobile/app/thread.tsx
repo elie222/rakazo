@@ -870,6 +870,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       ...(iosAtLeast(26)
         ? {
             unstable_headerRightItems: () => [
+              ...(inGroup || readOnly
+                ? []
+                : [
+                    {
+                      type: "button" as const,
+                      accessibilityLabel: t("Open computer"),
+                      icon: { type: "sfSymbol" as const, name: "desktopcomputer" },
+                      onPress: openBotComputer,
+                    },
+                  ]),
               {
                 type: "button" as const,
                 accessibilityLabel: inGroup ? t("Group settings") : t("Bot actions"),
@@ -906,19 +916,36 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             />
           </Pressable>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("Bot actions")}
-            hitSlop={8}
-            onPress={showBotActions}
-          >
-            <NativeSymbol
-              ios="ellipsis"
-              android="ellipsis-horizontal"
-              size={21}
-              color={tokens.foreground}
-            />
-          </Pressable>
+          <View style={styles.headerActions}>
+            {readOnly ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Open computer")}
+                hitSlop={8}
+                onPress={openBotComputer}
+              >
+                <NativeSymbol
+                  ios="desktopcomputer"
+                  android="desktop-outline"
+                  size={21}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Bot actions")}
+              hitSlop={8}
+              onPress={showBotActions}
+            >
+              <NativeSymbol
+                ios="ellipsis"
+                android="ellipsis-horizontal"
+                size={21}
+                color={tokens.foreground}
+              />
+            </Pressable>
+          </View>
         ),
       ...(split
         ? {
@@ -1000,6 +1027,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       );
   }
 
+  function openBotComputer() {
+    router.push({
+      pathname: "/computer",
+      params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+    });
+  }
+
   const botActions = [
     {
       text: t("Chat settings"),
@@ -1007,14 +1041,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         router.push({
           pathname: "/bot-settings",
           params: { botId: botId ?? "" },
-        }),
-    },
-    {
-      text: t("Open computer"),
-      onPress: () =>
-        router.push({
-          pathname: "/computer",
-          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
         }),
     },
     {
