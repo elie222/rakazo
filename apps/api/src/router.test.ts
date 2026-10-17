@@ -25,16 +25,21 @@ import type { RouterDeps } from "./router.js";
 import { createRouter, enqueueBotIntroRun, HEARTBEAT_MS, SESSION_RECHECK_MS } from "./router.js";
 
 describe("account preferences", () => {
-  function preferencesDeps(avatarStyle: string) {
+  function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
     const update = vi.fn().mockResolvedValue({});
+    const user = { email: "user@rakazo.test", name: "Test User", avatarStyle, timezone };
+    const updateMany = vi.fn(
+      async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
+        if (user.timezone !== where.timezone) return { count: 0 };
+        Object.assign(user, data);
+        return { count: 1 };
+      },
+    );
     const prisma = {
       user: {
         update,
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          email: "user@rakazo.test",
-          name: "Test User",
-          avatarStyle,
-        }),
+        updateMany,
+        findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
       spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -56,7 +61,7 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -140,6 +145,93 @@ describe("account preferences", () => {
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  async function updatePreferences(
+    { handler, actor }: ReturnType<typeof preferencesDeps>,
+    json: unknown,
+  ) {
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    if (!response) throw new Error("no response");
+    return response;
+  }
+
+  it("persists an IANA timezone without touching the avatar style", async () => {
+    const setup = preferencesDeps("organic");
+
+    const response = await updatePreferences(setup, { timezone: "Pacific/Auckland" });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Pacific/Auckland" },
+    });
+  });
+
+  it.each([null, "Europe/London"])(
+    "adopts the browser timezone only while the saved value is null (%s)",
+    async (timezone) => {
+      const setup = preferencesDeps("organic", timezone);
+      const client = createRouterClient(createRouter(setup.deps), {
+        context: { actor: setup.actor } as never,
+      });
+      const me = await client.preferences.adoptTimezone({ timezone: "Pacific/Auckland" });
+      expect(setup.updateMany).toHaveBeenCalledWith({
+        where: { id: "user-1", timezone: null },
+        data: { timezone: "Pacific/Auckland" },
+      });
+      expect(me.timezone).toBe(timezone ?? "Pacific/Auckland");
+      expect(setup.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ timezone: "Mars/Olympus_Mons" }, { timezone: "" }, {}])(
+    "rejects an unknown timezone or an empty update: %j",
+    async (json) => {
+      const setup = preferencesDeps("robot");
+
+      const response = await updatePreferences(setup, json);
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(setup.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects adopting an unknown timezone", async () => {
+    const setup = preferencesDeps("robot");
+    const { response } = await setup.handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { timezone: "Mars/Olympus_Mons" } }),
+      }),
+      { prefix: "/rpc", context: { actor: setup.actor } },
+    );
+
+    expect(response?.status).toBeGreaterThanOrEqual(400);
+    expect(setup.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reports an unset timezone as null", async () => {
+    const { actor, handler } = preferencesDeps("robot");
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/me", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: null }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ timezone: null }),
+    });
   });
 
   it.each(["robot", "organic", "custom-cdn"])(

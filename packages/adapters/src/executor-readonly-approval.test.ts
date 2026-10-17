@@ -187,6 +187,7 @@ function fixture({
     selfUpdateInstructions,
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findFirst: vi.fn(async () =>
         pendingInstructionsRunId ? { id: pendingInstructionsRunId } : null,

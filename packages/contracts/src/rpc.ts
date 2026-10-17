@@ -88,6 +88,7 @@ import {
   ThinkingLevelSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
+  TimeZoneSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
   UpdateExternalConversationPolicyInput,
@@ -191,7 +192,20 @@ export const appContract = {
     portal: oc.output(z.object({ url: z.string().url() })),
   },
   preferences: {
-    update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
+    update: oc
+      .input(
+        z
+          .object({
+            avatarStyle: AvatarStyleSchema.optional(),
+            timezone: TimeZoneSchema.nullable().optional(),
+          })
+          .refine((input) => input.avatarStyle !== undefined || input.timezone !== undefined, {
+            message: "Nothing to update",
+          }),
+      )
+      .output(MeSchema),
+    /** Saves a detected timezone only while none is saved, so it never replaces a choice. */
+    adoptTimezone: oc.input(z.object({ timezone: TimeZoneSchema })).output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),
