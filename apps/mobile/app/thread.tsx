@@ -3322,10 +3322,11 @@ const MessageRow = memo(function MessageRow({
         : undefined,
     [actions, message.id, enableJump, index],
   );
-  const { actionProps, menu, onMenuAction } = useMemo<{
+  const { actionProps, menu, onMenuAction, likeMessage } = useMemo<{
     actionProps: MessageActionProps;
     menu: ReturnType<typeof buildMessageContextMenu>;
     onMenuAction: (id: string) => void;
+    likeMessage?: () => void;
   }>(() => {
     const messageText = selectableMobileMessageText(message);
     const includeQuote =
@@ -3473,6 +3474,7 @@ const MessageRow = memo(function MessageRow({
       });
     return {
       menu,
+      likeMessage: includeReact ? () => react("👍") : undefined,
       onMenuAction: (id) => {
         const reaction = messageMenuReaction(id);
         if (reaction && (MESSAGE_REACTIONS as readonly string[]).includes(reaction)) {
@@ -3573,6 +3575,7 @@ const MessageRow = memo(function MessageRow({
             colorScheme={colorScheme}
             onAction={onMenuAction}
             onLongPress={actionProps.onLongPress}
+            onDoubleTap={likeMessage}
           >
             <ThreadReadOnlyContext.Provider value={readOnly}>
               <MessageBubble
