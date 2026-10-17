@@ -82,7 +82,22 @@ describe("Railway computers", () => {
       }),
     );
     expect(vi.mocked(Sandbox.create).mock.calls[0]?.[0]).not.toHaveProperty("env");
+    expect(vi.mocked(Sandbox.create).mock.calls[0]?.[0]).not.toHaveProperty("region");
     expect(JSON.stringify(ref)).not.toContain('"token"');
+  });
+
+  it("creates computers in the configured region and reconnects without one", async () => {
+    const regional = new RailwaySandboxProvider({
+      token: "test",
+      environmentId: "environment",
+      region: "asia-southeast1-eqsg3a",
+    });
+    await regional.provision({ botId: "bot", homePath: "/unused" }, ctx);
+    expect(Sandbox.create).toHaveBeenCalledWith(
+      expect.objectContaining({ region: "asia-southeast1-eqsg3a" }),
+    );
+    await regional.keepAlive(computer);
+    expect(vi.mocked(Sandbox.connect).mock.calls.at(-1)?.[1]).not.toHaveProperty("region");
   });
 
   it.each(["ISOLATED", undefined, "unexpected"])(
