@@ -101,6 +101,14 @@ vi.mock("./i18n", () => {
   return { useI18n: () => ({ t }) };
 });
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("./bot-avatar-edit", () => ({
+  avatarColor: (value: string) => value,
+  avatarShape: () => null,
+  isAvatarPhoto: () => false,
+  pickAvatarPhoto: async () => null,
+  withAvatarColor: (_value: string, color: string) => color,
+  withAvatarShape: (value: string) => value,
+}));
 vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
 vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
 vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));

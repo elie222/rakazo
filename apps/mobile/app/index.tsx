@@ -431,9 +431,12 @@ function Home({ embedded }: { embedded: boolean }) {
       return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
     }
     // Pinned chats of the current space sit as tiles above the list instead of in it.
+    const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
-      ...visible.filter((bot) => bot.pinned).map((bot) => ({ kind: "bot" as const, bot })),
-      ...visibleGroups
+      ...[...visible, ...otherSpaces.flatMap((space) => filterBots(space.bots, query))]
+        .filter((bot) => bot.pinned)
+        .map((bot) => ({ kind: "bot" as const, bot })),
+      ...[...visibleGroups, ...otherSpaces.flatMap((space) => space.groups)]
         .filter((group) => group.pinned)
         .map((group) => ({ kind: "group" as const, group })),
     ];
@@ -446,11 +449,13 @@ function Home({ embedded }: { embedded: boolean }) {
               ? { ...space, bots: listedBots, groups: listedGroups, botSections }
               : {
                   ...space,
-                  bots: filterBots(space.bots, query),
-                  groups: space.groups.filter((group) =>
-                    `${group.name} ${group.preview}`
-                      .toLowerCase()
-                      .includes(query.trim().toLowerCase()),
+                  bots: filterBots(space.bots, query).filter((bot) => !bot.pinned),
+                  groups: space.groups.filter(
+                    (group) =>
+                      !group.pinned &&
+                      `${group.name} ${group.preview}`
+                        .toLowerCase()
+                        .includes(query.trim().toLowerCase()),
                   ),
                 },
           )
@@ -766,11 +771,12 @@ function Home({ embedded }: { embedded: boolean }) {
     },
     [openChat],
   );
+  // A chat in another space is organised from that space, so switch to it first.
   const organizeBot = useCallback((bot: MobileBot | SpaceBot) => {
-    setOrganizeTarget({ kind: "bot", id: bot.id });
+    void openMobileSpace(bot.spaceId, () => setOrganizeTarget({ kind: "bot", id: bot.id }));
   }, []);
   const organizeGroup = useCallback((group: MobileGroup | SpaceGroup) => {
-    setOrganizeTarget({ kind: "group", id: group.id });
+    void openMobileSpace(group.spaceId, () => setOrganizeTarget({ kind: "group", id: group.id }));
   }, []);
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
@@ -932,7 +938,7 @@ function Home({ embedded }: { embedded: boolean }) {
           group={item.group}
           day={day}
           onPress={openGroup}
-          onLongPress={item.group.spaceId === me?.spaceId ? organizeGroup : undefined}
+          onLongPress={organizeGroup}
           onAction={SWIPE_ROWS && item.group.spaceId === me?.spaceId ? groupAction : undefined}
         />
       ) : (
@@ -944,7 +950,7 @@ function Home({ embedded }: { embedded: boolean }) {
           collapsed={collapsedRosterParents.has(item.bot.id)}
           onToggleChildren={toggleRosterParent}
           onPress={openBot}
-          onLongPress={item.bot.spaceId === me?.spaceId ? organizeBot : undefined}
+          onLongPress={organizeBot}
           onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
         />
       ),

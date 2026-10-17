@@ -838,4 +838,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not restore instructions": "Не удалось восстановить инструкции",
   "Hide chats": "Скрыть чаты",
   "Show chats": "Показать чаты",
+  "Choose photo": "Выбрать фото",
+  "Remove photo": "Удалить фото",
+  Shape: "Форма",
+  "Shape {number}": "Форма {number}",
+  "Could not use that photo": "Не удалось использовать это фото",
 };
