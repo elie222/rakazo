@@ -833,8 +833,8 @@ function Home({ embedded }: { embedded: boolean }) {
     ) => {
       if (action === "read" || action === "unread") {
         const key = unreadOverrideKey(kind, chat.id);
-        // Queued changes belong to the session and Space the chat was swiped in.
-        const spaceId = selectedSpaceId();
+        // Queued changes belong to the session and the chat's own Space.
+        const spaceId = chat.spaceId ?? selectedSpaceId();
         const session = currentSessionGeneration();
         setUnreadOverrides((current) => new Map(current).set(key, action === "unread"));
         await sendReadState(
@@ -873,7 +873,7 @@ function Home({ embedded }: { embedded: boolean }) {
       }
       if (action === "archive") {
         try {
-          await rpc(`${kind}s/archive`, chatTarget(kind, chat.id));
+          await chatRpc(chat.spaceId, `${kind}s/archive`, chatTarget(kind, chat.id));
         } catch (err) {
           Alert.alert(
             kind === "bot" ? t("Could not archive bot") : t("Could not update chat"),
@@ -1522,6 +1522,8 @@ const PinnedTiles = memo(function PinnedTiles({
             onLongPress={Platform.OS === "ios" ? undefined : organize}
             style={({ pressed }) => [
               styles.pinnedTile,
+              // On iOS the menu wrapper takes the tile's share of the row.
+              Platform.OS === "ios" ? { width: "100%" } : null,
               selectedId === id ? { backgroundColor: native.fill } : null,
               pressed && styles.rowPressed,
             ]}
@@ -1557,6 +1559,7 @@ const PinnedTiles = memo(function PinnedTiles({
             ]}
             colorScheme={appearance}
             shouldOpenOnLongPress
+            style={{ width: styles.pinnedTile.width }}
             onPressAction={({ nativeEvent }) => {
               if (nativeEvent.event === "organize") organize();
               const action = actions.find((item) => item === nativeEvent.event);

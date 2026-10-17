@@ -283,7 +283,7 @@ describe("inbox swipe handlers", () => {
     const run = new Function(...Object.keys(scope), compiled)(...Object.values(scope)) as {
       runRowAction: (
         kind: "bot" | "group",
-        chat: { id: string },
+        chat: { id: string; spaceId?: string },
         action: InboxRowAction,
       ) => Promise<void>;
       updateChat: (
@@ -402,6 +402,22 @@ describe("inbox swipe handlers", () => {
     await h.runRowAction(kind, { id: "x" }, action);
     expect(h.rpc.mock.calls).toEqual([[procedure, input]]);
     expect(h.loadBots).toHaveBeenCalledTimes(1);
+  });
+
+  it("archives a chat from another space in that space", async () => {
+    const h = handlers(async () => ({ ok: true }));
+    await h.runRowAction("group", { id: "x", spaceId: "space-b" }, "archive");
+    expect(h.rpc.mock.calls[0]?.[2]).toMatchObject({
+      requestContext: { headers: { "x-rakazo-space-id": "space-b" } },
+    });
+  });
+
+  it("marks a chat from another space read in that space", async () => {
+    const h = handlers(async () => ({ ok: true }));
+    await h.runRowAction("bot", { id: "x", spaceId: "space-b" }, "read");
+    expect(h.rpc.mock.calls[0]?.[2]).toMatchObject({
+      requestContext: { headers: { "x-rakazo-space-id": "space-b" } },
+    });
   });
 
   it("updates a chat from another space in that space without switching", async () => {
