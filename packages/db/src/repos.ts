@@ -39,6 +39,12 @@ function rosterRunErrorId(
   return latestRun.id;
 }
 
+// Roster rows show when the chat last moved. Bot.updatedAt also moves on settings, pin,
+// section and reorder writes, so the newest message's time wins when the chat has one.
+function rosterUpdatedAt(newestMessage: { createdAt: Date } | undefined, botUpdatedAt: Date) {
+  return newestMessage?.createdAt ?? botUpdatedAt;
+}
+
 function mapBot(
   bot: {
     id: string;
@@ -74,6 +80,7 @@ function mapBot(
   preview = "",
   status = "idle",
   runErrorId: string | null = null,
+  updatedAt: Date = bot.updatedAt,
 ): Bot {
   if (!bot.thread) {
     throw new IsolationError("Bot is missing its thread");
@@ -101,7 +108,7 @@ function mapBot(
     runErrorId,
     computerMode: bot.computer ? parseComputerMode(bot.computer.scope) : "team",
     createdAt: bot.createdAt.toISOString(),
-    updatedAt: bot.updatedAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
     modelProvider: bot.modelProvider ?? null,
@@ -160,7 +167,7 @@ export function createRepos(prisma: PrismaClient) {
             messages: {
               orderBy: { seq: "desc" },
               take: 1,
-              select: { blocks: true },
+              select: { blocks: true, createdAt: true },
             },
             runs: latestBotRunSelection,
           },
@@ -185,7 +192,7 @@ export function createRepos(prisma: PrismaClient) {
         preview: previewFromBlocks(bot.thread.messages[0]?.blocks),
         status: bot.runs[0]?.status ?? "idle",
         runErrorId: rosterRunErrorId(bot.thread.runs[0], bot.runs[0]),
-        updatedAt: bot.updatedAt.toISOString(),
+        updatedAt: rosterUpdatedAt(bot.thread.messages[0], bot.updatedAt).toISOString(),
       };
     });
   }
@@ -351,6 +358,7 @@ export function createRepos(prisma: PrismaClient) {
       return Promise.all(
         bots.map(async (bot) => {
           let messages = bot.thread?.messages ?? [];
+          const updatedAt = rosterUpdatedAt(messages[0], bot.updatedAt);
           let preview = "";
           for (let attempt = 0; attempt < 5; attempt++) {
             const windowRunIds = [
@@ -387,6 +395,7 @@ export function createRepos(prisma: PrismaClient) {
             preview,
             bot.runs[0]?.status ?? "idle",
             rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
+            updatedAt,
           );
         }),
       );
