@@ -98,9 +98,6 @@ export default function GroupSettingsScreen() {
             fontSize: 16,
           }}
         />
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14, marginTop: 20 }}>
-          {t("Members")}
-        </Text>
         <BotMemberPicker
           bots={bots}
           selected={selected}

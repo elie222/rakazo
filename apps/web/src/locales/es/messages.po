@@ -368,6 +368,11 @@ msgstr "Actividad"
 msgid "Add"
 msgstr "Agregar"
 
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Add {0} to the group"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "Agrega un modelo en Configuración para usarlo."
@@ -2332,6 +2337,10 @@ msgstr "El archivo supera el límite de subida de {0}."
 msgid "Files"
 msgstr ""
 
+#: src/pages/GroupPanel.tsx
+msgid "Filter bots"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr ""
@@ -2869,13 +2878,10 @@ msgstr "Medio"
 msgid "Medium"
 msgstr ""
 
+#. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
-msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "Miembros ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-
-#: src/pages/GroupPanel.tsx
-msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "Miembros (elige {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
+msgid "Members ({0})"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3147,6 +3153,7 @@ msgstr "Aún no hay actividad del bot."
 msgid "No bots"
 msgstr ""
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr ""
@@ -3186,6 +3193,10 @@ msgstr ""
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "Aún no hay servidores MCP."
+
+#: src/pages/GroupPanel.tsx
+msgid "No members yet"
+msgstr ""
 
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "No messages with {peerBotName} yet."
@@ -3481,6 +3492,10 @@ msgstr "En pausa"
 msgid "Photo"
 msgstr "Foto"
 
+#: src/pages/GroupPanel.tsx
+msgid "Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
 msgstr "Elige un modelo del catálogo."
@@ -3696,6 +3711,11 @@ msgstr "Quitar"
 #: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "Quitar {0}"
+
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Remove {0} from the group"
+msgstr ""
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
@@ -4177,6 +4197,10 @@ msgstr "Habilidades compartidas"
 msgid "Shell"
 msgstr "Shell"
 
+#: src/pages/GroupPanel.tsx
+msgid "Show all"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -4196,6 +4220,10 @@ msgstr "Mostrar más"
 #: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "Mostrar contraseña"
+
+#: src/pages/GroupPanel.tsx
+msgid "Show selected"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Show settings"

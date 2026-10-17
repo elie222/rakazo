@@ -4036,6 +4036,10 @@ export function ShellPage() {
                 bots={bots}
                 onCancel={() => setPanel(null)}
                 onCreate={(input) => createGroup(input)}
+                onOpenBot={(botId) => {
+                  setPanel(null);
+                  openBot(botId);
+                }}
               />
             ) : null}
             {panel === "group-settings" && activeGroup ? (
@@ -4061,6 +4065,7 @@ export function ShellPage() {
                   await refreshBots().catch(() => undefined);
                 }}
                 onClose={() => setPanel(null)}
+                onOpenBot={openBot}
                 covered={computerOpen}
               />
             ) : null}

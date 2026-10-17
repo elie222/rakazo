@@ -368,6 +368,11 @@ msgstr "动态"
 msgid "Add"
 msgstr "添加"
 
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Add {0} to the group"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "请在设置中添加模型后再使用。"
@@ -2332,6 +2337,10 @@ msgstr "文件超过 {0} 的上传限制。"
 msgid "Files"
 msgstr ""
 
+#: src/pages/GroupPanel.tsx
+msgid "Filter bots"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr ""
@@ -2869,13 +2878,10 @@ msgstr "中"
 msgid "Medium"
 msgstr ""
 
+#. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
-msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "成员（{GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}）"
-
-#: src/pages/GroupPanel.tsx
-msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "成员（选择 {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX} 个）"
+msgid "Members ({0})"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -3147,6 +3153,7 @@ msgstr "还没有机器人活动。"
 msgid "No bots"
 msgstr ""
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr ""
@@ -3186,6 +3193,10 @@ msgstr "还没有安装 MCP 或 API 工具源。"
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "还没有 MCP 服务器。"
+
+#: src/pages/GroupPanel.tsx
+msgid "No members yet"
+msgstr ""
 
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "No messages with {peerBotName} yet."
@@ -3481,6 +3492,10 @@ msgstr "已暂停"
 msgid "Photo"
 msgstr "照片"
 
+#: src/pages/GroupPanel.tsx
+msgid "Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
 msgstr "请从目录中选择模型。"
@@ -3696,6 +3711,11 @@ msgstr "移除"
 #: src/pages/Shell.tsx
 msgid "Remove {0}"
 msgstr "移除 {0}"
+
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Remove {0} from the group"
+msgstr ""
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
@@ -4177,6 +4197,10 @@ msgstr "共享技能"
 msgid "Shell"
 msgstr "Shell"
 
+#: src/pages/GroupPanel.tsx
+msgid "Show all"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -4196,6 +4220,10 @@ msgstr "显示更多"
 #: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "显示密码"
+
+#: src/pages/GroupPanel.tsx
+msgid "Show selected"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Show settings"
