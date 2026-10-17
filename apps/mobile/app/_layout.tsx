@@ -64,6 +64,7 @@ registerSessionDiskCache(clearSavedChats);
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 // Screens that take the whole window even when it is wide enough for the chat list beside them.
+const DIVIDER_GRAB_WIDTH = 24;
 const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/image", "/computer"]);
 
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
@@ -84,6 +85,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
   }, [inboxWidth, paneWidth]);
   const resize = Gesture.Pan()
     .runOnJS(true)
+    .activeOffsetX([-4, 4])
     .onStart(() => {
       dragStart.current = paneWidth.value;
     })
@@ -92,40 +94,52 @@ function SplitFrame({ children }: { children: ReactNode }) {
     })
     .onEnd(() => chooseInboxWidth(paneWidth.value));
   const paneStyle = useAnimatedStyle(() => ({ width: paneWidth.value }));
+  const handleStyle = useAnimatedStyle(() => ({ left: paneWidth.value - DIVIDER_GRAB_WIDTH / 2 }));
   return (
     <View style={{ flex: 1, flexDirection: "row" }}>
       {showsInbox ? (
-        <Animated.View style={paneStyle}>
+        <Animated.View
+          style={[
+            paneStyle,
+            { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.border },
+          ]}
+        >
           <InboxPane />
         </Animated.View>
       ) : null}
+      {/* Keeps its place among the children so the navigation stack survives folding. */}
+      <View style={{ flex: 1 }}>{children}</View>
       {showsInbox ? (
         <GestureDetector gesture={resize}>
-          {/* A wider strip than the line it draws, overlapping both panes, so it is easy to grab. */}
-          <View
+          {/* Drawn last and wider than the line, over both panes, so it is easy to grab. */}
+          <Animated.View
             accessible={false}
-            style={{ width: 16, marginHorizontal: -8, zIndex: 1, alignItems: "center" }}
+            collapsable={false}
+            style={[
+              {
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                width: DIVIDER_GRAB_WIDTH,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "transparent",
+              },
+              handleStyle,
+            ]}
           >
             <View
-              style={{ flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: tokens.border }}
-            />
-            <View
               style={{
-                position: "absolute",
-                top: "50%",
                 width: 5,
                 height: 40,
-                marginTop: -20,
                 borderRadius: 3,
                 backgroundColor: tokens.mutedForeground,
                 opacity: 0.6,
               }}
             />
-          </View>
+          </Animated.View>
         </GestureDetector>
       ) : null}
-      {/* Keeps its place among the children so the navigation stack survives folding. */}
-      <View style={{ flex: 1 }}>{children}</View>
     </View>
   );
 }

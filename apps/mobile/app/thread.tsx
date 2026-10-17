@@ -938,7 +938,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
               </Pressable>
             ),
           }
-        : {}),
+        : // Folding back takes the list away, so the chat gets its back button again.
+          { headerBackVisible: true, headerLeft: undefined }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
         : {}),
