@@ -81,7 +81,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import {
@@ -210,6 +209,7 @@ import {
   loadVerifiedIntegrationsScope,
   subscribeSessionGeneration,
 } from "../lib/session";
+import { setInboxHidden, useSplitView } from "../lib/split-view";
 import type { SendAttempt } from "../lib/thread-feedback";
 import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
@@ -411,7 +411,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const { t, locale } = useI18n();
   const navigation = useNavigation();
   const router = useRouter();
-  const { width: windowWidth } = useWindowDimensions();
+  // Beside the chat list on a wide window, the chat has only the width the list leaves.
+  const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = iosAtLeast(26) ? nativeHeaderHeight : 0;
   const insets = useSafeAreaInsets();
@@ -918,11 +919,33 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             />
           </Pressable>
         ),
+      ...(split
+        ? {
+            headerBackVisible: false,
+            headerLeft: () => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={inboxHidden ? t("Show chats") : t("Hide chats")}
+                hitSlop={8}
+                onPress={() => setInboxHidden(!inboxHidden)}
+              >
+                <NativeSymbol
+                  ios={inboxHidden ? "sidebar.left" : "arrow.up.left.and.arrow.down.right"}
+                  android={inboxHidden ? "contract-outline" : "expand-outline"}
+                  size={21}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+            ),
+          }
+        : {}),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
         : {}),
     });
   }, [
+    split,
+    inboxHidden,
     readOnly,
     restoring,
     botId,

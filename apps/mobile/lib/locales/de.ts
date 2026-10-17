@@ -836,4 +836,6 @@ export const DE_MESSAGES: Record<string, string> = {
   Undo: "Rückgängig",
   "Update instructions?": "Anweisungen aktualisieren?",
   "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
+  "Hide chats": "Chats ausblenden",
+  "Show chats": "Chats einblenden",
 };

@@ -3,7 +3,8 @@ import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/co
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
-import { Redirect, useFocusEffect, useNavigation, useRouter } from "expo-router";
+import type { Href } from "expo-router";
+import { Redirect, useFocusEffect, useNavigation, usePathname, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import {
   memo,
@@ -100,6 +101,7 @@ import {
   currentSessionGeneration,
   subscribeSessionGeneration,
 } from "../lib/session";
+import { useSplitView } from "../lib/split-view";
 import { errorText } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
@@ -116,13 +118,25 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   open();
 }
 
-export default function HomeSession() {
-  const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
-  const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  return <Home key={`${generation}:${ready}`} />;
+export default function HomeRoute() {
+  const { split } = useSplitView();
+  const styles = useThemedStyles(createHomeStyles);
+  // A wide window shows the chat list beside the stack, so home itself stays empty.
+  return split ? <View style={styles.screen} /> : <HomeSession />;
 }
 
-function Home() {
+/** The chat list beside the open chat on a wide window. */
+export function InboxPane() {
+  return <HomeSession embedded />;
+}
+
+function HomeSession({ embedded = false }: { embedded?: boolean }) {
+  const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
+  const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
+  return <Home key={`${generation}:${ready}`} embedded={embedded} />;
+}
+
+function Home({ embedded }: { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
@@ -445,14 +459,28 @@ function Home() {
     : null;
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps the inbox in a centred column.
-  const columnInset = readableGutter(
-    useWindowDimensions().width,
-    Math.max(insets.left, insets.right),
-  );
+  const windowWidth = useWindowDimensions().width;
+  const columnInset = embedded
+    ? 0
+    : readableGutter(windowWidth, Math.max(insets.left, insets.right));
   // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
-  const nativeHeader = iosAtLeast(26);
+  // The list beside a chat has no navigation bar of its own.
+  const nativeHeader = iosAtLeast(26) && !embedded;
   const navigation = useNavigation();
   const router = useRouter();
+  const pathname = usePathname();
+  // Beside the list, a chat replaces the open one instead of stacking on it.
+  const openChat = useCallback(
+    (href: Href) => {
+      if (!embedded) router.push(href);
+      else if (pathname === "/thread" || pathname === "/group-thread") router.replace(href);
+      else {
+        if (router.canDismiss()) router.dismissAll();
+        router.push(href);
+      }
+    },
+    [embedded, pathname, router],
+  );
 
   const chooseInboxSpace = useCallback(
     async (spaceId: string) => {
@@ -561,7 +589,7 @@ function Home() {
       });
       void refreshBots().catch(() => undefined);
       allowFocusPrompt(bot.id);
-      router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
           .then(() => true)
@@ -574,7 +602,7 @@ function Home() {
     } finally {
       creatingBotRef.current = false;
     }
-  }, [refreshBots, router, t]);
+  }, [openChat, refreshBots, t]);
 
   const runCreateAction = useCallback(
     (action: "bot" | "group" | "space") => {
@@ -685,19 +713,19 @@ function Home() {
     (bot: MobileBot | SpaceBot) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       void openMobileSpace(bot.spaceId, () =>
-        router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } }),
+        openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } }),
       );
     },
-    [router],
+    [openChat],
   );
   const openGroup = useCallback(
     (group: MobileGroup | SpaceGroup) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       void openMobileSpace(group.spaceId, () =>
-        router.push({ pathname: "/group-thread", params: { groupId: group.id, name: group.name } }),
+        openChat({ pathname: "/group-thread", params: { groupId: group.id, name: group.name } }),
       );
     },
-    [router],
+    [openChat],
   );
   const organizeBot = useCallback((bot: MobileBot | SpaceBot) => {
     setOrganizeTarget({ kind: "bot", id: bot.id });

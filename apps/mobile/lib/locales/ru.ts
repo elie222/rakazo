@@ -836,4 +836,6 @@ export const RU_MESSAGES: Record<string, string> = {
   Undo: "Отменить",
   "Update instructions?": "Обновить инструкции?",
   "Could not restore instructions": "Не удалось восстановить инструкции",
+  "Hide chats": "Скрыть чаты",
+  "Show chats": "Показать чаты",
 };
