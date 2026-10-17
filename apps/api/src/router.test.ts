@@ -204,6 +204,21 @@ describe("account preferences", () => {
     },
   );
 
+  it("rejects adopting an unknown timezone", async () => {
+    const setup = preferencesDeps("robot");
+    const { response } = await setup.handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { timezone: "Mars/Olympus_Mons" } }),
+      }),
+      { prefix: "/rpc", context: { actor: setup.actor } },
+    );
+
+    expect(response?.status).toBeGreaterThanOrEqual(400);
+    expect(setup.updateMany).not.toHaveBeenCalled();
+  });
+
   it("reports an unset timezone as null", async () => {
     const { actor, handler } = preferencesDeps("robot");
     const { response } = await handler.handle(

@@ -192,7 +192,6 @@ export const appContract = {
     portal: oc.output(z.object({ url: z.string().url() })),
   },
   preferences: {
-    adoptTimezone: oc.input(z.object({ timezone: TimeZoneSchema })).output(MeSchema),
     update: oc
       .input(
         z
@@ -205,6 +204,8 @@ export const appContract = {
           }),
       )
       .output(MeSchema),
+    /** Saves a detected timezone only while none is saved, so it never replaces a choice. */
+    adoptTimezone: oc.input(z.object({ timezone: TimeZoneSchema })).output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),

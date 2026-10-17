@@ -835,15 +835,6 @@ export function createRouter(deps: RouterDeps) {
       ),
     },
     preferences: {
-      adoptTimezone: authed.preferences.adoptTimezone.handler(
-        async ({ context, input }): Promise<Me> => {
-          await deps.prisma.user.updateMany({
-            where: { id: context.actor.userId, timezone: null },
-            data: { timezone: input.timezone },
-          });
-          return meDto(deps, context.actor);
-        },
-      ),
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         await deps.prisma.user.update({
           where: { id: context.actor.userId },
@@ -854,6 +845,16 @@ export function createRouter(deps: RouterDeps) {
         });
         return meDto(deps, context.actor);
       }),
+      adoptTimezone: authed.preferences.adoptTimezone.handler(
+        async ({ context, input }): Promise<Me> => {
+          // Conditional in one statement: a concurrent explicit save always wins.
+          await deps.prisma.user.updateMany({
+            where: { id: context.actor.userId, timezone: null },
+            data: { timezone: input.timezone },
+          });
+          return meDto(deps, context.actor);
+        },
+      ),
     },
     spaces: {
       list: authed.spaces.list.handler(async ({ context }) =>
