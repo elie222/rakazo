@@ -15,3 +15,16 @@ export function timezoneOptions(current?: string | null): string[] {
   if (current) zones.add(current);
   return [...zones].sort((a, b) => a.localeCompare(b));
 }
+
+/** The runtime's own spelling of a zone, so aliases such as Asia/Kolkata and Asia/Calcutta match. */
+function canonicalTimeZone(zone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return zone;
+  }
+}
+
+export function sameTimeZone(a: string, b: string): boolean {
+  return a === b || canonicalTimeZone(a) === canonicalTimeZone(b);
+}

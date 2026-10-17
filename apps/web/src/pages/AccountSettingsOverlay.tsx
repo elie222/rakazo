@@ -34,7 +34,7 @@ import {
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
-import { localTimezone, timezoneOptions } from "../lib/local-timezone";
+import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import {
   getRemoteImagesPreference,
   setRemoteImagesPreference,
@@ -232,16 +232,11 @@ export function GeneralSettingsPanels({
           className="rounded-xl border border-border px-4 py-4"
           data-testid="timezone-settings"
         >
-          <h3 className="text-[15px] font-medium text-foreground">
-            <Label htmlFor={timezoneId} className="text-[15px] font-medium">
-              <Trans>Timezone</Trans>
-            </Label>
+          <h3 id={timezoneId} className="text-[15px] font-medium text-foreground">
+            <Trans>Timezone</Trans>
           </h3>
-          <p className="mt-1 text-[13px] text-muted-foreground/80">
-            <Trans>Bots use it for the current time, and new routines start in it.</Trans>
-          </p>
           <NativeSelect
-            id={timezoneId}
+            aria-labelledby={timezoneId}
             data-testid="timezone-select"
             value={timezone ?? deviceTimezone}
             disabled={timezonePending}
@@ -254,16 +249,18 @@ export function GeneralSettingsPanels({
               </NativeSelectOption>
             ))}
           </NativeSelect>
-          {timezone && timezone !== deviceTimezone ? (
+          {timezone && !sameTimeZone(timezone, deviceTimezone) ? (
             <Button
               variant="outline"
               size="sm"
-              className="mt-3"
+              className="mt-3 h-auto max-w-full py-1.5 text-left whitespace-normal"
               disabled={timezonePending}
               data-testid="timezone-use-device"
               onClick={() => void chooseTimezone(deviceTimezone)}
             >
-              <Trans>Use this device's timezone ({deviceTimezone.replaceAll("_", " ")})</Trans>
+              <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
+                Use {deviceTimezone.replaceAll("_", " ")}
+              </Trans>
             </Button>
           ) : null}
           {timezoneError ? (
