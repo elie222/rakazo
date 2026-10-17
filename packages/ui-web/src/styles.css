@@ -8,6 +8,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-dialog: var(--dialog);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
