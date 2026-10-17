@@ -1,7 +1,14 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
+import {
+  captureScreenshot,
+  chooseOption,
+  completeOnboarding,
+  openUserSettings,
+  rpc,
+  signup,
+} from "./helpers";
 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
@@ -22,7 +29,7 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await expect(page.getByRole("checkbox", { name: "Supports images" })).toBeHidden();
   await page.getByText("Advanced", { exact: true }).click();
   await page.getByRole("checkbox", { name: "Supports thinking" }).check();
-  await page.getByRole("combobox", { name: "Reasoning effort", exact: true }).selectOption("low");
+  await chooseOption(page.getByRole("combobox", { name: "Reasoning effort", exact: true }), "Low");
   await page.getByLabel("Maximum output tokens").fill("8192");
   await page.getByLabel("Context limit").fill("65536");
   await page.getByRole("checkbox", { name: "Supports images" }).check();
@@ -59,24 +66,28 @@ test("custom connections persist reasoning support and bot thinking", async ({
   await openUserSettings(page, "models");
   await page.getByText("Advanced", { exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Supports thinking" })).toBeChecked();
-  await expect(page.getByRole("combobox", { name: "Reasoning effort", exact: true })).toHaveValue(
-    "low",
+  await expect(page.getByRole("combobox", { name: "Reasoning effort", exact: true })).toHaveText(
+    "Low",
   );
   await expect(page.getByLabel("Maximum output tokens")).toHaveValue("8192");
   await expect(page.getByLabel("Context limit")).toHaveValue("65536");
   await expect(page.getByRole("checkbox", { name: "Supports images" })).toBeChecked();
   await expect(page.getByLabel("Maximum images per request")).toHaveValue("1");
   await page.getByLabel("Maximum images per request").fill("");
+  // "Default" is the empty option, so choosing it clears the saved level.
+  await chooseOption(
+    page.getByRole("combobox", { name: "Reasoning effort", exact: true }),
+    "Default",
+  );
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
-  const clearedCredentials = await rpc<Array<{ modelId?: string; maxImagesPerPrompt?: number }>>(
-    page,
-    "models/credentials",
-    {},
-  );
-  expect(
-    clearedCredentials.find((entry) => entry.modelId === "arbitrary-model")?.maxImagesPerPrompt,
-  ).toBeUndefined();
+  const clearedCredentials = await rpc<
+    Array<{ modelId?: string; maxImagesPerPrompt?: number; thinkingLevel?: string | null }>
+  >(page, "models/credentials", {});
+  const cleared = clearedCredentials.find((entry) => entry.modelId === "arbitrary-model");
+  expect(cleared).toBeDefined();
+  expect(cleared?.maxImagesPerPrompt).toBeUndefined();
+  expect(cleared?.thinkingLevel ?? null).toBeNull();
   await page.getByRole("button", { name: "Close model settings" }).click();
   await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
   const settings = page.getByTestId("bot-settings");
