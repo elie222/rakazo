@@ -252,6 +252,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not load integrations": "无法加载集成",
   "Could not load model settings": "无法加载模型设置",
   "Could not load routine": "无法加载例行任务",
+  "Could not load routines": "无法加载例行任务",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "无法加载桌面。此设备无法访问屏幕地址。",
   "Could not load this file.": "无法加载此文件。",
@@ -451,6 +452,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
     "将此应用指向你自托管的 Rakazo 源站，地址与你在浏览器中打开的 HTTPS URL 相同。",
   Private: "私有",
+  Profile: "资料",
   Providers: "提供商",
   "Public servers need https://. HTTP only works on your local network.":
     "公共服务器需要 https://。HTTP 仅适用于本地网络。",
@@ -486,6 +488,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Robot: "机器人",
   Routine: "例行任务",
   "Routine link is incomplete": "例行任务链接不完整",
+  Routines: "例行任务",
   Running: "运行中",
   Save: "保存",
   "Saved.": "已保存。",

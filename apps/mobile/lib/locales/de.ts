@@ -323,6 +323,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Teams message": "Teams-Nachricht",
   "This routine no longer exists": "Diese Routine gibt es nicht mehr",
   Webhook: "Webhook",
+  // app/bot-profile.tsx
+  Profile: "Profil",
+  Routines: "Routinen",
+  "Could not load routines": "Routinen konnten nicht geladen werden",
   // app/computer.tsx
   "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",

@@ -1,6 +1,7 @@
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { LayoutChangeEvent } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,9 +40,11 @@ export default function ArtifactsScreen() {
   const { t } = useI18n();
   const styles = useThemedStyles(createStyles);
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
 
   const [bots, setBots] = useState<MobileBot[]>([]);
-  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  const { botId } = useLocalSearchParams<{ botId?: string }>();
+  const [activeBotId, setActiveBotId] = useState<string | null>(botId || null);
   const [items, setItems] = useState<MobileArtifactSummary[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -53,6 +57,8 @@ export default function ArtifactsScreen() {
   const autoFetchedCursorRef = useRef<string | null>(null);
   const activeBotIdRef = useRef(activeBotId);
   const didFocusRef = useRef(false);
+  const chipsRef = useRef<ScrollView>(null);
+  const chipRevealed = useRef(false);
   activeBotIdRef.current = activeBotId;
 
   useLayoutEffect(() => {
@@ -204,6 +210,7 @@ export default function ArtifactsScreen() {
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
           <ScrollView
+            ref={chipsRef}
             horizontal
             contentInsetAdjustmentBehavior="never"
             showsHorizontalScrollIndicator={false}
@@ -221,6 +228,20 @@ export default function ArtifactsScreen() {
                 label={bot.name}
                 active={activeBotId === bot.id}
                 onPress={() => setActiveBotId(bot.id)}
+                // A bot opened from its profile may sit past the edge; scroll just far enough to
+                // show it, once, so a later layout doesn't undo the user's own scrolling.
+                onLayout={
+                  bot.id === botId
+                    ? ({ nativeEvent: { layout } }) => {
+                        if (chipRevealed.current) return;
+                        chipRevealed.current = true;
+                        chipsRef.current?.scrollTo({
+                          x: Math.max(0, layout.x + layout.width + 16 - windowWidth),
+                          animated: false,
+                        });
+                      }
+                    : undefined
+                }
                 avatar={<BotAvatar color={bot.color} identity={bot.id} size={16} />}
               />
             ))}
@@ -299,11 +320,13 @@ function Chip({
   label,
   active,
   onPress,
+  onLayout,
   avatar,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
   avatar?: ReactNode;
 }) {
   const styles = useThemedStyles(createStyles);
@@ -312,6 +335,7 @@ function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       onPress={onPress}
+      onLayout={onLayout}
       style={[styles.chip, active && styles.chipActive]}
     >
       {avatar}
