@@ -31,10 +31,11 @@ test("actions run by default while optional confirmations live in advanced user 
   await expect(settings).toBeFocused();
   await expect(settings.getByText("Advanced", { exact: true })).toBeVisible();
   await expect(settings.getByText("Optional controls most people never need")).toHaveCount(0);
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).not.toBeVisible();
-  await captureScreenshot(page, testInfo, "51-user-settings-advanced-collapsed");
+  // Confirmations are per space, so they live in their own section, not General.
+  await expect(settings.getByRole("heading", { name: "Action confirmations" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "51-user-settings-general");
 
-  await settings.getByText("Advanced", { exact: true }).click();
+  await settings.getByTestId("settings-nav-confirmations").click();
   await expect(settings.getByRole("heading", { name: "Action confirmations" })).toBeVisible();
   await expect(
     settings.getByText(

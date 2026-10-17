@@ -15,7 +15,7 @@ import {
 } from "@rakazo/ui-web";
 import { XIcon } from "lucide-react";
 import { useEffect, useId, useState } from "react";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 import { SpaceMemorySection } from "./KnowledgeSection";
 import {
@@ -69,6 +69,7 @@ export function MemorySettingsOverlay({
   embedded?: boolean;
   onBusyChange?: (busy: boolean) => void;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const providerSelectId = useId();
   const defaultRegistration = defaultMemoryProviderSettings();

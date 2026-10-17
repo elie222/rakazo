@@ -229,6 +229,7 @@ import {
 import { clearSpaceSelection, rpc, selectedSpaceId, selectSpace } from "../lib/rpc";
 import { translateRunError } from "../lib/run-error";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
+import type { SettingsSection } from "../lib/settings-section";
 import { sharedInflight } from "../lib/shared-inflight";
 import {
   activeThreadRuns,
@@ -276,7 +277,6 @@ import {
   RoutineListRow,
   routineNeedsOneShotArm,
 } from "./RoutineEditor";
-import type { SettingsSection } from "./SettingsOverlay";
 import { SpaceSearchResults } from "./SpaceSearch";
 import { BotSettings, CreateBotForm } from "./shell/bot-panel";
 import { BotCreatePicker } from "./shell/bot-picker";
@@ -682,6 +682,11 @@ export function ShellPage() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
+  const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
+  // null: settings follow the space the app is showing.
+  const [settingsSpaceId, setSettingsSpaceId] = useState<string | null>(null);
+  const settingsSpace =
+    spaces.find((space) => space.id === (settingsSpaceId ?? currentSpaceId)) ?? null;
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputerRecoveryHint =
@@ -2439,8 +2444,16 @@ export function ShellPage() {
   }
 
   function openSettings(section: SettingsSection = "general") {
+    setSettingsSpaceId(null);
     setSettingsSection(section);
     setSettingsOpen(true);
+  }
+
+  // Space-scoped sections bind their own rpc client to this space, so another
+  // space's settings open in place without switching the app or reloading.
+  function openSpaceSettings(spaceId: string) {
+    openSettings("models");
+    setSettingsSpaceId(spaceId);
   }
 
   async function createBot(input: {
@@ -4414,6 +4427,17 @@ export function ShellPage() {
               sideOffset={0}
               className="w-[220px]"
             >
+              {spaceMenuTarget ? (
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSpaceMenu(null);
+                    openSpaceSettings(spaceMenuTarget.id);
+                  }}
+                >
+                  <Settings />
+                  {t`Settings`}
+                </DropdownMenuItem>
+              ) : null}
               {spaceMenuTarget?.canRename ? (
                 <DropdownMenuItem
                   onClick={() => {
@@ -4682,6 +4706,10 @@ export function ShellPage() {
       <Suspense fallback={null}>
         {settingsOpen ? (
           <SettingsOverlay
+            space={settingsSpace}
+            spaces={spaces}
+            currentSpaceId={currentSpaceId}
+            onSpaceChange={setSettingsSpaceId}
             name={userName}
             email={session.data?.user.email}
             usage={usage}
