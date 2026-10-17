@@ -910,6 +910,8 @@ function Home({ embedded }: { embedded: boolean }) {
           onOpenGroup={openGroup}
           onLongPressBot={organizeBot}
           onLongPressGroup={organizeGroup}
+          onBotAction={botAction}
+          onGroupAction={groupAction}
         />
       ) : item.type === "heading" ? (
         item.space ? (
@@ -1466,38 +1468,58 @@ const SearchRow = memo(function SearchRow({
   );
 });
 
-/** Pinned chats as large avatars above the list, opened with a tap and organised with a long press. */
+/**
+ * Pinned chats as large avatars above the list, opened with a tap. A long press organises them;
+ * on iOS it opens the row's swipe actions as a context menu instead, since tiles cannot swipe.
+ */
 const PinnedTiles = memo(function PinnedTiles({
   chats,
   onOpenBot,
   onOpenGroup,
   onLongPressBot,
   onLongPressGroup,
+  onBotAction,
+  onGroupAction,
 }: {
   chats: PinnedChat[];
   onOpenBot: (bot: MobileBot | SpaceBot) => void;
   onOpenGroup: (group: MobileGroup | SpaceGroup) => void;
   onLongPressBot: (bot: MobileBot | SpaceBot) => void;
   onLongPressGroup: (group: MobileGroup | SpaceGroup) => void;
+  onBotAction: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
+  onGroupAction: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 }) {
+  const { t } = useI18n();
   const styles = useThemedStyles(createHomeStyles);
   const selectedId = useContext(SelectedChatContext);
+  const appearance = resolveMobileAppearance();
   return (
     <View style={styles.pinnedTiles}>
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
         const unread = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
-        return (
+        const actions = inboxRowActionList(chat.kind === "bot" ? chat.bot : chat.group);
+        const runAction = (action: InboxRowAction) =>
+          chat.kind === "bot" ? onBotAction(action, chat.bot) : onGroupAction(action, chat.group);
+        const organize = () =>
+          chat.kind === "bot" ? onLongPressBot(chat.bot) : onLongPressGroup(chat.group);
+        const tile = (
           <Pressable
             key={`${chat.kind}-${id}`}
             accessibilityRole="button"
             accessibilityLabel={name}
             accessibilityState={{ selected: selectedId === id }}
+            accessibilityActions={actions.map((action) => ({
+              name: action,
+              label: t(INBOX_ROW_ACTIONS[action].label),
+            }))}
+            onAccessibilityAction={(event) => {
+              const action = actions.find((item) => item === event.nativeEvent.actionName);
+              if (action) runAction(action);
+            }}
             onPress={() => (chat.kind === "bot" ? onOpenBot(chat.bot) : onOpenGroup(chat.group))}
-            onLongPress={() =>
-              chat.kind === "bot" ? onLongPressBot(chat.bot) : onLongPressGroup(chat.group)
-            }
+            onLongPress={Platform.OS === "ios" ? undefined : organize}
             style={({ pressed }) => [
               styles.pinnedTile,
               selectedId === id ? { backgroundColor: native.fill } : null,
@@ -1519,6 +1541,30 @@ const PinnedTiles = memo(function PinnedTiles({
               {name}
             </Text>
           </Pressable>
+        );
+        if (Platform.OS !== "ios") return tile;
+        return (
+          <MenuView
+            key={`${chat.kind}-${id}`}
+            actions={[
+              ...actions.map((action) => ({
+                id: action,
+                title: t(INBOX_ROW_ACTIONS[action].label),
+                image: INBOX_ROW_ACTIONS[action].systemImage,
+                attributes: action === "archive" ? { destructive: true } : undefined,
+              })),
+              { id: "organize", title: t("Move to"), image: "folder" },
+            ]}
+            colorScheme={appearance}
+            shouldOpenOnLongPress
+            onPressAction={({ nativeEvent }) => {
+              if (nativeEvent.event === "organize") organize();
+              const action = actions.find((item) => item === nativeEvent.event);
+              if (action) runAction(action);
+            }}
+          >
+            {tile}
+          </MenuView>
         );
       })}
     </View>
