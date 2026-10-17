@@ -42,6 +42,7 @@ import type {
   MemoryCommitRequest,
   MemoryExportRequest,
   MemoryReadRequest,
+  MemoryRemoveRequest,
   MemoryRevision,
   MemorySearchRequest,
   MemorySearchResult,
@@ -212,6 +213,8 @@ export interface MemoryStore {
   read(request: MemoryReadRequest, context: AdapterContext): Promise<MemorySnapshot>;
   search(request: MemorySearchRequest, context: AdapterContext): Promise<MemorySearchResult[]>;
   commit(request: MemoryCommitRequest, context: AdapterContext): Promise<MemoryRevision>;
+  /** Delete one document and its history; `removed` is false when nothing matched. */
+  remove(request: MemoryRemoveRequest, context: AdapterContext): Promise<{ removed: boolean }>;
   exportMarkdown(
     request: MemoryExportRequest,
     context: AdapterContext,

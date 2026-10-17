@@ -7,8 +7,9 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), get: vi.fn() }));
+const memoryApi = vi.hoisted(() => ({ list: vi.fn(async () => []), remove: vi.fn() }));
 vi.mock("../lib/rpc", () => ({
-  rpc: { agentSkills: api, memory: { list: async () => [] } },
+  rpc: { agentSkills: api, memory: memoryApi },
 }));
 vi.mock("../lib/artifact-open", () => ({ downloadArtifactBytes: vi.fn() }));
 vi.mock("@lingui/react/macro", () => {
@@ -140,6 +141,54 @@ it("labels the skills tab as shared and badges built-in and plugin skills", asyn
     expect(container.textContent).toContain("Built-in");
     expect(button("Close")).toBeTruthy();
     expect(container.textContent).not.toContain("Delete");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("deletes a bot memory document after confirmation but never MEMORY.md", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const doc = (id: string, path: string) => ({
+    id,
+    scope: "bot" as const,
+    botId: "bot-fixture",
+    path,
+    content: `# ${path}`,
+    revision: 1,
+    updatedAt: "",
+  });
+  api.list.mockReset();
+  api.list.mockResolvedValue([]);
+  memoryApi.list.mockResolvedValueOnce([
+    doc("memory-index", "MEMORY.md"),
+    doc("memory-project", "projects/retired.md"),
+  ] as never);
+  memoryApi.remove.mockResolvedValue({ ok: true });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (text: string) => {
+    const found = [...container.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes(text),
+    );
+    if (!found) throw new Error(`Missing button: ${text}`);
+    return found;
+  };
+  try {
+    await act(async () =>
+      root.render(<KnowledgeSection botId="bot-fixture" onSkillsChange={() => undefined} />),
+    );
+    await act(async () => button("MEMORY.md").click());
+    expect(container.textContent).not.toContain("Delete");
+    await act(async () => button("projects/retired.md").click());
+    await act(async () => button("Delete").click());
+    expect(memoryApi.remove).not.toHaveBeenCalled();
+    await act(async () => button("Confirm delete").click());
+    expect(memoryApi.remove).toHaveBeenCalledWith({ documentId: "memory-project" });
+    expect(container.textContent).not.toContain("projects/retired.md");
+    expect(container.textContent).toContain("MEMORY.md");
   } finally {
     await act(async () => root.unmount());
     container.remove();

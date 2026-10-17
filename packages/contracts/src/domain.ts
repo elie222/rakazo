@@ -636,6 +636,12 @@ export const MemoryDocumentSchema = z.object({
 });
 export type MemoryDocument = z.infer<typeof MemoryDocumentSchema>;
 
+/** Every bot and Space keeps its MEMORY.md index; other memory documents can be deleted. */
+export const MEMORY_INDEX_PATH = "MEMORY.md";
+export function isDeletableMemoryDocument(path: string): boolean {
+  return path !== MEMORY_INDEX_PATH;
+}
+
 export const ConnectionSchema = z.object({
   id: Id,
   connectorId: z.string(),

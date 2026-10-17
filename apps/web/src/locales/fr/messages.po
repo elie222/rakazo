@@ -1640,6 +1640,7 @@ msgstr "Impossible de joindre le serveur du modèle."
 msgid "Could not reach the server"
 msgstr "Impossible d'atteindre le serveur"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "Impossible de retirer"

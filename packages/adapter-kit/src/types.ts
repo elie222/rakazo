@@ -310,6 +310,14 @@ export interface MemoryCommitRequest {
   sourceThreadId?: string;
 }
 
+export interface MemoryRemoveRequest {
+  /** When set, only this exact document is removed, never a newer one at the same path. */
+  id?: string;
+  scope: "bot" | "user";
+  botId?: string;
+  path: string;
+}
+
 export interface MemoryRevision {
   id: string;
   path: string;
