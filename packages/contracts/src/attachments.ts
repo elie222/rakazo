@@ -14,6 +14,7 @@ export const ATTACHMENT_IMAGE_MIME_TYPES = [
 ] as const;
 
 export const ATTACHMENT_FILE_MIME_TYPES = [
+  "video/mp4",
   "application/pdf",
   "text/plain",
   "text/markdown",

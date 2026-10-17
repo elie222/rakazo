@@ -12,6 +12,11 @@ describeFast("pnpm test emulator pin", () => {
     expect(process.env.WAKEUP_DRIVER).toBe("memory");
   });
 
+  it("never enables billed media generation through inherited configuration", () => {
+    expect(process.env.MEDIA_GENERATION_PROVIDER).toBe("disabled");
+    expect(process.env.MEDIA_GENERATION_API_KEY).toBeUndefined();
+  });
+
   it("does not keep a live Composio key in the test process", () => {
     expect(process.env.COMPOSIO_API_KEY).toBeUndefined();
     expect(process.env.INTEGRATIONS_CATALOG_URL).toBeUndefined();

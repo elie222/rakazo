@@ -908,6 +908,47 @@ service's trust boundary. `SIGNUPS_ENABLED` applies on the API's first start. A 
 `SIGNUP_ALLOWLIST` applies on every API start.
 The optional marketing site in `apps/www` can be hosted separately.
 
+## Image and video generation
+
+Bot media tools are disabled by default. Configure the worker (and API for inline
+execution) with a provider and its generic HTTP connection:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=fal
+MEDIA_GENERATION_BASE_URL=https://queue.fal.run
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
+MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
+```
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, or `fake`
+(for offline testing only). The base URL is optional and defaults to the URL above.
+Only set the image/video model fields for capabilities you want enabled. Compatible
+servers can use the same connection fields; models must support the corresponding
+fal queue API and Flux/Wan input and output shapes. Credentials stay on the server. Set these in
+your deployment secret configuration; never commit actual credentials.
+
+Bots use `generate_image` to attach one PNG or `generate_video` to submit a
+four-second MP4. The video tool returns a job ID and queued/running status; call it
+again with `jobId` to check progress and attach the completed video. Saved jobs
+can be polled after worker restarts by the same owner/bot/thread. The first version
+requires polling through the bot; it does not automatically deliver jobs in the
+background. Use the existing per-bot tool switches and action approval rules to
+control access. Both tools require approval by default. Ticket board runs keep
+these chat-only media tools unavailable so ticket work stays on the board.
+
+Each run allows at most two submissions (including failures). Submissions are
+never retried automatically: a lost response can mean the provider accepted and
+charged for the request. Provider errors omit remote response bodies. Configure
+account budgets and rate limits with your provider; the run cap is not a currency
+budget. Provider 429 responses are returned without automatic retries. Outputs
+must fit both the 10 MiB media ceiling and the configured attachment limit;
+larger outputs are rejected.
+
+Images use existing inline chat rendering. MP4 files can be previewed with native
+video controls on web and Electron and opened/downloaded through the existing
+native file flow on mobile. No new mobile player or settings screen is required.
+
 ## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.

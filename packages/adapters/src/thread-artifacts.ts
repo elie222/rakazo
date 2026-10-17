@@ -19,7 +19,7 @@ import {
   messageBlockForArtifact,
   validateAttachmentMimeType,
 } from "@rakazo/core";
-import type { PrismaClient } from "@rakazo/db";
+import type { Artifact, Prisma, PrismaClient } from "@rakazo/db";
 import { withResolvedArtifactVersion } from "@rakazo/db";
 import { resolveBotWorkspacePath } from "./computer-support.js";
 
@@ -47,6 +47,8 @@ export async function attachWorkspaceFileToThread(
     operationId: string;
     name?: string;
     description?: string;
+    /** Checkpoint a caller's durable state atomically with attachment creation. */
+    onAttached?: (tx: Prisma.TransactionClient, artifact: Artifact) => Promise<void>;
   },
 ): Promise<{ artifactId: string; block: Extract<MessageBlock, { kind: "image" | "file" }> }> {
   const fileName = path.basename(input.filePath) || input.filePath;
@@ -81,8 +83,8 @@ export async function attachWorkspaceFileToThread(
       groupId: input.groupId,
       name,
     },
-    (tx, { rootArtifactId, version }) =>
-      tx.artifact.create({
+    async (tx, { rootArtifactId, version }) => {
+      const artifact = await tx.artifact.create({
         data: {
           spaceId: input.spaceId,
           userId: input.userId,
@@ -98,20 +100,15 @@ export async function attachWorkspaceFileToThread(
           rootArtifactId,
           version,
         },
-      }),
+      });
+      await input.onAttached?.(tx, artifact);
+      return artifact;
+    },
   ).catch(async (error) => {
     await deps.artifacts.remove(stored.id, context).catch(() => undefined);
     throw error;
   });
-  return {
-    artifactId: row.id,
-    block: messageBlockForArtifact({
-      id: row.id,
-      name: row.name,
-      mimeType: row.mimeType,
-      size: row.size,
-    }),
-  };
+  return { artifactId: row.id, block: messageBlockForArtifact(row) };
 }
 
 export async function materializeCurrentTurnFiles(
