@@ -1207,9 +1207,11 @@ export function ShellPage() {
         // in Settings is never overwritten; a failure just leaves bots on UTC.
         if (bootstrap.me.timezone === null) {
           void rpc.preferences
-            .update({ timezone: localTimezone() })
+            .adoptTimezone({ timezone: localTimezone() })
             .then((nextMe) => {
-              if (!cancelled) setBootstrapMe(nextMe);
+              if (!cancelled) {
+                setBootstrapMe((current) => (current?.timezone == null ? nextMe : current));
+              }
             })
             .catch(() => {});
         }
