@@ -156,6 +156,7 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
 }
 
 const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
+  ".mp4": "video/mp4",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".png": "image/png",
@@ -173,6 +174,7 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
 };
 
 const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
+  "video/mp4": ".mp4",
   "image/jpeg": ".jpg",
   "image/png": ".png",
   "image/webp": ".webp",

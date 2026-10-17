@@ -17,6 +17,7 @@ import type {
   ConnectorTool,
   JobPublisher,
   ManagedConnectorProvider,
+  MediaGenerationProvider,
   MemoryStore,
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
@@ -266,6 +267,8 @@ import {
   needsOAuthProbe,
   parseMcpServerToolArgs,
 } from "./mcp-server-tool.js";
+import { createMediaGenerationProvider } from "./media-generation-factory.js";
+import { generateMediaFromTool } from "./media-generation-tools.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
@@ -2675,6 +2678,7 @@ export interface ExecutorDeps {
   listConnectedPluginSlugs?: (userId: string) => Promise<string[]>;
   /** Builtin web_search / web_fetch. Defaults to keyless HTTP when omitted. */
   web?: WebProvider;
+  mediaGeneration?: MediaGenerationProvider;
   /** Page browser (DOM refs) on the bot computer. Defaults to the sandbox live browser when supported. */
   browser?: BrowserProvider;
   secretHttp?: RemoteTransportDependencies;
@@ -2963,6 +2967,7 @@ export function isTerminalModelSetupError(error: unknown): boolean {
 export function createRunExecutor(deps: ExecutorDeps) {
   const contextStrategy = deps.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
   const web = deps.web ?? createWebProvider();
+  const mediaGeneration = deps.mediaGeneration ?? createMediaGenerationProvider();
   const browser = deps.browser ?? createBrowserProvider(undefined, { sandbox: deps.sandbox });
   const cloudAgent = deps.cloudAgent;
   const resolveConnectedModel = async (
@@ -4035,6 +4040,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             groupId: thread.groupId,
             trigger: run.trigger,
             semanticMemoryEnabled,
+            mediaImagesEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.images),
+            mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             messagingChannelRun,
             voiceCall,
@@ -4763,6 +4770,83 @@ export function createRunExecutor(deps: ExecutorDeps) {
           const bypassApproval = gateDecision === "allow" && requiresApprovalByDefault;
           let claimedEffect = false;
 
+          const callMediaTool = async (recoverOnly = false) => {
+            if (
+              (name !== "generate_image" && name !== "generate_video") ||
+              isBackgroundRunTrigger(run.trigger) ||
+              !mediaGeneration ||
+              !deps.artifacts
+            )
+              return { error: "Media generation is unavailable." };
+            const artifacts = deps.artifacts;
+            return generateMediaFromTool({
+              name,
+              args,
+              executionId: applied?.effect.id ?? executionId,
+              recoverOnly,
+              provider: mediaGeneration,
+              prisma: deps.prisma,
+              context,
+              run,
+              attach: (output, fileName, job) =>
+                attachWorkspaceFileToThread(
+                  { prisma: deps.prisma, artifacts, maxUploadSizeBytes: deps.maxUploadSizeBytes },
+                  {
+                    spaceId: run.spaceId,
+                    userId: run.userId,
+                    botId: bot.id,
+                    groupId: thread.groupId ?? undefined,
+                    runId: run.id,
+                    filePath: fileName,
+                    bytes: output.bytes,
+                    operationId: executionId,
+                    onAttached: async (tx, artifact) => {
+                      const checkpointed = await tx.externalEffect.updateMany({
+                        where: {
+                          id: job.id,
+                          status: { not: "media_completed" },
+                          result: { equals: job.result },
+                        },
+                        data: {
+                          status: "media_polling",
+                          result: { ...job.result, artifactId: artifact.id },
+                        },
+                      });
+                      if (!checkpointed.count)
+                        throw new Error("Media attachment was already checkpointed");
+                    },
+                  },
+                ),
+              publish: async (block, jobId, artifactId) => {
+                const committed = await deps.prisma.$transaction(async (tx) => {
+                  // Commit completion with the message so a restarted poll cannot post twice.
+                  const claimed = await tx.externalEffect.updateMany({
+                    where: { id: jobId, status: { not: "media_completed" } },
+                    data: {
+                      status: "media_completed",
+                      result: { provider: mediaGeneration.id, artifactId },
+                    },
+                  });
+                  if (!claimed.count) return null;
+                  return persistMessageInTransaction(tx, run, "bot", [block]);
+                });
+                if (committed)
+                  await deps.events.notify(run.threadId, committed.eventSeq).catch(() => undefined);
+              },
+            });
+          };
+          const settleToolUncertainty = async (effectId: string, toolName: string) => {
+            if (name === "generate_image" || name === "generate_video") {
+              const recovered = await callMediaTool(true);
+              if (
+                recovered !== undefined &&
+                (await completeEffect(deps, effectId, "executing", recovered))
+              )
+                return recovered;
+            }
+            return settleUncertainEffect(deps.prisma, effectId, toolName);
+          };
+
           const claimOrReturn = async (
             from: "approved" | "intended",
           ): Promise<unknown | undefined> => {
@@ -4778,7 +4862,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               const retryGate = resolveDuplicateEffectGate(current, name);
               if (retryGate.action === "return") return retryGate.result;
               if (retryGate.action === "uncertain") {
-                return settleUncertainEffect(deps.prisma, applied!.effect.id, name);
+                return settleToolUncertainty(applied!.effect.id, name);
               }
             }
             throw uncertainEffectError(name);
@@ -4883,7 +4967,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 return requestApproval();
               }
             } else if (gate.action === "uncertain") {
-              return settleUncertainEffect(deps.prisma, applied.effect.id, gate.toolName);
+              return settleToolUncertainty(applied.effect.id, gate.toolName);
             } else if (gate.action === "execute") {
               const early = await claimOrReturn("approved");
               if (early !== undefined) return early;
@@ -5065,6 +5149,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             await recordComputerAction("write_file", filePath, { bytes: content.byteLength });
             return finish({ ok: true, path: filePath });
+          }
+          if (name === "generate_image" || name === "generate_video") {
+            return finish(await callMediaTool());
           }
           if (name === "render_plot") {
             if (args.charts !== undefined) {
@@ -7923,6 +8010,8 @@ export function selectBuiltinToolsForRun(options: {
   trigger: string;
   semanticMemoryEnabled: boolean;
   cloudAgentEnabled?: boolean;
+  mediaImagesEnabled?: boolean;
+  mediaVideoEnabled?: boolean;
   messagingChannelRun: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
@@ -7948,10 +8037,19 @@ export function selectBuiltinToolsForRun(options: {
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
+      (options.mediaImagesEnabled || tool.name !== "generate_image") &&
+      (options.mediaVideoEnabled || tool.name !== "generate_video") &&
       (options.ticketBoardEnabled ||
         (tool.name !== "board_tickets" && !tool.name.startsWith("ticket_"))) &&
       (!isBackgroundRunTrigger(options.trigger) ||
-        !["message_user", "message_bot", "handoff_to_bot", "message_agent"].includes(tool.name)) &&
+        ![
+          "message_user",
+          "message_bot",
+          "handoff_to_bot",
+          "message_agent",
+          "generate_image",
+          "generate_video",
+        ].includes(tool.name)) &&
       (options.voiceCall || tool.name !== "end_call") &&
       (options.historyRetrievalEnabled ||
         !["search_history", "read_history"].includes(tool.name)) &&

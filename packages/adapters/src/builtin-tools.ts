@@ -146,6 +146,30 @@ const scheduleCreateInputSchema = {
 
 export const builtinAgentTools: ConnectorTool[] = [
   {
+    name: "generate_image",
+    description:
+      "Generate one image from a prompt and attach it to chat. Uses the deployment media model and may incur charges. Do not retry failed submissions automatically.",
+    inputSchema: {
+      type: "object",
+      properties: { prompt: { type: "string", minLength: 1, maxLength: 4000 } },
+      required: ["prompt"],
+    },
+    readOnly: false,
+  },
+  {
+    name: "generate_video",
+    description:
+      "Submit a short video from a prompt (may incur charges), or poll an existing job with jobId only. Pending jobs return status/progress; poll later. Completed videos are attached to chat. Do not resubmit failed or uncertain jobs automatically.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: { type: "string", minLength: 1, maxLength: 4000 },
+        jobId: { type: "string", minLength: 1, maxLength: 200 },
+      },
+    },
+    readOnly: false,
+  },
+  {
     name: "computer_observe",
     description:
       "Capture the current screen of this bot's computer. Returns frame metadata and an image. Observe before coordinate-based actions and whenever another actor may have changed the desktop.",

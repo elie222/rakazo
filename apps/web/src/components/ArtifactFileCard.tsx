@@ -20,7 +20,12 @@ type ArtifactFileCardProps = {
   size: number;
 };
 
-const PREVIEWABLE_MIME_TYPES = new Set(["text/markdown", "text/html", "application/pdf"]);
+const PREVIEWABLE_MIME_TYPES = new Set([
+  "text/markdown",
+  "text/html",
+  "application/pdf",
+  "video/mp4",
+]);
 const TEXT_MIME_TYPES = new Set(["text/markdown", "text/html"]);
 
 export function ArtifactFileCard(props: ArtifactFileCardProps) {
@@ -208,6 +213,8 @@ function FilePreview({
           </div>
         ) : mimeType === "text/html" && state.text !== undefined ? (
           <SandboxedHtmlViewer html={state.text} title={name} />
+        ) : mimeType === "video/mp4" ? (
+          <VideoPreview bytes={state.bytes} name={name} />
         ) : mimeType === "application/pdf" ? (
           <PdfViewer bytes={state.bytes} title={name} />
         ) : state.text !== undefined ? (
@@ -217,6 +224,26 @@ function FilePreview({
         ) : null}
       </div>
     </>
+  );
+}
+
+function VideoPreview({ bytes, name }: { bytes: Uint8Array; name: string }) {
+  const [src, setSrc] = useState<string>();
+  useEffect(() => {
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "video/mp4" }));
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [bytes]);
+  return (
+    // biome-ignore lint/a11y/useMediaCaption: Attachment playback has no caption track supplied by the author.
+    <video
+      src={src}
+      controls
+      playsInline
+      preload="metadata"
+      aria-label={name}
+      className="h-full w-full object-contain"
+    />
   );
 }
 
