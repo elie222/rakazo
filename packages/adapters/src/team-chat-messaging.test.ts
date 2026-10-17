@@ -28,6 +28,24 @@ describe("toTeamChatInbound", () => {
     expect(toTeamChatInbound(baseEvent({ content: "  ", mediaUrl: null }))).toBeNull();
   });
 
+  it("keeps a file-only message and passes its attachments through", () => {
+    const attachment = { name: "a.png", mimeType: "image/png", fetch: vi.fn() };
+    const mapped = toTeamChatInbound(baseEvent({ content: "", attachments: [attachment] }));
+    expect(mapped).toMatchObject({ content: "", attachments: [attachment] });
+  });
+
+  it("leaves out the media url when the file arrives as an attachment", () => {
+    const attachment = { name: "a.png", mimeType: "image/png", fetch: vi.fn() };
+    const mapped = toTeamChatInbound(
+      baseEvent({
+        content: "see this",
+        mediaUrl: "https://files.example/private/a.png",
+        attachments: [attachment],
+      }),
+    );
+    expect(mapped?.content).toBe("see this");
+  });
+
   it("appends mediaUrl to content", () => {
     const mapped = toTeamChatInbound(
       baseEvent({ content: "see this", mediaUrl: "https://cdn.example/a.png" }),

@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
-import type { ArtifactStore } from "@rakazo/adapter-kit";
+import type { ArtifactStore, MessagingInboundAttachment } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import {
+  ARTIFACT_NAME_MAX_LENGTH,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
+  attachmentSizeLabel,
+} from "@rakazo/contracts";
 import {
   AttachmentValidationError,
   decodeAttachmentBase64,
@@ -13,7 +18,7 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import { IsolationError, Prisma, withResolvedArtifactVersion } from "@rakazo/db";
 
-function adapterContext(actor: Actor, botId: string, operationId: string) {
+function adapterContext(actor: ArtifactOwner, botId: string, operationId: string) {
   return {
     operationId,
     traceId: operationId,
@@ -49,6 +54,57 @@ export async function createOwnedArtifact(
       : input.mimeType;
   validateAttachmentMimeType(mimeType);
   const bytes = decodeAttachmentBase64(input.contentBase64, deps.maxUploadSizeBytes);
+  return storeOwnedArtifact(deps, actor, { ...input, mimeType, bytes });
+}
+
+export async function storeInboundAttachment(
+  deps: {
+    prisma: PrismaClient;
+    artifacts: ArtifactStore;
+    maxUploadSizeBytes?: number;
+  },
+  owner: ArtifactOwner,
+  input: { botId: string; attachment: MessagingInboundAttachment; clientNonce: string },
+) {
+  const replayed = await findReplayedArtifact(deps.prisma, owner, input);
+  if (replayed) return createdArtifact(replayed);
+  const { attachment } = input;
+  const name = attachment.name.slice(0, ARTIFACT_NAME_MAX_LENGTH);
+  const mimeType = inferAttachmentMimeType(name, attachment.mimeType) ?? attachment.mimeType;
+  validateAttachmentMimeType(mimeType);
+  const maxBytes = deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES;
+  const tooLarge = new AttachmentValidationError(
+    `Attachment exceeds the ${attachmentSizeLabel(maxBytes)} limit`,
+  );
+  if ((attachment.size ?? 0) > maxBytes) throw tooLarge;
+  const bytes = await attachment.fetch();
+  if (bytes.byteLength === 0) throw new AttachmentValidationError("Attachment content is empty");
+  if (bytes.byteLength > maxBytes) throw tooLarge;
+  return storeOwnedArtifact(deps, owner, {
+    botId: input.botId,
+    name,
+    mimeType,
+    bytes,
+    clientNonce: input.clientNonce,
+  });
+}
+
+type ArtifactOwner = Pick<Actor, "spaceId" | "userId">;
+
+async function storeOwnedArtifact(
+  deps: { prisma: PrismaClient; artifacts: ArtifactStore },
+  actor: ArtifactOwner,
+  input: {
+    botId: string;
+    groupId?: string;
+    name: string;
+    description?: string;
+    mimeType: string;
+    bytes: Uint8Array;
+    clientNonce?: string;
+  },
+) {
+  const { mimeType, bytes } = input;
   const context = adapterContext(actor, input.botId, `artifact-create:${input.botId}`);
   const stored = await deps.artifacts.put({ name: input.name, mimeType, bytes }, context);
   const hash = createHash("sha256").update(bytes).digest("hex");
@@ -95,7 +151,7 @@ export async function createOwnedArtifact(
 /** The artifact an earlier upload with this nonce created; a nonce reused for another chat is refused. */
 async function findReplayedArtifact(
   db: Pick<Prisma.TransactionClient, "artifact">,
-  actor: Actor,
+  actor: ArtifactOwner,
   input: { botId: string; groupId?: string; clientNonce?: string },
 ) {
   if (!input.clientNonce) return null;

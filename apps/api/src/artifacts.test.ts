@@ -7,6 +7,7 @@ import {
   createOwnedArtifact,
   deleteArtifactFamily,
   listSpaceArtifacts,
+  storeInboundAttachment,
 } from "./artifacts.js";
 
 const actor: Actor = {
@@ -401,5 +402,66 @@ describe("configured artifact upload limit", () => {
     expect(put).not.toHaveBeenCalled();
     await expect(upload(deps.maxUploadSizeBytes)).rejects.toBe(stored);
     expect(put).toHaveBeenCalledOnce();
+  });
+});
+
+describe("storeInboundAttachment", () => {
+  const reachedStorage = new Error("reached storage");
+  function setup(existing: unknown = null) {
+    const put = vi.fn().mockRejectedValue(reachedStorage);
+    const findFirst = vi.fn(async () => existing);
+    const deps = {
+      prisma: { artifact: { findFirst } } as unknown as PrismaClient,
+      artifacts: { put } as unknown as ArtifactStore,
+      maxUploadSizeBytes: 8,
+    };
+    const store = (attachment: Parameters<typeof storeInboundAttachment>[2]["attachment"]) =>
+      storeInboundAttachment(deps, actor, { botId: "bot-1", attachment, clientNonce: "nonce-1" });
+    return { put, store };
+  }
+
+  it("skips the download when the platform reports an oversize file", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(4));
+    await expect(store({ name: "a.png", mimeType: "image/png", size: 9, fetch })).rejects.toThrow(
+      "limit",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported types and oversize downloads before storage", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(9));
+    await expect(
+      store({ name: "a.exe", mimeType: "application/x-msdownload", fetch }),
+    ).rejects.toThrow("Unsupported");
+    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).rejects.toThrow("limit");
+    expect(put).not.toHaveBeenCalled();
+    fetch.mockResolvedValueOnce(new Uint8Array(8));
+    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).rejects.toBe(
+      reachedStorage,
+    );
+  });
+
+  it("reuses the artifact an earlier delivery of the same file stored", async () => {
+    const { put, store } = setup({
+      id: "artifact-1",
+      botId: "bot-1",
+      groupId: null,
+      runId: null,
+      name: "a.png",
+      description: null,
+      mimeType: "image/png",
+      size: 3,
+      version: 1,
+      createdAt: new Date("2026-10-01T00:00:00.000Z"),
+    });
+    const fetch = vi.fn(async () => new Uint8Array(3));
+    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).resolves.toMatchObject({
+      id: "artifact-1",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 });
