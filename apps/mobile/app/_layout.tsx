@@ -18,6 +18,7 @@ import { AvatarStyleProvider } from "../components/avatar-style";
 import { CallCard } from "../components/CallCard";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
+import { MessageMenuHost } from "../components/message-action-menu";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
@@ -358,6 +359,7 @@ export default function Layout() {
                   <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
                 </View>
                 <ComputerUpdateProgress />
+                <MessageMenuHost />
                 <CallCard />
               </ThemeProvider>
             </ChatContentProviders>

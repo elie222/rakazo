@@ -17,7 +17,6 @@ import {
   buildComposerMentionOptions,
   cloudAgentHttpsUrl,
   formatFileSize,
-  formatMessageTime,
   forwardProbeAfterPage,
   groupVoiceChats,
   isApprovalAskBlock,
@@ -60,6 +59,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type {
+  GestureResponderEvent,
   LayoutChangeEvent,
   ListRenderItemInfo,
   NativeScrollEvent,
@@ -109,6 +109,7 @@ import { InstructionUndo } from "../components/instruction-undo";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
+import { presentMessageMenu } from "../components/message-action-menu";
 import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
 import { NativeActionButton } from "../components/native-action-button";
@@ -159,7 +160,7 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
-import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
+import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
 import { saveLastBotId } from "../lib/last-bot";
@@ -2994,15 +2995,59 @@ const MessageRow = memo(function MessageRow({
         select: includeSelect,
       },
     });
-    const openSheet = () =>
-      presentMessageActionSheet({
-        actions: menuActions,
-        title: message.createdAt
-          ? formatMessageTime(message.createdAt, dateLocaleForUi())
-          : undefined,
-        cancel: t("Cancel"),
-        more: t("More"),
-        colorScheme,
+    const openSheet = (event: GestureResponderEvent) =>
+      presentMessageMenu({
+        anchor: { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY },
+        reactions: includeReact
+          ? MESSAGE_REACTIONS.map((emoji) => ({ emoji, onPress: () => react(emoji) }))
+          : [],
+        groups: [
+          [
+            ...(!readOnly
+              ? [
+                  {
+                    name: "reply",
+                    text: t("Reply"),
+                    icon: "arrow-undo-outline" as const,
+                    onPress: reply,
+                  },
+                ]
+              : []),
+            ...(includeQuote
+              ? [
+                  {
+                    name: "quote",
+                    text: t("Quote"),
+                    icon: "chatbox-ellipses-outline" as const,
+                    onPress: quote,
+                  },
+                ]
+              : []),
+          ],
+          [
+            { name: "copy", text: t("Copy"), icon: "copy-outline" as const, onPress: copy },
+            ...(includeSelect
+              ? [
+                  {
+                    name: "select",
+                    text: t("Select text"),
+                    icon: "text-outline" as const,
+                    onPress: select,
+                  },
+                ]
+              : []),
+            ...(includeSpeak
+              ? [
+                  {
+                    name: "speak",
+                    text: t("Speak message"),
+                    icon: "volume-high-outline" as const,
+                    onPress: speakMessage,
+                  },
+                ]
+              : []),
+          ],
+        ],
       });
     return {
       menu,
