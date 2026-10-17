@@ -126,20 +126,18 @@ tags:
 - takeScreenshot: "15d-thread-keyboard"
 - eraseText
 - hideKeyboard
+# Holding a message opens the reaction row and grouped actions next to it.
 - longPressOn: "The fixture workspace is ready."
 - assertVisible: "Reply"
-- assertVisible: "React"
-- assertVisible: "More"
-- takeScreenshot: "15b-message-actions"
-- tapOn: "More"
+- assertVisible: "👍"
 - assertVisible: "Speak message"
+- takeScreenshot: "15b-message-actions"
 - back
-# User messages omit Speak, so Android fits Reply/React/Copy on one page (no More).
+# User messages omit Speak.
 - longPressOn: "Summarize the fixture launch checklist."
 - assertVisible: "Reply"
-- assertVisible: "React"
+- assertVisible: "👍"
 - assertVisible: "Copy"
-- assertNotVisible: "More"
 - assertNotVisible: "Speak message"
 - tapOn: "Reply"
 - assertVisible: "Replying to"
@@ -183,8 +181,8 @@ tags:
 - hideKeyboard
 - longPressOn: "The fixture launch plan is ready."
 - assertVisible: "Reply"
-- assertVisible: "React"
-- assertVisible: "More"
+- assertVisible: "👍"
+- assertVisible: "Speak message"
 - back
 
 - openLink: "rakazo:///group-settings?groupId=${RAKAZO_SCREENSHOT_GROUP_ID}"
@@ -244,7 +242,6 @@ tags:
 # Capture the reaction after theme comparisons. Reactions are append-only, so adding
 # 👍 earlier would leak into dark/light thread frames with no remove control.
 - longPressOn: "The fixture workspace is ready."
-- tapOn: "React"
 - tapOn: "👍"
 - extendedWaitUntil:
     visible: "👍"
