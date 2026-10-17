@@ -129,13 +129,16 @@ describe("Pi model catalog", () => {
   });
 
   it("accepts catalog model lists larger than the custom-server probe cap", async () => {
-    const ids = Array.from({ length: 600 }, (_, index) => {
+    const ids = Array.from({ length: 5_000 }, (_, index) => {
       const suffix = String(index).padStart(4, "0");
       return `vendor/catalog-model-${suffix}-${"x".repeat(120)}`;
     });
-    const payload = JSON.stringify({ object: "list", data: ids.map((id) => ({ id })) });
-    expect(Buffer.byteLength(payload)).toBeGreaterThan(64 * 1024);
-    expect(ids).toHaveLength(600);
+    const payload = JSON.stringify({
+      object: "list",
+      data: ids.map((id) => ({ id, description: "x".repeat(512) })),
+    });
+    expect(Buffer.byteLength(payload)).toBeGreaterThan(2 * 1024 * 1024);
+    expect(ids).toHaveLength(5_000);
 
     const fetchImpl = async () =>
       new Response(payload, {
