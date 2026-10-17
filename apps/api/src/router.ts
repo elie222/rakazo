@@ -838,7 +838,10 @@ export function createRouter(deps: RouterDeps) {
       update: authed.preferences.update.handler(async ({ context, input }): Promise<Me> => {
         await deps.prisma.user.update({
           where: { id: context.actor.userId },
-          data: { avatarStyle: input.avatarStyle },
+          data: {
+            ...(input.avatarStyle === undefined ? {} : { avatarStyle: input.avatarStyle }),
+            ...(input.timezone === undefined ? {} : { timezone: input.timezone }),
+          },
         });
         return meDto(deps, context.actor);
       }),
@@ -6400,6 +6403,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     canChooseHostComputer: actor.isDeploymentOwner && deps.env.sandboxProvider === "docker",
     sandboxProvider: deps.env.sandboxProvider,
     avatarStyle: user.avatarStyle === "robot" ? "robot" : "organic",
+    timezone: user.timezone ?? null,
     billingEnabled: Boolean(deps.billing) && !actor.isDeploymentOwner,
   };
 }

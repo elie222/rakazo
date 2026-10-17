@@ -19,6 +19,22 @@ export const MemoryScopeSchema = z.enum(["isolated", "shared"]);
 export type MemoryScopeValue = z.infer<typeof MemoryScopeSchema>;
 
 export const AvatarStyleSchema = z.enum(["robot", "organic"]);
+
+/** True for an IANA timezone this runtime can format in, such as "Pacific/Auckland". */
+export function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const TimeZoneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .refine(isValidTimeZone, { message: "Unknown timezone" });
 export type AvatarStyle = z.infer<typeof AvatarStyleSchema>;
 
 export const ThinkingLevelSchema = z.enum([
@@ -1373,6 +1389,11 @@ export const MeSchema = z.object({
   canChooseHostComputer: z.boolean(),
   sandboxProvider: z.string(),
   avatarStyle: AvatarStyleSchema,
+  /**
+   * The user's IANA timezone, or null when unset (bots then see UTC only).
+   * Absent from servers that predate it.
+   */
+  timezone: z.string().nullable().optional(),
   /** True when this deployment bills and the user is not the deployment owner. */
   billingEnabled: z.boolean(),
 });

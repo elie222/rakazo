@@ -856,6 +856,10 @@ msgstr ""
 msgid "Bots are working"
 msgstr "Bots estão trabalhando"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Bots use it for the current time, and new routines start in it."
+msgstr ""
+
 #: src/pages/Paywall.tsx
 msgid "Bots with their own computer and browser"
 msgstr ""
@@ -1805,6 +1809,10 @@ msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
+msgstr ""
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update your timezone"
 msgstr ""
 
 #: src/pages/Board.tsx
@@ -4597,6 +4605,10 @@ msgstr ""
 msgid "Time of day"
 msgstr "Hora do dia"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Timezone"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
@@ -4804,6 +4816,11 @@ msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
+msgstr ""
+
+#. placeholder {0}: deviceTimezone.replaceAll("_", " ")
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Use this device's timezone ({0})"
 msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx

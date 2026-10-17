@@ -1203,6 +1203,16 @@ export function ShellPage() {
         if (cancelled) return;
         const groupList = bootstrap.groups;
         setBootstrapMe(bootstrap.me);
+        // First sign-in with no saved timezone: adopt this browser's, once. A choice made
+        // in Settings is never overwritten; a failure just leaves bots on UTC.
+        if (bootstrap.me.timezone === null) {
+          void rpc.preferences
+            .update({ timezone: localTimezone() })
+            .then((nextMe) => {
+              if (!cancelled) setBootstrapMe(nextMe);
+            })
+            .catch(() => {});
+        }
         // Skip list/route writes only if a later refreshBots() successfully
         // committed (failed refreshes bump epoch but not botsRefreshApplied).
         const applyBotLists = appliedAtStart === botsRefreshApplied.current;
@@ -4110,7 +4120,7 @@ export function ShellPage() {
                 draft={routineDraft}
                 onChange={setRoutineDraft}
                 editing={editingRoutine}
-                timezone={editingRoutine?.timezone ?? localTimezone()}
+                timezone={editingRoutine?.timezone ?? bootstrapMe?.timezone ?? localTimezone()}
                 webhook={{
                   path:
                     typeof window !== "undefined"
@@ -4208,7 +4218,7 @@ export function ShellPage() {
                         name: routineDraft.name || t`Routine`,
                         prompt: routineDraft.prompt || t`Check in.`,
                         crons,
-                        timezone: localTimezone(),
+                        timezone: bootstrapMe?.timezone ?? localTimezone(),
                         active: routineDraft.active,
                         notify: true,
                         webhookEnabled: routineDraft.webhookEnabled,
@@ -4701,6 +4711,11 @@ export function ShellPage() {
             }}
             onAvatarStyleChange={async (avatarStyle) => {
               const nextMe = await rpc.preferences.update({ avatarStyle });
+              setBootstrapMe(nextMe);
+            }}
+            timezone={bootstrapMe?.timezone ?? null}
+            onTimezoneChange={async (timezone) => {
+              const nextMe = await rpc.preferences.update({ timezone });
               setBootstrapMe(nextMe);
             }}
             memoryConfig={memoryProviderConfig}

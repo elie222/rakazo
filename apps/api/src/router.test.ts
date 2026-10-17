@@ -142,6 +142,61 @@ describe("account preferences", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  async function updatePreferences(
+    { handler, actor }: ReturnType<typeof preferencesDeps>,
+    json: unknown,
+  ) {
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    if (!response) throw new Error("no response");
+    return response;
+  }
+
+  it("persists an IANA timezone without touching the avatar style", async () => {
+    const setup = preferencesDeps("organic");
+
+    const response = await updatePreferences(setup, { timezone: "Pacific/Auckland" });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Pacific/Auckland" },
+    });
+  });
+
+  it.each([{ timezone: "Mars/Olympus_Mons" }, { timezone: "" }, {}])(
+    "rejects an unknown timezone or an empty update: %j",
+    async (json) => {
+      const setup = preferencesDeps("robot");
+
+      const response = await updatePreferences(setup, json);
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(setup.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports an unset timezone as null", async () => {
+    const { actor, handler } = preferencesDeps("robot");
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/me", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: null }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ timezone: null }),
+    });
+  });
+
   it.each(["robot", "organic", "custom-cdn"])(
     "returns the stored style or organic fallback for %s",
     async (style) => {
