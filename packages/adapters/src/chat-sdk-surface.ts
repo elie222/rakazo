@@ -13,7 +13,7 @@ import type {
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import type { Adapter, Message, Thread } from "chat";
-import { Chat } from "chat";
+import { Chat, isLinkNode, text, toPlainText, walkAst } from "chat";
 
 /** Per-webhook drain of Chat SDK waitUntil work + inbound sink failures. */
 const webhookDrain = new AsyncLocalStorage<{
@@ -283,12 +283,34 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
-      content: message.text ?? "",
+      content: plainTextWithLinks(message),
       mediaUrl: message.attachments.find((attachment) => attachment.url)?.url ?? null,
     };
     const enrichment = platform.enrichTeamRoom?.(message.raw, base) ?? {};
     return { ...base, ...enrichment };
   }
+}
+
+/**
+ * The SDK's message.text keeps only a link's label, so a Slack link labelled
+ * `example.com/projects/…` reaches the model without its target.
+ */
+function plainTextWithLinks(message: Message): string {
+  let addedTarget = false;
+  const ast = walkAst(structuredClone(message.formatted), (node) => {
+    if (!isLinkNode(node)) return node;
+    const label = toPlainText({ type: "root", children: node.children }).trim();
+    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+    if (!label) {
+      addedTarget = true;
+      return text(node.url);
+    }
+    if (label === node.url || label === bare || label === bare.replace(/\/$/, ""))
+      return text(label);
+    addedTarget = true;
+    return text(`${label} (${node.url})`);
+  });
+  return addedTarget ? toPlainText(ast) : (message.text ?? "");
 }
 
 export function providerOfThreadId(threadId: string): string {
