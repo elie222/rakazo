@@ -1,7 +1,15 @@
 import Ionicons from "@react-native-vector-icons/ionicons";
 import type { ComponentProps } from "react";
 import { useState, useSyncExternalStore } from "react";
-import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
@@ -42,6 +50,8 @@ function subscribe(listener: () => void) {
 const getMenu = () => current;
 const MENU_MAX_WIDTH = 340;
 const EDGE = 12;
+/** The emoji row: 44pt buttons, 8pt padding, and the gap below it. */
+const REACTIONS_HEIGHT = 70;
 
 /** Mounted once at the root; draws the menu over everything while one is open. */
 export function MessageMenuHost() {
@@ -73,7 +83,7 @@ export function MessageMenuHost() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t("Cancel")}
-        style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.45)" }]}
+        style={[StyleSheet.absoluteFill, { backgroundColor: tokens.overlay }]}
         onPress={close}
       />
       <View
@@ -117,35 +127,48 @@ export function MessageMenuHost() {
             ))}
           </View>
         ) : null}
-        {menu.groups
-          .filter((group) => group.length > 0)
-          .map((group) => (
-            <View
-              key={group[0]?.name}
-              style={{ borderRadius: 18, overflow: "hidden", backgroundColor: tokens.card }}
-            >
-              {group.map((item, index) => (
-                <Pressable
-                  key={item.name}
-                  accessibilityRole="menuitem"
-                  onPress={() => run(item.onPress)}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 14,
-                    paddingHorizontal: 18,
-                    paddingVertical: 14,
-                    backgroundColor: pressed ? tokens.muted : undefined,
-                    borderTopWidth: index > 0 ? StyleSheet.hairlineWidth : 0,
-                    borderTopColor: tokens.border,
-                  })}
-                >
-                  <Ionicons name={item.icon} size={20} color={tokens.foreground} />
-                  <Text style={{ color: tokens.foreground, fontSize: 16 }}>{item.text}</Text>
-                </Pressable>
-              ))}
-            </View>
-          ))}
+        <ScrollView
+          style={{
+            maxHeight:
+              height -
+              insets.top -
+              insets.bottom -
+              EDGE * 2 -
+              (menu.reactions.length > 0 ? REACTIONS_HEIGHT : 0),
+          }}
+          contentContainerStyle={{ gap: 10 }}
+          bounces={false}
+        >
+          {menu.groups
+            .filter((group) => group.length > 0)
+            .map((group, groupIndex) => (
+              <View
+                key={`${groupIndex}-${group[0]?.name}`}
+                style={{ borderRadius: 18, overflow: "hidden", backgroundColor: tokens.card }}
+              >
+                {group.map((item, index) => (
+                  <Pressable
+                    key={item.name}
+                    accessibilityRole="menuitem"
+                    onPress={() => run(item.onPress)}
+                    style={({ pressed }) => ({
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 14,
+                      paddingHorizontal: 18,
+                      paddingVertical: 14,
+                      backgroundColor: pressed ? tokens.muted : undefined,
+                      borderTopWidth: index > 0 ? StyleSheet.hairlineWidth : 0,
+                      borderTopColor: tokens.border,
+                    })}
+                  >
+                    <Ionicons name={item.icon} size={20} color={tokens.foreground} />
+                    <Text style={{ color: tokens.foreground, fontSize: 16 }}>{item.text}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ))}
+        </ScrollView>
       </View>
     </Modal>
   );

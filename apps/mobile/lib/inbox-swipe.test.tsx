@@ -220,10 +220,16 @@ describe("iOS swipe row", () => {
 
 describe("inbox swipe handlers", () => {
   const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
-  const handlerSource = source.slice(
-    source.indexOf("  // One path for the long-press sheet and the swipe actions."),
-    source.indexOf("  const botAction = useCallback("),
-  );
+  const handlerSource = [
+    source.slice(
+      source.indexOf("/** Sends a request about a chat to that chat's space"),
+      source.indexOf("export default function HomeRoute()"),
+    ),
+    source.slice(
+      source.indexOf("  // One path for the long-press sheet and the swipe actions."),
+      source.indexOf("  const botAction = useCallback("),
+    ),
+  ].join("\n");
 
   const session = { space: "space-a", generation: 1 };
   beforeEach(() => {
@@ -280,8 +286,13 @@ describe("inbox swipe handlers", () => {
         chat: { id: string },
         action: InboxRowAction,
       ) => Promise<void>;
+      updateChat: (
+        kind: "bot" | "group",
+        chat: { id: string; spaceId?: string },
+        update: { pinned?: boolean },
+      ) => Promise<void>;
     };
-    return { ...scope, state, runRowAction: run.runRowAction };
+    return { ...scope, state, runRowAction: run.runRowAction, updateChat: run.updateChat };
   }
 
   it("sends overlapping read changes for one chat in order and keeps the newest on screen", async () => {
@@ -390,6 +401,26 @@ describe("inbox swipe handlers", () => {
     const h = handlers(async () => ({ ok: true }));
     await h.runRowAction(kind, { id: "x" }, action);
     expect(h.rpc.mock.calls).toEqual([[procedure, input]]);
+    expect(h.loadBots).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates a chat from another space in that space without switching", async () => {
+    const h = handlers(async () => ({ ok: true }));
+    await h.updateChat("bot", { id: "x", spaceId: "space-b" }, { pinned: false });
+    expect(h.rpc.mock.calls).toEqual([
+      [
+        "bots/update",
+        { botId: "x", pinned: false },
+        {
+          requestContext: {
+            apiBase: "",
+            headers: { authorization: "Bearer token", "x-rakazo-space-id": "space-b" },
+            sessionGeneration: 1,
+          },
+          skipSpaceAuthRecovery: true,
+        },
+      ],
+    ]);
     expect(h.loadBots).toHaveBeenCalledTimes(1);
   });
 

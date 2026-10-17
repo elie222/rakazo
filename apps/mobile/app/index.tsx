@@ -56,6 +56,7 @@ import {
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import { readableGutter } from "../lib/adaptive-layout";
 import type {
+  ApiRequestContext,
   MobileBot,
   MobileBotSection,
   MobileGroup,
@@ -130,12 +131,34 @@ type InboxItem =
   | { type: "search"; hit: SearchHit }
   | { type: "pinned"; chats: PinnedChat[] };
 
+function filterGroups<T extends { name: string; preview: string }>(groups: T[], query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return groups;
+  return groups.filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle));
+}
+
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
     Alert.alert(t("Could not switch spaces"), t("Try again."));
     return;
   }
   open();
+}
+
+/** Sends a request about a chat to that chat's space without switching to it. */
+async function chatRequestContext(
+  spaceId: string | undefined,
+): Promise<ApiRequestContext | undefined> {
+  if (!spaceId || spaceId === selectedSpaceId()) return undefined;
+  const context = await captureApiRequestContext();
+  return { ...context, headers: { ...context.headers, "x-rakazo-space-id": spaceId } };
+}
+
+async function chatRpc(spaceId: string | undefined, proc: string, body: unknown) {
+  const requestContext = await chatRequestContext(spaceId);
+  return requestContext
+    ? rpc(proc, body, { requestContext, skipSpaceAuthRecovery: true })
+    : rpc(proc, body);
 }
 
 export default function HomeRoute() {
@@ -202,6 +225,7 @@ function Home({ embedded }: { embedded: boolean }) {
   const [organizeTarget, setOrganizeTarget] = useState<{
     kind: "bot" | "group";
     id: string;
+    spaceId?: string;
   } | null>(null);
   const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
@@ -421,10 +445,7 @@ function Home({ embedded }: { embedded: boolean }) {
     [bots, query, unreadOverrides],
   );
   const visibleGroups = useMemo(() => {
-    const shown = applyUnreadOverrides("group", groups, unreadOverrides);
-    const needle = query.trim().toLowerCase();
-    if (!needle) return shown;
-    return shown.filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle));
+    return filterGroups(applyUnreadOverrides("group", groups, unreadOverrides), query);
   }, [groups, query, unreadOverrides]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
@@ -436,7 +457,7 @@ function Home({ embedded }: { embedded: boolean }) {
       ...[...visible, ...otherSpaces.flatMap((space) => filterBots(space.bots, query))]
         .filter((bot) => bot.pinned)
         .map((bot) => ({ kind: "bot" as const, bot })),
-      ...[...visibleGroups, ...otherSpaces.flatMap((space) => space.groups)]
+      ...[...visibleGroups, ...otherSpaces.flatMap((space) => filterGroups(space.groups, query))]
         .filter((group) => group.pinned)
         .map((group) => ({ kind: "group" as const, group })),
     ];
@@ -487,10 +508,14 @@ function Home({ embedded }: { embedded: boolean }) {
     visibleGroups,
   ]);
   const initials = userInitials(me?.name ?? "");
+  const organizeSpace =
+    organizeTarget?.spaceId && organizeTarget.spaceId !== me?.spaceId
+      ? spaces.find((space) => space.id === organizeTarget.spaceId)
+      : undefined;
   const organizeChat = organizeTarget
     ? organizeTarget.kind === "bot"
-      ? bots.find((bot) => bot.id === organizeTarget.id)
-      : groups.find((group) => group.id === organizeTarget.id)
+      ? (organizeSpace?.bots ?? bots).find((bot) => bot.id === organizeTarget.id)
+      : (organizeSpace?.groups ?? groups).find((group) => group.id === organizeTarget.id)
     : null;
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps the inbox in a centred column.
@@ -771,12 +796,11 @@ function Home({ embedded }: { embedded: boolean }) {
     },
     [openChat],
   );
-  // A chat in another space is organised from that space, so switch to it first.
   const organizeBot = useCallback((bot: MobileBot | SpaceBot) => {
-    void openMobileSpace(bot.spaceId, () => setOrganizeTarget({ kind: "bot", id: bot.id }));
+    setOrganizeTarget({ kind: "bot", id: bot.id, spaceId: bot.spaceId });
   }, []);
   const organizeGroup = useCallback((group: MobileGroup | SpaceGroup) => {
-    void openMobileSpace(group.spaceId, () => setOrganizeTarget({ kind: "group", id: group.id }));
+    setOrganizeTarget({ kind: "group", id: group.id, spaceId: group.spaceId });
   }, []);
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
@@ -786,7 +810,7 @@ function Home({ embedded }: { embedded: boolean }) {
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       update: BotOrganizationUpdate,
     ) => {
-      await rpc(`${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
+      await chatRpc(chat.spaceId, `${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
       if (kind === "bot" && update.notifyOnFinish !== undefined) {
         await resumeLiveNotifications(
           currentApiBase(),
@@ -1159,18 +1183,18 @@ function Home({ embedded }: { embedded: boolean }) {
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}
-          sections={botSections}
+          sections={organizeSpace?.botSections ?? botSections}
           onClose={() => setOrganizeTarget(null)}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
           onCreateSection={async (name) => {
-            await rpc("botSections/create", {
+            await chatRpc(organizeTarget.spaceId, "botSections/create", {
               [`${organizeTarget.kind}Id`]: organizeChat.id,
               name,
             });
             await loadBots();
           }}
           onRenameSection={async (sectionId, name) => {
-            await rpc("botSections/update", { sectionId, name });
+            await chatRpc(organizeTarget.spaceId, "botSections/update", { sectionId, name });
             await loadBots();
           }}
         />

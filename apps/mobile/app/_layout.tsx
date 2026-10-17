@@ -66,7 +66,7 @@ void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 // Screens that take the whole window even when it is wide enough for the chat list beside them.
 const DIVIDER_GRAB_WIDTH = 24;
-const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/image", "/computer"]);
+const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"]);
 
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
