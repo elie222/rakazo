@@ -17,7 +17,6 @@ import {
   buildComposerMentionOptions,
   cloudAgentHttpsUrl,
   formatFileSize,
-  formatMessageTime,
   forwardProbeAfterPage,
   groupVoiceChats,
   isApprovalAskBlock,
@@ -60,6 +59,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type {
+  GestureResponderEvent,
   LayoutChangeEvent,
   ListRenderItemInfo,
   NativeScrollEvent,
@@ -81,7 +81,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import {
@@ -110,6 +109,7 @@ import { InstructionUndo } from "../components/instruction-undo";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
+import { presentMessageMenu } from "../components/message-action-menu";
 import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
 import { NativeActionButton } from "../components/native-action-button";
@@ -160,7 +160,7 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
-import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
+import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
 import { saveLastBotId } from "../lib/last-bot";
@@ -210,6 +210,7 @@ import {
   loadVerifiedIntegrationsScope,
   subscribeSessionGeneration,
 } from "../lib/session";
+import { setInboxHidden, useSplitView } from "../lib/split-view";
 import type { SendAttempt } from "../lib/thread-feedback";
 import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
@@ -411,7 +412,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const { t, locale } = useI18n();
   const navigation = useNavigation();
   const router = useRouter();
-  const { width: windowWidth } = useWindowDimensions();
+  // Beside the chat list on a wide window, the chat has only the width the list leaves.
+  const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = iosAtLeast(26) ? nativeHeaderHeight : 0;
   const insets = useSafeAreaInsets();
@@ -868,6 +870,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       ...(iosAtLeast(26)
         ? {
             unstable_headerRightItems: () => [
+              ...(inGroup || readOnly
+                ? []
+                : [
+                    {
+                      type: "button" as const,
+                      accessibilityLabel: t("Open computer"),
+                      icon: { type: "sfSymbol" as const, name: "desktopcomputer" },
+                      onPress: openBotComputer,
+                    },
+                  ]),
               {
                 type: "button" as const,
                 accessibilityLabel: inGroup ? t("Group settings") : t("Bot actions"),
@@ -904,25 +916,65 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             />
           </Pressable>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("Bot actions")}
-            hitSlop={8}
-            onPress={showBotActions}
-          >
-            <NativeSymbol
-              ios="ellipsis"
-              android="ellipsis-horizontal"
-              size={21}
-              color={tokens.foreground}
-            />
-          </Pressable>
+          <View style={styles.headerActions}>
+            {readOnly ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Open computer")}
+                hitSlop={8}
+                onPress={openBotComputer}
+              >
+                <NativeSymbol
+                  ios="desktopcomputer"
+                  android="desktop-outline"
+                  size={21}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Bot actions")}
+              hitSlop={8}
+              onPress={showBotActions}
+            >
+              <NativeSymbol
+                ios="ellipsis"
+                android="ellipsis-horizontal"
+                size={21}
+                color={tokens.foreground}
+              />
+            </Pressable>
+          </View>
         ),
+      ...(split
+        ? {
+            headerBackVisible: false,
+            headerLeft: () => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={inboxHidden ? t("Show chats") : t("Hide chats")}
+                hitSlop={8}
+                onPress={() => setInboxHidden(!inboxHidden)}
+              >
+                <NativeSymbol
+                  ios={inboxHidden ? "sidebar.left" : "arrow.up.left.and.arrow.down.right"}
+                  android={inboxHidden ? "contract-outline" : "expand-outline"}
+                  size={21}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+            ),
+          }
+        : // Folding back takes the list away, so the chat gets its back button again.
+          { headerBackVisible: true, headerLeft: undefined }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
         : {}),
     });
   }, [
+    split,
+    inboxHidden,
     readOnly,
     restoring,
     botId,
@@ -975,6 +1027,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       );
   }
 
+  function openBotComputer() {
+    router.push({
+      pathname: "/computer",
+      params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+    });
+  }
+
   const botActions = [
     {
       text: t("Chat settings"),
@@ -982,14 +1041,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         router.push({
           pathname: "/bot-settings",
           params: { botId: botId ?? "" },
-        }),
-    },
-    {
-      text: t("Open computer"),
-      onPress: () =>
-        router.push({
-          pathname: "/computer",
-          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
         }),
     },
     {
@@ -2970,15 +3021,59 @@ const MessageRow = memo(function MessageRow({
         select: includeSelect,
       },
     });
-    const openSheet = () =>
-      presentMessageActionSheet({
-        actions: menuActions,
-        title: message.createdAt
-          ? formatMessageTime(message.createdAt, dateLocaleForUi())
-          : undefined,
-        cancel: t("Cancel"),
-        more: t("More"),
-        colorScheme,
+    const openSheet = (event: GestureResponderEvent) =>
+      presentMessageMenu({
+        anchor: { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY },
+        reactions: includeReact
+          ? MESSAGE_REACTIONS.map((emoji) => ({ emoji, onPress: () => react(emoji) }))
+          : [],
+        groups: [
+          [
+            ...(!readOnly
+              ? [
+                  {
+                    name: "reply",
+                    text: t("Reply"),
+                    icon: "arrow-undo-outline" as const,
+                    onPress: reply,
+                  },
+                ]
+              : []),
+            ...(includeQuote
+              ? [
+                  {
+                    name: "quote",
+                    text: t("Quote"),
+                    icon: "chatbox-ellipses-outline" as const,
+                    onPress: quote,
+                  },
+                ]
+              : []),
+          ],
+          [
+            { name: "copy", text: t("Copy"), icon: "copy-outline" as const, onPress: copy },
+            ...(includeSelect
+              ? [
+                  {
+                    name: "select",
+                    text: t("Select text"),
+                    icon: "text-outline" as const,
+                    onPress: select,
+                  },
+                ]
+              : []),
+            ...(includeSpeak
+              ? [
+                  {
+                    name: "speak",
+                    text: t("Speak message"),
+                    icon: "volume-high-outline" as const,
+                    onPress: speakMessage,
+                  },
+                ]
+              : []),
+          ],
+        ],
       });
     return {
       menu,

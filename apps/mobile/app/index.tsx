@@ -3,11 +3,21 @@ import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/co
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
-import { Redirect, useFocusEffect, useNavigation, useRouter } from "expo-router";
+import type { Href } from "expo-router";
+import {
+  Redirect,
+  useFocusEffect,
+  useGlobalSearchParams,
+  useNavigation,
+  usePathname,
+  useRouter,
+} from "expo-router";
 import type { ReactNode } from "react";
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -46,6 +56,7 @@ import {
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
 import { readableGutter } from "../lib/adaptive-layout";
 import type {
+  ApiRequestContext,
   MobileBot,
   MobileBotSection,
   MobileGroup,
@@ -100,13 +111,31 @@ import {
   currentSessionGeneration,
   subscribeSessionGeneration,
 } from "../lib/session";
+import { useSplitView } from "../lib/split-view";
 import { errorText } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
+// A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
+const TAGLESS_LIST_WIDTH = 360;
+const CompactRowsContext = createContext(false);
+// The chat open beside the list, so its row can show as selected.
+const SelectedChatContext = createContext<string | null>(null);
 // Swipe actions are iOS list behaviour; other platforms keep the long-press sheet.
 const SWIPE_ROWS = Platform.OS === "ios";
 
-type InboxItem = InboxSpaceItem | { type: "search"; hit: SearchHit };
+type PinnedChat =
+  | { kind: "bot"; bot: MobileBot | SpaceBot }
+  | { kind: "group"; group: MobileGroup | SpaceGroup };
+type InboxItem =
+  | InboxSpaceItem
+  | { type: "search"; hit: SearchHit }
+  | { type: "pinned"; chats: PinnedChat[] };
+
+function filterGroups<T extends { name: string; preview: string }>(groups: T[], query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return groups;
+  return groups.filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle));
+}
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -116,13 +145,41 @@ async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   open();
 }
 
-export default function HomeSession() {
-  const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
-  const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  return <Home key={`${generation}:${ready}`} />;
+/** Sends a request about a chat to that chat's space without switching to it. */
+async function chatRequestContext(
+  spaceId: string | undefined,
+): Promise<ApiRequestContext | undefined> {
+  if (!spaceId || spaceId === selectedSpaceId()) return undefined;
+  const context = await captureApiRequestContext();
+  return { ...context, headers: { ...context.headers, "x-rakazo-space-id": spaceId } };
 }
 
-function Home() {
+async function chatRpc(spaceId: string | undefined, proc: string, body: unknown) {
+  const requestContext = await chatRequestContext(spaceId);
+  return requestContext
+    ? rpc(proc, body, { requestContext, skipSpaceAuthRecovery: true })
+    : rpc(proc, body);
+}
+
+export default function HomeRoute() {
+  const { split } = useSplitView();
+  const styles = useThemedStyles(createHomeStyles);
+  // A wide window shows the chat list beside the stack, so home itself stays empty.
+  return split ? <View style={styles.screen} /> : <HomeSession />;
+}
+
+/** The chat list beside the open chat on a wide window. */
+export function InboxPane() {
+  return <HomeSession embedded />;
+}
+
+function HomeSession({ embedded = false }: { embedded?: boolean }) {
+  const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
+  const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
+  return <Home key={`${generation}:${ready}`} embedded={embedded} />;
+}
+
+function Home({ embedded }: { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
@@ -168,6 +225,7 @@ function Home() {
   const [organizeTarget, setOrganizeTarget] = useState<{
     kind: "bot" | "group";
     id: string;
+    spaceId?: string;
   } | null>(null);
   const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
@@ -387,27 +445,38 @@ function Home() {
     [bots, query, unreadOverrides],
   );
   const visibleGroups = useMemo(() => {
-    const shown = applyUnreadOverrides("group", groups, unreadOverrides);
-    const needle = query.trim().toLowerCase();
-    if (!needle) return shown;
-    return shown.filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle));
+    return filterGroups(applyUnreadOverrides("group", groups, unreadOverrides), query);
   }, [groups, query, unreadOverrides]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
       return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
     }
+    // Pinned chats of the current space sit as tiles above the list instead of in it.
+    const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
+    const pinned: PinnedChat[] = [
+      ...[...visible, ...otherSpaces.flatMap((space) => filterBots(space.bots, query))]
+        .filter((bot) => bot.pinned)
+        .map((bot) => ({ kind: "bot" as const, bot })),
+      ...[...visibleGroups, ...otherSpaces.flatMap((space) => filterGroups(space.groups, query))]
+        .filter((group) => group.pinned)
+        .map((group) => ({ kind: "group" as const, group })),
+    ];
+    const listedBots = visible.filter((bot) => !bot.pinned);
+    const listedGroups = visibleGroups.filter((group) => !group.pinned);
     const sidebarSpaces =
       spaces.length > 0
         ? spaces.map((space) =>
             space.id === me?.spaceId
-              ? { ...space, bots: visible, groups: visibleGroups, botSections }
+              ? { ...space, bots: listedBots, groups: listedGroups, botSections }
               : {
                   ...space,
-                  bots: filterBots(space.bots, query),
-                  groups: space.groups.filter((group) =>
-                    `${group.name} ${group.preview}`
-                      .toLowerCase()
-                      .includes(query.trim().toLowerCase()),
+                  bots: filterBots(space.bots, query).filter((bot) => !bot.pinned),
+                  groups: space.groups.filter(
+                    (group) =>
+                      !group.pinned &&
+                      `${group.name} ${group.preview}`
+                        .toLowerCase()
+                        .includes(query.trim().toLowerCase()),
                   ),
                 },
           )
@@ -418,13 +487,14 @@ function Home() {
                 name: t("Personal"),
                 isDefault: true,
                 hasContent: true,
-                bots: visible,
-                groups: visibleGroups,
+                bots: listedBots,
+                groups: listedGroups,
                 botSections,
               },
             ]
           : [];
-    return spaceInboxItems(sidebarSpaces, collapsedRosterParents);
+    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsedRosterParents);
+    return pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
   }, [
     botSections,
     collapsedRosterParents,
@@ -438,21 +508,48 @@ function Home() {
     visibleGroups,
   ]);
   const initials = userInitials(me?.name ?? "");
+  const organizeSpace =
+    organizeTarget?.spaceId && organizeTarget.spaceId !== me?.spaceId
+      ? spaces.find((space) => space.id === organizeTarget.spaceId)
+      : undefined;
   const organizeChat = organizeTarget
     ? organizeTarget.kind === "bot"
-      ? bots.find((bot) => bot.id === organizeTarget.id)
-      : groups.find((group) => group.id === organizeTarget.id)
+      ? (organizeSpace?.bots ?? bots).find((bot) => bot.id === organizeTarget.id)
+      : (organizeSpace?.groups ?? groups).find((group) => group.id === organizeTarget.id)
     : null;
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps the inbox in a centred column.
-  const columnInset = readableGutter(
-    useWindowDimensions().width,
-    Math.max(insets.left, insets.right),
-  );
+  const windowWidth = useWindowDimensions().width;
+  const { inboxWidth } = useSplitView();
+  const compactRows = embedded && inboxWidth < TAGLESS_LIST_WIDTH;
+  const columnInset = embedded
+    ? 0
+    : readableGutter(windowWidth, Math.max(insets.left, insets.right));
   // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
-  const nativeHeader = iosAtLeast(26);
+  // The list beside a chat has no navigation bar of its own.
+  const nativeHeader = iosAtLeast(26) && !embedded;
   const navigation = useNavigation();
   const router = useRouter();
+  const pathname = usePathname();
+  const openParams = useGlobalSearchParams<{ botId?: string; groupId?: string }>();
+  const selectedChatId =
+    pathname === "/thread"
+      ? (openParams.botId ?? null)
+      : pathname === "/group-thread"
+        ? (openParams.groupId ?? null)
+        : null;
+  // Beside the list, a chat replaces the open one instead of stacking on it.
+  const openChat = useCallback(
+    (href: Href) => {
+      if (!embedded) router.push(href);
+      else if (pathname === "/thread" || pathname === "/group-thread") router.replace(href);
+      else {
+        if (router.canDismiss()) router.dismissAll();
+        router.push(href);
+      }
+    },
+    [embedded, pathname, router],
+  );
 
   const chooseInboxSpace = useCallback(
     async (spaceId: string) => {
@@ -561,7 +658,7 @@ function Home() {
       });
       void refreshBots().catch(() => undefined);
       allowFocusPrompt(bot.id);
-      router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
       void (async () => {
         const started = await rpc("onboarding/start", { botId: bot.id })
           .then(() => true)
@@ -574,7 +671,7 @@ function Home() {
     } finally {
       creatingBotRef.current = false;
     }
-  }, [refreshBots, router, t]);
+  }, [openChat, refreshBots, t]);
 
   const runCreateAction = useCallback(
     (action: "bot" | "group" | "space") => {
@@ -685,25 +782,25 @@ function Home() {
     (bot: MobileBot | SpaceBot) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       void openMobileSpace(bot.spaceId, () =>
-        router.push({ pathname: "/thread", params: { botId: bot.id, name: bot.name } }),
+        openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } }),
       );
     },
-    [router],
+    [openChat],
   );
   const openGroup = useCallback(
     (group: MobileGroup | SpaceGroup) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
       void openMobileSpace(group.spaceId, () =>
-        router.push({ pathname: "/group-thread", params: { groupId: group.id, name: group.name } }),
+        openChat({ pathname: "/group-thread", params: { groupId: group.id, name: group.name } }),
       );
     },
-    [router],
+    [openChat],
   );
   const organizeBot = useCallback((bot: MobileBot | SpaceBot) => {
-    setOrganizeTarget({ kind: "bot", id: bot.id });
+    setOrganizeTarget({ kind: "bot", id: bot.id, spaceId: bot.spaceId });
   }, []);
   const organizeGroup = useCallback((group: MobileGroup | SpaceGroup) => {
-    setOrganizeTarget({ kind: "group", id: group.id });
+    setOrganizeTarget({ kind: "group", id: group.id, spaceId: group.spaceId });
   }, []);
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
@@ -713,7 +810,7 @@ function Home() {
       chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
       update: BotOrganizationUpdate,
     ) => {
-      await rpc(`${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
+      await chatRpc(chat.spaceId, `${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
       if (kind === "bot" && update.notifyOnFinish !== undefined) {
         await resumeLiveNotifications(
           currentApiBase(),
@@ -806,6 +903,14 @@ function Home() {
     ({ item }: { item: InboxItem }) =>
       item.type === "search" ? (
         <SearchRow hit={item.hit} onPress={openSearchHit} />
+      ) : item.type === "pinned" ? (
+        <PinnedTiles
+          chats={item.chats}
+          onOpenBot={openBot}
+          onOpenGroup={openGroup}
+          onLongPressBot={organizeBot}
+          onLongPressGroup={organizeGroup}
+        />
       ) : item.type === "heading" ? (
         item.space ? (
           <View style={styles.spaceHeading}>
@@ -857,7 +962,7 @@ function Home() {
           group={item.group}
           day={day}
           onPress={openGroup}
-          onLongPress={item.group.spaceId === me?.spaceId ? organizeGroup : undefined}
+          onLongPress={organizeGroup}
           onAction={SWIPE_ROWS && item.group.spaceId === me?.spaceId ? groupAction : undefined}
         />
       ) : (
@@ -869,7 +974,7 @@ function Home() {
           collapsed={collapsedRosterParents.has(item.bot.id)}
           onToggleChildren={toggleRosterParent}
           onPress={openBot}
-          onLongPress={item.bot.spaceId === me?.spaceId ? organizeBot : undefined}
+          onLongPress={organizeBot}
           onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
         />
       ),
@@ -979,112 +1084,117 @@ function Home() {
         </View>
       )}
 
-      <FlatList<InboxItem>
-        style={{ flex: 1 }}
-        data={listData}
-        keyExtractor={(item) => {
-          if (item.type === "heading") return `heading-${item.key}`;
-          if (item.type === "bot") return item.bot.id;
-          if (item.type === "group") return `group-${item.group.id}`;
-          return searchHitListKey(item.hit);
-        }}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        indicatorStyle={appearance === "dark" ? "white" : "black"}
-        contentContainerStyle={[
-          styles.list,
-          { paddingHorizontal: columnInset },
-          // iOS moves the active search bar to the bottom and removes the navigation inset.
-          nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
-        ]}
-        contentInsetAdjustmentBehavior="automatic"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              void refreshBots();
-              void loadActivity();
+      <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>
+        <CompactRowsContext.Provider value={compactRows}>
+          <FlatList<InboxItem>
+            style={{ flex: 1 }}
+            data={listData}
+            keyExtractor={(item) => {
+              if (item.type === "pinned") return "pinned";
+              if (item.type === "heading") return `heading-${item.key}`;
+              if (item.type === "bot") return item.bot.id;
+              if (item.type === "group") return `group-${item.group.id}`;
+              return searchHitListKey(item.hit);
             }}
-            tintColor={native.secondaryLabel}
-            colors={[tokens.mutedForeground]}
-            progressBackgroundColor={tokens.muted}
-          />
-        }
-        ListHeaderComponent={
-          <>
-            {searching && !nativeHeader ? (
-              <TextInput
-                autoFocus
-                value={query}
-                onChangeText={setQuery}
-                placeholder={t("Search")}
-                placeholderTextColor={tokens.mutedForeground}
-                autoCorrect={false}
-                autoCapitalize="none"
-                returnKeyType="search"
-                keyboardAppearance={appearance}
-                clearButtonMode="while-editing"
-                style={styles.searchField}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            indicatorStyle={appearance === "dark" ? "white" : "black"}
+            contentContainerStyle={[
+              styles.list,
+              { paddingHorizontal: columnInset },
+              // iOS moves the active search bar to the bottom and removes the navigation inset.
+              nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
+            ]}
+            contentInsetAdjustmentBehavior="automatic"
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  void refreshBots();
+                  void loadActivity();
+                }}
+                tintColor={native.secondaryLabel}
+                colors={[tokens.mutedForeground]}
+                progressBackgroundColor={tokens.muted}
               />
-            ) : null}
+            }
+            ListHeaderComponent={
+              <>
+                {searching && !nativeHeader ? (
+                  <TextInput
+                    autoFocus
+                    value={query}
+                    onChangeText={setQuery}
+                    placeholder={t("Search")}
+                    placeholderTextColor={tokens.mutedForeground}
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                    returnKeyType="search"
+                    keyboardAppearance={appearance}
+                    clearButtonMode="while-editing"
+                    style={styles.searchField}
+                  />
+                ) : null}
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            {spaceRecoveryId ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={spaceBusy}
-                onPress={() => void chooseInboxSpace(spaceRecoveryId)}
-                style={styles.recoveryAction}
-              >
-                <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
-              </Pressable>
-            ) : null}
-            {activityMode &&
-            !searching &&
-            !query.trim() &&
-            (activity.active.length > 0 || activity.recent.length > 0) ? (
-              <ActivitySection activity={activity} bots={bots} />
-            ) : null}
-          </>
-        }
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            {query.trim() && searching
-              ? searchLoading
-                ? t("Searching…")
-                : t("No results")
-              : query.trim()
-                ? t("No matching bots")
-                : searching
-                  ? t("Search conversations, files, and routines")
-                  : // Before any load (an offline launch with nothing saved) the bots are unknown.
-                    me
-                    ? t("Tap + to create a bot")
-                    : null}
-          </Text>
-        }
-        ListFooterComponent={
-          inboxNeedsCreateHint(listData) ? (
-            <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
-          ) : null
-        }
-        renderItem={renderItem}
-      />
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                {spaceRecoveryId ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={spaceBusy}
+                    onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+                    style={styles.recoveryAction}
+                  >
+                    <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+                  </Pressable>
+                ) : null}
+                {activityMode &&
+                !searching &&
+                !query.trim() &&
+                (activity.active.length > 0 || activity.recent.length > 0) ? (
+                  <ActivitySection activity={activity} bots={bots} />
+                ) : null}
+              </>
+            }
+            ListEmptyComponent={
+              <Text style={styles.empty}>
+                {query.trim() && searching
+                  ? searchLoading
+                    ? t("Searching…")
+                    : t("No results")
+                  : query.trim()
+                    ? t("No matching bots")
+                    : searching
+                      ? t("Search conversations, files, and routines")
+                      : // Before any load (an offline launch with nothing saved) the bots are unknown.
+                        me
+                        ? t("Tap + to create a bot")
+                        : null}
+              </Text>
+            }
+            ListFooterComponent={
+              inboxNeedsCreateHint(listData) ? (
+                <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+              ) : null
+            }
+            renderItem={renderItem}
+          />
+        </CompactRowsContext.Provider>
+      </SelectedChatContext.Provider>
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}
-          sections={botSections}
+          sections={organizeSpace?.botSections ?? botSections}
           onClose={() => setOrganizeTarget(null)}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
           onCreateSection={async (name) => {
-            await rpc("botSections/create", {
+            await chatRpc(organizeTarget.spaceId, "botSections/create", {
               [`${organizeTarget.kind}Id`]: organizeChat.id,
               name,
             });
             await loadBots();
           }}
           onRenameSection={async (sectionId, name) => {
-            await rpc("botSections/update", { sectionId, name });
+            await chatRpc(organizeTarget.spaceId, "botSections/update", { sectionId, name });
             await loadBots();
           }}
         />
@@ -1176,6 +1286,7 @@ function ActivityRow({
 }
 
 function ConversationRow({
+  chatId,
   title,
   preview,
   time,
@@ -1194,6 +1305,7 @@ function ConversationRow({
   accessibilityLabel,
   accessibilityHint,
 }: {
+  chatId?: string;
   title: string;
   preview: string;
   time: string;
@@ -1214,6 +1326,9 @@ function ConversationRow({
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
+  const compact = useContext(CompactRowsContext);
+  const openChatId = useContext(SelectedChatContext);
+  const selected = chatId !== undefined && openChatId === chatId;
   const toggleLabel = collapsed
     ? t("Expand {name}", { name: title })
     : t("Collapse {name}", { name: title });
@@ -1240,7 +1355,9 @@ function ConversationRow({
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.row,
-        depth > 0 ? { paddingInlineStart: 16 + depth * 16 } : null,
+        compact ? styles.compactRow : null,
+        selected ? styles.rowSelected : null,
+        depth > 0 ? { paddingInlineStart: (compact ? 12 : 16) + depth * 16 } : null,
         pressed && styles.rowPressed,
       ]}
     >
@@ -1266,7 +1383,7 @@ function ConversationRow({
             <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
               {title}
             </Text>
-            {tag ? (
+            {tag && !compact ? (
               <View style={styles.tag}>
                 <Text style={styles.tagLabel} numberOfLines={1}>
                   {tag}
@@ -1349,6 +1466,65 @@ const SearchRow = memo(function SearchRow({
   );
 });
 
+/** Pinned chats as large avatars above the list, opened with a tap and organised with a long press. */
+const PinnedTiles = memo(function PinnedTiles({
+  chats,
+  onOpenBot,
+  onOpenGroup,
+  onLongPressBot,
+  onLongPressGroup,
+}: {
+  chats: PinnedChat[];
+  onOpenBot: (bot: MobileBot | SpaceBot) => void;
+  onOpenGroup: (group: MobileGroup | SpaceGroup) => void;
+  onLongPressBot: (bot: MobileBot | SpaceBot) => void;
+  onLongPressGroup: (group: MobileGroup | SpaceGroup) => void;
+}) {
+  const styles = useThemedStyles(createHomeStyles);
+  const selectedId = useContext(SelectedChatContext);
+  return (
+    <View style={styles.pinnedTiles}>
+      {chats.map((chat) => {
+        const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
+        const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
+        const unread = chat.kind === "bot" ? chat.bot.unread : chat.group.unread;
+        return (
+          <Pressable
+            key={`${chat.kind}-${id}`}
+            accessibilityRole="button"
+            accessibilityLabel={name}
+            accessibilityState={{ selected: selectedId === id }}
+            onPress={() => (chat.kind === "bot" ? onOpenBot(chat.bot) : onOpenGroup(chat.group))}
+            onLongPress={() =>
+              chat.kind === "bot" ? onLongPressBot(chat.bot) : onLongPressGroup(chat.group)
+            }
+            style={({ pressed }) => [
+              styles.pinnedTile,
+              selectedId === id ? { backgroundColor: native.fill } : null,
+              pressed && styles.rowPressed,
+            ]}
+          >
+            {chat.kind === "bot" ? (
+              <BotAvatar
+                color={chat.bot.color || FALLBACK_COLOR}
+                identity={chat.bot.id}
+                size={64}
+                status={chat.bot.status}
+                muted={chat.bot.notifyOnFinish === false}
+              />
+            ) : (
+              <GroupAvatar members={chat.group.members} size={64} />
+            )}
+            <Text style={[styles.pinnedName, unread && styles.pinnedUnread]} numberOfLines={1}>
+              {name}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+});
+
 const BotRow = memo(function BotRow({
   bot,
   day,
@@ -1394,6 +1570,7 @@ const BotRow = memo(function BotRow({
   const runAction = (action: InboxRowAction) => onAction?.(action, bot);
   const row = (
     <ConversationRow
+      chatId={bot.id}
       title={bot.name}
       preview={preview}
       time={time}
@@ -1456,6 +1633,7 @@ const GroupRow = memo(function GroupRow({
   const runAction = (action: InboxRowAction) => onAction?.(action, group);
   const row = (
     <ConversationRow
+      chatId={group.id}
       title={group.name}
       preview={preview}
       time={time}
@@ -1572,6 +1750,42 @@ function createHomeStyles() {
       paddingHorizontal: 16,
       paddingVertical: 10,
       gap: 12,
+    },
+    rowSelected: {
+      marginHorizontal: 8,
+      paddingHorizontal: 8,
+      borderRadius: 16,
+      backgroundColor: native.fill,
+    },
+    pinnedTiles: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      paddingHorizontal: 8,
+      paddingTop: 4,
+      paddingBottom: 12,
+    },
+    pinnedTile: {
+      width: "33.33%",
+      alignItems: "center",
+      paddingVertical: 8,
+      paddingHorizontal: 4,
+      borderRadius: 16,
+      gap: 6,
+    },
+    pinnedName: {
+      color: native.secondaryLabel,
+      fontSize: 13,
+      fontWeight: "500",
+      textAlign: "center",
+      writingDirection: "auto",
+    },
+    pinnedUnread: {
+      color: native.label,
+      fontWeight: "700",
+    },
+    compactRow: {
+      paddingHorizontal: 12,
+      gap: 10,
     },
     treeToggle: {
       width: 20,

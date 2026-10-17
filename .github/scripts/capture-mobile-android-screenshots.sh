@@ -23,4 +23,4 @@ adb logcat -c
 adb logcat > "$android_log" &
 android_log_pid=$!
 
-timeout --signal=INT --kill-after=30s 10m pnpm test:mobile-screenshots
+timeout --signal=INT --kill-after=30s 15m pnpm test:mobile-screenshots

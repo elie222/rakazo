@@ -4,19 +4,21 @@ import {
   MarkdownLinkPromptProvider,
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
-import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import { DarkTheme, Stack, ThemeProvider, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Dimensions, Platform, View } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Dimensions, Platform, StyleSheet, View } from "react-native";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { CallCard } from "../components/CallCard";
 import { ComputerUpdateProgress } from "../components/computer-update-progress";
 import { floatingHeaderOptions, glassHeaderOptions } from "../components/glass-title";
+import { MessageMenuHost } from "../components/message-action-menu";
 import { NativeSymbol } from "../components/native-symbol";
 import { VoicePlayerBar } from "../components/voice-player-bar";
 import {
@@ -47,12 +49,101 @@ import {
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import { registerSessionDiskCache } from "../lib/session";
+import {
+  chooseInboxWidth,
+  inboxPaneWidth,
+  loadInboxWidth,
+  setInboxHidden,
+  useSplitView,
+} from "../lib/split-view";
 import { startUnsentSends } from "../lib/unsent-sends";
+import { InboxPane } from "./index";
 
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
+
+// Screens that take the whole window even when it is wide enough for the chat list beside them.
+const DIVIDER_GRAB_WIDTH = 24;
+const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"]);
+
+/** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
+function SplitFrame({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const { split, inboxHidden, inboxWidth, windowWidth } = useSplitView();
+  const tokens = useMobileTokens();
+  const home = pathname === "/";
+  useEffect(() => {
+    if (home) setInboxHidden(false);
+  }, [home]);
+  const showsInbox = split && (home || !inboxHidden) && !FULL_WINDOW_ROUTES.has(pathname);
+  // Dragging resizes the list natively; the width is kept when the finger lifts.
+  const paneWidth = useSharedValue(inboxWidth);
+  const dragStart = useRef(inboxWidth);
+  useEffect(() => {
+    paneWidth.value = inboxWidth;
+  }, [inboxWidth, paneWidth]);
+  const resize = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-4, 4])
+    .onStart(() => {
+      dragStart.current = paneWidth.value;
+    })
+    .onUpdate((event) => {
+      paneWidth.value = inboxPaneWidth(windowWidth, dragStart.current + event.translationX);
+    })
+    .onEnd(() => chooseInboxWidth(paneWidth.value));
+  const paneStyle = useAnimatedStyle(() => ({ width: paneWidth.value }));
+  const handleStyle = useAnimatedStyle(() => ({ left: paneWidth.value - DIVIDER_GRAB_WIDTH / 2 }));
+  return (
+    <View style={{ flex: 1, flexDirection: "row" }}>
+      {showsInbox ? (
+        <Animated.View
+          style={[
+            paneStyle,
+            { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.border },
+          ]}
+        >
+          <InboxPane />
+        </Animated.View>
+      ) : null}
+      {/* Keeps its place among the children so the navigation stack survives folding. */}
+      <View style={{ flex: 1 }}>{children}</View>
+      {showsInbox ? (
+        <GestureDetector gesture={resize}>
+          {/* Drawn last and wider than the line, over both panes, so it is easy to grab. */}
+          <Animated.View
+            accessible={false}
+            collapsable={false}
+            style={[
+              {
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                width: DIVIDER_GRAB_WIDTH,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "transparent",
+              },
+              handleStyle,
+            ]}
+          >
+            <View
+              style={{
+                width: 5,
+                height: 40,
+                borderRadius: 3,
+                backgroundColor: tokens.mutedForeground,
+                opacity: 0.6,
+              }}
+            />
+          </Animated.View>
+        </GestureDetector>
+      ) : null}
+    </View>
+  );
+}
 
 function LinkGlobe() {
   const tokens = useMobileTokens();
@@ -97,6 +188,8 @@ export default function Layout() {
   }, []);
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
+  const chatAnimation = useSplitView().split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
   const [appearanceReady, setAppearanceReady] = useState(false);
@@ -146,6 +239,7 @@ export default function Layout() {
         loadResponseStreamingPreference(),
         loadRemoteImagesPreference(),
         loadAvatarStyle(),
+        loadInboxWidth(),
       ])
         .then(async () =>
           resumeLiveNotifications(
@@ -168,92 +262,104 @@ export default function Layout() {
               <ThemeProvider value={navigationTheme}>
                 <StatusBar style={resolved === "light" ? "dark" : "light"} />
                 <View style={{ flex: 1 }}>
-                  <Stack
-                    screenOptions={{
-                      headerStyle: { backgroundColor: navigationTheme.colors.background },
-                      ...floatingHeaderOptions(),
-                      headerTintColor: navigationTheme.colors.text,
-                      headerShadowVisible: false,
-                      headerBackButtonDisplayMode: "minimal",
-                      contentStyle: { backgroundColor: String(native.page) },
-                    }}
-                  >
-                    <Stack.Screen name="index" options={{ headerShown: false, title: "Rakazo" }} />
-                    <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-                    <Stack.Screen
-                      name="(settings)"
-                      options={{
-                        headerShown: false,
-                        // One stack of settings pages in a sheet over the screen that opened it.
-                        // Android keeps pushed pages: it has no nested stack inside a formSheet.
-                        presentation: Platform.OS === "ios" ? "formSheet" : "card",
-                        sheetAllowedDetents: [0.95],
-                        sheetGrabberVisible: false,
-                        sheetExpandsWhenScrolledToEdge: false,
-                        contentStyle: { backgroundColor: native.groupedPage },
+                  <SplitFrame>
+                    <Stack
+                      screenOptions={{
+                        headerStyle: { backgroundColor: navigationTheme.colors.background },
+                        ...floatingHeaderOptions(),
+                        headerTintColor: navigationTheme.colors.text,
+                        headerShadowVisible: false,
+                        headerBackButtonDisplayMode: "minimal",
+                        contentStyle: { backgroundColor: String(native.page) },
                       }}
-                    />
-                    <Stack.Screen
-                      name="server"
-                      options={{
-                        title: t("Server"),
-                        presentation: "formSheet",
-                        sheetAllowedDetents: [0.6, 1],
-                        sheetGrabberVisible: true,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new"
-                      options={{
-                        title: t("New bot"),
-                        presentation: "modal",
-                        gestureEnabled: true,
-                        headerBackVisible: false,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new-group"
-                      options={{
-                        title: t("New group"),
-                        presentation: "modal",
-                        gestureEnabled: true,
-                      }}
-                    />
-                    <Stack.Screen
-                      name="new-space"
-                      options={{
-                        title: t("New space"),
-                        presentation: "modal",
-                        gestureEnabled: true,
-                        headerBackVisible: false,
-                      }}
-                    />
-                    <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
-                    <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
-                    <Stack.Screen name="group-thread" options={{ title: t("Group") }} />
-                    <Stack.Screen
-                      name="group-settings"
-                      options={glassHeaderOptions(t("Group settings"))}
-                    />
-                    <Stack.Screen
-                      name="bot-settings"
-                      options={glassHeaderOptions(t("Chat settings"))}
-                    />
-                    <Stack.Screen name="thread" options={{ title: t("Thread") }} />
-                    <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
-                    <Stack.Screen name="computer" options={{ title: t("Computer") }} />
-                    <Stack.Screen
-                      name="image"
-                      options={{
-                        headerShown: false,
-                        presentation: "fullScreenModal",
-                        animation: "fade",
-                      }}
-                    />
-                  </Stack>
+                    >
+                      <Stack.Screen
+                        name="index"
+                        options={{ headerShown: false, title: "Rakazo" }}
+                      />
+                      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
+                      <Stack.Screen
+                        name="(settings)"
+                        options={{
+                          headerShown: false,
+                          // One stack of settings pages in a sheet over the screen that opened it.
+                          // Android keeps pushed pages: it has no nested stack inside a formSheet.
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [0.95],
+                          sheetGrabberVisible: false,
+                          sheetExpandsWhenScrolledToEdge: false,
+                          contentStyle: { backgroundColor: native.groupedPage },
+                        }}
+                      />
+                      <Stack.Screen
+                        name="server"
+                        options={{
+                          title: t("Server"),
+                          presentation: "formSheet",
+                          sheetAllowedDetents: [0.6, 1],
+                          sheetGrabberVisible: true,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new"
+                        options={{
+                          title: t("New bot"),
+                          presentation: "modal",
+                          gestureEnabled: true,
+                          headerBackVisible: false,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new-group"
+                        options={{
+                          title: t("New group"),
+                          presentation: "modal",
+                          gestureEnabled: true,
+                        }}
+                      />
+                      <Stack.Screen
+                        name="new-space"
+                        options={{
+                          title: t("New space"),
+                          presentation: "modal",
+                          gestureEnabled: true,
+                          headerBackVisible: false,
+                        }}
+                      />
+                      <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
+                      <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
+                      <Stack.Screen
+                        name="group-thread"
+                        options={{ title: t("Group"), animation: chatAnimation }}
+                      />
+                      <Stack.Screen
+                        name="group-settings"
+                        options={glassHeaderOptions(t("Group settings"))}
+                      />
+                      <Stack.Screen
+                        name="bot-settings"
+                        options={glassHeaderOptions(t("Chat settings"))}
+                      />
+                      <Stack.Screen
+                        name="thread"
+                        options={{ title: t("Thread"), animation: chatAnimation }}
+                      />
+                      <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
+                      <Stack.Screen name="computer" options={{ title: t("Computer") }} />
+                      <Stack.Screen
+                        name="image"
+                        options={{
+                          headerShown: false,
+                          presentation: "fullScreenModal",
+                          animation: "fade",
+                        }}
+                      />
+                    </Stack>
+                  </SplitFrame>
                   <VoicePlayerBar style={{ marginTop: 8, marginBottom: insets.bottom + 8 }} />
                 </View>
                 <ComputerUpdateProgress />
+                <MessageMenuHost />
                 <CallCard />
               </ThemeProvider>
             </ChatContentProviders>
