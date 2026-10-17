@@ -17,7 +17,7 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未读）"
 
-#. placeholder {0}: group.entries.length
+#. placeholder {0}: enabledCount || group.entries.length
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "{0, plural, one {# model} other {# models}}"
 msgstr "{0, plural, one {# 个模型} other {# 个模型}}"

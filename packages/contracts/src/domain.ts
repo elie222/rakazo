@@ -1049,6 +1049,8 @@ export const ModelCredentialSchema = z.object({
   supportsImages: z.boolean().optional(),
   maxImagesPerPrompt: z.number().int().min(1).max(1000).optional(),
   thinkingLevels: z.array(ThinkingLevelSchema).optional(),
+  /** Openai-compatible only; always contains `modelId` when set. */
+  enabledModelIds: z.array(z.string()).optional(),
   /** Stored secret kind. Absent when the secret could not be read. */
   authKind: z.enum(["api_key", "oauth", "openai_compatible"]).optional(),
 });
@@ -1095,6 +1097,7 @@ export const ModelConnectInputSchema = z
     maxTokens: z.number().int().min(1).max(MAX_MODEL_MAX_TOKENS).nullable().optional(),
     supportsImages: z.boolean().optional(),
     maxImagesPerPrompt: z.number().int().min(1).max(1000).nullable().optional(),
+    enabledModelIds: z.array(z.string().trim().min(1)).max(500).optional(),
   })
   .superRefine((value, ctx) => {
     if (!modelOutputLeavesInputRoom(value.maxTokens, value.contextWindow)) {

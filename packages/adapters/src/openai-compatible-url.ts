@@ -1,35 +1,13 @@
 import { isIP } from "node:net";
-import { OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
+import { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { isCloudMetadataAddress, isLinkLocalAddress, isPrivateAddress } from "./network-address.js";
 
-export { OPENAI_COMPATIBLE_PROVIDER_ID };
+export { normalizeOpenAiCompatibleBaseUrl, OPENAI_COMPATIBLE_PROVIDER_ID };
 
 const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.goog"]);
 
 export function openAiCompatAllowPublicHosts(): boolean {
   return process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC === "1";
-}
-
-export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
-  const trimmed = raw.trim();
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    throw new Error("Base URL must be an absolute HTTP(S) URL");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Base URL must use http or https");
-  }
-  if (url.username || url.password) {
-    throw new Error("Base URL must not contain credentials");
-  }
-  let path = url.pathname.replace(/\/+$/, "") || "";
-  const VERSIONED_API_ROOT = /\/v\d+$/;
-  if (!VERSIONED_API_ROOT.test(path)) {
-    path = path ? `${path}/v1` : "/v1";
-  }
-  return `${url.origin}${path}`;
 }
 
 function normalizeHostname(hostname: string): string {

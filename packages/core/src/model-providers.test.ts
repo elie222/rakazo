@@ -1,13 +1,18 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import {
+  canUseCompatibleModelAsDefault,
   clampCatalogThinkingLevel,
+  compatibleModelRows,
   connectedModelChoices,
+  credentialForModel,
   featuredModelProviders,
   filterModelCatalog,
   pickCatalogModelId,
   resolveSelectableModelId,
+  savedCompatibleModelIds,
   selectedProviderOutsideSearchResults,
+  toggleEnabledModelId,
 } from "./model-providers.js";
 
 function provider(provider: string): ModelCatalogEntry {
@@ -226,6 +231,45 @@ describe("connected model choices", () => {
     ]);
   });
 
+  it("offers one choice per enabled model id on a compatible connection", () => {
+    const choices = connectedModelChoices(
+      [
+        {
+          provider: "openai-compatible",
+          label: "Local server",
+          modelId: "alpha",
+          enabledModelIds: ["alpha", "beta", "gamma", "beta"],
+        },
+      ],
+      deepseek,
+    );
+    expect(choices).toEqual(
+      ["alpha", "beta", "gamma"].map((id) => ({
+        key: `openai-compatible::${id}`,
+        provider: "openai-compatible",
+        modelId: id,
+        label: `Local server · ${id}`,
+      })),
+    );
+  });
+
+  it("finds a credential by enabled model id or by its default model", () => {
+    const compatible = {
+      provider: "openai-compatible",
+      label: "Local server",
+      modelId: "alpha",
+      enabledModelIds: ["alpha", "beta"],
+    };
+    const legacy = { provider: "deepseek", label: "DeepSeek", modelId: "my-finetune" };
+    const credentials = [legacy, compatible];
+    expect(credentialForModel(credentials, "openai-compatible", "beta")).toBe(compatible);
+    expect(credentialForModel(credentials, "openai-compatible", "alpha")).toBe(compatible);
+    expect(credentialForModel(credentials, "deepseek", "my-finetune")).toBe(legacy);
+    expect(credentialForModel(credentials, "openai-compatible", "delta")).toBeUndefined();
+    expect(credentialForModel(credentials, "deepseek", "beta")).toBeUndefined();
+    expect(credentialForModel(credentials, null, "alpha")).toBeUndefined();
+  });
+
   it("resolves a saved display label to the API id used on save", () => {
     expect(resolveSelectableModelId(deepseek, "deepseek", "DeepSeek-V4.1-Flash")).toBe(
       "deepseek-flash",
@@ -276,5 +320,47 @@ describe("filterModelCatalog", () => {
 
   it("returns nothing when no model matches", () => {
     expect(filterModelCatalog(models, "gemini")).toEqual([]);
+  });
+});
+
+describe("openai-compatible model rows", () => {
+  const saved = { baseUrl: "http://127.0.0.1:8000/v1", enabledModelIds: ["a", "b"] };
+
+  it("keeps the saved list only for the saved endpoint", () => {
+    expect(savedCompatibleModelIds(saved, " http://127.0.0.1:8000/v1 ")).toEqual(["a", "b"]);
+    expect(savedCompatibleModelIds(saved, "http://other.test/v1")).toEqual([]);
+    expect(savedCompatibleModelIds({ baseUrl: saved.baseUrl }, saved.baseUrl)).toEqual([]);
+    expect(savedCompatibleModelIds(undefined, saved.baseUrl)).toEqual([]);
+  });
+
+  it("compares endpoints the way the server stores them", () => {
+    expect(savedCompatibleModelIds(saved, "http://127.0.0.1:8000/v1/")).toEqual(["a", "b"]);
+    expect(savedCompatibleModelIds(saved, "http://127.0.0.1:8000")).toEqual(["a", "b"]);
+    expect(savedCompatibleModelIds(saved, "http://127.0.0.2:8000/v1")).toEqual([]);
+  });
+
+  it("treats half-typed text as a different endpoint without throwing", () => {
+    expect(savedCompatibleModelIds(saved, "http://")).toEqual([]);
+    expect(savedCompatibleModelIds(saved, "127.0.0.1:80")).toEqual([]);
+    expect(savedCompatibleModelIds({ ...saved, baseUrl: "not a url" }, " not a url ")).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("lists saved, ticked and probed ids once each, in that order", () => {
+    expect(compatibleModelRows(["a", "b"], ["b", "c"], ["d", "a"])).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("ticks and unticks an id without duplicates", () => {
+    expect(toggleEnabledModelId(["a"], "b", true)).toEqual(["a", "b"]);
+    expect(toggleEnabledModelId(["a", "b"], "b", true)).toEqual(["a", "b"]);
+    expect(toggleEnabledModelId(["a", "b"], "a", false)).toEqual(["b"]);
+  });
+
+  it("allows a default only from a saved list, and any default when the list is unread", () => {
+    expect(canUseCompatibleModelAsDefault(["a", "b"], "b")).toBe(true);
+    expect(canUseCompatibleModelAsDefault(["a"], "b")).toBe(false);
+    expect(canUseCompatibleModelAsDefault(undefined, "b")).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ import {
 import type { CodexLiveCatalog, CodexLiveReadOptions } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
+import type { StoredModelSecret } from "./pi-oauth.js";
 import { parseModelSecret } from "./pi-oauth.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./pi-openai-compatible-provider.js";
 
@@ -249,6 +250,35 @@ export type StoredModelAuthRead =
   | { status: "unreadable" }
   | { status: "rejected"; message: string };
 
+export type LoadedModelSecret =
+  | { status: "missing" }
+  | { status: "unreadable"; ciphertext: string }
+  | { status: "loaded"; ciphertext: string; plaintext: string };
+
+/**
+ * Read a user's account-wide model secret. A missing row or an undecryptable ciphertext is
+ * reported, not thrown; a store outage (`SecretStoreUnavailableError`) propagates.
+ */
+export async function loadStoredModelSecret(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<SecretStore, "load">,
+  userId: string,
+  secretId: string,
+): Promise<LoadedModelSecret> {
+  const secret = await prisma.secret.findFirst({
+    where: { id: secretId, userId, spaceId: null },
+    select: { id: true, ciphertext: true },
+  });
+  if (!secret) return { status: "missing" };
+  try {
+    const plaintext = await secretStore.load(secret.ciphertext, secret.id);
+    return { status: "loaded", ciphertext: secret.ciphertext, plaintext };
+  } catch (error) {
+    if (error instanceof SecretStoreUnavailableError) throw error;
+    return { status: "unreadable", ciphertext: secret.ciphertext };
+  }
+}
+
 /** Load credential auth outside transactions; retain the ref for a transactional recheck. */
 export async function prepareStoredModelAuth(
   prisma: Pick<PrismaClient, "secret">,
@@ -260,18 +290,12 @@ export async function prepareStoredModelAuth(
   live?: CodexLiveCatalog,
   liveOpts?: CodexLiveReadOptions,
 ): Promise<{ ref: string | null; auth: StoredModelAuthRead }> {
-  const secret = await prisma.secret.findFirst({
-    where: { id: secretId, userId, spaceId: null },
-    select: { id: true, ciphertext: true },
-  });
-  if (!secret) return { ref: null, auth: { status: "unreadable" } };
-  let plaintext: string;
-  try {
-    plaintext = await secretStore.load(secret.ciphertext, secret.id);
-  } catch (error) {
-    if (error instanceof SecretStoreUnavailableError) throw error;
+  const secret = await loadStoredModelSecret(prisma, secretStore, userId, secretId);
+  if (secret.status === "missing") return { ref: null, auth: { status: "unreadable" } };
+  if (secret.status === "unreadable") {
     return { ref: secret.ciphertext, auth: { status: "unreadable" } };
   }
+  const { plaintext } = secret;
   let message: string | undefined;
   try {
     message = validateModelAuthAvailability(provider, modelId, plaintext);
@@ -323,8 +347,38 @@ export async function validateStoredModelAuth(
   return auth.status === "rejected" ? auth.message : undefined;
 }
 
+/**
+ * The ids an openai-compatible connection serves in this space, default first. The
+ * secret is account-wide but the default is per space, so the default is unioned in.
+ */
+export function enabledOpenAiCompatibleModelIds(
+  secret: StoredModelSecret | undefined,
+  defaultModel: string | null | undefined,
+): string[] {
+  const listed = secret?.kind === "openai_compatible" ? (secret.enabledModelIds ?? []) : [];
+  const ids = [defaultModel, ...listed].map((id) => usableModelId(id));
+  return [...new Set(ids.filter((id): id is string => id !== null))];
+}
+
+async function loadModelSecret(
+  prisma: Pick<PrismaClient, "secret">,
+  secretStore: Pick<SecretStore, "load">,
+  userId: string,
+  secretId: string,
+): Promise<StoredModelSecret | undefined> {
+  const secret = await loadStoredModelSecret(prisma, secretStore, userId, secretId);
+  if (secret.status !== "loaded") return undefined;
+  try {
+    return parseModelSecret(secret.plaintext);
+  } catch {
+    // A secret that decrypts but does not parse is as unreadable as a corrupt one.
+    return undefined;
+  }
+}
+
 export async function validateConnectedModelChoice(
   prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
@@ -346,7 +400,10 @@ export async function validateConnectedModelChoice(
     },
     select: { id: true },
   });
-  return savedChoice ? undefined : "Unknown model for that provider";
+  if (savedChoice) return undefined;
+  const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+  const enabled = secret && enabledOpenAiCompatibleModelIds(secret, credential.defaultModel);
+  return enabled?.includes(modelId.trim()) ? undefined : "Unknown model for that provider";
 }
 
 export type ModelChoice = {
@@ -419,6 +476,8 @@ export function pinnedModelCredentialError(
 ): string | undefined {
   if (!choice.modelProvider || !usableModelId(choice.modelId)) return undefined;
   if (!credential) return "Connect that model provider first";
+  // The enabled list lives in the secret, so the run path checks openai-compatible ids.
+  if (choice.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) return undefined;
   const modelId = usableModelId(choice.modelId);
   if (
     modelId &&

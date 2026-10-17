@@ -141,6 +141,32 @@ describe("connected backup model choices", () => {
     ]);
   });
 
+  it("offers one compatible option per enabled model id", () => {
+    const enabled = credentials.map((credential) =>
+      credential.provider === "openai-compatible"
+        ? { ...credential, enabledModelIds: ["custom-model", "custom-from-catalog"] }
+        : credential,
+    );
+    expect(
+      connectedBackupOptions(catalog, enabled).filter(
+        (option) => option.provider === "openai-compatible",
+      ),
+    ).toEqual([
+      {
+        provider: "openai-compatible",
+        modelId: "custom-model",
+        label: "custom-model",
+        providerName: "openai-compatible",
+      },
+      {
+        provider: "openai-compatible",
+        modelId: "custom-from-catalog",
+        label: "Custom from catalog",
+        providerName: "OpenAI-compatible",
+      },
+    ]);
+  });
+
   it("moves a backup one place without changing the source list", () => {
     expect(moveBackupChoice(choices, 1, -1)).toEqual([choices[1], choices[0]]);
     expect(choices).toEqual([

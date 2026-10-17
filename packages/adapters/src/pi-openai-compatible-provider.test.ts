@@ -109,6 +109,7 @@ describe("model connect", () => {
     expect(parsed).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
+      enabledModelIds: ["qwen3-4b"],
     });
     expect(secretValuesToRedact(parsed)).toEqual([]);
   });
@@ -141,6 +142,7 @@ describe("model connect", () => {
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
       apiKey: "local-secret",
+      enabledModelIds: ["local-model"],
     });
   });
 

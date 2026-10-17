@@ -13,7 +13,11 @@ import {
   EncryptedSecretStore,
   IntegrationProviderSettings,
   LocalAgentHomeStore,
+  listPiCatalog,
+  modelCredentialDto,
+  parseModelSecret,
   screenLeaseIdForRun,
+  serializeModelSecret,
 } from "@rakazo/adapters";
 import type { Actor, Bot, ProductEvent } from "@rakazo/contracts";
 import { REPLY_QUOTE_MAX_LENGTH } from "@rakazo/contracts";
@@ -3681,6 +3685,664 @@ describe("routines.update", () => {
     const { call, update } = fixture(false);
     expect((await call({ thinkingLevel: "high" })).response.status).toBe(400);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("openai-compatible enabled models", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const compatible = "openai-compatible";
+  const baseUrl = "https://10.0.0.5:8443/v1";
+  const catalogId = listPiCatalog().find((entry) => entry.provider === compatible)!.id;
+  /** A pin row; space and user default to the actor's. */
+  type Pin = {
+    name: string;
+    modelId: string;
+    archived?: boolean;
+    spaceId?: string;
+    userId?: string;
+  };
+  type PinWhere = {
+    spaceId?: string;
+    archivedAt?: null;
+    userId?: string;
+    modelProvider?: string;
+    provider?: string;
+    modelId?: string | { notIn?: string[] };
+  };
+
+  function secretText(enabledModelIds?: string[], reasoning?: boolean) {
+    return serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl,
+      apiKey: "sk-fake-compatible-key",
+      ...(reasoning !== undefined ? { reasoning } : {}),
+      ...(enabledModelIds ? { enabledModelIds } : {}),
+    });
+  }
+
+  /** Applies the subset of a Prisma pin `where` the router uses. */
+  function matching(pins: Pin[] | undefined, where: PinWhere) {
+    return (pins ?? [])
+      .map((pin) => ({ spaceId: actor.spaceId, userId: actor.userId, ...pin }))
+      .filter(
+        (pin) =>
+          (where.modelProvider ?? where.provider) === compatible &&
+          (where.spaceId === undefined || pin.spaceId === where.spaceId) &&
+          (where.userId === undefined || pin.userId === where.userId) &&
+          !(where.archivedAt === null && pin.archived) &&
+          (typeof where.modelId === "string"
+            ? pin.modelId === where.modelId
+            : !where.modelId?.notIn?.includes(pin.modelId)),
+      )
+      .map(({ name, spaceId, modelId }) => ({ name, spaceId, modelId }));
+  }
+
+  function pinStores(options: { bots?: Pin[]; routines?: Pin[]; backups?: string[] }) {
+    const backups = options.backups?.map((modelId) => ({ name: "", modelId }));
+    return {
+      bots: (where: PinWhere) => matching(options.bots, where),
+      routine: {
+        findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
+          matching(options.routines, where),
+        ),
+      },
+      spaceBackupModel: {
+        findMany: vi.fn(async ({ where }: { where: PinWhere }) => matching(backups, where)),
+      },
+    };
+  }
+
+  function botRow(modelId: string) {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    return {
+      id: "bot-1",
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      name: "Ada",
+      title: "",
+      description: "",
+      instructions: "",
+      color: "ink",
+      notifyOnFinish: true,
+      pinned: false,
+      position: 0,
+      sectionId: null,
+      archivedAt: null,
+      parentBotId: null,
+      memoryScope: null,
+      createdAt: now,
+      updatedAt: now,
+      voiceId: null,
+      autoSpeak: false,
+      modelProvider: compatible,
+      modelId,
+      thinkingLevel: null,
+      teamChatAmbientEnabled: false,
+      teamChatRules: "",
+      webhookSecretId: null,
+      spawnKey: null,
+      thread: { id: "thread-1", unread: false, messages: [], runs: [] },
+      computer: null,
+      runs: [],
+    };
+  }
+
+  function preferenceStore(
+    state: { credential: Record<string, unknown>; preference: Record<string, unknown> },
+    otherSpaceDefaults: Record<string, string> = {},
+  ) {
+    const withCredential = () => ({ ...state.preference, credential: state.credential });
+    const elsewhere = Object.entries(otherSpaceDefaults).map(([spaceId, modelId]) => ({
+      ...state.preference,
+      id: `pref-${spaceId}`,
+      spaceId,
+      modelId,
+      isDefault: true,
+      credential: state.credential,
+    }));
+    type PreferenceWhere = {
+      spaceId?: string;
+      isDefault?: boolean;
+      modelId?: string;
+      credential?: { provider?: string };
+    };
+    return {
+      findMany: vi.fn(async ({ where }: { where: PreferenceWhere }) =>
+        where.credential?.provider && where.credential.provider !== compatible
+          ? []
+          : [withCredential(), ...elsewhere].filter(
+              (row) => where.spaceId === undefined || row.spaceId === where.spaceId,
+            ),
+      ),
+      findFirst: vi.fn(async ({ where }: { where: PreferenceWhere }) => {
+        const preference = withCredential();
+        if (where.isDefault !== undefined && where.isDefault !== preference.isDefault) return null;
+        if (where.modelId !== undefined && where.modelId !== preference.modelId) return null;
+        if (where.credential?.provider && where.credential.provider !== compatible) return null;
+        return preference;
+      }),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+      upsert: vi.fn(async ({ update }: { update: Record<string, unknown> }) =>
+        Object.assign(state.preference, update),
+      ),
+    };
+  }
+
+  function fixture(options: {
+    /** Stored plaintext; null makes the stored ciphertext unreadable. */
+    plaintext: string | null;
+    defaultModel: string;
+    preferenceIsDefault?: boolean;
+    /** The actor's compatible default in other spaces, by space id. */
+    otherSpaceDefaults?: Record<string, string>;
+    botModelId?: string;
+    bots?: Pin[];
+    routines?: Pin[];
+    backups?: string[];
+  }) {
+    const state = {
+      credential: {
+        id: "cred-compat",
+        userId: actor.userId,
+        provider: compatible,
+        label: "Compatible",
+        secretId: "secret-compat",
+        supportsImages: false,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      } as Record<string, unknown>,
+      preference: {
+        id: "pref-compat",
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        credentialId: "cred-compat",
+        modelId: options.defaultModel,
+        thinkingLevel: null,
+        isDefault: options.preferenceIsDefault ?? true,
+        updatedAt: new Date(0),
+      } as Record<string, unknown>,
+    };
+    const initialCredential = { ...state.credential };
+    const ciphertexts = new Map([["secret-compat", "cipher-compat"]]);
+    const plaintexts = new Map<string, string>();
+    if (options.plaintext !== null) plaintexts.set("cipher-compat", options.plaintext);
+    const pins = pinStores(options);
+    const bot = botRow(options.botModelId ?? options.defaultModel);
+    const prisma = {
+      ...pins,
+      bot: {
+        findFirst: vi.fn(async () => bot),
+        findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
+          where.modelProvider ? pins.bots(where) : [bot],
+        ),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+          Object.assign(
+            bot,
+            Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
+          ),
+        ),
+      },
+      spaceModelPreference: preferenceStore(state, options.otherSpaceDefaults),
+      userModelCredential: {
+        findMany: vi.fn(async ({ where }: { where: { provider?: string } }) =>
+          where.provider === compatible ? [state.credential] : [],
+        ),
+        findFirst: vi.fn(async ({ where }: { where: { provider?: string } }) =>
+          where.provider === compatible ? state.credential : null,
+        ),
+        create: vi.fn(),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
+          Object.assign(state.credential, data),
+        ),
+        count: vi.fn(async () => 0),
+      },
+      userVoiceCredential: { count: vi.fn(async () => 0) },
+      secret: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => {
+          const ciphertext = ciphertexts.get(where.id);
+          return ciphertext ? { id: where.id, ciphertext } : null;
+        }),
+        create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
+          ciphertexts.set(data.id, data.ciphertext);
+          return data;
+        }),
+        deleteMany: vi.fn(async () => ({ count: 1 })),
+      },
+      deploymentSettings: { findUnique: vi.fn(async () => null) },
+      user: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          email: actor.email,
+          name: "User",
+          avatarStyle: "organic",
+        })),
+      },
+      $transaction: vi.fn(async (fn: (client: unknown) => unknown) => fn(prisma)),
+    };
+    const secrets = {
+      load: vi.fn(async (ciphertext: string) => {
+        const plaintext = plaintexts.get(ciphertext);
+        if (plaintext === undefined) throw new Error("fixture ciphertext is unreadable");
+        return plaintext;
+      }),
+      put: vi.fn(async (plaintext: string) => {
+        plaintexts.set("cipher-new", plaintext);
+        return { id: "secret-new", ciphertext: "cipher-new" };
+      }),
+    };
+    const handler = new RPCHandler(
+      createRouter({
+        prisma,
+        secrets,
+        events: { notify: vi.fn().mockResolvedValue(undefined) },
+        env: {
+          defaultProvider: "fake",
+          defaultModel: "fake-model",
+          webOrigin: "http://127.0.0.1:5173",
+          screenProxySecret: "fake-test-secret",
+          sandboxProvider: "fake",
+          agentRuntime: "pi",
+        },
+      } as unknown as RouterDeps),
+    );
+    const call = async (path: string, body: unknown) => {
+      const { response } = await handler.handle(
+        new Request(`http://127.0.0.1/rpc/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: body }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+      const payload = (await response.json()) as { json: { message?: string } };
+      return { status: response.status, message: payload.json.message };
+    };
+    const enabledInDto = () =>
+      modelCredentialDto(
+        { ...state.credential, defaultModel: state.preference.modelId } as never,
+        options.plaintext ?? "",
+      ).enabledModelIds;
+    return { state, initialCredential, prisma, secrets, call, enabledInDto };
+  }
+
+  const refusal = (names: string) => `In use by ${names}. Pick another model for them first.`;
+
+  it.each([
+    ["bot", { bots: [{ name: "Ada", modelId: "m-b" }] }, "Ada"],
+    ["routine", { routines: [{ name: "Nightly digest", modelId: "m-b" }] }, "Nightly digest"],
+    ["backup", { backups: ["m-b"] }, "backup models"],
+  ])("refuses a shrunk list while a %s pins the removed id", async (_kind, pins, names) => {
+    const { call, secrets, state, initialCredential, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      ...pins,
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result).toEqual({ status: 400, message: refusal(names) });
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(prisma.userModelCredential.update).not.toHaveBeenCalled();
+    expect(prisma.userModelCredential.create).not.toHaveBeenCalled();
+    expect(state.credential).toEqual(initialCredential);
+  });
+
+  it("does not let an archived bot pinned on a removed id block the save", async () => {
+    const { call, secrets } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-b", archived: true }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result.status).toBe(200);
+    expect(secrets.put).toHaveBeenCalledOnce();
+  });
+
+  it("ignores another user's bot in the same space", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Teammate bot", modelId: "m-b", userId: "user-2" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses when the actor's bot in another space pins a removed id", async () => {
+    const { call, secrets } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      otherSpaceDefaults: { "space-2": "m-a" },
+      bots: [{ name: "Elsewhere", modelId: "m-b", spaceId: "space-2" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result).toEqual({ status: 400, message: refusal("Elsewhere") });
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("keeps a pin in another space on that space's own default", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      otherSpaceDefaults: { "space-2": "m-b" },
+      bots: [{ name: "Elsewhere", modelId: "m-b", spaceId: "space-2" }],
+      routines: [{ name: "Elsewhere digest", modelId: "m-b", spaceId: "space-2" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("keeps a thinking level on a newly enabled default judged by the saved secret", async () => {
+    const { call, state, prisma } = fixture({ plaintext: null, defaultModel: "m-z" });
+    state.preference.thinkingLevel = "high";
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      apiKey: "sk-fake-replacement-key",
+      modelId: "m-z",
+      enabledModelIds: ["m-z"],
+      reasoning: true,
+      thinkingLevel: "high",
+    });
+
+    expect(result.status).toBe(200);
+    expect(prisma.spaceModelPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ modelId: "m-z", thinkingLevel: "high" }),
+      }),
+    );
+  });
+
+  it("refuses an old client's key replacement over an unreadable secret that would drop a pin", async () => {
+    const { call, secrets, state, initialCredential } = fixture({
+      plaintext: null,
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-b" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      apiKey: "sk-fake-replacement-key",
+      modelId: "m-a",
+    });
+
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
+    expect(secrets.put).not.toHaveBeenCalled();
+    expect(state.credential).toEqual(initialCredential);
+  });
+
+  it("accepts the same key replacement when the client lists the pinned id", async () => {
+    const { call, secrets } = fixture({
+      plaintext: null,
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-b" }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      apiKey: "sk-fake-replacement-key",
+      modelId: "m-a",
+      enabledModelIds: ["m-b"],
+    });
+
+    expect(result.status).toBe(200);
+    expect(secrets.put).toHaveBeenCalledOnce();
+  });
+
+  it("never blocks a save for a pin on a catalog-listed compatible id", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-a"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: catalogId }],
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-a"],
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("refuses an old client's default change while a bot pins the old default", async () => {
+    const { call, secrets } = fixture({
+      plaintext: secretText(),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-a" }],
+    });
+
+    const result = await call("models/connect", { provider: compatible, baseUrl, modelId: "m-c" });
+
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
+    expect(secrets.put).not.toHaveBeenCalled();
+  });
+
+  it("stores the new list with the default included when nothing pins a dropped id", async () => {
+    const { call, secrets } = fixture({
+      plaintext: secretText(["m-a", "m-c"]),
+      defaultModel: "m-a",
+    });
+
+    const result = await call("models/connect", {
+      provider: compatible,
+      baseUrl,
+      modelId: "m-a",
+      enabledModelIds: ["m-b"],
+    });
+
+    expect(result.status).toBe(200);
+    const saved = parseModelSecret(secrets.put.mock.calls[0]![0]);
+    expect(saved).toMatchObject({ kind: "openai_compatible", enabledModelIds: ["m-a", "m-b"] });
+  });
+
+  it("refuses setDefault to an id outside a listed secret", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-z" });
+
+    expect(result).toEqual({ status: 400, message: "Unknown model for that provider" });
+    expect(prisma.spaceModelPreference.upsert).not.toHaveBeenCalled();
+  });
+
+  it("switches A to B to A within the list while a bot pins B", async () => {
+    const { call, state, enabledInDto } = fixture({
+      plaintext: secretText(["m-a", "m-b"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-b" }],
+    });
+
+    expect((await call("models/setDefault", { provider: compatible, modelId: "m-b" })).status).toBe(
+      200,
+    );
+    expect(state.preference.modelId).toBe("m-b");
+    expect((await call("models/setDefault", { provider: compatible, modelId: "m-a" })).status).toBe(
+      200,
+    );
+    expect(state.preference.modelId).toBe("m-a");
+    expect(enabledInDto()).toContain("m-b");
+  });
+
+  it.each([
+    ["a same-space bot on another non-default id", { name: "Ada", modelId: "m-z" }],
+    ["a bot in another space", { name: "Elsewhere", modelId: "m-w", spaceId: "space-2" }],
+    [
+      "another space's bot on the outgoing default",
+      { name: "Far", modelId: "m-a", spaceId: "space-2" },
+    ],
+  ])("lets setDefault on a legacy secret ignore %s", async (_case, bot) => {
+    const { call, state } = fixture({
+      plaintext: secretText(),
+      defaultModel: "m-a",
+      bots: [bot],
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-x" });
+
+    expect(result.status).toBe(200);
+    expect(state.preference.modelId).toBe("m-x");
+  });
+
+  it("skips the pin check when the outgoing default stays in the stored list", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-x"]),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-a" }],
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-x" });
+
+    expect(result.status).toBe(200);
+    expect(prisma.routine.findMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses setDefault on a legacy secret away from a pinned default", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(),
+      defaultModel: "m-a",
+      bots: [{ name: "Ada", modelId: "m-a" }],
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-b" });
+
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
+    expect(prisma.spaceModelPreference.upsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses setDefault away from a union-only default that a bot pins", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-x"]),
+      defaultModel: "m-y",
+      bots: [{ name: "Ada", modelId: "m-y" }],
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-x" });
+
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
+  });
+
+  it("re-activates a union-only compatible default while another provider is the space default", async () => {
+    const { call, state } = fixture({
+      plaintext: secretText(["m-x"]),
+      defaultModel: "m-y",
+      preferenceIsDefault: false,
+    });
+
+    const result = await call("models/setDefault", { provider: compatible, modelId: "m-y" });
+
+    expect(result.status).toBe(200);
+    expect(state.preference).toMatchObject({ modelId: "m-y", isDefault: true });
+  });
+
+  it("saves a bot thinking level on a non-default enabled id when the endpoint reasons", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"], true),
+      defaultModel: "m-a",
+    });
+
+    const result = await call("bots/update", {
+      botId: "bot-1",
+      modelProvider: compatible,
+      modelId: "m-b",
+      thinkingLevel: "high",
+    });
+
+    expect(result.status).toBe(200);
+    expect(prisma.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ modelId: "m-b", thinkingLevel: "high" }),
+      }),
+    );
+  });
+
+  it("keeps a non-reasoning endpoint's bots at thinking off", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a", "m-b"], false),
+      defaultModel: "m-a",
+    });
+
+    const result = await call("bots/update", {
+      botId: "bot-1",
+      modelProvider: compatible,
+      modelId: "m-b",
+      thinkingLevel: "high",
+    });
+
+    expect(result).toEqual({ status: 400, message: "Thinking level must be one of: off" });
+    expect(prisma.bot.update).not.toHaveBeenCalled();
+  });
+
+  it("saves a bot on this space's default when another space wrote the list", async () => {
+    const { call } = fixture({
+      plaintext: secretText(["m-x"], true),
+      defaultModel: "m-y",
+      botModelId: "m-x",
+    });
+
+    const result = await call("bots/update", {
+      botId: "bot-1",
+      modelProvider: compatible,
+      modelId: "m-y",
+      thinkingLevel: "high",
+    });
+
+    expect(result.status).toBe(200);
+  });
+
+  it("accepts a bot on a listed id that is not the default and refuses an unlisted one", async () => {
+    const { call } = fixture({ plaintext: secretText(["m-x"]), defaultModel: "m-y" });
+
+    expect(
+      (await call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "m-x" }))
+        .status,
+    ).toBe(200);
+    expect(
+      await call("bots/update", { botId: "bot-1", modelProvider: compatible, modelId: "m-z" }),
+    ).toEqual({ status: 400, message: "Unknown model for that provider" });
   });
 });
 
