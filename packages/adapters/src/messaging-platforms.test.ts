@@ -8,6 +8,7 @@ import {
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatus,
+  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
 
 // Fake credentials: adapters are constructed offline, never called.
@@ -91,6 +92,54 @@ describe("messagingPlatformsFromEnv", () => {
     })[0]!;
     // mode is protected on the adapter class but readable at runtime.
     expect((telegram.adapter as unknown as { mode: string }).mode).toBe("webhook");
+  });
+
+  it("mounts each named Telegram bot as its own telegram-<name> provider", () => {
+    const platforms = messagingPlatformsFromEnv({
+      telegramBotToken: "tg-token",
+      telegramWebhookSecret: "tg-webhook-secret",
+      telegramBots: [{ name: "work", botToken: "tg-work", webhookSecret: "tg-work-secret" }],
+    });
+    expect(platforms.map((platform) => [platform.provider, platform.adapterName])).toEqual([
+      ["telegram", undefined],
+      ["telegram-work", "telegram"],
+    ]);
+    expect((platforms[1]!.adapter as unknown as { mode: string }).mode).toBe("webhook");
+  });
+
+  it("reads named Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> pairs", () => {
+    expect(
+      telegramBotsFromEnv({
+        TELEGRAM_BOT_TOKEN: "default",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+        TELEGRAM_BOT_TOKEN_WORK: " tg-work ",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_WORK: " work-secret ",
+        TELEGRAM_BOT_TOKEN_HOME2: "tg-home",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_HOME2: "home-secret",
+        // Unsigned webhooks would be accepted, so a name without a secret stays off.
+        TELEGRAM_BOT_TOKEN_NOSECRET: "tg-nosecret",
+        TELEGRAM_BOT_TOKEN_BAD_NAME: "tg-bad",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_BAD_NAME: "bad-secret",
+      }),
+    ).toEqual([
+      { name: "home2", botToken: "tg-home", webhookSecret: "home-secret" },
+      { name: "work", botToken: "tg-work", webhookSecret: "work-secret" },
+    ]);
+  });
+
+  it("skips a named Telegram bot that reuses the default or another bot's token", () => {
+    expect(
+      telegramBotsFromEnv({
+        TELEGRAM_BOT_TOKEN: "tg-shared",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+        TELEGRAM_BOT_TOKEN_COPY: " tg-shared ",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_COPY: "copy-secret",
+        TELEGRAM_BOT_TOKEN_ALPHA: "tg-other",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_ALPHA: "alpha-secret",
+        TELEGRAM_BOT_TOKEN_BETA: "tg-other",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_BETA: "beta-secret",
+      }),
+    ).toEqual([{ name: "alpha", botToken: "tg-other", webhookSecret: "alpha-secret" }]);
   });
 
   it("forces Lark into webhook inbound so worker initialize cannot open a long connection", () => {
