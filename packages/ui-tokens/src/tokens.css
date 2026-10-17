@@ -4,6 +4,7 @@
 [data-theme="dark"] {
   color-scheme: dark;
   --background: #0b0c0e;
+  --dialog: #0e0f11;
   --foreground: #ececee;
   --card: #141518;
   --card-foreground: #ececee;
@@ -22,12 +23,12 @@
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   --border: #1e2026;
-  --input: #18191e;
+  --input: #27292f;
   --ring: #3b82f6;
   --sidebar: #111215;
   --sidebar-foreground: #ececee;
   --sidebar-border: #1c1d22;
-  --sidebar-accent: #1a1b20;
+  --sidebar-accent: #222429;
   --sidebar-accent-foreground: #ececee;
   --link: #3b82f6;
   --favicon-plate: #ffffff;
@@ -43,6 +44,7 @@
 [data-theme="light"] {
   color-scheme: light;
   --background: #fafaf8;
+  --dialog: #ffffff;
   --foreground: #1a1a1a;
   --card: #ffffff;
   --card-foreground: #1a1a1a;
@@ -60,7 +62,7 @@
   --accent-foreground: #1a1a1a;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #f0f0ed;
+  --border: #dcdcd6;
   --input: #eaeae6;
   --ring: #6c6c70;
   --sidebar: #ecece9;
