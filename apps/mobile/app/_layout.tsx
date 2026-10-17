@@ -8,10 +8,11 @@ import { DarkTheme, Stack, ThemeProvider, usePathname } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Dimensions, Platform, StyleSheet, View } from "react-native";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import Animated, { useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AvatarStyleProvider } from "../components/avatar-style";
 import { CallCard } from "../components/CallCard";
@@ -47,7 +48,13 @@ import {
 import { loadResponseStreamingPreference } from "../lib/response-streaming";
 import { clearSavedChats } from "../lib/saved-chats";
 import { registerSessionDiskCache } from "../lib/session";
-import { setInboxHidden, useSplitView } from "../lib/split-view";
+import {
+  chooseInboxWidth,
+  inboxPaneWidth,
+  loadInboxWidth,
+  setInboxHidden,
+  useSplitView,
+} from "../lib/split-view";
 import { startUnsentSends } from "../lib/unsent-sends";
 import { InboxPane } from "./index";
 
@@ -62,25 +69,60 @@ const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/image", "/computer"]);
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { split, inboxHidden, inboxWidth } = useSplitView();
+  const { split, inboxHidden, inboxWidth, windowWidth } = useSplitView();
   const tokens = useMobileTokens();
   const home = pathname === "/";
   useEffect(() => {
     if (home) setInboxHidden(false);
   }, [home]);
   const showsInbox = split && (home || !inboxHidden) && !FULL_WINDOW_ROUTES.has(pathname);
+  // Dragging resizes the list natively; the width is kept when the finger lifts.
+  const paneWidth = useSharedValue(inboxWidth);
+  const dragStart = useRef(inboxWidth);
+  useEffect(() => {
+    paneWidth.value = inboxWidth;
+  }, [inboxWidth, paneWidth]);
+  const resize = Gesture.Pan()
+    .runOnJS(true)
+    .onStart(() => {
+      dragStart.current = paneWidth.value;
+    })
+    .onUpdate((event) => {
+      paneWidth.value = inboxPaneWidth(windowWidth, dragStart.current + event.translationX);
+    })
+    .onEnd(() => chooseInboxWidth(paneWidth.value));
+  const paneStyle = useAnimatedStyle(() => ({ width: paneWidth.value }));
   return (
     <View style={{ flex: 1, flexDirection: "row" }}>
       {showsInbox ? (
-        <View
-          style={{
-            width: inboxWidth,
-            borderRightWidth: StyleSheet.hairlineWidth,
-            borderRightColor: tokens.border,
-          }}
-        >
+        <Animated.View style={paneStyle}>
           <InboxPane />
-        </View>
+        </Animated.View>
+      ) : null}
+      {showsInbox ? (
+        <GestureDetector gesture={resize}>
+          {/* A wider strip than the line it draws, overlapping both panes, so it is easy to grab. */}
+          <View
+            accessible={false}
+            style={{ width: 16, marginHorizontal: -8, zIndex: 1, alignItems: "center" }}
+          >
+            <View
+              style={{ flex: 1, width: StyleSheet.hairlineWidth, backgroundColor: tokens.border }}
+            />
+            <View
+              style={{
+                position: "absolute",
+                top: "50%",
+                width: 5,
+                height: 40,
+                marginTop: -20,
+                borderRadius: 3,
+                backgroundColor: tokens.mutedForeground,
+                opacity: 0.6,
+              }}
+            />
+          </View>
+        </GestureDetector>
       ) : null}
       {/* Keeps its place among the children so the navigation stack survives folding. */}
       <View style={{ flex: 1 }}>{children}</View>
@@ -131,6 +173,8 @@ export default function Layout() {
   }, []);
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
+  // Beside the list a chat swaps in place, the way it does when picked from a sidebar.
+  const chatAnimation = useSplitView().split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
   const [appearanceReady, setAppearanceReady] = useState(false);
@@ -180,6 +224,7 @@ export default function Layout() {
         loadResponseStreamingPreference(),
         loadRemoteImagesPreference(),
         loadAvatarStyle(),
+        loadInboxWidth(),
       ])
         .then(async () =>
           resumeLiveNotifications(
@@ -268,7 +313,10 @@ export default function Layout() {
                       />
                       <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                       <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
-                      <Stack.Screen name="group-thread" options={{ title: t("Group") }} />
+                      <Stack.Screen
+                        name="group-thread"
+                        options={{ title: t("Group"), animation: chatAnimation }}
+                      />
                       <Stack.Screen
                         name="group-settings"
                         options={glassHeaderOptions(t("Group settings"))}
@@ -277,7 +325,10 @@ export default function Layout() {
                         name="bot-settings"
                         options={glassHeaderOptions(t("Chat settings"))}
                       />
-                      <Stack.Screen name="thread" options={{ title: t("Thread") }} />
+                      <Stack.Screen
+                        name="thread"
+                        options={{ title: t("Thread"), animation: chatAnimation }}
+                      />
                       <Stack.Screen name="routine" options={glassHeaderOptions(t("Routine"))} />
                       <Stack.Screen name="computer" options={{ title: t("Computer") }} />
                       <Stack.Screen

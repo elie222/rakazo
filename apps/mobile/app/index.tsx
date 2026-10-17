@@ -7,8 +7,10 @@ import type { Href } from "expo-router";
 import { Redirect, useFocusEffect, useNavigation, usePathname, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import {
+  createContext,
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -105,6 +107,9 @@ import { useSplitView } from "../lib/split-view";
 import { errorText } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
+// A list narrower than this, beside an open chat, keeps names whole by leaving out the title tag.
+const TAGLESS_LIST_WIDTH = 360;
+const CompactRowsContext = createContext(false);
 // Swipe actions are iOS list behaviour; other platforms keep the long-press sheet.
 const SWIPE_ROWS = Platform.OS === "ios";
 
@@ -460,6 +465,8 @@ function Home({ embedded }: { embedded: boolean }) {
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps the inbox in a centred column.
   const windowWidth = useWindowDimensions().width;
+  const { inboxWidth } = useSplitView();
+  const compactRows = embedded && inboxWidth < TAGLESS_LIST_WIDTH;
   const columnInset = embedded
     ? 0
     : readableGutter(windowWidth, Math.max(insets.left, insets.right));
@@ -1007,97 +1014,99 @@ function Home({ embedded }: { embedded: boolean }) {
         </View>
       )}
 
-      <FlatList<InboxItem>
-        style={{ flex: 1 }}
-        data={listData}
-        keyExtractor={(item) => {
-          if (item.type === "heading") return `heading-${item.key}`;
-          if (item.type === "bot") return item.bot.id;
-          if (item.type === "group") return `group-${item.group.id}`;
-          return searchHitListKey(item.hit);
-        }}
-        keyboardDismissMode="interactive"
-        keyboardShouldPersistTaps="handled"
-        indicatorStyle={appearance === "dark" ? "white" : "black"}
-        contentContainerStyle={[
-          styles.list,
-          { paddingHorizontal: columnInset },
-          // iOS moves the active search bar to the bottom and removes the navigation inset.
-          nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
-        ]}
-        contentInsetAdjustmentBehavior="automatic"
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              void refreshBots();
-              void loadActivity();
-            }}
-            tintColor={native.secondaryLabel}
-            colors={[tokens.mutedForeground]}
-            progressBackgroundColor={tokens.muted}
-          />
-        }
-        ListHeaderComponent={
-          <>
-            {searching && !nativeHeader ? (
-              <TextInput
-                autoFocus
-                value={query}
-                onChangeText={setQuery}
-                placeholder={t("Search")}
-                placeholderTextColor={tokens.mutedForeground}
-                autoCorrect={false}
-                autoCapitalize="none"
-                returnKeyType="search"
-                keyboardAppearance={appearance}
-                clearButtonMode="while-editing"
-                style={styles.searchField}
-              />
-            ) : null}
+      <CompactRowsContext.Provider value={compactRows}>
+        <FlatList<InboxItem>
+          style={{ flex: 1 }}
+          data={listData}
+          keyExtractor={(item) => {
+            if (item.type === "heading") return `heading-${item.key}`;
+            if (item.type === "bot") return item.bot.id;
+            if (item.type === "group") return `group-${item.group.id}`;
+            return searchHitListKey(item.hit);
+          }}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          indicatorStyle={appearance === "dark" ? "white" : "black"}
+          contentContainerStyle={[
+            styles.list,
+            { paddingHorizontal: columnInset },
+            // iOS moves the active search bar to the bottom and removes the navigation inset.
+            nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
+          ]}
+          contentInsetAdjustmentBehavior="automatic"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                void refreshBots();
+                void loadActivity();
+              }}
+              tintColor={native.secondaryLabel}
+              colors={[tokens.mutedForeground]}
+              progressBackgroundColor={tokens.muted}
+            />
+          }
+          ListHeaderComponent={
+            <>
+              {searching && !nativeHeader ? (
+                <TextInput
+                  autoFocus
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={t("Search")}
+                  placeholderTextColor={tokens.mutedForeground}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  returnKeyType="search"
+                  keyboardAppearance={appearance}
+                  clearButtonMode="while-editing"
+                  style={styles.searchField}
+                />
+              ) : null}
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            {spaceRecoveryId ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={spaceBusy}
-                onPress={() => void chooseInboxSpace(spaceRecoveryId)}
-                style={styles.recoveryAction}
-              >
-                <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
-              </Pressable>
-            ) : null}
-            {activityMode &&
-            !searching &&
-            !query.trim() &&
-            (activity.active.length > 0 || activity.recent.length > 0) ? (
-              <ActivitySection activity={activity} bots={bots} />
-            ) : null}
-          </>
-        }
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            {query.trim() && searching
-              ? searchLoading
-                ? t("Searching…")
-                : t("No results")
-              : query.trim()
-                ? t("No matching bots")
-                : searching
-                  ? t("Search conversations, files, and routines")
-                  : // Before any load (an offline launch with nothing saved) the bots are unknown.
-                    me
-                    ? t("Tap + to create a bot")
-                    : null}
-          </Text>
-        }
-        ListFooterComponent={
-          inboxNeedsCreateHint(listData) ? (
-            <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
-          ) : null
-        }
-        renderItem={renderItem}
-      />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              {spaceRecoveryId ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={spaceBusy}
+                  onPress={() => void chooseInboxSpace(spaceRecoveryId)}
+                  style={styles.recoveryAction}
+                >
+                  <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
+                </Pressable>
+              ) : null}
+              {activityMode &&
+              !searching &&
+              !query.trim() &&
+              (activity.active.length > 0 || activity.recent.length > 0) ? (
+                <ActivitySection activity={activity} bots={bots} />
+              ) : null}
+            </>
+          }
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {query.trim() && searching
+                ? searchLoading
+                  ? t("Searching…")
+                  : t("No results")
+                : query.trim()
+                  ? t("No matching bots")
+                  : searching
+                    ? t("Search conversations, files, and routines")
+                    : // Before any load (an offline launch with nothing saved) the bots are unknown.
+                      me
+                      ? t("Tap + to create a bot")
+                      : null}
+            </Text>
+          }
+          ListFooterComponent={
+            inboxNeedsCreateHint(listData) ? (
+              <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+            ) : null
+          }
+          renderItem={renderItem}
+        />
+      </CompactRowsContext.Provider>
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}
@@ -1242,6 +1251,7 @@ function ConversationRow({
 }) {
   const styles = useThemedStyles(createHomeStyles);
   const { t } = useI18n();
+  const compact = useContext(CompactRowsContext);
   const toggleLabel = collapsed
     ? t("Expand {name}", { name: title })
     : t("Collapse {name}", { name: title });
@@ -1268,7 +1278,8 @@ function ConversationRow({
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.row,
-        depth > 0 ? { paddingInlineStart: 16 + depth * 16 } : null,
+        compact ? styles.compactRow : null,
+        depth > 0 ? { paddingInlineStart: (compact ? 12 : 16) + depth * 16 } : null,
         pressed && styles.rowPressed,
       ]}
     >
@@ -1294,7 +1305,7 @@ function ConversationRow({
             <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
               {title}
             </Text>
-            {tag ? (
+            {tag && !compact ? (
               <View style={styles.tag}>
                 <Text style={styles.tagLabel} numberOfLines={1}>
                   {tag}
@@ -1600,6 +1611,10 @@ function createHomeStyles() {
       paddingHorizontal: 16,
       paddingVertical: 10,
       gap: 12,
+    },
+    compactRow: {
+      paddingHorizontal: 12,
+      gap: 10,
     },
     treeToggle: {
       width: 20,
