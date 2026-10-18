@@ -13,6 +13,7 @@ import {
   missingTurnImagesInstruction,
   parseUpdateBotPatch,
   persistentComputerInstruction,
+  REACTION_SILENT_REPLY_GUIDANCE,
   runNotificationsEnabled,
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
@@ -1228,6 +1229,29 @@ describe("userTurnInstructions", () => {
     expect(text).toContain("web_search");
     expect(text).toContain("destination_write");
     expect(text).toContain("Always put the complete final answer in your normal reply.");
+  });
+
+  it("keeps the reaction silence rule when message_user is off", () => {
+    const text = userTurnInstructions({
+      ...base,
+      replyGuidance: REACTION_SILENT_REPLY_GUIDANCE,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+      disabledBuiltinTools: new Set(["message_user"]),
+    })
+      .filter(Boolean)
+      .join("\n");
+    expect(text).toContain("The user reacted with an emoji to your message.");
+    expect(text).toContain("must be exactly NO_RESPONSE.");
+    expect(text).not.toContain("message_user");
   });
 
   it("keeps the credential safeguard when secret tools are off and shell stays on", () => {

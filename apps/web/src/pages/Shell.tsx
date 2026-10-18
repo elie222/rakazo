@@ -2093,11 +2093,14 @@ export function ShellPage() {
           clientNonce: newClientNonce(),
         });
         if (result.runIds?.length) {
-          if (groupId && activeGroupId.current === groupId) {
-            await refreshGroupThreadRef.current(groupId);
-          } else if (botId && activeBotId.current === botId) {
-            await refreshThreadRef.current(botId);
-          }
+          // The reaction is saved; a failed refresh is caught up by live events.
+          try {
+            if (groupId && activeGroupId.current === groupId) {
+              await refreshGroupThreadRef.current(groupId);
+            } else if (botId && activeBotId.current === botId) {
+              await refreshThreadRef.current(botId);
+            }
+          } catch {}
         }
       } catch (error) {
         const stillHere = groupId

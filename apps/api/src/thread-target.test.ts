@@ -232,10 +232,13 @@ describe("reaction turns", () => {
       },
       run: {
         findMany: vi.fn().mockResolvedValue(options.activeRuns ?? []),
-        findFirst: vi
-          .fn()
-          .mockResolvedValueOnce(options.recentReaction ? { id: "recent" } : null)
-          .mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        findFirst: vi.fn(async (args?: { where?: { trigger?: string } }) =>
+          args?.where?.trigger === "reaction"
+            ? options.recentReaction
+              ? { id: "recent" }
+              : null
+            : { botId: "bot-1", userId: "user-1" },
+        ),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn().mockResolvedValue({ id: "run-new", taskId: "task-new", status: "queued" }),
@@ -423,6 +426,21 @@ describe("reaction turns", () => {
       data: { prompt: "no" },
     });
     expect(tx.run.create).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("answers a pending ask even inside the reaction cooldown", async () => {
+    const { tx, enqueue, react } = fixture({
+      reaction: "👍",
+      recentReaction: true,
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+    });
+    await react();
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { runs: { some: { id: "run-waiting" } } },
+      data: { prompt: "yes" },
+    });
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
 

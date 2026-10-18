@@ -1152,17 +1152,6 @@ async function startReactionTurn(
   message: { id: string },
   input: { reaction: MessageReaction; clientNonce: string },
 ): Promise<Array<{ id: string; taskId: string; status: string }>> {
-  const recentReaction = await tx.run.findFirst({
-    where: {
-      threadId,
-      botId,
-      trigger: "reaction",
-      status: { not: "cancelled" },
-      createdAt: { gte: new Date(Date.now() - REACTION_TURN_COOLDOWN_MS) },
-    },
-    select: { id: true },
-  });
-  if (recentReaction) return [];
   const activeRuns = await tx.run.findMany({
     where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
     select: { id: true, taskId: true, status: true },
@@ -1190,6 +1179,18 @@ async function startReactionTurn(
     await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
     return [{ ...active, status: "queued" }];
   }
+  // The cooldown limits new turns only, so a quick answer to a pending ask still goes through.
+  const recentReaction = await tx.run.findFirst({
+    where: {
+      threadId,
+      botId,
+      trigger: "reaction",
+      status: { not: "cancelled" },
+      createdAt: { gte: new Date(Date.now() - REACTION_TURN_COOLDOWN_MS) },
+    },
+    select: { id: true },
+  });
+  if (recentReaction) return [];
   const task = await tx.task.create({
     data: {
       spaceId: actor.spaceId,

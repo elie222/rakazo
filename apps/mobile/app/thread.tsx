@@ -2007,7 +2007,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         clientNonce: newClientNonce(),
       });
       if (result.runIds?.length && isCurrentTarget(targetBotId, targetGroupId)) {
-        await refresh();
+        // The reaction is saved; a failed refresh is caught up by live events.
+        await refresh().catch(() => {});
       }
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return;

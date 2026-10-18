@@ -8543,6 +8543,9 @@ function replyGuidanceForOfferedTools(
   if (guidance === longWorkProgressGuidance()) {
     return "Always put the complete final answer in your normal reply.";
   }
+  if (guidance === REACTION_SILENT_REPLY_GUIDANCE) {
+    return guidance.replace(", with no message_user call.", ".");
+  }
   if (guidance === ROUTINE_SILENT_REPLY_GUIDANCE) {
     return guidance.replace(" Do not call message_user unless you have something to report.", "");
   }
