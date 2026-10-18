@@ -34,12 +34,14 @@ import {
   MESSAGE_REACTIONS,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
-import type { ComposerMention, SlashActionId } from "@rakazo/core";
+import type { ComposerMention, FoldedTranscript, SlashActionId } from "@rakazo/core";
 import {
   attachmentsForThread,
   buildComposerMentionOptions,
   clampMentionHighlightIndex,
   cronFromPreset,
+  expandPeerReplies,
+  foldPeerReplies,
   formatMessageTime,
   groupVoiceChats,
   inferAttachmentMimeType,
@@ -1969,8 +1971,8 @@ function SpaceShell() {
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
-  const transcriptMessages = useMemo(
-    () => userVisibleMessages(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
+  const transcript = useMemo(
+    () => foldPeerReplies(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
     [activeSnapshot?.messages],
   );
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
@@ -3890,7 +3892,7 @@ function SpaceShell() {
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
             artifactTarget={transcriptArtifactTarget}
-            messages={transcriptMessages}
+            transcript={transcript}
             showToolActivity={showToolActivity}
             olderCursor={activeSnapshot?.olderCursor ?? null}
             loadingOlder={loadingOlder}
@@ -5047,7 +5049,7 @@ const Transcript = memo(function Transcript({
   scrollRequest,
   onScrollRequestHandled,
   artifactTarget,
-  messages,
+  transcript,
   showToolActivity,
   olderCursor,
   loadingOlder,
@@ -5076,7 +5078,7 @@ const Transcript = memo(function Transcript({
   scrollRequest: { messageId: string; nonce: number } | null;
   onScrollRequestHandled: () => void;
   artifactTarget: ArtifactTarget;
-  messages: ThreadMessage[];
+  transcript: FoldedTranscript<ThreadMessage>;
   showToolActivity: boolean;
   olderCursor: number | null;
   loadingOlder: boolean;
@@ -5108,6 +5110,20 @@ const Transcript = memo(function Transcript({
   const lastScrollTop = useRef<number | null>(null);
   const autoScrollTimer = useRef<number | undefined>(undefined);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
+  const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const togglePeerReplies = useCallback((markerId: string) => {
+    setExpandedPeerMarkers((expanded) => {
+      const next = new Set(expanded);
+      if (!next.delete(markerId)) next.add(markerId);
+      return next;
+    });
+  }, []);
+  const messages = useMemo(
+    () => expandPeerReplies(transcript, expandedPeerMarkers),
+    [transcript, expandedPeerMarkers],
+  );
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -5426,6 +5442,14 @@ const Transcript = memo(function Transcript({
                       canAnswer={message.id === answerableAskMessageId}
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
+                      peerReplies={
+                        transcript.folded.has(message.id)
+                          ? expandedPeerMarkers.has(message.id)
+                            ? "expanded"
+                            : "collapsed"
+                          : undefined
+                      }
+                      onTogglePeerReplies={togglePeerReplies}
                       onAnswer={onAnswer}
                       speakerName={
                         peerReceipt
@@ -6828,6 +6852,8 @@ const MessageView = memo(function MessageView({
   onAnswer,
   onOpenBot,
   onOpenPeerMessages,
+  peerReplies,
+  onTogglePeerReplies,
   speakerName,
   memberName,
   peerBot,
@@ -6848,6 +6874,9 @@ const MessageView = memo(function MessageView({
   onAnswer: (message: ThreadMessage, text: string, username?: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
+  /** Set on a received marker whose peer run has folded replies. */
+  peerReplies?: "collapsed" | "expanded";
+  onTogglePeerReplies: (markerId: string) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
@@ -7017,6 +7046,15 @@ const MessageView = memo(function MessageView({
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+              replies={
+                !sent && peerReplies
+                  ? {
+                      expanded: peerReplies === "expanded",
+                      label: peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
+                      onToggle: () => onTogglePeerReplies(message.id),
+                    }
+                  : undefined
+              }
             />
           );
         }

@@ -1,6 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
-import { userVisibleMessages } from "./message-visibility.js";
+import { expandPeerReplies, foldPeerReplies, userVisibleMessages } from "./message-visibility.js";
 
 function message(id: string, runId: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
   return {
@@ -33,7 +33,7 @@ const peerExchange = [
 ];
 
 describe("user-visible messages", () => {
-  it("hides peer activity but keeps the bot's text reply to the user", () => {
+  it("hides peer activity but keeps the bot's text reply when there is no marker to fold it under", () => {
     expect(userVisibleMessages(peerExchange).map((item) => item.id)).toEqual([
       "user",
       "reply",
@@ -44,7 +44,71 @@ describe("user-visible messages", () => {
   it("keeps compact peer receipts when includePeerReceipts is set", () => {
     expect(
       userVisibleMessages(peerExchange, { includePeerReceipts: true }).map((item) => item.id),
-    ).toEqual(["user", "sent", "received", "reply", "answer"]);
+    ).toEqual(["user", "sent", "received", "answer"]);
+  });
+
+  it("folds peer-run replies under their received marker", () => {
+    const messages = [
+      ...peerExchange,
+      message("fallback", "run-peer", [{ kind: "text", text: "Update from Coder: Done." }]),
+    ];
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+
+    expect(transcript.messages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+    ]);
+    expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual([
+      "reply",
+      "fallback",
+    ]);
+  });
+
+  it("keeps peer-run user-input cards inline while folding the reply", () => {
+    const messages = [
+      ...peerExchange,
+      message("ask", "run-peer", [{ kind: "ask", text: "Pick one", status: "pending" }]),
+      message("choice", "run-peer", [
+        { kind: "choice", question: "Which?", options: [{ id: "a", letter: "A", label: "A" }] },
+      ]),
+    ];
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+
+    expect(transcript.messages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+      "ask",
+      "choice",
+    ]);
+    expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual(["reply"]);
+  });
+
+  it("draws expanded folds right after their marker", () => {
+    const transcript = foldPeerReplies(peerExchange, { includePeerReceipts: true });
+
+    expect(expandPeerReplies(transcript, new Set()).map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+    ]);
+    expect(expandPeerReplies(transcript, new Set(["received"])).map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "reply",
+      "answer",
+    ]);
+  });
+
+  it("keeps sidebar previews ask-only", () => {
+    expect(
+      userVisibleMessages(peerExchange, { includeDelegatedReplyText: false }).map((m) => m.id),
+    ).toEqual(["user", "answer"]);
   });
 
   it("uses authoritative peer run ids when the receipt is outside the loaded page", () => {

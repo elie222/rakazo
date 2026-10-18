@@ -105,3 +105,62 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
     .toBe(true);
   await captureScreenshot(page, testInfo, "peer-view-only");
 });
+
+test("folds a peer run's reply under its marker and keeps its ask inline", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `peer-fold-${stamp}@rakazo.test`, "password12", "Peer Fold");
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const researcher = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Researcher",
+    title: "",
+    description: "",
+    instructions: "",
+    notifyOnFinish: true,
+  });
+  await page.reload();
+  const composer = page.getByRole("combobox", { name: "Message Chief" });
+  await composer.fill("message the bot named Researcher saying peer-fold-alpha");
+  await composer.press("Enter");
+
+  // Researcher's reply comes back to Chief as a peer run: marker plus the woken run's text.
+  const transcript = page.getByTestId("transcript");
+  const marker = transcript
+    .getByTestId("peer-receipt-chip")
+    .filter({ hasText: "Message from Researcher" });
+  await expect(marker).toBeVisible({ timeout: 60_000 });
+  await expect(transcript.getByText("messaging that bot now.")).toBeVisible();
+  const reply = transcript.getByText("on it. i will work this in the background");
+  await expect(reply).toHaveCount(0);
+
+  const toggle = transcript.getByRole("button", { name: "Expand Message from Researcher" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await captureScreenshot(page, testInfo, "peer-replies-folded");
+  await toggle.click();
+  await expect(reply).toBeVisible();
+  const collapse = transcript.getByRole("button", { name: "Collapse Message from Researcher" });
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await captureScreenshot(page, testInfo, "peer-replies-expanded");
+  await collapse.click();
+  await expect(reply).toHaveCount(0);
+
+  // An ask from the woken run stays inline in the recipient's thread; its text folds.
+  await composer.fill("message the bot named Researcher saying which city peer-fold-beta");
+  await composer.press("Enter");
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
+  await page.goto(`/app/${researcher.id}`);
+  const researcherTranscript = page.getByTestId("transcript");
+  await expect(
+    researcherTranscript.locator("p").filter({ hasText: /^Which city should I use\?$/ }),
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(
+    researcherTranscript.getByTestId("peer-receipt-chip").filter({ hasText: "Message from Chief" }),
+  ).toHaveCount(2);
+  await expect(researcherTranscript.getByText("i need a decision before i continue.")).toHaveCount(
+    0,
+  );
+});
