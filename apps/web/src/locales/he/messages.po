@@ -2871,11 +2871,11 @@ msgstr "בינוני"
 
 #: src/pages/GroupPanel.tsx
 msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "משתמשים ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
+msgstr "בוטים ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 
 #: src/pages/GroupPanel.tsx
 msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "משתמשים (יש לבחור {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
+msgstr "בוטים (יש לבחור {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -4897,7 +4897,7 @@ msgstr "שבוע"
 #: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Weekdays"
-msgstr "ימי חול"
+msgstr "שני עד שישי"
 
 #: src/pages/shell/dialogs.tsx
 msgid "What about its memories?"
