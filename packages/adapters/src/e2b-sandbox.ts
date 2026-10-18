@@ -76,6 +76,10 @@ function errorMessage(error: unknown): string {
 }
 
 export class E2BSandboxProvider implements SandboxProvider {
+  billsWhileRunning(): boolean {
+    return true;
+  }
+
   private readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",

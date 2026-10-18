@@ -58,9 +58,11 @@ the web UI. They require egress to the provider. For air-gapped hosts prefer
 `docker` with pre-loaded images, or `none`.
 
 A run starts its computer only when it first uses a computer tool. With idle sleep on,
-a computer suspends after `SANDBOX_IDLE_MS` idle, and after two hours up in one stretch
-even if background work or an open screen would keep it awake, unless a run is executing
-on it. The next use resumes it.
+a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
+(E2B, Daytona, Box, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
+(default 2 hours) up in one stretch, even with background work or an open screen, unless
+a run is executing on it or a user is in control of its screen. `0` turns the cap off.
+Docker and this-Mac computers are never capped. The next use resumes it.
 
 ### E2B computer template
 

@@ -88,6 +88,8 @@ import type {
 } from "./types.js";
 
 export interface SandboxProvider {
+  /** True when every running minute is billed, so the active-lifetime cap applies. */
+  billsWhileRunning?(computer: ComputerRef): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Optional live browser on the same leased screen as observe/act. */
   pageBrowser?(

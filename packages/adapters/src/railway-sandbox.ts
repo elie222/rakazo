@@ -45,6 +45,10 @@ export interface RailwaySandboxOptions {
 }
 
 export class RailwaySandboxProvider implements SandboxProvider {
+  billsWhileRunning(): boolean {
+    return true;
+  }
+
   private readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: WORKSPACE,

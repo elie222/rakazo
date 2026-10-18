@@ -9,8 +9,9 @@ import {
   CANCEL_COMPUTER_RUN_WORK,
   CANCEL_PRIMARY_BROWSER_WORK,
   computerIdleSleepEnabled,
+  computerMaxActiveMs,
+  DEFAULT_COMPUTER_MAX_ACTIVE_MS,
   DEFAULT_SANDBOX_IDLE_MS,
-  MAX_COMPUTER_ACTIVE_MS,
   sandboxIdleMs,
   scheduleComputerSleep,
   sleepComputerIfIdle,
@@ -21,6 +22,7 @@ import { e2bCreateOptions } from "./e2b-sandbox.js";
 describe("sandbox idle", () => {
   beforeEach(() => {
     vi.stubEnv("SANDBOX_IDLE_MS", undefined);
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", undefined);
   });
 
   afterEach(() => {
@@ -294,25 +296,92 @@ describe("sandbox idle", () => {
 
 describe("maximum active lifetime", () => {
   const now = new Date("2026-01-01T12:00:00.000Z").getTime();
-  const longAgo = new Date(now - MAX_COMPUTER_ACTIVE_MS - 1);
+  const longAgo = new Date(now - DEFAULT_COMPUTER_MAX_ACTIVE_MS - 1);
   const recently = new Date(now - 60_000);
 
   beforeEach(() => {
     vi.stubEnv("SANDBOX_IDLE_MS", undefined);
-    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", undefined);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
+  it.each([
+    [undefined, DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["0", 0],
+    ["garbage", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["-1", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["Infinity", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["NaN", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["59999", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["60000", 60_000],
+    ["1800000", 30 * 60_000],
+  ])("parses COMPUTER_MAX_ACTIVE_MS=%j", (value, expected) => {
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", value);
+    expect(computerMaxActiveMs()).toBe(expected);
+  });
+
+  it.each([undefined, false])("does not cap a provider reporting %s", async (billing) => {
+    const harness = idleHarness({
+      billsWhileRunning: billing,
+      runningSince: longAgo,
+      backgroundWorkProbeCode: 0,
+    });
+    await touchRunningComputer(harness.deps, harness.computer);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(2);
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledTimes(2);
+    for (const [job] of harness.jobs.enqueue.mock.calls) {
+      expect(job.availableAt).toEqual(new Date(now + DEFAULT_SANDBOX_IDLE_MS));
+    }
+  });
+
+  it("disables the cap on a billing provider with 0", async () => {
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", "0");
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: longAgo,
+      backgroundWorkProbeCode: 0,
+    });
+    await touchRunningComputer(harness.deps, harness.computer);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(2);
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    for (const [job] of harness.jobs.enqueue.mock.calls) {
+      expect(job.availableAt).toEqual(new Date(now + DEFAULT_SANDBOX_IDLE_MS));
+    }
+  });
+
+  it("honours a custom thirty-minute cap", async () => {
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", "1800000");
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 30 * 60_000),
+      backgroundWorkProbeCode: 0,
+    });
+    await touchRunningComputer(harness.deps, harness.computer);
+    expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now) }),
+    );
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+  });
+
   it("is two hours", () => {
-    expect(MAX_COMPUTER_ACTIVE_MS).toBe(2 * 60 * 60 * 1000);
+    expect(DEFAULT_COMPUTER_MAX_ACTIVE_MS).toBe(2 * 60 * 60 * 1000);
   });
 
   it("keeps a viewed computer alive within the limit", async () => {
-    const harness = idleHarness({ runningSince: recently });
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: recently });
 
     await touchRunningComputer(harness.deps, harness.computer);
 
@@ -323,7 +392,7 @@ describe("maximum active lifetime", () => {
   });
 
   it("stops extending a viewed computer past the limit and checks it now", async () => {
-    const harness = idleHarness({ runningSince: longAgo });
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
 
     await touchRunningComputer(harness.deps, harness.computer);
 
@@ -335,7 +404,11 @@ describe("maximum active lifetime", () => {
   });
 
   it("suspends past the limit even while background work keeps it busy", async () => {
-    const harness = idleHarness({ runningSince: longAgo, backgroundWorkProbeCode: 0 });
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: longAgo,
+      backgroundWorkProbeCode: 0,
+    });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
@@ -347,7 +420,11 @@ describe("maximum active lifetime", () => {
   });
 
   it("still waits for background work within the limit", async () => {
-    const harness = idleHarness({ runningSince: recently, backgroundWorkProbeCode: 0 });
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: recently,
+      backgroundWorkProbeCode: 0,
+    });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
 
@@ -356,7 +433,7 @@ describe("maximum active lifetime", () => {
   });
 
   it("suspends past the limit under a run that is only waiting", async () => {
-    const harness = idleHarness({ runningSince: longAgo });
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
       where.leaseExpiresAt ? null : { id: "waiting-for-approval" },
     );
@@ -370,23 +447,35 @@ describe("maximum active lifetime", () => {
     const control = {
       controlHolder: "user",
       controlLeaseId: "lease",
-      controlLeaseExpiresAt: new Date("2999-01-01T00:00:00.000Z"),
+      controlLeaseExpiresAt: new Date(now + 60_000),
     };
-    const harness = idleHarness({ runningSince: longAgo });
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     Object.assign(harness.computer, control);
     harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
       where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
     );
 
-    await touchRunningComputer(harness.deps, harness.computer);
-    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    for (const elapsed of [0, 60_000, DEFAULT_COMPUTER_MAX_ACTIVE_MS + 60_000]) {
+      vi.setSystemTime(now + elapsed);
+      Object.assign(harness.computer, {
+        controlLeaseExpiresAt: new Date(now + elapsed + 60_000),
+      });
+      await touchRunningComputer(harness.deps, harness.computer);
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+      expect(harness.jobs.enqueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          availableAt: new Date(now + elapsed + DEFAULT_SANDBOX_IDLE_MS),
+        }),
+      );
+    }
 
-    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(3);
+    expect(harness.jobs.enqueue).toHaveBeenCalledTimes(6);
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
   });
 
   it("does not pull the computer out from under a run that is executing", async () => {
-    const harness = idleHarness({ runningSince: longAgo });
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
 
     await sleepComputerIfIdle(harness.deps, harness.computer.id);
@@ -628,6 +717,7 @@ function idleHarness(
     exportError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
     runningSince?: Date | null;
+    billsWhileRunning?: boolean;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -673,6 +763,8 @@ function idleHarness(
     },
   };
   const sandbox = {
+    billsWhileRunning:
+      options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
     execute: vi.fn(async function* () {
       const code = backgroundWorkProbeCodes.shift() ?? options.backgroundWorkProbeCode ?? 1;
       if (code === 1 && !options.backgroundWorkProbeFailed) {

@@ -14,12 +14,11 @@ import { checkpointComputerWorkspace } from "./computer-workspace.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
- * Longest a computer stays up in one stretch. Viewers and background work can each keep a
- * computer awake, so without a ceiling one open screen kept a sandbox billing for weeks. Past
- * it the computer suspends at its next idle check unless a run is executing on it right now;
- * the next use starts it again.
+ * Default uptime cap for providers that bill while running. Background work and viewers
+ * do not extend it; executing runs and active user control leases defer suspension.
+ * COMPUTER_MAX_ACTIVE_MS configures the limit; 0 disables it.
  */
-export const MAX_COMPUTER_ACTIVE_MS = 2 * 60 * 60 * 1000;
+export const DEFAULT_COMPUTER_MAX_ACTIVE_MS = 2 * 60 * 60 * 1000;
 const EXECUTING_RUN_STATUSES = ["leased", "running"] as const;
 const BACKGROUND_WORK_MARKER_PREFIX = "/tmp/rakazo-background-";
 const BACKGROUND_WORK_IDLE_SENTINEL = "rakazo-background-idle";
@@ -177,6 +176,13 @@ export function sandboxIdleMs(): number {
   return Number.isFinite(raw) && raw >= 30_000 ? raw : DEFAULT_SANDBOX_IDLE_MS;
 }
 
+export function computerMaxActiveMs(): number {
+  const raw = Number(process.env.COMPUTER_MAX_ACTIVE_MS?.trim() || DEFAULT_COMPUTER_MAX_ACTIVE_MS);
+  return Number.isFinite(raw) && (raw === 0 || raw >= 60_000)
+    ? raw
+    : DEFAULT_COMPUTER_MAX_ACTIVE_MS;
+}
+
 export function computerIdleSleepEnabled(): boolean {
   return process.env.SANDBOX_IDLE_MS?.trim() !== "0";
 }
@@ -186,8 +192,18 @@ export function scheduleComputerSleep(jobs: JobPublisher, computerId: string): v
   void jobs.enqueue(computerSleepJob(computerId, new Date(Date.now() + sandboxIdleMs())));
 }
 
-function activeLimitReached(runningSince: Date | null | undefined): boolean {
-  return runningSince != null && Date.now() - runningSince.getTime() >= MAX_COMPUTER_ACTIVE_MS;
+function activeLimitReached(
+  sandbox: SandboxProvider,
+  ref: ComputerRef,
+  runningSince: Date | null | undefined,
+): boolean {
+  const limit = computerMaxActiveMs();
+  return (
+    limit > 0 &&
+    sandbox.billsWhileRunning?.(ref) === true &&
+    runningSince != null &&
+    Date.now() - runningSince.getTime() >= limit
+  );
 }
 
 export async function touchRunningComputer(
@@ -208,7 +224,10 @@ export async function touchRunningComputer(
     controlLeaseId: computer.controlLeaseId ?? null,
     controlLeaseExpiresAt: computer.controlLeaseExpiresAt ?? null,
   });
-  if (activeLimitReached(computer.runningSince) && !activeControl) {
+  if (
+    activeLimitReached(deps.sandbox, toComputerRef(computer), computer.runningSince) &&
+    !activeControl
+  ) {
     if (computerIdleSleepEnabled()) {
       void deps.jobs.enqueue(computerSleepJob(computer.id, new Date(Date.now())));
     }
@@ -251,7 +270,8 @@ export async function sleepComputerIfIdle(
   // runs and background work start it again when they next need it. A user in control is
   // left alone: control leases expire on their own, and that release resumes the waiting run.
   const activeControl = hasActiveComputerControl(computer);
-  const limitReached = activeLimitReached(computer.runningSince) && !activeControl;
+  const limitReached =
+    activeLimitReached(deps.sandbox, ref, computer.runningSince) && !activeControl;
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
     : activeControl

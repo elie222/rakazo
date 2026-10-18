@@ -16,6 +16,10 @@ const context = {
 };
 
 describe("E2B computer backend", () => {
+  it("bills while running", () => {
+    expect(new E2BSandboxProvider("test-key").billsWhileRunning()).toBe(true);
+  });
+
   it("removes inherited variables after the command environment overlay", async () => {
     const run = vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 }));
     const provider = new E2BSandboxProvider("test-key", {
