@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -31,6 +32,7 @@ export function BotOrganizeModal({
   onUpdate,
   onCreateSection,
   onRenameSection,
+  onDeleteSection,
 }: {
   bot: Pick<MobileBot, "name" | "pinned" | "sectionId"> &
     Partial<Pick<MobileBot, "notifyOnFinish">>;
@@ -39,6 +41,7 @@ export function BotOrganizeModal({
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
   onCreateSection: (name: string) => Promise<void>;
   onRenameSection: (sectionId: string, name: string) => Promise<void>;
+  onDeleteSection: (sectionId: string) => Promise<void>;
 }) {
   const styles = useThemedStyles(createBotOrganizeStyles);
   const { t } = useI18n();
@@ -72,6 +75,22 @@ export function BotOrganizeModal({
     setMode("rename");
     setName(currentSection.name);
     setError(null);
+  }
+
+  function confirmDelete() {
+    if (!currentSection) return;
+    Alert.alert(
+      t("Delete {name}?", { name: currentSection.name }),
+      t("Its bots and groups are kept and leave the section."),
+      [
+        { text: t("Cancel"), style: "cancel" },
+        {
+          text: t("Delete"),
+          style: "destructive",
+          onPress: () => void save(() => onDeleteSection(currentSection.id)),
+        },
+      ],
+    );
   }
 
   return (
@@ -188,6 +207,24 @@ export function BotOrganizeModal({
                 >
                   <NativeSymbol ios="pencil" android="pencil-outline" size={18} />
                   <Text style={styles.actionLabel}>{t("Rename section")}</Text>
+                </Pressable>
+              ) : null}
+              {currentSection ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saving}
+                  onPress={confirmDelete}
+                  style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+                >
+                  <NativeSymbol
+                    ios="trash"
+                    android="trash-outline"
+                    size={18}
+                    color={mobileTokens().destructive}
+                  />
+                  <Text style={[styles.actionLabel, styles.destructive]}>
+                    {t("Delete section")}
+                  </Text>
                 </Pressable>
               ) : null}
             </>
@@ -312,6 +349,7 @@ function createBotOrganizeStyles() {
       paddingHorizontal: 12,
       fontSize: 16,
     },
+    destructive: { color: tokens.destructive },
     error: {
       color: tokens.destructive,
       fontSize: 13,

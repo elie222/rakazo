@@ -1108,6 +1108,10 @@ function Home() {
             await rpc("botSections/update", { sectionId, name });
             await loadBots();
           }}
+          onDeleteSection={async (sectionId) => {
+            await rpc("botSections/remove", { sectionId });
+            await loadBots();
+          }}
         />
       ) : null}
     </View>

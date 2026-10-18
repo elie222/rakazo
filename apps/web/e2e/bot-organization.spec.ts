@@ -61,6 +61,48 @@ test("pinned bots and sidebar sections persist", async ({ page }, testInfo) => {
   await expect(sidebar.locator('[data-sidebar-group="unassigned"]')).toContainText("Chief");
 });
 
+test("deleting a section keeps its bots and groups", async ({ page }, testInfo) => {
+  await signup(page, `section-delete-${Date.now()}@rakazo.test`, "password12", "Section Delete");
+  await completeOnboarding(page);
+  const chiefId = activeBotId(page);
+  const alpha = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Alpha",
+    computerMode: "team",
+  });
+  const section = await rpc<{ id: string }>(page, "botSections/create", {
+    botId: alpha.id,
+    name: "Projects",
+  });
+  await rpc(page, "bots/update", { botId: chiefId, sectionId: section.id });
+  const group = await rpc<{ id: string }>(page, "groups/create", {
+    name: "Review room",
+    botIds: [chiefId, alpha.id],
+  });
+  await rpc(page, "groups/update", { groupId: group.id, sectionId: section.id });
+  await page.reload();
+
+  const sidebar = page.locator("aside").first();
+  const sectionRows = sidebar.locator(`[data-sidebar-group="section:${section.id}"]`);
+  await sectionRows
+    .getByRole("button", { name: "Collapse Projects", exact: true })
+    .click({ button: "right" });
+  await page
+    .getByRole("menu", { name: "Actions for Projects" })
+    .getByRole("menuitem", { name: "Delete section", exact: true })
+    .click();
+  const dialog = page.getByRole("alertdialog", { name: "Delete Projects?" });
+  await expect(dialog).toContainText("Its bots and groups are kept and leave the section.");
+  await captureScreenshot(page, testInfo, "delete-section-dialog");
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+
+  await expect(sectionRows).toHaveCount(0);
+  for (const id of [chiefId, alpha.id]) {
+    await expect(sidebar.locator(`[data-roster-bot-id="${id}"]`)).toBeVisible();
+  }
+  await expect(sidebar.getByRole("button", { name: /^Review room/ })).toBeVisible();
+  await captureScreenshot(page, testInfo, "section-deleted");
+});
+
 test("bots can be reordered by drag or keyboard and keep that order", async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `bot-reorder-${stamp}@rakazo.test`, "password12", "Bot Order");

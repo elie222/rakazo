@@ -1463,6 +1463,10 @@ msgstr "无法删除 MCP 服务器"
 msgid "Could not delete routine"
 msgstr "无法删除例行任务"
 
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete section"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
 msgstr "无法删除技能"
@@ -1993,6 +1997,10 @@ msgstr "删除群组"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "同时删除记忆"
+
+#: src/pages/Shell.tsx
+msgid "Delete section"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2635,6 +2643,10 @@ msgstr "隔离"
 
 #: src/pages/Artifacts.tsx
 msgid "Isolated preview — no access to your account"
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Its bots and groups are kept and leave the section."
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx

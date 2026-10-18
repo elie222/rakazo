@@ -1463,6 +1463,10 @@ msgstr "Could not delete MCP server"
 msgid "Could not delete routine"
 msgstr "Could not delete routine"
 
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete section"
+msgstr "Could not delete section"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
 msgstr "Could not delete skill"
@@ -1993,6 +1997,10 @@ msgstr "Delete group"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Delete memories too"
+
+#: src/pages/Shell.tsx
+msgid "Delete section"
+msgstr "Delete section"
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2636,6 +2644,10 @@ msgstr "Isolated"
 #: src/pages/Artifacts.tsx
 msgid "Isolated preview — no access to your account"
 msgstr "Isolated preview — no access to your account"
+
+#: src/pages/Shell.tsx
+msgid "Its bots and groups are kept and leave the section."
+msgstr "Its bots and groups are kept and leave the section."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."

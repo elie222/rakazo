@@ -440,6 +440,9 @@ export const RU_MESSAGES: Record<string, string> = {
   "New group": "Новая группа",
   "New section": "Новый раздел",
   "Rename section": "Переименовать раздел",
+  "Delete section": "Удалить раздел",
+  "Its bots and groups are kept and leave the section.":
+    "Боты и группы из него сохранятся и выйдут из раздела.",
   "Save section name": "Сохранить название раздела",
   "New space": "Новое пространство",
   "No apps match your search.": "Нет приложений, соответствующих вашему запросу.",

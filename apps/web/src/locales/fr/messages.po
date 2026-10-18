@@ -1463,6 +1463,10 @@ msgstr "Impossible de supprimer le serveur MCP"
 msgid "Could not delete routine"
 msgstr "Impossible de supprimer la routine"
 
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete section"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
 msgstr "Impossible de supprimer la compétence"
@@ -1993,6 +1997,10 @@ msgstr "Supprimer le groupe"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Supprimer les mémoires également"
+
+#: src/pages/Shell.tsx
+msgid "Delete section"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2636,6 +2644,10 @@ msgstr "Isolé"
 #: src/pages/Artifacts.tsx
 msgid "Isolated preview — no access to your account"
 msgstr "Aperçu isolé — aucun accès à votre compte"
+
+#: src/pages/Shell.tsx
+msgid "Its bots and groups are kept and leave the section."
+msgstr ""
 
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."

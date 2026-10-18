@@ -416,6 +416,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "New group": "新建群组",
   "New section": "新建分组",
   "Rename section": "重命名分组",
+  "Delete section": "删除分组",
+  "Its bots and groups are kept and leave the section.": "其中的 Bot 和群组会保留，并移出该分组。",
   "Save section name": "保存分组名称",
   "New space": "新建空间",
   "No apps match your search.": "没有符合搜索条件的应用。",

@@ -711,6 +711,10 @@ function SpaceShell() {
     section: BotSection;
     spaceId: string;
   } | null>(null);
+  const [deleteSectionTarget, setDeleteSectionTarget] = useState<{
+    section: BotSection;
+    spaceId: string;
+  } | null>(null);
   const [sectionMenu, setSectionMenu] = useState<{
     section: BotSection;
     spaceId: string;
@@ -4712,6 +4716,23 @@ function SpaceShell() {
           />
         ) : null}
 
+        {deleteSectionTarget ? (
+          <DeleteItemDialog
+            item={deleteSectionTarget.section}
+            noun="section"
+            description={<Trans>Its bots and groups are kept and leave the section.</Trans>}
+            onCancel={() => setDeleteSectionTarget(null)}
+            onConfirm={async () => {
+              await rpc.botSections.remove(
+                { sectionId: deleteSectionTarget.section.id },
+                { context: { spaceId: deleteSectionTarget.spaceId } },
+              );
+              setDeleteSectionTarget(null);
+              await refreshBots();
+            }}
+          />
+        ) : null}
+
         {sectionMenu ? (
           <DropdownMenu
             open
@@ -4747,6 +4768,19 @@ function SpaceShell() {
               >
                 <Pencil />
                 {t`Rename section`}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => {
+                  setDeleteSectionTarget({
+                    section: sectionMenu.section,
+                    spaceId: sectionMenu.spaceId,
+                  });
+                  setSectionMenu(null);
+                }}
+              >
+                <Trash2 />
+                {t`Delete section`}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

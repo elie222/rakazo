@@ -1463,6 +1463,10 @@ msgstr "No se pudo eliminar el servidor MCP"
 msgid "Could not delete routine"
 msgstr "No se pudo eliminar la rutina"
 
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete section"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
 msgstr "No se pudo eliminar la habilidad"
@@ -1993,6 +1997,10 @@ msgstr "Eliminar grupo"
 #: src/pages/shell/dialogs.tsx
 msgid "Delete memories too"
 msgstr "Eliminar también las memorias"
+
+#: src/pages/Shell.tsx
+msgid "Delete section"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2635,6 +2643,10 @@ msgstr "Aislado"
 
 #: src/pages/Artifacts.tsx
 msgid "Isolated preview — no access to your account"
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Its bots and groups are kept and leave the section."
 msgstr ""
 
 #: src/pages/shell/dialogs.tsx
