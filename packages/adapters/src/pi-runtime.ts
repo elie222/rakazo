@@ -75,6 +75,7 @@ import { recordPiTelemetryContent, withPiTelemetry, withPiTelemetrySpan } from "
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
+import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
@@ -1051,6 +1052,11 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     name: exposedName,
     label: tool.name,
     description: tool.description,
+    // Pi runs a turn's tool calls concurrently by default, so a batch that
+    // creates a routine and lists routines can read the list before the row
+    // exists. Pi runs the whole batch in order when any call in it is
+    // sequential, which is what the schedule tools need.
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ? { executionMode: "sequential" as const } : {}),
     parameters: parametersFor(tool),
     prepareArguments: (args: unknown) => {
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
