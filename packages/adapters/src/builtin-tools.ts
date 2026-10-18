@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
+  BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BotSecretName,
   botSecretDestinationSchema,
@@ -91,6 +92,7 @@ const scheduleTimingNames = [
   "runAt",
   "delayMinutes",
   "delaySeconds",
+  "watch",
 ] as const;
 
 /**
@@ -118,6 +120,30 @@ const scheduleTimingSpecs = {
     type: "number",
     description: "Seconds from now for a one-shot schedule (may be under one minute).",
   },
+  watch: {
+    type: "object",
+    description:
+      'Run only when something changes, checked without a model every everyMinutes (minimum 5, default 15). kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+    properties: {
+      kind: { type: "string", enum: ["files", "command", "tool"] },
+      paths: { type: "array", items: { type: "string" } },
+      command: { type: "string" },
+      tool: { type: "string" },
+      args: { type: "object" },
+      track: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "For a JSON result: the field naming each item, then the fields whose change counts. Everything else is ignored, and the run is told which items are new, updated or gone.",
+      },
+      everyMinutes: { type: "number" },
+      loud: {
+        type: "boolean",
+        description: "Also post 'No changes' in chat on quiet checks.",
+      },
+    },
+    required: ["kind"],
+  },
 };
 
 function scheduleCreateBranch(active: readonly (keyof typeof scheduleTimingSpecs)[]) {
@@ -142,6 +168,7 @@ const scheduleCreateInputSchema = {
     scheduleCreateBranch(["runAt"]),
     scheduleCreateBranch(["delayMinutes"]),
     scheduleCreateBranch(["delaySeconds"]),
+    scheduleCreateBranch(["watch"]),
   ],
 };
 
@@ -1079,7 +1106,18 @@ export const builtinAgentTools: ConnectorTool[] = [
       properties: {
         name: { type: "string" },
         title: { type: "string" },
-        instructions: { type: "string" },
+        description: {
+          type: "string",
+          maxLength: BOT_DESCRIPTION_MAX_LENGTH,
+          description:
+            "Short public summary of what the new bot is for. Teammates see it in their bot directory.",
+        },
+        instructions: {
+          type: "string",
+          maxLength: BOT_INSTRUCTIONS_MAX_LENGTH,
+          description:
+            "Private operating instructions for the new bot. Only that bot sees them, as its system prompt.",
+        },
         prompt: {
           type: "string",
           description: "Optional first task to run in the new bot's thread.",
@@ -1111,7 +1149,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         description: {
           type: "string",
-          description: "Longer blurb describing what this bot does.",
+          description:
+            "Short public summary of what this bot does. Teammates see it in their bot directory. It does not change your instructions.",
         },
         color: {
           type: "string",

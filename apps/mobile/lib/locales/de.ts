@@ -322,6 +322,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load routine": "Routine konnte nicht geladen werden",
   "Git event": "Git-Ereignis",
   "Message event": "Nachrichtenereignis",
+  "When something changes": "Wenn sich etwas ändert",
   "Open conversation": "Unterhaltung öffnen",
   Paused: "Pausiert",
   Prompt: "Prompt",
@@ -529,6 +530,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Speak + transcribe": "Sprechen + transkribieren",
   "Speak only": "Nur sprechen",
   "Speech model": "Sprachmodell",
+  "Transcription model": "Transkriptionsmodell",
+  Reconnect: "Erneut verbinden",
   "This device": "Dieses Gerät",
   "Your phone's built-in voice. Free, no account needed":
     "Die eingebaute Stimme deines Telefons. Kostenlos, kein Konto nötig",

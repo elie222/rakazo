@@ -11,3 +11,7 @@ export function openAiCompatibleProbeSuccessMessage(modelCount: number): string 
     ? `Found ${modelCount} model${modelCount === 1 ? "" : "s"}.`
     : "Server found. Enter a model name.";
 }
+
+/** Self-hosted voice defaults: Kokoro and Whisper as mlx-audio names them. */
+export const DEFAULT_COMPATIBLE_TTS_MODEL = "mlx-community/Kokoro-82M-bf16";
+export const DEFAULT_COMPATIBLE_STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16";

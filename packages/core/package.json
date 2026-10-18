@@ -65,6 +65,6 @@
     "@types/d3-dsv": "3.0.7",
     "fast-check": "4.10.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

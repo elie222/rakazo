@@ -82,4 +82,16 @@ describe("sandboxProviderOptionsFromEnv", () => {
       createosRootfs: "desktop:2",
     });
   });
+
+  it("loads the Railway sandbox region", () => {
+    expect(
+      sandboxProviderOptionsFromEnv({ RAILWAY_SANDBOX_REGION: "asia-southeast1-eqsg3a" }),
+    ).toMatchObject({ railwaySandboxRegion: "asia-southeast1-eqsg3a" });
+  });
+
+  it.each(["", "  "])("leaves a blank Railway sandbox region unset: %j", (region) => {
+    expect(
+      sandboxProviderOptionsFromEnv({ RAILWAY_SANDBOX_REGION: region }).railwaySandboxRegion,
+    ).toBeUndefined();
+  });
 });

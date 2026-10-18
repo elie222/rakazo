@@ -1,9 +1,10 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelOAuthSignInMode, ThinkingLevel } from "@rakazo/contracts";
-import { supplementPiModels } from "./pi-current-models.js";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { LOCAL_PROVIDER_ID, registerLocalProvider } from "./pi-local-provider.js";
-import { SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
+import { loadProviderOAuth, SUBSCRIPTION_SIGN_IN_PROVIDERS } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
   probeOpenAiCompatibleModels,
@@ -37,7 +38,7 @@ const catalogProbeBaseUrls = new Map<string, string>();
 /** Pinned models-list URL for a catalog provider, taken from the model registry. */
 export function catalogProviderProbeBaseUrl(provider: string): string | null {
   listPiCatalog();
-  return catalogProbeBaseUrls.get(provider) ?? null;
+  return catalogProbeBaseUrls.get(canonicalPiProviderId(provider)) ?? null;
 }
 
 /**
@@ -94,21 +95,28 @@ export function listPiCatalog(): PiCatalogEntry[] {
 
 let cachedCatalog: PiCatalogEntry[] | undefined;
 
+// Keep existing display names across pi 1.3's provider renames.
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  "openai-codex": "OpenAI Codex",
+  azure: "Azure OpenAI",
+};
+
 function buildPiCatalog(): PiCatalogEntry[] {
   catalogProbeBaseUrls.clear();
   const models = registerOpenAiCompatibleCatalog(
-    registerLocalProvider(supplementPiModels(builtinModels())),
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
   const entries: PiCatalogEntry[] = [];
   for (const provider of models.getProviders()) {
+    const providerName = PROVIDER_DISPLAY_NAMES[provider.id] ?? provider.name;
     const apiKey = Boolean(provider.auth.apiKey);
-    const oauth = Boolean(provider.auth.oauth);
+    const oauthAuth = loadProviderOAuth(provider.id);
+    const oauth = Boolean(oauthAuth);
     const auth: PiCatalogAuth = apiKey && oauth ? "both" : oauth ? "oauth" : "api-key";
     const signInMeta = SUBSCRIPTION_SIGN_IN_PROVIDERS[provider.id];
-    const oauthLabel =
-      signInMeta?.loginLabel ?? provider.auth.oauth?.loginLabel ?? provider.auth.oauth?.name;
-    const subscription = Boolean(provider.auth.oauth?.isSubscription);
-    const billing = catalogBilling(provider.id, provider.name, {
+    const oauthLabel = signInMeta?.loginLabel ?? oauthAuth?.loginLabel ?? oauthAuth?.name;
+    const subscription = Boolean(oauthAuth?.isSubscription);
+    const billing = catalogBilling(provider.id, providerName, {
       apiKey,
       oauth,
     });
@@ -120,7 +128,7 @@ function buildPiCatalog(): PiCatalogEntry[] {
       const thinkingLevels = getSupportedThinkingLevels(model) as ThinkingLevel[];
       entries.push({
         provider: provider.id,
-        providerName: provider.name,
+        providerName,
         id: model.id,
         label: catalogModelLabel(model.id, model.name, modelIds),
         billing,

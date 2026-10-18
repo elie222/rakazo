@@ -31,6 +31,8 @@ model User {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   avatarStyle                 String                       @default("organic")
+  /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
+  timezone                    String?
   sessions                    Session[]
   accounts                    Account[]
   members                     Member[]
@@ -789,6 +791,10 @@ model Routine {
   modelProvider  String?
   modelId        String?
   thinkingLevel  String?
+  /// Change trigger (RoutineWatchSchema); null when the routine does not watch anything.
+  watch          Json?
+  /// Last check's result (RoutineWatchStateSchema), written by the checker.
+  watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())

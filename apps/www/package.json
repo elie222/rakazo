@@ -12,7 +12,7 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@astrojs/react": "6.0.5",
+    "@astrojs/react": "6.0.6",
     "@astrojs/sitemap": "3.7.4",
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-web": "workspace:*",

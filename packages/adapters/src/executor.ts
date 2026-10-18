@@ -102,7 +102,7 @@ import {
   stableJsonValue,
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
-import type { McpServer, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createSpaceForMember,
@@ -114,6 +114,7 @@ import {
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
+  Prisma,
   parseComputerMode,
   readHistory,
   recordUsage,
@@ -242,6 +243,7 @@ import {
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
+import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -315,6 +317,7 @@ import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import { tickRoutineWatch } from "./routine-watch.js";
 import { lazyRunComputer } from "./run-computer.js";
 import {
   commitConsumedRunSecret,
@@ -326,9 +329,13 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+
+export { selectRunConnections } from "./connection-context.js";
+
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
   cancelScheduleFromTool,
+  commandWatchFromTool,
   compactScheduleInput,
   createScheduleFromTool,
   filterBuiltinToolsForRun,
@@ -3152,23 +3159,38 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })
         : null;
       const thread = targetThread ?? bot.thread;
+      // A change trigger checks first, without a model; only news becomes a run.
+      const watchTick =
+        routine.watch == null
+          ? null
+          : await tickRoutineWatch(
+              { ...deps, commandRefusal: protectedComputerLifecycleRefusal },
+              routine,
+              { threadId: thread.id, botId: bot.id },
+              scheduledAt,
+            );
+      if (watchTick && !watchTick.run) return;
       // A schedule with no valid parseable cron among its crons (e.g. a
       // legacy row accepted before cron validation was added) fires the
       // already-due run once, then nextRunAt stays null and the routine
       // pauses rather than crash-looping the wakeup job.
-      const nextRunAt = isOneShotRoutineCrons(routine.crons)
-        ? null
-        : nextCronDateAcross(
-            routine.crons,
-            new Date(Math.max(Date.now(), scheduledAt.getTime())),
-            routine.timezone,
-          );
+      const nextRunAt = watchTick?.run
+        ? watchTick.nextRunAt
+        : isOneShotRoutineCrons(routine.crons)
+          ? null
+          : nextCronDateAcross(
+              routine.crons,
+              new Date(Math.max(Date.now(), scheduledAt.getTime())),
+              routine.timezone,
+            );
       const previousLastRunAt = routine.lastRunAt;
       const skillRecords = await listAgentSkillRecords(deps.prisma, {
         spaceId: routine.spaceId,
         userId: routine.userId,
       });
-      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+      const routinePrompt =
+        expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
+        (watchTick?.run ? watchTick.note : "");
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
           where: {
@@ -3181,6 +3203,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             lastRunAt: new Date(),
             nextRunAt,
             ...(nextRunAt ? {} : { active: false }),
+            ...(watchTick?.run ? { watchState: watchTick.state } : {}),
           },
         });
         if (updated.count !== 1) return null;
@@ -3237,6 +3260,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               nextRunAt: scheduledAt,
               active: true,
               lastRunAt: previousLastRunAt,
+              // Put the old fingerprint back too, or the retry would see no change.
+              ...(watchTick?.run
+                ? { watchState: (routine.watchState as Prisma.InputJsonValue) ?? Prisma.DbNull }
+                : {}),
             },
           });
         });
@@ -3702,13 +3729,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           runId,
           screenLeaseId: screenLeaseIdForRun(computerScreenLease, runId, fence),
           signal: runAbortController.signal,
-          connectedConnections: connectedPlugins.map((row) => ({
-            id: row.id,
-            connectorId: row.connectorId,
-            externalId: row.provider,
-            displayName: row.displayName,
-            providerRef: row.providerRef ?? undefined,
-          })),
+          ...connectedContext(connectedPlugins),
           connectedProviders: connectedComposio.map((row) => row.provider),
         };
         const memoryScope = configuredMemory
@@ -4581,11 +4602,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
             viaConnector,
             declaredReadOnly,
           );
+          // This schedules unattended shell execution; require a person to approve
+          // the command once, rather than letting an allow rule or reviewer schedule it.
+          const commandWatch =
+            name === "schedule_create" && commandWatchFromTool(args.watch) !== undefined;
           const requiresApprovalByDefault =
+            commandWatch ||
             requiresUnattendedApproval ||
             toolRequiresApproval(name, viaConnector, declaredReadOnly);
           const requiresMandatoryApproval =
-            requiresUnattendedApproval || toolRequiresExplicitApproval(name);
+            commandWatch || requiresUnattendedApproval || toolRequiresExplicitApproval(name);
           const connectorKind = connectorKindFromToolName(
             name,
             connectedPlugins.map((plugin) => plugin.provider),
@@ -5779,6 +5805,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
           }
           if (name === "schedule_create") {
+            const command = commandWatchFromTool(args.watch);
+            const refusal =
+              command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
+            if (graphical && refusal)
+              return finish({ error: desktopProtectionGuardMessage(refusal) });
             const created = await createScheduleFromTool(deps, {
               spaceId: run.spaceId,
               botId: bot.id,
@@ -5794,6 +5825,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runAt: args.runAt,
                 delayMinutes: args.delayMinutes,
                 delaySeconds: args.delaySeconds,
+                watch: args.watch,
               }),
             });
             return finish(created);
@@ -6500,6 +6532,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               spawnKey: effectKey,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
+              description: args.description ? String(args.description) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
               computerMode,
@@ -6854,6 +6887,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
           { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
         );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
+        let userTimeZone: string | null | undefined;
+        try {
+          userTimeZone = (
+            await deps.prisma.user.findUnique({
+              where: { id: run.userId },
+              select: { timezone: true },
+            })
+          )?.timezone;
+        } catch {
+          // Timezone is optional context; a lookup failure must not prevent a run.
+        }
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
@@ -6862,7 +6906,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // A hang-up turn is read, not heard: no spoken-reply constraint.
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-          formatCurrentTimeInstruction(),
+          formatCurrentTimeInstruction(new Date(), userTimeZone),
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -8438,7 +8482,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -8511,19 +8555,46 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
     : { ...context, includeSemanticRecall: true };
 }
 
+/** Name, title, and description, skipping any part that is blank. */
+function publicProfile(
+  name: string,
+  title: string | null | undefined,
+  description: string,
+): string {
+  const trimmedTitle = title?.trim() ?? "";
+  const heading = trimmedTitle ? `${name}: ${trimmedTitle}` : name;
+  return description ? `${heading}\n${description}` : heading;
+}
+
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
-  bot: { name: string; title: string; description: string; instructions: string },
+  bot: {
+    name: string;
+    title?: string | null;
+    description?: string | null;
+    instructions?: string | null;
+  },
   trigger: string,
 ): string {
+  const description = bot.description?.trim() ?? "";
+  const rawInstructions = bot.instructions ?? "";
+  const instructions = rawInstructions.trim();
   if (trigger !== "created") {
-    return bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`;
+    const identity = publicProfile(bot.name, bot.title, description);
+    // Older bots saved one text as both fields; do not repeat it.
+    if (!instructions || instructions === description) {
+      return instructions ? rawInstructions : identity;
+    }
+    return [
+      identity,
+      "Teammates see only the profile above. These instructions are private to you:",
+      instructions,
+    ].join("\n");
   }
-  const instructions = bot.instructions.trim();
   return [
     `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${bot.title.trim() || "(none)"}`,
-    `Description: ${bot.description.trim() || "(none)"}`,
+    `Title: ${(bot.title ?? "").trim() || "(none)"}`,
+    `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");
 }
@@ -9249,31 +9320,6 @@ function cloudflareRunFields(resolved: { accountId?: string; gatewayId?: string 
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
   };
-}
-
-export function selectRunConnections<
-  T extends { connectorId: string; provider: string; status: string },
->(rows: T[], connectedComposioProviders: string[]): T[] {
-  const liveProviders = new Set(
-    connectedComposioProviders.map((provider) => provider.trim().toLowerCase()).filter(Boolean),
-  );
-  const connectedKeys = new Set(
-    rows
-      .filter((row) => row.status === "connected")
-      .map((row) => `${row.connectorId}:${row.provider.trim().toLowerCase()}`),
-  );
-  return rows.filter((row) => {
-    if (row.status === "connected") return true;
-    if (row.status === "revoked") return false;
-    // Recover a pending/error Composio row only when this provider has no
-    // connected row of its own. A sibling that shares the slug must not
-    // pull a non-live row — and its dead providerRef — into the run.
-    if (row.connectorId !== "composio") return false;
-    if (row.status !== "pending" && row.status !== "error") return false;
-    const providerKey = row.provider.trim().toLowerCase();
-    if (!liveProviders.has(providerKey)) return false;
-    return !connectedKeys.has(`composio:${providerKey}`);
-  });
 }
 
 export async function loadCurrentTurnImages(

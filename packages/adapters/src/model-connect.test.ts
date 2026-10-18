@@ -706,3 +706,15 @@ describe("compatible connection updates", () => {
     expect(() => buildModelConnectPlaintext({ ...input, baseUrl }, legacy)).toThrow(/HTTPS/);
   });
 });
+
+it("exposes saved Azure credentials under the catalog provider id", () => {
+  expect(
+    modelCredentialDto({
+      id: "credential-azure",
+      provider: "azure-openai-responses",
+      label: "Azure",
+      isDefault: true,
+      defaultModel: "gpt-4o",
+    }),
+  ).toMatchObject({ provider: "azure", modelId: "gpt-4o" });
+});

@@ -76,6 +76,7 @@ async function runTurn(
     yield { type: "done" as const, text: options.doneText ?? narrations.join("") + finalText };
   });
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
