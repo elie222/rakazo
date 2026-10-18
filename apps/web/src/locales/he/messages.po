@@ -1465,7 +1465,7 @@ msgstr "לא ניתן למחוק את הרוטינה"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete section"
-msgstr ""
+msgstr "לא ניתן למחוק את המקטע"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
@@ -2000,7 +2000,7 @@ msgstr "מחיקת הזיכרונות גם כן"
 
 #: src/pages/Shell.tsx
 msgid "Delete section"
-msgstr ""
+msgstr "מחיקת המקטע"
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2647,7 +2647,7 @@ msgstr "תצוגה מקדימה מבודדת — ללא גישה לחשבון"
 
 #: src/pages/Shell.tsx
 msgid "Its bots and groups are kept and leave the section."
-msgstr ""
+msgstr "הבוטים והקבוצות שבו יישמרו ויוצאו מהמקטע."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."

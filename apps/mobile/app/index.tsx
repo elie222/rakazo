@@ -64,6 +64,7 @@ import {
 } from "../lib/api";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
 import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
@@ -424,7 +425,7 @@ function Home() {
               },
             ]
           : [];
-    return spaceInboxItems(sidebarSpaces, collapsedRosterParents);
+    return spaceInboxItems(sidebarSpaces, collapsedRosterParents, me?.spaceId);
   }, [
     botSections,
     collapsedRosterParents,
@@ -815,6 +816,22 @@ function Home() {
     [runRowAction],
   );
 
+  const deleteSection = useCallback(
+    (section: { id: string; name: string }) => {
+      confirmDeleteSection(section, t, () => {
+        void (async () => {
+          try {
+            await rpc("botSections/remove", { sectionId: section.id });
+            await loadBots();
+          } catch (err) {
+            Alert.alert(t("Could not delete section"), errorText(err, t("Try again.")));
+          }
+        })();
+      });
+    },
+    [loadBots, t],
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: InboxItem }) =>
       item.type === "search" ? (
@@ -863,7 +880,33 @@ function Home() {
             ) : null}
           </View>
         ) : (
-          <Text style={styles.sectionHeading}>{item.title}</Text>
+          <View style={styles.sectionHeadingRow}>
+            <Text style={[styles.sectionHeading, { flex: 1 }]}>{item.title}</Text>
+            {item.sectionId ? (
+              <MenuView
+                actions={[
+                  {
+                    id: "delete",
+                    title: t("Delete section"),
+                    image: "trash",
+                    attributes: { destructive: true },
+                  },
+                ]}
+                colorScheme={appearance}
+                onPressAction={() => {
+                  if (item.sectionId) deleteSection({ id: item.sectionId, name: item.title });
+                }}
+              >
+                <View
+                  accessibilityLabel={t("Section actions for {name}", { name: item.title })}
+                  accessibilityRole="button"
+                  style={styles.spaceActions}
+                >
+                  <NativeSymbol ios="ellipsis" android="ellipsis-horizontal" size={20} />
+                </View>
+              </MenuView>
+            ) : null}
+          </View>
         )
       ) : item.type === "group" ? (
         <GroupRow
@@ -892,6 +935,7 @@ function Home() {
       chooseInboxSpace,
       collapsedRosterParents,
       confirmDeleteSpace,
+      deleteSection,
       day,
       groupAction,
       me?.spaceId,
@@ -1698,6 +1742,7 @@ function createHomeStyles() {
       paddingHorizontal: 20,
       justifyContent: "center",
     },
+    sectionHeadingRow: { flexDirection: "row", alignItems: "center", paddingRight: 16 },
     sectionHeading: {
       color: native.secondaryLabel,
       fontSize: 14,

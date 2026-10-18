@@ -1465,7 +1465,7 @@ msgstr "Impossible de supprimer la routine"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete section"
-msgstr ""
+msgstr "Impossible de supprimer la section"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
@@ -2000,7 +2000,7 @@ msgstr "Supprimer les mémoires également"
 
 #: src/pages/Shell.tsx
 msgid "Delete section"
-msgstr ""
+msgstr "Supprimer la section"
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2647,7 +2647,7 @@ msgstr "Aperçu isolé — aucun accès à votre compte"
 
 #: src/pages/Shell.tsx
 msgid "Its bots and groups are kept and leave the section."
-msgstr ""
+msgstr "Ses bots et groupes sont conservés et quittent la section."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."

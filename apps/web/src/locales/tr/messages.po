@@ -1465,7 +1465,7 @@ msgstr "Rutin silinemedi"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete section"
-msgstr ""
+msgstr "Bölüm silinemedi"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
@@ -2000,7 +2000,7 @@ msgstr "Hafızayı da sil"
 
 #: src/pages/Shell.tsx
 msgid "Delete section"
-msgstr ""
+msgstr "Bölümü sil"
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2647,7 +2647,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Its bots and groups are kept and leave the section."
-msgstr ""
+msgstr "Botları ve grupları korunur ve bölümden çıkarılır."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."

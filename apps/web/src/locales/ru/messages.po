@@ -1465,7 +1465,7 @@ msgstr "Не удалось удалить задачу"
 
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete section"
-msgstr ""
+msgstr "Не удалось удалить раздел"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
@@ -2000,7 +2000,7 @@ msgstr "Удалите воспоминания тоже"
 
 #: src/pages/Shell.tsx
 msgid "Delete section"
-msgstr ""
+msgstr "Удалить раздел"
 
 #: src/pages/Shell.tsx
 msgid "Delete space"
@@ -2647,7 +2647,7 @@ msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Its bots and groups are kept and leave the section."
-msgstr ""
+msgstr "Боты и группы из него сохранятся и выйдут из раздела."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."

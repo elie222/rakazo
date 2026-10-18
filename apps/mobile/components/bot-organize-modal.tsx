@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -13,6 +12,7 @@ import {
 } from "react-native";
 import type { MobileBot, MobileBotSection } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -79,17 +79,10 @@ export function BotOrganizeModal({
 
   function confirmDelete() {
     if (!currentSection) return;
-    Alert.alert(
-      t("Delete {name}?", { name: currentSection.name }),
-      t("Its bots and groups are kept and leave the section."),
-      [
-        { text: t("Cancel"), style: "cancel" },
-        {
-          text: t("Delete"),
-          style: "destructive",
-          onPress: () => void save(() => onDeleteSection(currentSection.id)),
-        },
-      ],
+    confirmDeleteSection(
+      currentSection,
+      t,
+      () => void save(() => onDeleteSection(currentSection.id)),
     );
   }
 

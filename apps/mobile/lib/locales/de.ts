@@ -607,6 +607,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "New section": "Neuer Abschnitt",
   Pin: "Anheften",
   "Rename section": "Abschnitt umbenennen",
+  "Section actions for {name}": "Abschnittsaktionen für {name}",
+  "Could not delete section": "Abschnitt konnte nicht gelöscht werden",
   "Delete section": "Abschnitt löschen",
   "Its bots and groups are kept and leave the section.":
     "Seine Bots und Gruppen bleiben erhalten und verlassen den Abschnitt.",
