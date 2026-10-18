@@ -1532,12 +1532,12 @@ const PinnedTiles = memo(function PinnedTiles({
               <BotAvatar
                 color={chat.bot.color || FALLBACK_COLOR}
                 identity={chat.bot.id}
-                size={64}
+                size={84}
                 status={chat.bot.status}
                 muted={chat.bot.notifyOnFinish === false}
               />
             ) : (
-              <GroupAvatar members={chat.group.members} size={64} />
+              <GroupAvatar members={chat.group.members} size={84} />
             )}
             <Text style={[styles.pinnedName, unread && styles.pinnedUnread]} numberOfLines={1}>
               {name}
@@ -1642,6 +1642,7 @@ const BotRow = memo(function BotRow({
         <BotAvatar
           color={bot.color || FALLBACK_COLOR}
           identity={bot.id}
+          size={62}
           status={bot.status}
           muted={bot.notifyOnFinish === false}
         />
@@ -1695,7 +1696,7 @@ const GroupRow = memo(function GroupRow({
       onLongPress={onLongPress ? () => onLongPress(group) : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
-      avatar={<GroupAvatar members={group.members} size={54} />}
+      avatar={<GroupAvatar members={group.members} size={62} />}
     />
   );
   return onAction ? (
@@ -1797,13 +1798,13 @@ function createHomeStyles() {
       flexDirection: "row",
       alignItems: "center",
       paddingHorizontal: 16,
-      paddingVertical: 10,
+      paddingVertical: 14,
       gap: 12,
     },
     rowSelected: {
-      marginHorizontal: 8,
-      paddingHorizontal: 8,
-      borderRadius: 16,
+      marginHorizontal: 12,
+      paddingHorizontal: 4,
+      borderRadius: 12,
       backgroundColor: native.fill,
     },
     pinnedTiles: {
@@ -1819,7 +1820,7 @@ function createHomeStyles() {
       paddingVertical: 8,
       paddingHorizontal: 4,
       borderRadius: 16,
-      gap: 6,
+      gap: 4,
     },
     pinnedName: {
       color: native.secondaryLabel,
