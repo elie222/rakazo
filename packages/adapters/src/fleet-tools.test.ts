@@ -466,6 +466,32 @@ describe("prepareFleetRequest set_child_bot_model", () => {
     });
   });
 
+  it("resets only the thinking level when the model stays the same", async () => {
+    const onDefault = (thinkingLevel: string | null) =>
+      fakeFleet({
+        bots: fleet.bots.map((bot) =>
+          bot.id === "bot-scout"
+            ? { ...bot, modelProvider: null, modelId: null, thinkingLevel }
+            : bot,
+        ),
+      }).deps;
+    expect(
+      await prepareFleetRequest(onDefault("high"), run, "set_child_bot_model", {
+        bot_id: "bot-scout",
+        clear: true,
+      }),
+    ).toMatchObject({
+      ok: true,
+      summary: { lines: ["From: Default model", "To: Default model", "Thinking: Default"] },
+    });
+    expect(
+      await prepareFleetRequest(onDefault(null), run, "set_child_bot_model", {
+        bot_id: "bot-scout",
+        clear: true,
+      }),
+    ).toEqual({ ok: false, error: "That bot already uses this model." });
+  });
+
   it("refuses a thinking level outside the shared levels even without catalog levels", async () => {
     const { deps } = fakeFleet(fleet);
     expect(

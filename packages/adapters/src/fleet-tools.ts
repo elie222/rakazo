@@ -280,10 +280,11 @@ async function prepareChildModel(
     },
   );
   if (!validated.ok) return refuse(validated.error);
+  // Leaving the level out resets it to the default, so that is a change when one was set.
   if (
-    !thinkingLevel &&
     validated.provider === previous.provider &&
-    validated.model === previous.model
+    validated.model === previous.model &&
+    (thinkingLevel ?? null) === previous.thinkingLevel
   ) {
     return refuse("That bot already uses this model.");
   }
