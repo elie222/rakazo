@@ -15,19 +15,21 @@ function message(id: string, runId: string, blocks: ThreadMessage["blocks"]): Th
   };
 }
 
+const received = message("received", "run-peer", [
+  {
+    kind: "bot_message_received",
+    fromBotId: "coder",
+    fromBotName: "Coder",
+    text: "Done.",
+  },
+]);
+
 const peerExchange = [
   message("user", "run-user", [{ kind: "text", text: "Please ask Coder." }]),
   message("sent", "run-user", [
     { kind: "bot_message_sent", toBotId: "coder", toBotName: "Coder", text: "Check this." },
   ]),
-  message("received", "run-peer", [
-    {
-      kind: "bot_message_received",
-      fromBotId: "coder",
-      fromBotName: "Coder",
-      text: "Done.",
-    },
-  ]),
+  received,
   message("activity", "run-peer", [{ kind: "steps", steps: [{ label: "Message bot", count: 1 }] }]),
   message("reply", "run-peer", [{ kind: "text", text: "Sent Coder the endpoints." }]),
   message("answer", "run-user", [{ kind: "text", text: "Coder is checking it." }]),
@@ -164,7 +166,7 @@ describe("user-visible messages", () => {
     });
 
     it("stays visible when it answers the run's ask", () => {
-      const transcript = foldPeerReplies([peerExchange[2], ask, human("paris", "Paris")], {
+      const transcript = foldPeerReplies([received, ask, human("paris", "Paris")], {
         includePeerReceipts: true,
       });
 
@@ -173,7 +175,7 @@ describe("user-visible messages", () => {
     });
 
     it("keeps a reaction to the run's inline ask counted on the ask", () => {
-      const transcript = foldPeerReplies([peerExchange[2], ask, human("thumbs", "👍", "ask")], {
+      const transcript = foldPeerReplies([received, ask, human("thumbs", "👍", "ask")], {
         includePeerReceipts: true,
       });
 
