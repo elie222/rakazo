@@ -2086,12 +2086,19 @@ export function ShellPage() {
       const groupId = activeGroupId.current;
       if (!botId && !groupId) return;
       try {
-        await rpc.threads.react({
+        const result = await rpc.threads.react({
           ...(groupId ? { groupId } : { botId: botId! }),
           messageId: message.id,
           reaction,
           clientNonce: newClientNonce(),
         });
+        if (result.runIds?.length) {
+          if (groupId && activeGroupId.current === groupId) {
+            await refreshGroupThreadRef.current(groupId);
+          } else if (botId && activeBotId.current === botId) {
+            await refreshThreadRef.current(botId);
+          }
+        }
       } catch (error) {
         const stillHere = groupId
           ? activeGroupId.current === groupId

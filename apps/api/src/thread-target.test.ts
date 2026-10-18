@@ -173,7 +173,7 @@ describe("reaction messages", () => {
   });
 });
 
-describe("yes or no reactions", () => {
+describe("reaction turns", () => {
   const ask = {
     id: "parent",
     blocks: [{ kind: "ask", text: "Shall I book it?", status: "pending" }],
@@ -185,9 +185,12 @@ describe("yes or no reactions", () => {
     newer?: Array<{ role: string; blocks: MessageBlock[]; replyToMessageId: string | null }>;
     activeRuns?: Array<{ id: string; taskId: string; status: string }>;
     mayStartTurn?: boolean;
+    recentReaction?: boolean;
+    groupMembers?: string[];
+    askBlocks?: MessageBlock[];
   }) {
     const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([]),
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
       thread: {
         update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
           data.nextMessageSeq ? { nextMessageSeq: 9 } : { nextEventSeq: 4 },
@@ -201,21 +204,38 @@ describe("yes or no reactions", () => {
             seq: 7,
             ...(options.parent ?? { role: "bot", botId: "bot-1", runId: "run-done" }),
           })
-          .mockResolvedValue({ ...ask, threadId: "thread-1", runId: "run-waiting", role: "bot" }),
+          .mockResolvedValue({
+            ...ask,
+            blocks: options.askBlocks ?? ask.blocks,
+            threadId: "thread-1",
+            runId: "run-waiting",
+            role: "bot",
+          }),
         findUnique: vi.fn().mockResolvedValue(null),
         findMany: vi
           .fn()
           .mockResolvedValueOnce(options.newer ?? [])
-          .mockResolvedValue([ask]),
+          .mockResolvedValue([{ ...ask, blocks: options.askBlocks ?? ask.blocks }]),
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
           id: "reaction-1",
           ...data,
         })),
         update: vi.fn(),
       },
+      chatGroup: {
+        update: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue({
+          members: (options.groupMembers ?? []).map((id) => ({
+            bot: { id, name: id, color: null },
+          })),
+        }),
+      },
       run: {
         findMany: vi.fn().mockResolvedValue(options.activeRuns ?? []),
-        findFirst: vi.fn().mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce(options.recentReaction ? { id: "recent" } : null)
+          .mockResolvedValue({ botId: "bot-1", userId: "user-1" }),
         findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
         create: vi.fn().mockResolvedValue({ id: "run-new", taskId: "task-new", status: "queued" }),
@@ -240,7 +260,14 @@ describe("yes or no reactions", () => {
       reactToThreadMessage(
         { prisma, jobs: { enqueue } as never },
         { spaceId: "space-1", userId: "user-1" } as Actor,
-        { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget,
+        (options.groupMembers
+          ? {
+              kind: "group",
+              groupId: "group-1",
+              memberBotIds: ["bot-1", "bot-2"],
+              threadId: "thread-1",
+            }
+          : { kind: "bot", botId: "bot-1", threadId: "thread-1" }) as ThreadTarget,
         {
           messageId: "parent",
           reaction: options.reaction ?? "👍",
@@ -261,7 +288,7 @@ describe("yes or no reactions", () => {
         },
       ],
     });
-    await expect(react()).resolves.toEqual({ eventSeq: 3 });
+    await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: ["run-new"] });
     expect(tx.task.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ botId: "bot-1", prompt: "👍", status: "queued" }),
     });
@@ -281,6 +308,109 @@ describe("yes or no reactions", () => {
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
 
+  it("lets other emoji wake an idle bot", async () => {
+    const { tx, react } = fixture({ reaction: "❤️" });
+    await react();
+    expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          trigger: "reaction",
+          status: { not: "cancelled" },
+          createdAt: { gte: expect.any(Date) },
+        }),
+      }),
+    );
+  });
+
+  it("checks a 30-second cooldown for this bot and thread", async () => {
+    const now = Date.parse("2026-10-01T12:00:00Z");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const { tx, react } = fixture({ recentReaction: true });
+      await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: [] });
+      expect(tx.run.findFirst).toHaveBeenCalledWith({
+        where: {
+          threadId: "thread-1",
+          botId: "bot-1",
+          trigger: "reaction",
+          status: { not: "cancelled" },
+          createdAt: { gte: new Date(now - 30_000) },
+        },
+        select: { id: true },
+      });
+      expect(tx.message.create).toHaveBeenCalledOnce();
+      expect(tx.run.create).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      kind: "ask" as const,
+      text: "Approve?",
+      status: "pending" as const,
+      approvalEffectId: "effect-1",
+      actions: [
+        { id: "allow", label: "Allow" },
+        { id: "deny", label: "Deny" },
+      ],
+    },
+    { kind: "ask" as const, text: "Secret?", status: "pending" as const, input: "secret" as const },
+  ])("leaves protected asks on their cards", async (askBlock) => {
+    const { tx, enqueue, react } = fixture({
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+      askBlocks: [askBlock],
+    });
+    await react();
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("fails quiet when the newer-message scan is capped", async () => {
+    const newer = Array.from({ length: 50 }, () => ({
+      role: "user",
+      blocks: [{ kind: "text" as const, text: "❤️" }],
+      replyToMessageId: "parent",
+    }));
+    const { tx, react } = fixture({
+      newer: [...newer, { role: "bot", blocks: [], replyToMessageId: null }],
+    });
+    await react();
+    expect(tx.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 51 }));
+    expect(tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["👍", "yes"],
+    ["👎", "no"],
+  ] as const)("resolves %s to an offered Yes/No choice", async (reaction, label) => {
+    const { tx, react } = fixture({
+      reaction,
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+      askBlocks: [
+        {
+          kind: "ask",
+          text: "Proceed?",
+          status: "pending",
+          actions: [
+            { id: "accept", label: "Yes" },
+            { id: "reject", label: "No" },
+          ],
+        },
+      ],
+    });
+    await react();
+    expect(tx.task.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { prompt: `Selected choice ${label === "yes" ? "accept: Yes" : "reject: No"}` },
+      }),
+    );
+  });
+
   it("answers the bot's pending ask with a thumbs down", async () => {
     const { tx, enqueue, react } = fixture({
       reaction: "👎",
@@ -290,14 +420,23 @@ describe("yes or no reactions", () => {
     await react();
     expect(tx.task.updateMany).toHaveBeenCalledWith({
       where: { runs: { some: { id: "run-waiting" } } },
-      data: { prompt: "👎" },
+      data: { prompt: "no" },
     });
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
   });
 
   it.each([
-    ["another reaction", { reaction: "❤️" as const }],
+    ["a recent reaction turn", { recentReaction: true }],
+    ["a departed group bot", { groupMembers: ["bot-2", "bot-3"] }],
+    [
+      "a non-thumb on a pending ask",
+      {
+        reaction: "❤️" as const,
+        parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+        activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+      },
+    ],
     ["an older message", { newer: [{ role: "bot", blocks: [], replyToMessageId: null }] }],
     ["the user's own message", { parent: { role: "user", botId: null, runId: null } }],
     ["a busy bot", { activeRuns: [{ id: "run-busy", taskId: "task-busy", status: "running" }] }],

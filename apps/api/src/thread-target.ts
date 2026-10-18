@@ -1038,14 +1038,13 @@ export async function sendThreadMessage(
   return sendResult(committed.message, committed.runs);
 }
 
-/** Reactions that read as yes or no, so they answer the bot's latest message. */
-const TURN_REACTIONS: ReadonlySet<MessageReaction> = new Set(["👍", "👎"]);
+const REACTION_TURN_COOLDOWN_MS = 30_000;
 
 /**
- * Append an emoji reply to the conversation so the next AI turn sees its target.
- * Clients render it beneath that message. A 👍 or 👎 on the bot's latest message also
- * answers it: it starts that bot's turn, or answers its pending ask. Every other
- * reaction, and any reaction while the bot is busy, stays quiet context.
+ * Append a human emoji reply with its target. Any reaction to the bot's latest
+ * message may wake it, with silence allowed. Only thumbs answer an ordinary pending
+ * ask; busy bots, recent reaction turns, and older targets stay quiet context.
+ * Approval and secret asks remain on their cards. Reactions are append-only.
  */
 export async function reactToThreadMessage(
   deps: { prisma: PrismaClient; jobs: JobPublisher },
@@ -1073,11 +1072,17 @@ export async function reactToThreadMessage(
       select: { id: true },
     });
     if (existing) return { eventSeq: null, runs: [] };
-    const replyBotId =
-      input.mayStartTurn && TURN_REACTIONS.has(input.reaction)
-        ? await reactionReplyBotId(tx, target, parent)
-        : undefined;
-    const botId = replyBotId ?? (target.kind === "bot" ? target.botId : target.memberBotIds[0]);
+    const members =
+      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
+    const currentTarget = members
+      ? { ...target, memberBotIds: members.map((member) => member.botId) }
+      : target;
+    const replyBotId = input.mayStartTurn
+      ? await reactionReplyBotId(tx, currentTarget, parent)
+      : undefined;
+    const botId =
+      replyBotId ??
+      (currentTarget.kind === "bot" ? currentTarget.botId : currentTarget.memberBotIds[0]);
     if (!botId) throw new IsolationError();
     const blocks: MessageBlock[] = [{ kind: "text", text: input.reaction }];
     const message = await createThreadMessageInTransaction(tx, {
@@ -1108,7 +1113,7 @@ export async function reactToThreadMessage(
     return { eventSeq: event.seq, runs };
   });
   await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
-  return { eventSeq: committed.eventSeq };
+  return { eventSeq: committed.eventSeq, runIds: committed.runs.map((run) => run.id) };
 }
 
 /** The bot that wrote the thread's newest message, when the reaction targets that message. */
@@ -1117,6 +1122,7 @@ async function reactionReplyBotId(
   target: ThreadTarget,
   parent: { seq: number; role: string; botId: string | null },
 ) {
+  // Only the authenticated human reaction route calls this path; bots cannot wake each other.
   if (parent.role !== "bot" || !parent.botId) return undefined;
   const memberBotIds = target.kind === "bot" ? [target.botId] : target.memberBotIds;
   if (!memberBotIds.includes(parent.botId)) return undefined;
@@ -1124,9 +1130,10 @@ async function reactionReplyBotId(
   const newer = await tx.message.findMany({
     where: { threadId: target.threadId, seq: { gt: parent.seq } },
     orderBy: { seq: "asc" },
-    take: 50,
+    take: 51,
     select: { role: true, blocks: true, replyToMessageId: true },
   });
+  if (newer.length > 50) return undefined;
   const onlyReactions = newer.every((message) =>
     messageReaction({
       ...message,
@@ -1145,6 +1152,17 @@ async function startReactionTurn(
   message: { id: string },
   input: { reaction: MessageReaction; clientNonce: string },
 ): Promise<Array<{ id: string; taskId: string; status: string }>> {
+  const recentReaction = await tx.run.findFirst({
+    where: {
+      threadId,
+      botId,
+      trigger: "reaction",
+      status: { not: "cancelled" },
+      createdAt: { gte: new Date(Date.now() - REACTION_TURN_COOLDOWN_MS) },
+    },
+    select: { id: true },
+  });
+  if (recentReaction) return [];
   const activeRuns = await tx.run.findMany({
     where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
     select: { id: true, taskId: true, status: true },
@@ -1153,7 +1171,12 @@ async function startReactionTurn(
   if (active) {
     // Only the pending ask in the reacted message is answered; approval and secret asks
     // are refused here and stay on their card.
-    if (others.length || active.status !== "waiting_input" || active.id !== parent.runId) {
+    if (
+      (input.reaction !== "👍" && input.reaction !== "👎") ||
+      others.length ||
+      active.status !== "waiting_input" ||
+      active.id !== parent.runId
+    ) {
       return [];
     }
     const answered = await answerWaitingRunWithTextInTransaction(tx, {
@@ -1161,7 +1184,7 @@ async function startReactionTurn(
       threadId,
       runId: active.id,
       answeredByUserId: actor.userId,
-      answer: input.reaction,
+      answer: input.reaction === "👍" ? "yes" : "no",
     });
     if (!answered) return [];
     await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });

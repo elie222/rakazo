@@ -10,6 +10,7 @@ import {
   longWorkProgressGuidance,
   mayOpenModelStream,
   NO_RESPONSE,
+  REACTION_SILENT_REPLY_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
   runIdentityInstruction,
@@ -170,6 +171,36 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("routine", text)).toBe(false);
   });
 
+  it("allows reaction silence without a bubble, fallback, or unread", () => {
+    expect(runAllowsSilentEmpty("reaction")).toBe(true);
+    const silent = stripNoResponseReply(NO_RESPONSE, [{ kind: "text", text: NO_RESPONSE }]);
+    const segments = completionMessageSegments(silent.blocks, {
+      allowSilentEmpty: runAllowsSilentEmpty("reaction"),
+    });
+    const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty("reaction"));
+    expect(blocks).toEqual([]);
+    expect(
+      completionMarksUnread("reaction", completionNotificationBody(silent.assembled, blocks)),
+    ).toBe(false);
+    expect(runReplyGuidance("reaction")).toBe(REACTION_SILENT_REPLY_GUIDANCE);
+    expect(runReplyGuidance("reaction")).toContain(`exactly ${NO_RESPONSE}`);
+    expect(runReplyGuidance("reaction")).not.toContain("routine's prompt");
+    expect(runPromotesMidTurnNarration("reaction")).toBe(true);
+  });
+
+  it("publishes a real reaction reply normally", () => {
+    const reply = stripNoResponseReply("I'll correct that.", [
+      { kind: "text", text: "I'll correct that." },
+    ]);
+    const segments = completionMessageSegments(reply.blocks, {
+      allowSilentEmpty: runAllowsSilentEmpty("reaction"),
+    });
+    expect(finalBlocksAfterMidTurnProgress(segments, true)).toEqual(reply.blocks);
+    expect(
+      completionMarksUnread("reaction", completionNotificationBody(reply.assembled, segments)),
+    ).toBe(true);
+  });
+
   it("still invents done. for a user-triggered empty run", () => {
     expect(runAllowsSilentEmpty("user")).toBe(false);
     const segments = completionMessageSegments([], {
@@ -180,16 +211,19 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("user", text)).toBe(true);
   });
 
-  it("drops a tool-only routine final so an empty watch leaves no chat bubble", () => {
-    const steps = [{ kind: "steps" as const, steps: [{ label: "List items", count: 1 }] }];
-    const segments = completionMessageSegments(steps, {
-      allowSilentEmpty: runAllowsSilentEmpty("routine"),
-    });
-    const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty("routine"));
-    expect(segments).toEqual(steps);
-    expect(blocks).toEqual([]);
-    expect(completionMarksUnread("routine", completionNotificationBody("", blocks))).toBe(false);
-  });
+  it.each(["routine", "reaction"])(
+    "drops a tool-only %s final so silence leaves no chat bubble",
+    (trigger) => {
+      const steps = [{ kind: "steps" as const, steps: [{ label: "List items", count: 1 }] }];
+      const segments = completionMessageSegments(steps, {
+        allowSilentEmpty: runAllowsSilentEmpty(trigger),
+      });
+      const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty(trigger));
+      expect(segments).toEqual(steps);
+      expect(blocks).toEqual([]);
+      expect(completionMarksUnread(trigger, completionNotificationBody("", blocks))).toBe(false);
+    },
+  );
 });
 
 describe("background ticket runs", () => {

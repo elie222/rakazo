@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, type Route, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 /** Submit from the Send control so an in-flight prior send cannot swallow Enter. */
 async function sendComposerMessage(page: Page, composer: Locator, text: string) {
@@ -547,4 +547,56 @@ test.describe("touch message actions", () => {
     await rail.getByRole("button", { name: "Reply", exact: true }).tap();
     await expect(page.getByRole("button", { name: "Cancel reply" })).toBeVisible();
   });
+});
+
+test("a reaction receipt refreshes live work and exposes Stop", async ({ page }, testInfo) => {
+  await signup(page, `reaction-work-${Date.now()}@rakazo.test`, "password12", "Reaction Work");
+  await completeOnboarding(page);
+  await expect(page.getByText("What do you want me on first?", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByRole("button", { name: /Day-to-day work/ }).click();
+  const botText = page.getByText(/Got it\./);
+  await expect(botText).toBeVisible({ timeout: 20_000 });
+  const row = page
+    .getByTestId("transcript")
+    .locator("[data-message-id]")
+    .filter({ has: botText })
+    .first();
+  const botId = activeBotId(page);
+  let reacted = false;
+  // No run events are emitted: the receipt alone must refresh the active state.
+  await page.route("**/rpc/threads/react", async (route) => {
+    reacted = true;
+    await route.fulfill({ json: { json: { ok: true, runIds: ["reaction-run"] } } });
+  });
+  await page.route("**/rpc/threads/get", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    if (reacted) {
+      const run = {
+        id: "reaction-run",
+        botId,
+        threadId: body.json.threadId,
+        taskId: "reaction-task",
+        status: "running",
+        trigger: "reaction",
+        routineId: null,
+        modelProvider: null,
+        modelId: null,
+        error: null,
+        startedAt: new Date().toISOString(),
+        completedAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      body.json.run = run;
+      body.json.activeRuns = [run];
+    }
+    await route.fulfill({ response, json: body });
+  });
+  const rail = await revealHoverRail(row);
+  await rail.getByRole("button", { name: "React" }).click();
+  await page.getByRole("button", { name: "🎉", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "reaction-run-working");
 });

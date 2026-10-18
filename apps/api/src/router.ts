@@ -2228,7 +2228,7 @@ export function createRouter(deps: RouterDeps) {
             getLogger().error("thread reaction realtime notification", error);
           });
         }
-        return { ok: true as const };
+        return { ok: true as const, runIds: result.runIds };
       }),
       stop: authed.threads.stop.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);

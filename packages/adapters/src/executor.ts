@@ -3743,6 +3743,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
           },
           messagingChannelRun,
+          run.sourceMessageId,
         );
         const compactedHistory = selectCompactedHistory({
           messages: threadContext.messages,
@@ -6831,7 +6832,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         const prompt = [
           replyContext,
-          basePrompt,
+          run.trigger === "reaction" && replyContext ? undefined : basePrompt,
           takeoverResume?.promptNote,
           approvalContinuation,
           // A hang-up turn is read, not heard: no spoken-reply constraint.
@@ -7557,7 +7558,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             currentTextSegment = assembled;
           }
           flushPendingTools();
-          // Only routine runs are instructed to emit NO_RESPONSE. Other
+          // Routine and reaction runs may emit NO_RESPONSE. Other
           // allowSilentEmpty wakes (FYI, messaging) may finish truly empty.
           const silentReply = runAllowsSilentEmpty(run.trigger)
             ? stripNoResponseReply(assembled, messageSegments)
@@ -8437,7 +8438,7 @@ export function userTurnInstructions(parts: {
   ];
 }
 
-export function threadContextForRun<T>(
+export function threadContextForRun<T extends { id?: string; role: string }>(
   trigger: string,
   context: {
     messages: T[];
@@ -8445,7 +8446,15 @@ export function threadContextForRun<T>(
     historyCompactedUpToSeq: number | null;
   },
   messagingChannelRun: boolean,
+  sourceMessageId?: string | null,
 ) {
+  // The current reaction is supplied with its target in the prompt, once.
+  if (trigger === "reaction" && sourceMessageId) {
+    context = {
+      ...context,
+      messages: context.messages.filter((message) => message.id !== sourceMessageId),
+    };
+  }
   // Routine runs stay isolated from thread history. The creation intro does
   // too: a message that arrives during it waits and is answered afterward.
   if (trigger === "created" || trigger === "routine") {
@@ -8502,8 +8511,10 @@ export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): st
 
 export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. Do not call message_user unless you have something to report.`;
 
+export const REACTION_SILENT_REPLY_GUIDANCE = `The user reacted with an emoji to your message. Reply only if the reaction calls for it, such as a correction after 👎, a go-ahead on something you proposed, or a question. Otherwise the entire final assistant reply must be exactly ${NO_RESPONSE}, with no message_user call.`;
+
 export function runAllowsSilentEmpty(trigger: string): boolean {
-  return trigger === "routine" || isBackgroundRunTrigger(trigger);
+  return trigger === "reaction" || trigger === "routine" || isBackgroundRunTrigger(trigger);
 }
 
 /**
@@ -8519,6 +8530,7 @@ export const TICKET_SILENT_REPLY_GUIDANCE =
   "Ticket work is reported on the board, not in chat. Put updates and results in ticket_comment and keep the ticket status current with ticket_update. Use the existing ask or approval mechanism when user input is needed. Leave the final reply empty.";
 
 export function runReplyGuidance(trigger: string): string {
+  if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
   return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : longWorkProgressGuidance();
 }
@@ -8602,7 +8614,7 @@ export function completionMarksUnread(
 ): boolean {
   if (trigger === "bot_message") return userFacingPeerReply;
   if (isBackgroundRunTrigger(trigger)) return false;
-  return trigger !== "routine" || Boolean(text);
+  return (trigger !== "routine" && trigger !== "reaction") || Boolean(text);
 }
 
 export function missingTurnImagesInstruction(

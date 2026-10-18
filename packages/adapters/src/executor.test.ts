@@ -1461,6 +1461,25 @@ describe("createRunExecutor", () => {
     });
   });
 
+  it("keeps the current reaction out of history because its target is supplied in the prompt", () => {
+    const messages = [
+      { id: "parent", role: "assistant", content: "Proceed?" },
+      {
+        id: "reaction",
+        role: "user",
+        content: "User reacted with 👍 to <reaction_target>Proceed?</reaction_target>",
+      },
+    ];
+    expect(
+      threadContextForRun(
+        "reaction",
+        { messages, summary: null, historyCompactedUpToSeq: null },
+        false,
+        "reaction",
+      ).messages,
+    ).toEqual([messages[0]]);
+  });
+
   it("isolates routine runs from every thread-history source", () => {
     const threadContext = {
       messages: [{ role: "user", content: "Create this routine" }],

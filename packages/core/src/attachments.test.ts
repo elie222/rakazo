@@ -122,6 +122,9 @@ describe("attachment helpers", () => {
       },
     ];
     expect(userTurnMessageForRun("messaging", "run-new", messages)).toEqual(messages[1]);
+    expect(userTurnMessageForRun("reaction", "run-new", messages, "message-new")).toEqual(
+      messages[1],
+    );
     expect(userTurnMessageForRun("routine", "run-new", messages)).toBeUndefined();
     expect(userTurnMessageForRun("user", "run-old", messages)).toEqual(messages[0]);
     expect(userTurnMessageForRun("user", "run-new", messages)).toEqual(messages[1]);

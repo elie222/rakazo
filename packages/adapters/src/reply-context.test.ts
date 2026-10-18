@@ -101,6 +101,25 @@ describe("reply context", () => {
     ).toBe("❤️");
   });
 
+  it("supplies the current reaction once with its target, without a bare emoji task", async () => {
+    const { prisma, findFirst } = harness(target);
+    findFirst.mockResolvedValueOnce({
+      id: "reaction-1",
+      threadId: "thread-1",
+      role: "user",
+      blocks: [{ kind: "text", text: "👍" }],
+      replyToMessageId: target.id,
+      replyQuote: null,
+      replyTo: target,
+    });
+    const prompt = await loadReplyContext(prisma, "thread-1", "reaction-1");
+    expect(prompt?.match(/👍/g)).toHaveLength(1);
+    expect(prompt).toContain("User reacted with 👍 to");
+    expect(prompt).toContain(`<reaction_target>`);
+    expect(prompt).toContain('"messageId":"message-first"');
+    expect(prompt).toContain("Test message 1/3: Hello!");
+  });
+
   it("preserves reply context in historical messages", () => {
     const text = messageToAgentHistoryText({
       id: "reply",
