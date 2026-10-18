@@ -6,7 +6,6 @@
   "Free": "Kostenlos",
   "No matching models": "Keine passenden Modelle",
   "Search models": "Modelle suchen",
-  "{0, plural, one {# model} other {# models}}": "{0, plural, one {# Modell} other {# Modelle}}",
   "{0} (max {ATTACHMENT_MAX_COUNT} attachments)": "{0} (maximal {ATTACHMENT_MAX_COUNT} Anhänge)",
   "{0} (over 10 MiB)": "{0} (über 10 MiB)",
   "{0} {1}": "{0} {1}",

@@ -6,7 +6,6 @@
   "Free": "免费",
   "No matching models": "没有匹配的模型",
   "Search models": "搜索模型",
-  "{0, plural, one {# model} other {# models}}": "{0, plural, one {# 个模型} other {# 个模型}}",
   "{0} (max {ATTACHMENT_MAX_COUNT} attachments)": "{0}（最多 {ATTACHMENT_MAX_COUNT} 个附件）",
   "{0} (over 10 MiB)": "{0}（超过 10 MiB）",
   "{0} {1}": "{0} {1}",

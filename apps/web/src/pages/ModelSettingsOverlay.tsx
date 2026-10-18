@@ -55,7 +55,7 @@ import {
   modelPreflightTestingLabel,
 } from "../components/ModelConnectionPreflightNotice";
 import { useCopyText } from "../lib/copy-text";
-import { localizedProviderHint } from "../lib/localized-provider-hint";
+import { providerRowHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
 import { thinkingLevelLabel } from "../lib/model-catalog";
 import type { ModelPreflightFailure } from "../lib/model-connection-preflight";
@@ -688,6 +688,9 @@ export function ModelSettingsOverlay({
       ? (group.entries.find((entry) => entry.id === rowCredential.modelId)?.label ??
         rowCredential.modelId)
       : null;
+    // Plain API-key providers show only their name; a subtitle marks the exception.
+    const rowSubtitle =
+      connectedSection && savedModelLabel ? savedModelLabel : providerRowHint(group.entries[0]!);
     return (
       <button
         key={group.id}
@@ -700,17 +703,11 @@ export function ModelSettingsOverlay({
       >
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] text-foreground">{group.name}</span>
-          <span className="mt-0.5 block truncate text-[12px] text-muted-foreground/80">
-            {connectedSection && savedModelLabel ? (
-              savedModelLabel
-            ) : (
-              <>
-                <Plural value={group.entries.length} one="# model" other="# models" />
-                {" · "}
-                {localizedProviderHint(group.entries[0]!)}
-              </>
-            )}
-          </span>
+          {rowSubtitle ? (
+            <span className="mt-0.5 block truncate text-[12px] text-muted-foreground/80">
+              {rowSubtitle}
+            </span>
+          ) : null}
         </span>
         {!connectedSection && rowCredential ? (
           <span className="text-[13px] leading-[1.5] text-success">
@@ -1180,7 +1177,9 @@ export function ModelSettingsOverlay({
                 {activeThinkingLabel ? (
                   <>
                     {" · "}
-                    <Trans>Thinking: {activeThinkingLabel}</Trans>
+                    <span>
+                      <Trans>Thinking: {activeThinkingLabel}</Trans>
+                    </span>
                   </>
                 ) : null}
               </span>

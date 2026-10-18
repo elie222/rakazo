@@ -33,6 +33,7 @@ vi.mock("../lib/rpc", () => ({
 }));
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
+  providerRowHint: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>

@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (읽지 않음)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {모델 #개} other {모델 #개}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1234,10 +1229,6 @@ msgstr "연결"
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
 msgstr "AI 모델 연결"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "백업을 추가하려면 제공업체를 연결하세요."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"

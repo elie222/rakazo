@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未读）"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {# 个模型} other {# 个模型}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1234,10 +1229,6 @@ msgstr "连接"
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
 msgstr "连接模型"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "连接提供商后即可添加备用模型。"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"

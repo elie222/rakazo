@@ -252,13 +252,11 @@ export function ModelBackupsSettings({
       ) : (
         <>
           {currentState.draft.length === 0 ? (
-            <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
-              {addableOptions.length === 0 ? (
-                <Trans>Connect a provider to add backups.</Trans>
-              ) : (
+            addableOptions.length === 0 ? null : (
+              <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
                 <Trans>Add connected models to use them as backups.</Trans>
-              )}
-            </p>
+              </p>
+            )
           ) : (
             <ol
               aria-label={t`Backup models order`}

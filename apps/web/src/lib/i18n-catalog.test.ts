@@ -293,7 +293,7 @@ describe("lingui catalogs", () => {
       'msgid "{0} runs · {1} tokens"\nmsgstr "Запусков: {0} · токенов: {1}"',
     );
     expect(catalog).toContain(
-      'msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"',
+      'msgstr "{toolCount, plural, one {# инструмент} few {# инструмента} many {# инструментов} other {# инструмента}}"',
     );
   });
 
@@ -309,7 +309,7 @@ describe("lingui catalogs", () => {
     expect(catalog).toContain(
       'msgid "{0} runs · {1} tokens"\nmsgstr "{0} exécutions · {1} jetons"',
     );
-    expect(catalog).toContain('msgstr "{0, plural, one {# modèle} other {# modèles}}"');
+    expect(catalog).toContain('msgstr "{toolCount, plural, one {# outil} other {# outils}}"');
     expect(catalog).toContain(
       'msgid "Configure a plugin catalog on the server to connect apps."\nmsgstr "Configurez un catalogue de plugins sur le serveur pour connecter des applications."',
     );

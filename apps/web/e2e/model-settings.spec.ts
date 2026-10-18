@@ -23,7 +23,7 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   });
   await openUserSettings(page, "models");
   await page.getByPlaceholder("Search providers").fill("openrouter");
-  await page.getByRole("button", { name: /^OpenRouter / }).click();
+  await page.getByRole("button", { name: /^OpenRouter( |$)/ }).click();
   const backups = page.getByTestId("model-backups");
   await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
   await expect(page.getByLabel("API key")).toBeVisible();
@@ -613,7 +613,7 @@ test("catalog models keep a space default thinking level per saved model", async
   await expect(page.getByRole("combobox", { name: "Thinking", exact: true })).toBeHidden();
 
   await providerSearch.fill("anthropic");
-  await page.getByRole("button", { name: /^Anthropic / }).click();
+  await page.getByRole("button", { name: /^Anthropic( |$)/ }).click();
   await page.getByLabel("API key").fill("fake-anthropic-key");
   await page.getByRole("button", { name: "Connect API key" }).click();
   await expect(page.getByText(/Connected and using/)).toBeVisible();
@@ -639,7 +639,7 @@ test("catalog models keep a space default thinking level per saved model", async
   await page.reload();
   await openUserSettings(page, "models");
   await providerSearch.fill("anthropic");
-  await page.getByRole("button", { name: /^Anthropic / }).click();
+  await page.getByRole("button", { name: /^Anthropic( |$)/ }).click();
   await expect(page.getByRole("combobox", { name: "Thinking", exact: true })).toHaveValue("high");
 
   // The stored level is bound to the saved model: staging another model resets the

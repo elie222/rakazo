@@ -3,7 +3,6 @@
   " (unread)": " (não lido)",
   "macOS will not ask for extra permission if you let bots run on this Mac. They run as you.": "O macOS não pedirá permissão extra se você permitir que os bots sejam executados neste Mac. Eles são executados como você.",
   "Your OS will not ask for extra permission if you let bots run on {hostLabel}. They run as you.": "Seu sistema operacional não pedirá permissão extra se você permitir que os bots sejam executados no {hostLabel}. Eles são executados como você.",
-  "{0, plural, one {# model} other {# models}}": "{0, plural, one {# modelo} other {# modelos}}",
   "{0} (max {ATTACHMENT_MAX_COUNT} attachments)": "{0} (máx. anexos {ATTACHMENT_MAX_COUNT})",
   "{0} (over 10 MiB)": "{0} (acima de 10 MiB)",
   "{0} {unitLabel}": "{0} {unitLabel}",

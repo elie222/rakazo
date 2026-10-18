@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (unread)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {# model} other {# models}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1234,10 +1229,6 @@ msgstr "Connect"
 #: src/pages/Onboarding.tsx
 msgid "Connect a model"
 msgstr "Connect a model"
-
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "Connect a provider to add backups."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
