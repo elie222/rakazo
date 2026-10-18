@@ -188,6 +188,7 @@ describe("reaction turns", () => {
     recentReaction?: boolean;
     groupMembers?: string[];
     askBlocks?: MessageBlock[];
+    withoutRelease?: boolean;
   }) {
     const tx = {
       steeringMessage: { create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
@@ -279,7 +280,7 @@ describe("reaction turns", () => {
           clientNonce: "nonce-1",
           mayStartTurn: options.mayStartTurn ?? true,
         },
-        releaseTakeover,
+        options.withoutRelease ? undefined : releaseTakeover,
       );
     return { tx, enqueue, react, releaseTakeover };
   }
@@ -296,6 +297,17 @@ describe("reaction turns", () => {
     expect(releaseTakeover).toHaveBeenCalledWith("run-takeover");
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("leaves a pending takeover alone when control cannot be handed back", async () => {
+    const { tx, enqueue, react } = fixture({
+      withoutRelease: true,
+      parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
+      activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
+    });
+    await react();
+    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it("retries the takeover handoff when the same reaction is replayed", async () => {

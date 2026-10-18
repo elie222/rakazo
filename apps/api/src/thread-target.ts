@@ -1105,7 +1105,10 @@ export async function reactToThreadMessage(
       clientNonce: input.clientNonce,
     });
     const runs = replyBotId
-      ? await startReactionTurn(tx, actor, target.threadId, replyBotId, parent, message, input)
+      ? await startReactionTurn(tx, actor, target.threadId, replyBotId, parent, message, {
+          ...input,
+          canReleaseTakeover: Boolean(releaseTakeover),
+        })
       : [];
     if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
     const event = await appendEventInTransaction(tx, {
@@ -1167,7 +1170,7 @@ async function startReactionTurn(
   botId: string,
   parent: { runId: string | null },
   message: { id: string },
-  input: { reaction: MessageReaction; clientNonce: string },
+  input: { reaction: MessageReaction; clientNonce: string; canReleaseTakeover: boolean },
 ): Promise<Array<{ id: string; taskId: string; status: string }>> {
   const activeRuns = await tx.run.findMany({
     where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
@@ -1177,7 +1180,9 @@ async function startReactionTurn(
   if (active) {
     // A 👍 while this run waits for the user to finish on the computer means "done", the
     // same as a typed reply: it steers the run and the caller hands control back.
+    // Only when the caller can hand control back (bot threads), as with a typed reply.
     if (
+      input.canReleaseTakeover &&
       input.reaction === "👍" &&
       !others.length &&
       active.status === "waiting_takeover" &&
