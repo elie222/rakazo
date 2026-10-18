@@ -324,6 +324,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not load routine": "Routine konnte nicht geladen werden",
   "Git event": "Git-Ereignis",
   "Message event": "Nachrichtenereignis",
+  "When something changes": "Wenn sich etwas ändert",
   "Open conversation": "Unterhaltung öffnen",
   Paused: "Pausiert",
   Prompt: "Prompt",

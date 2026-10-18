@@ -4638,3 +4638,82 @@ describe("link favicons", () => {
     expect(favicon).not.toHaveBeenCalled();
   });
 });
+
+describe("routine watch creation boundaries", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function fixture() {
+    const create = vi.fn();
+    const update = vi.fn();
+    const findBot = vi.fn(async () => ({ id: "bot-1", computer: { scope: "team" } }));
+    const findRoutine = vi.fn(async () => ({
+      id: "routine-1",
+      botId: "bot-1",
+      crons: [],
+      watch: null,
+    }));
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          bot: { findFirst: findBot },
+          routine: { findFirst: findRoutine, create, update },
+        },
+        env: { sandboxProvider: "fake" },
+      } as unknown as RouterDeps),
+      { context: { actor } as never },
+    );
+    return { client, create, update, findBot, findRoutine };
+  }
+
+  it("rejects team file escapes on create and update before writing", async () => {
+    const { client, create, update } = fixture();
+    const watch = { kind: "files" as const, paths: ["/etc"], everyMinutes: 5, loud: false };
+    await expect(
+      client.routines.create({ botId: "bot-1", name: "Check", prompt: "Check changes", watch }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("inside the bot's folder"),
+    });
+    await expect(client.routines.update({ routineId: "routine-1", watch })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("inside the bot's folder"),
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("uses the owner boundary before creating or changing a command watch", async () => {
+    const { client, create, update, findBot, findRoutine } = fixture();
+    findBot.mockResolvedValueOnce(null as never);
+    const watch = {
+      kind: "command" as const,
+      command: "echo changed",
+      everyMinutes: 5,
+      loud: false,
+    };
+    await expect(
+      client.routines.create({ botId: "bot-1", name: "Check", prompt: "Check changes", watch }),
+    ).rejects.toBeDefined();
+    expect(findBot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+      }),
+    );
+    findRoutine.mockResolvedValueOnce(null as never);
+    await expect(client.routines.update({ routineId: "routine-1", watch })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(findRoutine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+      }),
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+});

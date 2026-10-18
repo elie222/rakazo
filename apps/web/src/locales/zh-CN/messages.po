@@ -279,6 +279,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr "什么都做一点"
 
+#: src/pages/RoutineEditor.tsx
+msgid "A command's output"
+msgstr "命令的输出"
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -363,6 +367,14 @@ msgstr "动态"
 msgid "Add"
 msgstr "添加"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Add a command to run"
+msgstr "添加要运行的命令"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Add a file or folder to watch"
+msgstr "添加要监视的文件或文件夹"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "请在设置中添加模型后再使用。"
@@ -371,14 +383,6 @@ msgstr "请在设置中添加模型后再使用。"
 msgid "Add a run time for this one-shot."
 msgstr "为此一次性任务添加运行时间。"
 
-#: src/pages/Shell.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger to run this routine."
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
 msgstr "请填写服务器名称。"
@@ -386,6 +390,11 @@ msgstr "请填写服务器名称。"
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a stdio command."
 msgstr "请填写 stdio 命令。"
+
+#: src/pages/RoutineEditor.tsx
+#: src/pages/Shell.tsx
+msgid "Add a trigger to run this routine."
+msgstr "添加触发器以运行此例程。"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -562,6 +571,10 @@ msgstr "始终允许"
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
+
+#: src/pages/RoutineEditor.tsx
+msgid "An integration tool"
+msgstr "集成工具"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -952,9 +965,18 @@ msgstr "聊天设置"
 msgid "Check again"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Check every"
+msgstr "检查间隔"
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
 msgstr "检查失败"
+
+#. placeholder {0}: state.detail ?? ""
+#: src/pages/RoutineEditor.tsx
+msgid "Check failed: {0}"
+msgstr "检查失败：{0}"
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -1139,6 +1161,7 @@ msgid "Coming soon"
 msgstr "即将推出"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "命令"
 
@@ -2303,6 +2326,14 @@ msgstr "失败。"
 msgid "Failure handling"
 msgstr "失败处理"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Fields that mark a change"
+msgstr "标记变化的字段"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Fields to compare, e.g. id, modifiedTime (optional)"
+msgstr "要比较的字段，例如 id, modifiedTime（可选）"
+
 #. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
 msgid "File exceeds the {0} upload limit."
@@ -2311,6 +2342,14 @@ msgstr "文件超过 {0} 的上传限制。"
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders on the computer"
+msgstr "计算机上的文件或文件夹"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders, one per line"
+msgstr "文件或文件夹，每行一个"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -2635,6 +2674,16 @@ msgstr "知识"
 msgid "Language"
 msgstr "语言"
 
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: changed"
+msgstr "上次检查 {0}：有变化"
+
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: no changes"
+msgstr "上次检查 {0}：无变化"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr ""
@@ -2943,6 +2992,7 @@ msgstr ""
 msgid "minute"
 msgstr "分钟"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "分钟"
@@ -3473,6 +3523,10 @@ msgstr "请从目录中选择模型。"
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "请从列表中选择模型，或输入此端点提供的模型 ID。"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Pick a tool to check"
+msgstr "选择要检查的工具"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "置顶"
@@ -3488,6 +3542,10 @@ msgstr "播放中…"
 #: src/pages/KnowledgeSection.tsx
 msgid "Plugin"
 msgstr "插件"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Post \"No changes\" in chat"
+msgstr "在聊天中发布“无变化”"
 
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
@@ -3696,6 +3754,10 @@ msgstr "移除 {full}"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Remove change trigger"
+msgstr "移除变化触发器"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -4613,6 +4675,22 @@ msgstr "至:"
 msgid "Today"
 msgstr "今天"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments (JSON)"
+msgstr "工具参数（JSON）"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be a JSON object"
+msgstr "工具参数必须是 JSON 对象"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be JSON"
+msgstr "工具参数必须是 JSON"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool name"
+msgstr "工具名称"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
 msgstr "工具源"
@@ -4919,8 +4997,16 @@ msgid "What to return"
 msgstr "返回什么"
 
 #: src/pages/RoutineEditor.tsx
+msgid "What to watch"
+msgstr "监视内容"
+
+#: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "当 Webhook 触发时"
+
+#: src/pages/RoutineEditor.tsx
+msgid "When something changes"
+msgstr "发生变化时"
 
 #: src/pages/RoutineEditor.tsx
 msgid "When to run"

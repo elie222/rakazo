@@ -108,6 +108,7 @@ import {
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
 import { MessageReactionSchema } from "./reactions.js";
+import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -547,6 +548,8 @@ export const appContract = {
             thinkingLevel: ThinkingLevelSchema.nullable().optional(),
             /** ISO datetime to arm a never-run one-shot. */
             runAt: IsoDate.optional(),
+            /** Null removes the change trigger. */
+            watch: RoutineWatchSchema.nullable().optional(),
           })
           .superRefine((value, ctx) => {
             if (
@@ -554,11 +557,12 @@ export const appContract = {
               value.crons.length === 0 &&
               value.webhookEnabled === false &&
               value.githubEnabled === false &&
-              value.messageProvider === null
+              value.messageProvider === null &&
+              value.watch === null
             ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule, webhook, GitHub, or message trigger",
+                message: "Add a schedule, webhook, GitHub, message, or change trigger",
                 path: ["crons"],
               });
             }

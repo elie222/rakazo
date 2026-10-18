@@ -279,6 +279,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr "קצת מהכול"
 
+#: src/pages/RoutineEditor.tsx
+msgid "A command's output"
+msgstr ""
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -363,6 +367,14 @@ msgstr "פעילות"
 msgid "Add"
 msgstr "הוספה"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Add a command to run"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Add a file or folder to watch"
+msgstr ""
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "כדי להשתמש בזה יש להוסיף מודל בהגדרות."
@@ -371,14 +383,6 @@ msgstr "כדי להשתמש בזה יש להוסיף מודל בהגדרות."
 msgid "Add a run time for this one-shot."
 msgstr "יש להוסיף זמן הרצה להרצה החד-פעמית הזו."
 
-#: src/pages/Shell.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger"
-msgstr "הוספת טריגר: תזמון, webhook, GitHub או הודעה"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger to run this routine."
-msgstr "כדי להריץ את הרוטינה הזו יש להוסיף טריגר: תזמון, webhook, GitHub או הודעה."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
 msgstr "יש להוסיף שם שרת."
@@ -386,6 +390,11 @@ msgstr "יש להוסיף שם שרת."
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a stdio command."
 msgstr "יש להוסיף פקודת stdio."
+
+#: src/pages/RoutineEditor.tsx
+#: src/pages/Shell.tsx
+msgid "Add a trigger to run this routine."
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -562,6 +571,10 @@ msgstr "מאושר תמיד"
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "לספק הזה שמור מפתח API, לא התחברות עם מנוי."
+
+#: src/pages/RoutineEditor.tsx
+msgid "An integration tool"
+msgstr ""
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -952,9 +965,18 @@ msgstr "הגדרות צ׳אט"
 msgid "Check again"
 msgstr "בדיקה חוזרת"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Check every"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
 msgstr "הבדיקה נכשלה"
+
+#. placeholder {0}: state.detail ?? ""
+#: src/pages/RoutineEditor.tsx
+msgid "Check failed: {0}"
+msgstr ""
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -1139,6 +1161,7 @@ msgid "Coming soon"
 msgstr "בקרוב"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "פקודה"
 
@@ -2303,6 +2326,14 @@ msgstr "נכשל."
 msgid "Failure handling"
 msgstr "טיפול בכשלים"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Fields that mark a change"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Fields to compare, e.g. id, modifiedTime (optional)"
+msgstr ""
+
 #. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
 msgid "File exceeds the {0} upload limit."
@@ -2311,6 +2342,14 @@ msgstr "הקובץ חורג ממגבלת ההעלאה של {0}."
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
 msgstr "קבצים"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders on the computer"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders, one per line"
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -2635,6 +2674,16 @@ msgstr "ידע"
 msgid "Language"
 msgstr "שפה"
 
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: changed"
+msgstr ""
+
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: no changes"
+msgstr ""
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "מאוחר יותר"
@@ -2943,6 +2992,7 @@ msgstr "מזעור הבוטים"
 msgid "minute"
 msgstr "דקה"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "דקות"
@@ -3473,6 +3523,10 @@ msgstr "יש לבחור מודל מהקטלוג."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "יש לבחור מודל מהרשימה או להזין מזהה מודל שמוגש על ידי נקודת הקצה הזו."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Pick a tool to check"
+msgstr ""
+
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "הצמדה"
@@ -3488,6 +3542,10 @@ msgstr "מתנגן…"
 #: src/pages/KnowledgeSection.tsx
 msgid "Plugin"
 msgstr "תוסף"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Post \"No changes\" in chat"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
@@ -3696,6 +3754,10 @@ msgstr "הסרת {full}"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr "להסיר את {secretName}? הבוט הזה לא יוכל עוד להשתמש בו."
+
+#: src/pages/RoutineEditor.tsx
+msgid "Remove change trigger"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -4613,6 +4675,22 @@ msgstr "אל:"
 msgid "Today"
 msgstr "היום"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments (JSON)"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be a JSON object"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be JSON"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool name"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
 msgstr "מקורות כלים"
@@ -4919,8 +4997,16 @@ msgid "What to return"
 msgstr "מה להחזיר"
 
 #: src/pages/RoutineEditor.tsx
+msgid "What to watch"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "כש-webhook מופעל"
+
+#: src/pages/RoutineEditor.tsx
+msgid "When something changes"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "When to run"

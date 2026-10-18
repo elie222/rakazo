@@ -94,6 +94,7 @@ const scheduleTimingNames = [
   "runAt",
   "delayMinutes",
   "delaySeconds",
+  "watch",
 ] as const;
 
 /**
@@ -120,6 +121,30 @@ const scheduleTimingSpecs = {
   delaySeconds: {
     type: "number",
     description: "Seconds from now for a one-shot schedule (may be under one minute).",
+  },
+  watch: {
+    type: "object",
+    description:
+      'Run only when something changes, checked without a model every everyMinutes (minimum 5, default 15). kind files: paths on your computer. kind command: a shell command run in your folder every interval without a model or per-run approval, equivalent to running the command yourself; its output is compared. kind tool: a read-only connected tool and its args. If nothing changed, the routine does not run. Watch one named thing (a folder, a list, a search), never a whole account. For a list result, set track: e.g. new email matching a search -> the mail search tool with its query, track ["id"]; a Drive folder -> the tool listing that folder\'s files, track ["id", "modifiedTime"]; a ClickUp list -> the tool listing its tasks, track ["id", "date_updated"].',
+    properties: {
+      kind: { type: "string", enum: ["files", "command", "tool"] },
+      paths: { type: "array", items: { type: "string" } },
+      command: { type: "string" },
+      tool: { type: "string" },
+      args: { type: "object" },
+      track: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "For a JSON result: the field naming each item, then the fields whose change counts. Everything else is ignored, and the run is told which items are new, updated or gone.",
+      },
+      everyMinutes: { type: "number" },
+      loud: {
+        type: "boolean",
+        description: "Also post 'No changes' in chat on quiet checks.",
+      },
+    },
+    required: ["kind"],
   },
 };
 
@@ -148,6 +173,7 @@ const scheduleCreateInputSchema = {
     scheduleCreateBranch(["runAt"]),
     scheduleCreateBranch(["delayMinutes"]),
     scheduleCreateBranch(["delaySeconds"]),
+    scheduleCreateBranch(["watch"]),
   ],
 };
 

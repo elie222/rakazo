@@ -279,6 +279,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "A command's output"
+msgstr "명령 출력"
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -363,6 +367,14 @@ msgstr "활동"
 msgid "Add"
 msgstr "추가"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Add a command to run"
+msgstr "실행할 명령 추가"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Add a file or folder to watch"
+msgstr "감시할 파일 또는 폴더 추가"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "이 기능을 사용하려면 설정에서 모델을 추가하세요."
@@ -371,14 +383,6 @@ msgstr "이 기능을 사용하려면 설정에서 모델을 추가하세요."
 msgid "Add a run time for this one-shot."
 msgstr "이 일회성 실행의 시간을 추가하세요."
 
-#: src/pages/Shell.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger"
-msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger to run this routine."
-msgstr ""
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
 msgstr "서버 이름을 입력하세요."
@@ -386,6 +390,11 @@ msgstr "서버 이름을 입력하세요."
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a stdio command."
 msgstr "stdio 명령을 입력하세요."
+
+#: src/pages/RoutineEditor.tsx
+#: src/pages/Shell.tsx
+msgid "Add a trigger to run this routine."
+msgstr "이 루틴을 실행할 트리거를 추가하세요."
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -562,6 +571,10 @@ msgstr "항상 허용됨"
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되어 있습니다."
+
+#: src/pages/RoutineEditor.tsx
+msgid "An integration tool"
+msgstr "연동 도구"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -952,9 +965,18 @@ msgstr "채팅 설정"
 msgid "Check again"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Check every"
+msgstr "확인 주기"
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
 msgstr "확인 실패"
+
+#. placeholder {0}: state.detail ?? ""
+#: src/pages/RoutineEditor.tsx
+msgid "Check failed: {0}"
+msgstr "확인 실패: {0}"
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -1139,6 +1161,7 @@ msgid "Coming soon"
 msgstr "준비 중"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "실행 명령"
 
@@ -2303,6 +2326,14 @@ msgstr "실패했습니다."
 msgid "Failure handling"
 msgstr "실패했을 때 처리"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Fields that mark a change"
+msgstr "변경을 나타내는 필드"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Fields to compare, e.g. id, modifiedTime (optional)"
+msgstr "비교할 필드, 예: id, modifiedTime (선택 사항)"
+
 #. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
 msgid "File exceeds the {0} upload limit."
@@ -2311,6 +2342,14 @@ msgstr "파일이 업로드 한도 {0}을(를) 초과합니다."
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders on the computer"
+msgstr "컴퓨터의 파일 또는 폴더"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders, one per line"
+msgstr "파일 또는 폴더, 한 줄에 하나씩"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -2635,6 +2674,16 @@ msgstr "지식"
 msgid "Language"
 msgstr "언어"
 
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: changed"
+msgstr "마지막 확인 {0}: 변경됨"
+
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: no changes"
+msgstr "마지막 확인 {0}: 변경 없음"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr ""
@@ -2943,6 +2992,7 @@ msgstr ""
 msgid "minute"
 msgstr "분"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "분"
@@ -3473,6 +3523,10 @@ msgstr "모델 목록에서 모델을 선택하세요."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "목록에서 모델을 선택하거나 이 엔드포인트가 제공하는 모델 ID를 입력하세요."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Pick a tool to check"
+msgstr "확인할 도구 선택"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "고정"
@@ -3488,6 +3542,10 @@ msgstr "재생 중…"
 #: src/pages/KnowledgeSection.tsx
 msgid "Plugin"
 msgstr "플러그인"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Post \"No changes\" in chat"
+msgstr "채팅에 “변경 없음” 게시"
 
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
@@ -3696,6 +3754,10 @@ msgstr "{full} 삭제"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Remove change trigger"
+msgstr "변경 트리거 제거"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -4613,6 +4675,22 @@ msgstr "받는 사람:"
 msgid "Today"
 msgstr "오늘"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments (JSON)"
+msgstr "도구 인수 (JSON)"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be a JSON object"
+msgstr "도구 인수는 JSON 객체여야 합니다"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be JSON"
+msgstr "도구 인수는 JSON이어야 합니다"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool name"
+msgstr "도구 이름"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
 msgstr "도구 소스"
@@ -4919,8 +4997,16 @@ msgid "What to return"
 msgstr "완료 후 전달할 결과"
 
 #: src/pages/RoutineEditor.tsx
+msgid "What to watch"
+msgstr "감시 대상"
+
+#: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "웹훅이 실행될 때"
+
+#: src/pages/RoutineEditor.tsx
+msgid "When something changes"
+msgstr "변경이 있을 때"
 
 #: src/pages/RoutineEditor.tsx
 msgid "When to run"

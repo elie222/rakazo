@@ -10,6 +10,7 @@ import {
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
 import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
+import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
 
 export const ComputerModeSchema = z.enum(["team", "dedicated"]);
@@ -459,6 +460,9 @@ export const RoutineSchema = z.object({
   modelProvider: z.string().nullable(),
   modelId: z.string().nullable(),
   thinkingLevel: ThinkingLevelSchema.nullable(),
+  /** Null unless the routine starts when something changes. */
+  watch: RoutineWatchSchema.nullable(),
+  watchState: RoutineWatchStateSchema.nullable(),
   lastRunAt: z.string().nullable(),
   nextRunAt: z.string().nullable(),
   createdAt: z.string(),
@@ -486,6 +490,7 @@ export const CreateRoutineInput = z
     modelProvider: z.string().trim().min(1).max(80).nullable().default(null),
     modelId: z.string().trim().min(1).max(200).nullable().default(null),
     thinkingLevel: ThinkingLevelSchema.nullable().default(null),
+    watch: RoutineWatchSchema.nullable().default(null),
   })
   .superRefine((value, ctx) => {
     routineModelIssues(value, ctx);
@@ -493,12 +498,20 @@ export const CreateRoutineInput = z
       value.crons.length === 0 &&
       !value.webhookEnabled &&
       !value.githubEnabled &&
-      !value.messageProvider
+      !value.messageProvider &&
+      !value.watch
     ) {
       ctx.addIssue({
         code: "custom",
-        message: "Add a schedule, webhook, GitHub, or message trigger",
+        message: "Add a schedule, webhook, GitHub, message, or change trigger",
         path: ["crons"],
+      });
+    }
+    if (value.watch && value.crons.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A change trigger checks on its own interval; remove the schedule",
+        path: ["watch"],
       });
     }
   });

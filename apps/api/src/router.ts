@@ -84,6 +84,8 @@ import {
   normalizeSecretDestination,
   PushSessionEndedError,
   parseModelSecret,
+  parseRoutineWatch,
+  parseRoutineWatchState,
   persistPreparedSecret,
   pickReusableConnection,
   planLiveConnectionSync,
@@ -112,6 +114,7 @@ import {
   scriptedCatalogEntry,
   selectDefaultCredentialId,
   serializeModelSecret,
+  stableStringify,
   storeBotSecret,
   storedOpenAiCompatibleProbeKey,
   takeoverLeaseMs,
@@ -122,6 +125,7 @@ import {
   validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
+  validateRoutineWatch,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -3363,6 +3367,20 @@ export function createRouter(deps: RouterDeps) {
           });
         }
         const bot = await repos.getBot(context.actor, input.botId);
+        if (input.watch) {
+          try {
+            await validateRoutineWatch(
+              {},
+              input.watch,
+              { ...context.actor, botId: bot.id },
+              bot.computer,
+            );
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Invalid change trigger.",
+            });
+          }
+        }
         await assertRoutineModel(deps, context.actor, input);
         // Validate every recurring cron even when inactive; @once and webhook-only have no next date.
         let nextRunAt: Date | null = null;
@@ -3370,6 +3388,8 @@ export function createRouter(deps: RouterDeps) {
           const computedNextRunAt = nextRoutineDate(input.crons, input.timezone);
           nextRunAt = input.active ? computedNextRunAt : null;
         }
+        // A change trigger takes its first reading right away; that reading is the baseline.
+        if (input.watch && input.active) nextRunAt = firstWatchCheck();
         const row = await deps.prisma.routine.create({
           data: {
             spaceId: context.actor.spaceId,
@@ -3387,6 +3407,7 @@ export function createRouter(deps: RouterDeps) {
             modelProvider: input.modelProvider,
             modelId: input.modelId,
             thinkingLevel: input.thinkingLevel,
+            ...(input.watch ? { watch: input.watch as Prisma.InputJsonValue } : {}),
             nextRunAt,
           },
         });
@@ -3453,9 +3474,32 @@ export function createRouter(deps: RouterDeps) {
         if (modelChanged) {
           await assertRoutineModel(deps, context.actor, { modelProvider, modelId });
         }
-        if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider) {
+        const watch = input.watch === undefined ? parseRoutineWatch(existing.watch) : input.watch;
+        if (input.watch) {
+          try {
+            await validateRoutineWatch(
+              {},
+              input.watch,
+              { ...context.actor, botId: bot.id },
+              bot.computer,
+            );
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: error instanceof Error ? error.message : "Invalid change trigger.",
+            });
+          }
+        }
+        const watchChanged =
+          input.watch !== undefined &&
+          stableStringify(input.watch) !== stableStringify(parseRoutineWatch(existing.watch));
+        if (crons.length === 0 && !webhookEnabled && !githubEnabled && !messageProvider && !watch) {
           throw new ORPCError("BAD_REQUEST", {
-            message: "Add a schedule, webhook, GitHub, or message trigger",
+            message: "Add a schedule, webhook, GitHub, message, or change trigger",
+          });
+        }
+        if (watch && crons.length > 0) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "A change trigger checks on its own interval; remove the schedule",
           });
         }
         if (hasMixedOneShotSchedule(crons)) {
@@ -3507,11 +3551,16 @@ export function createRouter(deps: RouterDeps) {
         }
         const nextRunAt = !active
           ? null
-          : crons.length === 0
-            ? null
-            : isOneShotRoutineCrons(crons)
-              ? (armedOneShotAt ?? existing.nextRunAt)
-              : (recalculatedNextRunAt ?? existing.nextRunAt);
+          : watch
+            ? // Turning a watch on, or changing it, checks right away; otherwise keep its rhythm.
+              !existing.active || watchChanged || !existing.nextRunAt
+              ? firstWatchCheck()
+              : existing.nextRunAt
+            : crons.length === 0
+              ? null
+              : isOneShotRoutineCrons(crons)
+                ? (armedOneShotAt ?? existing.nextRunAt)
+                : (recalculatedNextRunAt ?? existing.nextRunAt);
         // Re-check the parent in the write itself so an archive that lands after the read wins.
         // Model patches must also match the snapshot used to resolve omitted model fields.
         const row = await deps.prisma.routine
@@ -3538,6 +3587,13 @@ export function createRouter(deps: RouterDeps) {
               githubEnabled: input.githubEnabled,
               messageProvider: input.messageProvider,
               ...(touchesModel ? { modelProvider, modelId, thinkingLevel } : {}),
+              // A changed watch starts from a fresh baseline.
+              ...(input.watch === undefined
+                ? {}
+                : {
+                    watch: (input.watch as Prisma.InputJsonValue | null) ?? Prisma.DbNull,
+                    ...(watchChanged ? { watchState: Prisma.DbNull } : {}),
+                  }),
               nextRunAt,
             },
           })
@@ -3573,6 +3629,8 @@ export function createRouter(deps: RouterDeps) {
         const scheduleNeedsSync =
           existing.active !== row.active ||
           scheduleChanged ||
+          watchChanged ||
+          existing.nextRunAt?.getTime() !== row.nextRunAt?.getTime() ||
           (!existing.nextRunAt && !!row.nextRunAt);
         if (scheduleNeedsSync) {
           if (row.active && row.nextRunAt) {
@@ -6937,6 +6995,11 @@ async function assertRoutineModel(
   if (message) throw new ORPCError("BAD_REQUEST", { message });
 }
 
+/** A new or re-armed watch takes its first reading a moment from now. */
+function firstWatchCheck(): Date {
+  return new Date(Date.now() + 2_000);
+}
+
 function mapRoutine(row: {
   id: string;
   botId: string;
@@ -6952,6 +7015,8 @@ function mapRoutine(row: {
   modelProvider: string | null;
   modelId: string | null;
   thinkingLevel: string | null;
+  watch: unknown;
+  watchState: unknown;
   lastRunAt: Date | null;
   nextRunAt: Date | null;
   createdAt: Date;
@@ -6971,6 +7036,8 @@ function mapRoutine(row: {
     modelProvider: row.modelProvider ? canonicalPiProviderId(row.modelProvider) : null,
     modelId: row.modelId ?? null,
     thinkingLevel: (row.thinkingLevel as Routine["thinkingLevel"]) ?? null,
+    watch: parseRoutineWatch(row.watch),
+    watchState: parseRoutineWatchState(row.watchState),
     lastRunAt: row.lastRunAt?.toISOString() ?? null,
     nextRunAt: row.nextRunAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),

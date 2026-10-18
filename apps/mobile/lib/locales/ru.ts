@@ -380,6 +380,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Git event": "Git-событие",
   "Slack message": "Сообщение Slack",
   "Message event": "Событие сообщения",
+  "When something changes": "Когда что-то меняется",
   "Teams not enabled": "Teams не настроен",
   "Slack not enabled": "Slack не включен",
   "Teams message": "Сообщение Teams",

@@ -792,6 +792,10 @@ model Routine {
   modelProvider  String?
   modelId        String?
   thinkingLevel  String?
+  /// Change trigger (RoutineWatchSchema); null when the routine does not watch anything.
+  watch          Json?
+  /// Last check's result (RoutineWatchStateSchema), written by the checker.
+  watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())

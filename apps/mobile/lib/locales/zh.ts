@@ -357,6 +357,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Git event": "Git 事件",
   "Slack message": "Slack 消息",
   "Message event": "消息事件",
+  "When something changes": "有变化时",
   "Teams not enabled": "未启用 Teams",
   "Slack not enabled": "未启用 Slack",
   "Teams message": "Teams 消息",
