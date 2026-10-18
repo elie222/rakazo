@@ -22,6 +22,22 @@ describe("current model compatibility", () => {
         ?.thinkingLevels,
     ).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
+  it.each([
+    ["us.anthropic.claude-sonnet-5-5", "us.anthropic.claude-sonnet-5"],
+    ["global.anthropic.claude-haiku-5-5", "global.anthropic.claude-sonnet-5"],
+    ["us.openai.gpt-6.1-sol", "us.openai.gpt-6-astra"],
+  ])("lists Bedrock %s with the endpoint and efforts of %s", (id, baseId) => {
+    const catalog = listPiCatalog();
+    const levels = (modelId: string) =>
+      catalog.find((entry) => entry.provider === "amazon-bedrock" && entry.id === modelId)
+        ?.thinkingLevels;
+    expect(levels(id)).toBeDefined();
+    expect(levels(id)).toEqual(levels(baseId));
+    const models = supplementPiModels(builtinModels());
+    const model = models.getModel("amazon-bedrock", id);
+    expect(model?.baseUrl).toBe(models.getModel("amazon-bedrock", baseId)?.baseUrl);
+    expect(model?.input).toContain("image");
+  });
   it("does not replace a provider library model when applying the supplement again", () => {
     const models = supplementPiModels(builtinModels());
     const model = models.getModel("anthropic", "claude-sonnet-5-5");
