@@ -2710,8 +2710,11 @@ export function ShellPage() {
     const heartbeatBotId = computerBot?.id ?? active?.id;
     if ((panel !== "computer" && !computerOpen) || !heartbeatBotId || computer?.state !== "running")
       return;
-    const ping = () =>
+    // A computer panel left open in a hidden window must not keep the computer awake.
+    const ping = () => {
+      if (document.visibilityState !== "visible") return;
       void rpc.computer.heartbeat({ botId: heartbeatBotId }).catch(() => undefined);
+    };
     ping();
     const timer = window.setInterval(ping, 60_000);
     return () => window.clearInterval(timer);

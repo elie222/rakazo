@@ -39,6 +39,31 @@ describe("current-turn thread files", () => {
     ).rejects.toThrow("attachment limit");
     expect(put).not.toHaveBeenCalled();
   });
+  it("does not start the computer for a turn without attachments", async () => {
+    const computer = vi.fn(async () => ({}) as ComputerRef);
+    const files = await materializeCurrentTurnFiles(
+      {
+        prisma: {} as PrismaClient,
+        artifacts: {} as ArtifactStore,
+        sandbox: {} as SandboxProvider,
+      },
+      [{ kind: "text", text: "Sweep the inbox" }],
+      {
+        context: {
+          operationId: "run-1",
+          traceId: "run-1",
+          spaceId: "space-1",
+          userId: "user-1",
+          botId: "bot-1",
+          signal: new AbortController().signal,
+        },
+        computer,
+        computerMode: "team",
+      },
+    );
+    expect(files).toEqual([]);
+    expect(computer).not.toHaveBeenCalled();
+  });
   it("materializes uploads above 10 MiB when allowed by the server", async () => {
     const bytes = new Uint8Array(11 * 1024 * 1024);
     const writeFile = vi.fn().mockResolvedValue(undefined);
@@ -78,7 +103,8 @@ describe("current-turn thread files", () => {
         botId: "bot-1",
         signal: new AbortController().signal,
       },
-      computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef,
+      computer: async () =>
+        ({ id: "computer-1", kind: "fake", providerRef: "fake-1" }) as ComputerRef,
       computerMode: "team" as const,
     };
     await expect(materializeCurrentTurnFiles(deps, blocks, input)).resolves.toHaveLength(1);
@@ -237,7 +263,7 @@ describe("current-turn thread files", () => {
           sandbox: { writeFile } as unknown as SandboxProvider,
         },
         blocks,
-        { context, computer, computerMode: "team", markWorkspaceDirty },
+        { context, computer: async () => computer, computerMode: "team", markWorkspaceDirty },
       );
 
       expect(get).toHaveBeenCalledWith("stored-1", context);
@@ -305,12 +331,12 @@ describe("current-turn thread files", () => {
           botId: "bot-1",
           signal: new AbortController().signal,
         },
-        computer: {
+        computer: async () => ({
           id: "computer-1",
           botId: "bot-1",
           kind: "fake",
           providerRef: "fake-1",
-        },
+        }),
         computerMode: "team",
       },
     );
@@ -365,7 +391,8 @@ describe("recent thread files", () => {
             botId: "bot",
             signal: new AbortController().signal,
           },
-          computer: { id: "computer", kind: "fake", providerRef: "fake" } as ComputerRef,
+          computer: async () =>
+            ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
           computerMode,
           maxTurns: 3,
           markWorkspaceDirty,
@@ -436,7 +463,8 @@ describe("recent thread files", () => {
           botId: "bot",
           signal: new AbortController().signal,
         },
-        computer: { id: "computer", kind: "fake", providerRef: "fake" } as ComputerRef,
+        computer: async () =>
+          ({ id: "computer", kind: "fake", providerRef: "fake" }) as ComputerRef,
         computerMode: "team",
         maxTurns,
         skipMessageId: "current",
@@ -513,7 +541,8 @@ describe("recent thread files", () => {
       ],
       {
         context,
-        computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" } as ComputerRef,
+        computer: async () =>
+          ({ id: "computer-1", kind: "fake", providerRef: "fake-1" }) as ComputerRef,
         computerMode: "team",
         maxTurns: 3,
       },

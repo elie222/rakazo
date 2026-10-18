@@ -366,6 +366,11 @@ export async function provisionComputer(
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
+        // A reconnect to a computer that stayed up continues its stretch; any start begins one.
+        runningSince:
+          existing.state === "running" && existing.runningSince && !ref.started && !replacement
+            ? existing.runningSince
+            : new Date(),
         ...(!reconnecting
           ? {
               controlHolder: activeControl ? "user" : controlHolder,

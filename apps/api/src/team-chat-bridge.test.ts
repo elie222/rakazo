@@ -2490,7 +2490,7 @@ describe("team chat bridge", () => {
           botId: "bot-1",
           signal: new AbortController().signal,
         },
-        computer: { id: "computer-1", kind: "fake", providerRef: "fake-1" },
+        computer: async () => ({ id: "computer-1", kind: "fake", providerRef: "fake-1" }),
         computerMode: "team",
       },
     );

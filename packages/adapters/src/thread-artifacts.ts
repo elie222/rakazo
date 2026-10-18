@@ -123,7 +123,8 @@ export async function materializeCurrentTurnFiles(
   blocks: MessageBlock[] | undefined,
   input: {
     context: AdapterContext & { botId: string };
-    computer: ComputerRef;
+    /** Starts the computer; called only when there is a file to copy onto it. */
+    computer: () => Promise<ComputerRef>;
     computerMode: ComputerMode;
     markWorkspaceDirty?: () => void;
   },
@@ -168,7 +169,7 @@ async function materializeThreadFiles(
       relativePath,
     );
     const exists = preserveExisting
-      ? await deps.sandbox.readFile(input.computer, workspacePath, input.context).then(
+      ? await deps.sandbox.readFile(await input.computer(), workspacePath, input.context).then(
           () => true,
           () => false,
         )
@@ -182,7 +183,7 @@ async function materializeThreadFiles(
       }
       input.markWorkspaceDirty?.();
       await deps.sandbox.writeFile(
-        input.computer,
+        await input.computer(),
         { path: workspacePath, content: bytes },
         input.context,
       );

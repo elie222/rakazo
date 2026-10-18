@@ -112,6 +112,24 @@ describe("host-aware sandbox", () => {
     await sandbox.destroy(computer, ctx);
   });
 
+  it.each([
+    [true, "desktop"],
+    [false, "fake"],
+  ])(
+    "reports the kind it would provision without starting one (this-mac: %s)",
+    async (hostEnabled, kind) => {
+      const isolated = new FakeSandboxProvider();
+      const provision = vi.spyOn(isolated, "provision");
+      const sandbox = new HostAwareSandbox(
+        isolated,
+        new DesktopSandboxProvider(),
+        async () => hostEnabled,
+      );
+      await expect(sandbox.provisionKind()).resolves.toBe(kind);
+      expect(provision).not.toHaveBeenCalled();
+    },
+  );
+
   it("provisions on the isolated provider when this-mac is off", async () => {
     const isolated = new FakeSandboxProvider();
     const host = new DesktopSandboxProvider();
