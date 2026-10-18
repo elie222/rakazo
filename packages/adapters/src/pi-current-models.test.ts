@@ -23,25 +23,29 @@ describe("current model compatibility", () => {
     ).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
   it.each([
-    ["claude-haiku-5-5", "claude-haiku-4-5"],
-    ["claude-sonnet-5-5", "claude-sonnet-5"],
-  ])("exposes opencode/%s in the picker and runtime like opencode/%s", (id, baseId) => {
-    const models = modelsForRequest(
-      { model: { provider: "opencode", id } } as Parameters<typeof modelsForRequest>[0],
-      "opencode",
-    );
-    const model = models.getModel("opencode", id);
-    const base = models.getModel("opencode", baseId);
-    expect(model).toBeDefined();
-    expect(model?.baseUrl).toBe(base?.baseUrl);
-    expect(model?.api).toBe(base?.api);
-    expect(model?.input).toContain("image");
-    expect(model?.contextWindow).toBe(1000000);
-    expect(
-      listPiCatalog().find((entry) => entry.provider === "opencode" && entry.id === id)
-        ?.thinkingLevels,
-    ).toEqual(getSupportedThinkingLevels(model!));
-  });
+    ["opencode", "claude-haiku-5-5", "claude-haiku-4-5"],
+    ["opencode", "claude-sonnet-5-5", "claude-sonnet-5"],
+    ["opencode-go", "claude-haiku-5-5", "minimax-m3"],
+  ])(
+    "exposes %s/%s in the picker and runtime on the same endpoint as %s",
+    (provider, id, baseId) => {
+      const models = modelsForRequest(
+        { model: { provider, id } } as Parameters<typeof modelsForRequest>[0],
+        provider,
+      );
+      const model = models.getModel(provider, id);
+      const base = models.getModel(provider, baseId);
+      expect(model).toBeDefined();
+      expect(model?.baseUrl).toBe(base?.baseUrl);
+      expect(model?.api).toBe(base?.api);
+      expect(model?.input).toContain("image");
+      expect(model?.contextWindow).toBe(1000000);
+      expect(
+        listPiCatalog().find((entry) => entry.provider === provider && entry.id === id)
+          ?.thinkingLevels,
+      ).toEqual(getSupportedThinkingLevels(model!));
+    },
+  );
   it("does not replace a provider library model when applying the supplement again", () => {
     const models = supplementPiModels(builtinModels());
     const model = models.getModel("anthropic", "claude-sonnet-5-5");
