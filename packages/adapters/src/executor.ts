@@ -4373,40 +4373,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (disabledBuiltinTools.has(name)) {
             return { error: "This tool is disabled for this bot." };
           }
-          const fleetWrite =
-            FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
-            (name === "update_bot" && argumentGiven(args.bot_id));
-          if (fleetWrite || name === "list_fleet") {
-            if (isSubagentToolExecution(executionId))
-              return { error: "Helpers cannot use fleet tools." };
-            // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
-            const live = await deps.prisma.bot.findUnique({
-              where: { id: bot.id },
-              select: { fleetManagement: true },
-            });
-            if (!live?.fleetManagement) return { error: "This tool is disabled for this bot." };
-            if (!ownerStartedRun) return { error: "Fleet tools need a run you started." };
-            // Channel and webhook text this run took in mid-turn is not the owner's. Rows queued
-            // before origins were recorded are recognized by their channel message.
-            const outside =
-              fleetWrite &&
-              (await deps.prisma.steeringMessage.findFirst({
-                where: {
-                  runId,
-                  claimedAt: { not: null },
-                  OR: [
-                    { originTrigger: { not: null } },
-                    { message: { blocks: { array_contains: [{ kind: "channel_message" }] } } },
-                  ],
-                },
-                select: { id: true },
-              }));
-            if (outside)
-              return {
-                error:
-                  "Fleet changes are blocked for the rest of this run because it received a channel or webhook message.",
-              };
-          }
           if (PAGE_BROWSER_TOOL_NAMES.has(name) && !pageBrowserAllowed) {
             return { error: "Page browser is unavailable on this computer." };
           }
@@ -4591,6 +4557,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 }
               }
             }
+          }
+          const fleetWrite =
+            FLEET_WRITE_TOOL_NAMES_SET.has(name) ||
+            (name === "update_bot" && argumentGiven(args.bot_id));
+          if (fleetWrite || name === "list_fleet") {
+            if (isSubagentToolExecution(executionId))
+              return { error: "Helpers cannot use fleet tools." };
+            // The run-start snapshot is not enough: the owner can turn the switch off mid-run.
+            const live = await deps.prisma.bot.findUnique({
+              where: { id: bot.id },
+              select: { fleetManagement: true },
+            });
+            if (!live?.fleetManagement) return { error: "This tool is disabled for this bot." };
+            if (!ownerStartedRun) return { error: "Fleet tools need a run you started." };
+            // Channel and webhook text this run took in mid-turn is not the owner's. Rows queued
+            // before origins were recorded are recognized by their channel message.
+            const outside =
+              fleetWrite &&
+              (await deps.prisma.steeringMessage.findFirst({
+                where: {
+                  runId,
+                  claimedAt: { not: null },
+                  OR: [
+                    { originTrigger: { not: null } },
+                    { message: { blocks: { array_contains: [{ kind: "channel_message" }] } } },
+                  ],
+                },
+                select: { id: true },
+              }));
+            if (outside)
+              return {
+                error:
+                  "Fleet changes are blocked for the rest of this run because it received a channel or webhook message.",
+              };
           }
           if (name === "propose_instructions_update") {
             try {

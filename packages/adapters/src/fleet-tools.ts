@@ -34,6 +34,7 @@ import { resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { createdByWhere } from "./child-bots.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
 import { validateBotModelChange } from "./model-selection.js";
+import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { ScheduleToolDeps } from "./schedule-tools.js";
 import {
   compactScheduleInput,
@@ -41,7 +42,7 @@ import {
   resolveScheduleTiming,
 } from "./schedule-tools.js";
 import type { UpdateBotPatch } from "./update-bot-patch.js";
-import { parseUpdateBotPatch } from "./update-bot-patch.js";
+import { argumentGiven, parseUpdateBotPatch } from "./update-bot-patch.js";
 
 /** The fleet writes that pause for the owner's card. */
 export type FleetApprovalToolName = Exclude<
@@ -261,7 +262,11 @@ async function prepareChildModel(
 
   const child = await resolveBot(deps.prisma, run, args, { createdByCaller: true });
   if ("error" in child) return child;
-  const previous = { provider: child.modelProvider, model: child.modelId };
+  const previous = {
+    provider: child.modelProvider,
+    model: child.modelId,
+    thinkingLevel: child.thinkingLevel ?? null,
+  };
   const validated = await validateBotModelChange(
     { prisma: deps.prisma, ...deps.modelChange },
     {
@@ -422,6 +427,7 @@ async function prepareChildInstructions(
 const FLEET_BOT_LIMIT = 200;
 const FLEET_GROUP_LIMIT = 100;
 const FLEET_SECTION_LIMIT = 100;
+const FLEET_ROSTER_MAX_LENGTH = 60_000;
 const GROUP_PAGE_SIZE = 200;
 const NOT_FOUND = "That bot or group is no longer available. Call list_fleet and try again.";
 
@@ -474,10 +480,11 @@ export async function listFleet(
     detail = {
       id: child.id,
       name: singleLine(child.name),
-      instructions: row.instructions,
       instructionsVersion: instructionsVersionOf(row),
+      instructions: row.instructions,
     };
   }
+  if (detail) return { bot: detail, bots: [], groups: [], sections: [], truncated: false };
   const [bots, groups, sections] = await Promise.all([
     prisma.bot.findMany({
       where: activeBotsWhere(run),
@@ -511,7 +518,7 @@ export async function listFleet(
     select: { id: true },
   });
   const childIds = new Set(children.map((child) => child.id));
-  return {
+  const listing: FleetListing = {
     bots: listedBots.map((bot) => ({
       id: bot.id,
       name: singleLine(bot.name),
@@ -527,8 +534,24 @@ export async function listFleet(
       bots.length > FLEET_BOT_LIMIT ||
       groups.length > FLEET_GROUP_LIMIT ||
       sections.length > FLEET_SECTION_LIMIT,
-    ...(detail ? { bot: detail } : {}),
   };
+  let remaining =
+    FLEET_ROSTER_MAX_LENGTH -
+    JSON.stringify({ bots: [], groups: [], sections: [], truncated: false }).length;
+  for (const rows of [listing.bots, listing.groups, listing.sections]) {
+    let kept = 0;
+    for (const row of rows) {
+      const length = JSON.stringify(row).length + 1;
+      if (length > remaining) break;
+      remaining -= length;
+      kept += 1;
+    }
+    if (kept < rows.length) {
+      rows.splice(kept);
+      listing.truncated = true;
+    }
+  }
+  return listing;
 }
 
 /**
@@ -760,10 +783,14 @@ export async function updateChildBot(
     return { error: "artifact_id and use_attached_image work only on yourself." };
   }
   const profile = {
-    name: args.name ?? undefined,
-    title: args.title ?? undefined,
-    description: args.description ?? undefined,
-    notifyOnFinish: args.notifyOnFinish ?? args.notify_on_finish ?? undefined,
+    name: argumentGiven(args.name) ? args.name : undefined,
+    title: argumentGiven(args.title) ? args.title : undefined,
+    description: argumentGiven(args.description) ? args.description : undefined,
+    notifyOnFinish: argumentGiven(args.notifyOnFinish)
+      ? args.notifyOnFinish
+      : argumentGiven(args.notify_on_finish)
+        ? args.notify_on_finish
+        : undefined,
   };
   const credential = credentialField(
     { name: profile.name, title: profile.title, description: profile.description },
@@ -904,7 +931,8 @@ export async function setChildBotModel(
   const previous = record(canonical.previous);
   if (
     (previous?.provider ?? null) !== child.modelProvider ||
-    (previous?.model ?? null) !== child.modelId
+    (previous?.model ?? null) !== child.modelId ||
+    (previous?.thinkingLevel ?? null) !== (child.thinkingLevel ?? null)
   ) {
     return { error: "That bot's model changed since you approved; ask again." };
   }
@@ -920,19 +948,30 @@ export async function setChildBotModel(
     },
   );
   if (!validated.ok) return { error: validated.error };
-  await commitBotUpdate({
-    prisma: deps.prisma,
-    notify: (threadId, seq) => deps.events.notify(threadId, seq),
-    spaceId: run.spaceId,
-    threadId: child.thread.id,
-    botId: child.id,
-    emitBotUpdated: true,
-    data: {
-      modelProvider: validated.provider,
-      modelId: validated.model,
-      thinkingLevel: validated.thinkingLevel,
-    },
-  });
+  try {
+    await commitBotUpdate({
+      prisma: deps.prisma,
+      notify: (threadId, seq) => deps.events.notify(threadId, seq),
+      spaceId: run.spaceId,
+      threadId: child.thread.id,
+      botId: child.id,
+      emitBotUpdated: true,
+      expectedModel: {
+        modelProvider: child.modelProvider,
+        modelId: child.modelId,
+        thinkingLevel: child.thinkingLevel ?? null,
+      },
+      data: {
+        modelProvider: validated.provider,
+        modelId: validated.model,
+        thinkingLevel: validated.thinkingLevel,
+      },
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2025")
+      return { error: "That bot's model changed since you approved; ask again." };
+    throw error;
+  }
   return {
     ok: true,
     botId: child.id,
@@ -1238,7 +1277,11 @@ function memberNames(members: Member[]): string {
 }
 
 function modelLabel(provider: string | null, model: string | null): string {
-  return provider && model ? `${model} (${provider})` : "Default model";
+  if (!provider || !model) return "Default model";
+  const entry = [...listPiCatalog(), scriptedCatalogEntry].find(
+    (item) => item.provider === provider && item.id === model,
+  );
+  return entry ? `${entry.providerName}: ${entry.label}` : model;
 }
 
 function issueMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {

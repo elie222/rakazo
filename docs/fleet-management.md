@@ -28,8 +28,8 @@ message it answers came from you in the app.
 
 ## Tools
 
-- `list_fleet`: lists active bots, groups and sections. With `bot_id` of a bot it created, it also
-  returns that bot's instructions and current version.
+- `list_fleet`: lists active bots, groups and sections. With `bot_id` of a bot it created, it instead
+  returns only that bot's full instructions and current version.
 - `create_group`: creates a group from existing bots.
 - `update_group`: renames a group or adds and removes members.
 - `organize_bot`: sets a section (`section`), clears it (`clear_section: true`) or sets a pin on a bot
@@ -57,8 +57,8 @@ pause:
 - Routine: the prompt and the resolved time.
 
 If the request cannot be shown whole on the card, it is refused instead of cut off. If the child's
-instructions or model change while the card waits, approving does not overwrite them; the bot has to
-ask again.
+instructions, model or thinking level change while the card waits, approving does not overwrite them;
+the bot has to ask again.
 
 `list_fleet`, `organize_bot` and `update_bot` need no card.
 

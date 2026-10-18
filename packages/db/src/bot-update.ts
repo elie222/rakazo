@@ -20,6 +20,11 @@ export async function commitBotUpdate(
     data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> & { instructions?: string };
     emitBotUpdated: boolean;
     expectedInstructions?: string;
+    expectedModel?: {
+      modelProvider: string | null;
+      modelId: string | null;
+      thinkingLevel: string | null;
+    };
     instructionRestore?: { versionId: string; undo?: boolean };
     reason?: string;
   },
@@ -31,7 +36,7 @@ export async function commitBotUpdate(
     !options.instructionRestore
   ) {
     return options.prisma.bot.update({
-      where: { id: options.botId },
+      where: { id: options.botId, ...options.expectedModel },
       data: options.data,
       select: { id: true, name: true, title: true, description: true },
     });
@@ -51,7 +56,7 @@ export async function commitBotUpdate(
       });
     }
     const updated = await tx.bot.update({
-      where: { id: options.botId },
+      where: { id: options.botId, ...options.expectedModel },
       data,
       select: { id: true, name: true, title: true, description: true },
     });

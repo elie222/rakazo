@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { commitBotUpdate } from "./bot-update.js";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
 import { provisionMessagingIdentity } from "./messaging.js";
@@ -57,4 +58,37 @@ describePostgres("bot fleetManagement (PostgreSQL)", () => {
     const bot = await createRepos(prisma).createBot(actor(), botInput("Plain"));
     expect(bot.fleetManagement).toBe(false);
   });
+  it.each(["modelProvider", "modelId", "thinkingLevel"] as const)(
+    "preserves an intervening owner edit to %s",
+    async (field) => {
+      const bot = await createRepos(prisma).createBot(
+        actor(),
+        botInput("Model child", owner.botId),
+      );
+      const thread = await prisma.thread.findFirstOrThrow({ where: { botId: bot.id } });
+      const baseline = { modelProvider: null, modelId: null, thinkingLevel: null };
+      await prisma.bot.update({
+        where: { id: bot.id },
+        data: { [field]: field === "thinkingLevel" ? "high" : "owner-choice" },
+      });
+      await expect(
+        commitBotUpdate({
+          prisma,
+          notify: async () => undefined,
+          spaceId: owner.spaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          expectedModel: baseline,
+          data: { modelProvider: "scripted", modelId: "scripted", thinkingLevel: null },
+          emitBotUpdated: true,
+        }),
+      ).rejects.toMatchObject({ code: "P2025" });
+      expect((await prisma.bot.findUniqueOrThrow({ where: { id: bot.id } }))[field]).toBe(
+        field === "thinkingLevel" ? "high" : "owner-choice",
+      );
+      expect(
+        await prisma.event.count({ where: { threadId: thread.id, type: "bot.updated" } }),
+      ).toBe(0);
+    },
+  );
 });

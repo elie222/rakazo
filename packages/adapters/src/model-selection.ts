@@ -2,12 +2,8 @@ import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { usableModelId } from "@rakazo/contracts";
-import {
-  chooseModelCredential,
-  type findDefaultModelCredential,
-  findModelCredential,
-  type PrismaClient,
-} from "@rakazo/db";
+import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
+import { chooseModelCredential, findModelCredential } from "@rakazo/db";
 import { modelCredentialDto } from "./model-connect.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {

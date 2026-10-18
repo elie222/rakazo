@@ -3590,7 +3590,7 @@ describeJourneys("required product journeys", () => {
       );
       const card = JSON.stringify(pending.waiting.messages);
       expect(card).toContain("Change the model of Scout?");
-      expect(card).toContain("To: scripted (openrouter)");
+      expect(card).toContain("To: scripted");
       expect(card).not.toContain("Always allow this tool");
       expect(await childState(scout.id)).toMatchObject({ modelProvider: null, modelId: null });
       const updates = () =>

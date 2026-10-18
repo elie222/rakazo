@@ -1157,6 +1157,40 @@ describe("fleet tool gating", () => {
     expect(f.effects).toEqual([]);
   });
 
+  it.each(["switch", "helper", "channel"])(
+    "checks restored child arguments against the live %s gate",
+    async (gate) => {
+      const f = fixture({
+        name: "update_bot",
+        builtin: true,
+        fleetManagement: true,
+        rules: [{ effect: "require_approval", matchKind: "tool", matchValue: "update_bot" }],
+      });
+      f.setCalls([{ args: { bot_id: "child-1", name: "New name" }, executionId: "call-1" }]);
+      await f.run();
+      expect(f.effects).toHaveLength(1);
+      f.effects[0]!.status = "approved";
+      if (gate === "switch") f.liveBot.fleetManagement = false;
+      if (gate === "channel") f.claimedOutsideSteering(true);
+      f.setCalls([
+        {
+          args: { name: "Self edit" },
+          executionId:
+            gate === "helper" ? JSON.stringify(["pi-tool", "helper-call", "call-2"]) : "call-2",
+        },
+      ]);
+      await f.run();
+      expect(f.results.at(-1)).toEqual(
+        gate === "switch"
+          ? switchRejection
+          : gate === "channel"
+            ? taintRejection
+            : { error: "Helpers cannot use fleet tools." },
+      );
+      expect(f.effects[0]!.status).toBe("approved");
+    },
+  );
+
   it("refuses update_bot on another bot when the switch is off or the run is untrusted", async () => {
     const childEdit = { bot_id: "child-1", name: "Obeys" };
     const off = fixture({ name: "update_bot", builtin: true, fleetManagement: false });

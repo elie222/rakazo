@@ -19,6 +19,22 @@ describe("serializeToolResult", () => {
     },
   );
 
+  it.each(["current", "retrieval"] as const)(
+    "keeps a full child read and its version with %s context",
+    (strategy) => {
+      const listing = {
+        bot: { id: "child", instructionsVersion: "v2", instructions: "x".repeat(20_000) },
+        bots: [],
+        groups: [],
+        sections: [],
+        truncated: false,
+      };
+      expect(
+        JSON.parse(serializeToolResult(listing, strategy, "list_fleet", { bot_id: "child" })),
+      ).toEqual(listing);
+    },
+  );
+
   it("still bounds other large tool results", () => {
     const text = serializeToolResult({ output: "x".repeat(20_000) }, "current", "shell", {});
     expect(text.length).toBeLessThan(20_000);

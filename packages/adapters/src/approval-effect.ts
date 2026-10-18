@@ -398,9 +398,12 @@ export function uncertainEffectResult(
   toolName: string,
   args?: Record<string, unknown>,
 ): UncertainEffectResult {
-  const verify = changesTheFleet(toolName, args)
-    ? "Call list_fleet to check whether it happened before retrying."
-    : "Verify the destination before proposing another action.";
+  const verify =
+    toolName === "set_child_bot_model" || toolName === "create_child_routine"
+      ? "Ask the owner to verify the outcome before proposing another change; do not retry automatically."
+      : changesTheFleet(toolName, args)
+        ? "Call list_fleet to check whether it happened before retrying."
+        : "Verify the destination before proposing another action.";
   return {
     error: `The earlier ${toolName} execution was interrupted, so its outcome is unknown. It was not replayed to avoid a duplicate side effect. ${verify}`,
     uncertain: true,

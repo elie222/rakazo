@@ -370,13 +370,31 @@ describe("prepareFleetRequest set_child_bot_model", () => {
       canonical: {
         botId: "bot-scout",
         botName: "Scout",
-        previous: { provider: "anthropic", model: "claude-old" },
+        previous: { provider: "anthropic", model: "claude-old", thinkingLevel: null },
         provider: "custom",
         model: "my-model",
       },
       summary: {
         title: "Change the model of Scout?",
-        lines: ["From: claude-old (anthropic)", "To: my-model (custom)"],
+        lines: ["From: claude-old", "To: my-model"],
+      },
+    });
+  });
+
+  it("uses catalog display names on the card", async () => {
+    const { deps } = fakeFleet({
+      bots: fleet.bots.map((bot) =>
+        bot.id === "bot-scout" ? { ...bot, modelProvider: "scripted", modelId: "scripted" } : bot,
+      ),
+    });
+    const prepared = await prepareFleetRequest(deps, run, "set_child_bot_model", {
+      bot_id: "bot-scout",
+      clear: true,
+    });
+    expect(prepared).toMatchObject({
+      ok: true,
+      summary: {
+        lines: ["From: Scripted: Scripted runtime (local verification)", "To: Default model"],
       },
     });
   });
@@ -390,7 +408,7 @@ describe("prepareFleetRequest set_child_bot_model", () => {
     expect(prepared).toMatchObject({
       ok: true,
       canonical: { botId: "bot-scout", provider: null, model: null },
-      summary: { lines: ["From: claude-old (anthropic)", "To: Default model"] },
+      summary: { lines: ["From: claude-old", "To: Default model"] },
     });
   });
 
@@ -407,7 +425,7 @@ describe("prepareFleetRequest set_child_bot_model", () => {
     expect(prepared).toMatchObject({
       ok: true,
       summary: {
-        lines: ["From: claude-old (anthropic)", "To: Default model", "Thinking: Default"],
+        lines: ["From: claude-old", "To: Default model", "Thinking: Default"],
       },
     });
   });
@@ -779,6 +797,32 @@ describe("prepareFleetRequest keeps the card whole and honest", () => {
 });
 
 describe("listFleet", () => {
+  it("returns full requested instructions and version separately from a large roster", async () => {
+    const instructions = "x".repeat(20_000);
+    const { deps } = fakeFleet({
+      bots: [
+        {
+          id: "child",
+          name: "Child",
+          parentBotId: "bot-self",
+          instructions,
+          instructionHistory: [{ id: "v2" }],
+        },
+        ...Array.from({ length: 210 }, (_, i) => ({
+          id: `peer-${i}`,
+          name: "Long roster name".repeat(30),
+        })),
+      ],
+    });
+    expect(await listFleet(deps, run, { bot_id: "child" })).toEqual({
+      bot: { id: "child", name: "Child", instructionsVersion: "v2", instructions },
+      bots: [],
+      groups: [],
+      sections: [],
+      truncated: false,
+    });
+  });
+
   it("lists only the user's active bots and groups and flags the bots the caller created", async () => {
     const { deps } = fakeFleet({
       ...fleet,
@@ -872,6 +916,19 @@ describe("listFleet", () => {
       error: "You can only change bots you created. The owner edits the others.",
     });
     expect(JSON.stringify(await listFleet(deps, run, {}))).not.toContain("Secret plan.");
+  });
+
+  it("bounds oversized roster output without cutting JSON entries", async () => {
+    const bots = Array.from({ length: 100 }, (_, i) => ({
+      id: `bot-${i}`,
+      name: `Bot ${i}`,
+      description: "x".repeat(2000),
+    }));
+    const listing = await listFleet(fakeFleet({ bots }).deps, run, {});
+    expect(listing).toMatchObject({ truncated: true });
+    expect(JSON.stringify(listing).length).toBeLessThanOrEqual(60_000);
+    if ("bots" in listing)
+      expect(listing.bots.every((bot) => bot.description === "x".repeat(2000))).toBe(true);
   });
 
   it("caps the lists at 200 bots and 100 groups and says so", async () => {
@@ -1032,11 +1089,44 @@ describe("updateChildBot", () => {
     },
   );
 
+  it.each(["name", "title", "description"])(
+    "omits blank %s while preserving a real update",
+    async (field) => {
+      const { prisma } = fakeFleet({ bots });
+      const tx = {
+        $queryRaw: vi.fn(),
+        bot: {
+          update: vi.fn().mockResolvedValue({
+            id: "bot-child",
+            name: "Child",
+            title: "Original",
+            description: "Original",
+          }),
+        },
+      };
+      prisma.$transaction.mockImplementation(async (write) => write(tx));
+      // Stop after the write to inspect the normalized patch without needing the event fixture.
+      tx.bot.update.mockRejectedValueOnce(new Error("write reached"));
+      await expect(
+        updateChildBot(writeDeps(prisma), run, {
+          bot_id: "bot-child",
+          [field]: "  ",
+          notify_on_finish: false,
+        }),
+      ).rejects.toThrow("write reached");
+      expect(tx.bot.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { notifyOnFinish: false } }),
+      );
+    },
+  );
+
   it("reuses the profile validation of update_bot", async () => {
     const { prisma } = fakeFleet({ bots });
     expect(
       await updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", name: "   " }),
-    ).toEqual({ error: "name cannot be empty." });
+    ).toEqual({
+      error: "Provide at least one of name, title, description, notify_on_finish, or color.",
+    });
     expect(
       await updateChildBot(writeDeps(prisma), run, { bot_id: "bot-child", color: "red" }),
     ).toMatchObject({ error: expect.stringMatching(/^color must be/) });
@@ -1220,7 +1310,7 @@ describe("setChildBotModel", () => {
   const canonical = {
     botId: "bot-scout",
     botName: "Scout",
-    previous: { provider: "anthropic", model: "claude-old" },
+    previous: { provider: "anthropic", model: "claude-old", thinkingLevel: null },
     provider: "custom",
     model: "my-model",
   };
@@ -1253,6 +1343,41 @@ describe("setChildBotModel", () => {
     );
     expect(result).toEqual({ error: "That bot's model changed since you approved; ask again." });
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a thinking-only edit made while the approval waited", async () => {
+    const { deps, prisma } = fakeFleet({
+      bots: fleet.bots.map((bot) =>
+        bot.id === "bot-scout" ? { ...bot, thinkingLevel: "high" } : bot,
+      ),
+    });
+    expect(
+      await setChildBotModel({ ...deps, events: writeDeps(prisma).events }, run, canonical),
+    ).toEqual({ error: "That bot's model changed since you approved; ask again." });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("requires all three original model values in the atomic write", async () => {
+    const { deps, prisma } = fakeFleet(fleet);
+    const tx = {
+      $queryRaw: vi.fn(),
+      bot: { update: vi.fn().mockRejectedValue({ code: "P2025" }) },
+    };
+    prisma.$transaction.mockImplementation(async (write) => write(tx));
+    const reset = { ...canonical, provider: null, model: null };
+    expect(
+      await setChildBotModel({ ...deps, events: writeDeps(prisma).events }, run, reset),
+    ).toEqual({ error: "That bot's model changed since you approved; ask again." });
+    expect(tx.bot.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "bot-scout",
+          modelProvider: "anthropic",
+          modelId: "claude-old",
+          thinkingLevel: null,
+        },
+      }),
+    );
   });
 
   it("validates the model again against the bot's current model", async () => {
