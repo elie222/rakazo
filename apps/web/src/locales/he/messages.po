@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (לא נקראה)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {# מודל} other {# מודלים}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -880,6 +875,10 @@ msgstr "מובנה"
 msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Can't read images"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
@@ -943,10 +942,6 @@ msgstr "לא ניתן להציג את התרשים: {error}"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Chat apps"
 msgstr "אפליקציות צ׳אט"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Chat apps, group channels, and agent connections."
-msgstr "אפליקציות צ׳אט, ערוצי קבוצה וחיבורי סוכנים."
 
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
@@ -1012,10 +1007,6 @@ msgstr "בחירת סיסמה חדשה"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "בחירת קובץ"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "בחירת המודל המחובר שבו Rakazo משתמש."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1239,10 +1230,6 @@ msgstr "חיבור"
 msgid "Connect a model"
 msgstr "חיבור מודל"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "כדי להוסיף גיבויים, יש לחבר ספק."
-
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "חיבור מפתח API"
@@ -1259,10 +1246,6 @@ msgstr "חיבור שרת MCP “{name}”"
 msgid "Connect OAuth"
 msgstr "חיבור OAuth"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "יש לחבר את הספק הזה כדי להשתמש בו כמודל האישי."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "חיבור Treg"
@@ -1276,21 +1259,10 @@ msgstr "חיבור Treg"
 msgid "Connected"
 msgstr "מחובר"
 
-#. placeholder {0}: credential.label
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected · {0}"
-msgstr "מחובר · {0}"
-
 #. placeholder {0}: selected.name
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0} מחובר."
-
-#. placeholder {0}: selected.label
-#. placeholder {0}: selectedLabelRef.current ?? "this model"
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected and using {0}."
-msgstr "מחובר ומשתמש ב-{0}."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
@@ -1607,6 +1579,10 @@ msgstr "לא ניתן לטעון את סטטוס העדכון"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "לא ניתן לטעון את הגדרות הקול"
+
+#: src/lib/sign-out.ts
+msgid "Could not log out. Try again."
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
@@ -2803,10 +2779,6 @@ msgstr "ניהול שרתי MCP"
 msgid "Manage messaging settings"
 msgstr "ניהול הגדרות ההודעות"
 
-#: src/pages/MemorySettingsOverlay.tsx
-msgid "Manage the Space semantic memory provider."
-msgstr "ניהול ספק הזיכרון הסמנטי של המרחב."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
 msgstr "ידני"
@@ -3963,10 +3935,6 @@ msgstr "שמירת גיבויים"
 msgid "Save credential"
 msgstr "שמירת פרטי הגישה"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
-msgstr "שמירת מגבלות"
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr "שמירת הערך החדש"
@@ -4376,10 +4344,6 @@ msgstr "נעצר."
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "נשמר מוצפן"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Stored securely. Never shown here."
-msgstr "נשמר באופן מאובטח. לא מוצג כאן."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
