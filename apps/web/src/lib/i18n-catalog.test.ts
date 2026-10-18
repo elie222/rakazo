@@ -341,7 +341,7 @@ describe("lingui catalogs", () => {
     expect(catalog).toContain('msgid "Language"\nmsgstr "שפה"');
     expect(catalog).toContain('msgid "Cancel"\nmsgstr "ביטול"');
     expect(catalog).toContain('msgid "{0} runs · {1} tokens"\nmsgstr "{0} הרצות · {1} טוקנים"');
-    expect(catalog).toContain('msgstr "{0, plural, one {# מודל} other {# מודלים}}"');
+    expect(catalog).toContain('msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"');
   });
 
   it("translates command credential controls in every locale", () => {
