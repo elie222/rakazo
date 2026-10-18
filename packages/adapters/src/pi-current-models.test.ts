@@ -38,6 +38,49 @@ describe("current model compatibility", () => {
     expect(model?.baseUrl).toBe(models.getModel("amazon-bedrock", baseId)?.baseUrl);
     expect(model?.input).toContain("image");
   });
+  it("disables strict tools only for the India Haiku 4.5 profile", () => {
+    const models = supplementPiModels(builtinModels());
+    const sibling = models.getModel(
+      "amazon-bedrock",
+      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+    );
+    const model = models.getModel("amazon-bedrock", "in.anthropic.claude-haiku-4-5-20251001-v1:0");
+    expect(sibling?.compat).toMatchObject({ supportsStrictMode: true });
+    expect(model?.compat).toEqual({ ...sibling?.compat, supportsStrictMode: false });
+  });
+  it.each([
+    [
+      "global.anthropic.claude-haiku-5-5",
+      {
+        input: 0.1,
+        output: 0.5,
+        cacheRead: 0.01,
+        cacheWrite: 0.125,
+        tiers: [
+          { inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 },
+        ],
+      },
+    ],
+    [
+      "us.openai.gpt-6.1-sol",
+      {
+        input: 2.2,
+        output: 11,
+        cacheRead: 0.11,
+        cacheWrite: 2.75,
+        tiers: [
+          { inputTokensAbove: 272000, input: 4.4, output: 16.5, cacheRead: 0.22, cacheWrite: 5.5 },
+        ],
+      },
+    ],
+    [
+      "eu.anthropic.claude-sonnet-5-5",
+      { input: 2.2, output: 11, cacheRead: 0.11, cacheWrite: 2.75 },
+    ],
+  ] as const)("uses catalog prices for Bedrock %s", (id, cost) => {
+    const models = supplementPiModels(builtinModels());
+    expect(models.getModel("amazon-bedrock", id)?.cost).toEqual(cost);
+  });
   it("does not replace a provider library model when applying the supplement again", () => {
     const models = supplementPiModels(builtinModels());
     const model = models.getModel("anthropic", "claude-sonnet-5-5");

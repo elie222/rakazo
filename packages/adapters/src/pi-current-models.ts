@@ -170,6 +170,13 @@ export function supplementPiModels(models: MutableModels): MutableModels {
     "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     "in.anthropic.claude-haiku-4-5-20251001-v1:0",
     "Claude Haiku 4.5 (India)",
+    undefined,
+    {
+      compat: {
+        ...models.getModel("amazon-bedrock", "us.anthropic.claude-haiku-4-5-20251001-v1:0")?.compat,
+        supportsStrictMode: false,
+      },
+    },
   );
   bedrock("us.anthropic.claude-opus-5", "in.anthropic.claude-opus-5", "Claude Opus 5 (India)");
   bedrock(
