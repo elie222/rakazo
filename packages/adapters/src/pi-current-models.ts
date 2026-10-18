@@ -133,39 +133,15 @@ export function supplementPiModels(models: MutableModels): MutableModels {
   }
   bedrock(
     "anthropic.claude-sonnet-5",
-    "anthropic.claude-haiku-5-5",
-    "Claude Haiku 5.5",
-    price(0.1, 0.5, 0.01, 0.125, [100000, 0.5, 2.5, 0.05, 0.625]),
-  );
-  bedrock(
-    "anthropic.claude-sonnet-5",
     "anthropic.claude-sonnet-5-5",
     "Claude Sonnet 5.5",
     price(2, 10, 0.1, 2.5),
-  );
-  bedrock(
-    "au.anthropic.claude-sonnet-5",
-    "au.anthropic.claude-haiku-5-5",
-    "Claude Haiku 5.5 (AU)",
-    price(0.11, 0.55, 0.011, 0.1375, [100000, 0.55, 2.75, 0.055, 0.6875]),
-  );
-  bedrock(
-    "eu.anthropic.claude-sonnet-5",
-    "eu.anthropic.claude-haiku-5-5",
-    "Claude Haiku 5.5 (EU)",
-    price(0.11, 0.55, 0.011, 0.1375, [100000, 0.55, 2.75, 0.055, 0.6875]),
   );
   bedrock(
     "eu.anthropic.claude-sonnet-5",
     "eu.anthropic.claude-sonnet-5-5",
     "Claude Sonnet 5.5 (EU)",
     price(2.2, 11, 0.11, 2.75),
-  );
-  bedrock(
-    "global.anthropic.claude-sonnet-5",
-    "global.anthropic.claude-haiku-5-5",
-    "Claude Haiku 5.5 (Global)",
-    price(0.1, 0.5, 0.01, 0.125, [100000, 0.5, 2.5, 0.05, 0.625]),
   );
   bedrock(
     "global.anthropic.claude-sonnet-5",
@@ -224,12 +200,6 @@ export function supplementPiModels(models: MutableModels): MutableModels {
     "Claude Sonnet 5 (India)",
   );
   bedrock(
-    "jp.anthropic.claude-sonnet-5",
-    "jp.anthropic.claude-haiku-5-5",
-    "Claude Haiku 5.5 (JP)",
-    price(0.11, 0.55, 0.011, 0.1375, [100000, 0.55, 2.75, 0.055, 0.6875]),
-  );
-  bedrock(
     "openai.gpt-6-astra",
     "openai.gpt-6-luna",
     "GPT-6 Luna",
@@ -246,12 +216,6 @@ export function supplementPiModels(models: MutableModels): MutableModels {
     "openai.gpt-6.1-sol",
     "GPT-6.1 Sol",
     price(2.2, 11, 0.11, 2.75, [272000, 4.4, 16.5, 0.22, 5.5]),
-  );
-  bedrock(
-    "us.anthropic.claude-sonnet-5",
-    "us.anthropic.claude-haiku-5-5",
-    "Claude Haiku 5.5 (US)",
-    price(0.11, 0.55, 0.011, 0.1375, [100000, 0.55, 2.75, 0.055, 0.6875]),
   );
   bedrock(
     "us.anthropic.claude-sonnet-5",

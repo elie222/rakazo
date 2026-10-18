@@ -24,7 +24,7 @@ describe("current model compatibility", () => {
   });
   it.each([
     ["us.anthropic.claude-sonnet-5-5", "us.anthropic.claude-sonnet-5"],
-    ["global.anthropic.claude-haiku-5-5", "global.anthropic.claude-sonnet-5"],
+    ["global.anthropic.claude-sonnet-5-5", "global.anthropic.claude-sonnet-5"],
     ["us.openai.gpt-6.1-sol", "us.openai.gpt-6-astra"],
   ])("lists Bedrock %s with the endpoint and efforts of %s", (id, baseId) => {
     const catalog = listPiCatalog();
@@ -38,6 +38,10 @@ describe("current model compatibility", () => {
     expect(model?.baseUrl).toBe(models.getModel("amazon-bedrock", baseId)?.baseUrl);
     expect(model?.input).toContain("image");
   });
+  it("leaves Claude Haiku 5.5 off Bedrock until the transport supports it", () => {
+    const models = supplementPiModels(builtinModels());
+    expect(models.getModel("amazon-bedrock", "us.anthropic.claude-haiku-5-5")).toBeUndefined();
+  });
   it("disables strict tools only for the India Haiku 4.5 profile", () => {
     const models = supplementPiModels(builtinModels());
     const sibling = models.getModel(
@@ -49,18 +53,6 @@ describe("current model compatibility", () => {
     expect(model?.compat).toEqual({ ...sibling?.compat, supportsStrictMode: false });
   });
   it.each([
-    [
-      "global.anthropic.claude-haiku-5-5",
-      {
-        input: 0.1,
-        output: 0.5,
-        cacheRead: 0.01,
-        cacheWrite: 0.125,
-        tiers: [
-          { inputTokensAbove: 100000, input: 0.5, output: 2.5, cacheRead: 0.05, cacheWrite: 0.625 },
-        ],
-      },
-    ],
     [
       "us.openai.gpt-6.1-sol",
       {
