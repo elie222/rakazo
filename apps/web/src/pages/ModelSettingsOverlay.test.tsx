@@ -101,7 +101,18 @@ vi.mock("@rakazo/ui-web", async (importOriginal) => {
     DialogHeader: Pass,
     DialogTitle: Pass,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    ModelThinkingOptions: () => null,
+    ModelThinkingOptions: (props: {
+      maxTokens?: string;
+      maxTokensLabel?: string;
+      onMaxTokensChange?: (value: string) => void;
+    }) =>
+      props.onMaxTokensChange ? (
+        <input
+          aria-label={props.maxTokensLabel}
+          value={props.maxTokens ?? ""}
+          onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
+        />
+      ) : null,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   };
@@ -283,6 +294,43 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(models.disconnect).toHaveBeenCalledWith({ provider: "deepseek" });
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe("sk-…");
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("saves an edited output limit without sending a half-typed replacement key", async () => {
+  models.credentials.mockResolvedValue([
+    {
+      id: "cred-deepseek",
+      provider: "deepseek",
+      label: "DeepSeek",
+      hasKey: true,
+      isDefault: true,
+      modelId: "deepseek-chat",
+    },
+  ]);
+
+  const view = await renderSettings();
+  try {
+    const limit = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Maximum output tokens"]',
+    );
+    if (!limit) throw new Error("Missing output limit field");
+    await typeInto(limit, "4096");
+    await typeInto(keyField(view.container), "sk-ab");
+    const save = buttons(view.container, "Save").find((entry) => entry.textContent === "Save");
+    await act(async () => {
+      save?.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(models.connect).toHaveBeenCalledTimes(1);
+    const input = models.connect.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(input).toMatchObject({ provider: "deepseek", maxTokens: 4096 });
+    expect(input).not.toHaveProperty("apiKey");
+    expect(keyField(view.container).value).toBe("sk-ab");
   } finally {
     await view.unmount();
   }

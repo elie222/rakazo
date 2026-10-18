@@ -114,7 +114,9 @@ export function ModelSettingsOverlay({
   const resetOpenAiCompatibleProbe = modelProbe.reset;
   const [codeCopied, copyOAuthCode] = useCopyText();
   const [loading, setLoading] = useState(true);
-  const [pending, setPending] = useState<"connect" | "default" | "disconnect" | null>(null);
+  const [pending, setPending] = useState<"connect" | "settings" | "default" | "disconnect" | null>(
+    null,
+  );
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -545,9 +547,12 @@ export function ModelSettingsOverlay({
     }
   }
 
-  async function connectKey() {
+  // settingsOnly saves a connected catalog provider's limits and gateway ids
+  // without touching the key field; key replacement stays on its own button.
+  async function connectKey({ settingsOnly = false }: { settingsOnly?: boolean } = {}) {
     if (!selected) return;
-    const savingLimitOnly = !isOpenAiCompatible && !apiKey.trim();
+    const newKey = settingsOnly ? "" : apiKey.trim();
+    const savingLimitOnly = !isOpenAiCompatible && !newKey;
     const activeModelId = isOpenAiCompatible ? modelId.trim() : selected.id;
     const supportedThinking = isOpenAiCompatible
       ? reasoning
@@ -565,7 +570,7 @@ export function ModelSettingsOverlay({
       if (!effectiveBaseUrl || !modelId.trim()) return;
     } else if (savingLimitOnly) {
       if (!credential) return;
-    } else if (apiKey.trim().length < 8) {
+    } else if (newKey.length < 8) {
       return;
     }
     const parsedMaxTokens = maxTokens.trim() ? parseModelMaxTokens(maxTokens) : undefined;
@@ -601,7 +606,7 @@ export function ModelSettingsOverlay({
     if (isOpenAiCompatible && parsedMaxTokens === undefined) return;
     setError(null);
     setNotice(null);
-    setPending("connect");
+    setPending(settingsOnly ? "settings" : "connect");
     try {
       await rpc.models.connect(
         isOpenAiCompatible
@@ -620,7 +625,7 @@ export function ModelSettingsOverlay({
             }
           : {
               provider: selected.provider,
-              ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+              ...(newKey ? { apiKey: newKey } : {}),
               ...(isCloudflareGateway
                 ? { accountId: accountId.trim(), gatewayId: gatewayId.trim() }
                 : {}),
@@ -635,7 +640,7 @@ export function ModelSettingsOverlay({
               label: selected.providerName ?? selected.provider,
             },
       );
-      setApiKey("");
+      if (!settingsOnly) setApiKey("");
       await refresh();
       detailScrollRef.current?.scrollTo({ top: 0 });
       // A fresh connection speaks for itself through the Active model row.
@@ -1056,7 +1061,7 @@ export function ModelSettingsOverlay({
             disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
             onClick={() => void connectKey()}
           >
-            {pending === "connect" && apiKey.trim() ? (
+            {pending === "connect" ? (
               <Trans>Saving…</Trans>
             ) : credential ? (
               <Trans>Replace API key</Trans>
@@ -1117,11 +1122,13 @@ export function ModelSettingsOverlay({
           className="rounded-full"
           size="sm"
           disabled={busy || !cloudflareRoutingReady || (isOpenAiCompatible && !modelId.trim())}
-          onClick={() => void (settingsDirty ? connectKey() : setModelDefault())}
+          onClick={() =>
+            void (settingsDirty ? connectKey({ settingsOnly: true }) : setModelDefault())
+          }
         >
           {pending === "default" ? (
             <Trans>Switching…</Trans>
-          ) : pending === "connect" ? (
+          ) : pending === "settings" ? (
             <Trans>Saving…</Trans>
           ) : isActive && !usingServerCredentials ? (
             <Trans>Save</Trans>
