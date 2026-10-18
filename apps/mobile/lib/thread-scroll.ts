@@ -4,12 +4,12 @@ export type { ThreadScrollState } from "@rakazo/core";
 
 export type ThreadScrollAction = "jump" | "smooth" | null;
 
-/** The transcript's last row for arrival tracking. */
+/** The last row that isn't a folded peer reply, so expanding or collapsing a fold isn't an arrival. */
 export function latestArrivalMessageId<M extends { id: string }>(
   visible: readonly M[],
-  _markerOf: ReadonlyMap<string, string>,
+  markerOf: ReadonlyMap<string, string>,
 ): string | null {
-  return visible.at(-1)?.id ?? null;
+  return visible.findLast((message) => !markerOf.has(message.id))?.id ?? null;
 }
 
 export class ThreadScrollBehavior {

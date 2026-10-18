@@ -1,7 +1,7 @@
 import type { ThreadScrollState } from "@rakazo/core";
 import { reconcileThreadScrollState } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
-import { ThreadScrollBehavior } from "./thread-scroll.js";
+import { latestArrivalMessageId, ThreadScrollBehavior } from "./thread-scroll.js";
 
 describe("mobile thread initial scroll", () => {
   it("waits for layout when messages arrive first, then opens at the latest message", () => {
@@ -103,5 +103,46 @@ describe("mobile thread initial scroll", () => {
     publish(behavior.onUserScroll(80));
     expect(afterCommits).toBe(2);
     expect(after).toEqual({ detached: false, unread: false });
+  });
+});
+
+describe("mobile thread folded peer replies", () => {
+  const markerOf = new Map([["reply", "marker"]]);
+  const collapsed = [{ id: "user" }, { id: "marker" }];
+  const expanded = [...collapsed, { id: "reply" }];
+
+  it("does not count collapsing a fold at the end as a new message", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout();
+    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
+    behavior.onContentChanged(false, latestArrivalMessageId(expanded, markerOf));
+
+    behavior.onUserScroll(200);
+    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
+    expect(behavior.state()).toEqual({ detached: true, unread: false });
+  });
+
+  it("does not follow an expanded fold as if a message arrived", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout();
+    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
+
+    expect(behavior.onContentChanged(false, latestArrivalMessageId(expanded, markerOf))).toBe(null);
+  });
+
+  it("still records a real new row after the marker while detached", () => {
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout();
+    behavior.onContentChanged(false, latestArrivalMessageId(expanded, markerOf));
+
+    behavior.onUserScroll(200);
+    behavior.onContentChanged(
+      false,
+      latestArrivalMessageId([...expanded, { id: "new" }], markerOf),
+    );
+    expect(behavior.state()).toEqual({ detached: true, unread: true });
   });
 });
