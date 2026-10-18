@@ -27,7 +27,7 @@ describe("lingui catalogs", () => {
       "{provider} took too long to respond. Try again.",
       "Details",
     ];
-    for (const locale of ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -315,6 +315,19 @@ describe("lingui catalogs", () => {
     );
   });
 
+  it("ships the Hebrew runtime catalog with translated chrome and Hebrew plurals", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/he/messages.po", import.meta.url)),
+      "utf8",
+    );
+
+    expect(catalog).toContain('msgid "Settings"\nmsgstr "הגדרות"');
+    expect(catalog).toContain('msgid "Language"\nmsgstr "שפה"');
+    expect(catalog).toContain('msgid "Cancel"\nmsgstr "ביטול"');
+    expect(catalog).toContain('msgid "{0} runs · {1} tokens"\nmsgstr "{0} הרצות · {1} טוקנים"');
+    expect(catalog).toContain('msgstr "{0, plural, one {# מודל} other {# מודלים}}"');
+  });
+
   it("translates command credential controls in every locale", () => {
     const messages = [
       "Command variable",
@@ -322,7 +335,7 @@ describe("lingui catalogs", () => {
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
       "Values are encrypted and never shown again.",
     ];
-    for (const locale of ["en", "de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of ["en", "de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -340,7 +353,7 @@ describe("lingui catalogs", () => {
   });
 
   it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"];
+    const locales = ["de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"];
     const messages = [
       "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
@@ -388,6 +401,7 @@ describe("lingui catalogs", () => {
       de: "Noch keine Bot-Aktivität.",
       es: "Aún no hay actividad del bot.",
       fr: "Aucune activité du bot pour le moment.",
+      he: "עדיין אין פעילות של בוטים.",
       hi: "अभी तक कोई बॉट गतिविधि नहीं।",
       ko: "아직 봇 활동이 없습니다.",
       "pt-BR": "Ainda não há atividade do bot.",

@@ -126,3 +126,33 @@ test("account settings language picker includes French and persists it", async (
   await expect(page.locator("html")).toHaveAttribute("lang", "fr");
   await captureScreenshot(page, testInfo, "ui-locale-settings-fr");
 });
+
+test("account settings language picker includes Hebrew and mirrors the UI right-to-left", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `ui-locale-he-${stamp}@rakazo.test`, "password12", "Locale QA");
+  await completeOnboarding(page, testInfo);
+
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+
+  const picker = settings.getByTestId("ui-locale-select");
+  await picker.click();
+  await expect(settings.getByRole("option", { name: "עברית", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "ui-locale-picker-he");
+
+  await settings.getByRole("option", { name: "עברית", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "כללי", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "חשבון", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "שפה", exact: true })).toBeVisible();
+  await expect(picker).toHaveText("עברית");
+  await expect(page.locator("html")).toHaveAttribute("lang", "he");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+  await captureScreenshot(page, testInfo, "ui-locale-settings-he");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "he");
+  await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+});
