@@ -176,6 +176,17 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await expect(researcherTranscript.getByText("i need a decision before i continue.")).toHaveCount(
     0,
   );
+
+  // The user's answer joins the peer run but is not a bot reply, so it stays out of the fold.
+  await page.getByRole("combobox", { name: "Message Researcher" }).fill("Paris");
+  await page.getByRole("combobox", { name: "Message Researcher" }).press("Enter");
+  await expect(
+    researcherTranscript.getByTestId("message-user-bubble").filter({ hasText: /^Paris$/ }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    researcherTranscript.getByRole("button", { name: "Expand Message from Chief" }),
+  ).toHaveCount(2);
+  await captureScreenshot(page, testInfo, "peer-run-answer-inline");
 });
 
 /** The folded reply, expanded by hand; later scripted replies repeat its text, so it goes by id. */
