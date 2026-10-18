@@ -1013,10 +1013,6 @@ msgstr "새 비밀번호 선택"
 msgid "Choose file"
 msgstr "파일 선택"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "Rakazo에서 기본으로 사용할 연결된 모델을 선택하세요."
-
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "비우기"
@@ -1258,10 +1254,6 @@ msgstr "MCP 서버 ‘{name}’ 연결"
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "OAuth 연결"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "이 AI 서비스를 연결하면 내 기본 모델로 사용할 수 있습니다."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"

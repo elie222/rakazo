@@ -42,6 +42,41 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await model.click();
   await expect(page.getByRole("listbox", { name: "Model options" })).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-3-model-dropdown-open");
+
+  // The popup must paint above the settings scroll pane, including its lower edge.
+  const popup = page.locator('[data-slot="popover-content"]');
+  await expect(popup).toBeVisible();
+  expect(
+    await popup.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      const hit = document.elementFromPoint(bounds.x + bounds.width / 2, bounds.bottom - 2);
+      return hit !== null && element.contains(hit);
+    }),
+  ).toBe(true);
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await expect(search).toBeFocused();
+  await search.fill("gpt");
+  const firstModel = await page
+    .getByRole("listbox", { name: "Model options" })
+    .getByRole("option")
+    .first()
+    .locator("span")
+    .first()
+    .innerText();
+  await search.press("Home");
+  await search.press("Enter");
+  await expect(model).toContainText(firstModel);
+  await expect(popup).toBeHidden();
+  await expect(model).toBeFocused();
+  await model.press("ArrowDown");
+  await expect(search).toBeFocused();
+  await search.press("Escape");
+  await expect(popup).toBeHidden();
+  await expect(model).toBeFocused();
+  await model.click();
+  await expect(search).toBeFocused();
+  await page.getByPlaceholder("Search providers").click();
+  await expect(popup).toBeHidden();
 });
 
 test("custom connections persist reasoning support and bot thinking", async ({

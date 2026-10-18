@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+type UiWebModule = typeof UiWeb;
 
 const models = vi.hoisted(() => ({
   list: vi.fn(),
@@ -44,7 +47,8 @@ vi.mock("@lingui/react/macro", () => {
       value === 1 ? one : other,
   };
 });
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { Popover, PopoverContent, PopoverTrigger } = await importOriginal<UiWebModule>();
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     AlertDialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
@@ -87,7 +91,12 @@ vi.mock("@rakazo/ui-web", () => {
     Dialog: Pass,
     DialogClose: Pass,
     DialogContent: Pass,
-    DialogDescription: Pass,
+    DialogDescription: ({ children }: { children?: ReactNode }) => (
+      <p data-testid="model-description">{children}</p>
+    ),
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
     DialogHeader: Pass,
     DialogTitle: Pass,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
@@ -172,13 +181,19 @@ async function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
-async function renderSettings() {
+async function renderSettings(embedded = true, localOwner = false) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<ModelSettingsOverlay embedded onClose={() => undefined} />);
+    root.render(
+      <ModelSettingsOverlay
+        embedded={embedded}
+        localOwner={localOwner}
+        onClose={() => undefined}
+      />,
+    );
   });
   await act(async () => {
     await Promise.resolve();
@@ -395,5 +410,30 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
     expect(input.placeholder).toBe("Optional");
   } finally {
     await empty.unmount();
+  }
+});
+
+it("omits the redundant description and connection prompt", async () => {
+  const view = await renderSettings(false);
+  try {
+    expect(view.container.querySelector('[data-testid="model-description"]')).toBeNull();
+    expect(view.container.textContent).not.toContain("Choose which connected model Rakazo uses.");
+    expect(view.container.textContent).not.toContain(
+      "Connect this provider to use it as your personal model.",
+    );
+    expect(keyField(view.container)).toBeInstanceOf(HTMLInputElement);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps the server owner's description when relevant", async () => {
+  const view = await renderSettings(false, true);
+  try {
+    expect(view.container.querySelector('[data-testid="model-description"]')?.textContent).toBe(
+      "Models for the server owner’s default space.",
+    );
+  } finally {
+    await view.unmount();
   }
 });

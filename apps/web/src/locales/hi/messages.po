@@ -1013,10 +1013,6 @@ msgstr "नया पासवर्ड चुनें"
 msgid "Choose file"
 msgstr "फ़ाइल चुनें"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "चुनें कि Rakazo किस कनेक्टेड मॉडल का उपयोग करे।"
-
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "साफ़ करें"
@@ -1258,10 +1254,6 @@ msgstr "MCP सर्वर “{name}” कनेक्ट करें"
 #: src/pages/McpServersOverlay.tsx
 msgid "Connect OAuth"
 msgstr "OAuth कनेक्ट करें"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "इस प्रोवाइडर को अपने व्यक्तिगत मॉडल के रूप में उपयोग करने के लिए कनेक्ट करें।"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"

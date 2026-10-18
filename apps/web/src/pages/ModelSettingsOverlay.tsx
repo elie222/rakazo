@@ -43,6 +43,9 @@ import {
   ModelThinkingOptions,
   NativeSelect,
   NativeSelectOption,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
 } from "@rakazo/ui-web";
 import { Check, ChevronDown, Copy, X } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
@@ -288,7 +291,7 @@ export function ModelSettingsOverlay({
   const disconnectName = selectedProviderName;
   const hostCredentialSource = me?.hostCredentialSource ?? "";
   const serverCredentialsNote = (
-    <p className="text-sm leading-[1.5] text-muted-foreground">
+    <p className="text-[13px] leading-[1.5] text-muted-foreground">
       <Trans>
         Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}.
       </Trans>
@@ -710,7 +713,7 @@ export function ModelSettingsOverlay({
           </span>
         </span>
         {!connectedSection && rowCredential ? (
-          <span className="text-[12px] text-success">
+          <span className="text-[13px] leading-[1.5] text-success">
             <Trans>Connected</Trans>
           </span>
         ) : null}
@@ -806,7 +809,7 @@ export function ModelSettingsOverlay({
             <div className="rounded-xl border border-border px-4 py-3">
               {oauth.mode === "auth-url" ? (
                 <>
-                  <p className="text-sm leading-[1.5] text-muted-foreground">
+                  <p className="text-[13px] leading-[1.5] text-muted-foreground">
                     {popupBlocked ? (
                       <Trans>
                         Open{" "}
@@ -855,7 +858,7 @@ export function ModelSettingsOverlay({
                       <Trans>Submit</Trans>
                     </Button>
                   </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
                     <Plural
                       value={Math.ceil(oauth.expiresInSeconds / 60)}
                       one="Waiting for sign-in — the link expires in about # minute."
@@ -865,7 +868,7 @@ export function ModelSettingsOverlay({
                 </>
               ) : (
                 <>
-                  <p className="text-sm leading-[1.5] text-muted-foreground">
+                  <p className="text-[13px] leading-[1.5] text-muted-foreground">
                     {popupBlocked ? (
                       <Trans>
                         Open{" "}
@@ -912,7 +915,7 @@ export function ModelSettingsOverlay({
                       {codeCopied ? <Trans>Copied</Trans> : <Trans>Copy</Trans>}
                     </Button>
                   </div>
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
                     <Plural
                       value={Math.ceil(oauth.expiresInSeconds / 60)}
                       one="Waiting for sign-in — the code expires in about # minute."
@@ -1068,7 +1071,7 @@ export function ModelSettingsOverlay({
       ) : null}
 
       {selected?.auth === "oauth" && !subscriptionSignIn ? (
-        <p className="mt-5 text-sm leading-[1.5] text-muted-foreground first:mt-0">
+        <p className="mt-5 text-[13px] leading-[1.5] text-muted-foreground first:mt-0">
           <Trans>
             This subscription sign-in is not available in Rakazo yet. Use a deployment credential or
             choose another provider.
@@ -1130,25 +1133,23 @@ export function ModelSettingsOverlay({
       </div>
     ) : null;
 
-  const description = loading ? (
-    <Trans>Loading model catalog…</Trans>
-  ) : localOwner ? (
+  const description = localOwner ? (
     <Trans>Models for the server owner’s default space.</Trans>
-  ) : (
-    <Trans>Choose which connected model Rakazo uses.</Trans>
-  );
+  ) : null;
 
   const body = (
     <>
       {!embedded ? (
         <DialogHeader className="flex-row items-start justify-between px-6 pt-6 sm:px-8 sm:pt-7">
           <div>
-            <DialogTitle className="text-2xl text-foreground">
+            <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Models</Trans>
             </DialogTitle>
-            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
-              {description}
-            </DialogDescription>
+            {description ? (
+              <DialogDescription className="mt-1 text-[13px] leading-[1.5] text-muted-foreground">
+                {description}
+              </DialogDescription>
+            ) : null}
           </div>
           <DialogClose
             render={<Button variant="ghost" size="icon-sm" aria-label={t`Close model settings`} />}
@@ -1156,29 +1157,34 @@ export function ModelSettingsOverlay({
             <X />
           </DialogClose>
         </DialogHeader>
-      ) : (
-        <p className="px-6 pt-1 text-[13.5px] text-muted-foreground/70 sm:px-8">{description}</p>
-      )}
+      ) : description ? (
+        <p className="px-6 pt-1 text-[13px] leading-[1.5] text-muted-foreground sm:px-8">
+          {description}
+        </p>
+      ) : null}
 
       {me?.needsModel ? null : (
         <div className={`mx-6 sm:mx-8 ${embedded ? "mt-4" : "mt-5"}`}>
-          <div className="flex items-baseline gap-3">
-            <span className="shrink-0 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground/80">
+          <div className="flex flex-col gap-1 md:flex-row md:items-baseline md:gap-6">
+            <span className="shrink-0 text-[13.5px] text-muted-foreground md:w-[310px]">
               <Trans>Active model</Trans>
             </span>
-            <span className="truncate text-[15px] text-foreground">
-              {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
-            </span>
-            <span className="truncate text-[13px] text-muted-foreground">
-              {currentEntry?.providerName ?? me?.defaultProvider ?? (
-                <Trans>Configured by deployment</Trans>
-              )}
-            </span>
-            {activeThinkingLabel ? (
-              <span className="shrink-0 text-[13px] text-muted-foreground">
-                <Trans>Thinking: {activeThinkingLabel}</Trans>
+            <div className="flex min-w-0 items-baseline gap-3">
+              <span className="truncate text-[15px] text-foreground">
+                {currentEntry?.label ?? me?.defaultModel ?? t`Deployment default`}
               </span>
-            ) : null}
+              <span className="truncate text-[13px] leading-[1.5] text-muted-foreground">
+                {currentEntry?.providerName ?? me?.defaultProvider ?? (
+                  <Trans>Configured by deployment</Trans>
+                )}
+                {activeThinkingLabel ? (
+                  <>
+                    {" · "}
+                    <Trans>Thinking: {activeThinkingLabel}</Trans>
+                  </>
+                ) : null}
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -1203,12 +1209,12 @@ export function ModelSettingsOverlay({
               <>
                 {connectedGroups.length ? (
                   <>
-                    <p className="border-b border-border px-3.5 pb-1.5 pt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                    <p className="border-b border-border px-3.5 pb-1.5 pt-3 text-[12px] text-muted-foreground">
                       <Trans>Connected</Trans>
                     </p>
                     {connectedGroups.map((group) => renderProviderRow(group, true))}
                     {otherGroups.length ? (
-                      <p className="border-b border-border px-3.5 pb-1.5 pt-3 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                      <p className="border-b border-border px-3.5 pb-1.5 pt-3 text-[12px] text-muted-foreground">
                         <Trans>All providers</Trans>
                       </p>
                     ) : null}
@@ -1217,7 +1223,7 @@ export function ModelSettingsOverlay({
                 {otherGroups.map((group) => renderProviderRow(group, false))}
               </>
             ) : (
-              <p className="px-3.5 py-4 text-[13px] text-muted-foreground">
+              <p className="px-3.5 py-4 text-[13px] leading-[1.5] text-muted-foreground">
                 <Trans>No providers found.</Trans>
               </p>
             )}
@@ -1320,7 +1326,7 @@ export function ModelSettingsOverlay({
                       <Button
                         type="button"
                         variant="link"
-                        className="mt-2 h-auto px-0 text-[13px] text-muted-foreground underline"
+                        className="mt-2 h-auto px-0 text-[13px] leading-[1.5] text-muted-foreground underline"
                         onClick={() => {
                           invalidatePreflight();
                           stageCompatibleModelId(probeModels[0] ?? "");
@@ -1405,7 +1411,7 @@ export function ModelSettingsOverlay({
                       <div className="text-[15px] text-foreground">
                         <Trans>Connected · {credential.label}</Trans>
                       </div>
-                      <div className="mt-0.5 text-[13px] text-muted-foreground">
+                      <div className="mt-0.5 text-[13px] leading-[1.5] text-muted-foreground">
                         <Trans>Stored securely. Never shown here.</Trans>
                       </div>
                     </div>
@@ -1432,7 +1438,7 @@ export function ModelSettingsOverlay({
                 <>
                   {serverCredentialsNote}
                   <details
-                    className="mt-5 text-sm text-muted-foreground"
+                    className="mt-5 text-[13px] leading-[1.5] text-muted-foreground"
                     open={ownKeyProvider === provider}
                     onToggle={(event) =>
                       setOwnKeyProvider(event.currentTarget.open ? provider : null)
@@ -1447,20 +1453,17 @@ export function ModelSettingsOverlay({
                 </>
               ) : (
                 <>
-                  <p className="text-sm leading-[1.5] text-muted-foreground">
-                    <Trans>Connect this provider to use it as your personal model.</Trans>
-                  </p>
                   {connectionControls}
                   <div className="mt-6">{catalogModelConfig}</div>
                 </>
               )}
             </>
           ) : loading ? (
-            <p className="text-muted-foreground">
+            <p className="text-[13px] leading-[1.5] text-muted-foreground">
               <Trans>Loading model catalog…</Trans>
             </p>
           ) : (
-            <p className="text-muted-foreground">
+            <p className="text-[13px] leading-[1.5] text-muted-foreground">
               <Trans>No model catalog is available.</Trans>
             </p>
           )}
@@ -1539,7 +1542,6 @@ function ModelPicker({
   onChange: (value: string) => void;
 }) {
   const { t } = useLingui();
-  const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -1577,20 +1579,7 @@ function ModelPicker({
   }, [selectedIndex, value]);
 
   useEffect(() => {
-    if (!open) {
-      setQuery("");
-      return;
-    }
-    searchRef.current?.focus();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function closeOnOutsidePointer(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    if (!open) setQuery("");
   }, [open]);
 
   function choose(index: number) {
@@ -1701,84 +1690,95 @@ function ModelPicker({
   }
 
   return (
-    <div ref={rootRef} className="relative mt-2">
-      <button
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        aria-label={t`Model`}
-        aria-controls={listboxId}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 text-start text-sm text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-        onClick={() => setOpen((current) => !current)}
-        onKeyDown={onTriggerKeyDown}
-      >
-        <span className="min-w-0 truncate">{options[selectedIndex]?.label}</span>
-        <span className="ml-3 shrink-0 text-muted-foreground" aria-hidden="true">
-          <ChevronDown size={16} strokeWidth={1.8} />
-        </span>
-      </button>
-      {open ? (
-        <div className="absolute left-0 right-0 top-full z-20 mt-2 overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10">
-          <input
-            ref={searchRef}
-            type="text"
-            value={query}
-            role="combobox"
-            aria-label={t`Search models`}
-            aria-controls={listboxId}
-            aria-expanded={open}
-            aria-autocomplete="list"
-            aria-activedescendant={activeDescendantId}
-            placeholder={t`Search`}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setHighlightedIndex(0);
-            }}
-            onKeyDown={onSearchKeyDown}
-            className="w-full border-b border-border bg-transparent px-3 py-2.5 text-[13.5px] text-foreground outline-none placeholder:text-muted-foreground/80"
-          />
-          <div
-            id={listboxId}
-            role="listbox"
-            aria-label={t`Model options`}
-            className="rk-scroll max-h-64 overflow-y-auto py-1"
+    <Popover open={open} onOpenChange={setOpen}>
+      <div className="mt-2">
+        <PopoverTrigger
+          render={
+            <button
+              ref={triggerRef}
+              type="button"
+              role="combobox"
+              aria-label={t`Model`}
+              aria-controls={listboxId}
+              aria-expanded={open}
+              aria-haspopup="listbox"
+              className="flex h-10 w-full items-center justify-between rounded-lg border border-input bg-transparent px-3 text-start text-[15px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+              onKeyDown={onTriggerKeyDown}
+            />
+          }
+        >
+          <span className="min-w-0 truncate">{options[selectedIndex]?.label}</span>
+          <span className="ml-3 shrink-0 text-muted-foreground" aria-hidden="true">
+            <ChevronDown size={16} strokeWidth={1.8} />
+          </span>
+        </PopoverTrigger>
+        {open ? (
+          <PopoverContent
+            role="presentation"
+            align="start"
+            sideOffset={8}
+            initialFocus={searchRef}
+            className="w-(--anchor-width) gap-0 overflow-hidden p-0"
           >
-            {groupRanges.map((group) => (
-              <div key={group.name}>
-                {groupRanges.length > 1 ? (
-                  <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                    {group.name}
-                  </p>
-                ) : null}
-                {group.entries.map((option, groupIndex) => {
-                  const index = group.start + groupIndex;
-                  return (
-                    <ModelOption
-                      key={`${option.provider}:${option.id}`}
-                      option={option}
-                      optionDomId={optionDomId(index)}
-                      index={index}
-                      value={value}
-                      highlighted={highlightedIndex === index}
-                      optionRefs={optionRefs}
-                      choose={choose}
-                      onOptionKeyDown={onOptionKeyDown}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-            {filteredOptions.length === 0 ? (
-              <p className="px-3 py-2 text-[13px] text-muted-foreground">
-                <Trans>No matching models</Trans>
-              </p>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-    </div>
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              role="combobox"
+              aria-label={t`Search models`}
+              aria-controls={listboxId}
+              aria-expanded={open}
+              aria-autocomplete="list"
+              aria-activedescendant={activeDescendantId}
+              placeholder={t`Search`}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setHighlightedIndex(0);
+              }}
+              onKeyDown={onSearchKeyDown}
+              className="w-full border-b border-border bg-transparent px-3 py-2.5 text-[15px] text-foreground outline-none placeholder:text-muted-foreground/80"
+            />
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-label={t`Model options`}
+              className="rk-scroll max-h-64 overflow-y-auto py-1"
+            >
+              {groupRanges.map((group) => (
+                <div key={group.name}>
+                  {groupRanges.length > 1 ? (
+                    <p className="px-3 pb-1 pt-2 text-[13.5px] text-muted-foreground">
+                      {group.name}
+                    </p>
+                  ) : null}
+                  {group.entries.map((option, groupIndex) => {
+                    const index = group.start + groupIndex;
+                    return (
+                      <ModelOption
+                        key={`${option.provider}:${option.id}`}
+                        option={option}
+                        optionDomId={optionDomId(index)}
+                        index={index}
+                        value={value}
+                        highlighted={highlightedIndex === index}
+                        optionRefs={optionRefs}
+                        choose={choose}
+                        onOptionKeyDown={onOptionKeyDown}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+              {filteredOptions.length === 0 ? (
+                <p className="px-3 py-2 text-[13px] leading-[1.5] text-muted-foreground">
+                  <Trans>No matching models</Trans>
+                </p>
+              ) : null}
+            </div>
+          </PopoverContent>
+        ) : null}
+      </div>
+    </Popover>
   );
 }
 
@@ -1812,14 +1812,14 @@ function ModelOption({
       role="option"
       aria-selected={option.id === value}
       tabIndex={highlighted ? 0 : -1}
-      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[13.5px] text-foreground outline-none hover:bg-accent focus-visible:bg-accent ${
+      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-start text-[15px] text-foreground outline-none hover:bg-accent focus-visible:bg-accent ${
         highlighted ? "bg-accent" : ""
       }`}
       onClick={() => choose(index)}
       onKeyDown={(event) => onOptionKeyDown(event, index)}
     >
       <span className="min-w-0 truncate">{option.label}</span>
-      <span className="flex shrink-0 items-center gap-2 text-[12px] text-muted-foreground">
+      <span className="flex shrink-0 items-center gap-2 text-[13px] leading-[1.5] text-muted-foreground">
         {option.billing.toLowerCase().includes("free") ? t`Free` : null}
         {option.id === value ? (
           <Check size={14} strokeWidth={2} className="text-foreground" aria-hidden="true" />
