@@ -371,6 +371,7 @@ import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
+  listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeRecentThreadFiles,
   recentThreadFilesInstruction,
@@ -3950,11 +3951,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (!bot.computer) throw new Error("Bot has no computer");
         const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);
+        const artifacts = deps.artifacts;
+        const recentFilesInput = {
+          context,
+          computerMode,
+          skipMessageId: currentTurnMessage?.id,
+          maxTurns: RECENT_TURN_IMAGE_TURNS,
+        };
         const runComputer = lazyRunComputer(
           async () => {
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
             screenRelease = { computer, context, keepWarm: false };
             scheduleComputerSleep(deps.jobs, storedComputer.id);
+            // Earlier attachments wait for the computer's first use; every start copies them
+            // again, so they need no checkpoint, and each copy logs and skips its own failure.
+            if (artifacts) {
+              await materializeRecentThreadFiles({ ...deps, artifacts }, history, historyMessages, {
+                ...recentFilesInput,
+                computer: async () => computer,
+              });
+            }
             return computer;
           },
           () => runAbortController?.abort(),
@@ -3965,38 +3981,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
         });
         let currentTurnFiles: Awaited<ReturnType<typeof materializeCurrentTurnFiles>> = [];
-        let recentThreadFiles: Awaited<ReturnType<typeof materializeRecentThreadFiles>> = [];
+        let recentThreadFiles: Awaited<ReturnType<typeof listRecentThreadFiles>> = [];
         try {
-          if (deps.artifacts) {
-            const fileDeps = {
-              prisma: deps.prisma,
-              artifacts: deps.artifacts,
-              maxUploadSizeBytes: deps.maxUploadSizeBytes,
-              sandbox: deps.sandbox,
-            };
-            const fileInput = {
-              context,
-              computer: runComputer.get,
-              computerMode,
-              markWorkspaceDirty: workspaceCheckpoint.markDirty,
-            };
-            currentTurnFiles = await materializeCurrentTurnFiles(fileDeps, turnBlocks, fileInput);
-            recentThreadFiles = await materializeRecentThreadFiles(
-              fileDeps,
-              history,
-              historyMessages,
+          if (artifacts) {
+            currentTurnFiles = await materializeCurrentTurnFiles(
+              { ...deps, artifacts },
+              turnBlocks,
               {
-                ...fileInput,
-                // Every run copies these again, so they need no checkpoint.
-                markWorkspaceDirty: undefined,
-                skipMessageId: currentTurnMessage?.id,
-                maxTurns: RECENT_TURN_IMAGE_TURNS,
+                context,
+                computer: runComputer.get,
+                computerMode,
+                markWorkspaceDirty: workspaceCheckpoint.markDirty,
               },
             );
+            recentThreadFiles = await listRecentThreadFiles(
+              deps,
+              history,
+              historyMessages,
+              recentFilesInput,
+            );
           }
-          // Earlier-turn copies log and skip their failures; a computer that cannot start is
-          // still a setup failure.
-          runComputer.throwIfFailed();
         } catch (error) {
           await workspaceCheckpoint.flush().catch(() => undefined);
           throw error;
@@ -7276,6 +7280,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return;
             } else if (event.type === "takeover") {
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+              // The user takes over the computer's screen, so it must be up before the run waits.
+              await runComputer.get();
               const safeReason = redactSecrets(event.reason, runSecrets);
               // Publish pending narration as tagged mid-turn progress so reconciliation
               // does not treat pre-takeover text as the delegated final result.

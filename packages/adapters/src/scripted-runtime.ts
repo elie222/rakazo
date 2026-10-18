@@ -34,6 +34,13 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         throw new Error("Scripted run failure");
       }
       if (shouldHang(request.prompt)) {
+        // Long-running work happens on the computer, which starts it like any real run would.
+        yield {
+          type: "tool",
+          name: "list_files",
+          args: { path: "" },
+          executionId: `${request.runId}:list_files:hang`,
+        };
         yield { type: "progress", text: "still working…", activity: true };
         while (!controller.signal.aborted && !signal.aborted) {
           await abortableDelay(50, controller.signal);

@@ -137,6 +137,26 @@ describe("running Docker computer reuse", () => {
     },
   );
 
+  it.each<[Date | null, string]>([
+    [null, "starts"],
+    [new Date("2024-01-01T00:00:00Z"), "keeps"],
+  ])("a confirmed running computer with clock %s %s its active-lifetime clock", async (since) => {
+    const f = await fixture();
+    Object.assign(f.row, { runningSince: since });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ running: true })),
+    );
+    try {
+      await provisionComputer(f.deps, "computer", context, "bot");
+      const runningSince = (f.row as unknown as { runningSince: Date | null }).runningSince;
+      if (since) expect(runningSince).toEqual(since);
+      else expect(runningSince).toBeInstanceOf(Date);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
   it.each(["state", "provider", "kind", "generation", "maintenance", "ownership", "cancel"])(
     "rejects reuse when %s changes during the read-only probe",
     async (change) => {

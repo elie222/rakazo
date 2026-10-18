@@ -33,6 +33,8 @@ type RunHooks = {
   runtimeGate?: Gate;
   notificationGate?: Gate;
   computerLeaseRenewal?: () => Promise<boolean>;
+  /** The model lists the computer's files before answering, which starts the computer. */
+  useComputer?: boolean;
 };
 
 function deferred<T>(): Deferred<T> {
@@ -124,6 +126,14 @@ async function runWithModel(
       ).onModelChange;
       await onModelChange?.(switchModel.provider, switchModel.modelId);
     }
+    if (hooks?.useComputer) {
+      const executeTool = (
+        next as AgentRunRequest & {
+          executeTool?: (name: string, args: Record<string, unknown>, id: string) => unknown;
+        }
+      ).executeTool;
+      await executeTool?.("list_files", { path: "" }, "list-1");
+    }
     yield { type: "done" as const, text: "Done" };
   });
   const prisma = {
@@ -203,6 +213,8 @@ async function runWithModel(
     agentSkill: { findMany: vi.fn(async () => []) },
     scratchpadItem: { findMany: vi.fn(async () => []) },
     externalEffect: { findMany: vi.fn(async () => []) },
+    actionApprovalRule: { findMany: vi.fn(async () => []) },
+    actionAutoReviewPreference: { findUnique: vi.fn(async () => null) },
     artifact: {
       findMany: vi.fn(async () => [
         { id: "art-1", storageKey: "shot.png", size: 4, mimeType: "image/png", name: "shot.png" },
@@ -225,6 +237,7 @@ async function runWithModel(
       describe: () => ({ capabilities: { graphical: false } }),
       releaseScreen,
       writeFile,
+      listFiles: vi.fn(async () => []),
       readFile: vi.fn().mockRejectedValue(new Error("missing")),
       exportWorkspace,
     },
@@ -266,8 +279,25 @@ describe("recent turn images follow model vision", () => {
     expect(request.history.find((entry) => entry.id === "earlier")?.images).toBeUndefined();
   });
 
-  it("puts an earlier turn's image on the computer so the bot can upload it", async () => {
-    const { request, writeFile, exportWorkspace } = await runWithModel(TEXT_ONLY_MODEL);
+  it("lists an earlier turn's image without starting the computer for it", async () => {
+    const { request, writeFile, releaseScreen } = await runWithModel(TEXT_ONLY_MODEL);
+
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(releaseScreen).not.toHaveBeenCalled();
+    expect(request.prompt).toContain(
+      'Files attached earlier in this conversation are also on your computer:\n- "shot.png" (image/png, 4 bytes): "attachments/art-1.png"',
+    );
+  });
+
+  it("puts an earlier turn's image on the computer once the bot uses it", async () => {
+    const { request, writeFile, exportWorkspace } = await runWithModel(
+      TEXT_ONLY_MODEL,
+      undefined,
+      false,
+      false,
+      true,
+      { useComputer: true },
+    );
 
     expect(writeFile.mock.calls.map(([, file]) => file)).toEqual([
       { path: "attachments/art-1.png", content: new Uint8Array([1, 2, 3, 4]) },
@@ -373,14 +403,18 @@ describe("recent turn images follow model vision", () => {
 
 describe("screen lifecycle after run completion", () => {
   it("keeps only a successfully finalized run's screen warm and uses a dedicated screen fence", async () => {
-    const completed = await runWithModel(VISION_MODEL);
+    const completed = await runWithModel(VISION_MODEL, undefined, false, false, true, {
+      useComputer: true,
+    });
     expect(completed.releaseScreen).toHaveBeenCalledOnce();
     expect(completed.releaseScreen.mock.calls[0]?.[1]).toMatchObject({
       keepScreenWarm: true,
       screenLeaseId: "run-1:7",
     });
 
-    const unfinished = await runWithModel(VISION_MODEL, undefined, false, false, false);
+    const unfinished = await runWithModel(VISION_MODEL, undefined, false, false, false, {
+      useComputer: true,
+    });
     expect(unfinished.releaseScreen).toHaveBeenCalledOnce();
     expect(unfinished.releaseScreen.mock.calls[0]?.[1]).not.toHaveProperty("keepScreenWarm");
     expect(unfinished.releaseScreen.mock.calls[0]?.[1]).toMatchObject({ screenLeaseId: "run-1:7" });
@@ -398,6 +432,7 @@ describe("screen lifecycle after run completion", () => {
       completed = await runWithModel(VISION_MODEL, undefined, false, false, true, {
         runtimeGate,
         notificationGate,
+        useComputer: true,
         computerLeaseRenewal: () => {
           renewalStarted.resolve(undefined);
           return renewalResult.promise;

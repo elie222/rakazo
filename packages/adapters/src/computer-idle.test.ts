@@ -366,6 +366,25 @@ describe("maximum active lifetime", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
+  it("leaves a computer the user is controlling to its control lease", async () => {
+    const control = {
+      controlHolder: "user",
+      controlLeaseId: "lease",
+      controlLeaseExpiresAt: new Date("2999-01-01T00:00:00.000Z"),
+    };
+    const harness = idleHarness({ runningSince: longAgo });
+    Object.assign(harness.computer, control);
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    );
+
+    await touchRunningComputer(harness.deps, harness.computer);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+  });
+
   it("does not pull the computer out from under a run that is executing", async () => {
     const harness = idleHarness({ runningSince: longAgo });
     harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });

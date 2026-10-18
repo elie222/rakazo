@@ -198,9 +198,17 @@ export async function touchRunningComputer(
     providerRef: string;
     kind: string;
     runningSince?: Date | null;
+    controlHolder?: string;
+    controlLeaseId?: string | null;
+    controlLeaseExpiresAt?: Date | null;
   },
 ): Promise<void> {
-  if (activeLimitReached(computer.runningSince)) {
+  const activeControl = hasActiveComputerControl({
+    controlHolder: computer.controlHolder ?? "none",
+    controlLeaseId: computer.controlLeaseId ?? null,
+    controlLeaseExpiresAt: computer.controlLeaseExpiresAt ?? null,
+  });
+  if (activeLimitReached(computer.runningSince) && !activeControl) {
     if (computerIdleSleepEnabled()) {
       void deps.jobs.enqueue(computerSleepJob(computer.id, new Date(Date.now())));
     }
@@ -240,11 +248,13 @@ export async function sleepComputerIfIdle(
     signal: new AbortController().signal,
   };
   // Past the lifetime limit only a run executing right now holds the computer up; waiting
-  // runs and background work start it again when they next need it.
-  const limitReached = activeLimitReached(computer.runningSince);
+  // runs and background work start it again when they next need it. A user in control is
+  // left alone: control leases expire on their own, and that release resumes the waiting run.
+  const activeControl = hasActiveComputerControl(computer);
+  const limitReached = activeLimitReached(computer.runningSince) && !activeControl;
   const activeStatuses = limitReached
     ? EXECUTING_RUN_STATUSES
-    : hasActiveComputerControl(computer)
+    : activeControl
       ? [...ACTIVE_RUN_STATUSES]
       : ACTIVE_RUN_STATUSES.filter((status) => status !== "waiting_takeover");
   const runHolds = () => findActiveRun(deps.prisma, computerId, activeStatuses, limitReached);

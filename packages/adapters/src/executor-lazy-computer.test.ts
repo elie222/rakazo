@@ -26,7 +26,10 @@ type ExecuteTool = (
 ) => Promise<unknown>;
 
 /** A routine run whose model makes the given tool calls, then answers. */
-async function runRoutine(toolCalls: Array<{ name: string; args: Record<string, unknown> }>) {
+async function runRoutine(
+  toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
+  options: { takeover?: boolean } = {},
+) {
   const run = {
     id: "run-1",
     botId: "bot-1",
@@ -44,6 +47,10 @@ async function runRoutine(toolCalls: Array<{ name: string; args: Record<string, 
   const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
     for (const [index, call] of toolCalls.entries()) {
       toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
+    }
+    if (options.takeover) {
+      yield { type: "takeover" as const, reason: "Sign in to the inbox." };
+      return;
     }
     yield { type: "text-delta" as const, text: "Inbox is clear." };
     yield { type: "done" as const, text: "Inbox is clear." };
@@ -139,7 +146,11 @@ async function runRoutine(toolCalls: Array<{ name: string; args: Record<string, 
     memory: { read: async () => ({ documents: [] }) },
     memoryProviders: { resolve: async () => null },
     artifacts: { get: vi.fn() },
-    events: { append: vi.fn(async () => undefined), finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      finalizeRun,
+      pauseRunForTakeover: vi.fn(async () => false),
+    },
     jobs: { enqueue },
     notifications: { send: vi.fn(async () => undefined) },
     secrets: [],
@@ -190,6 +201,12 @@ describe("run computer provisioning", () => {
     expect(toolResults[0]).toMatchObject({ entries: [{ path: "notes.txt" }] });
     expect(sleepJobs).toHaveLength(1);
     expect(sandbox.releaseScreen).toHaveBeenCalledWith(COMPUTER, expect.anything());
+  });
+
+  it("starts the computer before handing its screen to the user", async () => {
+    await runRoutine([], { takeover: true });
+
+    expect(provisionComputer).toHaveBeenCalledOnce();
   });
 
   it("keeps setup-failure retry semantics when the computer cannot start", async () => {
