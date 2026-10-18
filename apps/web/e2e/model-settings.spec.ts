@@ -6,6 +6,44 @@ import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } 
 const LOCAL_MODEL_ID = "rakazo-e2e-local";
 const LOCAL_MODEL_REPLY = "OpenAI-compatible endpoint verified end to end.";
 
+test("model settings cleanup frames", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const stamp = Date.now();
+  await signup(page, `model-cleanup-${stamp}@rakazo.test`, "password12", "Model Preview");
+  await completeOnboarding(page);
+
+  // Keep the account and persistence real; the scripted test runtime accepts fake keys.
+  // Hide the deployment default so the first frame exercises the empty-provider state.
+  let providerConnected = false;
+  await page.route("**/rpc/me", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as { json: Record<string, unknown> };
+    body.json.needsModel = !providerConnected;
+    await route.fulfill({ response, json: body });
+  });
+  await openUserSettings(page, "models");
+  await page.getByPlaceholder("Search providers").fill("openrouter");
+  await page.getByRole("button", { name: /^OpenRouter / }).click();
+  const backups = page.getByTestId("model-backups");
+  await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
+  await expect(page.getByLabel("API key")).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");
+
+  await page.getByLabel("API key").fill("fake-cleanup-api-key");
+  providerConnected = true;
+  await page.getByRole("button", { name: "Connect API key", exact: true }).click();
+  await expect(page.getByText(/Connected and using/)).toBeVisible();
+  await expect(page.getByText(/Connected ·/)).toBeVisible();
+  await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
+  const model = page.getByRole("combobox", { name: "Model", exact: true });
+  await expect(model).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-2-connected");
+
+  await model.click();
+  await expect(page.getByRole("listbox", { name: "Model options" })).toBeVisible();
+  await captureScreenshot(page, testInfo, "model-settings-cleanup-3-model-dropdown-open");
+});
+
 test("custom connections persist reasoning support and bot thinking", async ({
   page,
 }, testInfo) => {
