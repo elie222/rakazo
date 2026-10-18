@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (읽지 않음)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {모델 #개} other {모델 #개}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -880,6 +875,10 @@ msgstr "기본 제공"
 msgid "Can't reach the server."
 msgstr "서버에 연결할 수 없습니다."
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Can't read images"
+msgstr "이미지를 읽을 수 없음"
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
@@ -943,10 +942,6 @@ msgstr "차트를 표시하지 못했습니다: {error}"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Chat apps"
 msgstr "채팅 앱"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Chat apps, group channels, and agent connections."
-msgstr "채팅 앱, 그룹 채널 및 Agent 연결을 관리합니다."
 
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
@@ -1012,10 +1007,6 @@ msgstr "새 비밀번호 선택"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "파일 선택"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "Rakazo에서 기본으로 사용할 연결된 모델을 선택하세요."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1243,10 +1234,6 @@ msgstr "연결"
 msgid "Connect a model"
 msgstr "AI 모델 연결"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "백업을 추가하려면 제공업체를 연결하세요."
-
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "API 키 연결"
@@ -1263,10 +1250,6 @@ msgstr "MCP 서버 ‘{name}’ 연결"
 msgid "Connect OAuth"
 msgstr "OAuth 연결"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "이 AI 서비스를 연결하면 내 기본 모델로 사용할 수 있습니다."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Treg 연결"
@@ -1280,21 +1263,10 @@ msgstr "Treg 연결"
 msgid "Connected"
 msgstr "연결됨"
 
-#. placeholder {0}: credential.label
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected · {0}"
-msgstr "연결됨 · {0}"
-
 #. placeholder {0}: selected.name
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "{0}에 연결했습니다."
-
-#. placeholder {0}: selected.label
-#. placeholder {0}: selectedLabelRef.current ?? "this model"
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected and using {0}."
-msgstr "{0}에 연결하고 기본 모델로 설정했습니다."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
@@ -1611,6 +1583,10 @@ msgstr "업데이트 상태를 불러올 수 없습니다"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "음성 설정을 불러오지 못했습니다."
+
+#: src/lib/sign-out.ts
+msgid "Could not log out. Try again."
+msgstr "로그아웃하지 못했습니다. 다시 시도해 주세요."
 
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
@@ -2811,10 +2787,6 @@ msgstr "MCP 서버 관리"
 msgid "Manage messaging settings"
 msgstr "메시징 설정 관리"
 
-#: src/pages/MemorySettingsOverlay.tsx
-msgid "Manage the Space semantic memory provider."
-msgstr "작업공간에서 사용할 장기 기억 서비스를 관리합니다."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
 msgstr ""
@@ -3971,10 +3943,6 @@ msgstr "백업 모델 저장"
 msgid "Save credential"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
-msgstr ""
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
@@ -4384,10 +4352,6 @@ msgstr "중지되었습니다."
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "암호화해 저장"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Stored securely. Never shown here."
-msgstr "안전하게 저장됩니다. 이 화면에 표시되지 않습니다."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"

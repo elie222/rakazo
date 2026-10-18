@@ -1,4 +1,8 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",
+  "The server had a problem. Try again in a moment.": "服务器出现问题。请稍后重试。",
+  "Password sign-in is turned off on this server": "此服务器已关闭密码登录",
+  "Could not save your sign-in on this device. Try again.": "无法在此设备上保存登录信息。请重试。",
   "Your OpenRouter": "你的 OpenRouter",
   "Your OpenAI": "你的 OpenAI",
   "Your Anthropic": "你的 Anthropic",
@@ -130,7 +134,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   React: "回应",
   "Add Treg": "添加 Treg",
   "Agent messages": "智能体消息",
-  "Alerts from routines": "来自例行任务的提醒",
   "Allowed once": "已允许一次",
   "Allow once": "允许一次",
   "Already have an account?": "已有账户？",
@@ -387,7 +390,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Mark as Unread": "标为未读",
   "Long press to pin or move to a section": "长按可置顶或移动到分组",
   "Long press to pin, move, or silence notifications": "长按可置顶、移动或静音通知",
-  "Enter your Rakazo server address.": "输入你的 Rakazo 服务器地址。",
   "Show less": "收起",
   Members: "成员",
   Max: "最高",
@@ -573,7 +575,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Waiting for this bot’s response.": "正在等待这个 Bot 的回复。",
   "Waiting…": "等待中…",
   "What this bot is for": "这个 Bot 的用途",
-  "While agents are working": "智能体工作时",
   Working: "工作中",
   "Working…": "处理中…",
   "Work stopped, but the thread could not refresh: {detail}":

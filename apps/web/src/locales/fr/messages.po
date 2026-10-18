@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (non lu)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {# modèle} other {# modèles}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -880,6 +875,10 @@ msgstr "Intégré"
 msgid "Can't reach the server."
 msgstr "Impossible d'atteindre le serveur."
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Can't read images"
+msgstr "Ne peut pas lire les images"
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
@@ -943,10 +942,6 @@ msgstr "Le graphique n'a pas pu s'afficher : {error}"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Chat apps"
 msgstr "Applications de discussion"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Chat apps, group channels, and agent connections."
-msgstr "Applications de discussion, canaux de groupe et connexions d'agent."
 
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
@@ -1012,10 +1007,6 @@ msgstr "Choisissez un nouveau mot de passe"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Choisir un fichier"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "Choisissez le modèle connecté utilisé par Rakazo."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1243,10 +1234,6 @@ msgstr "Connecter"
 msgid "Connect a model"
 msgstr "Connecter un modèle"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "Connectez un fournisseur pour ajouter des modèles de secours."
-
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "Connecter la clé API"
@@ -1263,10 +1250,6 @@ msgstr "Connecter le serveur MCP « {name} »"
 msgid "Connect OAuth"
 msgstr "Connecter OAuth"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "Connectez ce fournisseur pour l'utiliser comme modèle personnel."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Connecter Treg"
@@ -1280,21 +1263,10 @@ msgstr "Connecter Treg"
 msgid "Connected"
 msgstr "Connecté"
 
-#. placeholder {0}: credential.label
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected · {0}"
-msgstr "Connecté · {0}"
-
 #. placeholder {0}: selected.name
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Connecté à {0}."
-
-#. placeholder {0}: selected.label
-#. placeholder {0}: selectedLabelRef.current ?? "this model"
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected and using {0}."
-msgstr "Connecté et utilise {0}."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
@@ -1611,6 +1583,10 @@ msgstr "Impossible de charger l'état de la mise à jour"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "Impossible de charger les paramètres vocaux"
+
+#: src/lib/sign-out.ts
+msgid "Could not log out. Try again."
+msgstr "Impossible de se déconnecter. Réessayez."
 
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
@@ -2811,10 +2787,6 @@ msgstr "Gérer les serveurs MCP"
 msgid "Manage messaging settings"
 msgstr "Gérer les paramètres de messagerie"
 
-#: src/pages/MemorySettingsOverlay.tsx
-msgid "Manage the Space semantic memory provider."
-msgstr "Gérer le fournisseur de mémoire sémantique de l'espace."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
 msgstr "Manuel"
@@ -3971,10 +3943,6 @@ msgstr "Enregistrer les modèles de secours"
 msgid "Save credential"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
-msgstr ""
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
@@ -4384,10 +4352,6 @@ msgstr "Arrêté."
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "Stocké chiffré"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Stored securely. Never shown here."
-msgstr "Stocké en toute sécurité. Jamais affiché ici."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"

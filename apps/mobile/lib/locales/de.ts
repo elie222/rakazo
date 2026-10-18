@@ -1,4 +1,12 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Too many attempts. Try again in a few minutes.":
+    "Zu viele Versuche. Versuche es in ein paar Minuten erneut.",
+  "The server had a problem. Try again in a moment.":
+    "Auf dem Server ist ein Problem aufgetreten. Versuche es gleich noch einmal.",
+  "Password sign-in is turned off on this server":
+    "Die Anmeldung mit Passwort ist auf diesem Server deaktiviert",
+  "Could not save your sign-in on this device. Try again.":
+    "Deine Anmeldung konnte auf diesem Gerät nicht gespeichert werden. Versuche es erneut.",
   "Your OpenRouter": "Dein OpenRouter",
   "Your OpenAI": "Dein OpenAI",
   "Your Anthropic": "Dein Anthropic",
@@ -86,7 +94,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Custom server {host}": "Eigener Server {host}",
   "Don’t have an account?": "Du hast noch kein Konto?",
   Email: "E-Mail",
-  "Enter your Rakazo server address.": "Gib die Adresse deines Rakazo-Servers ein.",
   "Forgot password?": "Passwort vergessen?",
   "Loading…": "Wird geladen…",
   Password: "Passwort",
@@ -527,7 +534,6 @@ export const DE_MESSAGES: Record<string, string> = {
     "Die eingebaute Stimme deines Telefons. Kostenlos, kein Konto nötig",
   // app/(settings)/account.tsx
   "Agent messages": "Agent-Nachrichten",
-  "Alerts from routines": "Meldungen von Routinen",
   Appearance: "Erscheinungsbild",
   Archived: "Archiviert",
   "Avatar style": "Avatar-Stil",
@@ -567,7 +573,6 @@ export const DE_MESSAGES: Record<string, string> = {
     "Das löscht dein Konto, deine Bots, Unterhaltungen, Erinnerungen, Dateien und gespeicherten Verbindungen endgültig. Das lässt sich nicht rückgängig machen.",
   "Try again.": "Versuche es erneut.",
   Usage: "Nutzung",
-  "While agents are working": "Während Agents arbeiten",
   "Your account": "Dein Konto",
   "{runs} runs · {tokens} tokens": "{runs} Ausführungen · {tokens} Token",
   "{style} avatars": "Avatare: {style}",

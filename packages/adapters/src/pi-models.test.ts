@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { modelAcceptsImageInput } from "./model-vision.js";
 import {
   catalogModelLabel,
   catalogProviderProbeBaseUrl,
@@ -13,6 +14,20 @@ describe("Pi model catalog", () => {
     const custom = listPiCatalog().filter((entry) => entry.provider === "openai-compatible");
     expect(custom).toHaveLength(1);
     expect(custom[0]).toMatchObject({ id: "custom", placeholder: true, reasoning: false });
+  });
+
+  it("says which catalog models support images, the same way runs decide it", () => {
+    const catalog = listPiCatalog();
+    for (const entry of catalog) {
+      if (entry.provider === "openai-compatible") {
+        // The connection's own "Supports images" setting decides this one.
+        expect(entry.images).toBeUndefined();
+      } else {
+        expect(entry.images).toBe(modelAcceptsImageInput(entry.provider, entry.id));
+      }
+    }
+    expect(catalog.some((entry) => entry.images === true)).toBe(true);
+    expect(catalog.some((entry) => entry.images === false)).toBe(true);
   });
 
   afterEach(() => {

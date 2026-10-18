@@ -29,6 +29,12 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("fr-CA")).toBe("fr");
     expect(normalizeUiLocale("FR")).toBe("fr");
     expect(normalizeUiLocale("fr_BE")).toBe("fr");
+    expect(normalizeUiLocale("he")).toBe("he");
+    expect(normalizeUiLocale("he-IL")).toBe("he");
+    expect(normalizeUiLocale("HE")).toBe("he");
+    expect(normalizeUiLocale("he_IL")).toBe("he");
+    expect(normalizeUiLocale("iw")).toBe("he");
+    expect(normalizeUiLocale("iw-IL")).toBe("he");
     expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");
     expect(normalizeUiLocale("zh")).toBe("zh-CN");
     expect(normalizeUiLocale("zh-Hans")).toBe("zh-CN");
@@ -51,7 +57,7 @@ describe("normalizeUiLocale", () => {
   });
 
   it("falls back to English for unknown locales", () => {
-    expect(normalizeUiLocale("he-IL")).toBe("en");
+    expect(normalizeUiLocale("sv-SE")).toBe("en");
     expect(normalizeUiLocale("")).toBe("en");
     expect(normalizeUiLocale(null)).toBe("en");
   });

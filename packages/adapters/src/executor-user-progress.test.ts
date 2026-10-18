@@ -5,6 +5,7 @@ import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.j
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
 import { createJobReconciler } from "./job-reconciler.js";
+import { userProgressClientNonce } from "./user-progress.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -30,6 +31,12 @@ async function runTurn(
   narration: string | string[] = "I will check that.",
   secrets: string[] = [],
   intent: "fyi" | "request" | "question" = "fyi",
+  options: {
+    trigger?: string;
+    doneText?: string;
+    splitText?: boolean;
+    priorProgressText?: string;
+  } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
     kind: "bot_message_received",
@@ -48,14 +55,16 @@ async function runTurn(
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: silent ? "bot_message" : "user",
+    trigger: options.trigger ?? (silent ? "bot_message" : "user"),
     sourceMessageId: "source-1",
     leaseFence: 0,
   };
   const runtimeRun = vi.fn(async function* (_request: AgentRunRequest) {
     const narrations = Array.isArray(narration) ? narration : [narration];
     for (const [index, text] of narrations.entries()) {
-      yield { type: "text" as const, text };
+      for (const chunk of options.splitText ? [...text] : [text]) {
+        yield { type: "text" as const, text: chunk };
+      }
       yield {
         type: "tool" as const,
         name: "read_file",
@@ -64,7 +73,7 @@ async function runTurn(
       };
     }
     if (finalText) yield { type: "text" as const, text: finalText };
-    yield { type: "done" as const, text: narrations.join("") + finalText };
+    yield { type: "done" as const, text: options.doneText ?? narrations.join("") + finalText };
   });
   const prisma = {
     run: {
@@ -106,8 +115,21 @@ async function runTurn(
       })),
     },
     message: {
-      findMany: vi.fn(async () => []),
-      findUnique: vi.fn(async () => null),
+      findMany: vi.fn(async ({ where }: { where: { runId?: string } }) =>
+        where.runId === run.id && options.priorProgressText
+          ? [
+              {
+                blocks: [{ kind: "text", text: options.priorProgressText }],
+                clientNonce: userProgressClientNonce(run.id),
+              },
+            ]
+          : [],
+      ),
+      findUnique: vi.fn(async () =>
+        run.trigger === "messaging"
+          ? { blocks: [{ kind: "channel_message", channelId: "channel-1" }] }
+          : null,
+      ),
       findFirst: vi.fn(async () => null),
     },
     task: {
@@ -178,26 +200,121 @@ async function runTurn(
   return { finalizeRun, append };
 }
 
-describe("withheld narration on short peer turns", () => {
-  it.each(["", "Checked: all clear."])("returns only the post-tool final %j", async (finalText) => {
-    vi.mocked(returnBotMessageOutcome).mockClear();
-    const { finalizeRun } = await runTurn(finalText);
-    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
-    expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
-      finalText ? [{ kind: "text", text: finalText }] : [],
-    );
-    if (finalText) {
-      expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        finalText,
-        "result",
+describe.each(["routine", "reaction", "bot_message", "messaging"])(
+  "held-back narration on %s runs",
+  (trigger) => {
+    it("restores the last non-empty narration as a normal final reply", async () => {
+      vi.mocked(returnBotMessageOutcome).mockClear();
+      const { finalizeRun, append } = await runTurn(
+        "",
+        true,
+        ["I will check that.", "  The draft is posted.  ", "   "],
+        [],
+        "fyi",
+        { trigger },
       );
-    } else {
+      expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          outcome: "completed",
+          markUnread: trigger !== "bot_message",
+        }),
+      );
+      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+        [{ kind: "text", text: "The draft is posted." }],
+      );
+      expect(append.mock.calls.map(([event]) => event.type)).not.toContain(
+        "thread.message.created",
+      );
+      if (trigger === "bot_message") {
+        expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+          "The draft is posted.",
+          "result",
+        );
+      }
+    });
+
+    it("keeps a non-empty post-tool final", async () => {
+      const { finalizeRun } = await runTurn("Checked: all clear.", true, undefined, [], "fyi", {
+        trigger,
+      });
+      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+        [{ kind: "text", text: "Checked: all clear." }],
+      );
+    });
+
+    it.each([
+      { narration: ["I will check that.", "NO_RESPONSE"], doneText: "" },
+      { narration: ["NO_RESPONSE", "The draft is posted."], doneText: "" },
+      { narration: ["I will check that. NO_RESPONSE"], doneText: "" },
+      { narration: ["NO_RESPONSENO_RESPONSE"], doneText: "" },
+      { narration: ["The draft is posted."], doneText: "NO_RESPONSE" },
+    ])("respects explicit silence in any turn: %j", async ({ narration, doneText }) => {
+      vi.mocked(returnBotMessageOutcome).mockClear();
+      const { finalizeRun } = await runTurn("", true, narration, [], "fyi", {
+        trigger,
+        doneText,
+        splitText: true,
+      });
+      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+        [],
+      );
       expect(returnBotMessageOutcome).not.toHaveBeenCalled();
-    }
+    });
+
+    it("respects an explicit silent final", async () => {
+      const { finalizeRun } = await runTurn("NO_RESPONSE", true, undefined, [], "fyi", { trigger });
+      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+        [],
+      );
+    });
+
+    it("does not confuse an identifier with the silence token across chunks", async () => {
+      const { finalizeRun } = await runTurn(
+        "",
+        true,
+        "NO_RESPONSE_POLICY is configured.",
+        [],
+        "fyi",
+        {
+          trigger,
+          splitText: true,
+        },
+      );
+      expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual(
+        [{ kind: "text", text: "NO_RESPONSE_POLICY is configured." }],
+      );
+    });
+  },
+);
+
+it("redacts restored narration", async () => {
+  const { finalizeRun } = await runTurn(
+    "",
+    true,
+    "The fake-secret-value is configured.",
+    ["fake-secret-value"],
+    "fyi",
+    { trigger: "routine" },
+  );
+  expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual([
+    { kind: "text", text: "The [redacted] is configured." },
+  ]);
+});
+
+it("does not restore narration already published as durable progress", async () => {
+  const { finalizeRun } = await runTurn("", true, "The draft is posted.", [], "fyi", {
+    trigger: "reaction",
+    priorProgressText: "The draft is posted.",
   });
+  expect(finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")).toEqual([]);
+});
+
+it("keeps background ticket runs silent", async () => {
+  const { finalizeRun } = await runTurn("", true, undefined, [], "fyi", { trigger: "tickets" });
+  expect(finalizeRun.mock.calls[0]![0].blocks).toEqual([]);
 });
 
 describe("held-back narration on peer requests", () => {

@@ -137,9 +137,6 @@ export function GeneralSettingsPanels({
           <h3 className="text-[15px] font-medium text-foreground">
             <Trans>Messaging</Trans>
           </h3>
-          <p className="mt-3 text-[13px] text-muted-foreground/70">
-            <Trans>Chat apps, group channels, and agent connections.</Trans>
-          </p>
           <Button variant="secondary" className="mt-3 rounded-full" onClick={onOpenMessaging}>
             <Trans>Manage messaging settings</Trans>
           </Button>

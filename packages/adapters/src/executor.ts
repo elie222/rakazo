@@ -4162,10 +4162,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Rehydrate from this run's prior progress rows so a resume after ask/takeover
         // still knows progress was already published (skip hollow finals; status outcome).
         let publishedMidTurnUserMessage = false;
-        // Routine, background and bot-to-bot runs discard promoted narration instead of
-        // posting it as chat.
+        // Some runs hold back pre-tool narration instead of posting it as chat.
+        // Keep the last segment in case the model supplies no final reply.
         let discardedMidTurnNarration = false;
         let lastDiscardedMidTurnNarration = "";
+        let explicitNoResponse = false;
+        let assistantTurnText = "";
+        const recordExplicitNoResponse = (text: string) => {
+          explicitNoResponse ||= isExactNoResponse(text) || /\bNO_RESPONSE\b/.test(text);
+        };
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
         const turnStartedAtMs = run.startedAt?.getTime() ?? Date.now();
@@ -7192,7 +7197,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             }
 
+            // Check complete assistant turns so split sentinel chunks are recognized
+            // without treating a partial identifier (NO_RESPONSE_POLICY) as silence.
+            if (event.type === "tool" || event.type === "takeover") {
+              recordExplicitNoResponse(assistantTurnText);
+              assistantTurnText = "";
+            }
             if (event.type === "text") {
+              assistantTurnText += event.text;
               if (assistantTurnBreakPending && event.text) {
                 assistantTurnBreakPending = false;
                 const separator = assistantTurnSeparator(assembled, event.text);
@@ -7511,6 +7523,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 operationId: runId,
               });
             } else if (event.type === "done") {
+              recordExplicitNoResponse(event.text ?? "");
               if (!assembled && event.text) {
                 if (publishedMidTurnUserMessage || discardedMidTurnNarration) {
                   // Mid-turn narration was already published or discarded (routines).
@@ -7524,6 +7537,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
+          recordExplicitNoResponse(assistantTurnText);
           runComputer.throwIfFailed();
           if (approvalPausePending || !leaseValid) return;
           approvedEffectReplays.assertDrained();
@@ -7568,21 +7582,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await workspaceCheckpoint.flush();
           terminalCheckpointComplete = true;
 
-          // Save the last held-back narration as the final reply so outcome delivery
-          // can be retried from the persisted message after completion.
+          // Preserve the last held-back preview as a normal final reply when the
+          // model supplies none, unless it chose silence or already delivered that text.
+          // Persisting peer results here also lets outcome delivery retry after completion.
+          recordExplicitNoResponse(lastDiscardedMidTurnNarration);
           if (
-            run.trigger === "bot_message" &&
-            !allowSilentEmptyRun &&
+            !isBackgroundRunTrigger(run.trigger) &&
+            !handedOff &&
+            !explicitNoResponse &&
             !assembled.trim() &&
-            lastDiscardedMidTurnNarration
+            lastDiscardedMidTurnNarration &&
+            !midTurnUserTexts.includes(lastDiscardedMidTurnNarration)
           ) {
             assembled = lastDiscardedMidTurnNarration;
             currentTextSegment = assembled;
           }
           flushPendingTools();
-          // Routine and reaction runs may emit NO_RESPONSE. Other
-          // allowSilentEmpty wakes (FYI, messaging) may finish truly empty.
-          const silentReply = runAllowsSilentEmpty(run.trigger)
+          // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
+          const silentReply = allowSilentEmptyRun
             ? stripNoResponseReply(assembled, messageSegments)
             : { assembled, blocks: messageSegments };
           let completionBlocks = silentReply.blocks;
@@ -8542,9 +8559,10 @@ export function runAllowsSilentEmpty(trigger: string): boolean {
 }
 
 /**
- * Whether text written before a tool call is saved as a chat bubble. Bot-to-bot runs
- * discard it: nobody reads those threads live, and the receiver's final reply is what
- * goes back to the sender.
+ * Whether text written before a tool call may become a durable mid-turn chat bubble.
+ * Routine and bot-to-bot runs hold it back, using the last segment as the final reply
+ * only when the model supplies none and has not explicitly chosen silence.
+ * Background runs never promote it.
  */
 export function runPromotesMidTurnNarration(trigger: string): boolean {
   return trigger !== "routine" && trigger !== "bot_message" && !isBackgroundRunTrigger(trigger);

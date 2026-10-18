@@ -25,6 +25,8 @@ export type PiCatalogEntry = {
   signIn?: ModelOAuthSignInMode;
   reasoning?: boolean;
   thinkingLevels?: ThinkingLevel[];
+  /** The model reads images. Left out where a connection setting decides it. */
+  images?: boolean;
   placeholder?: boolean;
   /** Provider models share one pinned HTTPS models-list base URL. */
   catalogProbe?: boolean;
@@ -132,7 +134,10 @@ function buildPiCatalog(): PiCatalogEntry[] {
         thinkingLevels,
         // Compatibility metadata does not prove a model is served by a user's
         // endpoint. Keep each custom connection scoped to its entered model ID.
-        ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID ? { placeholder: true } : {}),
+        // Its image support is the connection's own setting, not the catalog's.
+        ...(provider.id === OPENAI_COMPATIBLE_PROVIDER_ID
+          ? { placeholder: true }
+          : { images: model.input.includes("image") }),
         ...(probeBaseUrl ? { catalogProbe: true } : {}),
       });
     }
