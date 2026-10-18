@@ -65,7 +65,7 @@ export type FoldedTranscript<T> = {
 
 /**
  * Drop peer-run activity; optionally keep sent/received receipt rows. With receipts kept, a
- * peer run's text replies fold under its received marker; its user-input cards stay inline.
+ * peer run's bot text replies fold under its received marker; its user-input cards stay inline.
  */
 export function foldPeerReplies<T extends PresentableMessage>(
   messages: readonly T[],
@@ -112,6 +112,8 @@ export function foldPeerReplies<T extends PresentableMessage>(
     // User-input cards stay inline; previews without receipts keep only asks, as before.
     if (message.blocks.some(includePeerReceipts ? isPeerInputBlock : isAskBlock)) return true;
     if (!includeText || !message.blocks.some((block) => block.kind === "text")) return false;
+    // Only bot replies fold: a person's answer, steering or reaction in the run stays inline.
+    if (message.role !== "bot") return true;
     const markerId = includePeerReceipts ? markerByRunId.get(message.runId) : undefined;
     // A reply whose marker is outside the loaded page stays inline.
     if (markerId === undefined) return true;

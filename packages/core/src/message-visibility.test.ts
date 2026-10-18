@@ -153,6 +153,60 @@ describe("user-visible messages", () => {
     expect(expanded.reactions.get("reply")?.get("👍")).toBe(1);
   });
 
+  describe("a human message in a peer run", () => {
+    const ask = message("ask", "run-peer", [
+      { kind: "ask", text: "Which city should I use?", status: "pending" },
+    ]);
+    const human = (id: string, text: string, replyToMessageId?: string): ThreadMessage => ({
+      ...message(id, "run-peer", [{ kind: "text", text }]),
+      role: "user",
+      replyToMessageId,
+    });
+
+    it("stays visible when it answers the run's ask", () => {
+      const transcript = foldPeerReplies([peerExchange[2], ask, human("paris", "Paris")], {
+        includePeerReceipts: true,
+      });
+
+      expect(transcript.messages.map((item) => item.id)).toEqual(["received", "ask", "paris"]);
+      expect(transcript.markerOf.has("paris")).toBe(false);
+    });
+
+    it("keeps a reaction to the run's inline ask counted on the ask", () => {
+      const transcript = foldPeerReplies([peerExchange[2], ask, human("thumbs", "👍", "ask")], {
+        includePeerReceipts: true,
+      });
+
+      expect(transcript.messages.map((item) => item.id)).toEqual(["received", "ask", "thumbs"]);
+      const view = projectMessageReactions(expandPeerReplies(transcript, new Set()));
+      expect(view.visibleMessages.map((item) => item.id)).toEqual(["received", "ask"]);
+      expect(view.reactions.get("ask")?.get("👍")).toBe(1);
+    });
+
+    it("stays visible as steering while the bot's own reply still folds", () => {
+      const transcript = foldPeerReplies([...peerExchange, human("steer", "Use the staging API")], {
+        includePeerReceipts: true,
+      });
+
+      expect(transcript.messages.map((item) => item.id)).toEqual([
+        "user",
+        "sent",
+        "received",
+        "answer",
+        "steer",
+      ]);
+      expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual(["reply"]);
+    });
+
+    it("stays out of sidebar previews, as before", () => {
+      expect(
+        userVisibleMessages([...peerExchange, ask, human("paris", "Paris")], {
+          includeDelegatedReplyText: false,
+        }).map((m) => m.id),
+      ).toEqual(["user", "answer", "ask"]);
+    });
+  });
+
   it("keeps sidebar previews ask-only", () => {
     expect(
       userVisibleMessages(peerExchange, { includeDelegatedReplyText: false }).map((m) => m.id),
