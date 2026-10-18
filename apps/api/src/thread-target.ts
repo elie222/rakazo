@@ -18,6 +18,7 @@ import {
   callIdFromClientNonce,
   isActive,
   isConversationalRun,
+  messageReaction,
   projectMessages,
   resolveGroupTargetBotIds,
   runFailureError,
@@ -1037,25 +1038,32 @@ export async function sendThreadMessage(
   return sendResult(committed.message, committed.runs);
 }
 
+/** Reactions that read as yes or no, so they answer the bot's latest message. */
+const TURN_REACTIONS: ReadonlySet<MessageReaction> = new Set(["👍", "👎"]);
+
 /**
  * Append an emoji reply to the conversation so the next AI turn sees its target.
- * Clients render it beneath that message; the reaction itself does not start an AI turn.
+ * Clients render it beneath that message. A 👍 or 👎 on the bot's latest message also
+ * answers it: it starts that bot's turn, or answers its pending ask. Every other
+ * reaction, and any reaction while the bot is busy, stays quiet context.
  */
 export async function reactToThreadMessage(
-  deps: { prisma: PrismaClient },
+  deps: { prisma: PrismaClient; jobs: JobPublisher },
   actor: Actor,
   target: ThreadTarget,
   input: {
     messageId: string;
     reaction: MessageReaction;
     clientNonce: string;
+    /** False when a send could not start a run either (no model, teaching). */
+    mayStartTurn: boolean;
   },
 ) {
-  return deps.prisma.$transaction(async (tx) => {
+  const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const parent = await tx.message.findFirst({
       where: { id: input.messageId, threadId: target.threadId },
-      select: { id: true },
+      select: { id: true, seq: true, role: true, botId: true, runId: true },
     });
     if (!parent) throw new IsolationError();
     const existing = await tx.message.findUnique({
@@ -1064,8 +1072,12 @@ export async function reactToThreadMessage(
       },
       select: { id: true },
     });
-    if (existing) return { eventSeq: null };
-    const botId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
+    if (existing) return { eventSeq: null, runs: [] };
+    const replyBotId =
+      input.mayStartTurn && TURN_REACTIONS.has(input.reaction)
+        ? await reactionReplyBotId(tx, target, parent)
+        : undefined;
+    const botId = replyBotId ?? (target.kind === "bot" ? target.botId : target.memberBotIds[0]);
     if (!botId) throw new IsolationError();
     const blocks: MessageBlock[] = [{ kind: "text", text: input.reaction }];
     const message = await createThreadMessageInTransaction(tx, {
@@ -1075,16 +1087,112 @@ export async function reactToThreadMessage(
       replyToMessageId: parent.id,
       clientNonce: input.clientNonce,
     });
+    const runs = replyBotId
+      ? await startReactionTurn(tx, actor, target.threadId, replyBotId, parent, message, input)
+      : [];
     if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
     const event = await appendEventInTransaction(tx, {
       spaceId: actor.spaceId,
       threadId: target.threadId,
       botId,
       type: "thread.message.created",
-      payload: { messageId: message.id, role: "user", blocks, replyToMessageId: parent.id },
+      ...(runs[0] ? { runId: runs[0].id } : {}),
+      payload: {
+        messageId: message.id,
+        role: "user",
+        blocks,
+        replyToMessageId: parent.id,
+        ...(runs.length ? { runIds: runs.map((run) => run.id) } : {}),
+      },
     });
-    return { eventSeq: event.seq };
+    return { eventSeq: event.seq, runs };
   });
+  await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
+  return { eventSeq: committed.eventSeq };
+}
+
+/** The bot that wrote the thread's newest message, when the reaction targets that message. */
+async function reactionReplyBotId(
+  tx: Prisma.TransactionClient,
+  target: ThreadTarget,
+  parent: { seq: number; role: string; botId: string | null },
+) {
+  if (parent.role !== "bot" || !parent.botId) return undefined;
+  const memberBotIds = target.kind === "bot" ? [target.botId] : target.memberBotIds;
+  if (!memberBotIds.includes(parent.botId)) return undefined;
+  // Earlier reactions may follow it; any other message means the conversation moved on.
+  const newer = await tx.message.findMany({
+    where: { threadId: target.threadId, seq: { gt: parent.seq } },
+    orderBy: { seq: "asc" },
+    take: 50,
+    select: { role: true, blocks: true, replyToMessageId: true },
+  });
+  const onlyReactions = newer.every((message) =>
+    messageReaction({
+      ...message,
+      blocks: Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [],
+    }),
+  );
+  return onlyReactions ? parent.botId : undefined;
+}
+
+async function startReactionTurn(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  threadId: string,
+  botId: string,
+  parent: { runId: string | null },
+  message: { id: string },
+  input: { reaction: MessageReaction; clientNonce: string },
+): Promise<Array<{ id: string; taskId: string; status: string }>> {
+  const activeRuns = await tx.run.findMany({
+    where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    select: { id: true, taskId: true, status: true },
+  });
+  const [active, ...others] = activeRuns;
+  if (active) {
+    // Only the pending ask in the reacted message is answered; approval and secret asks
+    // are refused here and stay on their card.
+    if (others.length || active.status !== "waiting_input" || active.id !== parent.runId) {
+      return [];
+    }
+    const answered = await answerWaitingRunWithTextInTransaction(tx, {
+      spaceId: actor.spaceId,
+      threadId,
+      runId: active.id,
+      answeredByUserId: actor.userId,
+      answer: input.reaction,
+    });
+    if (!answered) return [];
+    await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+    return [{ ...active, status: "queued" }];
+  }
+  const task = await tx.task.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId,
+      threadId,
+      userId: actor.userId,
+      prompt: input.reaction,
+      status: "queued",
+    },
+  });
+  const run = await tx.run.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId,
+      threadId,
+      taskId: task.id,
+      userId: actor.userId,
+      status: "queued",
+      trigger: "reaction",
+      clientNonce: sendRunClientNonce(input.clientNonce, message.id),
+      sourceMessageId: message.id,
+    },
+  });
+  await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
+  await cancelSupersededQueuedRuns(tx, { threadId, botIds: [botId], keepRunIds: [run.id] });
+  return [run];
 }
 
 export async function stopThreadRuns(

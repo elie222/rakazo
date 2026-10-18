@@ -2211,7 +2211,18 @@ export function createRouter(deps: RouterDeps) {
       }),
       react: authed.threads.react.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
-        const result = await reactToThreadMessage(deps, context.actor, target, input);
+        // Without a model or while teaching, the reaction is still saved; it just starts no turn.
+        const mayStartTurn =
+          !(await modelSetup(deps, context.actor)).needsModel &&
+          (target.kind !== "bot" ||
+            (await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId).then(
+              () => true,
+              () => false,
+            )));
+        const result = await reactToThreadMessage(deps, context.actor, target, {
+          ...input,
+          mayStartTurn,
+        });
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
             getLogger().error("thread reaction realtime notification", error);
