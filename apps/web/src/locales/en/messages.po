@@ -2643,6 +2643,10 @@ msgstr "Launched {app}"
 msgid "Leave"
 msgstr "Leave"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Light"

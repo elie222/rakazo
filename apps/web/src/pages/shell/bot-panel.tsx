@@ -246,6 +246,7 @@ export function BotSettings({
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
   const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
+  useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [modelKey, setModelKey] = useState(
@@ -282,6 +283,7 @@ export function BotSettings({
       description?: string;
       color?: string;
       notifyOnFinish?: boolean;
+      fleetManagement?: boolean;
       disabledBuiltinTools?: string[];
       baseDisabledBuiltinTools?: string[];
     }) => Promise<void>
@@ -341,6 +343,7 @@ export function BotSettings({
     description?: string;
     color?: string;
     notifyOnFinish?: boolean;
+    fleetManagement?: boolean;
     disabledBuiltinTools?: string[];
     baseDisabledBuiltinTools?: string[];
   }) {
@@ -372,7 +375,9 @@ export function BotSettings({
         computerMode,
         memoryScope,
         autoSpeak,
-        fleetManagement,
+        ...(patchOverrides?.fleetManagement !== undefined
+          ? { fleetManagement: patchOverrides.fleetManagement }
+          : {}),
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
@@ -418,6 +423,8 @@ export function BotSettings({
       }
       savedDescriptionRef.current = nextDescription;
     } catch (err) {
+      if (patchOverrides?.fleetManagement !== undefined)
+        setFleetManagement(!patchOverrides.fleetManagement);
       setError(errorText(err, t`Could not save`));
     } finally {
       pendingSavesRef.current -= 1;
@@ -450,6 +457,7 @@ export function BotSettings({
     description?: string;
     color?: string;
     notifyOnFinish?: boolean;
+    fleetManagement?: boolean;
     disabledBuiltinTools?: string[];
   }) {
     // Serialize full-object auto-saves so an older in-flight request cannot
@@ -665,10 +673,20 @@ export function BotSettings({
           <Switch
             id={`${ids}-fleet-management`}
             checked={fleetManagement}
-            onCheckedChange={(checked) => setFleetManagement(checked)}
+            disabled={saving}
+            onCheckedChange={(checked) => {
+              setFleetManagement(checked);
+              void enqueueSave({ fleetManagement: checked });
+            }}
           />
           <Trans>Fleet management</Trans>
         </label>
+        <div className="text-[12px] text-muted-foreground/70">
+          <Trans>
+            Lets this bot organize, retune and schedule the bots it creates. You approve each
+            change.
+          </Trans>
+        </div>
         {voices.length ? (
           <label htmlFor={`${ids}-voice`} className={fieldLabelClass}>
             <Trans>Voice</Trans>

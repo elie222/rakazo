@@ -2643,6 +2643,10 @@ msgstr ""
 msgid "Leave"
 msgstr "Выйти"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "Позволяет этому боту организовывать, настраивать и планировать работу созданных им ботов. Вы одобряете каждое изменение."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Светлая"

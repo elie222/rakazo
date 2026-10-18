@@ -2643,6 +2643,10 @@ msgstr ""
 msgid "Leave"
 msgstr "나가기"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "이 봇이 자신이 만든 봇을 정리하고 조정하고 예약할 수 있습니다. 각 변경은 사용자가 승인합니다."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "라이트"

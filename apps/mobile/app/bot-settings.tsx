@@ -26,6 +26,7 @@ import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
 import { NativeSymbol } from "../components/native-symbol";
 import { Chevron } from "../components/row-accessories";
+import { SettingsFooter } from "../components/settings-group";
 import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { rpc } from "../lib/api";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
@@ -291,7 +292,6 @@ export default function BotSettingsScreen() {
         modelId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
-        fleetManagement?: boolean;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -317,7 +317,6 @@ export default function BotSettingsScreen() {
           : null;
       }
       if (autoSpeak !== bot.autoSpeak) input.autoSpeak = autoSpeak;
-      if (fleetManagement !== bot.fleetManagement) input.fleetManagement = fleetManagement;
       if (computerMode !== bot.computerMode) {
         await rpc(
           "bots/setComputer",
@@ -494,10 +493,26 @@ export default function BotSettingsScreen() {
           </Text>
           <NativeSwitch
             accessibilityLabel={t("Fleet management")}
-            onValueChange={setFleetManagement}
+            disabled={pending}
+            onValueChange={(value) => {
+              if (!botId || pending) return;
+              setFleetManagement(value);
+              setPending(true);
+              void rpc("bots/update", { botId, fleetManagement: value })
+                .catch((err) => {
+                  setFleetManagement(!value);
+                  setError(errorText(err, t("Could not save bot")));
+                })
+                .finally(() => setPending(false));
+            }}
             value={fleetManagement}
           />
         </View>
+        <SettingsFooter>
+          {t(
+            "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+          )}
+        </SettingsFooter>
         {deviceVoiceEnabled ? (
           voiceError ? (
             <Pressable

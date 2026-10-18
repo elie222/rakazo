@@ -37,13 +37,21 @@ vi.mock("@rakazo/ui-web", () => ({
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Switch: ({
-    onCheckedChange: _onCheckedChange,
-    checked: _checked,
+    onCheckedChange,
+    checked,
     ...props
   }: ComponentProps<"button"> & {
     checked?: boolean;
     onCheckedChange?: (checked: boolean) => void;
-  }) => <button type="button" {...props} />,
+  }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange?.(!checked)}
+      {...props}
+    />
+  ),
   Toggle: ({
     onPressedChange: _onPressedChange,
     pressed,
@@ -115,11 +123,11 @@ const onSave = vi.fn(
   async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
 );
 
-async function render(description = "Billing") {
+async function render(description = "Billing", fleetManagement = false) {
   await act(async () => {
     root.render(
       <BotSettings
-        bot={bot(description)}
+        bot={{ ...bot(description), fleetManagement }}
         memoryProviderConfigured={false}
         onSkillsChange={() => undefined}
         onSave={onSave}
@@ -222,6 +230,38 @@ describe("BotSettings model choices", () => {
     expect(values).toContain("deepseek::deepseek-v4-pro");
     expect(values).not.toContain("deepseek::DeepSeek-V4.1-Flash");
     expect(values.some((value) => value.includes("DeepSeek"))).toBe(false);
+  });
+});
+
+describe("BotSettings fleet management saves", () => {
+  it("cannot restore a stale enabled value when another session disables it", async () => {
+    await render("Billing", true);
+    await render("Billing", false);
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
+  });
+
+  it("restores the toggle when the immediate save fails", async () => {
+    await render();
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
+    if (!toggle) throw new Error("Missing switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("persists the toggle immediately and omits it from unrelated saves", async () => {
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
+    if (!toggle) throw new Error("Missing switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(onSave.mock.lastCall?.[0]).toHaveProperty("fleetManagement", true);
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
   });
 });
 

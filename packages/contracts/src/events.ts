@@ -113,6 +113,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
       })
       .optional(),
     detail: z.string().optional(),
+    detailFormat: z.enum(["text", "code"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),

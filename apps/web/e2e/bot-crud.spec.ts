@@ -209,6 +209,17 @@ test("fleet management switch persists", async ({ page }, testInfo) => {
 
   const fleetSwitch = await openAdvanced();
   await expect(fleetSwitch).not.toBeChecked();
+  await expect(
+    page.getByText(
+      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+    ),
+  ).toBeVisible();
+  await page
+    .getByText(
+      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+    )
+    .scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "32-fleet-management-switch-off");
   await fleetSwitch.click();
   await expect(fleetSwitch).toBeChecked();
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -218,5 +229,10 @@ test("fleet management switch persists", async ({ page }, testInfo) => {
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   const reloadedSwitch = await openAdvanced();
   await expect(reloadedSwitch).toBeChecked();
+  await page
+    .getByText(
+      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+    )
+    .scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "32-fleet-management-switch");
 });

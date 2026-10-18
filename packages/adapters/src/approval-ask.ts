@@ -35,6 +35,7 @@ export function buildApprovalAskBlock(
         redactSecrets(options.summary.lines.join("\n"), secrets),
         approvalDetailLength(toolName),
       ),
+      detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
       actions: [
         { id: "allow", label: "Allow once" },
@@ -57,6 +58,7 @@ export function buildApprovalAskBlock(
         after,
         reason,
       },
+      detailFormat: "code",
       status: "pending",
       actions: [
         { id: "allow", label: "Apply" },

@@ -139,6 +139,7 @@ describe("fleet approval cards", () => {
       approvalEffectId: "effect-1",
       text: "Create group “Launch”?",
       detail: "Members: Scout, Writer\nPrompt: use [redacted]",
+      detailFormat: toolName === "set_child_instructions" ? "code" : "text",
       status: "pending",
       actions: [
         { id: "allow", label: "Allow once" },

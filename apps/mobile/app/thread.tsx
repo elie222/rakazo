@@ -3512,7 +3512,8 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <View
           style={{
-            width: "90%",
+            width: "100%",
+            maxWidth: 576,
             borderRadius: 18,
             borderWidth: 1,
             borderColor: tokens.border,
@@ -3543,11 +3544,12 @@ const MessageBubble = memo(function MessageBubble({
                 <Text
                   {...(askBlock.text ? {} : actionProps)}
                   style={{
-                    color: tokens.mutedForeground,
+                    color:
+                      askBlock.detailFormat === "text" ? tokens.foreground : tokens.mutedForeground,
                     marginTop: askBlock.text ? 8 : 0,
-                    fontSize: 12.5,
-                    fontFamily: "Menlo",
-                    lineHeight: 20,
+                    fontSize: askBlock.detailFormat === "text" ? 15.5 : 12.5,
+                    fontFamily: askBlock.detailFormat === "text" ? undefined : "Menlo",
+                    lineHeight: askBlock.detailFormat === "text" ? 23 : 20,
                   }}
                 >
                   {askBlock.detail}
@@ -3557,7 +3559,7 @@ const MessageBubble = memo(function MessageBubble({
                 <Text
                   {...actionProps}
                   style={{
-                    color: tokens.success,
+                    color: askBlock.answer === "deny" ? tokens.mutedForeground : tokens.success,
                     marginTop: 12,
                     fontSize: 13.5,
                     fontWeight: "600",
