@@ -142,10 +142,8 @@ export function ModelSettingsOverlay({
   } = useModelOAuthSignIn({
     onClearError: () => setError(null),
     onError: setError,
-    onFinished: async (controller) => {
+    onFinished: async () => {
       await refresh();
-      if (controller.signal.aborted) return;
-      setNotice(t`Connected and using ${selectedLabelRef.current ?? "this model"}.`);
     },
   });
 
@@ -339,7 +337,14 @@ export function ModelSettingsOverlay({
     baseUrl: effectiveBaseUrl,
     modelId,
   });
-  const builtinLimitSave = !isOpenAiCompatible && Boolean(credential) && apiKey.trim().length === 0;
+  // Saved-connection settings edited without a new key (output limit, gateway ids).
+  const settingsDirty =
+    !isOpenAiCompatible &&
+    Boolean(credential) &&
+    (maxTokens.trim() !== connectionMaxTokensField(provider, credential?.maxTokens) ||
+      (isCloudflareGateway &&
+        (accountId.trim() !== (credential?.accountId ?? "") ||
+          gatewayId.trim() !== (credential?.gatewayId ?? ""))));
 
   function invalidatePreflight() {
     preflightRevisionRef.current += 1;
@@ -623,7 +628,9 @@ export function ModelSettingsOverlay({
               // A limits-only save leaves the stored effort alone while the model
               // stays put. Changing the model sends the clamped level, including
               // null, so the previous model's effort is not reused.
-              ...(!savingLimitOnly || modelChanged ? { thinkingLevel: stagedThinking } : {}),
+              ...(!savingLimitOnly || modelChanged || thinkingDirty
+                ? { thinkingLevel: stagedThinking }
+                : {}),
               maxTokens: parsedMaxTokens ?? null,
               label: selected.providerName ?? selected.provider,
             },
@@ -631,11 +638,8 @@ export function ModelSettingsOverlay({
       setApiKey("");
       await refresh();
       detailScrollRef.current?.scrollTo({ top: 0 });
-      setNotice(
-        isOpenAiCompatible || savingLimitOnly
-          ? t`Saved.`
-          : t`Connected and using ${selected.label}.`,
-      );
+      // A fresh connection speaks for itself through the Active model row.
+      if (isOpenAiCompatible || savingLimitOnly) setNotice(t`Saved.`);
     } catch (err) {
       setError(errorText(err, t`Could not connect this provider`));
     } finally {
@@ -967,7 +971,7 @@ export function ModelSettingsOverlay({
         </div>
       ) : null}
 
-      {acceptsKey || builtinLimitSave ? (
+      {acceptsKey ? (
         <div className="mt-5 first:mt-0">
           {isCloudflareGateway ? (
             <>
@@ -1049,15 +1053,11 @@ export function ModelSettingsOverlay({
             variant="secondary"
             className="mt-3 rounded-full"
             size="sm"
-            disabled={
-              busy || !cloudflareRoutingReady || (!builtinLimitSave && apiKey.trim().length < 8)
-            }
+            disabled={busy || !cloudflareRoutingReady || apiKey.trim().length < 8}
             onClick={() => void connectKey()}
           >
-            {pending === "connect" ? (
+            {pending === "connect" && apiKey.trim() ? (
               <Trans>Saving…</Trans>
-            ) : builtinLimitSave ? (
-              <Trans>Save limits</Trans>
             ) : credential ? (
               <Trans>Replace API key</Trans>
             ) : (
@@ -1109,18 +1109,20 @@ export function ModelSettingsOverlay({
   ) : null;
 
   const saveButton =
-    credential && (!isActive || thinkingDirty || usingServerCredentials) ? (
+    credential && (!isActive || thinkingDirty || usingServerCredentials || settingsDirty) ? (
       <div className="mt-6">
         <Button
           type="button"
           variant="secondary"
           className="rounded-full"
           size="sm"
-          disabled={busy || (isOpenAiCompatible && !modelId.trim())}
-          onClick={() => void setModelDefault()}
+          disabled={busy || !cloudflareRoutingReady || (isOpenAiCompatible && !modelId.trim())}
+          onClick={() => void (settingsDirty ? connectKey() : setModelDefault())}
         >
           {pending === "default" ? (
             <Trans>Switching…</Trans>
+          ) : pending === "connect" ? (
+            <Trans>Saving…</Trans>
           ) : isActive && !usingServerCredentials ? (
             <Trans>Save</Trans>
           ) : (
@@ -1405,20 +1407,15 @@ export function ModelSettingsOverlay({
                   {provider === me?.hostCredentialProvider ? (
                     <div className="mb-5">{serverCredentialsNote}</div>
                   ) : null}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[15px] text-foreground">
-                        <Trans>Connected · {credential.label}</Trans>
-                      </div>
-                      <div className="mt-0.5 text-[13px] leading-[1.5] text-muted-foreground">
-                        <Trans>Stored securely. Never shown here.</Trans>
-                      </div>
-                    </div>
+                  {catalogModelConfig}
+                  {saveButton}
+                  <div className="mt-6 border-t border-border pt-5">
+                    {connectionControls}
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="-mr-2 shrink-0 text-muted-foreground"
+                      className="mt-3 -ml-2.5 text-muted-foreground"
                       disabled={busy}
                       onClick={() => setConfirmDisconnect(true)}
                     >
@@ -1429,9 +1426,6 @@ export function ModelSettingsOverlay({
                       )}
                     </Button>
                   </div>
-                  <div className="mt-5">{catalogModelConfig}</div>
-                  {saveButton}
-                  <div className="mt-6 border-t border-border pt-5">{connectionControls}</div>
                 </>
               ) : provider === me?.hostCredentialProvider ? (
                 <>

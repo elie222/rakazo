@@ -33,8 +33,7 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await page.getByLabel("API key").fill("fake-cleanup-api-key");
   providerConnected = true;
   await page.getByRole("button", { name: "Connect API key", exact: true }).click();
-  await expect(page.getByText(/Connected and using/)).toBeVisible();
-  await expect(page.getByText(/Connected ·/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
   await expect(backups.getByLabel("Add connected model")).toBeVisible();
   const model = page.getByRole("combobox", { name: "Model", exact: true });
@@ -328,7 +327,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
   await page.getByLabel("Maximum output tokens").fill("8192");
   await captureScreenshot(page, testInfo, "builtin-provider-max-tokens");
   await page.getByRole("button", { name: "Connect API key" }).click();
-  await expect(page.getByText(/Connected and using Scripted runtime/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   const connected = await rpc<Array<{ provider: string; maxTokens?: number }>>(
     page,
     "models/credentials",
@@ -341,7 +340,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
     await page.getByText("Advanced", { exact: true }).click();
   }
   await outputLimit.fill("16384");
-  await page.getByRole("button", { name: "Save limits", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Saved.", { exact: true })).toBeVisible();
   const updated = await rpc<Array<{ provider: string; maxTokens?: number }>>(
     page,
@@ -375,7 +374,9 @@ test("model settings connect, replace, and cancel provider authentication", asyn
 
   await page.getByLabel("Replace API key").fill("fake-scripted-key-two");
   await page.getByRole("button", { name: "Replace API key" }).click();
-  await expect(page.getByText(/Connected and using Scripted runtime/)).toBeVisible();
+  // A saved replacement clears the field and re-enables the controls.
+  await expect(page.getByLabel("Replace API key")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeEnabled();
 
   const codexCredential = {
     id: "cred-codex",
@@ -478,7 +479,7 @@ test("model settings connect, replace, and cancel provider authentication", asyn
     .first()
     .click();
   await page.getByRole("button", { name: /Sign in with ChatGPT Plus\/Pro/ }).click();
-  await expect(page.getByText(/Connected and using/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in again", exact: true })).toBeVisible();
 
   // Disconnect removes the credential and its Connected marker.
@@ -618,7 +619,7 @@ test("catalog models keep a space default thinking level per saved model", async
   await page.getByRole("button", { name: /^Anthropic( |$)/ }).click();
   await page.getByLabel("API key").fill("fake-anthropic-key");
   await page.getByRole("button", { name: "Connect API key" }).click();
-  await expect(page.getByText(/Connected and using/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
 
   const thinking = page.getByRole("combobox", { name: "Thinking", exact: true });
   await expect(thinking).toBeVisible();

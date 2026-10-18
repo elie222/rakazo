@@ -242,6 +242,11 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(input.placeholder).toBe(STORED_PLACEHOLDER);
     expect(input.type).toBe("password");
     expect(view.container.textContent).not.toContain("sk-");
+    // The Active model row is the only connection status in the connected view.
+    expect(view.container.textContent).not.toContain("Connected · DeepSeek");
+    expect(view.container.textContent).not.toContain("Stored securely");
+    expect(view.container.textContent).not.toContain("Save limits");
+    expect(buttons(view.container, "Replace API key")[0]?.disabled).toBe(true);
 
     await typeInto(input, "sk-replacement-key");
     expect(keyField(view.container).value).toBe("sk-replacement-key");
@@ -260,6 +265,7 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "deepseek", apiKey: "sk-replacement-key" }),
     );
+    expect(view.container.textContent).not.toContain("Connected and using");
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
