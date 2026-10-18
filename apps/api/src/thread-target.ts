@@ -1044,6 +1044,7 @@ const REACTION_TURN_COOLDOWN_MS = 30_000;
  * Append a human emoji reply with its target. Any reaction to the bot's latest
  * message may wake it, with silence allowed. Only thumbs answer an ordinary pending
  * ask; busy bots, recent reaction turns, and older targets stay quiet context.
+ * A 👍 on a pending takeover counts as done and hands computer control back.
  * Approval and secret asks remain on their cards. Reactions are append-only.
  */
 export async function reactToThreadMessage(
@@ -1057,6 +1058,7 @@ export async function reactToThreadMessage(
     /** False when a send could not start a run either (no model, teaching). */
     mayStartTurn: boolean;
   },
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
   const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
@@ -1112,6 +1114,11 @@ export async function reactToThreadMessage(
     });
     return { eventSeq: event.seq, runs };
   });
+  if (releaseTakeover) {
+    for (const run of committed.runs) {
+      if (run.status === "waiting_takeover") await releaseTakeover(run.id);
+    }
+  }
   await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
   return { eventSeq: committed.eventSeq, runIds: committed.runs.map((run) => run.id) };
 }
@@ -1158,6 +1165,20 @@ async function startReactionTurn(
   });
   const [active, ...others] = activeRuns;
   if (active) {
+    // A 👍 while this run waits for the user to finish on the computer means "done", the
+    // same as a typed reply: it steers the run and the caller hands control back.
+    if (
+      input.reaction === "👍" &&
+      !others.length &&
+      active.status === "waiting_takeover" &&
+      active.id === parent.runId
+    ) {
+      await tx.steeringMessage.create({
+        data: { messageId: message.id, botId, userId: actor.userId, runId: active.id },
+      });
+      await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+      return [active];
+    }
     // Only the pending ask in the reacted message is answered; approval and secret asks
     // are refused here and stay on their card.
     if (

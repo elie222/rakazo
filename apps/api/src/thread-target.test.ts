@@ -190,6 +190,7 @@ describe("reaction turns", () => {
     askBlocks?: MessageBlock[];
   }) {
     const tx = {
+      steeringMessage: { create: vi.fn() },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
       thread: {
         update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
@@ -259,6 +260,7 @@ describe("reaction turns", () => {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
     const enqueue = vi.fn().mockResolvedValue(undefined);
+    const releaseTakeover = vi.fn().mockResolvedValue(undefined);
     const react = () =>
       reactToThreadMessage(
         { prisma, jobs: { enqueue } as never },
@@ -277,9 +279,36 @@ describe("reaction turns", () => {
           clientNonce: "nonce-1",
           mayStartTurn: options.mayStartTurn ?? true,
         },
+        releaseTakeover,
       );
-    return { tx, enqueue, react };
+    return { tx, enqueue, react, releaseTakeover };
   }
+
+  it("treats a thumbs up on a pending takeover as done and hands control back", async () => {
+    const { tx, enqueue, react, releaseTakeover } = fixture({
+      parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
+      activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
+    });
+    await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: ["run-takeover"] });
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: { messageId: "reaction-1", botId: "bot-1", userId: "user-1", runId: "run-takeover" },
+    });
+    expect(releaseTakeover).toHaveBeenCalledWith("run-takeover");
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it.each(["👎", "❤️"] as const)("leaves a pending takeover alone on %s", async (reaction) => {
+    const { tx, enqueue, react, releaseTakeover } = fixture({
+      reaction,
+      parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
+      activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
+    });
+    await react();
+    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+    expect(releaseTakeover).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
 
   it("starts the bot's turn when its latest message gets a thumbs up", async () => {
     const { tx, enqueue, react } = fixture({

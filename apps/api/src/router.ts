@@ -2219,10 +2219,15 @@ export function createRouter(deps: RouterDeps) {
               () => true,
               () => false,
             )));
-        const result = await reactToThreadMessage(deps, context.actor, target, {
-          ...input,
-          mayStartTurn,
-        });
+        const result = await reactToThreadMessage(
+          deps,
+          context.actor,
+          target,
+          { ...input, mayStartTurn },
+          target.kind === "bot"
+            ? (runId) => releaseComputerControl(deps, context.actor, target.botId, "done", runId)
+            : undefined,
+        );
         if (result.eventSeq != null) {
           await deps.events.notify(target.threadId, result.eventSeq).catch((error) => {
             getLogger().error("thread reaction realtime notification", error);
