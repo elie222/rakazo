@@ -1,5 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
+import { projectMessageReactions } from "./message-reactions.js";
 import { expandPeerReplies, foldPeerReplies, userVisibleMessages } from "./message-visibility.js";
 
 function message(id: string, runId: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
@@ -103,6 +104,53 @@ describe("user-visible messages", () => {
       "reply",
       "answer",
     ]);
+  });
+
+  it("resolves a folded message to the marker it folds under", () => {
+    const transcript = foldPeerReplies(peerExchange, { includePeerReceipts: true });
+
+    expect(transcript.markerOf.get("reply")).toBe("received");
+    expect(transcript.markerOf.has("answer")).toBe(false);
+    expect(transcript.markerOf.has("received")).toBe(false);
+  });
+
+  it("folds a reaction to a folded reply with it, and a text reply stays inline", () => {
+    const reaction: ThreadMessage = {
+      ...message("reaction", "", [{ kind: "text", text: "👍" }]),
+      runId: undefined,
+      role: "user",
+      replyToMessageId: "reply",
+    };
+    const textReply: ThreadMessage = {
+      ...message("quote", "", [{ kind: "text", text: "Thanks for this" }]),
+      runId: undefined,
+      role: "user",
+      replyToMessageId: "reply",
+    };
+    const transcript = foldPeerReplies([...peerExchange, reaction, textReply], {
+      includePeerReceipts: true,
+    });
+
+    expect(transcript.messages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+      "quote",
+    ]);
+    expect(transcript.markerOf.get("reaction")).toBe("received");
+    const collapsed = projectMessageReactions(expandPeerReplies(transcript, new Set()));
+    expect(collapsed.visibleMessages.map((item) => item.id)).not.toContain("reaction");
+    const expanded = projectMessageReactions(expandPeerReplies(transcript, new Set(["received"])));
+    expect(expanded.visibleMessages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "reply",
+      "answer",
+      "quote",
+    ]);
+    expect(expanded.reactions.get("reply")?.get("👍")).toBe(1);
   });
 
   it("keeps sidebar previews ask-only", () => {

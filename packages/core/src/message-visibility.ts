@@ -1,8 +1,11 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { messageReaction } from "./message-reactions.js";
 
 type PresentableMessage = {
   id: string;
   runId?: string;
+  role?: string;
+  replyToMessageId?: string | null;
   blocks: readonly MessageBlock[];
 };
 
@@ -56,6 +59,8 @@ export type FoldedTranscript<T> = {
   messages: T[];
   /** Peer-run replies keyed by the id of the `bot_message_received` marker they fold under. */
   folded: ReadonlyMap<string, readonly T[]>;
+  /** The marker each folded message folds under, so a jump can expand it. */
+  markerOf: ReadonlyMap<string, string>;
 };
 
 /**
@@ -81,12 +86,28 @@ export function foldPeerReplies<T extends PresentableMessage>(
   const backgroundRunIds = new Set(options.backgroundRunIds ?? []);
   const includeText = options.includeDelegatedReplyText !== false;
   const folded = new Map<string, T[]>();
+  const markerOf = new Map<string, string>();
+  const fold = (markerId: string, message: T) => {
+    folded.set(markerId, [...(folded.get(markerId) ?? []), message]);
+    markerOf.set(message.id, markerId);
+    return false;
+  };
 
   const visible = messages.filter((message) => {
     if (message.runId && backgroundRunIds.has(message.runId)) {
       return message.blocks.some(isBackgroundInputBlock);
     }
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
+    // A reaction folds with its folded parent so the count shows when the parent is expanded.
+    const parentMarkerId = message.replyToMessageId
+      ? markerOf.get(message.replyToMessageId)
+      : undefined;
+    if (
+      parentMarkerId !== undefined &&
+      message.role !== undefined &&
+      messageReaction({ ...message, role: message.role, blocks: [...message.blocks] })
+    )
+      return fold(parentMarkerId, message);
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
     // User-input cards stay inline; previews without receipts keep only asks, as before.
     if (message.blocks.some(includePeerReceipts ? isPeerInputBlock : isAskBlock)) return true;
@@ -94,10 +115,9 @@ export function foldPeerReplies<T extends PresentableMessage>(
     const markerId = includePeerReceipts ? markerByRunId.get(message.runId) : undefined;
     // A reply whose marker is outside the loaded page stays inline.
     if (markerId === undefined) return true;
-    folded.set(markerId, [...(folded.get(markerId) ?? []), message]);
-    return false;
+    return fold(markerId, message);
   });
-  return { messages: visible, folded };
+  return { messages: visible, folded, markerOf };
 }
 
 export function userVisibleMessages<T extends PresentableMessage>(

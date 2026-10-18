@@ -1178,7 +1178,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     // Publish the jump refs even when the opened snapshot is already visible.
     setThreadScrollState(scrollBehavior.current.state());
     snapshotOrigin.current = scope;
-    commitSnap(opened?.snapshot ?? snap);
+    const next = opened?.snapshot ?? snap;
+    // A reply folded under its peer marker is only drawn once the marker is expanded.
+    const markerId = targetInPage
+      ? foldPeerReplies(next.messages, { includePeerReceipts: true }).markerOf.get(target.messageId)
+      : undefined;
+    if (markerId) {
+      setExpandedPeerMarkers((expanded) =>
+        expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
+      );
+    }
+    commitSnap(next);
     setShowingSaved(false);
   }
 

@@ -66,7 +66,6 @@ import {
   speechFromBlocks,
   timeSeparatorIds,
   truncateSlashDescription,
-  userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
@@ -1846,9 +1845,11 @@ function SpaceShell() {
     if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    const targetInPage = userVisibleMessages(page.messages, { includePeerReceipts: true }).some(
-      (message) => message.id === target.messageId,
-    );
+    // A reply folded under its peer marker counts: the transcript expands the marker to show it.
+    const pageTranscript = foldPeerReplies(page.messages, { includePeerReceipts: true });
+    const targetInPage =
+      pageTranscript.markerOf.has(target.messageId) ||
+      pageTranscript.messages.some((message) => message.id === target.messageId);
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = targetInPage
       ? {
@@ -1975,6 +1976,8 @@ function SpaceShell() {
     () => foldPeerReplies(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
     [activeSnapshot?.messages],
   );
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
     () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
     [active?.id, groupId, inGroup],
@@ -2149,8 +2152,10 @@ function SpaceShell() {
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
   const jumpToReplyMessage = useCallback((messageId: string) => {
-    const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
-    if (existing) {
+    const inTranscript =
+      transcriptRef.current.markerOf.has(messageId) ||
+      document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (inTranscript) {
       // Cancel any in-flight around-fetch so it cannot overwrite this scroll.
       jumpGeneration.current += 1;
       setScrollRequest({ messageId, nonce: jumpGeneration.current });
@@ -5120,6 +5125,14 @@ const Transcript = memo(function Transcript({
       return next;
     });
   }, []);
+  // A jump to a folded reply expands its marker; the scroll effect below then finds the row.
+  useLayoutEffect(() => {
+    const markerId = scrollRequest && transcript.markerOf.get(scrollRequest.messageId);
+    if (!markerId) return;
+    setExpandedPeerMarkers((expanded) =>
+      expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
+    );
+  }, [scrollRequest, transcript]);
   const messages = useMemo(
     () => expandPeerReplies(transcript, expandedPeerMarkers),
     [transcript, expandedPeerMarkers],
