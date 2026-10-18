@@ -4,6 +4,14 @@ export type { ThreadScrollState } from "@rakazo/core";
 
 export type ThreadScrollAction = "jump" | "smooth" | null;
 
+/** The transcript's last row for arrival tracking. */
+export function latestArrivalMessageId<M extends { id: string }>(
+  visible: readonly M[],
+  _markerOf: ReadonlyMap<string, string>,
+): string | null {
+  return visible.at(-1)?.id ?? null;
+}
+
 export class ThreadScrollBehavior {
   private threadKey: string | null = null;
   private laidOut = false;
