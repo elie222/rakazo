@@ -204,6 +204,7 @@ function fixture({
   let outsideSteering = false;
   let offeredTools: string[] = [];
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findFirst: vi.fn(async () =>
         pendingInstructionsRunId ? { id: pendingInstructionsRunId } : null,

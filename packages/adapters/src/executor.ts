@@ -6570,6 +6570,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               spawnKey: effectKey,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
+              description: args.description ? String(args.description) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
               computerMode,
@@ -6943,6 +6944,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
           { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
         );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
+        let userTimeZone: string | null | undefined;
+        try {
+          userTimeZone = (
+            await deps.prisma.user.findUnique({
+              where: { id: run.userId },
+              select: { timezone: true },
+            })
+          )?.timezone;
+        } catch {
+          // Timezone is optional context; a lookup failure must not prevent a run.
+        }
         const prompt = [
           replyContext,
           run.trigger === "reaction" && replyContext ? undefined : basePrompt,
@@ -6951,7 +6963,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           // A hang-up turn is read, not heard: no spoken-reply constraint.
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-          formatCurrentTimeInstruction(),
+          formatCurrentTimeInstruction(new Date(), userTimeZone),
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -8542,7 +8554,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -8616,19 +8628,46 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
     : { ...context, includeSemanticRecall: true };
 }
 
+/** Name, title, and description, skipping any part that is blank. */
+function publicProfile(
+  name: string,
+  title: string | null | undefined,
+  description: string,
+): string {
+  const trimmedTitle = title?.trim() ?? "";
+  const heading = trimmedTitle ? `${name}: ${trimmedTitle}` : name;
+  return description ? `${heading}\n${description}` : heading;
+}
+
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
-  bot: { name: string; title: string; description: string; instructions: string },
+  bot: {
+    name: string;
+    title?: string | null;
+    description?: string | null;
+    instructions?: string | null;
+  },
   trigger: string,
 ): string {
+  const description = bot.description?.trim() ?? "";
+  const rawInstructions = bot.instructions ?? "";
+  const instructions = rawInstructions.trim();
   if (trigger !== "created") {
-    return bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`;
+    const identity = publicProfile(bot.name, bot.title, description);
+    // Older bots saved one text as both fields; do not repeat it.
+    if (!instructions || instructions === description) {
+      return instructions ? rawInstructions : identity;
+    }
+    return [
+      identity,
+      "Teammates see only the profile above. These instructions are private to you:",
+      instructions,
+    ].join("\n");
   }
-  const instructions = bot.instructions.trim();
   return [
     `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${bot.title.trim() || "(none)"}`,
-    `Description: ${bot.description.trim() || "(none)"}`,
+    `Title: ${(bot.title ?? "").trim() || "(none)"}`,
+    `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");
 }

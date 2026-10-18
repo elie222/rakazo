@@ -6,6 +6,7 @@ import {
   inboundRoutineModelPin,
   modelCredentialAuthKindsForSpace,
   pinnedModelCredentialError,
+  prepareAllowedThinkingLevels,
   readStoredModelAuth,
   routineRunModelPin,
   runModelChoice,
@@ -1151,6 +1152,29 @@ describe("bot model change validation", () => {
         thinkingLevel: "high",
       }),
     ).resolves.toEqual({ ok: true, provider: "xai", model: "grok-4.6", thinkingLevel: "high" });
+  });
+
+  it("uses canonical catalog thinking levels for a saved Azure provider alias", async () => {
+    const entry = listPiCatalog().find(
+      (item) => item.provider === "azure" && item.thinkingLevels?.length,
+    );
+    expect(entry).toBeDefined();
+    const deps = changeDeps({});
+    await expect(
+      prepareAllowedThinkingLevels(deps, scope, "azure-openai-responses", entry!.id),
+    ).resolves.toEqual({ allowed: entry!.thinkingLevels });
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "azure-openai-responses",
+        model: entry!.id,
+        current: { provider: "azure-openai-responses", model: entry!.id },
+        thinkingLevel: "unsupported",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: `Thinking level must be one of: ${entry!.thinkingLevels!.join(", ")}`,
+    });
   });
 
   it("skips model checks when the model is unchanged", async () => {

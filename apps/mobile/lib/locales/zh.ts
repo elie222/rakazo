@@ -539,6 +539,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   Speak: "朗读",
   "Speak only": "仅朗读",
   "Speech model": "语音模型",
+  "Transcription model": "转写模型",
+  Reconnect: "重新连接",
   Starting: "正在启动",
   "Starting…": "正在启动…",
   Stop: "停止",

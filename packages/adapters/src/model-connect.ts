@@ -3,6 +3,7 @@ import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
+  canonicalPiProviderId,
   cloudflareGatewayRouting,
   isCloudflareAiGatewayProvider,
   modelOutputLeavesInputRoom,
@@ -242,7 +243,7 @@ export function modelCredentialDto(
 ): ModelCredential {
   const credential: ModelCredential = {
     id: row.id,
-    provider: row.provider,
+    provider: canonicalPiProviderId(row.provider),
     label: row.label,
     hasKey: storedModelSecretHasApiKey(plaintext),
     isDefault: row.isDefault,

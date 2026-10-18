@@ -531,6 +531,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Speak + transcribe": "Sprechen + transkribieren",
   "Speak only": "Nur sprechen",
   "Speech model": "Sprachmodell",
+  "Transcription model": "Transkriptionsmodell",
+  Reconnect: "Erneut verbinden",
   "This device": "Dieses Gerät",
   "Your phone's built-in voice. Free, no account needed":
     "Die eingebaute Stimme deines Telefons. Kostenlos, kein Konto nötig",

@@ -1,5 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import {
+  BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BotSecretName,
   botSecretDestinationSchema,
@@ -1110,7 +1111,18 @@ export const builtinAgentTools: ConnectorTool[] = [
       properties: {
         name: { type: "string" },
         title: { type: "string" },
-        instructions: { type: "string" },
+        description: {
+          type: "string",
+          maxLength: BOT_DESCRIPTION_MAX_LENGTH,
+          description:
+            "Short public summary of what the new bot is for. Teammates see it in their bot directory.",
+        },
+        instructions: {
+          type: "string",
+          maxLength: BOT_INSTRUCTIONS_MAX_LENGTH,
+          description:
+            "Private operating instructions for the new bot. Only that bot sees them, as its system prompt.",
+        },
         prompt: {
           type: "string",
           description: "Optional first task to run in the new bot's thread.",
@@ -1142,7 +1154,8 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         description: {
           type: "string",
-          description: "Longer blurb describing what this bot does.",
+          description:
+            "Short public summary of what this bot does. Teammates see it in their bot directory. It does not change your instructions.",
         },
         color: {
           type: "string",

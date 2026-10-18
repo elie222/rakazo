@@ -1,7 +1,7 @@
 import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { usableModelId } from "@rakazo/contracts";
+import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential } from "@rakazo/db";
 import { modelCredentialDto } from "./model-connect.js";
@@ -22,7 +22,7 @@ type ModelCredential = Awaited<ReturnType<typeof findDefaultModelCredential>>;
 
 export function isCatalogModelChoice(provider: string, modelId: string) {
   return [...listPiCatalog(), scriptedCatalogEntry].some(
-    (item) => item.provider === provider && item.id === modelId,
+    (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
   );
 }
 
@@ -35,7 +35,9 @@ export function defaultCatalogModelId(
     : "disconnected";
   const authByProvider: Partial<Record<string, ModelCredentialAuthKind>> =
     authKind === "disconnected" ? {} : { [provider]: authKind };
-  const entry = listAvailablePiCatalog(authByProvider).find((item) => item.provider === provider);
+  const entry = listAvailablePiCatalog(authByProvider).find(
+    (item) => item.provider === canonicalPiProviderId(provider),
+  );
   return usableModelId(entry?.id);
 }
 
@@ -104,8 +106,8 @@ export async function modelCredentialAuthKindsForSpace(
     }),
   ]);
   const connectedProviders = new Set([
-    ...credentials.map((credential) => credential.provider),
-    ...preferences.map((preference) => preference.credential.provider),
+    ...credentials.map((credential) => canonicalPiProviderId(credential.provider)),
+    ...preferences.map((preference) => canonicalPiProviderId(preference.credential.provider)),
   ]);
   const selections: Array<{
     provider: string;
@@ -202,7 +204,7 @@ export function validateModelAuthAvailability(
   if (!credentialPlaintext) return undefined;
   const authKind = modelCredentialAuthKindFromPlaintext(credentialPlaintext);
   const catalogEntry = listPiCatalog().find(
-    (item) => item.provider === provider && item.id === modelId,
+    (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
   );
   if (!catalogModelAvailableForAuth(provider, modelId, authKind, catalogEntry?.auth)) {
     return UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE;
@@ -211,7 +213,9 @@ export function validateModelAuthAvailability(
 }
 
 function modelAuthIsRestricted(provider: string, modelId: string): boolean {
-  const entry = listPiCatalog().find((item) => item.provider === provider && item.id === modelId);
+  const entry = listPiCatalog().find(
+    (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
+  );
   if (!entry) return false;
   return (["oauth", "api_key", "openai_compatible", "disconnected"] as const).some(
     (kind) => !catalogModelAvailableForAuth(provider, modelId, kind, entry.auth),
@@ -413,8 +417,9 @@ export async function prepareAllowedThinkingLevels(
 ): Promise<{ allowed: string[] | undefined; secret?: { id: string; ciphertext: string } }> {
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
     return {
-      allowed: listPiCatalog().find((item) => item.provider === provider && item.id === modelId)
-        ?.thinkingLevels,
+      allowed: listPiCatalog().find(
+        (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
+      )?.thinkingLevels,
     };
   }
   let allowed: string[] | undefined = ["off"];

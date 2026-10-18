@@ -179,7 +179,10 @@ describe("the images compose file", () => {
     expect(compose.services.supervisor?.environment?.AXIOM_TOKEN).toBe("${AXIOM_TOKEN:-}");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(compose.services.supervisor?.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(compose.services.supervisor?.environment?.SENTRY_DSN).toBe("${SENTRY_DSN:-}");
     expect(compose.services.computer?.environment?.AXIOM_TOKEN).toBeUndefined();
+    expect(compose.services.computer?.environment?.SENTRY_DSN).toBeUndefined();
     expect(compose.services.computer?.environment?.LOG_LEVEL).toBeUndefined();
   });
 });

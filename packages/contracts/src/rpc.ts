@@ -71,6 +71,7 @@ import {
   ModelConnectInputSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   RoutineSchema,
@@ -89,6 +90,7 @@ import {
   ThinkingLevelSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
+  TimeZoneSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
   UpdateExternalConversationPolicyInput,
@@ -192,7 +194,20 @@ export const appContract = {
     portal: oc.output(z.object({ url: z.string().url() })),
   },
   preferences: {
-    update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
+    update: oc
+      .input(
+        z
+          .object({
+            avatarStyle: AvatarStyleSchema.optional(),
+            timezone: TimeZoneSchema.nullable().optional(),
+          })
+          .refine((input) => input.avatarStyle !== undefined || input.timezone !== undefined, {
+            message: "Nothing to update",
+          }),
+      )
+      .output(MeSchema),
+    /** Saves a detected timezone only while none is saved, so it never replaces a choice. */
+    adoptTimezone: oc.input(z.object({ timezone: TimeZoneSchema })).output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),
@@ -914,12 +929,27 @@ export const appContract = {
     credentials: oc.output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
-        z.object({
-          provider: z.string(),
-          apiKey: z.string().min(8),
-          voiceId: z.string().max(120).optional(),
-          speechModel: z.string().max(64).optional(),
-        }),
+        z
+          .object({
+            provider: z.string(),
+            /** Optional only for a self-hosted server, which may run without a key. */
+            apiKey: z.string().max(4096).default(""),
+            voiceId: z.string().max(120).optional(),
+            speechModel: z.string().max(64).optional(),
+            /** Self-hosted (OpenAI-compatible) server address and model ids. */
+            baseUrl: z.string().max(2048).optional(),
+            ttsModel: z.string().max(200).optional(),
+            sttModel: z.string().max(200).optional(),
+          })
+          .superRefine((input, ctx) => {
+            if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+              if (!input.baseUrl?.trim()) {
+                ctx.addIssue({ code: "custom", path: ["baseUrl"], message: "Enter a server URL." });
+              }
+            } else if (input.apiKey.length < 8) {
+              ctx.addIssue({ code: "custom", path: ["apiKey"], message: "Enter an API key." });
+            }
+          }),
       )
       .output(VoiceCredentialSchema),
     disconnect: oc

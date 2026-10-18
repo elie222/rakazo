@@ -1,11 +1,57 @@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { describe, expect, it } from "vitest";
-import { supplementPiModels } from "./pi-current-models.js";
 import { listPiCatalog } from "./pi-models.js";
 import { modelsForRequest } from "./pi-runtime.js";
 
 describe("current model compatibility", () => {
+  it("disables strict tools for Bedrock Haiku in India", () => {
+    const provider = "amazon-bedrock";
+    const id = "in.anthropic.claude-haiku-4-5-20251001-v1:0";
+    const model = modelsForRequest({ model: { provider, id } }, provider).getModel(provider, id);
+    expect(model?.compat).toMatchObject({ supportsStrictMode: false });
+  });
+
+  it.each([
+    ["anthropic", "claude-sonnet-5-5"],
+    ["opencode", "claude-haiku-5-5"],
+    ["opencode", "claude-sonnet-5-5"],
+    ["opencode-go", "claude-haiku-5-5"],
+    ["openai-codex", "gpt-6.1-sol"],
+    ["amazon-bedrock", "anthropic.claude-sonnet-5-5"],
+    ["amazon-bedrock", "eu.anthropic.claude-sonnet-5-5"],
+    ["amazon-bedrock", "global.anthropic.claude-sonnet-5-5"],
+    ["amazon-bedrock", "global.moonshotai.kimi-k3"],
+    ["amazon-bedrock", "global.openai.gpt-6-luna"],
+    ["amazon-bedrock", "global.openai.gpt-6-sol"],
+    ["amazon-bedrock", "global.openai.gpt-6.1-sol"],
+    ["amazon-bedrock", "global.xai.grok-4.7"],
+    ["amazon-bedrock", "global.zai.glm-5.3"],
+    ["amazon-bedrock", "in.anthropic.claude-haiku-4-5-20251001-v1:0"],
+    ["amazon-bedrock", "in.anthropic.claude-opus-5"],
+    ["amazon-bedrock", "in.anthropic.claude-sonnet-5"],
+    ["amazon-bedrock", "openai.gpt-6-luna"],
+    ["amazon-bedrock", "openai.gpt-6-sol"],
+    ["amazon-bedrock", "openai.gpt-6.1-sol"],
+    ["amazon-bedrock", "us.anthropic.claude-sonnet-5-5"],
+    ["amazon-bedrock", "us.moonshotai.kimi-k3"],
+    ["amazon-bedrock", "us.openai.gpt-6-luna"],
+    ["amazon-bedrock", "us.openai.gpt-6-sol"],
+    ["amazon-bedrock", "us.openai.gpt-6.1-sol"],
+    ["amazon-bedrock", "us.xai.grok-4.7"],
+    ["amazon-bedrock", "us.zai.glm-5.3"],
+  ])("ships %s/%s natively", (provider, id) => {
+    expect(builtinModels().getModel(provider, id)).toBeDefined();
+    expect(listPiCatalog().some((entry) => entry.provider === provider && entry.id === id)).toBe(
+      true,
+    );
+    expect(
+      modelsForRequest(
+        { model: { provider, id } } as Parameters<typeof modelsForRequest>[0],
+        provider,
+      ).getModel(provider, id),
+    ).toBeDefined();
+  });
   it.each([
     ["anthropic", "claude-sonnet-5-5"],
     ["openai-codex", "gpt-6.1-sol"],
@@ -15,12 +61,20 @@ describe("current model compatibility", () => {
       provider,
     ).getModel(provider, id);
     expect(model).toBeDefined();
-    expect(getSupportedThinkingLevels(model!)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    const levels = [
+      ...(provider === "openai-codex" ? ["minimal"] : []),
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ];
+    expect(getSupportedThinkingLevels(model!)).toEqual(levels);
     expect(model?.input).toContain("image");
     expect(
       listPiCatalog().find((entry) => entry.provider === provider && entry.id === id)
         ?.thinkingLevels,
-    ).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    ).toEqual(levels);
   });
   it.each([
     ["us.anthropic.claude-sonnet-5-5", "us.anthropic.claude-sonnet-5"],
@@ -33,24 +87,10 @@ describe("current model compatibility", () => {
         ?.thinkingLevels;
     expect(levels(id)).toBeDefined();
     expect(levels(id)).toEqual(levels(baseId));
-    const models = supplementPiModels(builtinModels());
+    const models = builtinModels();
     const model = models.getModel("amazon-bedrock", id);
     expect(model?.baseUrl).toBe(models.getModel("amazon-bedrock", baseId)?.baseUrl);
     expect(model?.input).toContain("image");
-  });
-  it("leaves Claude Haiku 5.5 off Bedrock until the transport supports it", () => {
-    const models = supplementPiModels(builtinModels());
-    expect(models.getModel("amazon-bedrock", "us.anthropic.claude-haiku-5-5")).toBeUndefined();
-  });
-  it("disables strict tools only for the India Haiku 4.5 profile", () => {
-    const models = supplementPiModels(builtinModels());
-    const sibling = models.getModel(
-      "amazon-bedrock",
-      "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-    );
-    const model = models.getModel("amazon-bedrock", "in.anthropic.claude-haiku-4-5-20251001-v1:0");
-    expect(sibling?.compat).toMatchObject({ supportsStrictMode: true });
-    expect(model?.compat).toEqual({ ...sibling?.compat, supportsStrictMode: false });
   });
   it.each([
     [
@@ -70,7 +110,7 @@ describe("current model compatibility", () => {
       { input: 2.2, output: 11, cacheRead: 0.11, cacheWrite: 2.75 },
     ],
   ] as const)("uses catalog prices for Bedrock %s", (id, cost) => {
-    const models = supplementPiModels(builtinModels());
+    const models = builtinModels();
     expect(models.getModel("amazon-bedrock", id)?.cost).toEqual(cost);
   });
   it.each([
@@ -99,18 +139,4 @@ describe("current model compatibility", () => {
       ).toEqual(levels);
     },
   );
-  it("does not replace a provider library model when applying the supplement again", () => {
-    const models = supplementPiModels(builtinModels());
-    const model = models.getModel("anthropic", "claude-sonnet-5-5");
-    supplementPiModels(models);
-    expect(models.getModel("anthropic", "claude-sonnet-5-5")).toBe(model);
-    expect(model?.compat).toMatchObject({
-      forceAdaptiveThinking: true,
-      supportsTemperature: false,
-      supportsStrictTools: true,
-      supportsMidConvoEffort: true,
-      supportsMidConvoSystemMessages: true,
-      supportsMidConvoToolChanges: true,
-    });
-  });
 });

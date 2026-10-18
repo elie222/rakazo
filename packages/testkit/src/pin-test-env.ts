@@ -24,6 +24,8 @@ delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
 delete process.env.OTEL_CAPTURE_CONTENT;
 delete process.env.AXIOM_TOKEN;
 delete process.env.AXIOM_DATASET;
+delete process.env.SENTRY_DSN;
+delete process.env.SENTRY_BROWSER_DSN;
 if (!process.env.VERIFY_LOGGING) {
   process.env.LOG_LEVEL = "off";
 }

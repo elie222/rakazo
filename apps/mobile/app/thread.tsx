@@ -72,7 +72,6 @@ import type {
   TextProps,
 } from "react-native";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   AppState,
@@ -126,6 +125,7 @@ import { SelectTextSheet } from "../components/select-text-sheet";
 import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
+import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { createThreadHeaderStyles } from "../components/thread-header-styles";
 import { TimeSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
@@ -837,11 +837,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: displayName || t("Thread"),
-      // Messages scroll under the bar. The list is inverted, so iOS would draw the header's scroll
-      // edge effect at its flipped top, above the composer.
+      // Inversion swaps the visual edges; disable both native fades on iOS 26.
       headerTransparent: iosAtLeast(26),
       ...(iosAtLeast(26) ? { headerStyle: { backgroundColor: "transparent" } } : {}),
-      scrollEdgeEffects: { top: "hidden" },
+      scrollEdgeEffects: { top: "hidden", bottom: "hidden" },
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
@@ -872,21 +871,34 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           </GlassSurface>
         </Pressable>
       ),
-      ...(iosAtLeast(26)
+      ...(Platform.OS === "ios" && !readOnly && (!inGroup || iosAtLeast(26))
         ? {
             unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                accessibilityLabel: inGroup ? t("Group settings") : t("Bot actions"),
-                icon: { type: "sfSymbol" as const, name: inGroup ? "gearshape" : "ellipsis" },
-                onPress: inGroup
-                  ? () =>
+              inGroup
+                ? {
+                    type: "button" as const,
+                    accessibilityLabel: t("Group settings"),
+                    icon: { type: "sfSymbol" as const, name: "gearshape" },
+                    onPress: () =>
                       router.push({
                         pathname: "/group-settings",
                         params: { groupId: groupId ?? "" },
-                      })
-                  : showBotActions,
-              },
+                      }),
+                  }
+                : {
+                    type: "menu" as const,
+                    accessibilityLabel: t("Bot actions"),
+                    icon: { type: "sfSymbol" as const, name: "ellipsis" },
+                    disabled: !botId,
+                    menu: {
+                      items: botActions.map((action) => ({
+                        type: "action" as const,
+                        label: action.text,
+                        destructive: action.destructive,
+                        onPress: action.onPress,
+                      })),
+                    },
+                  },
             ],
           }
         : {}),
@@ -1032,21 +1044,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function showBotActions() {
     if (!botId) return;
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: name || t("Bot"),
-          userInterfaceStyle: colorScheme,
-          options: [...botActions.map((action) => action.text), t("Cancel")],
-          cancelButtonIndex: botActions.length,
-          destructiveButtonIndex: botActions.flatMap((action, index) =>
-            action.destructive ? [index] : [],
-          ),
-        },
-        (index) => botActions[index]?.onPress(),
-      );
-      return;
-    }
     setBotActionsOpen(true);
   }
 
@@ -2284,24 +2281,19 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         paddingHorizontal: 20 + columnInset,
       }}
     >
-      {error ? (
-        <Text style={{ color: tokens.mutedForeground, marginTop: headerHeight + 28 }}>
-          {showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
-        </Text>
-      ) : null}
-      {runError ? (
-        <View style={{ marginTop: error ? 12 : headerHeight + 28 }}>
-          <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
-            {normalizeRunError(runError, t, locale).summary}
-          </Text>
-          <NativeActionButton
-            label={t("Details")}
-            prominence="quiet"
-            size="compact"
-            onPress={() => setSelectableText(runError)}
-          />
-        </View>
-      ) : null}
+      <ThreadErrorNotice
+        top={headerHeight + 8}
+        inset={20 + columnInset}
+        error={
+          error
+            ? showingSaved
+              ? t("Couldn't refresh — showing the last loaded messages.")
+              : error
+            : null
+        }
+        summary={runError ? normalizeRunError(runError, t, locale).summary : null}
+        onDetails={() => setSelectableText(runError)}
+      />
       {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
       <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
         {showPinnedPage ? (
@@ -2473,15 +2465,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           </Pressable>
         ) : null}
       </View>
-      {/* Fades messages out under the transparent header; the alpha stop keeps the page hue. */}
-      {iosAtLeast(26) ? (
-        <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight + 24 }]} />
-      ) : null}
       {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
       <Animated.View
         style={[{ display: readOnly ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
       >
-        {/* Fades messages out above the composer, like the header fade. */}
+        {/* Fades messages out immediately above the composer. */}
         <View pointerEvents="none" style={styles.composerFade} />
         {replyTarget ? (
           <GlassSurface

@@ -112,6 +112,7 @@ import {
 } from "./messaging-inbound.js";
 import { createMessagingReceipts } from "./messaging-receipts.js";
 import { mountMessagingWebhookRoutes } from "./messaging-webhook.js";
+import { monitoringRoutes } from "./monitoring.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
@@ -401,6 +402,14 @@ export async function createApp(
     signupsEnabled: env.signupsEnabled,
     signupAllowlist: env.signupAllowlist,
     email,
+    logger: {
+      level: "error",
+      log: (_level, _message, ...args) =>
+        getLogger().error(
+          "auth.request.failed",
+          args.find((arg) => arg instanceof Error),
+        ),
+    },
     onEmailError: (error) => getLogger().error("transactional email delivery failed", error),
     extraOrigins: MOBILE_AUTH_ORIGINS,
     beforeDeleteUser: async (userId) => {
@@ -624,6 +633,7 @@ export async function createApp(
         }),
     );
   }
+  app.route("/", monitoringRoutes(env.browserMonitoring));
   mountApiRequestBodyLimits(app, env.maxUploadSizeBytes);
   mountScreenTarget(app, prisma, env.screenProxySecret);
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {

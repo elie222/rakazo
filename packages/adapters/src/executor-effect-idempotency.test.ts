@@ -144,6 +144,7 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),

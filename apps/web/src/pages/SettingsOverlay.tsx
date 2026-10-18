@@ -50,6 +50,8 @@ export function SettingsOverlay({
   initialSection = "general",
   avatarStyle,
   onAvatarStyleChange,
+  timezone,
+  onTimezoneChange,
   isDeploymentOwner = false,
   billingEnabled = false,
   sandboxProvider,
@@ -73,6 +75,8 @@ export function SettingsOverlay({
   initialSection?: SettingsSection;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
+  timezone: string | null;
+  onTimezoneChange: (timezone: string) => Promise<void>;
   isDeploymentOwner?: boolean;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
@@ -255,6 +259,8 @@ export function SettingsOverlay({
                   name={name}
                   avatarStyle={avatarStyle}
                   onAvatarStyleChange={onAvatarStyleChange}
+                  timezone={timezone}
+                  onTimezoneChange={onTimezoneChange}
                   messagingEnabled={messagingEnabled}
                   onOpenMessaging={
                     onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
