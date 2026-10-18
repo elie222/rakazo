@@ -5135,6 +5135,9 @@ const Transcript = memo(function Transcript({
     () => new Set(),
   );
   const togglePeerReplies = useCallback((markerId: string) => {
+    // Like a pointer press: a keyboard toggle must not snap the transcript to its end.
+    following.current = false;
+    autoScrolling.current = false;
     setExpandedPeerMarkers((expanded) => {
       const next = new Set(expanded);
       if (!next.delete(markerId)) next.add(markerId);

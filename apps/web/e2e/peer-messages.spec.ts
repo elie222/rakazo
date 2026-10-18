@@ -266,3 +266,21 @@ test("keeps a reaction with its folded peer reply", async ({ page }, testInfo) =
   await expect(reactions).toBeInViewport();
   await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
 });
+
+test("keeps a keyboard-expanded peer marker in view", async ({ page }, testInfo) => {
+  const { transcript, reply } = await openFoldedPeerReply(page, "peer-keys");
+  await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
+  // Short enough that the expanded reply is taller than the space below the marker.
+  await page.setViewportSize({ width: 390, height: 360 });
+  await transcript.evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+
+  const toggle = transcript.getByRole("button", { name: "Expand Message from Researcher" });
+  await toggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(reply).toBeAttached();
+  const collapse = transcript.getByRole("button", { name: "Collapse Message from Researcher" });
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await expect(collapse).toBeFocused();
+  await expect(collapse).toBeInViewport();
+  await captureScreenshot(page, testInfo, "peer-replies-keyboard-expanded");
+});
