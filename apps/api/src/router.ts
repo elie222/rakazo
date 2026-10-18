@@ -2188,6 +2188,9 @@ export function createRouter(deps: RouterDeps) {
           throw error;
         }
       }),
+      remove: authed.botSections.remove.handler(async ({ context, input }) =>
+        repos.deleteBotSection(context.actor, input),
+      ),
     },
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {

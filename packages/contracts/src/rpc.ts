@@ -354,6 +354,13 @@ export const appContract = {
     update: oc
       .input(z.object({ sectionId: Id, name: z.string().trim().min(1).max(60) }))
       .output(BotSectionSchema),
+    remove: oc.input(z.object({ sectionId: Id })).output(
+      z.object({
+        id: Id,
+        releasedBots: z.number().int().nonnegative(),
+        releasedGroups: z.number().int().nonnegative(),
+      }),
+    ),
   },
   threads: {
     head: oc.input(threadTarget).output(

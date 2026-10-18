@@ -307,6 +307,27 @@ export function createRepos(prisma: PrismaClient) {
       }
     },
 
+    /** Delete one of the actor's sections; its bots and groups stay, unsectioned (FK SetNull). */
+    async deleteBotSection(actor: Actor, input: { sectionId: string }) {
+      return prisma.$transaction(async (tx) => {
+        // The row lock blocks concurrent moves into this section until the delete commits.
+        const locked = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id
+          FROM bot_sections
+          WHERE id = ${input.sectionId}
+            AND "spaceId" = ${actor.spaceId}
+            AND "userId" = ${actor.userId}
+          FOR UPDATE
+        `;
+        if (locked.length !== 1) throw new IsolationError();
+        const where = { sectionId: input.sectionId };
+        const releasedBots = await tx.bot.count({ where });
+        const releasedGroups = await tx.chatGroup.count({ where });
+        await tx.botSection.delete({ where: { id: input.sectionId } });
+        return { id: input.sectionId, releasedBots, releasedGroups };
+      });
+    },
+
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
       const bots = await prisma.bot.findMany({
         where: {

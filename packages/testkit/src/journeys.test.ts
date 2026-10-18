@@ -462,6 +462,19 @@ describeJourneys("required product journeys", () => {
     expect(await rpc<Array<{ id: string; name: string }>>(app, ada, "botSections/list")).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: section.id, name: "Delivery" })]),
     );
+    const foreignDelete = await raw(app, bob, "botSections/remove", { sectionId: section.id });
+    expect(foreignDelete.status).toBeGreaterThanOrEqual(400);
+    expect(await rpc(app, ada, "botSections/remove", { sectionId: section.id })).toEqual({
+      id: section.id,
+      releasedBots: 1,
+      releasedGroups: 0,
+    });
+    expect(
+      (await rpc<Array<{ id: string }>>(app, ada, "botSections/list")).map((item) => item.id),
+    ).not.toContain(section.id);
+    expect(
+      (await rpc<Bot[]>(app, ada, "bots/list")).find((bot) => bot.id === chief.id)?.sectionId,
+    ).toBeNull();
     const duplicate = await rpc<Bot>(app, ada, "bots/duplicate", { botId: chief.id });
     expect(duplicate).toMatchObject({
       name: "Chief copy",
