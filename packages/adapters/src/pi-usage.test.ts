@@ -10,7 +10,13 @@ import {
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
-import { normalizePiUsage, observedPiStream, usageReportingFetch } from "./pi-usage.js";
+import {
+  normalizePiUsage,
+  observedPiStream,
+  usageBaseFetch,
+  usageReportingFetch,
+} from "./pi-usage.js";
+import { dispatcherFetch } from "./undici-fetch.js";
 
 const model: Model<Api> = {
   provider: "openrouter",
@@ -602,5 +608,36 @@ describe("Pi usage accounting", () => {
     const response = await fetcher("https://model.example.test");
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
     expect(reported.has("inputTokens")).toBe(true);
+  });
+});
+
+describe("usage wrapper fetch selection", () => {
+  it("uses the guarded package fetch for OpenAI-compatible and preserves overrides", () => {
+    expect(usageBaseFetch("openai-compatible", undefined)).toBe(dispatcherFetch);
+    expect(usageBaseFetch("anthropic", undefined)).toBe(globalThis.fetch);
+    const supplied = (async () => new Response("{}")) as typeof fetch;
+    expect(usageBaseFetch("openai-compatible", supplied)).toBe(supplied);
+  });
+
+  it("passes the guarded dispatcher through the usage wrapper", async () => {
+    const previous = process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+    process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = "1";
+    try {
+      const wrapped = usageReportingFetch(
+        usageBaseFetch("openai-compatible", undefined),
+        new Set(),
+      );
+      const safeFetch = createOpenAiCompatibleFetch(wrapped, async () => {
+        throw new Error("lookup reached");
+      });
+      await expect(
+        safeFetch("https://models.example.test/v1/chat/completions"),
+      ).rejects.toMatchObject({
+        cause: { message: "lookup reached" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC;
+      else process.env.RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC = previous;
+    }
   });
 });

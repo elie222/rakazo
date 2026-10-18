@@ -18,9 +18,10 @@ import type {
 import { Agent } from "undici";
 import type { ContextBudget } from "./context-selection.js";
 import { estimateModelContextTokens } from "./model-context.js";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./openai-compatible-url.js";
 import { requestedPiCacheWriteRetention, resolvePiCacheRetention } from "./pi-cache-retention.js";
 import { recordPiTelemetryContent, withPiTelemetrySpan } from "./pi-telemetry.js";
-import { fetchPairedWithDispatcher } from "./undici-fetch.js";
+import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
 /** Pi initializes absent usage to zero. Only raw numeric fields can prove reported zero. */
 export type ReportedUsageFields = Set<keyof AgentUsage>;
@@ -80,6 +81,12 @@ export function normalizePiUsage(
     pricingVersion: providerCost !== undefined ? null : costKnown ? "pi-ai-0.87.1" : null,
     usageSource: reported.size ? "provider-reported-via-pi" : "pi-normalized",
   };
+}
+
+/** Select the fetch paired with the OpenAI-compatible provider's guarded dispatcher. */
+export function usageBaseFetch(provider: string, supplied: typeof fetch | undefined): typeof fetch {
+  if (supplied) return supplied;
+  return provider === OPENAI_COMPATIBLE_PROVIDER_ID ? dispatcherFetch : globalThis.fetch;
 }
 
 /** Read only bounded SSE frames, retaining field presence, never provider text or payloads. */
@@ -302,7 +309,10 @@ export function observedPiStream(
             collectRawUsage
               ? {
                   ...streamOptions,
-                  fetch: usageReportingFetch(streamOptions?.fetch ?? globalThis.fetch, reported),
+                  fetch: usageReportingFetch(
+                    usageBaseFetch(model.provider, streamOptions?.fetch),
+                    reported,
+                  ),
                 }
               : streamOptions,
           );
