@@ -1151,7 +1151,7 @@ describe("updateChildBot", () => {
     },
   );
 
-  it.each(["name", "title", "description"])(
+  it.each(["name", "title", "description", "artifact_id", "color"])(
     "omits blank %s while preserving a real update",
     async (field) => {
       const { prisma } = fakeFleet({ bots });

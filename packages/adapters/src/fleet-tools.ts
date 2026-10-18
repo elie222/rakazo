@@ -781,7 +781,7 @@ export async function updateChildBot(
   run: FleetRun,
   args: Record<string, unknown>,
 ): Promise<{ ok: true } | { error: string }> {
-  if ((args.artifact_id ?? undefined) !== undefined || args.use_attached_image === true) {
+  if (argumentGiven(args.artifact_id) || args.use_attached_image === true) {
     return { error: "artifact_id and use_attached_image work only on yourself." };
   }
   const profile = {
@@ -817,7 +817,7 @@ export async function updateChildBot(
     if ("error" in parsed) return parsed;
     patch = parsed.patch;
   }
-  if (args.color !== undefined && args.color !== null) {
+  if (argumentGiven(args.color)) {
     const avatar = await resolveUpdateBotAvatar({
       color: args.color,
       sourceImageArtifactIds: [],
