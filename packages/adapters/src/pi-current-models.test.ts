@@ -40,10 +40,12 @@ describe("current model compatibility", () => {
       expect(model?.api).toBe(base?.api);
       expect(model?.input).toContain("image");
       expect(model?.contextWindow).toBe(1000000);
+      const levels = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+      expect(getSupportedThinkingLevels(model!)).toEqual(levels);
       expect(
         listPiCatalog().find((entry) => entry.provider === provider && entry.id === id)
           ?.thinkingLevels,
-      ).toEqual(getSupportedThinkingLevels(model!));
+      ).toEqual(levels);
     },
   );
   it("does not replace a provider library model when applying the supplement again", () => {
