@@ -1493,8 +1493,14 @@ const PinnedTiles = memo(function PinnedTiles({
   const styles = useThemedStyles(createHomeStyles);
   const selectedId = useContext(SelectedChatContext);
   const appearance = resolveMobileAppearance();
+  // Three tiles share the row, so a narrow pane shrinks the avatars instead of overlapping them.
+  const [rowWidth, setRowWidth] = useState(0);
+  const avatarSize = rowWidth > 0 ? Math.min(84, Math.floor((rowWidth - 16) / 3 - 8)) : 84;
   return (
-    <View style={styles.pinnedTiles}>
+    <View
+      style={styles.pinnedTiles}
+      onLayout={(event) => setRowWidth(event.nativeEvent.layout.width)}
+    >
       {chats.map((chat) => {
         const id = chat.kind === "bot" ? chat.bot.id : chat.group.id;
         const name = chat.kind === "bot" ? chat.bot.name : chat.group.name;
@@ -1532,12 +1538,12 @@ const PinnedTiles = memo(function PinnedTiles({
               <BotAvatar
                 color={chat.bot.color || FALLBACK_COLOR}
                 identity={chat.bot.id}
-                size={84}
+                size={avatarSize}
                 status={chat.bot.status}
                 muted={chat.bot.notifyOnFinish === false}
               />
             ) : (
-              <GroupAvatar members={chat.group.members} size={84} />
+              <GroupAvatar members={chat.group.members} size={avatarSize} />
             )}
             <Text style={[styles.pinnedName, unread && styles.pinnedUnread]} numberOfLines={1}>
               {name}
