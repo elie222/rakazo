@@ -1,5 +1,6 @@
+import type { ThreadMessage } from "@rakazo/contracts";
 import type { ThreadScrollState } from "@rakazo/core";
-import { reconcileThreadScrollState } from "@rakazo/core";
+import { expandPeerReplies, foldPeerReplies, reconcileThreadScrollState } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { latestArrivalMessageId, ThreadScrollBehavior } from "./thread-scroll.js";
 
@@ -316,6 +317,59 @@ describe("mobile thread folded peer replies", () => {
   const markerOf = new Map([["reply", "marker"]]);
   const collapsed = [{ id: "user" }, { id: "marker" }];
   const expanded = [...collapsed, { id: "reply" }];
+
+  it("ignores hidden arrivals and fold toggles but marks an inline ask unread", () => {
+    const messages: ThreadMessage[] = [
+      {
+        id: "marker",
+        threadId: "thread-1",
+        seq: 1,
+        createdAt: "2026-10-19T00:00:00Z",
+        role: "user",
+        runId: "peer-run",
+        blocks: [
+          { kind: "bot_message_received", fromBotId: "peer", fromBotName: "Peer", text: "Done" },
+        ],
+      },
+    ];
+    const behavior = new ThreadScrollBehavior();
+    behavior.openThread("thread-1");
+    behavior.onLayout(600);
+    behavior.onContentSizeChanged(1800);
+    const arrive = (expandedMarkers: ReadonlySet<string>) => {
+      const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+      return behavior.onContentChanged(
+        false,
+        latestArrivalMessageId(expandPeerReplies(transcript, expandedMarkers), transcript.markerOf),
+      );
+    };
+    expect(arrive(new Set())).toBe("jump");
+    behavior.onUserScroll(200);
+    messages.push({
+      ...messages[0]!,
+      id: "reply",
+      seq: 2,
+      role: "bot",
+      blocks: [{ kind: "text", text: "Peer summary" }],
+    });
+    for (const expandedMarkers of [new Set<string>(), new Set(["marker"]), new Set<string>()]) {
+      expect(arrive(expandedMarkers)).toBeNull();
+      expect(behavior.state()).toEqual({ detached: true, unread: false });
+    }
+    messages.push({
+      ...messages[0]!,
+      id: "ask",
+      seq: 3,
+      role: "bot",
+      blocks: [{ kind: "ask", text: "Which city?", status: "pending" }],
+    });
+    expect(arrive(new Set())).toBeNull();
+    expect(behavior.state()).toEqual({ detached: true, unread: true });
+    expect(arrive(new Set(["marker"]))).toBeNull();
+    expect(behavior.state()).toEqual({ detached: true, unread: true });
+    expect(behavior.jumpToLatest()).toBe("smooth");
+    expect(behavior.state()).toEqual({ detached: false, unread: false });
+  });
 
   it("does not count collapsing a fold at the end as a new message", () => {
     const behavior = new ThreadScrollBehavior();

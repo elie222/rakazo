@@ -36,6 +36,24 @@ const peerExchange = [
 ];
 
 describe("user-visible messages", () => {
+  it("keeps ordinary group replies inline when a member sends a peer message", () => {
+    const messages: ThreadMessage[] = [
+      { ...message("first", "group-run", [{ kind: "text", text: "Checking" }]), botId: "first" },
+      {
+        ...message("sent", "group-run", [
+          { kind: "bot_message_sent", toBotId: "peer", toBotName: "Peer", text: "Check this" },
+        ]),
+        botId: "first",
+      },
+      { ...message("second", "other-run", [{ kind: "text", text: "Agreed" }]), botId: "second" },
+      { ...message("final", "group-run", [{ kind: "text", text: "Done" }]), botId: "first" },
+    ];
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+    expect(transcript.messages).toEqual(messages);
+    expect(transcript.folded.size).toBe(0);
+    expect(transcript.markerOf.size).toBe(0);
+  });
+
   it("hides peer activity but keeps the bot's text reply when there is no marker to fold it under", () => {
     expect(userVisibleMessages(peerExchange).map((item) => item.id)).toEqual([
       "user",
