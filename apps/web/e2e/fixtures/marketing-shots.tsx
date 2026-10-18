@@ -473,7 +473,7 @@ function SubscriptionShot() {
       const text = document.body.textContent ?? "";
       if (
         text.includes("Sign in with Claude Pro/Max") &&
-        text.includes("Connect a provider to add backups") &&
+        text.includes("Backup models") &&
         text.includes("Claude Sonnet 5.5")
       ) {
         setReady(true);

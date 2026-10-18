@@ -12,6 +12,22 @@ import tr from "../../scripts/translations-tr.json";
 import zhCN from "../../scripts/translations-zh-CN.json";
 
 describe("lingui catalogs", () => {
+  it("translates sign-out failures in every supported language", () => {
+    for (const locale of ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes('msgid "Could not log out. Try again."\n'));
+      const translated = entry?.split("msgstr ")[1];
+      expect(translated, locale).toBeTruthy();
+      expect(translated, locale).not.toBe('""');
+      expect(translated, locale).not.toBe('"Could not log out. Try again."');
+    }
+  });
+
   it("localizes provider error guidance and retains its placeholders", () => {
     const messages = [
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
@@ -293,7 +309,7 @@ describe("lingui catalogs", () => {
       'msgid "{0} runs · {1} tokens"\nmsgstr "Запусков: {0} · токенов: {1}"',
     );
     expect(catalog).toContain(
-      'msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"',
+      'msgstr "{toolCount, plural, one {# инструмент} few {# инструмента} many {# инструментов} other {# инструмента}}"',
     );
   });
 
@@ -309,7 +325,7 @@ describe("lingui catalogs", () => {
     expect(catalog).toContain(
       'msgid "{0} runs · {1} tokens"\nmsgstr "{0} exécutions · {1} jetons"',
     );
-    expect(catalog).toContain('msgstr "{0, plural, one {# modèle} other {# modèles}}"');
+    expect(catalog).toContain('msgstr "{toolCount, plural, one {# outil} other {# outils}}"');
     expect(catalog).toContain(
       'msgid "Configure a plugin catalog on the server to connect apps."\nmsgstr "Configurez un catalogue de plugins sur le serveur pour connecter des applications."',
     );

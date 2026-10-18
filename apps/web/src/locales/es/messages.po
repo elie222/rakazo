@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (sin leer)"
 
-#. placeholder {0}: group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {# modelo} other {# modelos}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -1013,10 +1008,6 @@ msgstr "Elige una contraseña nueva"
 msgid "Choose file"
 msgstr "Elegir archivo"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "Elige qué modelo conectado usa Rakazo."
-
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
 msgstr "Borrar"
@@ -1239,10 +1230,6 @@ msgstr "Conectar"
 msgid "Connect a model"
 msgstr "Conectar un modelo"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "Conecta un proveedor para agregar modelos de respaldo."
-
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "Conectar clave de API"
@@ -1259,10 +1246,6 @@ msgstr "Conectar servidor MCP “{name}”"
 msgid "Connect OAuth"
 msgstr "Conectar OAuth"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "Conecta este proveedor para usarlo como tu modelo personal."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Conectar Treg"
@@ -1276,21 +1259,10 @@ msgstr "Conectar Treg"
 msgid "Connected"
 msgstr "Conectado"
 
-#. placeholder {0}: credential.label
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected · {0}"
-msgstr "Conectado · {0}"
-
 #. placeholder {0}: selected.name
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Se conectó {0}."
-
-#. placeholder {0}: selected.label
-#. placeholder {0}: selectedLabelRef.current ?? "this model"
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected and using {0}."
-msgstr "Conectado y usando {0}."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
@@ -1607,6 +1579,10 @@ msgstr "No se pudo cargar el estado de actualización"
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not load voice settings"
 msgstr "No se pudo cargar la configuración de voz"
+
+#: src/lib/sign-out.ts
+msgid "Could not log out. Try again."
+msgstr "No se pudo cerrar sesión. Inténtalo de nuevo."
 
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
@@ -3963,10 +3939,6 @@ msgstr "Guardar respaldos"
 msgid "Save credential"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
-msgstr ""
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
@@ -4376,10 +4348,6 @@ msgstr "Detenido."
 #: src/pages/McpServersOverlay.tsx
 msgid "Stored encrypted"
 msgstr "Almacenado cifrado"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Stored securely. Never shown here."
-msgstr "Almacenado de forma segura. Nunca se muestra aquí."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"

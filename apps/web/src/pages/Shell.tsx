@@ -236,6 +236,7 @@ import { clearSpaceSelection, createSpaceRpc, selectedSpaceId, selectSpace } fro
 import { translateRunError } from "../lib/run-error";
 import { readSeenRunErrorIds, rememberSeenRunErrorId } from "../lib/run-error-storage";
 import { sharedInflight } from "../lib/shared-inflight";
+import { useSignOut } from "../lib/sign-out";
 import {
   guardShellNavigate,
   markShellReady,
@@ -518,6 +519,11 @@ function SpaceShell() {
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [logOutError, setLogOutError] = useState<string | null>(null);
+  const { signingOut, logOut } = useSignOut(() => {
+    clearSpaceSelection();
+    navigate("/");
+  }, setLogOutError);
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [panel, setPanelState] = useState<Panel>(null);
@@ -3656,7 +3662,13 @@ function SpaceShell() {
             <Trans>Integrations</Trans>
           </span>
         </button>
-        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+        <Popover
+          open={menuOpen}
+          onOpenChange={(open) => {
+            setMenuOpen(open);
+            if (!open) setLogOutError(null);
+          }}
+        >
           <PopoverTrigger
             data-testid="user-menu-trigger"
             className="flex items-center gap-[11px] px-[18px] py-3.5"
@@ -3725,16 +3737,20 @@ function SpaceShell() {
               <Button
                 variant="ghost"
                 className="w-full justify-start font-normal"
-                onClick={() =>
-                  void authClient.signOut().then(() => {
-                    clearSpaceSelection();
-                    navigate("/");
-                  })
-                }
+                disabled={signingOut}
+                onClick={() => {
+                  setLogOutError(null);
+                  void logOut();
+                }}
               >
                 <LogOut className="text-muted-foreground" strokeWidth={1.75} />
                 <Trans>Log out</Trans>
               </Button>
+              {logOutError ? (
+                <p role="alert" className="px-3 pt-1 pb-2 text-[13px] text-destructive">
+                  {logOutError}
+                </p>
+              ) : null}
             </PopoverContent>
           ) : null}
         </Popover>
