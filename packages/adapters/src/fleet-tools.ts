@@ -6,6 +6,7 @@ import {
   BotSectionName,
   CreateGroupInput,
   CreateRoutineInput,
+  canonicalPiProviderId,
   FLEET_WRITE_TOOL_NAMES,
   GROUP_MEMBER_MAX,
   GROUP_MEMBER_MIN,
@@ -1279,8 +1280,10 @@ function memberNames(members: Member[]): string {
 function modelLabel(provider: string | null, model: string | null): string {
   if (!provider || !model) return "Default model";
   const catalog = [...listPiCatalog(), scriptedCatalogEntry];
-  const entry = catalog.find((item) => item.provider === provider && item.id === model);
-  const providerName = catalog.find((item) => item.provider === provider)?.providerName ?? provider;
+  const catalogProvider = canonicalPiProviderId(provider);
+  const entry = catalog.find((item) => item.provider === catalogProvider && item.id === model);
+  const providerName =
+    catalog.find((item) => item.provider === catalogProvider)?.providerName ?? provider;
   return entry ? `${entry.providerName}: ${entry.label}` : `${model} (${providerName})`;
 }
 
