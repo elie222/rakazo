@@ -190,7 +190,7 @@ describe("reaction turns", () => {
     askBlocks?: MessageBlock[];
   }) {
     const tx = {
-      steeringMessage: { create: vi.fn() },
+      steeringMessage: { create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
       thread: {
         update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
@@ -296,6 +296,17 @@ describe("reaction turns", () => {
     expect(releaseTakeover).toHaveBeenCalledWith("run-takeover");
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("retries the takeover handoff when the same reaction is replayed", async () => {
+    const { tx, react, releaseTakeover } = fixture({});
+    tx.message.findUnique.mockResolvedValueOnce({ id: "reaction-1" });
+    tx.steeringMessage.findFirst.mockResolvedValueOnce({
+      run: { id: "run-takeover", taskId: "task-1", status: "waiting_takeover" },
+    });
+    await expect(react()).resolves.toEqual({ eventSeq: null, runIds: ["run-takeover"] });
+    expect(releaseTakeover).toHaveBeenCalledWith("run-takeover");
+    expect(tx.message.create).not.toHaveBeenCalled();
   });
 
   it.each(["👎", "❤️"] as const)("leaves a pending takeover alone on %s", async (reaction) => {

@@ -1073,7 +1073,17 @@ export async function reactToThreadMessage(
       },
       select: { id: true },
     });
-    if (existing) return { eventSeq: null, runs: [] };
+    if (existing) {
+      // A retry finishes a takeover handoff whose release failed after the 👍 was saved.
+      const steering = releaseTakeover
+        ? await tx.steeringMessage.findFirst({
+            where: { messageId: existing.id, claimedAt: null },
+            select: { run: { select: { id: true, taskId: true, status: true } } },
+          })
+        : null;
+      const run = steering?.run;
+      return { eventSeq: null, runs: run?.status === "waiting_takeover" ? [run] : [] };
+    }
     const members =
       target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
     const currentTarget = members
