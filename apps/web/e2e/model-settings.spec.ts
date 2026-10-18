@@ -26,6 +26,7 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await page.getByRole("button", { name: /^OpenRouter( |$)/ }).click();
   const backups = page.getByTestId("model-backups");
   await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
+  await expect(backups.getByLabel("Add connected model")).toBeVisible();
   await expect(page.getByLabel("API key")).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-1-not-connected");
 
@@ -35,6 +36,7 @@ test("model settings cleanup frames", async ({ page }, testInfo) => {
   await expect(page.getByText(/Connected and using/)).toBeVisible();
   await expect(page.getByText(/Connected ·/)).toBeVisible();
   await expect(backups.getByRole("heading", { name: "Backup models" })).toBeVisible();
+  await expect(backups.getByLabel("Add connected model")).toBeVisible();
   const model = page.getByRole("combobox", { name: "Model", exact: true });
   await expect(model).toBeVisible();
   await captureScreenshot(page, testInfo, "model-settings-cleanup-2-connected");
