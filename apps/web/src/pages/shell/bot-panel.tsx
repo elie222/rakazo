@@ -219,6 +219,7 @@ export function BotSettings({
     computerMode: ComputerMode;
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
+    fleetManagement?: boolean;
     voiceId?: string | null;
     modelProvider?: string | null;
     modelId?: string | null;
@@ -244,6 +245,7 @@ export function BotSettings({
   const [computerMode, setComputerMode] = useState(bot.computerMode);
   const [memoryScope, setMemoryScope] = useState(bot.memoryScope);
   const [autoSpeak, setAutoSpeak] = useState(bot.autoSpeak);
+  const [fleetManagement, setFleetManagement] = useState(bot.fleetManagement);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
   const [modelKey, setModelKey] = useState(
@@ -370,6 +372,7 @@ export function BotSettings({
         computerMode,
         memoryScope,
         autoSpeak,
+        fleetManagement,
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
@@ -654,6 +657,17 @@ export function BotSettings({
             onCheckedChange={(checked) => setAutoSpeak(checked)}
           />
           <Trans>Read replies aloud</Trans>
+        </label>
+        <label
+          htmlFor={`${ids}-fleet-management`}
+          className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-foreground/75"
+        >
+          <Switch
+            id={`${ids}-fleet-management`}
+            checked={fleetManagement}
+            onCheckedChange={(checked) => setFleetManagement(checked)}
+          />
+          <Trans>Fleet management</Trans>
         </label>
         {voices.length ? (
           <label htmlFor={`${ids}-voice`} className={fieldLabelClass}>

@@ -56,6 +56,7 @@ export default function BotSettingsScreen() {
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [fleetManagement, setFleetManagement] = useState(false);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -88,6 +89,7 @@ export default function BotSettingsScreen() {
         );
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
+        setFleetManagement(next.fleetManagement);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
   }, [botId]);
@@ -289,6 +291,7 @@ export default function BotSettingsScreen() {
         modelId?: string | null;
         thinkingLevel?: ThinkingLevel | null;
         autoSpeak?: boolean;
+        fleetManagement?: boolean;
       } = { botId };
       if (profile.name !== bot.name) input.name = profile.name;
       if (profile.title !== bot.title) input.title = profile.title;
@@ -314,6 +317,7 @@ export default function BotSettingsScreen() {
           : null;
       }
       if (autoSpeak !== bot.autoSpeak) input.autoSpeak = autoSpeak;
+      if (fleetManagement !== bot.fleetManagement) input.fleetManagement = fleetManagement;
       if (computerMode !== bot.computerMode) {
         await rpc(
           "bots/setComputer",
@@ -482,6 +486,16 @@ export default function BotSettingsScreen() {
             accessibilityLabel={t("Read replies aloud")}
             onValueChange={setAutoSpeak}
             value={autoSpeak}
+          />
+        </View>
+        <View style={[styles.row, { marginTop: 20 }]}>
+          <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
+            {t("Fleet management")}
+          </Text>
+          <NativeSwitch
+            accessibilityLabel={t("Fleet management")}
+            onValueChange={setFleetManagement}
+            value={fleetManagement}
           />
         </View>
         {deviceVoiceEnabled ? (

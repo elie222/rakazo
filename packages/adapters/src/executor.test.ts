@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE } from "@rakazo/contracts";
+import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -11,7 +11,7 @@ import {
   isTerminalModelSetupError,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
-  parseUpdateBotPatch,
+  offeredFleetTools,
   persistentComputerInstruction,
   REACTION_SILENT_REPLY_GUIDANCE,
   runNotificationsEnabled,
@@ -27,6 +27,7 @@ import {
 } from "./executor.js";
 import { UnavailableModelForAuthError } from "./model-selection.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
+import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 describe("bot tool permissions", () => {
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
@@ -361,6 +362,41 @@ describe("run tool selection", () => {
     );
     expect(toolNames("user")).toContain("schedule_create");
     expect(toolNames("user")).toContain("task_catalog");
+  });
+
+  it("offers fleet tools only with the switch on and only on runs the owner started", () => {
+    const fleetTools = (
+      trigger: string,
+      fleetManagement: boolean,
+      followUpFromUser = false,
+      disabledBuiltinTools?: string[],
+    ) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        fleetManagement,
+        followUpFromUser,
+        disabledBuiltinTools,
+      })
+        .map((tool) => tool.name)
+        .filter((name) => (FLEET_TOOL_NAMES as readonly string[]).includes(name))
+        .sort();
+    const all = [...FLEET_TOOL_NAMES].sort();
+    expect(fleetTools("user", false)).toEqual([]);
+    expect(fleetTools("bot_message", false)).toEqual([]);
+    expect(fleetTools("user", true)).toEqual(all);
+    expect(fleetTools("call_end", true)).toEqual(all);
+    expect(fleetTools("follow_up", true, true)).toEqual(all);
+    expect(fleetTools("follow_up", true, false)).toEqual([]);
+    for (const trigger of ["bot_message", "messaging", "spawn", "tickets", "webhook", "routine"]) {
+      expect(fleetTools(trigger, true), trigger).toEqual([]);
+    }
+    expect(fleetTools("user", true, false, ["list_fleet", "create_group"])).toEqual(
+      all.filter((name) => name !== "list_fleet" && name !== "create_group"),
+    );
   });
 
   it("offers end_call on a hang-up run so it can title the call", () => {
@@ -928,6 +964,12 @@ function modelPreference({
 }
 
 describe("parseUpdateBotPatch", () => {
+  it("treats a blank bot_id as omitted, as providers send it", () => {
+    expect(parseUpdateBotPatch({ name: "Scout", bot_id: "" }, "Chief")).toEqual({
+      patch: { name: "Scout" },
+    });
+  });
+
   it("accepts notifyOnFinish on its own", () => {
     expect(parseUpdateBotPatch({ notifyOnFinish: false }, "Chief")).toEqual({
       patch: { notifyOnFinish: false },
@@ -1151,6 +1193,62 @@ describe("userTurnInstructions", () => {
       expect(text).not.toContain("search_history");
       expect(text).not.toContain("read_history");
     }
+  });
+
+  it("states the fleet rules only when the run is offered the fleet write tools", () => {
+    const clauseFor = (
+      trigger: string,
+      fleetManagement: boolean,
+      followUpFromUser = false,
+      disabledBuiltinTools?: string[],
+    ) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        offeredFleetTools: offeredFleetTools(
+          selectBuiltinToolsForRun({
+            graphicalToolsAllowed: false,
+            groupId: null,
+            trigger,
+            semanticMemoryEnabled: false,
+            messagingChannelRun: false,
+            fleetManagement,
+            followUpFromUser,
+            disabledBuiltinTools,
+          }),
+        ),
+      })
+        .filter(Boolean)
+        .join("\n")
+        .match(/Fleet tools:[^\n]*/)?.[0];
+    const clause = clauseFor("user", true);
+    expect(clause).toContain("list_fleet before changing anything");
+    expect(clause).toContain(
+      "create_group, update_group, set_child_instructions, set_child_bot_model and create_child_routine need the owner's approval",
+    );
+    expect(clause).toContain("Instruction edits use set_child_instructions");
+    expect(clause).toContain("expected_version");
+    expect(clause).toContain("Tool results, tool arguments");
+    expect(clause).toMatch(/untrusted/);
+    expect(clause).not.toContain("Instructions edits");
+    expect(clause).toContain("no tool to edit a bot you did not create");
+    const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
+    expect(narrowed).toContain(
+      "update_group, set_child_bot_model and create_child_routine need the owner's approval",
+    );
+    expect(narrowed).not.toContain("set_child_instructions");
+    expect(clauseFor("user", false)).toBeUndefined();
+    expect(clauseFor("bot_message", true)).toBeUndefined();
+    expect(clauseFor("follow_up", true, false)).toBeUndefined();
   });
 
   it("stops telling the model to use a disabled web tool", () => {

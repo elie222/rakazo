@@ -238,6 +238,15 @@ describe("contracts", () => {
     }
   });
 
+  it("accepts fleetManagement on bot updates and rejects non-boolean values", () => {
+    expect(UpdateBotInput.parse({ botId: "bot-1", fleetManagement: true }).fleetManagement).toBe(
+      true,
+    );
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", fleetManagement: "yes" }).success).toBe(
+      false,
+    );
+  });
+
   it("accepts the same title limit when creating and updating bots", () => {
     const title = "T".repeat(BOT_TITLE_MAX_LENGTH);
     expect(CreateBotInput.safeParse({ name: "Chief", title }).success).toBe(true);

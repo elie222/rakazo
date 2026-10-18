@@ -1468,6 +1468,7 @@ function SpaceShell() {
           event.type === "bot.spawned" ||
           event.type === "bot.deleted" ||
           event.type === "bot.updated" ||
+          event.type === "group.created" ||
           event.type === "run.started" ||
           isRunTerminalEvent(event) ||
           event.type === "thread.cleared"
@@ -1574,6 +1575,7 @@ function SpaceShell() {
         if (
           event.type === "run.started" ||
           event.type === "bot.updated" ||
+          event.type === "group.updated" ||
           isRunTerminalEvent(event)
         ) {
           void refreshBots().catch(() => undefined);

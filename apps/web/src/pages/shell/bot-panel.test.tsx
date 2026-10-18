@@ -102,6 +102,7 @@ function bot(description = "Billing"): Bot {
     thinkingLevel: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
+    fleetManagement: false,
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,

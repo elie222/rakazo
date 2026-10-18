@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@rakazo/db", () => ({
-  appendEventInTransaction: vi.fn(),
-  writeBotInstructions: vi.fn(),
-}));
+vi.mock("./events.js", () => ({ appendEventInTransaction: vi.fn() }));
+vi.mock("./bot-instructions.js", () => ({ writeBotInstructions: vi.fn() }));
 
-import { writeBotInstructions } from "@rakazo/db";
+import { writeBotInstructions } from "./bot-instructions.js";
 import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 
 describe("botProfileLabelsChanged", () => {

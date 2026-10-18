@@ -90,6 +90,7 @@ import {
   prepareApiInstall,
   prepareGraphqlInstall,
   prepareManagedConnectorForTransaction,
+  prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
@@ -118,9 +119,9 @@ import {
   touchRunningComputer,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
   updateTicket,
+  validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
-  validateStoredModelAuth,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -166,12 +167,14 @@ import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from 
 import {
   appendEventInTransaction,
   BotSectionNameConflictError,
+  botProfileLabelsChanged,
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
   CannotRenameSpaceAsNonOwnerError,
   ComputerLimitError,
   claimEmptySpaceDeletionForMember,
+  commitBotUpdate,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
@@ -232,7 +235,6 @@ import {
   listSpaceArtifacts,
 } from "./artifacts.js";
 import type { BillingService } from "./billing.js";
-import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
@@ -1697,96 +1699,29 @@ export function createRouter(deps: RouterDeps) {
           });
           if (!section) throw new IsolationError();
         }
-        // Web settings resend the saved model on every save. Reject an
-        // incompatible override only when this request is changing it; a run
-        // still rejects a Spark model the subscription sign-in cannot call.
-        const settingModel =
-          input.modelProvider !== undefined &&
-          input.modelId !== undefined &&
-          (input.modelProvider !== existing.modelProvider || input.modelId !== existing.modelId);
-        if (settingModel && input.modelProvider && input.modelId) {
-          const credential = await findModelCredential(
-            deps.prisma,
-            context.actor,
-            input.modelProvider,
-            input.modelId,
-          );
-          if (!credential) {
-            throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
-          }
-          const knownModels = [...listPiCatalog(), scriptedCatalogEntry];
-          const inCatalog = knownModels.some(
-            (item) => item.provider === input.modelProvider && item.id === input.modelId,
-          );
-          if (!inCatalog && credential.defaultModel !== input.modelId) {
-            throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
-          }
-          if (inCatalog) {
-            const authError = await validateStoredModelAuth(
-              deps.prisma,
-              deps.secrets,
-              context.actor.userId,
-              credential.secretId,
-              input.modelProvider,
-              input.modelId,
-              codexCatalog,
-              {
-                onExpiredToken: () =>
-                  refreshExpiredCredential(
-                    context.actor,
-                    credential.secretId,
-                    input.modelProvider!,
-                  ),
-              },
-            );
-            if (authError) throw new ORPCError("BAD_REQUEST", { message: authError });
-          }
-        }
+        const modelChange = await validateBotModelChange(
+          {
+            prisma: deps.prisma,
+            secretStore: deps.secrets,
+            codexCatalog,
+            refreshExpiredCredential,
+            defaultModel: async () => {
+              const me = await meDto(deps, context.actor);
+              return { provider: me.defaultProvider, model: me.defaultModel };
+            },
+          },
+          {
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            provider:
+              input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
+            model: input.modelId !== undefined ? input.modelId : existing.modelId,
+            thinkingLevel: input.thinkingLevel,
+            current: { provider: existing.modelProvider, model: existing.modelId },
+          },
+        );
+        if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
-        if (input.thinkingLevel) {
-          const provider =
-            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
-          const modelId = input.modelId !== undefined ? input.modelId : existing.modelId;
-          const me = await meDto(deps, context.actor);
-          const effectiveProvider = provider ?? me.defaultProvider;
-          const effectiveModelId = modelId ?? me.defaultModel;
-          if (effectiveProvider && effectiveModelId) {
-            const entry = listPiCatalog().find(
-              (item) => item.provider === effectiveProvider && item.id === effectiveModelId,
-            );
-            let allowed = entry?.thinkingLevels;
-            if (effectiveProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-              allowed = ["off"];
-              const credential = await findModelCredential(
-                deps.prisma,
-                context.actor,
-                effectiveProvider,
-              );
-              if (credential && credential.defaultModel === effectiveModelId) {
-                const secret = await deps.prisma.secret.findFirst({
-                  where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
-                  select: { ciphertext: true },
-                });
-                if (secret) {
-                  try {
-                    allowed =
-                      modelCredentialDto(
-                        credential,
-                        await deps.secrets.load(secret.ciphertext, credential.secretId),
-                      ).thinkingLevels ?? allowed;
-                  } catch {
-                    // Unreadable connections must not advertise reasoning support.
-                  }
-                }
-              }
-            }
-            if (allowed && !allowed.includes(input.thinkingLevel)) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: `Thinking level must be one of: ${allowed.join(", ")}`,
-              });
-            }
-          }
-        }
         if (!existing.thread) throw new IsolationError();
         await commitBotUpdate({
           prisma: deps.prisma,
@@ -1817,6 +1752,9 @@ export function createRouter(deps: RouterDeps) {
               ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
               : {}),
             ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
+            ...(input.fleetManagement !== undefined
+              ? { fleetManagement: input.fleetManagement }
+              : {}),
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
@@ -6488,45 +6426,18 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
   };
 }
 
-/**
- * Thinking levels a caller may set for a provider/model. Catalog models answer from
- * `thinkingLevels`; unknown catalog ids return undefined (no check). OpenAI-compatible
- * connections only advertise levels when the stored endpoint's saved model matches.
- */
-async function prepareAllowedThinkingLevels(
+function prepareAllowedThinkingLevels(
   deps: RouterDeps,
   actor: Actor,
   provider: string,
   modelId: string,
-): Promise<{ allowed: string[] | undefined; secret?: { id: string; ciphertext: string } }> {
-  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return {
-      allowed: listPiCatalog().find((item) => item.provider === provider && item.id === modelId)
-        ?.thinkingLevels,
-    };
-  }
-  let allowed: string[] | undefined = ["off"];
-  let savedSecret: { id: string; ciphertext: string } | undefined;
-  const credential = await findModelCredential(deps.prisma, actor, provider);
-  if (credential && credential.defaultModel === modelId) {
-    const secret = await deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: actor.userId, spaceId: null },
-      select: { ciphertext: true },
-    });
-    if (secret) {
-      savedSecret = { id: credential.secretId, ciphertext: secret.ciphertext };
-      try {
-        allowed =
-          modelCredentialDto(
-            credential,
-            await deps.secrets.load(secret.ciphertext, credential.secretId),
-          ).thinkingLevels ?? allowed;
-      } catch {
-        // Unreadable connections must not advertise reasoning support.
-      }
-    }
-  }
-  return { allowed, secret: savedSecret };
+) {
+  return prepareModelThinkingLevels(
+    { prisma: deps.prisma, secretStore: deps.secrets },
+    actor,
+    provider,
+    modelId,
+  );
 }
 
 async function allowedThinkingLevels(

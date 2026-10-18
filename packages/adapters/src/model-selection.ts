@@ -8,6 +8,7 @@ import {
   findModelCredential,
   type PrismaClient,
 } from "@rakazo/db";
+import { modelCredentialDto } from "./model-connect.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -321,6 +322,127 @@ export async function validateStoredModelAuth(
   );
   // Unreadable credentials fail when the run loads them, not as an auth mismatch.
   return auth.status === "rejected" ? auth.message : undefined;
+}
+
+export type BotModelChangeDeps = {
+  prisma: PrismaClient;
+  secretStore: Pick<SecretStore, "load">;
+  codexCatalog?: CodexLiveCatalog;
+  refreshExpiredCredential: (
+    scope: { userId: string; spaceId: string },
+    secretId: string,
+    provider: string,
+  ) => void;
+  /** The space's default model, used for the thinking-level check when the bot has none. */
+  defaultModel: () => Promise<{ provider: string | null; model: string | null }>;
+};
+
+export type BotModelChangeResult =
+  | { ok: true; provider: string | null; model: string | null; thinkingLevel: string | null }
+  | { ok: false; error: string };
+
+/**
+ * The rules for changing a bot's model and thinking level. `provider` and `model`
+ * are the values the bot will have; `current` is what it has now. Settings resend
+ * the saved model on every save, so the model checks run only when it changes.
+ */
+export async function validateBotModelChange(
+  deps: BotModelChangeDeps,
+  input: {
+    userId: string;
+    spaceId: string;
+    provider: string | null;
+    model: string | null;
+    thinkingLevel?: string | null;
+    current?: { provider: string | null; model: string | null };
+  },
+): Promise<BotModelChangeResult> {
+  const scope = { userId: input.userId, spaceId: input.spaceId };
+  const { provider, model } = input;
+  const changing = provider !== input.current?.provider || model !== input.current?.model;
+  if (changing && provider && model) {
+    const credential = await findModelCredential(deps.prisma, scope, provider, model);
+    if (!credential) return { ok: false, error: "Connect that model provider first" };
+    const inCatalog = isCatalogModelChoice(provider, model);
+    if (!inCatalog && credential.defaultModel !== model) {
+      return { ok: false, error: "Unknown model for that provider" };
+    }
+    if (inCatalog) {
+      const authError = await validateStoredModelAuth(
+        deps.prisma,
+        deps.secretStore,
+        input.userId,
+        credential.secretId,
+        provider,
+        model,
+        deps.codexCatalog,
+        {
+          onExpiredToken: () => deps.refreshExpiredCredential(scope, credential.secretId, provider),
+        },
+      );
+      if (authError) return { ok: false, error: authError };
+    }
+  }
+  const thinkingLevel = input.thinkingLevel ?? null;
+  if (thinkingLevel) {
+    const defaults = provider && model ? null : await deps.defaultModel();
+    const effectiveProvider = provider ?? defaults?.provider;
+    const effectiveModelId = model ?? defaults?.model;
+    if (effectiveProvider && effectiveModelId) {
+      const { allowed } = await prepareAllowedThinkingLevels(
+        deps,
+        scope,
+        effectiveProvider,
+        effectiveModelId,
+      );
+      if (allowed && !allowed.includes(thinkingLevel)) {
+        return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };
+      }
+    }
+  }
+  return { ok: true, provider, model, thinkingLevel };
+}
+
+/**
+ * Catalog models answer from `thinkingLevels`; unknown ids return `allowed: undefined`
+ * (no check). OpenAI-compatible connections only advertise levels when the saved model
+ * matches. `secret` is the stored ciphertext the answer was derived from, for callers
+ * that recheck it inside a transaction.
+ */
+export async function prepareAllowedThinkingLevels(
+  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore">,
+  scope: { userId: string; spaceId: string },
+  provider: string,
+  modelId: string,
+): Promise<{ allowed: string[] | undefined; secret?: { id: string; ciphertext: string } }> {
+  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return {
+      allowed: listPiCatalog().find((item) => item.provider === provider && item.id === modelId)
+        ?.thinkingLevels,
+    };
+  }
+  let allowed: string[] | undefined = ["off"];
+  let savedSecret: { id: string; ciphertext: string } | undefined;
+  const credential = await findModelCredential(deps.prisma, scope, provider);
+  if (credential && credential.defaultModel === modelId) {
+    const secret = await deps.prisma.secret.findFirst({
+      where: { id: credential.secretId, userId: scope.userId, spaceId: null },
+      select: { ciphertext: true },
+    });
+    if (secret) {
+      savedSecret = { id: credential.secretId, ciphertext: secret.ciphertext };
+      try {
+        allowed =
+          modelCredentialDto(
+            credential,
+            await deps.secretStore.load(secret.ciphertext, credential.secretId),
+          ).thinkingLevels ?? allowed;
+      } catch {
+        // Unreadable connections must not advertise reasoning support.
+      }
+    }
+  }
+  return { allowed, secret: savedSecret };
 }
 
 export async function validateConnectedModelChoice(

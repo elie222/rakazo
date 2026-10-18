@@ -243,6 +243,46 @@ describe("schedule tool persistence", () => {
     expect(enqueue).toHaveBeenCalledOnce();
   });
 
+  it("createScheduleFromTool creates the routine for the target bot and thread", async () => {
+    const append = vi.fn(async () => undefined);
+    const enqueue = vi.fn(async () => undefined);
+    const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+      id: "routine-1",
+      ...args.data,
+    }));
+    const deps = {
+      prisma: { routine: { create } },
+      events: { append },
+      jobs: { enqueue, cancel: vi.fn(async () => undefined) },
+    } as unknown as Parameters<typeof createScheduleFromTool>[0];
+
+    const result = await createScheduleFromTool(deps, {
+      spaceId: "ws-1",
+      botId: "bot-1",
+      userId: "user-1",
+      threadId: "thread-1",
+      target: { botId: "child-1", threadId: "child-thread-1" },
+      name: "Morning joke",
+      prompt: "Tell a joke",
+      schedule: { every: 1, unit: "minutes" },
+    });
+
+    expect(result).toMatchObject({ ok: true, routineId: "routine-1" });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ botId: "child-1", threadId: "child-thread-1" }),
+      }),
+    );
+    expect(append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "routine.created",
+        botId: "child-1",
+        threadId: "child-thread-1",
+      }),
+    );
+    expect(enqueue).toHaveBeenCalledOnce();
+  });
+
   it("keeps the routine when event append fails after enqueue", async () => {
     const cancel = vi.fn(async () => undefined);
     const remove = vi.fn(async () => undefined);

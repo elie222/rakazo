@@ -158,6 +158,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
+import { plainAskTitle } from "../lib/ask-title";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
@@ -3533,7 +3534,9 @@ const MessageBubble = memo(function MessageBubble({
                   {...actionProps}
                   style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
                 >
-                  {askBlock.instructionUpdate ? t("Update instructions?") : askBlock.text}
+                  {askBlock.instructionUpdate
+                    ? t("Update instructions?")
+                    : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
               {askBlock.detail ? (
@@ -4014,7 +4017,7 @@ function AskBlock({
         {...actionProps}
         style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
       >
-        {ask.text}
+        {plainAskTitle(ask.text)}
       </Text>
       {secretInput && ask.credential ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>

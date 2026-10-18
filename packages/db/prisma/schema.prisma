@@ -429,6 +429,7 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
+  fleetManagement        Boolean @default(false)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BOT_INSTRUCTIONS_MAX_LENGTH, InstructionVersionSchema } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, isOwnerStartedRun } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "./client.js";
 
 export class InstructionConflictError extends Error {
@@ -10,8 +10,9 @@ export class InstructionConflictError extends Error {
   }
 }
 
+/** The caller checks a follow-up's source message; routines the owner set up may also propose. */
 export function validateInstructionProposal(args: Record<string, unknown>, trigger: string): void {
-  if (!["user", "routine", "follow_up", "call_end"].includes(trigger)) {
+  if (trigger !== "routine" && !isOwnerStartedRun(trigger, true)) {
     throw new Error("Instruction updates are blocked for externally triggered runs.");
   }
   if (

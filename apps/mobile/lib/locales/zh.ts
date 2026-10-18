@@ -809,4 +809,5 @@ export const ZH_MESSAGES: Record<string, string> = {
   Undo: "撤销",
   "Update instructions?": "更新指令？",
   "Could not restore instructions": "无法恢复指令",
+  "Fleet management": "集群管理",
 };

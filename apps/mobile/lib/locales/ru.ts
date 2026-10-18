@@ -840,4 +840,5 @@ export const RU_MESSAGES: Record<string, string> = {
   Undo: "Отменить",
   "Update instructions?": "Обновить инструкции?",
   "Could not restore instructions": "Не удалось восстановить инструкции",
+  "Fleet management": "Управление флотом",
 };

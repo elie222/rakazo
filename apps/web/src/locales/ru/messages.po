@@ -2353,6 +2353,10 @@ msgstr "Завершение подключения MCP…"
 msgid "Flag unexpected actions"
 msgstr "Пометить неожиданные действия"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Забыли пароль?"

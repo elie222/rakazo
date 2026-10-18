@@ -207,12 +207,15 @@ export async function createScheduleFromTool(
     botId: string;
     userId: string;
     threadId: string;
+    target?: { botId: string; threadId: string };
     name: string;
     prompt: string;
     timezone?: string;
     schedule: Record<string, unknown>;
   },
 ) {
+  const routineBotId = input.target?.botId ?? input.botId;
+  const routineThreadId = input.target?.threadId ?? input.threadId;
   const name = input.name.trim();
   const prompt = input.prompt.trim();
   if (!name) return { error: "name is required." };
@@ -225,9 +228,9 @@ export async function createScheduleFromTool(
   const row = await deps.prisma.routine.create({
     data: {
       spaceId: input.spaceId,
-      botId: input.botId,
+      botId: routineBotId,
       userId: input.userId,
-      threadId: input.threadId,
+      threadId: routineThreadId,
       name,
       prompt,
       crons: [resolved.cron],
@@ -256,8 +259,8 @@ export async function createScheduleFromTool(
   try {
     await deps.events.append({
       spaceId: input.spaceId,
-      threadId: input.threadId,
-      botId: input.botId,
+      threadId: routineThreadId,
+      botId: routineBotId,
       type: "routine.created",
       payload: { name: row.name },
     });

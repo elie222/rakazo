@@ -11,10 +11,12 @@ import {
   runModelChoice,
   selectConfiguredModel,
   selectDefaultCredentialId,
+  validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
+import { listPiCatalog } from "./pi-models.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
 
@@ -1051,5 +1053,121 @@ describe("connected model validation", () => {
     await expect(
       validateConnectedModelChoice(catalogPrisma, actor, "xai", "undefined"),
     ).resolves.toBe("Unknown model for that provider");
+  });
+});
+
+describe("bot model change validation", () => {
+  const scope = { userId: "user-1", spaceId: "space-1" };
+  const oauthSecret = JSON.stringify({
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 60_000,
+  });
+
+  function changeDeps(connected: Record<string, ReturnType<typeof credential>>) {
+    const prisma = {
+      // A saved model lives on the space preference, as the picker writes it.
+      spaceModelPreference: {
+        findFirst: async (args: { where: { credential?: { provider?: string } } }) => {
+          const saved = connected[args.where.credential?.provider ?? ""];
+          if (!saved?.defaultModel) return null;
+          return {
+            credential: saved,
+            isDefault: true,
+            modelId: saved.defaultModel,
+            thinkingLevel: null,
+          };
+        },
+      },
+      userModelCredential: {
+        findFirst: async (args: { where: { provider?: string } }) =>
+          connected[args.where.provider ?? ""] ?? null,
+      },
+      secret: {
+        findFirst: async (args: { where: { id?: string } }) => ({
+          id: args.where.id,
+          ciphertext: `cipher-${args.where.id}`,
+        }),
+      },
+    } as unknown as PrismaClient;
+    return {
+      prisma,
+      secretStore: { load: async () => oauthSecret },
+      refreshExpiredCredential: vi.fn(),
+      defaultModel: async () => ({ provider: "xai", model: "grok-4.6" }),
+    };
+  }
+
+  it("rejects a disconnected provider and an unknown model", async () => {
+    const deps = changeDeps({ xai: credential("xai", "saved-model") });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: "anthropic", model: "claude-opus-4-6" }),
+    ).resolves.toEqual({ ok: false, error: "Connect that model provider first" });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: "xai", model: "not-a-model" }),
+    ).resolves.toEqual({ ok: false, error: "Unknown model for that provider" });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: "xai", model: "saved-model" }),
+    ).resolves.toEqual({ ok: true, provider: "xai", model: "saved-model", thinkingLevel: null });
+  });
+
+  it("rejects a model the stored credential cannot call", async () => {
+    const deps = changeDeps({ "openai-codex": credential("openai-codex", null) });
+    const result = await validateBotModelChange(deps, {
+      ...scope,
+      provider: "openai-codex",
+      model: "gpt-5.3-codex-spark",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringMatching(/not available with your current sign-in/i),
+    });
+  });
+
+  it("rejects a thinking level the model does not offer, including the default model", async () => {
+    const deps = changeDeps({ xai: credential("xai", null) });
+    const levels = listPiCatalog().find(
+      (item) => item.provider === "xai" && item.id === "grok-4.6",
+    )?.thinkingLevels;
+    expect(levels).not.toContain("off");
+    const error = `Thinking level must be one of: ${levels?.join(", ")}`;
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "xai",
+        model: "grok-4.6",
+        thinkingLevel: "off",
+      }),
+    ).resolves.toEqual({ ok: false, error });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: null, model: null, thinkingLevel: "off" }),
+    ).resolves.toEqual({ ok: false, error });
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "xai",
+        model: "grok-4.6",
+        thinkingLevel: "high",
+      }),
+    ).resolves.toEqual({ ok: true, provider: "xai", model: "grok-4.6", thinkingLevel: "high" });
+  });
+
+  it("skips model checks when the model is unchanged", async () => {
+    const deps = changeDeps({});
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "xai",
+        model: "retired-model",
+        current: { provider: "xai", model: "retired-model" },
+      }),
+    ).resolves.toEqual({ ok: true, provider: "xai", model: "retired-model", thinkingLevel: null });
+  });
+
+  it("clears the model", async () => {
+    await expect(
+      validateBotModelChange(changeDeps({}), { ...scope, provider: null, model: null }),
+    ).resolves.toEqual({ ok: true, provider: null, model: null, thinkingLevel: null });
   });
 });

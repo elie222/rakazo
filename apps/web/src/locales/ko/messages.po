@@ -2353,6 +2353,10 @@ msgstr "MCP 연결을 마무리하는 중…"
 msgid "Flag unexpected actions"
 msgstr "예상하지 못한 작업 표시"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "비밀번호를 잊으셨나요?"

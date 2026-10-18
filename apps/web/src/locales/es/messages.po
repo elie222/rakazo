@@ -2353,6 +2353,10 @@ msgstr "Finalizando conexión MCP…"
 msgid "Flag unexpected actions"
 msgstr "Marcar acciones inesperadas"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "¿Olvidaste la contraseña?"

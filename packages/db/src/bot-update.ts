@@ -1,6 +1,7 @@
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import { appendEventInTransaction, writeBotInstructions } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { writeBotInstructions } from "./bot-instructions.js";
+import type { Prisma, PrismaClient } from "./client.js";
+import { appendEventInTransaction } from "./events.js";
 
 type AppendEvent = typeof appendEventInTransaction;
 
@@ -20,6 +21,7 @@ export async function commitBotUpdate(
     emitBotUpdated: boolean;
     expectedInstructions?: string;
     instructionRestore?: { versionId: string; undo?: boolean };
+    reason?: string;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
 ): Promise<{ id: string; name: string; title: string; description: string }> {
@@ -43,7 +45,7 @@ export async function commitBotUpdate(
       await writeBotInstructions(tx, {
         botId: options.botId,
         instructions,
-        reason: options.instructionRestore ? "Restore" : "Manual edit",
+        reason: options.instructionRestore ? "Restore" : (options.reason ?? "Manual edit"),
         expectedInstructions: options.expectedInstructions,
         ...options.instructionRestore,
       });
