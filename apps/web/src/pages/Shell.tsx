@@ -1983,7 +1983,9 @@ function SpaceShell() {
     [activeSnapshot?.messages],
   );
   const transcriptRef = useRef(transcript);
-  transcriptRef.current = transcript;
+  useLayoutEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
     () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
     [active?.id, groupId, inGroup],
