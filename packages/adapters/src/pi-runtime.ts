@@ -1053,10 +1053,14 @@ export function prepareRequestSecretArguments(raw: Record<string, unknown>) {
   };
 }
 
+/** Pi runs one turn's tool calls concurrently; these read each other's writes, so they must not. */
+const SEQUENTIAL_TOOLS = new Set(["schedule_create", "schedule_list", "schedule_cancel"]);
+
 function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): AgentTool {
   return {
     name: exposedName,
     label: tool.name,
+    ...(SEQUENTIAL_TOOLS.has(tool.name) ? { executionMode: "sequential" as const } : {}),
     description: tool.description,
     // Pi runs a turn's tool calls concurrently by default, so a batch that
     // creates a routine and lists routines can read the list before the row

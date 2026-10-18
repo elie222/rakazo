@@ -34,6 +34,7 @@ const fakeAgentState = vi.hoisted(() => ({
     name: string;
     executionMode?: string;
     prepareArguments?: (args: unknown) => Record<string, unknown>;
+    executionMode?: "sequential" | "parallel";
     execute: (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>;
   }>,
   invoke: {
@@ -742,6 +743,54 @@ describe("Pi connector tool dispatch", () => {
       ]);
     },
   );
+
+  it("runs schedule tools one at a time so a list sees a create from the same turn", async () => {
+    const scheduleTool = (name: string): ConnectorTool => ({
+      name,
+      description: name,
+      inputSchema: { type: "object", properties: {} },
+      route: { connectorId: "builtin", toolName: name },
+    });
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "r",
+        prompt: "remind me",
+        instructions: "Schedule it.",
+        history: [],
+        tools: [
+          scheduleTool("schedule_create"),
+          scheduleTool("schedule_list"),
+          scheduleTool("schedule_cancel"),
+          destinationTool,
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => ({ ok: true })),
+      },
+      {
+        operationId: "1",
+        traceId: "1",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust the runtime event stream so the tool list is captured.
+    }
+
+    const modes = Object.fromEntries(
+      fakeAgentState.tools.map((tool) => [tool.name, tool.executionMode]),
+    );
+    expect(modes).toMatchObject({
+      schedule_create: "sequential",
+      schedule_list: "sequential",
+      schedule_cancel: "sequential",
+    });
+    expect(modes.destination_write).toBeUndefined();
+  });
 
   it("exposes a provider-safe name while executing the original connector name", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
