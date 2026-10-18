@@ -376,7 +376,43 @@ describe("prepareFleetRequest set_child_bot_model", () => {
       },
       summary: {
         title: "Change the model of Scout?",
-        lines: ["From: claude-old", "To: my-model"],
+        lines: ["From: claude-old (Anthropic)", "To: my-model (custom)"],
+      },
+    });
+  });
+
+  it("distinguishes providers with the same unknown model id", async () => {
+    const { deps } = fakeFleet({
+      ...fleet,
+      bots: fleet.bots.map((bot) =>
+        bot.id === "bot-scout" ? { ...bot, modelId: "unknown-model" } : bot,
+      ),
+      credentials: [
+        {
+          id: "pref-custom",
+          modelId: "unknown-model",
+          position: 0,
+          createdAt: new Date(0),
+          credential: {
+            id: "cred-custom",
+            userId: "user-1",
+            provider: "custom",
+            label: "Custom",
+            secretId: "secret-custom",
+            createdAt: new Date(0),
+          },
+        },
+      ],
+    });
+    const prepared = await prepareFleetRequest(deps, run, "set_child_bot_model", {
+      bot_id: "bot-scout",
+      provider: "custom",
+      model: "unknown-model",
+    });
+    expect(prepared).toMatchObject({
+      ok: true,
+      summary: {
+        lines: ["From: unknown-model (Anthropic)", "To: unknown-model (custom)"],
       },
     });
   });
@@ -408,7 +444,7 @@ describe("prepareFleetRequest set_child_bot_model", () => {
     expect(prepared).toMatchObject({
       ok: true,
       canonical: { botId: "bot-scout", provider: null, model: null },
-      summary: { lines: ["From: claude-old", "To: Default model"] },
+      summary: { lines: ["From: claude-old (Anthropic)", "To: Default model"] },
     });
   });
 
@@ -425,7 +461,7 @@ describe("prepareFleetRequest set_child_bot_model", () => {
     expect(prepared).toMatchObject({
       ok: true,
       summary: {
-        lines: ["From: claude-old", "To: Default model", "Thinking: Default"],
+        lines: ["From: claude-old (Anthropic)", "To: Default model", "Thinking: Default"],
       },
     });
   });

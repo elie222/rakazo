@@ -107,7 +107,7 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./i18n", () => {
   const t = (text: string, values?: { name: string }) => text.replace("{name}", values?.name ?? "");
-  return { useI18n: () => ({ t }) };
+  return { t, useI18n: () => ({ t }) };
 });
 vi.mock("../components/settings-group", () => ({
   SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
@@ -203,7 +203,7 @@ describe("bot settings device voice menu", () => {
     await act(async () => {
       toggle.click();
     });
-    expect(mocks.rpc).toHaveBeenCalledWith("bots/update", {
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("bots/update", {
       botId: "bot-fixture",
       fleetManagement: true,
     });
@@ -217,6 +217,23 @@ describe("bot settings device voice menu", () => {
     });
     for (const [, input] of mocks.rpc.mock.calls)
       expect(input).not.toHaveProperty("fleetManagement");
+  });
+
+  it("restores the fleet toggle when saving fails", async () => {
+    mocks.rpc.mockRejectedValueOnce(new Error("offline"));
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    if (!toggle) throw new Error("Missing fleet switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("bots/update", {
+      botId: "bot-fixture",
+      fleetManagement: true,
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.disabled).toBe(false);
+    expect(container.textContent).toContain("offline");
   });
 
   it("marks the current voice, keeps the plain row, and saves before playing a sample", async () => {

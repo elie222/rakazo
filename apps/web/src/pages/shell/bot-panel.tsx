@@ -216,7 +216,7 @@ export function BotSettings({
     instructions?: string;
     color?: string;
     notifyOnFinish?: boolean;
-    computerMode: ComputerMode;
+    computerMode?: ComputerMode;
     memoryScope?: "isolated" | "shared" | null;
     autoSpeak?: boolean;
     fleetManagement?: boolean;
@@ -347,23 +347,28 @@ export function BotSettings({
     disabledBuiltinTools?: string[];
     baseDisabledBuiltinTools?: string[];
   }) {
-    const selected = selectedModel;
-    const nextName = (patchOverrides?.name !== undefined ? patchOverrides.name : name).trim();
-    const nextTitle = (patchOverrides?.title !== undefined ? patchOverrides.title : title).trim();
-    const nextDescription = (
-      patchOverrides?.description !== undefined ? patchOverrides.description : description
-    ).trim();
-    const nextColor = patchOverrides?.color !== undefined ? patchOverrides.color : color;
-    const nextNotify =
-      patchOverrides?.notifyOnFinish !== undefined ? patchOverrides.notifyOnFinish : notifyOnFinish;
-
-    if (nextName) setName(nextName);
-    setTitle(nextTitle);
-    setDescription(nextDescription);
-
     try {
       setSaving(true);
       setError(null);
+      if (patchOverrides?.fleetManagement !== undefined) {
+        await onSave({ fleetManagement: patchOverrides.fleetManagement });
+        return;
+      }
+      const selected = selectedModel;
+      const nextName = (patchOverrides?.name !== undefined ? patchOverrides.name : name).trim();
+      const nextTitle = (patchOverrides?.title !== undefined ? patchOverrides.title : title).trim();
+      const nextDescription = (
+        patchOverrides?.description !== undefined ? patchOverrides.description : description
+      ).trim();
+      const nextColor = patchOverrides?.color !== undefined ? patchOverrides.color : color;
+      const nextNotify =
+        patchOverrides?.notifyOnFinish !== undefined
+          ? patchOverrides.notifyOnFinish
+          : notifyOnFinish;
+
+      if (nextName) setName(nextName);
+      setTitle(nextTitle);
+      setDescription(nextDescription);
       const patch = {
         name: nextName || bot.name,
         title: nextTitle,
@@ -375,9 +380,6 @@ export function BotSettings({
         computerMode,
         memoryScope,
         autoSpeak,
-        ...(patchOverrides?.fleetManagement !== undefined
-          ? { fleetManagement: patchOverrides.fleetManagement }
-          : {}),
         voiceId: voiceId || null,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,

@@ -252,14 +252,14 @@ describe("BotSettings fleet management saves", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("persists the toggle immediately and omits it from unrelated saves", async () => {
-    await render();
+  it.each([false, true])("saves only the fleet toggle from %s", async (enabled) => {
+    await render("Billing", enabled);
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");
     await act(async () => {
       toggle.click();
     });
-    expect(onSave.mock.lastCall?.[0]).toHaveProperty("fleetManagement", true);
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: !enabled });
     await clickSave();
     expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
   });

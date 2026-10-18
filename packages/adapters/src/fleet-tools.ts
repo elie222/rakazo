@@ -1278,10 +1278,10 @@ function memberNames(members: Member[]): string {
 
 function modelLabel(provider: string | null, model: string | null): string {
   if (!provider || !model) return "Default model";
-  const entry = [...listPiCatalog(), scriptedCatalogEntry].find(
-    (item) => item.provider === provider && item.id === model,
-  );
-  return entry ? `${entry.providerName}: ${entry.label}` : model;
+  const catalog = [...listPiCatalog(), scriptedCatalogEntry];
+  const entry = catalog.find((item) => item.provider === provider && item.id === model);
+  const providerName = catalog.find((item) => item.provider === provider)?.providerName ?? provider;
+  return entry ? `${entry.providerName}: ${entry.label}` : `${model} (${providerName})`;
 }
 
 function issueMessage(error: { issues: Array<{ path: PropertyKey[]; message: string }> }): string {
