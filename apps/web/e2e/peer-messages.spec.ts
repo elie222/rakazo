@@ -249,6 +249,9 @@ test("keeps a reaction with its folded peer reply", async ({ page }, testInfo) =
   await expect(transcript.getByText("👍", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "peer-reply-reaction-folded");
   await expand.click();
-  await expect(replyRow.getByTestId("message-reactions")).toHaveText("👍");
+  const reactions = replyRow.getByTestId("message-reactions");
+  await expect(reactions).toHaveText("👍");
+  await reactions.scrollIntoViewIfNeeded();
+  await expect(reactions).toBeInViewport();
   await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
 });
