@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { activeBotId, captureScreenshot, completeOnboarding, rpc, signup } from "./helpers";
 
 test("shows peer chips in transcript and opens view-only peer chat", async ({ page }, testInfo) => {
@@ -193,7 +194,7 @@ async function expandFoldedPeerReply(page: Page, name: string) {
   return { ...opened, expand, collapse, replyRow };
 }
 
-test("opens a folded peer reply from a search hit", async ({ page }) => {
+test("opens a folded peer reply from a search hit", async ({ page }, testInfo) => {
   const { transcript, reply } = await openFoldedPeerReply(page, "peer-search");
   await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 60_000 });
 
@@ -206,9 +207,10 @@ test("opens a folded peer reply from a search hit", async ({ page }) => {
   const collapse = transcript.getByRole("button", { name: "Collapse Message from Researcher" });
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
   await expect(reply).toBeInViewport();
+  await captureScreenshot(page, testInfo, "peer-reply-search-jump");
 });
 
-test("opens a folded peer reply from a reply quote", async ({ page }) => {
+test("opens a folded peer reply from a reply quote", async ({ page }, testInfo) => {
   const { composer, transcript, collapse, replyRow } = await expandFoldedPeerReply(
     page,
     "peer-quote",
@@ -228,9 +230,10 @@ test("opens a folded peer reply from a reply quote", async ({ page }) => {
   await quote.click();
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
   await expect(replyRow).toBeInViewport();
+  await captureScreenshot(page, testInfo, "peer-reply-quote-jump");
 });
 
-test("keeps a reaction with its folded peer reply", async ({ page }) => {
+test("keeps a reaction with its folded peer reply", async ({ page }, testInfo) => {
   const { transcript, expand, collapse, replyRow } = await expandFoldedPeerReply(
     page,
     "peer-react",
@@ -244,6 +247,8 @@ test("keeps a reaction with its folded peer reply", async ({ page }) => {
   await collapse.click();
   await expect(replyRow).toHaveCount(0);
   await expect(transcript.getByText("👍", { exact: true })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "peer-reply-reaction-folded");
   await expand.click();
   await expect(replyRow.getByTestId("message-reactions")).toHaveText("👍");
+  await captureScreenshot(page, testInfo, "peer-reply-reaction-expanded");
 });
