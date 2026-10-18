@@ -44,6 +44,7 @@ describe("collaboration transcript markers", () => {
       onToggle: () => undefined,
     });
     expect(collapsed).toContain('data-testid="peer-replies-toggle"');
+    expect(collapsed).toContain('data-slot="button"');
     expect(collapsed).toContain('aria-expanded="false"');
     expect(collapsed).toContain('aria-label="Expand Message from Research"');
     expect(

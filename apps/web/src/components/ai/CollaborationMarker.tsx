@@ -1,4 +1,4 @@
-import { BotAvatar, GroupAvatar, type GroupAvatarMember } from "@rakazo/ui-web";
+import { BotAvatar, Button, GroupAvatar, type GroupAvatarMember } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { LoadingState } from "./primitives";
 
@@ -36,23 +36,26 @@ export function CollaborationMarker({
         </span>
       </button>
       {replies ? (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           data-testid="peer-replies-toggle"
           aria-expanded={replies.expanded}
           aria-label={replies.label}
           onClick={replies.onToggle}
-          className="grid size-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground/75"
+          className="rounded-full text-muted-foreground"
         >
           <ChevronDown
             size={14}
             strokeWidth={1.8}
             className={
-              replies.expanded ? "transition-transform" : "-rotate-90 transition-transform"
+              replies.expanded
+                ? "size-3.5 transition-transform"
+                : "size-3.5 -rotate-90 transition-transform"
             }
             aria-hidden="true"
           />
-        </button>
+        </Button>
       ) : null}
     </div>
   );

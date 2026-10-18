@@ -383,6 +383,28 @@ describe("lingui catalogs", () => {
     );
   });
 
+  it("translates the peer marker toggle names and fills in the marker label", () => {
+    for (const locale of ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      for (const message of ["Expand {label}", "Collapse {label}"]) {
+        const msgstr = catalog
+          .split("\n\n")
+          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`))
+          ?.match(/msgstr "(.+)"/)?.[1];
+        expect(msgstr, `${locale}: ${message}`).toBeTruthy();
+        expect(msgstr, `${locale}: ${message}`).not.toBe(message);
+        i18n.load(locale, { [message]: msgstr ?? "" });
+        i18n.activate(locale);
+        const name = i18n._({ id: message, message, values: { label: "Writer" } });
+        expect(name, `${locale}: ${message}`).toContain("Writer");
+        expect(name, `${locale}: ${message}`).not.toContain("{label}");
+      }
+    }
+  });
+
   it("translates the terminal empty state in every non-English catalog", () => {
     const translations: Record<string, string> = {
       de: "Noch keine Bot-Aktivität.",

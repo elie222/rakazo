@@ -142,11 +142,16 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await captureScreenshot(page, testInfo, "peer-replies-folded");
   await toggle.click();
   await expect(reply).toBeVisible();
+  // The toggle only folds; the label alone opens the peer chat.
+  await expect(page.getByTestId("peer-conversation-view")).toHaveCount(0);
   const collapse = transcript.getByRole("button", { name: "Collapse Message from Researcher" });
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
   await captureScreenshot(page, testInfo, "peer-replies-expanded");
-  await collapse.click();
+  await collapse.focus();
+  await collapse.press("Enter");
   await expect(reply).toHaveCount(0);
+  await toggle.press(" ");
+  await expect(reply).toBeVisible();
 
   // An ask from the woken run stays inline in the recipient's thread; its text folds.
   await composer.fill("message the bot named Researcher saying which city peer-fold-beta");
