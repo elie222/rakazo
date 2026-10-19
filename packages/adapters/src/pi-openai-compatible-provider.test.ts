@@ -543,10 +543,12 @@ describe("openai-compatible provider", () => {
     const fetchImpl = async () =>
       new Response(
         new ReadableStream({
+          /** Cross the byte cap in a second chunk without declaring a content length. */
           start(controller) {
             controller.enqueue(new Uint8Array(2 * 1024 * 1024));
             controller.enqueue(new Uint8Array(1));
           },
+          /** Record cancellation so the test can verify the oversized stream is released. */
           cancel() {
             cancelled = true;
           },

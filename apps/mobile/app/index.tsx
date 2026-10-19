@@ -683,6 +683,19 @@ function Home({ embedded }: { embedded: boolean }) {
     [createQuickBot, router],
   );
 
+  const openCreateChooser = useCallback(() => {
+    Alert.alert(
+      t("Create"),
+      undefined,
+      [
+        { text: t("New bot"), onPress: () => runCreateAction("bot") },
+        { text: t("New group"), onPress: () => runCreateAction("group") },
+        { text: t("New space"), onPress: () => runCreateAction("space") },
+      ],
+      { cancelable: true },
+    );
+  }, [runCreateAction, t]);
+
   useLayoutEffect(() => {
     if (!nativeHeader) return;
     const signedIn = ready && hasSession;
@@ -1060,28 +1073,36 @@ function Home({ embedded }: { embedded: boolean }) {
             >
               <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
             </HeaderButton>
-            <MenuView
-              actions={[
-                { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
-                { id: "group", title: t("New group"), image: "person.2" },
-                { id: "space", title: t("New space"), image: "square.grid.2x2" },
-              ]}
-              colorScheme={appearance}
-              onPressAction={({ nativeEvent }) => {
-                const action = nativeEvent.event;
-                if (action === "bot" || action === "group" || action === "space") {
-                  runCreateAction(action);
-                }
-              }}
-            >
-              <View
-                accessibilityLabel={t("Create")}
-                accessibilityRole="button"
-                style={styles.headerButton}
-              >
+            {Platform.OS === "android" ? (
+              // A plain button: the native Android menu trigger collapses to zero width when the
+              // installed app binary is older than the JS update, which hid the only way to create.
+              <HeaderButton accessibilityLabel={t("Create")} onPress={openCreateChooser}>
                 <NativeSymbol ios="plus" android="add" size={18} />
-              </View>
-            </MenuView>
+              </HeaderButton>
+            ) : (
+              <MenuView
+                actions={[
+                  { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
+                  { id: "group", title: t("New group"), image: "person.2" },
+                  { id: "space", title: t("New space"), image: "square.grid.2x2" },
+                ]}
+                colorScheme={appearance}
+                onPressAction={({ nativeEvent }) => {
+                  const action = nativeEvent.event;
+                  if (action === "bot" || action === "group" || action === "space") {
+                    runCreateAction(action);
+                  }
+                }}
+              >
+                <View
+                  accessibilityLabel={t("Create")}
+                  accessibilityRole="button"
+                  style={styles.headerButton}
+                >
+                  <NativeSymbol ios="plus" android="add" size={18} />
+                </View>
+              </MenuView>
+            )}
           </View>
         </View>
       )}

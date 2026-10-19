@@ -54,7 +54,7 @@ function createSurface(sendErrors: string[] = []) {
     mode: "webhook",
   });
   const surface = new ChatSdkMessagingSurface([
-    { provider: "telegram", capabilities: { direct: true, groups: false, typing: false }, adapter },
+    { provider: "telegram", capabilities: { direct: true, groups: false, receipt: null }, adapter },
   ]);
   return { surface, sends, threadId: adapter.encodeThreadId({ chatId: "123" }) };
 }

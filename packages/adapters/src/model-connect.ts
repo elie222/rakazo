@@ -3,11 +3,13 @@ import type { ModelConnectInput, ModelCredential, ThinkingLevel } from "@rakazo/
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   OPENAI_COMPATIBLE_PROVIDER_ID as CONTRACT_OPENAI_COMPAT,
+  canonicalPiProviderId,
   cloudflareGatewayRouting,
   isCloudflareAiGatewayProvider,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
 import { modelIdSupportsImages, updateModelImageCapabilities } from "./model-vision.js";
+import { normalizeOpenAiCompatibleBaseUrl } from "./openai-compatible-url.js";
 import { modelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   CHATGPT_OAUTH_PROVIDER,
@@ -25,6 +27,22 @@ export type BuildModelConnectOptions = {
   /** Skip writing visionModelIds when prior plaintext was unavailable during key replacement. */
   omitVisionModelIds?: boolean;
 };
+
+/** Reuse a saved probe key only for the endpoint it was saved for. */
+export function storedOpenAiCompatibleProbeKey(
+  baseUrl: string,
+  storedPlaintext?: string,
+): string | undefined {
+  const previous = tryParseModelSecret(storedPlaintext);
+  if (
+    previous?.kind !== "openai_compatible" ||
+    !previous.apiKey?.trim() ||
+    previous.baseUrl !== normalizeOpenAiCompatibleBaseUrl(baseUrl)
+  ) {
+    return undefined;
+  }
+  return previous.apiKey;
+}
 
 export function buildModelConnectPlaintext(
   input: ModelConnectInput,
@@ -225,7 +243,7 @@ export function modelCredentialDto(
 ): ModelCredential {
   const credential: ModelCredential = {
     id: row.id,
-    provider: row.provider,
+    provider: canonicalPiProviderId(row.provider),
     label: row.label,
     hasKey: storedModelSecretHasApiKey(plaintext),
     isDefault: row.isDefault,

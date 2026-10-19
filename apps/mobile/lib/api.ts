@@ -60,7 +60,12 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
-import { authErrorText, errorText } from "./user-error";
+import {
+  authErrorText,
+  authResponseErrorText,
+  errorText,
+  sessionSaveErrorText,
+} from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -491,7 +496,7 @@ async function authenticateWithEmail(
   action: "sign-in" | "sign-up",
   input: { email: string; password: string; name?: string },
 ) {
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/${action}/email`,
     {
       method: "POST",
@@ -500,8 +505,8 @@ async function authenticateWithEmail(
     },
     {},
   );
-  if (!response.ok) {
-    throw new Error(authErrorText(body, t("Could not continue")));
+  if (!response.ok || invalidJson) {
+    throw new Error(authResponseErrorText(response.status, body, invalidJson));
   }
   const token = tokenFromAuthResponse(response, body);
   if (action === "sign-up" && signupRequiresEmailVerification(body))
@@ -514,8 +519,13 @@ async function authenticateWithEmail(
           : "Sign-up did not return a session",
       ),
     );
-  if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
-  await saveSessionToken(token);
+  try {
+    if (!(await clearSpace()))
+      throw new Error(t("Could not save your sign-in on this device. Try again."));
+    await saveSessionToken(token);
+  } catch (error) {
+    throw new Error(sessionSaveErrorText(error));
+  }
   return { verificationRequired: false };
 }
 
@@ -607,7 +617,7 @@ export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
-): Promise<{ response: Response; body: T }> {
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
@@ -626,7 +636,7 @@ export async function fetchMobileJson<T>(
       return { response, body };
     } catch (error) {
       if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
-        return { response, body: invalidJsonFallback };
+        return { response, body: invalidJsonFallback, invalidJson: true };
       }
       throw requestError(error, controller.signal);
     }

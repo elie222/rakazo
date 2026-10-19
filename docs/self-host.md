@@ -339,6 +339,18 @@ Services set `service.name` (`rakazo-api`, `rakazo-worker`, `rakazo-sandbox-supe
 `rakazo-updater`). A partial Axiom config logs a one-time warning and stays off. `AXIOM_EDGE` is a
 regional hostname; `AXIOM_EDGE_URL` must be https and wins when both are set.
 
+Error reporting to Sentry or a Sentry-compatible collector such as GlitchTip is optional:
+
+- `SENTRY_DSN` reports backend `error` logs, with the exception chain, `service`, and request or job
+  ids as tags. Uncaught exceptions are reported before exit.
+- `SENTRY_BROWSER_DSN` reports web app errors. The browser reads it from `/api/monitoring/config` at
+  startup and posts reports to `/api/monitoring/tunnel`; the API forwards only envelopes addressed
+  to that DSN. Use a separate project from `SENTRY_DSN`.
+- `SENTRY_ENVIRONMENT` names the deployment. `SENTRY_RELEASE` defaults to the image's `GIT_SHA`.
+
+Neither SDK sends cookies, headers, request bodies, user identity, console output, or log context.
+Reporting is off without a DSN; an invalid DSN logs a warning and stays off.
+
 Compose passes these into the API, worker, supervisor, and updater. Computer containers and updater
 child commands do not receive them.
 
@@ -353,8 +365,11 @@ WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
 # E2B, CreateOS and Box still apply their own timeouts.
+COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
+RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
+BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos

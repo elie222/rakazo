@@ -1,4 +1,11 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Too many attempts. Try again in a few minutes.":
+    "Слишком много попыток. Попробуйте снова через несколько минут.",
+  "The server had a problem. Try again in a moment.":
+    "На сервере возникла проблема. Попробуйте снова чуть позже.",
+  "Password sign-in is turned off on this server": "Вход по паролю на этом сервере отключён",
+  "Could not save your sign-in on this device. Try again.":
+    "Не удалось сохранить вход на этом устройстве. Попробуйте снова.",
   "Your OpenRouter": "Ваш OpenRouter",
   "Your OpenAI": "Ваш OpenAI",
   "Your Anthropic": "Ваш Anthropic",
@@ -147,7 +154,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Add thumbs-up": "Поставить отметку «Нравится»",
   "Add Treg": "Добавить Treg",
   "Agent messages": "Сообщения агента",
-  "Alerts from routines": "Уведомления от задач",
   "Allowed once": "Разрешено один раз",
   "Allow once": "Разрешить один раз",
   "Already have an account?": "У вас уже есть аккаунт?",
@@ -372,6 +378,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Git event": "Git-событие",
   "Slack message": "Сообщение Slack",
   "Message event": "Событие сообщения",
+  "When something changes": "Когда что-то меняется",
   "Teams not enabled": "Teams не настроен",
   "Slack not enabled": "Slack не включен",
   "Teams message": "Сообщение Teams",
@@ -411,7 +418,6 @@ export const RU_MESSAGES: Record<string, string> = {
     "Нажмите и удерживайте, чтобы закрепить или переместить в раздел",
   "Long press to pin, move, or silence notifications":
     "Длительное нажатие, чтобы закрепить, переместить или отключить уведомления",
-  "Enter your Rakazo server address.": "Введите адрес вашего сервера Rakazo.",
   "Show less": "Свернуть",
   Members: "Участники",
   "Members ({min}–{max})": "Участники ({min}–{max})",
@@ -557,6 +563,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Speak: "Озвучить",
   "Speak only": "Только озвучить",
   "Speech model": "Речевая модель",
+  "Transcription model": "Модель транскрипции",
+  Reconnect: "Переподключить",
   Starting: "Запуск",
   "Starting…": "Запуск…",
   Stop: "Остановить",
@@ -595,7 +603,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Waiting for this bot’s response.": "Ожидание ответа этого бота.",
   "Waiting…": "Ожидание…",
   "What this bot is for": "Для чего нужен этот бот",
-  "While agents are working": "Пока агенты работают",
   Working: "Выполняется",
   "Working…": "Выполняется…",
   "Work stopped, but the thread could not refresh: {detail}":

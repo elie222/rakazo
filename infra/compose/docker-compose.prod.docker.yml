@@ -80,6 +80,9 @@ services:
       AXIOM_DATASET: ${AXIOM_DATASET:-}
       AXIOM_EDGE: ${AXIOM_EDGE:-}
       AXIOM_EDGE_URL: ${AXIOM_EDGE_URL:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - appdata:/data
@@ -102,6 +105,10 @@ services:
 
   api:
     environment:
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_BROWSER_DSN: ${SENTRY_BROWSER_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       SECRET_STORE: ${SECRET_STORE:-encrypted}
       INFISICAL_URL: ${INFISICAL_URL:-}
       INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
@@ -118,6 +125,7 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
+      COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
     depends_on:
       data-init:
         condition: service_completed_successfully
@@ -126,6 +134,9 @@ services:
 
   worker:
     environment:
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
       SECRET_STORE: ${SECRET_STORE:-encrypted}
       INFISICAL_URL: ${INFISICAL_URL:-}
       INFISICAL_ALLOW_INSECURE_HTTP: ${INFISICAL_ALLOW_INSECURE_HTTP:-false}
@@ -139,6 +150,7 @@ services:
       SANDBOX_SUPERVISOR_TOKEN: ${SANDBOX_SUPERVISOR_TOKEN:?Set SANDBOX_SUPERVISOR_TOKEN in .env}
       SANDBOX_MAX_COMPUTERS_PER_USER: ${SANDBOX_MAX_COMPUTERS_PER_USER:-0}
       SANDBOX_IDLE_MS: ${SANDBOX_IDLE_MS:-600000}
+      COMPUTER_MAX_ACTIVE_MS: ${COMPUTER_MAX_ACTIVE_MS:-7200000}
     depends_on:
       data-init:
         condition: service_completed_successfully

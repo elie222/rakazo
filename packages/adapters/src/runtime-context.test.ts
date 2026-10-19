@@ -191,6 +191,58 @@ describe("runtime context policy", () => {
     expect(prepared.messages).toContainEqual(context.messages.at(-1));
     expect(prepared.messages.length).toBeLessThan(context.messages.length);
   });
+  it("keeps the selected prefix byte-identical when a user message arrives mid-run", () => {
+    const { request, context } = fixture();
+    const shellOutput = "synthetic shell output ".repeat(100);
+    context.messages.push(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "shell-1", name: "shell", arguments: {} }],
+        timestamp: 101,
+      } as unknown as Message,
+      {
+        role: "toolResult",
+        toolCallId: "shell-1",
+        toolName: "shell",
+        content: [{ type: "text", text: shellOutput }],
+        isError: false,
+        timestamp: 102,
+      } as Message,
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "shell-2", name: "shell", arguments: {} }],
+        timestamp: 103,
+      } as unknown as Message,
+      {
+        role: "toolResult",
+        toolCallId: "shell-2",
+        toolName: "shell",
+        content: [{ type: "text", text: "ok" }],
+        isError: false,
+        timestamp: 104,
+      } as Message,
+      { role: "assistant", content: [{ type: "text", text: "Done." }], timestamp: 105 } as Message,
+    );
+    const policy = () => createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+    const before = policy().prepareContext(context, model);
+    const steered = {
+      ...context,
+      messages: [
+        ...context.messages,
+        { role: "user", content: "Reply from a teammate", timestamp: 200 } as Message,
+      ],
+    };
+    const after = policy().prepareContext(steered, model);
+    // Provider caches match on an exact prefix; a shifted first message rewrites all of it.
+    expect(JSON.stringify(after.messages.slice(0, before.messages.length))).toBe(
+      JSON.stringify(before.messages),
+    );
+    expect(after.messages.at(-1)).toEqual(steered.messages.at(-1));
+    expect(after.messages.length).toBe(before.messages.length + 1);
+    // History is still bounded and old tool evidence is still shortened.
+    expect(after.messages.length).toBeLessThan(steered.messages.length);
+    expect(JSON.stringify(after.messages)).toContain("[Tool result truncated to fit context");
+  });
   it.each(["snapshots", "cache-aware"] as const)(
     "retains already-short history without lookup navigation under %s",
     (strategy) => {

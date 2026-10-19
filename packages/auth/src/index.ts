@@ -10,6 +10,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { bootstrapUserSpace } from "@rakazo/db";
+import type { BetterAuthOptions } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
@@ -35,6 +36,7 @@ export interface AuthEnv {
   signupAllowlist: string | undefined;
   extraOrigins?: string[];
   email?: TransactionalEmailProvider;
+  logger?: BetterAuthOptions["logger"];
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
   /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
@@ -245,6 +247,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
   const auth = betterAuth({
     appName: "Rakazo",
+    logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: [...buildTrustedOrigins(env), "rakazo://"],

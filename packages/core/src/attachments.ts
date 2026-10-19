@@ -156,6 +156,10 @@ export function blocksToAgentHistoryText(blocks: MessageBlock[]): string {
 }
 
 const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
   ".mp4": "video/mp4",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -174,6 +178,10 @@ const EXTENSION_MIME_TYPES: Record<string, AttachmentMimeType> = {
 };
 
 const MIME_TYPE_EXTENSIONS: Record<AttachmentMimeType, string> = {
+  "audio/mpeg": ".mp3",
+  "audio/wav": ".wav",
+  "audio/ogg": ".ogg",
+  "audio/mp4": ".m4a",
   "video/mp4": ".mp4",
   "image/jpeg": ".jpg",
   "image/png": ".png",
@@ -199,6 +207,16 @@ export function inferAttachmentMimeType(
   ) {
     return "application/zip";
   }
+  const audioAliases: Record<string, AttachmentMimeType> = {
+    "audio/mp3": "audio/mpeg",
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+    "audio/vnd.wave": "audio/wav",
+    "audio/x-m4a": "audio/mp4",
+  };
+  if (reportedType && Object.hasOwn(audioAliases, reportedType)) return audioAliases[reportedType]!;
+  // audio/aac may describe an M4A's codec, not its container. Infer from .m4a;
+  // do not advertise standalone AAC streams as MP4 containers.
   const dot = name.lastIndexOf(".");
   const extensionType = dot < 0 ? undefined : EXTENSION_MIME_TYPES[name.slice(dot).toLowerCase()];
   // Some browsers and native document pickers report Markdown as text/plain.
@@ -232,7 +250,7 @@ export function attachmentsForBot<T extends { botId: string }>(
 export function userTurnMessageForRun<
   T extends { id?: string; role: string; runId?: string | null; blocks: MessageBlock[] },
 >(trigger: string, runId: string, messages: T[], sourceMessageId?: string | null): T | undefined {
-  if (trigger !== "user") return undefined;
+  if (trigger !== "user" && trigger !== "messaging" && trigger !== "reaction") return undefined;
   return messages.find(
     (message) =>
       message.role === "user" &&

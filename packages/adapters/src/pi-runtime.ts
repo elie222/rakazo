@@ -35,10 +35,11 @@ import {
   isTransientModelError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
-import { usableModelId } from "@rakazo/contracts";
+import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import { abortableDelay, MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
+import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
@@ -51,9 +52,9 @@ import {
   openAiToolParametersNeedNormalization,
 } from "./openai-tool-parameters.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
-import { supplementPiModels } from "./pi-current-models.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { codexComputeResidency } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -75,6 +76,7 @@ import { recordPiTelemetryContent, withPiTelemetry, withPiTelemetrySpan } from "
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
+import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
@@ -94,7 +96,7 @@ const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
   catalogModelsCache ??= registerOpenAiCompatibleCatalog(
-    registerLocalProvider(supplementPiModels(builtinModels())),
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
   return catalogModelsCache;
 }
@@ -104,10 +106,14 @@ const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
 // instead of taking another assistant turn. A bounded internal follow-up keeps
 // that provider quirk from making a long task look complete after one step.
 const MAX_SILENT_TOOL_CONTINUATIONS = 3;
-const SILENT_TOOL_CONTINUATION_PROMPT =
-  "Continue the original task from the latest tool result. Do not stop after a tool call; use any remaining tools needed, then give the user the final answer.";
-const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT =
-  "Continue the original task from the latest tool result. If you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply. Otherwise use any remaining tools needed, then give the user the final answer.";
+// Sent in the user's role, so marked as automated: models took the old wording for the
+// user telling them never to stop, and kept going instead of asking.
+export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
+  "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing; otherwise use any remaining tools needed, then give the user the final answer.",
+);
+export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
+  "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing, even if you were told to stay silent. Otherwise, if you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply; if not, use any remaining tools needed, then give the user the final answer.",
+);
 
 // Shown as a failed-run error, not an assistant message. Asking the user to
 // continue stores that sentence as the reply, and the next "continue" runs
@@ -401,7 +407,8 @@ export class PiAgentRuntime implements AgentRuntime {
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
-          streamFn: (_m, ctx, options) => fallbackAwareModelStream(fallbackState, ctx, options),
+          streamFn: (_m, ctx, options) =>
+            fallbackAwareModelStream(fallbackState, ctx, withAutomatedLabels(options)),
           getApiKey: hasBackups
             ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
             : async () => apiKey,
@@ -719,7 +726,9 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   /** Live credential store; OAuth refreshes swap the credential mid-run. */
   credentials: PiRuntimeCredentialStore | undefined;
 } {
-  const provider = modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider;
+  const provider = canonicalPiProviderId(
+    modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider,
+  );
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
   const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   const requestedId =
@@ -783,7 +792,7 @@ export function modelsForRequest(
   const store = credentials ?? credentialStoreForRequest(request, provider);
   if (store) {
     return registerOpenAiCompatibleCatalog(
-      registerLocalProvider(supplementPiModels(builtinModels({ credentials: store }))),
+      registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
     );
   }
   if (
@@ -792,7 +801,7 @@ export function modelsForRequest(
     request.model.id.trim()
   ) {
     const models = registerOpenAiCompatibleCatalog(
-      registerLocalProvider(supplementPiModels(builtinModels())),
+      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
     );
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
@@ -1051,6 +1060,11 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     name: exposedName,
     label: tool.name,
     description: tool.description,
+    // Pi runs a turn's tool calls concurrently by default, so a batch that
+    // creates a routine and lists routines can read the list before the row
+    // exists. Pi runs the whole batch in order when any call in it is
+    // sequential, which is what the schedule tools need.
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ? { executionMode: "sequential" as const } : {}),
     parameters: parametersFor(tool),
     prepareArguments: (args: unknown) => {
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -1125,6 +1139,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
         return {
           name: String(raw.name ?? ""),
           title: raw.title ? String(raw.title) : "",
+          description: raw.description ? String(raw.description) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
           computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
@@ -1497,7 +1512,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       );
     },
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
-    streamFn: (_m, ctx, options) => fallbackAwareModelStream(retryState, ctx, options),
+    streamFn: (_m, ctx, options) =>
+      fallbackAwareModelStream(retryState, ctx, withAutomatedLabels(options)),
     getApiKey: async () =>
       hasBackups
         ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
@@ -1512,6 +1528,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         `You are a Rakazo subagent named "${name}".`,
         "You run inside the parent bot's turn — you are not a separate bot chat.",
         "Complete the task and return a concise result. Do not spawn bots or further subagents.",
+        "Your task comes from the parent bot, not from the human user, and you cannot talk to the user: report your result back to the parent bot.",
+        "Messages marked as automated come from Rakazo, not from the user.",
         extra,
       ]
         .filter(Boolean)
@@ -1578,7 +1596,9 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     const onAbort = () => nested.abort();
     host.signal.addEventListener("abort", onAbort);
     try {
-      await nested.prompt(task || "Complete the delegated task.");
+      await nested.prompt(
+        `Task from the parent bot (not from the user):\n${task || "Complete the delegated task."}`,
+      );
     } finally {
       try {
         await nested.waitForIdle();
@@ -1621,7 +1641,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       status: "completed",
       result: clipped,
     });
-    return clipped;
+    // The parent bot reads this as a tool result; say plainly that it is the helper talking.
+    return `Result from your helper "${name}" (not a message from the user):\n${clipped}`;
   } catch (error) {
     const message = sanitizeError(error instanceof Error ? error.message : String(error));
     host.queue.push({
@@ -1735,6 +1756,7 @@ function builtinParameters(tool: ConnectorTool) {
     return Type.Object({
       name: Type.String(),
       title: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
       computer_mode: Type.Optional(stringEnum(["team", "dedicated"], {})),

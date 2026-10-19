@@ -10,6 +10,7 @@ import type {
   ModelCredentialFailedState,
   ModelCredentialRetireReason,
 } from "@rakazo/adapter-kit";
+import { canonicalPiProviderId } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
 import {
   OAUTH_ACCOUNT_CHANGED_ERROR,
@@ -42,6 +43,7 @@ export class PiRuntimeCredentialStore implements CredentialStore {
     ) => Promise<boolean | undefined>,
   ) {
     this.credential = credential;
+    this.providerId = canonicalPiProviderId(providerId);
   }
 
   /**
@@ -55,7 +57,7 @@ export class PiRuntimeCredentialStore implements CredentialStore {
 
   async read(providerId: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
     options?.signal?.throwIfAborted();
-    return providerId === this.providerId ? this.credential : undefined;
+    return canonicalPiProviderId(providerId) === this.providerId ? this.credential : undefined;
   }
 
   async list(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
@@ -68,7 +70,7 @@ export class PiRuntimeCredentialStore implements CredentialStore {
     fn: (current: Credential | undefined) => Promise<Credential | undefined>,
     options?: AuthOperationOptions,
   ): Promise<Credential | undefined> {
-    if (providerId !== this.providerId) return Promise.resolve(undefined);
+    if (canonicalPiProviderId(providerId) !== this.providerId) return Promise.resolve(undefined);
     const previous = this.chain;
     const operation = previous.then(async () => {
       options?.signal?.throwIfAborted();
@@ -140,7 +142,7 @@ export class PiRuntimeCredentialStore implements CredentialStore {
   }
 
   delete(providerId: string, options?: AuthOperationOptions): Promise<void> {
-    if (providerId !== this.providerId) return Promise.resolve();
+    if (canonicalPiProviderId(providerId) !== this.providerId) return Promise.resolve();
     const previous = this.chain;
     const operation = previous.then(() => {
       options?.signal?.throwIfAborted();

@@ -36,6 +36,7 @@ function executorFixture(
     leaseFence: 0,
   };
   const prisma = {
+    user: { findUnique: vi.fn<() => Promise<{ timezone: string } | null>>(async () => null) },
     run: {
       findUnique: async () => run,
       findUniqueOrThrow: async () => run,
@@ -98,10 +99,30 @@ function executorFixture(
     jobs: { enqueue: async () => undefined },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
-  return { peer, finalizeRun, execute: () => executor.continueRun("run", "worker") };
+  return { peer, prisma, finalizeRun, execute: () => executor.continueRun("run", "worker") };
 }
 
 describe("Parallel through the ordinary bot caller", () => {
+  it.each(["missing", "failure", "saved"])("uses optional timezone context (%s)", async (state) => {
+    let prompt = "";
+    const runtime = {
+      describe: () => ({ capabilities: { scripted: false } }),
+      run: async function* (request: AgentRunRequest) {
+        prompt = request.prompt;
+        yield { type: "done" as const, text: "Done." };
+      },
+    } as unknown as AgentRuntime;
+    const fixture = executorFixture(runtime);
+    if (state === "failure") {
+      fixture.prisma.user.findUnique.mockRejectedValueOnce(new Error("lookup unavailable"));
+    } else if (state === "saved") {
+      fixture.prisma.user.findUnique.mockResolvedValueOnce({ timezone: "Pacific/Auckland" });
+    }
+    await fixture.execute();
+    expect(prompt).toContain(state === "saved" ? "(Pacific/Auckland)" : "Current date and time:");
+    expect(prompt).toContain("(UTC)");
+  });
+
   it.each([false, true])(
     "passes large MCP envelopes through executor dispatch into real Pi's next model steps (text-only=%s)",
     async (textOnly) => {

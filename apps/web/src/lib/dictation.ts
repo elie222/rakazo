@@ -102,6 +102,7 @@ const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
   de: "de-DE",
   es: "es-ES",
   fr: "fr-FR",
+  he: "he-IL",
   hi: "hi-IN",
   ko: "ko-KR",
   "pt-BR": "pt-BR",
