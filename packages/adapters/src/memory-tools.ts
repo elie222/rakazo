@@ -10,3 +10,11 @@ export function selectMemoryTools(
     ? tools.filter((tool) => tool.name !== "remember")
     : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }
+
+/** Adds a remembered fact to a bot memory document without dropping what it already holds. */
+export function appendMemoryFact(existing: string, fact: string): string {
+  const current = existing.trimEnd();
+  const next = fact.trim();
+  if (!next || current.split("\n").some((line) => line.trim() === next)) return existing;
+  return current ? `${current}\n${next}\n` : `${next}\n`;
+}

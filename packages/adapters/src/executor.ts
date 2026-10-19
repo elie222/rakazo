@@ -290,7 +290,7 @@ import { createMediaGenerationProvider } from "./media-generation-factory.js";
 import { generateMediaFromTool } from "./media-generation-tools.js";
 import { loadAgentMemoryContext } from "./memory-context.js";
 import type { MemoryProviderResolver } from "./memory-provider-factory.js";
-import { selectMemoryTools } from "./memory-tools.js";
+import { appendMemoryFact, selectMemoryTools } from "./memory-tools.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
@@ -5718,18 +5718,36 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }, finish);
           }
           if (name === "remember") {
-            await deps.memory.commit(
-              {
-                scope: "bot",
-                botId: bot.id,
-                path: String(args.path ?? "MEMORY.md"),
-                content: String(args.content ?? ""),
-                sourceRunId: runId,
-                sourceThreadId: thread.id,
-              },
-              context,
-            );
-            return finish({ ok: true });
+            const path = String(args.path ?? "MEMORY.md");
+            // A fact is added to the document, never replaces it. A concurrent save
+            // changes the revision, so re-read and append again.
+            for (let attempt = 1; ; attempt += 1) {
+              const snapshot = await deps.memory.read(
+                { scope: "bot", botId: bot.id, path },
+                context,
+              );
+              const existing = snapshot.documents[0];
+              const content = appendMemoryFact(existing?.content ?? "", String(args.content ?? ""));
+              if (content === (existing?.content ?? "")) return finish({ ok: true });
+              try {
+                await deps.memory.commit(
+                  {
+                    scope: "bot",
+                    botId: bot.id,
+                    path,
+                    content,
+                    expectedRevision: existing?.revision ?? 0,
+                    sourceRunId: runId,
+                    sourceThreadId: thread.id,
+                  },
+                  context,
+                );
+                return finish({ ok: true });
+              } catch (error) {
+                const message = error instanceof Error ? error.message : "";
+                if (message !== MEMORY_REVISION_CONFLICT_ERROR || attempt >= 3) throw error;
+              }
+            }
           }
           if (name === "save_shared_memory") {
             const invalid = sharedMemorySaveError(args);

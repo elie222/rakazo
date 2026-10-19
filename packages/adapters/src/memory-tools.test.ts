@@ -1,6 +1,6 @@
 import type { ConnectorTool } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
-import { selectMemoryTools } from "./memory-tools.js";
+import { appendMemoryFact, selectMemoryTools } from "./memory-tools.js";
 
 function tool(name: string): ConnectorTool {
   return { name, description: name, inputSchema: { type: "object", properties: {} } };
@@ -29,5 +29,22 @@ describe("selectMemoryTools", () => {
     const shellOnly = [tool("shell")];
     expect(selectMemoryTools(shellOnly, false)).toEqual(shellOnly);
     expect(selectMemoryTools(shellOnly, true)).toEqual(shellOnly);
+  });
+});
+
+describe("appendMemoryFact", () => {
+  it("keeps existing memory and adds the fact on its own line", () => {
+    expect(appendMemoryFact("Save trip files to Drive.\n", "The client is Combient.")).toBe(
+      "Save trip files to Drive.\nThe client is Combient.\n",
+    );
+  });
+
+  it("starts an empty document with the fact", () => {
+    expect(appendMemoryFact("", "  durable fact  ")).toBe("durable fact\n");
+  });
+
+  it("leaves memory unchanged for a fact it already holds or an empty fact", () => {
+    expect(appendMemoryFact("a\ndurable fact\n", "durable fact")).toBe("a\ndurable fact\n");
+    expect(appendMemoryFact("a\n", "   ")).toBe("a\n");
   });
 });
