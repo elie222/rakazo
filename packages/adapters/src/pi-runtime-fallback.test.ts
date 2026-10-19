@@ -1682,3 +1682,65 @@ describe("Pi runtime ordered model fallback", () => {
     expect(JSON.stringify(events)).not.toContain("backup-only-key");
   });
 });
+
+describe("Pi runtime thinking blocks bound to a different conversation", () => {
+  const mismatch =
+    '400 {"type":"error","error":{"type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] messages.1.content.0: Invalid `signature` in `thinking` block. The block is bound to a different conversation."}}';
+  const thinkingParts = (context: Context) =>
+    context.messages.flatMap((entry) =>
+      entry.role === "assistant" ? entry.content.filter((part) => part.type === "thinking") : [],
+    );
+
+  it("retries once without earlier thinking blocks and keeps dropping them for the run", async () => {
+    providerState.stream
+      .mockImplementationOnce(() =>
+        stream(
+          primary,
+          message(
+            primary,
+            [
+              { type: "thinking", thinking: "Plan the write.", thinkingSignature: "sig" },
+              { type: "toolCall", id: "call-1", name: "write_effect", arguments: { value: "a" } },
+            ],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementationOnce(() => stream(primary, message(primary, [], "error", mismatch)))
+      .mockImplementationOnce(() =>
+        stream(
+          primary,
+          message(
+            primary,
+            [{ type: "toolCall", id: "call-2", name: "write_effect", arguments: { value: "b" } }],
+            "toolUse",
+          ),
+        ),
+      )
+      .mockImplementation(() =>
+        stream(primary, message(primary, [{ type: "text", text: "Done." }], "stop")),
+      );
+    const events = await run(request());
+    expect(events.at(-1)).toEqual({ type: "done", text: "Done." });
+    const contexts = providerState.stream.mock.calls.map(([, context]) => context as Context);
+    expect(contexts).toHaveLength(4);
+    expect(thinkingParts(contexts[1]!)).toHaveLength(1);
+    expect(thinkingParts(contexts[2]!)).toEqual([]);
+    expect(thinkingParts(contexts[3]!)).toEqual([]);
+    expect(
+      contexts[2]!.messages.some(
+        (entry) =>
+          entry.role === "assistant" && entry.content.some((part) => part.type === "toolCall"),
+      ),
+    ).toBe(true);
+    expect(providerState.delay).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the error when the retry without thinking blocks fails the same way", async () => {
+    providerState.stream.mockImplementation(() =>
+      stream(primary, message(primary, [], "error", mismatch)),
+    );
+    await expect(run(request())).rejects.toThrow("bound to a different conversation");
+    expect(providerState.stream).toHaveBeenCalledTimes(2);
+  });
+});
