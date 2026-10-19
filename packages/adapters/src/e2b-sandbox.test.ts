@@ -892,6 +892,24 @@ function _unwrapSetupCommand(command: string): string {
 }
 
 describe("keepingAwake", () => {
+  it("finishes the first timeout extension before reading", async () => {
+    const order: string[] = [];
+    const desktop = {
+      setTimeout: vi.fn(async () => {
+        await Promise.resolve();
+        order.push("extended");
+      }),
+    };
+    const items = (async function* () {
+      order.push("read");
+      yield 1;
+    })();
+    for await (const _ of keepingAwake(desktop, items)) {
+      // drain
+    }
+    expect(order).toEqual(["extended", "read"]);
+  });
+
   it("extends the sandbox timeout while a long export is still reading", async () => {
     vi.useFakeTimers();
     vi.stubEnv("SANDBOX_IDLE_MS", "180000");
@@ -910,6 +928,7 @@ describe("keepingAwake", () => {
 
       await vi.advanceTimersByTimeAsync(0);
       expect(desktop.setTimeout).toHaveBeenCalledTimes(1);
+      expect(read).toEqual(["first"]);
       await vi.advanceTimersByTimeAsync(200_000);
       expect(desktop.setTimeout).toHaveBeenCalledWith(180_000);
       expect(desktop.setTimeout.mock.calls.length).toBeGreaterThanOrEqual(2);
