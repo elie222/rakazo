@@ -62,7 +62,6 @@ import {
   speechFromBlocks,
   timeSeparatorIds,
   truncateSlashDescription,
-  unreadBoundaryId,
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
@@ -272,6 +271,7 @@ import {
   ReplyLine,
   TimeSeparator,
   UnreadSeparator,
+  useUnreadBoundary,
 } from "./shell/chat-context";
 import { CommandPalette, isCommandPaletteHotkey } from "./shell/command-palette";
 import {
@@ -4900,11 +4900,7 @@ const Transcript = memo(function Transcript({
   );
   const separatorIds = timeSeparatorIds(shownMessages);
   // Fixed for the visit, so replies that arrive while reading do not move it.
-  const unreadFrom = useRef<string | null | undefined>(undefined);
-  if (unreadFrom.current === undefined && shownMessages.length > 0) {
-    unreadFrom.current = openedUnread ? unreadBoundaryId(shownMessages) : null;
-  }
-  const unreadFromId = unreadFrom.current ?? null;
+  const unreadFromId = useUnreadBoundary(openedUnread, shownMessages);
   const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
   const workingLabel =
     workingBotName != null && workingBotName !== ""

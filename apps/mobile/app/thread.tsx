@@ -36,7 +36,6 @@ import {
   selectedAskActionLabel,
   threadWindowMessages,
   timeSeparatorIds,
-  unreadBoundaryId,
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
@@ -111,7 +110,7 @@ import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { TimeSeparator } from "../components/time-separator";
-import { UnreadSeparator } from "../components/unread-separator";
+import { UnreadSeparator, useUnreadBoundary } from "../components/unread-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import type {
@@ -1903,14 +1902,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
-  // Fixed for the visit, so replies that arrive while reading do not move it.
-  const unreadFrom = useRef<{ key?: string; id?: string | null }>({});
-  if (unreadFrom.current.key !== threadKey) unreadFrom.current = { key: threadKey };
-  // Wait for live messages: the saved offline copy can be missing the new replies.
-  if (unreadFrom.current.id === undefined && visibleMessages.length > 0 && !showingSaved) {
-    unreadFrom.current.id = unreadParam === "1" ? unreadBoundaryId(visibleMessages) : null;
-  }
-  const unreadFromId = unreadFrom.current.id ?? null;
+  // The saved offline copy can be missing the new replies, so wait for live messages.
+  const unreadFromId = useUnreadBoundary(
+    threadKey,
+    unreadParam === "1",
+    visibleMessages,
+    !showingSaved,
+  );
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(

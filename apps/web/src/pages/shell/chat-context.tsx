@@ -1,6 +1,11 @@
 import { useLingui } from "@lingui/react/macro";
 import type { ReplyPreview, ThreadMessage } from "@rakazo/contracts";
-import { formatTimeSeparator, isPeerReceiptBlocks, replyLabel } from "@rakazo/core";
+import {
+  formatTimeSeparator,
+  isPeerReceiptBlocks,
+  replyLabel,
+  unreadBoundaryId,
+} from "@rakazo/core";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ArtifactTarget } from "../../lib/artifact-open";
@@ -67,6 +72,15 @@ export function TimeSeparator({ createdAt, locale }: { createdAt: string; locale
       {formatTimeSeparator(createdAt, locale, { today: t`Today`, yesterday: t`Yesterday` })}
     </h3>
   );
+}
+
+/** The message "New messages" sits above, fixed for the visit once messages load. */
+export function useUnreadBoundary(openedUnread: boolean, messages: ThreadMessage[]) {
+  const boundary = useRef<string | null | undefined>(undefined);
+  if (boundary.current === undefined && messages.length > 0) {
+    boundary.current = openedUnread ? unreadBoundaryId(messages) : null;
+  }
+  return boundary.current ?? null;
 }
 
 export function UnreadSeparator() {
