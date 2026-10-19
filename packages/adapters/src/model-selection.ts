@@ -4,6 +4,7 @@ import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
 import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential } from "@rakazo/db";
+import { modelCredentialDto } from "./model-connect.js";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -407,6 +408,178 @@ export async function findConnectedModelCredential(
     }
   }
   return selected;
+}
+
+export type BotModelChangeDeps = {
+  prisma: PrismaClient;
+  secretStore: Pick<SecretStore, "load">;
+  codexCatalog?: CodexLiveCatalog;
+  refreshExpiredCredential: (
+    scope: { userId: string; spaceId: string },
+    secretId: string,
+    provider: string,
+  ) => void;
+  /** The space's default model, used for the thinking-level check when the bot has none. */
+  defaultModel: () => Promise<{ provider: string | null; model: string | null }>;
+};
+
+export type BotModelChangeResult =
+  | { ok: true; provider: string | null; model: string | null; thinkingLevel: string | null }
+  | { ok: false; error: string };
+
+/**
+ * The rules for changing a bot's model and thinking level. `provider` and `model`
+ * are the values the bot will have; `current` is what it has now. Settings resend
+ * the saved model on every save, so the model checks run only when it changes.
+ */
+export async function validateBotModelChange(
+  deps: BotModelChangeDeps,
+  input: {
+    userId: string;
+    spaceId: string;
+    provider: string | null;
+    model: string | null;
+    thinkingLevel?: string | null;
+    current?: { provider: string | null; model: string | null };
+  },
+): Promise<BotModelChangeResult> {
+  const scope = { userId: input.userId, spaceId: input.spaceId };
+  const { provider, model } = input;
+  const changing = provider !== input.current?.provider || model !== input.current?.model;
+  if (changing && provider && model) {
+    const credential = await findConnectedModelCredential(
+      deps.prisma,
+      deps.secretStore,
+      scope,
+      provider,
+      model,
+    );
+    if (!credential) return { ok: false, error: "Connect that model provider first" };
+    const inCatalog = isCatalogModelChoice(provider, model);
+    if (provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+      const error = await validateConnectedModelChoice(
+        deps.prisma,
+        deps.secretStore,
+        scope,
+        provider,
+        model,
+      );
+      if (error) return { ok: false, error };
+    } else if (!inCatalog && credential.defaultModel !== model) {
+      return { ok: false, error: "Unknown model for that provider" };
+    }
+    if (inCatalog) {
+      const authError = await validateStoredModelAuth(
+        deps.prisma,
+        deps.secretStore,
+        input.userId,
+        credential.secretId,
+        provider,
+        model,
+        deps.codexCatalog,
+        {
+          onExpiredToken: () => deps.refreshExpiredCredential(scope, credential.secretId, provider),
+        },
+      );
+      if (authError) return { ok: false, error: authError };
+    }
+  }
+  const thinkingLevel = input.thinkingLevel ?? null;
+  if (thinkingLevel) {
+    const defaults = provider && model ? null : await deps.defaultModel();
+    const effectiveProvider = provider ?? defaults?.provider;
+    const effectiveModelId = model ?? defaults?.model;
+    if (effectiveProvider && effectiveModelId) {
+      const { allowed } = await prepareAllowedThinkingLevels(
+        deps,
+        scope,
+        effectiveProvider,
+        effectiveModelId,
+      );
+      if (allowed && !allowed.includes(thinkingLevel)) {
+        return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };
+      }
+    }
+  }
+  return { ok: true, provider, model, thinkingLevel };
+}
+
+/**
+ * Thinking levels a caller may set for a provider/model. Catalog models answer from
+ * `thinkingLevels`; unknown catalog ids return undefined (no check). OpenAI-compatible
+ * connections advertise the endpoint's levels for every enabled model id.
+ */
+export async function prepareAllowedThinkingLevels(
+  deps: Pick<BotModelChangeDeps, "prisma" | "secretStore">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  modelId: string,
+): Promise<{
+  allowed: string[] | undefined;
+  secret?: { id: string; ciphertext: string };
+  enabledModelIds?: string[];
+  storedEnabledModelIds?: string[];
+}> {
+  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
+    return {
+      allowed: listPiCatalog().find(
+        (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
+      )?.thinkingLevels,
+    };
+  }
+  const credential = await findConnectedModelCredential(
+    deps.prisma,
+    deps.secretStore,
+    actor,
+    provider,
+    modelId,
+  );
+  if (!credential) return { allowed: ["off"] };
+  const secret = await loadStoredModelSecret(
+    deps.prisma,
+    deps.secretStore,
+    actor.userId,
+    credential.secretId,
+  );
+  return {
+    ...compatibleThinkingLevels(
+      credential,
+      secret.status === "loaded" ? secret.plaintext : undefined,
+      modelId,
+    ),
+    secret:
+      secret.status === "missing"
+        ? undefined
+        : { id: credential.secretId, ciphertext: secret.ciphertext },
+  };
+}
+
+/**
+ * Thinking levels for `modelId` on an openai-compatible connection whose secret is
+ * `plaintext`: the endpoint's levels for any enabled id, otherwise only "off".
+ */
+export function compatibleThinkingLevels(
+  row: Parameters<typeof modelCredentialDto>[0],
+  plaintext: string | undefined,
+  modelId: string,
+) {
+  let parsed: StoredModelSecret | undefined;
+  let levels: string[] | undefined;
+  if (plaintext !== undefined) {
+    try {
+      parsed = parseModelSecret(plaintext);
+      levels = modelCredentialDto(row, plaintext).thinkingLevels;
+    } catch {
+      // Unreadable connections must not advertise reasoning support.
+    }
+  }
+  const enabled = enabledOpenAiCompatibleModelIds(parsed, row.defaultModel);
+  return {
+    allowed: enabled.includes(modelId.trim()) ? (levels ?? ["off"]) : ["off"],
+    enabledModelIds: enabled,
+    storedEnabledModelIds:
+      parsed?.kind === "openai_compatible" ? parsed.enabledModelIds : undefined,
+  };
 }
 
 export async function validateConnectedModelChoice(

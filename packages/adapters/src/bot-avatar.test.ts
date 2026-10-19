@@ -93,6 +93,7 @@ describe("update_bot tool schema", () => {
       (tool.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
     expect(Object.keys(properties).sort()).toEqual([
       "artifact_id",
+      "bot_id",
       "color",
       "description",
       "name",

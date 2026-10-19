@@ -1,4 +1,5 @@
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import type { Locator, Page, TestInfo } from "@playwright/test";
+import { expect } from "@playwright/test";
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
   return provider === "e2b" || provider === "daytona" || provider === "box";
@@ -163,4 +164,17 @@ export async function createNamedBot(
   await page.goto(`/app/${bot.id}`);
   await expect(page.getByPlaceholder(`Message ${name}`)).toBeVisible();
   return bot.id;
+}
+
+/**
+ * Picks an option from one of the kit's dropdowns. They open a menu of options rather than a
+ * native select, so selectOption() does not apply; options are matched by their visible name.
+ */
+export async function chooseOption(trigger: Locator, option: string | { index: number }) {
+  await trigger.click();
+  const options = trigger.page().getByRole("option");
+  await (typeof option === "string"
+    ? trigger.page().getByRole("option", { name: option, exact: true })
+    : options.nth(option.index)
+  ).click();
 }

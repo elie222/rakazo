@@ -95,6 +95,7 @@ import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
 import { querySpaceSearch } from "../lib/search";
 import { mobileSearchDestination } from "../lib/search-destination";
 import { dedupeSearchHits, searchHitListKey, searchHitRowPreview } from "../lib/search-list";
+import { promptSectionName } from "../lib/section-name-prompt";
 import {
   currentReadySessionGeneration,
   currentSessionGeneration,
@@ -103,7 +104,8 @@ import {
 import { errorText } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
-// Swipe actions are iOS list behaviour; other platforms keep the long-press sheet.
+// Swipe actions and the context menu are iOS list behaviour; other platforms keep the long-press
+// sheet.
 const SWIPE_ROWS = Platform.OS === "ios";
 
 type InboxItem = InboxSpaceItem | { type: "search"; hit: SearchHit };
@@ -814,6 +816,56 @@ function Home() {
       void runRowAction("group", group, action),
     [runRowAction],
   );
+  const createSection = useCallback(
+    async (kind: InboxChatKind, chatId: string, name: string) => {
+      await rpc("botSections/create", { [`${kind}Id`]: chatId, name });
+      await loadBots();
+    },
+    [loadBots],
+  );
+  const renameSection = useCallback(
+    async (sectionId: string, name: string) => {
+      await rpc("botSections/update", { sectionId, name });
+      await loadBots();
+    },
+    [loadBots],
+  );
+  // The iOS row menu changes the chat in place, so failures use the native alert.
+  const organizeFromMenu = useCallback(
+    (
+      kind: InboxChatKind,
+      chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+      update: BotOrganizationUpdate,
+    ) =>
+      void updateChat(kind, chat, update).catch((err) =>
+        Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
+      ),
+    [t, updateChat],
+  );
+  const editSectionFromMenu = useCallback(
+    (
+      kind: InboxChatKind,
+      chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+      mode: "create" | "rename",
+    ) => {
+      const current =
+        mode === "rename" ? botSections.find((section) => section.id === chat.sectionId) : null;
+      if (mode === "rename" && !current) return;
+      promptSectionName({
+        title: current ? t("Rename section") : t("New section"),
+        cancelLabel: t("Cancel"),
+        submitLabel: current ? t("Save") : t("Create"),
+        defaultValue: current?.name,
+        onSubmit: (name) =>
+          void (
+            current ? renameSection(current.id, name) : createSection(kind, chat.id, name)
+          ).catch((err) =>
+            Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
+          ),
+      });
+    },
+    [botSections, createSection, renameSection, t],
+  );
 
   const renderItem = useCallback(
     ({ item }: { item: InboxItem }) =>
@@ -870,8 +922,13 @@ function Home() {
           group={item.group}
           day={day}
           onPress={openGroup}
-          onLongPress={item.group.spaceId === me?.spaceId ? organizeGroup : undefined}
+          onLongPress={
+            !SWIPE_ROWS && item.group.spaceId === me?.spaceId ? organizeGroup : undefined
+          }
           onAction={SWIPE_ROWS && item.group.spaceId === me?.spaceId ? groupAction : undefined}
+          sections={botSections}
+          onOrganize={organizeFromMenu}
+          onEditSection={editSectionFromMenu}
         />
       ) : (
         <BotRow
@@ -882,23 +939,29 @@ function Home() {
           collapsed={collapsedRosterParents.has(item.bot.id)}
           onToggleChildren={toggleRosterParent}
           onPress={openBot}
-          onLongPress={item.bot.spaceId === me?.spaceId ? organizeBot : undefined}
+          onLongPress={!SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? organizeBot : undefined}
           onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
+          sections={botSections}
+          onOrganize={organizeFromMenu}
+          onEditSection={editSectionFromMenu}
         />
       ),
     [
       appearance,
       botAction,
+      botSections,
       chooseInboxSpace,
       collapsedRosterParents,
       confirmDeleteSpace,
       day,
+      editSectionFromMenu,
       groupAction,
       me?.spaceId,
       openBot,
       openGroup,
       openSearchHit,
       organizeBot,
+      organizeFromMenu,
       organizeGroup,
       spaceBusy,
       spaceRecoveryId,
@@ -1097,17 +1160,8 @@ function Home() {
           sections={botSections}
           onClose={() => setOrganizeTarget(null)}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
-          onCreateSection={async (name) => {
-            await rpc("botSections/create", {
-              [`${organizeTarget.kind}Id`]: organizeChat.id,
-              name,
-            });
-            await loadBots();
-          }}
-          onRenameSection={async (sectionId, name) => {
-            await rpc("botSections/update", { sectionId, name });
-            await loadBots();
-          }}
+          onCreateSection={(name) => createSection(organizeTarget.kind, organizeChat.id, name)}
+          onRenameSection={renameSection}
         />
       ) : null}
     </View>
@@ -1370,6 +1424,21 @@ const SearchRow = memo(function SearchRow({
   );
 });
 
+/** What the iOS row menu needs to organize a chat in place. */
+type RowMenuProps = {
+  sections: readonly MobileBotSection[];
+  onOrganize: (
+    kind: InboxChatKind,
+    chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+    update: BotOrganizationUpdate,
+  ) => void;
+  onEditSection: (
+    kind: InboxChatKind,
+    chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
+    mode: "create" | "rename",
+  ) => void;
+};
+
 const BotRow = memo(function BotRow({
   bot,
   day,
@@ -1380,6 +1449,9 @@ const BotRow = memo(function BotRow({
   onPress,
   onLongPress,
   onAction,
+  sections,
+  onOrganize,
+  onEditSection,
 }: {
   bot: MobileBot | SpaceBot;
   day: number;
@@ -1390,7 +1462,7 @@ const BotRow = memo(function BotRow({
   onPress: (bot: MobileBot | SpaceBot) => void;
   onLongPress?: (bot: MobileBot | SpaceBot) => void;
   onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
-}) {
+} & RowMenuProps) {
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
@@ -1426,7 +1498,7 @@ const BotRow = memo(function BotRow({
       onToggleChildren={onToggleChildren ? () => onToggleChildren(bot.id) : undefined}
       accessibilityLabel={label}
       accessibilityHint={
-        onLongPress ? t("Long press to pin, move, or silence notifications") : undefined
+        onLongPress || onAction ? t("Long press to pin, move, or silence notifications") : undefined
       }
       onPress={() => onPress(bot)}
       onLongPress={onLongPress ? () => onLongPress(bot) : undefined}
@@ -1448,7 +1520,17 @@ const BotRow = memo(function BotRow({
       rowKey={`bot:${bot.id}`}
       unread={bot.unread}
       pinned={bot.pinned}
+      notifyOnFinish={bot.notifyOnFinish}
+      sectionId={bot.sectionId}
+      sections={sections}
+      preview={{
+        title: bot.name,
+        message: bot.preview,
+        avatar: <BotAvatar color={bot.color || FALLBACK_COLOR} identity={bot.id} size={32} />,
+      }}
       onAction={runAction}
+      onOrganize={(update) => onOrganize("bot", bot, update)}
+      onEditSection={(mode) => onEditSection("bot", bot, mode)}
     >
       {row}
     </InboxSwipeRow>
@@ -1463,13 +1545,16 @@ const GroupRow = memo(function GroupRow({
   onPress,
   onLongPress,
   onAction,
+  sections,
+  onOrganize,
+  onEditSection,
 }: {
   group: MobileGroup | SpaceGroup;
   day: number;
   onPress: (group: MobileGroup | SpaceGroup) => void;
   onLongPress?: (group: MobileGroup | SpaceGroup) => void;
   onAction?: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
-}) {
+} & RowMenuProps) {
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
@@ -1484,7 +1569,9 @@ const GroupRow = memo(function GroupRow({
       accessibilityLabel={[group.name, group.unread ? t("unread") : null, time, preview]
         .filter(Boolean)
         .join(", ")}
-      accessibilityHint={onLongPress ? t("Long press to pin or move to a section") : undefined}
+      accessibilityHint={
+        onLongPress || onAction ? t("Long press to pin or move to a section") : undefined
+      }
       onPress={() => onPress(group)}
       onLongPress={onLongPress ? () => onLongPress(group) : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
@@ -1497,7 +1584,16 @@ const GroupRow = memo(function GroupRow({
       rowKey={`group:${group.id}`}
       unread={group.unread}
       pinned={group.pinned}
+      sectionId={group.sectionId}
+      sections={sections}
+      preview={{
+        title: group.name,
+        message: group.preview,
+        avatar: <GroupAvatar members={group.members} size={32} />,
+      }}
       onAction={runAction}
+      onOrganize={(update) => onOrganize("group", group, update)}
+      onEditSection={(mode) => onEditSection("group", group, mode)}
     >
       {row}
     </InboxSwipeRow>

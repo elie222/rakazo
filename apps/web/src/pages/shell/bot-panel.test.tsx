@@ -38,13 +38,21 @@ vi.mock("@rakazo/ui-web", () => ({
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Switch: ({
-    onCheckedChange: _onCheckedChange,
-    checked: _checked,
+    onCheckedChange,
+    checked,
     ...props
   }: ComponentProps<"button"> & {
     checked?: boolean;
     onCheckedChange?: (checked: boolean) => void;
-  }) => <button type="button" {...props} />,
+  }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange?.(!checked)}
+      {...props}
+    />
+  ),
   Toggle: ({
     onPressedChange: _onPressedChange,
     pressed,
@@ -103,6 +111,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     thinkingLevel: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
+    fleetManagement: false,
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,
@@ -251,6 +260,38 @@ describe("BotSettings thinking options", () => {
     expect(model.value).toBe("openai-compatible::beta");
     if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
     expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
+  });
+});
+
+describe("BotSettings fleet management saves", () => {
+  it("cannot restore a stale enabled value when another session disables it", async () => {
+    await render("Billing", { fleetManagement: true });
+    await render("Billing", { fleetManagement: false });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
+  });
+
+  it("restores the toggle when the immediate save fails", async () => {
+    await render();
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
+    if (!toggle) throw new Error("Missing switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it.each([false, true])("saves only the fleet toggle from %s", async (enabled) => {
+    await render("Billing", { fleetManagement: enabled });
+    const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
+    if (!toggle) throw new Error("Missing switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: !enabled });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
   });
 });
 

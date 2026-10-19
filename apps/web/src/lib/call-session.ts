@@ -13,22 +13,27 @@ import {
   spokenMemory,
 } from "@rakazo/core";
 import { useSyncExternalStore } from "react";
+import { pickUp } from "./call-pickup.js";
 import { dictation } from "./dictation.js";
 import { rpc } from "./rpc.js";
 import { isThreadSnapshotEvent, reduceThreadSnapshot } from "./thread-events.js";
 import { speaker } from "./tts.js";
 import { errorText } from "./user-error";
 
-export type CallPhase = "listening" | "thinking" | "speaking";
-export type CallExchange = { role: "user" | "bot"; text: string };
+/** `ringing` until the call picks up; the rest describe the conversation. */
+type CallPhase = "ringing" | "listening" | "thinking" | "speaking";
+type CallExchange = { role: "user" | "bot"; text: string };
 
 export interface CallState {
   botId: string;
   botName: string;
   botColor: string;
-  startedAt: number;
+  /** When the call picked up; null while it is still ringing. */
+  connectedAt: number | null;
   phase: CallPhase;
   muted: boolean;
+  /** The call window is tucked away; the call keeps running. */
+  minimized: boolean;
   transcriptOpen: boolean;
   caption: string;
   heard: string;
@@ -47,6 +52,10 @@ export const ECHO_GUARD_MS = 600;
 let state: CallState | null = null;
 /** Shared by every message this call sends, so the thread can group one call's exchange. */
 let callId = "";
+/** Cancels the ringing of a call that is hung up before it picks up. */
+let pickup: AbortController | null = null;
+/** The bot's opening is playing: nothing else is spoken and the mic waits for it. */
+let openingPending = false;
 /** Requests for this call that must persist before its server-side hang-up. */
 const pendingCallSends = new Map<string, Set<Promise<unknown>>>();
 let transcribe: boolean | undefined;
@@ -102,9 +111,11 @@ export function startCall(call: {
   botName: string;
   botColor?: string;
   transcribe?: boolean;
+  /** The bot called and the user picked up: no ringing, and the bot speaks first. */
+  answered?: { callId: string; opening: string };
 }): void {
   endCall();
-  callId = randomId();
+  callId = call.answered?.callId ?? randomId();
   transcribe = call.transcribe;
   spokenMemory.clear();
   clearInterim();
@@ -115,16 +126,18 @@ export function startCall(call: {
     botId: call.botId,
     botName: call.botName,
     botColor: call.botColor ?? "",
-    startedAt: Date.now(),
-    phase: "listening",
+    connectedAt: null,
+    phase: "ringing",
     muted: false,
+    minimized: false,
     transcriptOpen: false,
     caption: "",
     heard: "",
     exchanges: [],
   };
   unsubSpeech = speaker.subscribe((speech) => {
-    if (!state) return;
+    if (!state || state.phase === "ringing") return;
+    if (openingPending && speech.status === "idle") openingPending = false;
     if (speech.status === "speaking") {
       bargedIn = false;
       set({ phase: "speaking", caption: speech.caption ?? "" });
@@ -149,16 +162,48 @@ export function startCall(call: {
   });
   watchThread(call.botId);
   emit();
-  void listen();
+  const ringing = new AbortController();
+  pickup = ringing;
+  const ringingCallId = callId;
+  const opening = call.answered?.opening.trim() ?? "";
+  void pickUp(ringing.signal, { ring: !call.answered }).then(() => {
+    if (ringing.signal.aborted || !state || callId !== ringingCallId) return;
+    pickup = null;
+    if (!opening) {
+      set({ phase: "listening", connectedAt: Date.now() });
+      void listen();
+      return;
+    }
+    // The bot opens the call; its speech ending hands the turn to the user.
+    set({
+      phase: "thinking",
+      connectedAt: Date.now(),
+      exchanges: [{ role: "bot", text: opening }],
+    });
+    spokenMemory.remember(opening);
+    openingPending = true;
+    void speaker.speak(opening, { botId: call.botId }).catch(() => {
+      if (callId !== ringingCallId) return;
+      openingPending = false;
+      void listen();
+    });
+  });
 }
 
 export function endCall(): void {
   // A caller hang-up closes the call server-side, which files the marker and the wrap-up
   // run. The bot's own end_call already did that, so only tell the server when it did not.
   if (state && !botEndedCall) {
-    const { botId } = state;
+    const { botId, connectedAt } = state;
     const closingCallId = callId;
-    const closeServerCall = () => rpc.threads.endCall({ botId, callId: closingCallId });
+    const durationSeconds =
+      connectedAt === null ? undefined : Math.max(0, Math.round((Date.now() - connectedAt) / 1000));
+    const closeServerCall = () =>
+      rpc.threads.endCall({
+        botId,
+        callId: closingCallId,
+        ...(durationSeconds === undefined ? {} : { durationSeconds }),
+      });
     const pendingSends = [...(pendingCallSends.get(closingCallId) ?? [])];
     // The server checks durable user messages, so its close must follow an in-flight write.
     if (pendingSends.length === 0) void closeServerCall().catch(() => undefined);
@@ -167,6 +212,9 @@ export function endCall(): void {
         .then(closeServerCall)
         .catch(() => undefined);
   }
+  pickup?.abort();
+  pickup = null;
+  openingPending = false;
   feed?.abort();
   feed = null;
   hangUpAfterReply = false;
@@ -210,6 +258,11 @@ export function toggleMute(): void {
 export function toggleTranscript(): void {
   if (!state) return;
   set({ transcriptOpen: !state.transcriptOpen });
+}
+
+export function setCallMinimized(minimized: boolean): void {
+  if (!state) return;
+  set({ minimized });
 }
 
 /** Live feed for the bot on the call, independent of whichever thread is on screen. */
@@ -432,7 +485,8 @@ function clearInterim() {
  * card's phase indicator is the only feedback, so nothing talks over the caller.
  */
 function reactToThread() {
-  if (!state) return;
+  // Nothing is spoken before the call picks up, or over the bot's opening.
+  if (!state || state.phase === "ringing" || openingPending) return;
   // The bot already said goodbye: neither its marker nor the work it files after it is spoken.
   if (botEndedCall) return;
   if (pendingSecretAsk(thread)) {

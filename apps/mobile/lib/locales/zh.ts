@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
+    "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。",
   "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",
   "The server had a problem. Try again in a moment.": "服务器出现问题。请稍后重试。",
   "Password sign-in is turned off on this server": "此服务器已关闭密码登录",
@@ -255,6 +257,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not load integrations": "无法加载集成",
   "Could not load model settings": "无法加载模型设置",
   "Could not load routine": "无法加载例行任务",
+  "Could not load routines": "无法加载例行任务",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "无法加载桌面。此设备无法访问屏幕地址。",
   "Could not load this file.": "无法加载此文件。",
@@ -454,6 +457,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
     "将此应用指向你自托管的 Rakazo 源站，地址与你在浏览器中打开的 HTTPS URL 相同。",
   Private: "私有",
+  Profile: "资料",
   Providers: "提供商",
   "Public servers need https://. HTTP only works on your local network.":
     "公共服务器需要 https://。HTTP 仅适用于本地网络。",
@@ -489,6 +493,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   Robot: "机器人",
   Routine: "例行任务",
   "Routine link is incomplete": "例行任务链接不完整",
+  Routines: "例行任务",
   Running: "运行中",
   Save: "保存",
   "Saved.": "已保存。",
@@ -812,4 +817,5 @@ export const ZH_MESSAGES: Record<string, string> = {
   Undo: "撤销",
   "Update instructions?": "更新指令？",
   "Could not restore instructions": "无法恢复指令",
+  "Fleet management": "集群管理",
 };

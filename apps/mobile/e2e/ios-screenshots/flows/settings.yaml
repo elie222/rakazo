@@ -113,7 +113,6 @@ name: Settings
     centerElement: true
 - tapOn: "Language"
 - extendedWaitUntil:
-    visible: ".*English.*|.*Cancel.*"
+    visible: "Deutsch"
     timeout: 10000
 - takeScreenshot: 16-language
-- tapOn: "Cancel"

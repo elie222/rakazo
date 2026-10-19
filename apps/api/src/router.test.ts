@@ -4809,13 +4809,149 @@ describe("openai-compatible enabled models", () => {
   });
 });
 
+describe("threads.answerCall and threads.declineCall", () => {
+  function fixture(
+    status = "ringing",
+    updated = 1,
+    expiresAt = new Date(Date.now() + 45_000).toISOString(),
+  ) {
+    const appended: { type: string; payload: Record<string, unknown> }[] = [];
+    const tx = {
+      $queryRaw: vi.fn(async () => []),
+      bot: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ id: "bot-1", thread: { id: "thread-1" }, computer: null }),
+      },
+      message: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "message-1",
+          botId: "bot-1",
+          thread: { spaceId: "space-1" },
+          blocks: [
+            {
+              kind: "call_request",
+              callId: "call-1",
+              reason: "Send the report",
+              opening: "Hi, it's about the report.",
+              status,
+              expiresAt,
+            },
+          ],
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: updated }),
+      },
+      thread: { update: vi.fn(async () => ({ nextEventSeq: 2 })) },
+      event: {
+        create: vi.fn(
+          async ({ data }: { data: { type: string; payload: Record<string, unknown> } }) => {
+            appended.push(data);
+            return { seq: 1 };
+          },
+        ),
+      },
+      routine: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          id: "routine-1",
+          ...data,
+        })),
+      },
+    };
+    const prisma = {
+      ...tx,
+      $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      prisma,
+      events: {
+        notify: vi.fn().mockResolvedValue(undefined),
+        append: vi.fn(async (event: { type: string; payload: Record<string, unknown> }) => {
+          appended.push(event);
+          return { seq: 1 };
+        }),
+      },
+      jobs: { enqueue },
+      env: { sandboxProvider: "fake", phoneCallsEnabled: true },
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "space-1",
+      userId: "user-1",
+      email: "user@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+    const call = (path: string, json: Record<string, unknown>) =>
+      handler.handle(
+        new Request(`http://127.0.0.1/rpc/threads/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { botId: "bot-1", callId: "call-1", ...json } }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { prisma, appended, enqueue, call };
+  }
+
+  it("answers a ringing call with the bot's opening", async () => {
+    const { call, appended } = fixture();
+    const { response } = await call("answerCall", {});
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      json: { opening: "Hi, it's about the report.", reason: "Send the report" },
+    });
+    expect(appended[0]?.payload).toMatchObject({
+      messageId: "message-1",
+      blocks: [expect.objectContaining({ status: "answered" })],
+    });
+  });
+
+  it("refuses to answer a call that is no longer ringing", async () => {
+    const { call } = fixture("missed");
+    const { response } = await call("answerCall", {});
+    expect(response.status).toBe(409);
+  });
+
+  it("marks a declined call without scheduling another", async () => {
+    const { call, appended, prisma } = fixture();
+    const { response } = await call("declineCall", { outcome: "declined" });
+    expect(response.status).toBe(200);
+    expect(appended[0]?.payload).toMatchObject({
+      blocks: [expect.objectContaining({ status: "declined" })],
+    });
+    expect(prisma.routine.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects expired answers and records a missed call", async () => {
+    const { call, appended } = fixture("ringing", 1, new Date(0).toISOString());
+    expect((await call("answerCall", {})).response.status).toBe(409);
+    expect(appended[0]?.payload).toMatchObject({
+      blocks: [expect.objectContaining({ status: "missed" })],
+    });
+  });
+
+  it("checks ownership within the active space", async () => {
+    const { call, prisma } = fixture();
+    vi.mocked(prisma.bot.findFirst).mockResolvedValue(null);
+    expect((await call("answerCall", {})).response.status).not.toBe(200);
+    expect(prisma.bot.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: "bot-1", userId: "user-1", spaceId: "space-1" }),
+      }),
+    );
+    expect(prisma.message.updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("threads.endCall", () => {
   function fixture(duplicateMarker?: boolean, userSpoke = true) {
     const created: { blocks?: unknown; clientNonce?: string }[] = [];
     const events: { type: string; payload: Record<string, unknown> }[] = [];
     const tx = {
+      $queryRaw: vi.fn(async () => []),
       thread: { update: vi.fn().mockResolvedValue({ nextMessageSeq: 3, nextEventSeq: 5 }) },
       message: {
+        findUnique: vi.fn().mockResolvedValue(null),
         findFirst: vi.fn().mockResolvedValue(userSpoke ? { id: "utterance-1" } : null),
         create: vi.fn(async ({ data }: { data: { blocks: unknown; clientNonce?: string } }) => {
           if (duplicateMarker) throw Object.assign(new Error("unique"), { code: "P2002" });
@@ -4842,6 +4978,8 @@ describe("threads.endCall", () => {
           .fn()
           .mockResolvedValue({ id: "bot-1", thread: { id: "thread-1" }, computer: null }),
       },
+      // No bot-placed call behind this one: only the caller's own hang-up runs.
+      message: { findUnique: vi.fn().mockResolvedValue(null) },
       taughtSkill: { findFirst: vi.fn().mockResolvedValue(null) },
       $transaction: vi.fn(async (run: (client: typeof tx) => unknown) => run(tx)),
     } as unknown as PrismaClient;
@@ -4850,7 +4988,7 @@ describe("threads.endCall", () => {
       prisma,
       events: { notify: vi.fn().mockResolvedValue(undefined) },
       jobs: { enqueue },
-      env: { sandboxProvider: "fake" },
+      env: { sandboxProvider: "fake", phoneCallsEnabled: true },
     } as unknown as RouterDeps;
     const actor = {
       spaceId: "space-1",
@@ -4864,12 +5002,12 @@ describe("threads.endCall", () => {
       created,
       events,
       enqueue,
-      call: () =>
+      call: (extra: Record<string, unknown> = {}) =>
         handler.handle(
           new Request("http://127.0.0.1/rpc/threads/endCall", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ json: { botId: "bot-1", callId: "call-1" } }),
+            body: JSON.stringify({ json: { botId: "bot-1", callId: "call-1", ...extra } }),
           }),
           { prefix: "/rpc", context: { actor } },
         ),
@@ -4902,6 +5040,22 @@ describe("threads.endCall", () => {
     );
     expect(String(tx.run.create.mock.calls[0]?.[0]?.data?.clientNonce)).toMatch(/^call:call-1:/);
     expect(enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the connected time the caller reported on the card", async () => {
+    const { call, created } = fixture();
+    const { response } = await call({ durationSeconds: 83 });
+    expect(response.status).toBe(200);
+    expect(created[0]?.blocks).toEqual([
+      { kind: "voice_call", callId: "call-1", title: "", farewell: "", durationSeconds: 83 },
+    ]);
+  });
+
+  it("rejects a negative connected time", async () => {
+    const { call, created } = fixture();
+    const { response } = await call({ durationSeconds: -1 });
+    expect(response.status).toBe(400);
+    expect(created).toEqual([]);
   });
 
   it("is a no-op for a late hang-up with no user call utterance", async () => {
@@ -5340,6 +5494,76 @@ describe("link favicons", () => {
       code: "UNAUTHORIZED",
     });
     expect(favicon).not.toHaveBeenCalled();
+  });
+});
+
+describe("memory documents", () => {
+  const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+
+  function memoryClient(
+    doc: { id: string; path: string; scope: string; botId: string | null } | null,
+    session: typeof actor | null = actor,
+  ) {
+    const memoryDocument = { findFirst: vi.fn(async () => doc) };
+    const memory = { remove: vi.fn(async () => ({ removed: true })) };
+    const deps = {
+      prisma: { memoryDocument },
+      memory,
+      env: { webOrigin: "https://example.test" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor: session } as never });
+    return { client, memoryDocument, memory };
+  }
+
+  it("deletes a memory document owned by the caller through the memory store", async () => {
+    const { client, memoryDocument, memory } = memoryClient({
+      id: "doc-1",
+      path: "projects/retired.md",
+      scope: "bot",
+      botId: "bot-1",
+    });
+    await expect(client.memory.remove({ documentId: "doc-1" })).resolves.toEqual({ ok: true });
+    expect(memoryDocument.findFirst).toHaveBeenCalledWith({
+      where: { id: "doc-1", spaceId: "space-1", userId: "user-1" },
+    });
+    expect(memory.remove).toHaveBeenCalledWith(
+      { id: "doc-1", scope: "bot", botId: "bot-1", path: "projects/retired.md" },
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
+  });
+
+  it("requires a session before looking up or deleting a document", async () => {
+    const { client, memoryDocument, memory } = memoryClient(null, null);
+    await expect(client.memory.remove({ documentId: "doc-1" })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    expect(memoryDocument.findFirst).not.toHaveBeenCalled();
+    expect(memory.remove).not.toHaveBeenCalled();
+  });
+
+  it("does not report success when the memory adapter fails", async () => {
+    const { client, memory } = memoryClient({
+      id: "doc-1",
+      path: "projects/retired.md",
+      scope: "user",
+      botId: null,
+    });
+    memory.remove.mockRejectedValueOnce(new Error("Memory unavailable"));
+    await expect(client.memory.remove({ documentId: "doc-1" })).rejects.toThrow(
+      "Memory unavailable",
+    );
+  });
+
+  it("keeps MEMORY.md and does not reach another user's document", async () => {
+    const index = memoryClient({ id: "doc-1", path: "MEMORY.md", scope: "user", botId: null });
+    await expect(index.client.memory.remove({ documentId: "doc-1" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(index.memory.remove).not.toHaveBeenCalled();
+
+    const foreign = memoryClient(null);
+    await expect(foreign.client.memory.remove({ documentId: "doc-2" })).rejects.toBeTruthy();
+    expect(foreign.memory.remove).not.toHaveBeenCalled();
   });
 });
 

@@ -35,6 +35,13 @@ export interface MessagingPlatform {
   provider: string;
   capabilities: MessagingCapabilities;
   adapter: Adapter;
+  /**
+   * The adapter's own thread-id prefix when it differs from `provider`, so
+   * one adapter type can mount more than once (one Telegram bot per space:
+   * "telegram-work"). Rakazo only ever sees `provider`-prefixed thread ids;
+   * the adapter keeps its native ones. Defaults to `provider`.
+   */
+  adapterName?: string;
   /** Deterministic 1:1 thread id for platforms without openDM (sendblue). */
   directThreadId?: (address: string) => string;
   /** Delivery-status events the Chat SDK drops (sendblue is_outbound posts). */
@@ -55,55 +62,74 @@ export interface MessagingPlatform {
   ) => Partial<MessagingInboundMessage>;
 }
 
+/** One mounted platform with its own Chat SDK instance. */
+interface MountedPlatform {
+  platform: MessagingPlatform;
+  /** The adapter's native thread-id prefix (see MessagingPlatform.adapterName). */
+  adapterName: string;
+  chat: Chat<Record<string, Adapter>>;
+}
+
 /**
  * MessagingSurface over the Chat SDK (github.com/vercel/chat): one bot
- * presence across every mounted platform. Orchestration stays upstream —
- * this class only translates between Chat SDK events/calls and the
- * provider-neutral contract.
+ * presence per mounted platform. Orchestration stays upstream — this class
+ * only translates between Chat SDK events/calls and the provider-neutral
+ * contract.
+ *
+ * Each platform gets its own Chat instance: the SDK routes thread ids by
+ * their adapter-name prefix, so two adapters of the same type (two Telegram
+ * bots, both minting "telegram:<chatId>") cannot share one instance. The
+ * surface rewrites that prefix to the platform's provider at the boundary.
  */
 export class ChatSdkMessagingSurface implements MessagingSurface {
-  private readonly chat: Chat<Record<string, Adapter>>;
-  private readonly byProvider = new Map<string, MessagingPlatform>();
+  private readonly byProvider = new Map<string, MountedPlatform>();
   private sink: ((event: MessagingInboundEvent) => Promise<void>) | undefined;
   private initialized: Promise<void> | undefined;
 
   constructor(platforms: MessagingPlatform[], options: { userName?: string } = {}) {
     if (platforms.length === 0) throw new Error("ChatSdkMessagingSurface needs >=1 platform");
-    for (const platform of platforms) this.byProvider.set(platform.provider, platform);
-    this.chat = new Chat({
-      userName: options.userName ?? "rakazo",
-      adapters: Object.fromEntries(platforms.map((p) => [p.provider, p.adapter])),
-      state: createMemoryState(),
-      // The SDK default ("drop") takes a per-conversation lock and discards
-      // any message that arrives while it is held — and the LockError is
-      // swallowed into waitUntil, so the webhook still ACKs 200 and the
-      // vendor never retries. Two texts in quick succession would lose the
-      // second. Each inbound message already runs inside its own webhook's
-      // waitUntil task, so process them independently and let the per-message
-      // client nonce downstream handle replay.
-      concurrency: "concurrent",
-    });
-    const deliver = async (thread: Thread, message: Message) => {
-      const event = this.toInbound(thread.id, thread.isDM, message);
-      if (!event) return;
-      try {
-        await this.sink?.(event);
-      } catch (error) {
-        // processMessage hands waitUntil a swallowed promise, so track sink
-        // failures here and turn them into HTTP 5xx after the drain.
-        const drain = webhookDrain.getStore();
-        if (drain) drain.failed = true;
-        throw error;
+    for (const platform of platforms) {
+      if (this.byProvider.has(platform.provider)) {
+        throw new Error(`Duplicate messaging provider: ${platform.provider}`);
       }
-    };
-    // Priority routing makes these disjoint: DMs, then @-mentions in
-    // unsubscribed threads, then the catch-all pattern for everything else.
-    // Subscribed threads skip the catch-all and only fire onSubscribedMessage
-    // (chat SDK docs / dispatchToHandlersWithSignal); register deliver there too.
-    this.chat.onDirectMessage(deliver);
-    this.chat.onNewMention(deliver);
-    this.chat.onSubscribedMessage(deliver);
-    this.chat.onNewMessage(/(?:)/, deliver);
+      const adapterName = platform.adapterName ?? platform.provider;
+      const chat = new Chat({
+        userName: options.userName ?? "rakazo",
+        adapters: { [adapterName]: platform.adapter },
+        state: createMemoryState(),
+        // The SDK default ("drop") takes a per-conversation lock and discards
+        // any message that arrives while it is held — and the LockError is
+        // swallowed into waitUntil, so the webhook still ACKs 200 and the
+        // vendor never retries. Two texts in quick succession would lose the
+        // second. Each inbound message already runs inside its own webhook's
+        // waitUntil task, so process them independently and let the per-message
+        // client nonce downstream handle replay.
+        concurrency: "concurrent",
+      });
+      const mounted: MountedPlatform = { platform, adapterName, chat };
+      this.byProvider.set(platform.provider, mounted);
+      const deliver = async (thread: Thread, message: Message) => {
+        const event = this.toInbound(mounted, thread.id, thread.isDM, message);
+        if (!event) return;
+        try {
+          await this.sink?.(event);
+        } catch (error) {
+          // processMessage hands waitUntil a swallowed promise, so track sink
+          // failures here and turn them into HTTP 5xx after the drain.
+          const drain = webhookDrain.getStore();
+          if (drain) drain.failed = true;
+          throw error;
+        }
+      };
+      // Priority routing makes these disjoint: DMs, then @-mentions in
+      // unsubscribed threads, then the catch-all pattern for everything else.
+      // Subscribed threads skip the catch-all and only fire onSubscribedMessage
+      // (chat SDK docs / dispatchToHandlersWithSignal); register deliver there too.
+      chat.onDirectMessage(deliver);
+      chat.onNewMention(deliver);
+      chat.onSubscribedMessage(deliver);
+      chat.onNewMessage(/(?:)/, deliver);
+    }
   }
 
   describe(): AdapterDescriptor<{ providers: string[] }> {
@@ -116,7 +142,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   }
 
   platforms(): MessagingPlatformDescriptor[] {
-    return [...this.byProvider.values()].map((platform) => ({
+    return [...this.byProvider.values()].map(({ platform }) => ({
       provider: platform.provider,
       capabilities: platform.capabilities,
     }));
@@ -127,23 +153,23 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   }
 
   handleWebhook(provider: string, request: Request): Promise<Response> | null {
-    const platform = this.byProvider.get(provider);
-    if (!platform) return null;
-    return this.dispatchWebhook(platform, request);
+    const mounted = this.byProvider.get(provider);
+    if (!mounted) return null;
+    return this.dispatchWebhook(mounted, request);
   }
 
   async sendToThread(
     request: MessagingSendRequest,
     _context: AdapterContext,
   ): Promise<MessagingSendResult> {
+    const mounted = this.mountedForThread(request.threadId);
     await this.ensureInitialized();
     // Telegram converts Markdown and retries parse errors as plain text. Keep
     // other adapters' existing payloads (Slack markdown_text has a lower limit).
-    const message =
-      providerOfThreadId(request.threadId) === "telegram"
-        ? { markdown: request.body }
-        : request.body;
-    const sent = await this.chat.thread(request.threadId).post(message);
+    const message = mounted.adapterName === "telegram" ? { markdown: request.body } : request.body;
+    const sent = await mounted.chat
+      .thread(toAdapterThreadId(mounted, request.threadId))
+      .post(message);
     const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
     return { handle };
   }
@@ -153,24 +179,27 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     address: string,
     _context: AdapterContext,
   ): Promise<string> {
-    const platform = this.byProvider.get(provider);
-    if (!platform) throw new Error(`Unknown messaging provider: ${provider}`);
+    const mounted = this.byProvider.get(provider);
+    if (!mounted) throw new Error(`Unknown messaging provider: ${provider}`);
+    const { platform } = mounted;
     if (platform.directThreadId) return platform.directThreadId(address);
     await this.ensureInitialized();
     if (!platform.adapter.openDM) {
       throw new Error(`${provider} cannot open direct conversations`);
     }
-    return platform.adapter.openDM(address);
+    return toProviderThreadId(mounted, await platform.adapter.openDM(address));
   }
 
   async acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void> {
-    const platform = this.byProvider.get(providerOfThreadId(threadId));
-    const receipt = platform?.capabilities.receipt;
-    if (!platform || !receipt) return;
+    const mounted = this.byProvider.get(providerOfThreadId(threadId));
+    const receipt = mounted?.platform.capabilities.receipt;
+    if (!mounted || !receipt) return;
     await this.ensureInitialized();
+    const { platform } = mounted;
+    const adapterThreadId = toAdapterThreadId(mounted, threadId);
     const sends: Record<MessagingReceipt, () => Promise<void>> = {
-      typing: () => platform.adapter.startTyping(threadId),
-      reaction: () => platform.adapter.addReaction(threadId, handle, "eyes"),
+      typing: () => platform.adapter.startTyping(adapterThreadId),
+      reaction: () => platform.adapter.addReaction(adapterThreadId, handle, "eyes"),
     };
     // The Chat SDK adapter API takes no abort signal, so the underlying
     // request cannot be cancelled — but the caller's wait is still bounded.
@@ -182,20 +211,24 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     options: { before: string; limit: number },
     context: AdapterContext,
   ): Promise<MessagingInboundMessage[]> {
-    const platform = this.byProvider.get(providerOfThreadId(threadId));
-    if (!platform) return [];
+    const mounted = this.byProvider.get(providerOfThreadId(threadId));
+    if (!mounted) return [];
     await this.ensureInitialized();
+    const adapterThreadId = toAdapterThreadId(mounted, threadId);
     const fetched = await raceWithSignal(
-      platform.adapter.fetchMessages(threadId, { limit: options.limit + 1, direction: "backward" }),
+      mounted.platform.adapter.fetchMessages(adapterThreadId, {
+        limit: options.limit + 1,
+        direction: "backward",
+      }),
       context.signal,
     );
     const end = fetched.messages.findIndex((message) => message.id === options.before);
     if (end < 0) return [];
-    const isDirect = platform.adapter.isDM?.(threadId) ?? false;
+    const isDirect = mounted.platform.adapter.isDM?.(adapterThreadId) ?? false;
     return fetched.messages
       .slice(0, end)
       .slice(-options.limit)
-      .flatMap((message) => this.toInbound(threadId, isDirect, message) ?? []);
+      .flatMap((message) => this.toInbound(mounted, adapterThreadId, isDirect, message) ?? []);
   }
 
   /**
@@ -219,8 +252,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     this.initialized = undefined;
     if (pending) await pending.catch(() => undefined);
     await this.stopPollingAdapters();
-    const chat = this.chat as { shutdown?: () => Promise<void> };
-    await chat.shutdown?.().catch(() => undefined);
+    await this.shutdownChats();
   }
 
   private ensureInitialized(): Promise<void> {
@@ -228,31 +260,48 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // sends from job runners need the explicit call. Chat keeps a rejected
     // initPromise until shutdown(), so clear that before allowing a retry.
     if (!this.initialized) {
-      this.initialized = this.chat.initialize().catch(async (error) => {
-        try {
-          // Telegram may already be polling if Promise.all failed on another
-          // adapter after Telegram's initialize started getUpdates.
-          await this.stopPollingAdapters();
-          await (this.chat as { shutdown?: () => Promise<void> }).shutdown?.();
-        } catch {
-          // Best-effort reset of Chat's cached init failure.
-        } finally {
-          this.initialized = undefined;
-        }
-        throw error;
-      });
+      const chats = [...this.byProvider.values()].map(({ chat }) => chat.initialize());
+      this.initialized = Promise.all(chats).then(
+        () => undefined,
+        async (error: unknown) => {
+          try {
+            // Telegram may already be polling if another platform's
+            // initialize failed after Telegram's started getUpdates.
+            await Promise.allSettled(chats);
+            await this.stopPollingAdapters();
+            await this.shutdownChats();
+          } finally {
+            this.initialized = undefined;
+          }
+          throw error;
+        },
+      );
     }
     return this.initialized;
   }
 
   private async stopPollingAdapters(): Promise<void> {
-    for (const platform of this.byProvider.values()) {
+    for (const { platform } of this.byProvider.values()) {
       const adapter = platform.adapter as { stopPolling?: () => Promise<void> };
       await adapter.stopPolling?.().catch(() => undefined);
     }
   }
 
-  private async dispatchWebhook(platform: MessagingPlatform, request: Request): Promise<Response> {
+  private async shutdownChats(): Promise<void> {
+    for (const { chat } of this.byProvider.values()) {
+      // Best-effort: also resets Chat's cached init failure.
+      await (chat as { shutdown?: () => Promise<void> }).shutdown?.().catch(() => undefined);
+    }
+  }
+
+  private mountedForThread(threadId: string): MountedPlatform {
+    const mounted = this.byProvider.get(providerOfThreadId(threadId));
+    if (!mounted) throw new Error(`No messaging provider mounted for thread ${threadId}`);
+    return mounted;
+  }
+
+  private async dispatchWebhook(mounted: MountedPlatform, request: Request): Promise<Response> {
+    const { platform, adapterName, chat } = mounted;
     const declared = Number(request.headers.get("content-length") ?? 0);
     if (declared > MESSAGING_WEBHOOK_MAX_BODY_BYTES) {
       return new Response("Payload too large", { status: 413 });
@@ -271,7 +320,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // failures as 5xx so the vendor retries.
     const drain = { pending: [] as Promise<unknown>[], failed: false };
     const response = await webhookDrain.run(drain, async () => {
-      const adapterResponse = await this.chat.webhooks[platform.provider]!(forwarded, {
+      const adapterResponse = await chat.webhooks[adapterName]!(forwarded, {
         waitUntil: (task) => {
           drain.pending.push(task);
         },
@@ -292,24 +341,23 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
   }
 
   private toInbound(
+    mounted: MountedPlatform,
     threadId: string,
     isDirect: boolean,
     message: Message,
   ): MessagingInboundMessage | null {
     if (message.author.isMe || message.author.isSystem) return null;
-    const provider = providerOfThreadId(threadId);
-    const platform = this.byProvider.get(provider);
-    if (!platform) return null;
+    const { platform } = mounted;
     if (!isDirect && !platform.capabilities.groups) return null;
     const fromLabel = message.author.fullName || message.author.userName || null;
     const transport = platform.transport?.(message.raw) ?? null;
     const attachments = inboundAttachments(message);
     const base: MessagingInboundMessage = {
       type: "message",
-      provider,
+      provider: platform.provider,
       ...(transport ? { transport } : {}),
       handle: message.id,
-      threadId,
+      threadId: toProviderThreadId(mounted, threadId),
       isDirect,
       from: message.author.userId,
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
@@ -373,6 +421,24 @@ function plainTextWithLinks(message: Message): string {
 
 export function providerOfThreadId(threadId: string): string {
   return threadId.split(":", 1)[0] ?? "";
+}
+
+/** Adapter-native thread id ("telegram:42") → Rakazo thread id ("telegram-work:42"). */
+function toProviderThreadId(mounted: MountedPlatform, threadId: string): string {
+  const { provider } = mounted.platform;
+  if (mounted.adapterName === provider) return threadId;
+  const prefix = `${mounted.adapterName}:`;
+  return threadId.startsWith(prefix) ? `${provider}:${threadId.slice(prefix.length)}` : threadId;
+}
+
+/** Rakazo thread id → the id the platform's adapter and Chat instance expect. */
+function toAdapterThreadId(mounted: MountedPlatform, threadId: string): string {
+  const { provider } = mounted.platform;
+  if (mounted.adapterName === provider) return threadId;
+  const prefix = `${provider}:`;
+  return threadId.startsWith(prefix)
+    ? `${mounted.adapterName}:${threadId.slice(prefix.length)}`
+    : threadId;
 }
 
 function raceWithSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {

@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
+    "Erlaubt diesem Bot, die von ihm erstellten Bots zu organisieren, anzupassen und zu planen. Du genehmigst jede Änderung.",
   "Too many attempts. Try again in a few minutes.":
     "Zu viele Versuche. Versuche es in ein paar Minuten erneut.",
   "The server had a problem. Try again in a moment.":
@@ -331,6 +333,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Teams message": "Teams-Nachricht",
   "This routine no longer exists": "Diese Routine gibt es nicht mehr",
   Webhook: "Webhook",
+  // app/bot-profile.tsx
+  Profile: "Profil",
+  Routines: "Routinen",
+  "Could not load routines": "Routinen konnten nicht geladen werden",
   // app/computer.tsx
   "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",
@@ -844,4 +850,5 @@ export const DE_MESSAGES: Record<string, string> = {
   Undo: "Rückgängig",
   "Update instructions?": "Anweisungen aktualisieren?",
   "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
+  "Fleet management": "Flottenverwaltung",
 };
