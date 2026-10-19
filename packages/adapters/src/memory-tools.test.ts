@@ -46,6 +46,14 @@ describe("appendMemoryFact", () => {
     },
   );
 
+  it.each(["Intro.\n\n", "line  \n", "line  ", "line\r\n", "   "])(
+    "preserves existing Markdown whitespace in %j when appending",
+    (existing) => {
+      const separator = existing.endsWith("\n") ? "" : "\n";
+      expect(appendMemoryFact(existing, "new fact")).toBe(`${existing}${separator}new fact\n`);
+    },
+  );
+
   it("starts an empty document with the fact", () => {
     expect(appendMemoryFact("", "  durable fact  ")).toBe("durable fact\n");
   });
@@ -65,6 +73,14 @@ describe("multiline memory facts", () => {
     ]) {
       expect(appendMemoryFact(existing, "Office:\nBerlin")).toBe(existing);
     }
+  });
+
+  it.each([
+    ["Office:\r\nBerlin\r\n", "Office:\nBerlin"],
+    ["Office:\nBerlin\n", "Office:\r\nBerlin"],
+    ["before\r\nOffice:\r\nBerlin\r\nafter\r\n", "Office:\nBerlin"],
+  ])("matches multiline blocks across newline formats", (existing, fact) => {
+    expect(appendMemoryFact(existing, fact)).toBe(existing);
   });
 
   it("does not match partial lines or nonconsecutive lines", () => {
