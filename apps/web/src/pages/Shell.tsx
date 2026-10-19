@@ -7545,7 +7545,9 @@ const MessageView = memo(function MessageView({
                   className={
                     block.state === "Needs you"
                       ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
-                      : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                      : block.state === "Skipped"
+                        ? "rounded-full bg-foreground/10 px-[11px] py-1 text-[13px] text-muted-foreground"
+                        : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
                   }
                 >
                   {block.state}
