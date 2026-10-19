@@ -295,7 +295,9 @@ export class Dictation {
     let live = true;
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = navigator.language || "en-US";
+    // The recognizer follows the language the app is set to, so a Dutch UI is
+    // dictated in Dutch; the browser language stays the fallback.
+    rec.lang = speechLocaleTag(getActiveUiLocale()) ?? (navigator.language || "en-US");
     // Chrome numbers results per session, so a restart starts over: keep the earlier text.
     let carried = "";
     let sessionStartedAt = Date.now();
