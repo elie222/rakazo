@@ -126,11 +126,12 @@ export class RailwaySandboxProvider implements SandboxProvider {
     context.signal.throwIfAborted();
     if (request.providerRef && request.providerKind === "railway") {
       try {
-        const sandbox = await this.connect(
+        const sandbox = await this.lookup(
           this.ref(request.providerRef, request.botId, false),
           context,
         );
         if (sandbox.status === "RUNNING") {
+          assertPrivateNetwork(sandbox);
           return this.ref(sandbox.id, request.botId, false);
         }
         if (sandbox.status === "CREATING") throw new Error("Railway computer is still starting");
@@ -463,8 +464,14 @@ export class RailwaySandboxProvider implements SandboxProvider {
   }
 
   private async connect(computer: ComputerRef, context: AdapterContext) {
+    const sandbox = await this.lookup(computer, context);
+    assertPrivateNetwork(sandbox);
+    return sandbox;
+  }
+
+  private async lookup(computer: ComputerRef, context: AdapterContext) {
     context.signal.throwIfAborted();
-    const sandbox = await Sandbox.connect(computer.providerRef, {
+    return Sandbox.connect(computer.providerRef, {
       ...this.options,
       fetch: (input, init) =>
         railwayFetch(input, {
@@ -472,8 +479,6 @@ export class RailwaySandboxProvider implements SandboxProvider {
           signal: init?.signal ? AbortSignal.any([init.signal, context.signal]) : context.signal,
         }),
     });
-    assertPrivateNetwork(sandbox);
-    return sandbox;
   }
 
   private async run(

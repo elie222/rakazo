@@ -409,8 +409,18 @@ describe("Railway computers", () => {
     );
   });
 
-  it.each(["DESTROYED", "DESTROYING", "FAILED"])("replaces a %s computer", async (status) => {
-    vi.mocked(Sandbox.connect).mockResolvedValue({ ...sandbox, status } as unknown as Sandbox);
+  it.each([
+    ["DESTROYED", "PRIVATE"],
+    ["DESTROYING", "PRIVATE"],
+    ["FAILED", "PRIVATE"],
+    ["DESTROYED", undefined],
+    ["FAILED", undefined],
+  ])("replaces a %s computer with %s networking", async (status, networkIsolation) => {
+    vi.mocked(Sandbox.connect).mockResolvedValue({
+      ...sandbox,
+      status,
+      networkIsolation,
+    } as unknown as Sandbox);
     expect(
       await provider.provision(
         { botId: "bot", homePath: "/unused", providerRef: "old", providerKind: "railway" },
