@@ -23,3 +23,51 @@ test("current subscription models appear in the picker", async ({ page }, testIn
     await page.keyboard.press("Escape");
   }
 });
+
+test("text-only models have a subtle image warning", async ({ page }, testInfo) => {
+  await page.route("**/rpc/models/list", async (route) => {
+    const response = await route.fetch();
+    const body = (await response.json()) as {
+      json: Array<{ provider: string; id: string; label: string; images?: boolean }>;
+    };
+    const template = body.json.find((entry) => entry.provider === "openrouter");
+    if (!template) throw new Error("Missing OpenRouter catalog fixture");
+    await route.fulfill({
+      response,
+      json: {
+        ...body,
+        json: [
+          ...body.json.filter((entry) => entry.provider !== "openrouter"),
+          { ...template, id: "fixture-vision", label: "Vision model", images: true },
+          { ...template, id: "fixture-text", label: "Text-only model", images: false },
+        ],
+      },
+    });
+  });
+  await signup(page, `text-only-models-${Date.now()}@rakazo.test`, "password12", "Model Picker");
+  await completeOnboarding(page);
+  await openUserSettings(page, "models");
+  await page.getByPlaceholder("Search providers").fill("OpenRouter");
+  await page.getByRole("button", { name: /OpenRouter/ }).click();
+
+  const picker = page.getByRole("combobox", { name: "Model", exact: true });
+  await picker.click();
+  const textOnly = page.getByRole("option", { name: "Text-only model", exact: true });
+  const vision = page.getByRole("option", { name: "Vision model", exact: true });
+  await expect(textOnly.getByTitle("Can't read images")).toBeVisible();
+  await expect(textOnly).toHaveAccessibleDescription("Can't read images");
+  await expect(vision.getByTitle("Can't read images")).toHaveCount(0);
+  await expect(vision).toHaveAccessibleDescription("");
+  await captureScreenshot(page, testInfo, "model-picker-text-only-warning");
+
+  await textOnly.click();
+  await expect(picker.getByTitle("Can't read images")).toBeVisible();
+  await expect(picker).toHaveAccessibleDescription("Can't read images");
+  await expect(page.getByRole("listbox", { name: "Model options" })).toBeHidden();
+  await captureScreenshot(page, testInfo, "model-picker-text-only-selected");
+
+  await picker.click();
+  await vision.click();
+  await expect(picker.getByTitle("Can't read images")).toHaveCount(0);
+  await expect(picker).toHaveAccessibleDescription("");
+});

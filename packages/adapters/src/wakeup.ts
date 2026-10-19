@@ -1,13 +1,14 @@
-import {
-  type BackgroundJob,
-  type BackgroundJobHandlers,
-  dispatchBackgroundJob,
-  type JobPublisher,
-  type JobWorkerHost,
+import type {
+  BackgroundJob,
+  BackgroundJobHandlers,
+  JobPublisher,
+  JobWorkerHost,
 } from "@rakazo/adapter-kit";
+import { dispatchBackgroundJob } from "@rakazo/adapter-kit";
 import { isTooManyDatabaseConnections } from "@rakazo/db";
-import { runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
-import { makeWorkerUtils, type Runner, run, type WorkerUtils } from "graphile-worker";
+import { getLogger, runCorrelatedJob, unwrapJobPayload, wrapJobPayload } from "@rakazo/logging";
+import type { Runner, WorkerUtils } from "graphile-worker";
+import { makeWorkerUtils, run } from "graphile-worker";
 import type { Pool } from "pg";
 import { recordHistoryCompactAttemptsExhausted } from "./history-compaction.js";
 
@@ -199,6 +200,59 @@ export class GraphileJobWorkerHost implements JobWorkerHost {
       }
     }
   }
+}
+
+/** Exhausted retry rows are durable notice requests, including across worker restarts. */
+export function createRoutineRetryNoticeReconciler(
+  pool: Pool,
+  notify: (runId: string) => Promise<void>,
+): () => Promise<void> {
+  const batchSize = 20;
+  const concurrency = 4;
+  let cursor = "0";
+  return async () => {
+    const { rows } = await pool.query<{ id: string; revision: number; payload: unknown }>(
+      `select jobs.id, jobs.revision, jobs.payload
+       from graphile_worker._private_jobs as jobs
+       join graphile_worker._private_tasks as tasks on tasks.id = jobs.task_id
+       where tasks.identifier = 'routine.retry'
+         and jobs.attempts >= jobs.max_attempts and jobs.locked_at is null
+         and jobs.id > $1::bigint
+       order by jobs.id limit $2`,
+      [cursor, batchSize],
+    );
+    const deliver = async (job: (typeof rows)[number]) => {
+      const { payload } = unwrapJobPayload(job.payload);
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        !("runId" in payload) ||
+        typeof payload.runId !== "string" ||
+        !payload.runId
+      ) {
+        return;
+      }
+      try {
+        await notify(payload.runId);
+        // A concurrently replaced job is new work, not the notice we just delivered.
+        // A crash before this delete may replay the notice (at-least-once delivery).
+        await pool.query(
+          `delete from graphile_worker._private_jobs
+           where id = $1 and revision = $2
+             and attempts >= max_attempts and locked_at is null`,
+          [job.id, job.revision],
+        );
+      } catch (error) {
+        getLogger().error("routine retry exhaustion notification", error);
+      }
+    };
+    for (let index = 0; index < rows.length; index += concurrency) {
+      await Promise.all(rows.slice(index, index + concurrency).map(deliver));
+    }
+    // Advance past failures too, so an unavailable destination cannot starve later notices.
+    // Wrap after the final page; failed rows stay durable and will be revisited.
+    cursor = rows.length === batchSize ? rows[rows.length - 1]!.id : "0";
+  };
 }
 
 /** Graphile's default when a job sets no cap. */

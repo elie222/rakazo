@@ -1,6 +1,7 @@
 import type { MessagingInboundMessage, MessagingSurface } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
 import {
+  createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
   resolveMessagingThreadId,
   toTeamChatInbound,
@@ -26,6 +27,24 @@ function baseEvent(overrides: Partial<MessagingInboundMessage> = {}): MessagingI
 describe("toTeamChatInbound", () => {
   it("returns null when content and media are empty", () => {
     expect(toTeamChatInbound(baseEvent({ content: "  ", mediaUrl: null }))).toBeNull();
+  });
+
+  it("keeps a file-only message and passes its attachments through", () => {
+    const attachment = { name: "a.png", mimeType: "image/png", fetch: vi.fn() };
+    const mapped = toTeamChatInbound(baseEvent({ content: "", attachments: [attachment] }));
+    expect(mapped).toMatchObject({ content: "", attachments: [attachment] });
+  });
+
+  it("leaves out the media url when the file arrives as an attachment", () => {
+    const attachment = { name: "a.png", mimeType: "image/png", fetch: vi.fn() };
+    const mapped = toTeamChatInbound(
+      baseEvent({
+        content: "see this",
+        mediaUrl: "https://files.example/private/a.png",
+        attachments: [attachment],
+      }),
+    );
+    expect(mapped?.content).toBe("see this");
   });
 
   it("appends mediaUrl to content", () => {
@@ -136,5 +155,54 @@ describe("createMessagingTeamChatSender", () => {
         operationId: "team-chat-send:external-message:m-1",
       }),
     );
+  });
+});
+
+describe("createMessagingTeamChatHistory", () => {
+  it("is absent when the surface cannot read history", () => {
+    expect(createMessagingTeamChatHistory({} as MessagingSurface)).toBeUndefined();
+  });
+
+  it("reads the reply thread and places each message in the asking room as ambient context", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetchThreadHistory = vi.fn(async () => [
+      baseEvent({ handle: "100.1", content: "look at this", threadId: "slack:C1:100.1" }),
+      baseEvent({ handle: "100.2", content: " " }),
+    ]);
+    const read = createMessagingTeamChatHistory({
+      fetchThreadHistory,
+    } as unknown as MessagingSurface);
+
+    const history = await read!({
+      eventId: "100.9",
+      workspaceId: "T1",
+      kind: "mention",
+      conversationKey: "C1",
+      conversationId: "slack:C1:100.1",
+      conversationName: "launch",
+      replyThreadId: "100.1",
+      senderId: "U2",
+      senderName: "Grace",
+      content: "@Chief is this a LOD issue?",
+    });
+
+    expect(fetchThreadHistory).toHaveBeenCalledWith(
+      "slack:C1:100.1",
+      { before: "100.9", limit: 50 },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(timeout).toHaveBeenCalledWith(1_000);
+    timeout.mockRestore();
+    expect(history).toEqual([
+      expect.objectContaining({
+        eventId: "100.1",
+        kind: "ambient",
+        workspaceId: "T1",
+        conversationKey: "C1",
+        conversationId: "slack:C1:100.1",
+        replyThreadId: "100.1",
+        content: "look at this",
+      }),
+    ]);
   });
 });

@@ -1,6 +1,5 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
@@ -42,6 +41,7 @@ import { createComputerRefresh } from "../lib/computer-refresh";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { holdFreeRotation } from "../lib/orientation";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { errorText } from "../lib/user-error";
 
@@ -196,18 +196,8 @@ export default function Computer() {
     }).catch(() => undefined);
   }, [readyBotId, botId, computer?.state, switching]);
 
-  useEffect(() => {
-    // Let the full-screen desktop rotate to landscape; the rest of the app stays portrait.
-    const lock = computerOpen
-      ? ScreenOrientation.OrientationLock.DEFAULT
-      : ScreenOrientation.OrientationLock.PORTRAIT_UP;
-    void ScreenOrientation.lockAsync(lock).catch(() => undefined);
-    return () => {
-      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-        () => undefined,
-      );
-    };
-  }, [computerOpen]);
+  // Let the full-screen desktop rotate to landscape; phone-sized windows elsewhere stay portrait.
+  useEffect(() => (computerOpen ? holdFreeRotation() : undefined), [computerOpen]);
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;

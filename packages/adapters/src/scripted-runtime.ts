@@ -34,6 +34,13 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         throw new Error("Scripted run failure");
       }
       if (shouldHang(request.prompt)) {
+        // Long-running work happens on the computer, which starts it like any real run would.
+        yield {
+          type: "tool",
+          name: "list_files",
+          args: { path: "" },
+          executionId: `${request.runId}:list_files:hang`,
+        };
         yield { type: "progress", text: "still working…", activity: true };
         while (!controller.signal.aborted && !signal.aborted) {
           await abortableDelay(50, controller.signal);
@@ -364,6 +371,20 @@ code-b
       {
         assistant: "archiving that bot.",
         toolCalls: [{ name: "archive_bot", args: { confirm_name: name } }],
+        complete: true,
+      },
+    ];
+  }
+  if (lower.includes("propose an instruction update")) {
+    return [
+      {
+        assistant: "",
+        toolCalls: [
+          {
+            name: "propose_instructions_update",
+            args: { instructions: "Draft only. Ask before sending.", reason: "Learned preference" },
+          },
+        ],
         complete: true,
       },
     ];

@@ -106,8 +106,11 @@ export function isComputerControlUnavailable(error: unknown) {
   if (error.name === "TimeoutError" || error.name === "AbortError") return false;
   const text = errorText(error);
   // Only pre-connect failures prove no actions ran. Mid-flight resets/hang-ups can
-  // happen after the service already applied steps.
+  // happen after the service already applied steps. undici's connect timeout
+  // ("Connect Timeout Error", UND_ERR_CONNECT_TIMEOUT) fires before the socket
+  // opens, e.g. when the supervisor is no longer on the computer's network.
   return (
+    text.includes("connect timeout") ||
     text.includes("econnrefused") ||
     text.includes("enotfound") ||
     text.includes("ehostunreach") ||
@@ -218,7 +221,10 @@ export function nextScreenIndex(
       ) {
         throw new Error("This Team Computer screen is owned by a newer execution.");
       }
-      if (canTakeScreenLease(existing.leaseId, leaseId)) existing.leaseId = leaseId;
+      if (existing.leaseId !== leaseId && canTakeScreenLease(existing.leaseId, leaseId)) {
+        existing.leaseId = leaseId;
+        delete existing.idleAt;
+      }
     }
     return existing.index;
   }
@@ -255,6 +261,35 @@ export function completeReleasedScreen(
   if (slot?.releasing && slot.index === index) assigned.delete(screenId);
 }
 
+export function completeWarmReleasedScreen(
+  assigned: Map<string, ScreenAssignment>,
+  screenId: string,
+  index: number,
+  idleAt: number,
+): void {
+  const slot = assigned.get(screenId);
+  if (slot?.releasing && slot.index === index) {
+    delete slot.releasing;
+    delete slot.controlled;
+    slot.idleAt = idleAt;
+  }
+}
+
+export function oldestIdleScreen(
+  assigned: Map<string, ScreenAssignment>,
+  limit: number,
+): string | undefined {
+  return [...assigned.entries()]
+    .filter(
+      ([, slot]) =>
+        !slot.releasing && !slot.controlled && slot.idleAt !== undefined && slot.index < limit,
+    )
+    .sort(
+      ([screenA, a], [screenB, b]) =>
+        (a.idleAt ?? 0) - (b.idleAt ?? 0) || a.index - b.index || screenA.localeCompare(screenB),
+    )[0]?.[0];
+}
+
 export async function teardownReleasedScreen(
   assigned: Map<string, ScreenAssignment>,
   screenId: string,
@@ -271,6 +306,8 @@ export interface ScreenAssignment {
   leaseId?: string;
   releasing?: boolean;
   viewToken?: string;
+  idleAt?: number;
+  controlled?: boolean;
 }
 
 /** Forget screen assignments and their boot marker together on every cleanup path. */

@@ -5,6 +5,7 @@ import {
   estimateContextTokens,
   providerContextPrefix,
   selectContext,
+  shortenToolResultText,
 } from "./context-selection.js";
 
 const budget = {
@@ -280,6 +281,159 @@ describe("bounded context selection", () => {
       contextTruncated: true,
     });
     expect(decoded.diagnostic).toContain("Tool result truncated");
+  });
+  it("keeps every id inside an MCP text envelope when shortening its JSON", () => {
+    const names = ["Ada", "Ben", "Cleo", "Dev", "Eli", "Fay", "Gus", "Hal", "Ivy"];
+    const inner = JSON.stringify({
+      date: "2026-10-12",
+      time_zone: "UTC",
+      conversations: names.map((name, index) => ({
+        conversation_id: `conv${String(index).padStart(4, "0")}example`,
+        kind: "bot",
+        name,
+        messages: index * 7 + 2,
+      })),
+      note: "context ".repeat(200),
+    });
+    const source = JSON.stringify({ content: [{ type: "text", text: inner }] });
+    const out = shortenToolResultText(source, 1024, { name: "connectors_execute_tool" });
+    // Protected ids/names may exceed the soft target; they must never be cut to meet it.
+    expect(out.length).toBeLessThan(source.length / 2);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    const decoded = JSON.parse(envelope.content[0].text);
+    expect(decoded.contextTruncated).toBe(true);
+    expect(decoded.conversations.map((c: { name: string }) => c.name)).toEqual(names);
+    for (const [index, c] of decoded.conversations.entries())
+      expect(c.conversation_id).toBe(`conv${String(index).padStart(4, "0")}example`);
+    expect(decoded.note).toContain("Tool result truncated");
+  });
+  it("keeps an MCP JSON array of only ids and names whole instead of cutting it", () => {
+    const rows = Array.from({ length: 80 }, (_, index) => ({
+      id: `conversation-${index}`,
+      name: `Conversation ${index}`,
+    }));
+    const source = JSON.stringify({ content: [{ type: "text", text: JSON.stringify(rows) }] });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(JSON.parse(envelope.content[0].text)).toEqual(rows);
+  });
+  it("shortens both copies of an MCP result while preserving ids, names and cursors", () => {
+    const conversations = Array.from({ length: 9 }, (_, index) => ({
+      id: `conversation-${index}`,
+      name: `Conversation ${index}`,
+      description: "bulky prose ".repeat(1000),
+    }));
+    const inner = { conversations, nextCursor: "next-page", note: "details ".repeat(1000) };
+    const source = JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      structuredContent: inner,
+      isError: false,
+    });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(envelope.isError).toBe(false);
+    expect(out.length).toBeLessThan(source.length / 10);
+    for (const copy of [JSON.parse(envelope.content[0].text), envelope.structuredContent]) {
+      expect(copy.nextCursor).toBe(inner.nextCursor);
+      expect(
+        copy.conversations.map(({ id, name }: { id: string; name: string }) => ({ id, name })),
+      ).toEqual(conversations.map(({ id, name }) => ({ id, name })));
+      expect(copy.note.length).toBeLessThan(200);
+      for (const conversation of copy.conversations) {
+        expect(conversation.description.length).toBeLessThan(200);
+        expect(conversation.description).toContain("Tool result truncated");
+      }
+    }
+  });
+  it("does not mark an MCP envelope truncated when both copies already fit", () => {
+    const inner = { id: "conversation-1", name: "Conversation", note: "brief" };
+    const envelope = {
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      structuredContent: inner,
+    };
+    const out = shortenToolResultText(JSON.stringify(envelope), 1024);
+    expect(JSON.parse(out)).toEqual(envelope);
+    expect(JSON.parse(out).contextTruncated).toBeUndefined();
+  });
+  it("shortens large MCP outer metadata without cutting routing fields or inner JSON", () => {
+    const inner = { id: "conversation-1", name: "Conversation", nextCursor: "next-page" };
+    const controls = {
+      id: "metadata-1",
+      name: "Metadata",
+      nextCursor: "metadata-page",
+      url: `https://example.com/${"route/".repeat(30)}`,
+      path: `/${"folder/".repeat(30)}`,
+      status: "success",
+      type: "result",
+    };
+    const source = JSON.stringify({
+      content: [{ type: "text", text: JSON.stringify(inner) }],
+      _meta: { ...controls, description: "bulky metadata ".repeat(3000) },
+    });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(JSON.parse(envelope.content[0].text)).toMatchObject(inner);
+    expect(envelope._meta).toMatchObject(controls);
+    expect(envelope._meta.description.length).toBeLessThan(200);
+    expect(out.length).toBeLessThan(1024);
+  });
+  it("shortens a large sibling prose part so the envelope still fits", () => {
+    const inner = JSON.stringify({
+      id: "conv-1",
+      name: "Ada",
+      note: "keep ".repeat(50),
+    });
+    const source = JSON.stringify({
+      content: [
+        { type: "text", text: inner },
+        { type: "text", text: "summary ".repeat(5000) },
+      ],
+    });
+    const out = shortenToolResultText(source, 1024);
+    expect(out.length).toBeLessThan(source.length / 5);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    const decoded = JSON.parse(envelope.content[0].text);
+    expect(decoded.id).toBe("conv-1");
+    expect(decoded.name).toBe("Ada");
+    expect(envelope.content[1].text.length).toBeLessThan(2000);
+  });
+  it("leaves non-JSON MCP text to the generic shortener", () => {
+    const source = JSON.stringify({ content: [{ type: "text", text: "plain ".repeat(1000) }] });
+    const out = shortenToolResultText(source, 512);
+    expect(out.length).toBeLessThan(source.length);
+  });
+  it("keeps ids in a JSON text part when the MCP envelope also has other content", () => {
+    const names = ["Ada", "Ben", "Cleo"];
+    const inner = JSON.stringify({
+      conversations: names.map((name, index) => ({
+        conversation_id: `conv${index}`,
+        name,
+        blurb: "padding ".repeat(400),
+      })),
+    });
+    const source = JSON.stringify({
+      content: [
+        { type: "text", text: inner },
+        { type: "resource_link", uri: "mcp://example/conv", name: "conversations" },
+      ],
+    });
+    const out = shortenToolResultText(source, 1024);
+    const envelope = JSON.parse(out);
+    expect(envelope.contextTruncated).toBe(true);
+    expect(envelope.content).toHaveLength(2);
+    expect(envelope.content[1]).toEqual({
+      type: "resource_link",
+      uri: "mcp://example/conv",
+      name: "conversations",
+    });
+    const decoded = JSON.parse(envelope.content[0].text);
+    expect(decoded.conversations.map((c: { name: string }) => c.name)).toEqual(names);
+    for (const [index, c] of decoded.conversations.entries())
+      expect(c.conversation_id).toBe(`conv${index}`);
   });
   it("fails explicitly if mandatory content cannot fit rather than silently losing the request", () => {
     expect(() =>

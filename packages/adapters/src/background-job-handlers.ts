@@ -74,6 +74,9 @@ export function createBackgroundJobHandlers(deps: {
     "routine.wakeup": async (payload) => {
       await deps.executor.wakeRoutine(payload.routineId, payload.scheduledFor);
     },
+    "routine.retry": async (payload) => {
+      await deps.executor.retryRoutineRun(payload.runId);
+    },
     "computer.update": async ({ updateId }) => {
       await performComputerUpdate(deps, updateId);
     },

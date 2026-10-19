@@ -13,6 +13,7 @@ import { clearThread, type PrismaClient, type ThreadEvents } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   acquireComputerExecutionLease,
+  acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
   computerSupportsUpdate,
   holdComputerExecutionLeaseForTakeover,
@@ -1007,7 +1008,12 @@ describe("computer provisioning", () => {
             updatedAt: expect.any(Date),
             bots: { some: { id: "bot-1", archivedAt: null } },
           },
-          data: { state: "running", providerRef: next.providerRef, kind: next.kind },
+          data: {
+            state: "running",
+            providerRef: next.providerRef,
+            kind: next.kind,
+            runningSince: expect.any(Date),
+          },
         });
         expect(destroy).not.toHaveBeenCalled();
         expect(stop).not.toHaveBeenCalled();
@@ -1358,6 +1364,7 @@ describe("Team Computer wake", () => {
     state: "stopped" | "running",
     findMany = vi.fn().mockResolvedValue([{ id: "deleted-bot" }]),
     provisioned: Partial<ComputerRef> = {},
+    stored: Record<string, unknown> = {},
   ) {
     const ref = {
       id: "sandbox-1",
@@ -1385,6 +1392,7 @@ describe("Team Computer wake", () => {
           controlLeaseId: null,
           maintenanceId: null,
           updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+          ...stored,
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
@@ -1420,6 +1428,46 @@ describe("Team Computer wake", () => {
       await rm(dataDir, { recursive: true, force: true });
     }
   }
+
+  function activation(harness: ReturnType<typeof wakeHarness>) {
+    const calls = vi.mocked(harness.prisma.computer.updateMany).mock.calls;
+    return calls.map(([args]) => args).find((args) => args.data.state === "running")?.data;
+  }
+
+  it("starts the active-lifetime clock when a stopped computer starts", async () => {
+    const harness = wakeHarness("stopped", undefined, {}, { runningSince: null });
+    const before = Date.now();
+
+    await boot(harness);
+
+    const runningSince = activation(harness)?.runningSince as Date;
+    expect(runningSince).toBeInstanceOf(Date);
+    expect(runningSince.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("keeps the active-lifetime clock when reconnecting to a running computer", async () => {
+    const runningSince = new Date("2024-01-01T00:00:00.000Z");
+    const harness = wakeHarness("running", undefined, {}, { runningSince });
+
+    await boot(harness);
+
+    expect(activation(harness)?.runningSince).toEqual(runningSince);
+  });
+
+  it("restarts the active-lifetime clock when reconnecting had to start the computer", async () => {
+    const harness = wakeHarness(
+      "running",
+      undefined,
+      { started: true },
+      { runningSince: new Date("2024-01-01T00:00:00.000Z") },
+    );
+    const before = Date.now();
+
+    await boot(harness);
+
+    const runningSince = activation(harness)?.runningSince as Date;
+    expect(runningSince.getTime()).toBeGreaterThanOrEqual(before);
+  });
 
   it("removes folders of bots deleted while the Team Computer was stopped", async () => {
     const harness = wakeHarness("stopped");
@@ -1848,6 +1896,53 @@ describe("computer execution leases", () => {
   it("keeps the screen lease on the run id and fence", () => {
     expect(screenLeaseIdForRun({ runId: "run-1", fence: 8 }, "run-1")).toBe("run-1:8");
     expect(screenLeaseIdForRun(null, "run-1", 0)).toBe("run-1:0");
+  });
+
+  it("increments dedicated screen fences and refuses an unowned run", async () => {
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "run-1" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([{ id: "run-2" }])
+      .mockResolvedValueOnce([{ id: "bot-1" }])
+      .mockResolvedValueOnce([{ id: "computer-1", scope: "dedicated" }])
+      .mockResolvedValueOnce([]);
+    const updateManyAndReturn = vi
+      .fn()
+      .mockResolvedValueOnce([{ fence: 4 }])
+      .mockResolvedValueOnce([{ fence: 5 }]);
+    const tx = {
+      $queryRaw: queryRaw,
+      computerExecutionLease: {
+        updateManyAndReturn,
+        create: vi.fn(),
+      },
+      run: { aggregate: vi.fn() },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (work: (client: typeof tx) => unknown) => work(tx)),
+    } as unknown as PrismaClient;
+    const base = {
+      computerId: "computer-1",
+      botId: "bot-1",
+      workerId: "worker-1",
+      runFence: 1,
+    };
+
+    const first = await acquireDedicatedScreenLeaseFence(prisma, { ...base, runId: "run-1" });
+    const second = await acquireDedicatedScreenLeaseFence(prisma, { ...base, runId: "run-2" });
+    expect(screenLeaseIdForRun(first, "run-1")).toBe("run-1:4");
+    expect(screenLeaseIdForRun(second, "run-2")).toBe("run-2:5");
+    expect(updateManyAndReturn).toHaveBeenCalledTimes(2);
+    expect(tx.run.aggregate).not.toHaveBeenCalled();
+
+    await expect(
+      acquireDedicatedScreenLeaseFence(prisma, { ...base, runId: "run-unowned" }),
+    ).rejects.toBeInstanceOf(ComputerBusyError);
+    expect(updateManyAndReturn).toHaveBeenCalledTimes(2);
   });
 
   it("acquires a team lease on a stale suspending computer", async () => {

@@ -15,14 +15,14 @@
     "test": "vitest run --root ../.. packages/auth/src"
   },
   "dependencies": {
-    "@better-auth/expo": "1.7.7",
+    "@better-auth/expo": "1.7.10",
     "@rakazo/adapter-kit": "workspace:*",
     "@rakazo/core": "workspace:*",
     "@rakazo/db": "workspace:*",
-    "better-auth": "1.7.7"
+    "better-auth": "1.7.10"
   },
   "devDependencies": {
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   }
 }

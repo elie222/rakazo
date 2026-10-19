@@ -1,3 +1,8 @@
+import {
+  DEFAULT_COMPATIBLE_STT_MODEL,
+  DEFAULT_COMPATIBLE_TTS_MODEL,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
+} from "@rakazo/contracts";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -39,6 +44,9 @@ type VoiceCredential = {
   provider: string;
   voiceId: string;
   speechModel?: string;
+  endpoint?: string;
+  ttsModel?: string;
+  sttModel?: string;
 };
 type VoiceStatus = {
   configured: boolean;
@@ -59,6 +67,9 @@ export default function VoiceSettings() {
   const [apiKey, setApiKey] = useState("");
   const [voiceId, setVoiceId] = useState("");
   const [speechModel, setSpeechModel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [ttsModel, setTtsModel] = useState("");
+  const [sttModel, setSttModel] = useState("");
   const speechModelSave = useRef<string | null>(null);
   const [deviceVoice, setDeviceVoice] = useState(false);
   const [deviceVoiceReady, setDeviceVoiceReady] = useState(false);
@@ -89,6 +100,9 @@ export default function VoiceSettings() {
     const cred = nextCredentials.find((entry) => entry.provider === selected);
     setVoiceId(cred?.voiceId ?? "");
     setSpeechModel(cred?.speechModel ?? "");
+    setBaseUrl(cred?.endpoint ?? "");
+    setTtsModel(cred?.ttsModel ?? "");
+    setSttModel(cred?.sttModel ?? "");
     if (cred) {
       setVoices(await rpc<VoiceInfo[]>("voice/voices", { provider: selected }));
     } else {
@@ -237,16 +251,27 @@ export default function VoiceSettings() {
   const selected = catalog.find((entry) => entry.id === provider);
   const credential = credentials.find((entry) => entry.provider === provider);
 
+  const selfHosted = selected?.id === OPENAI_COMPATIBLE_PROVIDER_ID;
+  const canConnect = selfHosted ? Boolean(baseUrl.trim()) : apiKey.trim().length >= 8;
+
   async function connect() {
-    if (!selected || apiKey.trim().length < 8) return;
+    if (!selected || !canConnect) return;
     setPending("connect");
     setError(null);
     try {
       await rpc("voice/connect", {
         provider: selected.id,
         apiKey: apiKey.trim(),
+        // The server drops this voice when the address or speech model really changed.
         voiceId: voiceId || undefined,
         ...(selected.id === "fish-audio" ? { speechModel: speechModel.trim() } : {}),
+        ...(selfHosted
+          ? {
+              baseUrl: baseUrl.trim(),
+              ttsModel: ttsModel.trim() || undefined,
+              sttModel: sttModel.trim() || undefined,
+            }
+          : {}),
       });
       setApiKey("");
       await load(selected.id);
@@ -389,6 +414,22 @@ export default function VoiceSettings() {
         ) : null}
         {selected && !deviceVoice ? (
           <>
+            {selfHosted ? (
+              <TextInput
+                accessibilityLabel={t("Server URL")}
+                autoCapitalize="none"
+                autoComplete="off"
+                autoCorrect={false}
+                inputMode="url"
+                keyboardType="url"
+                value={baseUrl}
+                onChangeText={setBaseUrl}
+                placeholder="http://192.168.1.10:8880/v1"
+                placeholderTextColor={native.tertiaryLabel}
+                style={styles.input}
+                textContentType="URL"
+              />
+            ) : null}
             <TextInput
               accessibilityLabel={t("API key")}
               autoCapitalize="none"
@@ -397,15 +438,53 @@ export default function VoiceSettings() {
               importantForAutofill="no"
               value={apiKey}
               onChangeText={setApiKey}
-              placeholder={credential ? t("Paste a replacement key") : t("Paste your API key")}
+              placeholder={
+                selfHosted
+                  ? t("Optional")
+                  : credential
+                    ? t("Paste a replacement key")
+                    : t("Paste your API key")
+              }
               placeholderTextColor={native.tertiaryLabel}
               secureTextEntry
               style={styles.input}
               textContentType="none"
             />
+            {selfHosted ? (
+              <>
+                <Text style={styles.fieldLabel}>{t("Speech model")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Speech model")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={ttsModel}
+                  onChangeText={setTtsModel}
+                  placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                />
+                <Text style={styles.fieldLabel}>{t("Transcription model")}</Text>
+                <TextInput
+                  accessibilityLabel={t("Transcription model")}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={sttModel}
+                  onChangeText={setSttModel}
+                  placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
+                  placeholderTextColor={native.tertiaryLabel}
+                  style={styles.input}
+                />
+              </>
+            ) : null}
             <NativeActionButton
-              disabled={pending !== null || apiKey.trim().length < 8}
-              label={credential ? t("Replace key") : t("Connect")}
+              disabled={pending !== null || !canConnect}
+              label={
+                credential && selfHosted
+                  ? t("Reconnect")
+                  : credential
+                    ? t("Replace key")
+                    : t("Connect")
+              }
               onPress={() => void connect()}
             />
             {credential ? (

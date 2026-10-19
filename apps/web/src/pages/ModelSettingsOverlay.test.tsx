@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+type UiWebModule = typeof UiWeb;
 
 const models = vi.hoisted(() => ({
   list: vi.fn(),
@@ -30,6 +33,7 @@ vi.mock("../lib/rpc", () => ({
 }));
 vi.mock("../lib/localized-provider-hint", () => ({
   localizedProviderHint: () => "API key",
+  providerRowHint: () => null,
 }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -44,7 +48,8 @@ vi.mock("@lingui/react/macro", () => {
       value === 1 ? one : other,
   };
 });
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { Popover, PopoverContent, PopoverTrigger } = await importOriginal<UiWebModule>();
   const Pass = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
     AlertDialog: ({ open, children }: { open?: boolean; children?: ReactNode }) =>
@@ -87,11 +92,27 @@ vi.mock("@rakazo/ui-web", () => {
     Dialog: Pass,
     DialogClose: Pass,
     DialogContent: Pass,
-    DialogDescription: Pass,
+    DialogDescription: ({ children }: { children?: ReactNode }) => (
+      <p data-testid="model-description">{children}</p>
+    ),
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
     DialogHeader: Pass,
     DialogTitle: Pass,
     Input: (props: ComponentProps<"input">) => <input {...props} />,
-    ModelThinkingOptions: () => null,
+    ModelThinkingOptions: (props: {
+      maxTokens?: string;
+      maxTokensLabel?: string;
+      onMaxTokensChange?: (value: string) => void;
+    }) =>
+      props.onMaxTokensChange ? (
+        <input
+          aria-label={props.maxTokensLabel}
+          value={props.maxTokens ?? ""}
+          onChange={(event) => props.onMaxTokensChange?.(event.target.value)}
+        />
+      ) : null,
     NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
     NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   };
@@ -172,13 +193,19 @@ async function typeInto(input: HTMLInputElement, value: string) {
   });
 }
 
-async function renderSettings() {
+async function renderSettings(embedded = true, localOwner = false) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
   await act(async () => {
-    root.render(<ModelSettingsOverlay embedded onClose={() => undefined} />);
+    root.render(
+      <ModelSettingsOverlay
+        embedded={embedded}
+        localOwner={localOwner}
+        onClose={() => undefined}
+      />,
+    );
   });
   await act(async () => {
     await Promise.resolve();
@@ -226,6 +253,11 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(input.placeholder).toBe(STORED_PLACEHOLDER);
     expect(input.type).toBe("password");
     expect(view.container.textContent).not.toContain("sk-");
+    // The Active model row is the only connection status in the connected view.
+    expect(view.container.textContent).not.toContain("Connected · DeepSeek");
+    expect(view.container.textContent).not.toContain("Stored securely");
+    expect(view.container.textContent).not.toContain("Save limits");
+    expect(buttons(view.container, "Replace API key")[0]?.disabled).toBe(true);
 
     await typeInto(input, "sk-replacement-key");
     expect(keyField(view.container).value).toBe("sk-replacement-key");
@@ -244,6 +276,7 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
     expect(models.connect).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "deepseek", apiKey: "sk-replacement-key" }),
     );
+    expect(view.container.textContent).not.toContain("Connected and using");
     expect(keyField(view.container).value).toBe("");
     expect(keyField(view.container).placeholder).toBe(STORED_PLACEHOLDER);
 
@@ -266,6 +299,43 @@ it("shows a stored BYOK key when provider settings reopen", async () => {
   }
 });
 
+it("saves an edited output limit without sending a half-typed replacement key", async () => {
+  models.credentials.mockResolvedValue([
+    {
+      id: "cred-deepseek",
+      provider: "deepseek",
+      label: "DeepSeek",
+      hasKey: true,
+      isDefault: true,
+      modelId: "deepseek-chat",
+    },
+  ]);
+
+  const view = await renderSettings();
+  try {
+    const limit = view.container.querySelector<HTMLInputElement>(
+      'input[aria-label="Maximum output tokens"]',
+    );
+    if (!limit) throw new Error("Missing output limit field");
+    await typeInto(limit, "4096");
+    await typeInto(keyField(view.container), "sk-ab");
+    const save = buttons(view.container, "Save").find((entry) => entry.textContent === "Save");
+    await act(async () => {
+      save?.click();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(models.connect).toHaveBeenCalledTimes(1);
+    const input = models.connect.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(input).toMatchObject({ provider: "deepseek", maxTokens: 4096 });
+    expect(input).not.toHaveProperty("apiKey");
+    expect(keyField(view.container).value).toBe("sk-ab");
+  } finally {
+    await view.unmount();
+  }
+});
+
 it("leaves the key field empty until a key is saved", async () => {
   const view = await renderSettings();
   try {
@@ -275,6 +345,28 @@ it("leaves the key field empty until a key is saved", async () => {
     expect(view.container.textContent).not.toContain(STORED_PLACEHOLDER);
   } finally {
     await view.unmount();
+  }
+});
+
+it("shows the active model only once a model is connected", async () => {
+  vi.mocked(rpc.me).mockResolvedValue({
+    ...account("deepseek", "deepseek-chat"),
+    needsModel: true,
+  });
+  const view = await renderSettings();
+  try {
+    expect(view.container.textContent).not.toContain("Active model");
+  } finally {
+    await view.unmount();
+  }
+
+  vi.mocked(rpc.me).mockResolvedValue(account("deepseek", "deepseek-chat"));
+  const connected = await renderSettings();
+  try {
+    expect(connected.container.textContent).toContain("Active model");
+    expect(connected.container.textContent).toContain("DeepSeek Chat");
+  } finally {
+    await connected.unmount();
   }
 });
 
@@ -373,5 +465,89 @@ it("shows a stored OpenAI-compatible key and stays empty when none is saved", as
     expect(input.placeholder).toBe("Optional");
   } finally {
     await empty.unmount();
+  }
+});
+
+it("warns only on text-only models in the picker", async () => {
+  models.list.mockResolvedValue([
+    { ...deepseekEntry, images: false },
+    { ...deepseekEntry, id: "deepseek-vision", label: "DeepSeek Vision", images: true },
+    { ...deepseekEntry, id: "deepseek-unknown", label: "DeepSeek Unknown" },
+  ]);
+  const view = await renderSettings();
+  try {
+    const describedAs = (element: Element) =>
+      (element.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => (id ? document.getElementById(id)?.textContent : null))
+        .filter(Boolean)
+        .join(" ");
+    const marked = (element: Element) =>
+      Boolean(element.querySelector(`[title="Can't read images"]`));
+    const trigger = view.container.querySelector('button[role="combobox"]');
+    if (!(trigger instanceof HTMLButtonElement)) throw new Error("Missing model picker");
+    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
+      "DeepSeek Chat",
+      true,
+      "Can't read images",
+    ]);
+    await act(async () => {
+      trigger.click();
+    });
+    const options = [...document.querySelectorAll('[role="option"]')];
+    // The label stays the model name; the icon is for eyes, the description for screen readers.
+    expect(
+      options.map((option) => [option.textContent, marked(option), describedAs(option)]),
+    ).toEqual([
+      ["DeepSeek Chat", true, "Can't read images"],
+      ["DeepSeek Vision", false, ""],
+      ["DeepSeek Unknown", false, ""],
+    ]);
+    await act(async () => {
+      (options[1] as HTMLButtonElement).click();
+    });
+    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
+      "DeepSeek Vision",
+      false,
+      "",
+    ]);
+    await act(async () => {
+      trigger.click();
+    });
+    await act(async () => {
+      (document.querySelector('[role="option"]') as HTMLButtonElement).click();
+    });
+    expect([trigger.textContent, marked(trigger), describedAs(trigger)]).toEqual([
+      "DeepSeek Chat",
+      true,
+      "Can't read images",
+    ]);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("omits the redundant description and connection prompt", async () => {
+  const view = await renderSettings(false);
+  try {
+    expect(view.container.querySelector('[data-testid="model-description"]')).toBeNull();
+    expect(view.container.textContent).not.toContain("Choose which connected model Rakazo uses.");
+    expect(view.container.textContent).not.toContain(
+      "Connect this provider to use it as your personal model.",
+    );
+    expect(keyField(view.container)).toBeInstanceOf(HTMLInputElement);
+  } finally {
+    await view.unmount();
+  }
+});
+
+it("keeps the server owner's description when relevant", async () => {
+  const view = await renderSettings(false, true);
+  try {
+    expect(view.container.querySelector('[data-testid="model-description"]')?.textContent).toBe(
+      "Models for the server owner’s default space.",
+    );
+  } finally {
+    await view.unmount();
   }
 });

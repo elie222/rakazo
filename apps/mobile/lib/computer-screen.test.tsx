@@ -103,9 +103,8 @@ vi.mock("expo-router", () => ({
   useNavigation: () => ({ setOptions: () => undefined }),
 }));
 
-vi.mock("expo-screen-orientation", () => ({
-  OrientationLock: { DEFAULT: 0, PORTRAIT_UP: 1 },
-  lockAsync: () => Promise.resolve(),
+vi.mock("../lib/orientation", () => ({
+  holdFreeRotation: () => () => undefined,
 }));
 
 vi.mock("../components/native-action-button", () => {

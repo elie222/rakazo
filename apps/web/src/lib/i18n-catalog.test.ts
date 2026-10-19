@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { i18n } from "@lingui/core";
+import { RUN_ERROR_LIMIT_MESSAGES } from "@rakazo/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import de from "../../scripts/translations-de.json";
 import es from "../../scripts/translations-es.json";
@@ -9,8 +10,62 @@ import ko from "../../scripts/translations-ko.json";
 import ptBR from "../../scripts/translations-pt-BR.json";
 import tr from "../../scripts/translations-tr.json";
 import zhCN from "../../scripts/translations-zh-CN.json";
+import { UI_LOCALES } from "./ui-locale";
 
 describe("lingui catalogs", () => {
+  it("translates sign-out failures in every supported language", () => {
+    for (const locale of ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      const entry = catalog
+        .split("\n\n")
+        .find((block) => block.includes('msgid "Could not log out. Try again."\n'));
+      const translated = entry?.split("msgstr ")[1];
+      expect(translated, locale).toBeTruthy();
+      expect(translated, locale).not.toBe('""');
+      expect(translated, locale).not.toBe('"Could not log out. Try again."');
+    }
+  });
+
+  it("localizes provider error guidance and retains its placeholders", () => {
+    const messages = [
+      ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "Your OpenRouter",
+      "Your OpenAI",
+      "Your Anthropic",
+      "Your model provider",
+      "The model provider returned an error.",
+      "{provider} is rate limiting requests. Try again shortly.",
+      "{summary} Resets {date}.",
+      "{provider} rejected the API key. Check your connection settings.",
+      "{provider} could not find the requested model.",
+      "{provider} took too long to respond. Try again.",
+      "Details",
+    ];
+    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      for (const message of messages) {
+        const entry = catalog
+          .split("\n\n")
+          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
+        const translated = entry?.split("msgstr ")[1];
+        expect(translated, `${locale}: ${message}`).toBeTruthy();
+        // "Details" is also the German label.
+        if (locale !== "de" || message !== "Details") {
+          expect(translated, `${locale}: ${message}`).not.toBe(JSON.stringify(message));
+        }
+        for (const placeholder of message.match(/\{\w+\}/g) ?? []) {
+          expect(translated).toContain(placeholder);
+        }
+      }
+    }
+  });
+
   beforeEach(() => {
     i18n.load("en", {});
     i18n.activate("en");
@@ -255,7 +310,7 @@ describe("lingui catalogs", () => {
       'msgid "{0} runs · {1} tokens"\nmsgstr "Запусков: {0} · токенов: {1}"',
     );
     expect(catalog).toContain(
-      'msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"',
+      'msgstr "{toolCount, plural, one {# инструмент} few {# инструмента} many {# инструментов} other {# инструмента}}"',
     );
   });
 
@@ -271,10 +326,23 @@ describe("lingui catalogs", () => {
     expect(catalog).toContain(
       'msgid "{0} runs · {1} tokens"\nmsgstr "{0} exécutions · {1} jetons"',
     );
-    expect(catalog).toContain('msgstr "{0, plural, one {# modèle} other {# modèles}}"');
+    expect(catalog).toContain('msgstr "{toolCount, plural, one {# outil} other {# outils}}"');
     expect(catalog).toContain(
       'msgid "Configure a plugin catalog on the server to connect apps."\nmsgstr "Configurez un catalogue de plugins sur le serveur pour connecter des applications."',
     );
+  });
+
+  it("ships the Hebrew runtime catalog with translated chrome and Hebrew plurals", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/he/messages.po", import.meta.url)),
+      "utf8",
+    );
+
+    expect(catalog).toContain('msgid "Settings"\nmsgstr "הגדרות"');
+    expect(catalog).toContain('msgid "Language"\nmsgstr "שפה"');
+    expect(catalog).toContain('msgid "Cancel"\nmsgstr "ביטול"');
+    expect(catalog).toContain('msgid "{0} runs · {1} tokens"\nmsgstr "{0} הרצות · {1} טוקנים"');
+    expect(catalog).toContain('msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"');
   });
 
   it("translates command credential controls in every locale", () => {
@@ -284,7 +352,7 @@ describe("lingui catalogs", () => {
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
       "Values are encrypted and never shown again.",
     ];
-    for (const locale of ["en", "de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of ["en", "de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -302,7 +370,7 @@ describe("lingui catalogs", () => {
   });
 
   it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"];
+    const locales = ["de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"];
     const messages = [
       "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
@@ -345,11 +413,34 @@ describe("lingui catalogs", () => {
     );
   });
 
+  it("translates the peer marker toggle names and fills in the marker label", () => {
+    for (const locale of UI_LOCALES.filter((locale) => locale !== "en")) {
+      const catalog = readFileSync(
+        fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
+        "utf8",
+      );
+      for (const message of ["Expand {label}", "Collapse {label}"]) {
+        const msgstr = catalog
+          .split("\n\n")
+          .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`))
+          ?.match(/msgstr "(.+)"/)?.[1];
+        expect(msgstr, `${locale}: ${message}`).toBeTruthy();
+        expect(msgstr, `${locale}: ${message}`).not.toBe(message);
+        i18n.load(locale, { [message]: msgstr ?? "" });
+        i18n.activate(locale);
+        const name = i18n._({ id: message, message, values: { label: "Writer" } });
+        expect(name, `${locale}: ${message}`).toContain("Writer");
+        expect(name, `${locale}: ${message}`).not.toContain("{label}");
+      }
+    }
+  });
+
   it("translates the terminal empty state in every non-English catalog", () => {
     const translations: Record<string, string> = {
       de: "Noch keine Bot-Aktivität.",
       es: "Aún no hay actividad del bot.",
       fr: "Aucune activité du bot pour le moment.",
+      he: "עדיין אין פעילות של בוטים.",
       hi: "अभी तक कोई बॉट गतिविधि नहीं।",
       ko: "아직 봇 활동이 없습니다.",
       "pt-BR": "Ainda não há atividade do bot.",

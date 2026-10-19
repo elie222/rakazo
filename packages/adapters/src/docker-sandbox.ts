@@ -512,7 +512,12 @@ export class DockerSandboxProvider implements SandboxProvider {
       const res = await withAbort(
         fetch(this.url(`/computers/${computer.id}/screen`), {
           method: "DELETE",
-          headers: this.headers(context, computer.botId),
+          headers: {
+            ...this.headers(context, computer.botId),
+            ...(context.keepScreenWarm && !context.cancelRunWork && !context.signal.aborted
+              ? { "x-rakazo-preserve-screen": "1" }
+              : {}),
+          },
           signal: deadline.signal,
         }),
         deadline.signal,

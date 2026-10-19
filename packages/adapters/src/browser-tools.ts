@@ -5,6 +5,7 @@ import type {
   BrowserProvider,
   ComputerRef,
 } from "@rakazo/adapter-kit";
+import { MAX_BROWSER_UPLOAD_FILES } from "@rakazo/adapter-kit";
 import type { LoginField } from "./bot-secrets.js";
 import { redactConnectorPayload } from "./connector-safety.js";
 
@@ -72,12 +73,28 @@ export async function browserActFromTool(
   computer: ComputerRef,
   context: AdapterContext,
   args: Record<string, unknown>,
-  options: { resolveSecretFill?: ResolveSecretFill; redactions?: () => string[] } = {},
+  options: {
+    resolveSecretFill?: ResolveSecretFill;
+    redactions?: () => string[];
+    /** Maps a bot-facing workspace path to its path in the computer's home. */
+    resolveUploadPath?: (path: string) => string;
+    /** Trusted upload roots relative to the computer home, set by the executor. */
+    uploadRoots?: string[];
+  } = {},
 ) {
   try {
     const actions: BrowserActStep[] = [];
     // Resolve every saved login before acting, so a missing one cannot leave a half-filled form.
     for (const step of parseBrowserActions(args.actions)) {
+      if (step.kind === "upload") {
+        const resolve = options.resolveUploadPath ?? ((path: string) => path);
+        actions.push({
+          ...step,
+          paths: step.paths.map(resolve),
+          ...(options.uploadRoots ? { roots: options.uploadRoots } : {}),
+        });
+        continue;
+      }
       if (step.kind !== "fill_secret") {
         actions.push(step);
         continue;
@@ -114,11 +131,29 @@ export function parseBrowserActions(value: unknown): BrowserActInput[] {
     }
     const action = raw as Record<string, unknown>;
     const kind = String(action.kind ?? "") as BrowserActKind | "fill_secret";
-    if (kind !== "click" && kind !== "fill" && kind !== "type" && kind !== "fill_secret") {
+    if (
+      kind !== "click" &&
+      kind !== "fill" &&
+      kind !== "type" &&
+      kind !== "upload" &&
+      kind !== "fill_secret"
+    ) {
       throw new Error(`browser_act action ${index} has unsupported kind`);
     }
     const ref = String(action.ref ?? "").trim();
     if (!ref) throw new Error(`browser_act action ${index} requires ref`);
+    if (kind === "upload") {
+      const paths = Array.isArray(action.paths)
+        ? action.paths.map((path) => (typeof path === "string" ? path.trim() : ""))
+        : [];
+      if (paths.length === 0 || paths.some((path) => !path)) {
+        throw new Error("browser_act upload requires paths: one or more file paths");
+      }
+      if (paths.length > MAX_BROWSER_UPLOAD_FILES) {
+        throw new Error(`browser_act upload accepts at most ${MAX_BROWSER_UPLOAD_FILES} files`);
+      }
+      return { kind, ref, paths };
+    }
     if (kind === "fill_secret") {
       const secret = String(action.secret ?? "").trim();
       const field = action.field;

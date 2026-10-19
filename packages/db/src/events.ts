@@ -1,6 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   encodeLoginSecret,
   LoginSecretValue,
   MessageBlock as MessageBlockSchema,
@@ -8,6 +9,7 @@ import {
 import {
   blocksToAgentHistoryText,
   callIdFromClientNonce,
+  instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
@@ -15,6 +17,7 @@ import {
   resolveAskChoice,
   sanitizeJsonValue,
 } from "@rakazo/core";
+import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -470,15 +473,17 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = !isConversationalRun(busy.trigger);
+        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
             botId: input.botId,
             userId: input.userId,
-            // Keep messaging on the hold so the later run is mirrored back to that app.
+            // External deliveries retain their origin and never become app follow-ups.
             runId: held ? null : busy.id,
-            ...(held && input.trigger === "messaging" ? { originTrigger: "messaging" } : {}),
+            ...(held && (input.trigger === "messaging" || input.trigger === "webhook")
+              ? { originTrigger: input.trigger }
+              : {}),
             ...(input.modelPin
               ? {
                   modelProvider: input.modelPin.modelProvider,
@@ -557,7 +562,7 @@ export async function claimSteering(
     const pendingWhere = directMessage
       ? { runId: null, originTrigger: "messaging" }
       : channelId
-        ? { runId: null }
+        ? { runId: null, originTrigger: "messaging" }
         : { runId: null, originTrigger: null };
     const steering = await tx.steeringMessage.findMany({
       where: {
@@ -686,10 +691,27 @@ async function commitAnswerRunInput(
     : undefined;
   if (login && !login.success) return null;
   let approvalEffect: { id: string; kind: string } | null = null;
+  let editedInstructions: string | undefined;
+  let approvalAnswer = input.answer;
+  if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
+    try {
+      const edited = JSON.parse(input.answer);
+      if (
+        typeof edited.instructions !== "string" ||
+        edited.instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH ||
+        Object.keys(edited).length !== 1
+      )
+        return null;
+      editedInstructions = edited.instructions;
+      approvalAnswer = "allow";
+    } catch {
+      return null;
+    }
+  }
   let approvalUserId: string | null = null;
 
   if (approvalAsk) {
-    if (!pendingAsk.actions?.some((action) => action.id === input.answer)) return null;
+    if (!pendingAsk.actions?.some((action) => action.id === approvalAnswer)) return null;
     approvalEffect = await tx.externalEffect.findFirst({
       where: {
         id: pendingAsk.approvalEffectId,
@@ -699,6 +721,15 @@ async function commitAnswerRunInput(
       },
     });
     if (!approvalEffect) return null;
+    if (pendingAsk.instructionUpdate) {
+      if (
+        approvalEffect.kind !== "propose_instructions_update" ||
+        pendingAsk.instructionUpdate.botId !== run.botId ||
+        (approvalAnswer !== "allow" && approvalAnswer !== "deny") ||
+        run.userId !== input.answeredByUserId
+      )
+        return null;
+    }
     if (input.answer === "always") {
       if (run.userId !== input.answeredByUserId) return null;
       approvalUserId = input.answeredByUserId;
@@ -719,7 +750,7 @@ async function commitAnswerRunInput(
   });
   if (queued.count !== 1) return null;
 
-  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? input.answer);
+  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
   const recordsCallUtterance = Boolean(callId && !secretAsk);
 
@@ -746,7 +777,30 @@ async function commitAnswerRunInput(
   }
 
   if (approvalAsk) {
-    const allowed = input.answer === "allow" || input.answer === "always";
+    if (pendingAsk.instructionUpdate) {
+      if (editedInstructions !== undefined) {
+        const stored = await tx.externalEffect.findUniqueOrThrow({
+          where: { id: approvalEffect!.id },
+        });
+        const request = stored.request as Record<string, Prisma.InputJsonValue>;
+        await tx.externalEffect.update({
+          where: { id: approvalEffect!.id },
+          data: {
+            request: { ...request, instructions: editedInstructions },
+            idempotencyKey: approvalEffectKey(input.runId, approvalEffect!.kind, {
+              ...request,
+              instructions: editedInstructions,
+            }),
+          },
+        });
+      }
+      if (approvalAnswer === "deny")
+        await tx.bot.updateMany({
+          where: { id: run.botId, pendingInstructionsRunId: input.runId },
+          data: { pendingInstructionsRunId: null },
+        });
+    }
+    const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
@@ -817,6 +871,16 @@ async function commitAnswerRunInput(
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
+          ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
+            ? {
+                instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
+                detail: instructionUpdateDiff(
+                  pendingAsk.instructionUpdate.before,
+                  editedInstructions,
+                  pendingAsk.instructionUpdate.reason,
+                ),
+              }
+            : {}),
         }
       : block,
   );
@@ -1378,7 +1442,10 @@ export async function createPendingSteeringRun(
       botId: input.botId,
       threadId: input.threadId,
       userId: batch[0]!.userId,
-      prompt: "Respond to the user's steering context.",
+      prompt:
+        origin === "webhook"
+          ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
+          : "Respond to the user's steering context.",
       status: "queued",
     },
   });
@@ -1390,7 +1457,7 @@ export async function createPendingSteeringRun(
       taskId: task.id,
       userId: batch[0]!.userId,
       status: "queued",
-      trigger: origin === "app" ? "follow_up" : "messaging",
+      trigger: origin === "app" ? "follow_up" : origin === "webhook" ? "webhook" : "messaging",
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
@@ -1430,6 +1497,7 @@ function steeringOrigin(item: {
   originTrigger: string | null;
   message: { blocks: unknown };
 }): string {
+  if (item.originTrigger === "webhook") return "webhook";
   if (item.originTrigger !== "messaging") return "app";
   const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
   return channelId ? `channel:${channelId}` : "dm";

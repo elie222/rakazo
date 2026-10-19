@@ -42,6 +42,7 @@ export function sandboxProviderOptionsFromEnv(
   | "railwayApiToken"
   | "railwayEnvironmentId"
   | "railwayMaxWorkspaceFileBytes"
+  | "railwaySandboxRegion"
   | "boxApiKey"
   | "boxApiUrl"
 > {
@@ -57,6 +58,7 @@ export function sandboxProviderOptionsFromEnv(
     railwayApiToken: source.RAILWAY_API_TOKEN,
     railwayEnvironmentId: source.RAILWAY_ENVIRONMENT_ID,
     railwayMaxWorkspaceFileBytes: source.RAILWAY_MAX_WORKSPACE_FILE_BYTES,
+    railwaySandboxRegion: optional(source.RAILWAY_SANDBOX_REGION),
     boxApiKey: source.BOX_API_KEY,
     boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
   };

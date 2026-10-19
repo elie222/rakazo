@@ -41,13 +41,15 @@ export function openAiCompatibleVisionModelIds(): ReadonlySet<string> {
   return declaredVisionModelIds(OPENAI_COMPATIBLE_VISION_MODELS_ENV);
 }
 
-const MAX_MODELS_RESPONSE_BYTES = 64 * 1024;
-const MAX_MODEL_IDS = 500;
+/** Custom endpoints can be aggregators; keep their discovery bounded below pinned catalogs. */
+const MAX_MODELS_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_MODEL_IDS = 4_000;
 /** Pinned catalogs (OpenRouter is ~1 MiB). Custom server URLs stay on the tight caps. */
 const CATALOG_MAX_MODELS_RESPONSE_BYTES = 8 * 1024 * 1024;
 const CATALOG_MAX_MODEL_IDS = 8_000;
 const MAX_MODEL_ID_LENGTH = 256;
 
+/** Select response-size and model-count caps, using larger caps for pinned catalogs. */
 function modelsProbeLimits(catalogProbe?: boolean): { maxBytes: number; maxModelIds: number } {
   return catalogProbe
     ? { maxBytes: CATALOG_MAX_MODELS_RESPONSE_BYTES, maxModelIds: CATALOG_MAX_MODEL_IDS }

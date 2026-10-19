@@ -11,6 +11,7 @@ import {
   MAX_SUPERVISOR_REQUEST_BYTES,
   resolveDockerSocketPath,
   supervisorApp,
+  supervisorFileWriteSchema,
   supervisorRequestBodyLimit,
   waitForScreenReady,
 } from "./index.js";
@@ -22,6 +23,7 @@ import {
   ComputerControlUnavailableError,
   clearComputerScreenRegistry,
   completeReleasedScreen,
+  completeWarmReleasedScreen,
   computerCommandEnv,
   computerControlTimeoutMs,
   containerActionStep,
@@ -37,6 +39,7 @@ import {
   isComputerControlUnavailable,
   nextScreenIndex,
   normalizeWorkspaceRelative,
+  oldestIdleScreen,
   parseObservation,
   preferComputerControl,
   releaseAssignedScreen,
@@ -218,6 +221,26 @@ describe("sandbox supervisor HTTP boundary", () => {
       expect(response.status).toBe(413);
       await expect(response.json()).resolves.toEqual({ error: "Request body is too large." });
     }
+  });
+
+  it("allows configured uploads through both the file schema and body guard", () => {
+    const limit = 25 * 1024 * 1024;
+    const content = Buffer.alloc(20 * 1024 * 1024).toString("base64");
+    const payload = { path: "attachments/large.txt", content };
+    expect(supervisorFileWriteSchema(limit).safeParse(payload).success).toBe(true);
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeLessThan(
+      supervisorRequestBodyLimit("POST", "/computers/id/files", limit),
+    );
+    expect(supervisorFileWriteSchema().safeParse(payload).success).toBe(false);
+    expect(
+      supervisorFileWriteSchema(limit).safeParse({
+        path: "large.txt",
+        content: "A".repeat(Math.ceil(limit / 3) * 4 + 1),
+      }).success,
+    ).toBe(false);
+    expect(supervisorRequestBodyLimit("POST", "/computers/id/actions", limit)).toBe(
+      MAX_SUPERVISOR_REQUEST_BYTES,
+    );
   });
 
   it("keeps the larger file-write allowance scoped to that exact POST route", () => {
@@ -471,6 +494,18 @@ describe("sandbox supervisor input containment", () => {
       isComputerControlUnavailable(
         Object.assign(new TypeError("fetch failed"), {
           cause: new Error("connect ENETUNREACH 172.18.0.4:7070"),
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isComputerControlUnavailable(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: Object.assign(
+            new Error(
+              "Connect Timeout Error (attempted address: 172.20.0.2:7070, timeout: 10000ms)",
+            ),
+            { name: "ConnectTimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" },
+          ),
         }),
       ),
     ).toBe(true);
@@ -778,6 +813,49 @@ describe("sandbox supervisor input containment", () => {
     expect(nextScreenIndex(assigned, "researcher")).toBe(1);
     expect(releaseAssignedScreen(assigned, "writer", "run-2:2")).toBe(0);
     completeReleasedScreen(assigned, "writer", 0);
+  });
+
+  it("retains warm slots, clears their idle marker on reuse, and evicts only the oldest idle Team slot", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1")).toBe(0);
+    assigned.get("writer")!.viewToken = "view-token";
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
+    completeWarmReleasedScreen(assigned, "writer", 0, 100);
+
+    expect(assigned.get("writer")).toEqual({
+      index: 0,
+      leaseId: "run-1:1",
+      viewToken: "view-token",
+      idleAt: 100,
+    });
+    expect(nextScreenIndex(assigned, "researcher", "team-run:1", 3)).toBe(1);
+    expect(releaseAssignedScreen(assigned, "researcher", "team-run:1")).toBe(1);
+    completeWarmReleasedScreen(assigned, "researcher", 1, 200);
+    expect(nextScreenIndex(assigned, "controlled", "run-controlled:1", 3)).toBe(2);
+    assigned.get("controlled")!.controlled = true;
+    assigned.get("controlled")!.idleAt = 50;
+    expect(oldestIdleScreen(assigned, 3)).toBe("writer");
+
+    expect(nextScreenIndex(assigned, "writer", "run-2:2", 3)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(oldestIdleScreen(assigned, 3)).toBe("researcher");
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBeUndefined();
+    expect(assigned.get("writer")?.releasing).toBeUndefined();
+  });
+
+  it("keeps a warm slot evictable when a viewer repeats the completed run lease", () => {
+    const assigned = new Map<string, ScreenAssignment>();
+    expect(nextScreenIndex(assigned, "writer", "run-1:1", 1)).toBe(0);
+    expect(releaseAssignedScreen(assigned, "writer", "run-1:1")).toBe(0);
+    completeWarmReleasedScreen(assigned, "writer", 0, 100);
+
+    expect(nextScreenIndex(assigned, "writer", "run-1:1", 1)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBe(100);
+    expect(oldestIdleScreen(assigned, 1)).toBe("writer");
+
+    expect(nextScreenIndex(assigned, "writer", "run-2:2", 1)).toBe(0);
+    expect(assigned.get("writer")?.idleAt).toBeUndefined();
+    expect(oldestIdleScreen(assigned, 1)).toBeUndefined();
   });
 
   it("releases a retained screen after the same run resumes", () => {

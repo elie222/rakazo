@@ -63,6 +63,14 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Docker, E2B, Daytona, CreateOS, and Box
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
+## Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rakazo-template)
+
+Deploy a private Rakazo instance with PostgreSQL, persistent storage and Railway computers.
+Enter your email and Railway API token, then connect a model after signing in.
+See [setup, security defaults and backups](./infra/railway/README.md).
+
 ## Quick start (published images)
 
 You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.
@@ -184,6 +192,8 @@ separate from the app and database. Recreate existing `ISOLATED` computers befor
 The desktop is installed on first start. Stopping a computer saves its portable
 home and destroys the sandbox; the next start restores that home in a new sandbox.
 Railway sandbox usage is metered.
+New computers start in Railway's default region. Set `RAILWAY_SANDBOX_REGION` (for example
+`asia-southeast1-eqsg3a`) to keep them near the API; a running computer moves on its next start.
 Workspace exports reject files above 64 MiB without truncating them. Set `RAILWAY_MAX_WORKSPACE_FILE_BYTES` to change this limit.
 
 ## Desktop and mobile

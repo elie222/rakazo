@@ -71,6 +71,7 @@ const PERFORMANCE_USER_DATA = process.env.RAKAZO_PERFORMANCE_USER_DATA;
 /** Test hook: where the app-managed stack answers. Mode `new` still requires loopback. */
 const LOCAL_WEB_URL = process.env.RAKAZO_LOCAL_WEB_URL?.trim() || DEFAULT_LOCAL_WEB_URL;
 const PROBE_TIMEOUT_MS = 8_000;
+const APP_DOCUMENT_READY_TIMEOUT_MS = 20_000;
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
 let mainWindow: BrowserWindow | null = null;
@@ -460,7 +461,7 @@ function loadAppUrl(win: BrowserWindow, url: string): Promise<AppDocumentState> 
 async function waitForMountedAppDocument(
   contents: Electron.WebContents,
 ): Promise<AppDocumentState> {
-  const deadline = Date.now() + 8_000;
+  const deadline = Date.now() + APP_DOCUMENT_READY_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if (contents.isCrashed()) throw new Error("Renderer stopped after load.");
     const state = (await contents.executeJavaScript(APP_DOCUMENT_STATE_SCRIPT)) as

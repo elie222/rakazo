@@ -458,7 +458,6 @@ export default function Account() {
           <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
             <SettingsSwitch
               label={t("Live working status")}
-              detail={t("While agents are working")}
               value={notifications.liveConnection}
               disabled={notificationPending || !notificationsReady}
               onChange={(liveConnection) =>
@@ -474,7 +473,6 @@ export default function Account() {
             />
             <SettingsSwitch
               label={t("Scheduled tasks")}
-              detail={t("Alerts from routines")}
               value={notifications.scheduledTasks}
               disabled={notificationPending || !notificationsReady}
               onChange={(scheduledTasks) =>

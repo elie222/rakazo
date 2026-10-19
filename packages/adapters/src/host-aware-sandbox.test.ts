@@ -61,6 +61,25 @@ describe("host-aware sandbox", () => {
     expect(pageBrowser).not.toHaveBeenCalled();
   });
 
+  it("routes billing capability by computer kind rather than the current host setting", () => {
+    const isolated: SandboxProvider = new FakeSandboxProvider();
+    isolated.billsWhileRunning = vi.fn(() => true);
+    const sandbox = new HostAwareSandbox(isolated, new DesktopSandboxProvider(), async () => true);
+    const computer: ComputerRef = {
+      id: "computer",
+      providerRef: "computer",
+      botId: "home",
+      kind: "fake",
+    };
+    expect(sandbox.billsWhileRunning(computer)).toBe(true);
+    expect(isolated.billsWhileRunning).toHaveBeenCalledWith(computer);
+    expect(sandbox.billsWhileRunning({ ...computer, kind: "desktop" })).toBe(false);
+    expect(isolated.billsWhileRunning).toHaveBeenCalledOnce();
+    expect(new DockerSandboxProvider("http://supervisor.test", "test-token")).not.toHaveProperty(
+      "billsWhileRunning",
+    );
+  });
+
   it("does not expose page commands when neither provider supports them", () => {
     const sandbox = new HostAwareSandbox(
       new FakeSandboxProvider(),
@@ -111,6 +130,24 @@ describe("host-aware sandbox", () => {
     expect(computer.kind).toBe("desktop");
     await sandbox.destroy(computer, ctx);
   });
+
+  it.each([
+    [true, "desktop"],
+    [false, "fake"],
+  ])(
+    "reports the kind it would provision without starting one (this-mac: %s)",
+    async (hostEnabled, kind) => {
+      const isolated = new FakeSandboxProvider();
+      const provision = vi.spyOn(isolated, "provision");
+      const sandbox = new HostAwareSandbox(
+        isolated,
+        new DesktopSandboxProvider(),
+        async () => hostEnabled,
+      );
+      await expect(sandbox.provisionKind()).resolves.toBe(kind);
+      expect(provision).not.toHaveBeenCalled();
+    },
+  );
 
   it("provisions on the isolated provider when this-mac is off", async () => {
     const isolated = new FakeSandboxProvider();

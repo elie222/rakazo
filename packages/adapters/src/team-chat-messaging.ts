@@ -11,9 +11,10 @@ import type {
 
 /** Map a Chat SDK inbound message into a team-chat event, or null if empty. */
 export function toTeamChatInbound(event: MessagingInboundMessage): TeamChatInboundMessage | null {
-  const mediaLine = event.mediaUrl?.trim() ? `\n${event.mediaUrl.trim()}` : "";
+  const mediaUrl = event.attachments?.length ? "" : event.mediaUrl?.trim();
+  const mediaLine = mediaUrl ? `\n${mediaUrl}` : "";
   const content = `${event.content}${mediaLine}`.trim();
-  if (!content) return null;
+  if (!content && !event.attachments?.length) return null;
 
   const kind: TeamChatMessageKind = event.isDirect
     ? "direct"
@@ -36,6 +37,7 @@ export function toTeamChatInbound(event: MessagingInboundMessage): TeamChatInbou
     senderName: event.fromLabel?.trim() || event.from,
     senderIsBot: event.senderIsBot,
     content,
+    ...(event.attachments?.length ? { attachments: event.attachments } : {}),
   };
 }
 
@@ -61,6 +63,46 @@ export function resolveMessagingThreadId(
     return `${parts[0]}:${parts[1]}:${replyThreadId}`;
   }
   return `${conversationId}:${replyThreadId}`;
+}
+
+export const TEAM_CHAT_THREAD_HISTORY_LIMIT = 50;
+const THREAD_HISTORY_TIMEOUT_MS = 1_000;
+
+export function createMessagingTeamChatHistory(
+  messaging: MessagingSurface,
+): ((message: TeamChatInboundMessage) => Promise<TeamChatInboundMessage[]>) | undefined {
+  const fetchThreadHistory = messaging.fetchThreadHistory?.bind(messaging);
+  if (!fetchThreadHistory) return undefined;
+  return async (message) => {
+    if (!message.replyThreadId) return [];
+    const operationId = `team-chat-history:${randomUUID()}`;
+    const history = await fetchThreadHistory(
+      resolveMessagingThreadId(message.conversationId, message.replyThreadId),
+      { before: message.eventId, limit: TEAM_CHAT_THREAD_HISTORY_LIMIT },
+      {
+        operationId,
+        traceId: operationId,
+        spaceId: "",
+        userId: "",
+        signal: AbortSignal.timeout(THREAD_HISTORY_TIMEOUT_MS),
+      },
+    );
+    return history.flatMap((event) => {
+      const mapped = toTeamChatInbound(event);
+      if (!mapped) return [];
+      return [
+        {
+          ...mapped,
+          kind: "ambient" as const,
+          workspaceId: message.workspaceId,
+          conversationKey: message.conversationKey,
+          conversationId: message.conversationId,
+          conversationName: message.conversationName,
+          replyThreadId: message.replyThreadId,
+        },
+      ];
+    });
+  };
 }
 
 /** Outbound sender that posts through the existing MessagingSurface. */
