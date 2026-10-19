@@ -416,6 +416,22 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
+### Prompt cache capabilities
+
+The model connection API accepts `cacheCapabilities`, including `scope`,
+`retentionMs`, `minimumTokens`, and `retentionMode`. Declare a positive
+`retentionMs` only when the endpoint supports prefix reuse for that window.
+For these connections, the runtime automatically uses cache-aware context:
+recent history remains bounded on a cold request, and subsequent requests keep
+that selected prefix while it is likely warm and fits the context budget.
+Connections with unknown retention or `retentionMode: "none"` retain the default
+retrieval policy. An explicit executor context strategy still takes precedence.
+
+Cache warmth is advisory. Changing instructions or tools, context pressure,
+worker eviction, or a process restart can require fresh prompt processing.
+These settings do not create backend KV snapshots or keep a model loaded;
+the inference server is responsible for retention and conversation switching.
+
 ### Web search and page reading
 
 Builtin `web_search` and `web_fetch` use keyless HTTP search (DuckDuckGo HTML) and local

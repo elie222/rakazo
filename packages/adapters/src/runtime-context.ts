@@ -156,7 +156,18 @@ export function createRuntimeContextPolicy(
   }
   return {
     prepareContext(ctx: Context, model: Model<Api>): Context {
-      const strategy = request.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
+      // An explicitly declared cache window opts this connection into prefix reuse.
+      // Unknown/disabled caches retain the qualified retrieval default; test and
+      // deployment callers can still force a strategy explicitly.
+      const retention = request.model.cacheCapabilities?.retentionMs;
+      const strategy =
+        request.contextStrategy ??
+        (request.model.cacheCapabilities?.retentionMode !== "none" &&
+        typeof retention === "number" &&
+        Number.isFinite(retention) &&
+        retention > 0
+          ? "cache-aware"
+          : DEFAULT_CONTEXT_STRATEGY);
       const standaloneHistoryFallback =
         request.contextStrategy === undefined &&
         (!request.executeTool ||

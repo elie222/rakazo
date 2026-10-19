@@ -7221,7 +7221,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 });
               },
               prompt,
-              contextStrategy,
+              // Keep an explicit executor override, but let the runtime select
+              // cache-aware context for connections declaring a cache window.
+              contextStrategy: deps.contextStrategy,
               instructions: userTurnInstructions({
                 botInstructions: runIdentityInstruction(bot, run.trigger),
                 groupContext,
