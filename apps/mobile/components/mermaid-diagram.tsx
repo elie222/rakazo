@@ -91,6 +91,9 @@ export function MermaidDiagram({ source, palette, colorScheme, fallback }: Merma
           onHttpError={fail}
           style={[styles.webview, { height: drawn ? diagram.height : 1 }]}
           javaScriptEnabled
+          allowsLinkPreview={false}
+          dataDetectorTypes="none"
+          javaScriptCanOpenWindowsAutomatically={false}
           domStorageEnabled={false}
           allowFileAccess={false}
           allowFileAccessFromFileURLs={false}

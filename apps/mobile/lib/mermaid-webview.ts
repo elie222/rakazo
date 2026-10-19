@@ -92,7 +92,7 @@ export function parseDiagramMessage(data: string): DiagramMessage | null {
       Number.isFinite(message.height) &&
       message.height > 0
     ) {
-      return { type: "drawn", height: message.height };
+      return { type: "drawn", height: Math.min(message.height, 10_000) };
     }
   } catch {
     // Not a message this page sends.

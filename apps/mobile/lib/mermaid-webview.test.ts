@@ -35,9 +35,9 @@ describe("diagram WebView document", () => {
     expect(policy).toContain("default-src 'none'");
     expect(policy).toContain(`script-src ${url}`);
     expect(policy).toContain("img-src data:");
-    expect(policy.find((directive) => directive.startsWith("script-src"))).toBe(
+    expect(policy.filter((directive) => directive.startsWith("script-src"))).toEqual([
       `script-src ${url}`,
-    );
+    ]);
     expect(policy.some((directive) => directive.includes("unsafe-eval"))).toBe(false);
     expect(policy.some((directive) => directive.startsWith("connect-src"))).toBe(false);
     expect(html).toContain(`<script src="${url}"></script>`);
@@ -87,6 +87,21 @@ describe("diagram boot script", () => {
     expect(posted).toEqual([{ type: "drawn", height: 88 }]);
   });
 
+  it("embeds hostile source only as a JSON string in the native boot script", async () => {
+    const source = "</script><script>alert(1)</script>\u2028\u2029";
+    const boot = diagramBootScript(source, config);
+    expect(boot).toContain(`var source = ${JSON.stringify(source)};`);
+    expect(diagramDocument(diagramScriptUrl("https://rakazo.example.test"))).not.toContain(source);
+    const mermaid = {
+      initialize: vi.fn(),
+      parse: vi.fn(async () => true),
+      render: vi.fn(async () => ({ svg: "<svg/>" })),
+    };
+    await run(source, mermaid);
+    expect(mermaid.parse).toHaveBeenCalledWith(source, { suppressErrors: true });
+    expect(mermaid.render).toHaveBeenCalledWith("rk-mermaid", source);
+  });
+
   it("reports failure when Mermaid did not load, cannot parse, or throws", async () => {
     expect((await run("graph LR", undefined)).posted).toEqual([{ type: "failed" }]);
     const invalid = { initialize: vi.fn(), parse: vi.fn(async () => false), render: vi.fn() };
@@ -110,7 +125,23 @@ describe("parseDiagramMessage", () => {
     expect(parseDiagramMessage('{"type":"failed"}')).toEqual({ type: "failed" });
   });
 
+  it("clamps an excessive height", () => {
+    expect(parseDiagramMessage('{"type":"drawn","height":1e100}')).toEqual({
+      type: "drawn",
+      height: 10_000,
+    });
+  });
+
   it("ignores anything else", () => {
+    for (const data of [
+      "null",
+      "[]",
+      "42",
+      '{"type":"drawn","height":-1}',
+      '{"type":"drawn","height":1e999}',
+    ]) {
+      expect(parseDiagramMessage(data)).toBeNull();
+    }
     expect(parseDiagramMessage("not json")).toBeNull();
     expect(parseDiagramMessage('{"type":"drawn","height":0}')).toBeNull();
     expect(parseDiagramMessage('{"type":"drawn","height":"12"}')).toBeNull();
