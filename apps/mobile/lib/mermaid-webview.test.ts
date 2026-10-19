@@ -5,6 +5,7 @@ import {
   diagramBootScript,
   diagramDocument,
   diagramScriptUrl,
+  MAX_DIAGRAM_HEIGHT,
   parseDiagramMessage,
 } from "./mermaid-webview";
 
@@ -125,11 +126,21 @@ describe("parseDiagramMessage", () => {
     expect(parseDiagramMessage('{"type":"failed"}')).toEqual({ type: "failed" });
   });
 
-  it("clamps an excessive height", () => {
-    expect(parseDiagramMessage('{"type":"drawn","height":1e100}')).toEqual({
+  it("accepts the maximum height", () => {
+    expect(
+      parseDiagramMessage(JSON.stringify({ type: "drawn", height: MAX_DIAGRAM_HEIGHT })),
+    ).toEqual({
       type: "drawn",
-      height: 10_000,
+      height: MAX_DIAGRAM_HEIGHT,
     });
+  });
+
+  it("fails when the height exceeds the maximum", () => {
+    for (const height of [MAX_DIAGRAM_HEIGHT + 1, 1e100]) {
+      expect(parseDiagramMessage(JSON.stringify({ type: "drawn", height }))).toEqual({
+        type: "failed",
+      });
+    }
   });
 
   it("ignores anything else", () => {

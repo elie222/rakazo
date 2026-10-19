@@ -6,6 +6,8 @@ export const DIAGRAM_SCRIPT_PATH = "/api/v1/assets/mermaid.js";
 /** Long enough for a first, uncached download of Mermaid on a slow connection. */
 export const DIAGRAM_TIMEOUT_MS = 20_000;
 
+export const MAX_DIAGRAM_HEIGHT = 10_000;
+
 export type DiagramMessage = { type: "drawn"; height: number } | { type: "failed" };
 
 export function diagramScriptUrl(apiBase: string): string {
@@ -92,7 +94,8 @@ export function parseDiagramMessage(data: string): DiagramMessage | null {
       Number.isFinite(message.height) &&
       message.height > 0
     ) {
-      return { type: "drawn", height: Math.min(message.height, 10_000) };
+      if (message.height > MAX_DIAGRAM_HEIGHT) return { type: "failed" };
+      return { type: "drawn", height: message.height };
     }
   } catch {
     // Not a message this page sends.
