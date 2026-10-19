@@ -5073,17 +5073,18 @@ const Transcript = memo(function Transcript({
     if (following.current) snapToEnd();
   }, [messages, running, snapToEnd]);
 
-  // Open at "New messages" when the unread replies do not fit below it.
+  // Open at "New messages" when the unread replies do not fit below it. A passive effect, so it
+  // runs after the page's own layout effect has opened the chat at its end.
   const openedAtUnread = useRef(false);
-  useLayoutEffect(() => {
+  useEffect(() => {
     const element = scrollRef.current;
     const divider = element?.querySelector('[data-testid="unread-separator"]');
-    if (openedAtUnread.current || !element || !divider) return;
+    if (openedAtUnread.current || scrollRequest || !element || !divider) return;
     openedAtUnread.current = true;
     if (divider.getBoundingClientRect().top >= element.getBoundingClientRect().top) return;
     following.current = false;
     divider.scrollIntoView({ block: "start" });
-  }, [messages, scrollRef]);
+  }, [messages, scrollRef, scrollRequest]);
 
   useLayoutEffect(() => {
     const button = jumpButtonRef.current;

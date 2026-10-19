@@ -1906,7 +1906,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   // Fixed for the visit, so replies that arrive while reading do not move it.
   const unreadFrom = useRef<{ key?: string; id?: string | null }>({});
   if (unreadFrom.current.key !== threadKey) unreadFrom.current = { key: threadKey };
-  if (unreadFrom.current.id === undefined && visibleMessages.length > 0) {
+  // Wait for live messages: the saved offline copy can be missing the new replies.
+  if (unreadFrom.current.id === undefined && visibleMessages.length > 0 && !showingSaved) {
     unreadFrom.current.id = unreadParam === "1" ? unreadBoundaryId(visibleMessages) : null;
   }
   const unreadFromId = unreadFrom.current.id ?? null;
