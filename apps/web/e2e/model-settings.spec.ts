@@ -351,17 +351,21 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
     await settings.getByTestId("bot-settings-advanced").evaluate((element) => {
       (element as HTMLDetailsElement).open = true;
     });
-    const botModel = settings.getByLabel("Model", { exact: true });
+    // The Model select sits inside its wrapping <label>, so the label text includes
+    // option copy and getByLabel(..., { exact: true }) misses it. Use the role name.
+    const botModel = settings.getByRole("combobox", { name: "Model", exact: true });
     await expect(botModel.locator("option")).toContainText([LOCAL_MODEL_ID, SECOND_MODEL_ID]);
     await botModel.selectOption(`openai-compatible::${SECOND_MODEL_ID}`);
     // Native select popups are outside Playwright's screenshots. Render the
     // same options as an expanded native list for the CI screenshot, then restore.
-    await botModel.evaluate((select: HTMLSelectElement) => {
+    // An expanded select is a listbox, so keep a role-independent handle.
+    const botModelSelect = settings.locator(`[id="${await botModel.getAttribute("id")}"]`);
+    await botModelSelect.evaluate((select: HTMLSelectElement) => {
       select.size = select.options.length;
       select.style.height = "auto";
     });
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
-    await botModel.evaluate((select: HTMLSelectElement) => {
+    await botModelSelect.evaluate((select: HTMLSelectElement) => {
       select.size = 0;
       select.style.removeProperty("height");
     });
