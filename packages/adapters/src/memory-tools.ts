@@ -15,6 +15,11 @@ export function selectMemoryTools(
 export function appendMemoryFact(existing: string, fact: string): string {
   const current = existing.trimEnd();
   const next = fact.trim();
-  if (!next || `\n${current}\n`.includes(`\n${next}\n`)) return existing;
+  if (
+    !next ||
+    `\n${current}\n`.includes(`\n${next}\n`) ||
+    (!next.includes("\n") && current.split("\n").some((line) => line.trim() === next))
+  )
+    return existing;
   return current ? `${current}\n${next}\n` : `${next}\n`;
 }

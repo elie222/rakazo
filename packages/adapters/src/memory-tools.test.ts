@@ -39,6 +39,13 @@ describe("appendMemoryFact", () => {
     );
   });
 
+  it.each(["Berlin\r\nother\n", "  Berlin  \nother\n", "before\n\tBerlin\t\nafter\n"])(
+    "preserves whitespace-tolerant single-line duplicates in %j",
+    (existing) => {
+      expect(appendMemoryFact(existing, "Berlin")).toBe(existing);
+    },
+  );
+
   it("starts an empty document with the fact", () => {
     expect(appendMemoryFact("", "  durable fact  ")).toBe("durable fact\n");
   });

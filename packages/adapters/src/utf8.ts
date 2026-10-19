@@ -8,13 +8,30 @@ export function truncateUtf8(
   keep: "start" | "end" = "start",
 ): string {
   if (maxBytes <= 0) return "";
+  if (keep === "end") {
+    let start = value.length;
+    let bytes = 0;
+    while (start > 0) {
+      let nextStart = start - 1;
+      const code = value.charCodeAt(nextStart);
+      const previous = value.charCodeAt(nextStart - 1);
+      if (code >= 0xdc00 && code <= 0xdfff && previous >= 0xd800 && previous <= 0xdbff) {
+        nextStart -= 1;
+      }
+      const characterBytes = byteLength(value.slice(nextStart, start));
+      if (bytes + characterBytes > maxBytes) break;
+      bytes += characterBytes;
+      start = nextStart;
+    }
+    return value.slice(start);
+  }
   const characters: string[] = [];
   let bytes = 0;
-  for (const character of keep === "end" ? Array.from(value).reverse() : value) {
+  for (const character of value) {
     const characterBytes = byteLength(character);
     if (bytes + characterBytes > maxBytes) break;
     characters.push(character);
     bytes += characterBytes;
   }
-  return (keep === "end" ? characters.reverse() : characters).join("");
+  return characters.join("");
 }
