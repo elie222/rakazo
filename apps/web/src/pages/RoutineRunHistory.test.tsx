@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { i18n } from "@lingui/core";
 import type { RoutineRun } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -12,7 +13,7 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray) => parts.join(""),
 }));
 vi.mock("@lingui/react/macro", () => ({
-  useLingui: () => ({ i18n: { locale: "en" } }),
+  useLingui: () => ({ i18n: { locale: "en" }, t: (parts: TemplateStringsArray) => parts.join("") }),
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@rakazo/ui-web", () => ({
@@ -30,6 +31,7 @@ const run: RoutineRun = {
   botId: "bot-1",
   groupId: null,
   status: "completed",
+  error: null,
   createdAt: "2026-01-02T12:00:00Z",
   startedAt: "2026-01-02T12:00:00Z",
   completedAt: "2026-01-02T12:01:22Z",
@@ -315,6 +317,51 @@ it("keeps loaded older runs while expanded, and refreshes to the first page on c
     await act(async () => button("Run history").click());
     expect(view.container.querySelectorAll("li")).toHaveLength(1);
     expect(button("Run history").getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    await view.close();
+  }
+});
+
+it("shows a silent failed run summary with diagnostics behind Details", async () => {
+  i18n.loadAndActivate({ locale: "en", messages: {} });
+  const error = "504: request timed out";
+  api.history.mockResolvedValue(page([{ ...run, status: "failed", messageId: null, error }]));
+  const view = await mounted();
+  try {
+    expect(view.container.textContent).toContain(
+      "Your model provider took too long to respond. Try again.",
+    );
+    const details = view.container.querySelector("details");
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toBe("Details");
+    expect(details?.querySelector("pre")?.textContent).toBe(error);
+    expect(view.container.querySelector("a")).toBeNull();
+  } finally {
+    await view.close();
+  }
+});
+
+it.each(["completed", "failed"] as const)(
+  "omits diagnostics for a %s run without an error",
+  async (status) => {
+    api.history.mockResolvedValue(page([{ ...run, status, messageId: null }]));
+    const view = await mounted();
+    try {
+      expect(view.container.querySelector("details")).toBeNull();
+      expect(view.container.querySelector("a")).toBeNull();
+    } finally {
+      await view.close();
+    }
+  },
+);
+
+it("omits error UI for a completed run carrying a stale error", async () => {
+  api.history.mockResolvedValue(page([{ ...run, error: "504: request timed out" }]));
+  const view = await mounted();
+  try {
+    expect(view.container.querySelector("details")).toBeNull();
+    expect(view.container.textContent).not.toContain("Your model provider");
+    expect(view.container.textContent).not.toContain("504: request timed out");
   } finally {
     await view.close();
   }

@@ -1,5 +1,6 @@
 import type { Actor } from "@rakazo/contracts";
 import { RoutineHistorySchema } from "@rakazo/contracts";
+import { runFailureError } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { listRoutineRuns } from "./routine-runs.js";
@@ -50,6 +51,7 @@ describe("routine history", () => {
         threadId: "thread-1",
         thread: { groupId: i === 1 ? "group-1" : null },
         status,
+        error: "504: request timed out",
         createdAt: at,
         startedAt: status === "queued" ? null : at,
         completedAt: status === "queued" ? null : new Date(at.getTime() + 82_000),
@@ -61,6 +63,10 @@ describe("routine history", () => {
     expect(history.runs.map((row) => row.messageId)).toEqual([null, "reply-new", null]);
     expect(history.runs.map((row) => row.groupId)).toEqual([null, "group-1", null]);
     expect(history.runs[2]?.startedAt).toBeNull();
+    expect(history.runs.map((row) => row.error)).toEqual([null, "504: request timed out", null]);
+    expect(runs).toHaveBeenCalledWith(
+      expect.objectContaining({ select: expect.objectContaining({ error: true }) }),
+    );
     expect(runs).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
@@ -85,6 +91,28 @@ describe("routine history", () => {
       actor.spaceId,
       actor.userId,
     ]);
+  });
+  it("bounds stored errors like thread failures", async () => {
+    const { prisma, runs } = fixture();
+    const error = "x".repeat(400);
+    runs.mockResolvedValue([
+      {
+        id: "failed-run",
+        botId: "bot-1",
+        threadId: "thread-1",
+        thread: { groupId: null },
+        status: "failed",
+        error,
+        createdAt: at,
+        startedAt: at,
+        completedAt: at,
+      },
+    ]);
+    const history = await listRoutineRuns(prisma, actor, "routine-1");
+    expect(history.runs[0]?.error).toBe(`${"x".repeat(300)}…`);
+    expect(history.runs[0]?.error).toBe(
+      runFailureError({ type: "run.failed", payload: { error } }),
+    );
   });
   it("does not confuse a database failure with an empty history", async () => {
     const { prisma, runs, messages } = fixture();

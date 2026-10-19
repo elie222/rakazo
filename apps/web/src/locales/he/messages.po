@@ -2091,6 +2091,7 @@ msgstr "אפליקציית הדסקטופ"
 msgid "Desktop update"
 msgstr "עדכון לאפליקציית הדסקטופ"
 
+#: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
 msgid "Details"
 msgstr "פרטים"

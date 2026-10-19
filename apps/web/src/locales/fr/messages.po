@@ -2091,6 +2091,7 @@ msgstr "Application de bureau"
 msgid "Desktop update"
 msgstr "Mise à jour du bureau"
 
+#: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
 msgid "Details"
 msgstr "Détails"
