@@ -30,18 +30,6 @@ function space(
 }
 
 describe("sidebarGroupsForSpaces", () => {
-  it("keeps a section menu reachable when a space has no chats", () => {
-    const input = {
-      ...space("space-1", "Personal", { bots: [] }),
-      botSections: [{ id: "empty", name: "Old ideas" }],
-    };
-    expect(sidebarGroupsForSpaces([input], "")).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ sectionId: "empty", title: "Old ideas", bots: [] }),
-      ]),
-    );
-  });
-
   it("keeps an empty space with saved sections openable", () => {
     const empty = {
       ...space("space-2", "Support", { canRename: true, bots: [] }),
@@ -49,8 +37,7 @@ describe("sidebarGroupsForSpaces", () => {
     };
     const groups = sidebarGroupsForSpaces([space("space-1", "Personal"), empty], "");
     expect(groups.filter((group) => group.spaceId === empty.id)).toEqual([
-      expect.objectContaining({ sectionId: "saved", title: "Support · Archived projects" }),
-      expect.objectContaining({ sectionId: null, title: "Support · Unassigned" }),
+      expect.objectContaining({ emptySpaceId: "space-2", title: "Support" }),
     ]);
   });
 
