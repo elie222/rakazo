@@ -42,7 +42,6 @@ import {
   selectedAskActionLabel,
   threadWindowMessages,
   timeSeparatorIds,
-  unreadBoundaryId,
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
@@ -129,7 +128,7 @@ import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
 import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { createThreadHeaderStyles } from "../components/thread-header-styles";
-import { TimeSeparator, UnreadSeparator } from "../components/time-separator";
+import { TimeSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import { readableGutter } from "../lib/adaptive-layout";
@@ -459,7 +458,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     messageId,
     threadId,
     readOnly: readOnlyParam,
-    unread: unreadParam,
   } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
@@ -467,7 +465,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     messageId?: string;
     threadId?: string;
     readOnly?: string;
-    unread?: string;
   }>();
   const readOnly = readOnlyParam === "1";
   const [restoring, setRestoring] = useState(false);
@@ -1919,13 +1916,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
-  // Fixed for the visit, so replies that arrive while reading do not move it.
-  const unreadFrom = useRef<{ key?: string; id?: string | null }>({});
-  if (unreadFrom.current.key !== threadKey) unreadFrom.current = { key: threadKey };
-  if (unreadFrom.current.id === undefined && visibleMessages.length > 0) {
-    unreadFrom.current.id = unreadParam === "1" ? unreadBoundaryId(visibleMessages) : null;
-  }
-  const unreadFromId = unreadFrom.current.id ?? null;
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -2163,7 +2153,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           canAnswer={!readOnly && message.id === answerableAskMessageId}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
-          unreadSeparator={message.id === unreadFromId}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
@@ -2196,7 +2185,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       answerableAskMessageId,
       highlightedMessageId,
       separatorIds,
-      unreadFromId,
       columnWidth,
       t,
       locale,
@@ -2209,15 +2197,12 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
             <TimeSeparator createdAt={item.messages[0].createdAt} />
           ) : null}
-          {item.messages.some((message) => message.id === unreadFromId) ? (
-            <UnreadSeparator />
-          ) : null}
           <VoiceChatCard group={item} />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds, unreadFromId],
+    [renderMessageRow, separatorIds],
   );
   const listContentStyle = useMemo(
     () => ({
@@ -2875,7 +2860,6 @@ type MessageRowProps = {
   canAnswer: boolean;
   highlighted: boolean;
   separator: boolean;
-  unreadSeparator: boolean;
   replyAuthor: string;
   replyFallbackText?: string;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
@@ -2902,7 +2886,6 @@ const MessageRow = memo(function MessageRow({
   canAnswer,
   highlighted,
   separator,
-  unreadSeparator,
   replyAuthor,
   replyFallbackText,
   messageReactions,
@@ -3049,7 +3032,6 @@ const MessageRow = memo(function MessageRow({
       }}
     >
       {separator ? <TimeSeparator createdAt={message.createdAt} /> : null}
-      {unreadSeparator ? <UnreadSeparator /> : null}
       <View
         style={{
           width: "100%",

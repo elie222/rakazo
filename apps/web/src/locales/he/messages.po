@@ -3119,10 +3119,6 @@ msgstr "בוט חדש"
 msgid "New group"
 msgstr "קבוצה חדשה"
 
-#: src/pages/shell/chat-context.tsx
-msgid "New messages"
-msgstr "הודעות חדשות"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "New open-work item"
 msgstr "פריט עבודה פתוחה חדש"
