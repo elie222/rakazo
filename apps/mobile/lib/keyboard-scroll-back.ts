@@ -1,5 +1,9 @@
-/** The content-offset direction that moves a list toward older messages. */
-export type OlderDirection = "increasing" | "decreasing";
+import type { NativeScrollEvent } from "react-native";
+
+export type ScrollMetrics = Pick<
+  NativeScrollEvent,
+  "contentOffset" | "contentSize" | "layoutMeasurement"
+>;
 
 const THRESHOLD = 8;
 
@@ -7,26 +11,34 @@ const THRESHOLD = 8;
  * iOS `keyboardDismissMode="interactive"` only hides the keyboard when the finger drags into
  * it; a scroll over the messages above it never reaches it, so this flags the first drag
  * toward older messages so the caller can dismiss the keyboard itself.
+ *
+ * A drag is measured as distance from the oldest message, not as raw offset:
+ * `maintainVisibleContentPosition` shifts the offset when a message arrives or grows at the
+ * newest end, and that shift must not read as a drag toward older messages.
  */
 export class KeyboardScrollBack {
   private dragStart: number | null = null;
 
-  constructor(private readonly older: OlderDirection) {}
+  constructor(private readonly list: { inverted: boolean }) {}
 
-  onDragStart(offset: number): void {
-    this.dragStart = offset;
+  onDragStart(metrics: ScrollMetrics): void {
+    this.dragStart = this.distanceFromOldest(metrics);
   }
 
-  onScroll(offset: number): boolean {
+  onScroll(metrics: ScrollMetrics): boolean {
     if (this.dragStart === null) return false;
-    const delta = offset - this.dragStart;
-    const towardOlder = this.older === "increasing" ? delta : -delta;
-    if (towardOlder <= THRESHOLD) return false;
+    if (this.dragStart - this.distanceFromOldest(metrics) <= THRESHOLD) return false;
     this.dragStart = null;
     return true;
   }
 
   onDragEnd(): void {
     this.dragStart = null;
+  }
+
+  private distanceFromOldest({ contentOffset, contentSize, layoutMeasurement }: ScrollMetrics) {
+    return this.list.inverted
+      ? contentSize.height - layoutMeasurement.height - contentOffset.y
+      : contentOffset.y;
   }
 }

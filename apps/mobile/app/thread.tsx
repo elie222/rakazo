@@ -481,8 +481,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
-  const liveScrollBack = useRef(new KeyboardScrollBack("increasing"));
-  const pinnedScrollBack = useRef(new KeyboardScrollBack("decreasing"));
+  const liveScrollBack = useRef(new KeyboardScrollBack({ inverted: true }));
+  const pinnedScrollBack = useRef(new KeyboardScrollBack({ inverted: false }));
   const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const nativeMomentumActive = useRef(false);
   const loadingOlderContent = useRef(false);
@@ -2454,13 +2454,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 viewport: layoutMeasurement.height,
                 content: contentSize.height,
               };
-              if (pinnedScrollBack.current.onScroll(contentOffset.y) && Platform.OS === "ios") {
+              if (pinnedScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
                 KeyboardController.dismiss();
               }
               loadNewerNearEnd();
             }}
             onScrollBeginDrag={(event) => {
-              pinnedScrollBack.current.onDragStart(event.nativeEvent.contentOffset.y);
+              pinnedScrollBack.current.onDragStart(event.nativeEvent);
               newerLoadFailed.current = false;
               if (!jumpAnchor.current.holds()) return;
               jumpAnchor.current.release();
@@ -2503,13 +2503,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
               clearTimeout(scrollIdleTimer.current);
               nativeMomentumActive.current = false;
               scrollBehavior.current.onUserDragStart();
-              liveScrollBack.current.onDragStart(event.nativeEvent.contentOffset.y);
+              liveScrollBack.current.onDragStart(event.nativeEvent);
             }}
             onScroll={(event) => {
-              if (
-                liveScrollBack.current.onScroll(event.nativeEvent.contentOffset.y) &&
-                Platform.OS === "ios"
-              ) {
+              if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
                 KeyboardController.dismiss();
               }
               if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
