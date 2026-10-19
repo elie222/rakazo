@@ -421,11 +421,14 @@ managed endpoints, the deployment-wide fallback remains
 The model connection API accepts `cacheCapabilities`, including `scope`,
 `retentionMs`, `minimumTokens`, and `retentionMode`. Declare a positive
 `retentionMs` only when the endpoint supports prefix reuse for that window.
-For these connections, the runtime automatically uses cache-aware context:
+For these connections with usable history-retrieval tools, the runtime
+automatically uses cache-aware context:
 recent history remains bounded on a cold request, and subsequent requests keep
 that selected prefix while it is likely warm and fits the context budget.
 Connections with unknown retention or `retentionMode: "none"` retain the default
 retrieval policy. An explicit executor context strategy still takes precedence.
+Callers without usable history-retrieval tools keep fitting original history
+under the model's context budget instead of replacing it with snapshots.
 
 Cache warmth is advisory. Changing instructions or tools, context pressure,
 worker eviction, or a process restart can require fresh prompt processing.

@@ -40,16 +40,19 @@ function fixture(count = 30) {
   const context: Context = { systemPrompt: request.instructions, tools: [], messages };
   return { request, context };
 }
+function enableHistoryRetrieval(request: AgentRunRequest) {
+  request.tools = ["read_history", "search_history"].map((name) => ({
+    name,
+    description: name,
+    inputSchema: { type: "object" },
+  }));
+  request.executeTool = async () => ({});
+}
 describe("runtime context policy", () => {
   it("preserves a selected prefix across turns with a declared cache window", () => {
     const { request, context } = fixture(30);
     request.threadId = "declared-cache-thread";
-    request.tools = ["read_history", "search_history"].map((name) => ({
-      name,
-      description: name,
-      inputSchema: { type: "object" },
-    }));
-    request.executeTool = async () => ({});
+    enableHistoryRetrieval(request);
     request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
     const first = createRuntimeContextPolicy(request);
     const initial = first.prepareContext(context, model);
@@ -69,6 +72,7 @@ describe("runtime context policy", () => {
   });
   it("honors an explicit retrieval override even with a declared cache window", () => {
     const { request, context } = fixture(30);
+    enableHistoryRetrieval(request);
     request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
     request.contextStrategy = "retrieval";
     const policy = createRuntimeContextPolicy(request);
@@ -79,6 +83,7 @@ describe("runtime context policy", () => {
     "does not infer cache-aware context from an unknown or invalid window %s",
     (retentionMs) => {
       const { request, context } = fixture();
+      enableHistoryRetrieval(request);
       request.model.cacheCapabilities = { scope: "connection", retentionMs };
       const policy = createRuntimeContextPolicy(request);
       policy.prepareContext(context, model);
@@ -87,6 +92,7 @@ describe("runtime context policy", () => {
   );
   it("retains retrieval when caching is explicitly disabled", () => {
     const { request, context } = fixture();
+    enableHistoryRetrieval(request);
     request.model.cacheCapabilities = {
       scope: "connection",
       retentionMs: 300000,
@@ -98,12 +104,7 @@ describe("runtime context policy", () => {
   });
   it("matches the qualified explicit strategy when backend history retrieval is usable", () => {
     const { request, context } = fixture();
-    request.tools = ["read_history", "search_history"].map((name) => ({
-      name,
-      description: name,
-      inputSchema: { type: "object" },
-    }));
-    request.executeTool = async () => ({});
+    enableHistoryRetrieval(request);
     const implicit = createRuntimeContextPolicy(request);
     const explicit = createRuntimeContextPolicy({
       ...request,
@@ -114,10 +115,20 @@ describe("runtime context policy", () => {
     );
     expect(implicit.getDecision()!.strategy).toBe("retrieval");
   });
-  it.each(["no tools", "one tool", "no backend"])(
-    "preserves fitting standalone originals with %s",
-    (capability) => {
-      const { request, context } = fixture();
+  it.each([
+    [false, "no tools"],
+    [false, "one tool"],
+    [false, "no backend"],
+    [true, "no tools"],
+    [true, "one tool"],
+    [true, "no backend"],
+  ])(
+    "preserves fitting standalone originals with declared cache %s and %s",
+    (declaredCache, capability) => {
+      // Exceed the cold snapshot allowance while fitting the model's window.
+      const { request, context } = fixture(60);
+      if (declaredCache)
+        request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
       request.tools = (
         capability === "no tools"
           ? []
@@ -136,8 +147,10 @@ describe("runtime context policy", () => {
       expect(explicit.messages.length).toBeLessThan(context.messages.length);
     },
   );
-  it("bounds standalone originals by the model window while preserving current input", () => {
+  it.each([false, true])("bounds standalone originals with declared cache %s", (declaredCache) => {
     const { request, context } = fixture(100);
+    if (declaredCache)
+      request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
     const policy = createRuntimeContextPolicy(request);
     const prepared = policy.prepareContext(context, {
       ...model,
