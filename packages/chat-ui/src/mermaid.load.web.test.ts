@@ -2,6 +2,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
 const mermaid = {
   initialize: vi.fn(),
   parse: vi.fn(async () => true),
@@ -23,8 +31,8 @@ afterEach(() => {
 
 describe("Mermaid render timeout", () => {
   it("times out a hung load and lets the next diagram load and render", async () => {
-    const loadGate = Promise.withResolvers<void>();
-    const loadStarted = Promise.withResolvers<void>();
+    const loadGate = deferred();
+    const loadStarted = deferred();
     vi.doMock("mermaid", async () => {
       loadStarted.resolve();
       await loadGate.promise;
