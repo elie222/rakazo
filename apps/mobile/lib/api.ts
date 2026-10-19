@@ -1295,6 +1295,38 @@ export function applyMobileThreadEvent(
       : prev.activeRuns;
     return { ...prev, cursor, run, activeRuns, messages, computer };
   }
+  if (event.type === "computer.takeover.released") {
+    const runId = event.runId;
+    const settle = <T extends { id: string; status: string }>(candidate: T): T =>
+      runId && candidate.id === runId && candidate.status === "waiting_takeover"
+        ? { ...candidate, status: "queued" }
+        : candidate;
+    const nextRun = prev.run ? settle(prev.run) : prev.run;
+    const activeChanged = Boolean(
+      runId &&
+        prev.activeRuns?.some(
+          (candidate) => candidate.id === runId && candidate.status === "waiting_takeover",
+        ),
+    );
+    const cursor = event.seq ?? prev.cursor;
+    if (nextRun === prev.run && !activeChanged) {
+      return cursor === prev.cursor ? prev : { ...prev, cursor };
+    }
+    const members = prev.members?.some(
+      (member) => member.botId === event.botId && member.status === "waiting_takeover",
+    )
+      ? prev.members.map((member) =>
+          member.botId === event.botId ? { ...member, status: "queued" } : member,
+        )
+      : prev.members;
+    return {
+      ...prev,
+      cursor,
+      run: nextRun,
+      activeRuns: activeChanged ? prev.activeRuns?.map(settle) : prev.activeRuns,
+      members,
+    };
+  }
   if (isRunTerminalEvent(event)) {
     const activeRuns = prev.activeRuns?.filter((candidate) => candidate.id !== event.runId);
     const failure = runFailureError(event);

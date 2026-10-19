@@ -151,7 +151,9 @@ export function mergeThreadSnapshot(
  * Apply a threads.get refresh without clobbering newer event-sourced takeover state.
  *
  * A refresh that started earlier can still return running+busyBotName after the client
- * already applied waiting_takeover. Cursor comparisons only apply within the same thread.
+ * already applied waiting_takeover. That stale snapshot shares the cursor already applied.
+ * A newer cursor is the release (or a later run) and replaces the waiting status.
+ * Cursor comparisons only apply within the same thread.
  * Stop clears run/busy optimistically in the shell so an in-flight refresh cannot revive
  * the run before its run.cancelled event lands; an older-cursor refresh must keep that
  * cleared local state (see Shell stopRun).
@@ -205,6 +207,7 @@ export function reconcileRefreshedThread(
 
   const localWaiting =
     sameThread &&
+    prev?.cursor === snapshot.cursor &&
     prev?.run?.status === "waiting_takeover" &&
     snapshot.run?.id === prev.run.id &&
     snapshot.run.status !== "waiting_takeover" &&
@@ -248,6 +251,7 @@ export function isThreadSnapshotEvent(event: ProductEvent): boolean {
     event.type === "run.started" ||
     event.type === "run.waiting_input" ||
     event.type === "computer.takeover.requested" ||
+    event.type === "computer.takeover.released" ||
     isRunTerminalEvent(event)
   );
 }
@@ -372,6 +376,39 @@ export function reduceThreadSnapshot(
             candidate.id === runId ? { ...candidate, status } : candidate,
           )
         : prev.activeRuns,
+    };
+  }
+  if (event.type === "computer.takeover.released") {
+    const runId = event.runId;
+    const settle = <T extends { id: string; status: string }>(candidate: T): T =>
+      runId && candidate.id === runId && candidate.status === "waiting_takeover"
+        ? { ...candidate, status: "queued" }
+        : candidate;
+    const nextRun = prev.run ? settle(prev.run) : prev.run;
+    const activeChanged = Boolean(
+      runId &&
+        prev.activeRuns?.some(
+          (candidate) => candidate.id === runId && candidate.status === "waiting_takeover",
+        ),
+    );
+    const nextActive = activeChanged ? prev.activeRuns?.map(settle) : prev.activeRuns;
+    const releasedWaiting = nextRun !== prev.run || activeChanged;
+    const members =
+      releasedWaiting &&
+      prev.members?.some(
+        (member) => member.botId === event.botId && member.status === "waiting_takeover",
+      )
+        ? updateMemberStatus(prev.members, event.botId, "queued")
+        : prev.members;
+    if (!releasedWaiting && members === prev.members) {
+      return prev.cursor === event.seq ? prev : { ...prev, cursor: event.seq };
+    }
+    return {
+      ...prev,
+      cursor: event.seq,
+      members,
+      run: nextRun,
+      activeRuns: nextActive,
     };
   }
   if (isRunTerminalEvent(event)) {

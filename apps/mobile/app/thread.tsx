@@ -1500,6 +1500,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "thread.cleared" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
+                event.type === "computer.takeover.released" ||
                 isRunTerminalEvent(event)
               ) {
                 if (event.type === "thread.cleared") {

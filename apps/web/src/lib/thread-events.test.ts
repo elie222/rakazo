@@ -464,6 +464,7 @@ describe("thread event reduction", () => {
     expect(isThreadSnapshotEvent(event({ type: "run.started" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "computer.takeover.requested" }))).toBe(true);
+    expect(isThreadSnapshotEvent(event({ type: "computer.takeover.released" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "agent.tool.completed" }))).toBe(true);
   });
 
@@ -570,6 +571,39 @@ describe("thread event reduction", () => {
 
     expect(waiting?.run?.status).toBe("waiting_takeover");
     expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
+
+    const other = threadRun("run-2", "bot-2");
+    const released = reduceThreadSnapshot(
+      {
+        ...initial,
+        run: { ...run, status: "waiting_takeover" },
+        activeRuns: [
+          { ...run, status: "waiting_takeover" },
+          { ...other, status: "waiting_takeover" },
+        ],
+      },
+      event({
+        type: "computer.takeover.released",
+        seq: 6,
+        runId: run.id,
+        payload: { holder: "bot", reason: "released" },
+      }),
+    );
+    expect(released?.run?.status).toBe("queued");
+    expect(released?.activeRuns?.map((item) => [item.id, item.status])).toEqual([
+      [run.id, "queued"],
+      [other.id, "waiting_takeover"],
+    ]);
+
+    const running = reduceThreadSnapshot(
+      {
+        ...snapshot([]),
+        run: { ...run, status: "running" },
+        activeRuns: [{ ...run, status: "running" }],
+      },
+      event({ type: "computer.takeover.released", seq: 7, runId: run.id }),
+    );
+    expect(running?.run?.status).toBe("running");
   });
 
   it("inserts a peer takeover run that was absent from the open snapshot", () => {
@@ -629,6 +663,33 @@ describe("thread event reduction", () => {
     expect(computerTakeoverBlocked(reconciled.computer, reconciled.snapshot.run?.status)).toBe(
       false,
     );
+  });
+
+  it("accepts a newer refresh that queued the run after takeover release", () => {
+    const run = threadRun("run-1");
+    const waitingLocal: ThreadSnapshot = {
+      ...snapshot([]),
+      cursor: 10,
+      run: { ...run, status: "waiting_takeover" },
+      activeRuns: [{ ...run, status: "waiting_takeover" }],
+    };
+    const released: ThreadSnapshot = {
+      ...snapshot([]),
+      cursor: 12,
+      run: { ...run, status: "queued" },
+      activeRuns: [{ ...run, status: "queued" }],
+      computer: computer({ state: "running", busyBotName: "Chief", takeoverRequested: false }),
+    };
+
+    const reconciled = reconcileRefreshedThread(
+      waitingLocal,
+      released,
+      computer({ state: "running", takeoverRequested: true }),
+    );
+
+    expect(reconciled.snapshot.run?.status).toBe("queued");
+    expect(reconciled.snapshot.activeRuns?.[0]?.status).toBe("queued");
+    expect(reconciled.computer?.takeoverRequested).toBe(false);
   });
 
   it("ignores a refresh whose cursor is behind the event-sourced snapshot", () => {

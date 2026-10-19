@@ -2968,6 +2968,60 @@ describe("mobile thread event reduction", () => {
     expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
     expect(waiting?.messages.some((message) => message.id.startsWith("progress:"))).toBe(false);
     expect(waiting?.cursor).toBe(10);
+
+    const released = applyMobileThreadEvent(
+      {
+        ...initial,
+        run: { id: "run-1", status: "waiting_takeover" },
+        activeRuns: [
+          { id: "run-1", status: "waiting_takeover" },
+          { id: "run-2", status: "waiting_takeover" },
+        ],
+      },
+      {
+        type: "computer.takeover.released",
+        runId: "run-1",
+        seq: 11,
+      },
+    );
+    expect(released?.run?.status).toBe("queued");
+    expect(released?.activeRuns).toEqual([
+      { id: "run-1", status: "queued" },
+      { id: "run-2", status: "waiting_takeover" },
+    ]);
+    expect(released?.cursor).toBe(11);
+
+    const running = applyMobileThreadEvent(
+      {
+        ...snapshot(),
+        run: { id: "run-1", status: "running" },
+        activeRuns: [{ id: "run-1", status: "running" }],
+      },
+      { type: "computer.takeover.released", runId: "run-1", seq: 12 },
+    );
+    expect(running?.run?.status).toBe("running");
+    expect(running?.activeRuns?.[0]?.status).toBe("running");
+  });
+
+  it("lets a newer refresh replace waiting_takeover with queued", () => {
+    const waiting: MobileSnapshot = {
+      ...snapshot(),
+      cursor: 10,
+      run: { id: "run-1", status: "waiting_takeover" },
+      activeRuns: [{ id: "run-1", status: "waiting_takeover" }],
+    };
+    const refreshed: MobileSnapshot = {
+      ...snapshot(),
+      cursor: 12,
+      run: { id: "run-1", status: "queued" },
+      activeRuns: [{ id: "run-1", status: "queued" }],
+    };
+
+    const next = mergeMobileSnapshot(waiting, refreshed);
+
+    expect(next.cursor).toBe(12);
+    expect(next.run?.status).toBe("queued");
+    expect(next.activeRuns?.[0]?.status).toBe("queued");
   });
 
   it("inserts a peer takeover run that was absent from the open snapshot", () => {
