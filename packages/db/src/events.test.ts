@@ -703,6 +703,53 @@ describe("finalizeComputerControlRelease", () => {
     expect(publish).toHaveBeenCalledOnce();
     expect(publish).toHaveBeenCalledWith("thread:group-thread", JSON.stringify({ cursor: 8 }));
   });
+
+  it("still releases control after the run was stopped, leaving its card alone", async () => {
+    const tx = {
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "group-thread" }]),
+      computer: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      bot: { findFirst: vi.fn().mockResolvedValue({ thread: { id: "bot-thread" } }) },
+      run: {
+        findUnique: vi.fn().mockResolvedValue({
+          threadId: "group-thread",
+          status: "cancelled",
+          startedAt: null,
+        }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      message: { findMany: vi.fn(), update: vi.fn() },
+      thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 4 }) },
+      event: {
+        create: vi.fn(
+          async ({ data }: { data: { seq: number; type: string; threadId: string } }) => ({
+            ...event(data.seq),
+            type: data.type,
+            threadId: data.threadId,
+          }),
+        ),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+
+    await expect(
+      finalizeComputerControlRelease(prisma, {
+        spaceId: "workspace-1",
+        computerId: "computer-1",
+        botId: "bot-1",
+        runId: "run-1",
+        leaseId: "lease-1",
+        holder: "bot",
+        reason: "expired",
+      }),
+    ).resolves.toEqual({ runId: null });
+
+    expect(tx.message.findMany).not.toHaveBeenCalled();
+    expect(tx.event.create.mock.calls.map(([call]) => call.data.type)).toEqual([
+      "computer.takeover.released",
+    ]);
+  });
 });
 
 describe("settleReleasedTakeoverCards", () => {

@@ -1193,11 +1193,14 @@ export async function finalizeComputerControlRelease(
     if (input.runId) {
       const waiting = await tx.run.findUnique({
         where: { id: input.runId },
-        select: { threadId: true },
+        select: { threadId: true, status: true },
       });
       runThreadId = waiting?.threadId ?? null;
       if (runThreadId) {
         await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
+      }
+      // A stopped run cannot write history, and the release must still clear the lease.
+      if (runThreadId && waiting?.status !== "cancelled") {
         await settleReleasedTakeoverCardsInTransaction(tx, {
           spaceId: input.spaceId,
           threadId: runThreadId,
