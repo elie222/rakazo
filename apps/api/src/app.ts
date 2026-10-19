@@ -505,6 +505,9 @@ export async function createApp(
     events,
     onTicketChange: ticketChanges,
     ticketBoardEnabled,
+    phoneCallsEnabled: env.phoneCallsEnabled,
+    phoneCallRingSeconds: env.phoneCallRingSeconds,
+    phoneCallCooldownMinutes: env.phoneCallCooldownMinutes,
     messaging: messaging ? createMessagingContextLoader(prisma) : undefined,
     web: createWebProvider(),
     cloudAgent,
@@ -571,6 +574,8 @@ export async function createApp(
       openSignup: env.messagingOpenSignup,
     },
     env: {
+      phoneCallsEnabled: env.phoneCallsEnabled,
+      phoneCallRingSeconds: env.phoneCallRingSeconds,
       ticketBoardEnabled,
       agentRuntime: env.agentRuntime,
       defaultProvider: env.defaultProvider,

@@ -5,7 +5,8 @@ import { Alert, ScrollView, Text, TextInput } from "react-native";
 import { BotMemberPicker } from "../components/bot-member-picker";
 import { glassHeaderOptions } from "../components/glass-title";
 import { NativeActionButton } from "../components/native-action-button";
-import { type MobileBot, type MobileGroup, rpc } from "../lib/api";
+import type { MobileBot, MobileGroup } from "../lib/api";
+import { rpc } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { native, useMobileTokens } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -98,15 +99,15 @@ export default function GroupSettingsScreen() {
             fontSize: 16,
           }}
         />
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14, marginTop: 20 }}>
-          {t("Members")}
-        </Text>
-        <BotMemberPicker
-          bots={bots}
-          selected={selected}
-          onChange={setSelected}
-          disabled={pending}
-        />
+        {group ? (
+          <BotMemberPicker
+            key={group.id}
+            bots={bots}
+            selected={selected}
+            onChange={setSelected}
+            disabled={pending}
+          />
+        ) : null}
         {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
         <NativeActionButton
           disabled={

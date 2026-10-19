@@ -159,7 +159,7 @@ export function MemorySettingsOverlay({
             <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Memory</Trans>
             </DialogTitle>
-            {registration ? (
+            {registration?.description ? (
               <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
                 {registration.description}
               </DialogDescription>
@@ -173,7 +173,7 @@ export function MemorySettingsOverlay({
             <XIcon />
           </DialogClose>
         </div>
-      ) : registration ? (
+      ) : registration?.description ? (
         <p className="px-6 pt-1 text-[13.5px] text-muted-foreground/70 sm:px-8">
           {registration.description}
         </p>

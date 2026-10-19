@@ -21,6 +21,8 @@ import {
   attachmentsForThread,
   buildComposerMentionOptions,
   cloudAgentHttpsUrl,
+  expandPeerReplies,
+  foldPeerReplies,
   formatFileSize,
   formatMessageTime,
   forwardProbeAfterPage,
@@ -42,7 +44,6 @@ import {
   selectedAskActionLabel,
   threadWindowMessages,
   timeSeparatorIds,
-  userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
@@ -159,6 +160,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
+import { plainAskTitle } from "../lib/ask-title";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
@@ -222,7 +224,7 @@ import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thr
 import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
-import { ThreadScrollBehavior } from "../lib/thread-scroll";
+import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
 import { errorText } from "../lib/user-error";
@@ -609,10 +611,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const [dismissedChoiceQuestions, setDismissedChoiceQuestions] = useState<
     ReadonlyMap<string, ReadonlySet<string>>
   >(() => new Map());
+  const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const peerTranscript = useMemo(
+    () => foldPeerReplies(snap?.messages ?? [], { includePeerReceipts: true }),
+    [snap?.messages],
+  );
   const reactionView = useMemo(
     () =>
       projectMessageReactions(
-        userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true })
+        expandPeerReplies(peerTranscript, expandedPeerMarkers)
           .map((message) => {
             const dismissed = dismissedChoiceQuestions.get(message.id);
             if (!dismissed) return message;
@@ -621,10 +630,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           })
           .filter((message) => hasVisibleMessagePresentation(message.blocks)),
       ),
-    [dismissedChoiceQuestions, snap?.messages],
+    [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
   );
   const visibleMessages = reactionView.visibleMessages;
-  const latestMessageId = visibleMessages.at(-1)?.id ?? null;
+  const latestMessageId = latestArrivalMessageId(visibleMessages, peerTranscript.markerOf);
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerRef = useRef<ThreadComposerHandle>(null);
   const composerMentionTargets = useMemo(
@@ -1001,6 +1010,14 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   const botActions = [
     {
+      text: t("Profile"),
+      onPress: () =>
+        router.push({
+          pathname: "/bot-profile",
+          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+        }),
+    },
+    {
       text: t("Chat settings"),
       onPress: () =>
         router.push({
@@ -1173,7 +1190,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     // Publish the jump refs even when the opened snapshot is already visible.
     setThreadScrollState(scrollBehavior.current.state());
     snapshotOrigin.current = scope;
-    commitSnap(opened?.snapshot ?? snap);
+    const next = opened?.snapshot ?? snap;
+    // A reply folded under its peer marker is only drawn once the marker is expanded.
+    const markerId = targetInPage
+      ? foldPeerReplies(next.messages, { includePeerReceipts: true }).markerOf.get(target.messageId)
+      : undefined;
+    if (markerId) {
+      setExpandedPeerMarkers((expanded) =>
+        expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
+      );
+    }
+    commitSnap(next);
     setShowingSaved(false);
   }
 
@@ -2074,6 +2101,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         return next;
       });
     },
+    togglePeerReplies: (markerId) => {
+      setExpandedPeerMarkers((expanded) => {
+        const next = new Set(expanded);
+        if (!next.delete(markerId)) next.add(markerId);
+        return next;
+      });
+    },
     layout: (messageId, y, index) => {
       const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, headerHeight + 24);
       if (offset == null) return;
@@ -2106,6 +2140,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
+      togglePeerReplies: (id) => rowActionsRef.current.togglePeerReplies(id),
       layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
     }),
     [],
@@ -2156,6 +2191,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
+          peerReplies={
+            peerTranscript.folded.has(message.id)
+              ? expandedPeerMarkers.has(message.id)
+                ? "expanded"
+                : "collapsed"
+              : undefined
+          }
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
           activityStatus={activityStatus}
@@ -2174,6 +2216,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       mentionBots,
       displayName,
       reactionView.reactions,
+      peerTranscript,
+      expandedPeerMarkers,
       inGroup,
       botId,
       groupId,
@@ -2843,6 +2887,7 @@ type MessageRowActions = {
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
+  togglePeerReplies: (markerId: string) => void;
   layout: (messageId: string, y: number, index: number) => void;
 };
 
@@ -2863,6 +2908,8 @@ type MessageRowProps = {
   replyAuthor: string;
   replyFallbackText?: string;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
+  /** Set on a received marker whose peer run has folded replies. */
+  peerReplies?: "collapsed" | "expanded";
   activityBotId?: string;
   activityColor?: string;
   activityStatus?: MobileBot["status"];
@@ -2889,6 +2936,7 @@ const MessageRow = memo(function MessageRow({
   replyAuthor,
   replyFallbackText,
   messageReactions,
+  peerReplies,
   activityBotId,
   activityColor,
   activityStatus,
@@ -3102,6 +3150,8 @@ const MessageRow = memo(function MessageRow({
                 onChoiceDismissed={onChoiceDismissed}
                 onPreviewMarkdown={actions.previewMarkdown}
                 onPreviewImage={actions.previewImage}
+                peerReplies={peerReplies}
+                onTogglePeerReplies={actions.togglePeerReplies}
                 actionProps={actionProps}
               />
             </ThreadReadOnlyContext.Provider>
@@ -3156,6 +3206,8 @@ const MessageBubble = memo(function MessageBubble({
   onChoiceDismissed,
   onPreviewMarkdown,
   onPreviewImage,
+  peerReplies,
+  onTogglePeerReplies,
   actionProps,
 }: {
   botId: string;
@@ -3171,6 +3223,8 @@ const MessageBubble = memo(function MessageBubble({
   onChoiceDismissed?: (question: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
+  peerReplies?: "collapsed" | "expanded";
+  onTogglePeerReplies: (markerId: string) => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -3267,13 +3321,23 @@ const MessageBubble = memo(function MessageBubble({
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
       tokens.mutedForeground;
-    // Compact receipt only: peer bodies stay out of the human thread.
-    // Full view-only peer chat is web-first; mobile keeps the chip without expand.
+    // Full view-only peer chat is web-first; on mobile a received chip expands the peer run's
+    // folded replies, which the thread draws as ordinary rows right after it.
+    const replies = sent ? undefined : peerReplies;
     return (
       <Pressable
         {...actionProps}
         accessible
-        accessibilityLabel={label}
+        onPress={replies ? () => onTogglePeerReplies(message.id) : undefined}
+        accessibilityRole={replies ? "button" : undefined}
+        accessibilityState={replies ? { expanded: replies === "expanded" } : undefined}
+        accessibilityLabel={
+          replies === "expanded"
+            ? t("Hide {label}", { label })
+            : replies === "collapsed"
+              ? t("Show {label}", { label })
+              : label
+        }
         style={{
           width: "100%",
           paddingVertical: 4,
@@ -3290,6 +3354,14 @@ const MessageBubble = memo(function MessageBubble({
         >
           {label}
         </Text>
+        {replies ? (
+          <NativeSymbol
+            ios={replies === "expanded" ? "chevron.down" : "chevron.right"}
+            android={replies === "expanded" ? "chevron-down" : "chevron-forward"}
+            size={12}
+            color={tokens.mutedForeground}
+          />
+        ) : null}
       </Pressable>
     );
   }
@@ -3516,7 +3588,8 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <View
           style={{
-            width: "90%",
+            width: "100%",
+            maxWidth: 576,
             borderRadius: 18,
             borderWidth: 1,
             borderColor: tokens.border,
@@ -3538,18 +3611,21 @@ const MessageBubble = memo(function MessageBubble({
                   {...actionProps}
                   style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
                 >
-                  {askBlock.instructionUpdate ? t("Update instructions?") : askBlock.text}
+                  {askBlock.instructionUpdate
+                    ? t("Update instructions?")
+                    : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
               {askBlock.detail ? (
                 <Text
                   {...(askBlock.text ? {} : actionProps)}
                   style={{
-                    color: tokens.mutedForeground,
+                    color:
+                      askBlock.detailFormat === "text" ? tokens.foreground : tokens.mutedForeground,
                     marginTop: askBlock.text ? 8 : 0,
-                    fontSize: 12.5,
-                    fontFamily: "Menlo",
-                    lineHeight: 20,
+                    fontSize: askBlock.detailFormat === "text" ? 15.5 : 12.5,
+                    fontFamily: askBlock.detailFormat === "text" ? undefined : "Menlo",
+                    lineHeight: askBlock.detailFormat === "text" ? 23 : 20,
                   }}
                 >
                   {askBlock.detail}
@@ -3559,7 +3635,7 @@ const MessageBubble = memo(function MessageBubble({
                 <Text
                   {...actionProps}
                   style={{
-                    color: tokens.success,
+                    color: askBlock.answer === "deny" ? tokens.mutedForeground : tokens.success,
                     marginTop: 12,
                     fontSize: 13.5,
                     fontWeight: "600",
@@ -4019,7 +4095,7 @@ function AskBlock({
         {...actionProps}
         style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
       >
-        {ask.text}
+        {plainAskTitle(ask.text)}
       </Text>
       {secretInput && ask.credential ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>

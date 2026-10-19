@@ -26,7 +26,7 @@ export type InboxSpaceItem =
       hasChildren: boolean;
     }
   | { type: "group"; group: MobileGroup | SpaceGroup }
-  | { type: "heading"; key: string; title: string; space?: InboxSpace };
+  | { type: "heading"; key: string; title: string; space?: InboxSpace; sectionId?: string };
 
 export function canDeleteInboxSpace(
   space: Pick<InboxSpace, "isDefault" | "hasContent" | "canDelete">,
@@ -42,6 +42,7 @@ export function inboxNeedsCreateHint(items: readonly { type: string }[]): boolea
 export function spaceInboxItems(
   spaces: InboxSpace[],
   collapsedParentIds: ReadonlySet<string> = new Set(),
+  editableSpaceId?: string,
 ): InboxSpaceItem[] {
   return spaces.flatMap((space): InboxSpaceItem[] => {
     const chats = [
@@ -65,9 +66,18 @@ export function spaceInboxItems(
     if (spaces.length > 1 || !space.isDefault || chats.length === 0) {
       items.push({ type: "heading", key: space.id, title: space.name, space });
     }
-    for (const group of groupBotsForSidebar(chats, space.botSections)) {
+    for (const group of groupBotsForSidebar(chats, space.botSections, {
+      includeEmptySections: true,
+    })) {
       if (group.title) {
-        items.push({ type: "heading", key: `${space.id}:${group.key}`, title: group.title });
+        items.push({
+          type: "heading",
+          key: `${space.id}:${group.key}`,
+          title: group.title,
+          ...(space.id === editableSpaceId && group.key.startsWith("section:")
+            ? { sectionId: group.key.slice("section:".length) }
+            : {}),
+        });
       }
       for (const row of nestRosterByParent(group.bots, collapsedParentIds)) {
         if (row.item.type === "bot") {

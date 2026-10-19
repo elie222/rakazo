@@ -1,17 +1,43 @@
 import { useLingui } from "@lingui/react/macro";
-import { BotAvatar, Button, cn } from "@rakazo/ui-web";
-import { Captions, Mic, MicOff, PhoneOff, Settings, User } from "lucide-react";
-import { useEffect } from "react";
+import { BotAvatar, Button, cn, defaultBotAvatarValue } from "@rakazo/ui-web";
+import { Captions, ChevronDown, Mic, MicOff, PhoneOff, Settings } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { endCall, toggleMute, toggleTranscript, useCallSession } from "../../lib/call-session";
+import type { CallState } from "../../lib/call-session";
+import {
+  endCall,
+  setCallMinimized,
+  toggleMute,
+  toggleTranscript,
+  useCallSession,
+} from "../../lib/call-session";
 
 const BARS = [9, 15, 21, 15, 9];
 const TRANSCRIPT_LINES = 4;
 const EDITABLE = /^(?:input|textarea|select)$/i;
 
+function callClock(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+/** Whole seconds the call has been connected, ticking while it is. */
+function useCallElapsed(call: CallState | null): number {
+  const connectedAt = call?.connectedAt ?? null;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (connectedAt === null) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [connectedAt]);
+  return connectedAt === null ? 0 : Math.max(0, Math.floor((now - connectedAt) / 1000));
+}
+
 export function CallCard({ onSettings }: { onSettings: () => void }) {
   const { t } = useLingui();
   const call = useCallSession();
+  const elapsed = useCallElapsed(call);
   const navigate = useNavigate();
   const { botId } = useParams();
   const onCall = Boolean(call);
@@ -26,65 +52,40 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onCall]);
-  if (!call) return null;
+  if (!call || call.minimized) return null;
   const onBotScreen = botId === call.botId;
+  const ringing = call.phase === "ringing";
+  const activity =
+    call.phase === "speaking"
+      ? t`Speaking`
+      : call.phase === "thinking"
+        ? t`Thinking`
+        : call.muted
+          ? t`Muted`
+          : t`Listening`;
+  const status = ringing ? t`Calling…` : `${callClock(elapsed)} · ${activity}`;
   return (
     <div
       data-testid="call-view"
-      className="fixed end-4 top-4 z-50 w-[360px] rounded-2xl border border-border bg-card p-3 shadow-lg"
+      role="dialog"
+      aria-label={t`Call with ${call.botName}`}
+      className="fixed inset-0 z-50 flex flex-col bg-background px-5 pt-[max(env(safe-area-inset-top),12px)] pb-[max(env(safe-area-inset-bottom),24px)] md:inset-auto md:end-4 md:top-16 md:w-[360px] md:rounded-[22px] md:border md:border-border md:bg-card md:px-4 md:pt-2 md:pb-5 md:shadow-lg"
     >
-      <div className="flex items-center gap-2.5">
-        <BotAvatar color={call.botColor} identity={call.botId} size={28} />
-        <button
-          type="button"
-          aria-label={t`On a call with ${call.botName}`}
-          onClick={() => {
-            if (!onBotScreen) navigate(`/app/${call.botId}`);
-          }}
-          className="min-w-0 truncate text-[14.5px] font-medium text-foreground hover:text-foreground/70"
-          dir="auto"
-        >
-          {call.botName}
-        </button>
-        <div className="flex flex-1 items-center justify-center gap-[3px]" aria-hidden="true">
-          {BARS.map((height, index) => (
-            <span
-              key={`bar-${index + 1}`}
-              className={cn(
-                "w-[3px] rounded-full",
-                call.phase === "thinking"
-                  ? "bg-muted-foreground/40"
-                  : "animate-pulse bg-foreground",
-              )}
-              style={{
-                height,
-                animationDelay: `${index * 90}ms`,
-                animationDuration: call.phase === "speaking" ? "600ms" : "1200ms",
-              }}
-            />
-          ))}
-        </div>
-        <span
-          className="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground"
-          aria-hidden="true"
-        >
-          <User className="size-3.5" />
-        </span>
-      </div>
-      <div className="mt-3 flex items-center justify-center gap-2">
+      <div className="flex items-center gap-1">
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
-          aria-label={t`Settings`}
-          onClick={onSettings}
+          className="rounded-full text-muted-foreground"
+          aria-label={t`Minimize call`}
+          onClick={() => setCallMinimized(true)}
         >
-          <Settings />
+          <ChevronDown />
         </Button>
+        <span className="flex-1" />
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
+          className="rounded-full text-muted-foreground"
           aria-label={t`Transcript`}
           aria-pressed={call.transcriptOpen}
           onClick={toggleTranscript}
@@ -94,25 +95,64 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
         <Button
           variant="ghost"
           size="icon"
-          className="rounded-full"
-          aria-label={call.muted ? t`Unmute` : t`Mute`}
-          aria-pressed={call.muted}
-          onClick={toggleMute}
+          className="rounded-full text-muted-foreground"
+          aria-label={t`Settings`}
+          onClick={onSettings}
         >
-          {call.muted ? <MicOff className="text-muted-foreground" /> : <Mic />}
-        </Button>
-        <Button
-          variant="destructive"
-          size="icon"
-          className="rounded-full"
-          aria-label={t`Hang up`}
-          onClick={endCall}
-        >
-          <PhoneOff />
+          <Settings />
         </Button>
       </div>
+
+      <div className="relative flex flex-1 flex-col items-center justify-center gap-4 py-6 md:flex-none">
+        <button
+          type="button"
+          aria-label={t`Open chat with ${call.botName}`}
+          onClick={() => {
+            if (!onBotScreen) navigate(`/app/${call.botId}`);
+          }}
+          className="relative grid size-32 place-items-center md:size-24"
+        >
+          {ringing ? (
+            <span
+              aria-hidden="true"
+              className="absolute inset-0 animate-ping rounded-full border-2"
+              style={{ borderColor: defaultBotAvatarValue(call.botColor) }}
+            />
+          ) : null}
+          <BotAvatar color={call.botColor} identity={call.botId} size={96} />
+        </button>
+        <div className="flex flex-col items-center gap-1 text-center">
+          <span className="text-2xl font-semibold text-foreground md:text-xl" dir="auto">
+            {call.botName}
+          </span>
+          <span className="text-sm tabular-nums text-muted-foreground" aria-live="polite">
+            {status}
+          </span>
+        </div>
+        {!ringing ? (
+          <div className="flex h-7 items-center gap-[4px]" aria-hidden="true">
+            {BARS.map((height, index) => (
+              <span
+                key={`bar-${index + 1}`}
+                className={cn(
+                  "w-1 rounded-full",
+                  call.phase === "speaking"
+                    ? "animate-pulse bg-foreground"
+                    : "animate-pulse bg-muted-foreground/50",
+                )}
+                style={{
+                  height,
+                  animationDelay: `${index * 90}ms`,
+                  animationDuration: call.phase === "speaking" ? "600ms" : "1400ms",
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
+
       {call.transcriptOpen ? (
-        <div className="mt-3 flex flex-col gap-1.5 border-t border-border pt-2.5 text-[13px] leading-[1.45]">
+        <div className="mb-4 flex flex-col gap-1.5 border-t border-border pt-2.5 text-sm leading-[1.45]">
           {call.exchanges.slice(-TRANSCRIPT_LINES).map((exchange, index) => (
             <p
               key={`${exchange.role}-${index + 1}-${exchange.text.slice(0, 24)}`}
@@ -131,7 +171,54 @@ export function CallCard({ onSettings }: { onSettings: () => void }) {
             </p>
           ) : null}
         </div>
+      ) : call.caption ? (
+        <p className="mb-4 text-center text-sm text-muted-foreground" dir="auto">
+          {call.caption}
+        </p>
       ) : null}
+
+      <div className="flex items-center justify-center gap-3">
+        <Button
+          variant={call.muted ? "default" : "secondary"}
+          size="icon-lg"
+          className="size-14 rounded-full md:size-12"
+          aria-label={call.muted ? t`Unmute` : t`Mute`}
+          aria-pressed={call.muted}
+          onClick={toggleMute}
+        >
+          {call.muted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
+        </Button>
+        <Button
+          variant="destructive"
+          size="icon-lg"
+          className="size-14 rounded-full md:size-12"
+          aria-label={t`Hang up`}
+          onClick={endCall}
+        >
+          <PhoneOff className="size-5" />
+        </Button>
+      </div>
     </div>
+  );
+}
+
+/** Shown while the call window is minimized, so the call is never out of reach. */
+export function CallReturnBar() {
+  const { t } = useLingui();
+  const call = useCallSession();
+  const elapsed = useCallElapsed(call);
+  if (!call?.minimized) return null;
+  return (
+    <button
+      type="button"
+      data-testid="call-return-bar"
+      onClick={() => setCallMinimized(false)}
+      className="app-no-drag flex min-h-10 w-full shrink-0 items-center justify-center gap-1.5 bg-success px-3 text-sm font-medium text-background"
+    >
+      <span dir="auto">{t`Return to call with ${call.botName}`}</span>
+      <span className="tabular-nums">
+        · {call.phase === "ringing" ? t`Calling…` : callClock(elapsed)}
+      </span>
+    </button>
   );
 }

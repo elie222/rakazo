@@ -60,6 +60,11 @@ msgstr "ברירת המחדל של {0}"
 msgid "{0} handling"
 msgstr "טיפול של {0}"
 
+#. placeholder {0}: bot.name
+#: src/components/call/IncomingCall.tsx
+msgid "{0} is calling you"
+msgstr ""
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -367,6 +372,11 @@ msgstr "פעילות"
 msgid "Add"
 msgstr "הוספה"
 
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Add {0} to the group"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Add a command to run"
 msgstr ""
@@ -580,6 +590,11 @@ msgstr ""
 msgid "Answer"
 msgstr "תשובה"
 
+#: src/components/call/IncomingCall.tsx
+msgctxt "incoming call"
+msgid "Answer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "נענה"
@@ -604,6 +619,7 @@ msgstr "ה-API חזר לפעול, אבל העדכון לא הושלם. יש לב
 #: src/components/AskCard.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/lib/localized-provider-hint.ts
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -884,6 +900,27 @@ msgstr "דפדפן"
 msgid "Built-in"
 msgstr "מובנה"
 
+#: src/pages/Shell.tsx
+msgid "Call"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Call back"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Call with {0}"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Calling you…"
+msgstr ""
+
+#: src/components/call/CallCard.tsx
+msgid "Calling…"
+msgstr ""
+
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "אין גישה לשרת."
@@ -1144,6 +1181,10 @@ msgstr "קוד"
 msgid "Collapse {0}"
 msgstr "כיווץ {0}"
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "כיווץ {label}"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "צבע"
@@ -1243,6 +1284,7 @@ msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הדפדפן הזה, ואז לבדוק שוב."
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -1293,6 +1335,7 @@ msgstr "מחובר. הכלים שלו יהיו זמינים החל מההודע�
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1462,6 +1505,10 @@ msgstr "לא ניתן למחוק את שרת ה-MCP"
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete routine"
 msgstr "לא ניתן למחוק את הרוטינה"
+
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete section"
+msgstr "לא ניתן למחוק את המקטע"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
@@ -1639,6 +1686,7 @@ msgstr "אין גישה לשרת המודל."
 msgid "Could not reach the server"
 msgstr "אין גישה לשרת"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "לא ניתן להסיר"
@@ -1746,6 +1794,7 @@ msgstr "לא ניתן לחפש בקטלוג"
 msgid "Could not send reset email"
 msgstr "לא ניתן לשלוח אימייל לאיפוס"
 
+#: src/components/call/IncomingCall.tsx
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "לא ניתן לשלוח את זה"
@@ -1925,6 +1974,7 @@ msgstr "עבודה יומיומית"
 msgid "days"
 msgstr "ימים"
 
+#: src/components/call/IncomingCall.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Decline"
 msgstr "דחייה"
@@ -1995,6 +2045,10 @@ msgid "Delete memories too"
 msgstr "מחיקת הזיכרונות גם כן"
 
 #: src/pages/Shell.tsx
+msgid "Delete section"
+msgstr "מחיקת המקטע"
+
+#: src/pages/Shell.tsx
 msgid "Delete space"
 msgstr "מחיקת המרחב"
 
@@ -2051,6 +2105,10 @@ msgstr "MCP ישיר"
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
 msgstr "כלים מושבתים"
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Discard recording"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -2278,6 +2336,10 @@ msgstr "הרחבה"
 msgid "Expand {0}"
 msgstr "הרחבת {0}"
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "הרחבת {label}"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "ייצוא"
@@ -2351,6 +2413,10 @@ msgstr ""
 msgid "Files or folders, one per line"
 msgstr ""
 
+#: src/pages/GroupPanel.tsx
+msgid "Filter bots"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr "סינון לפי תאריך"
@@ -2395,6 +2461,10 @@ msgstr "משלים את חיבור ה-MCP…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
 msgstr "סימון פעולות לא צפויות"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -2520,6 +2590,14 @@ msgstr "גבוהה"
 msgid "High"
 msgstr "גבוה"
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk, release to send"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
 msgstr "שעה"
@@ -2572,6 +2650,10 @@ msgstr "לא פעיל"
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
 msgstr "תיבת דואר נכנס ואימייל"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Incoming call"
+msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Inherit default"
@@ -2637,6 +2719,10 @@ msgstr "מבודד"
 msgid "Isolated preview — no access to your account"
 msgstr "תצוגה מקדימה מבודדת — ללא גישה לחשבון"
 
+#: src/pages/Shell.tsx
+msgid "Its bots and groups are kept and leave the section."
+msgstr "הבוטים והקבוצות שבו יישמרו ויוצאו מהמקטע."
+
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "השיחה, הקבצים והרוטינות שלו יימחקו לצמיתות. בוטים שהוא יצר יישארו ברשימה."
@@ -2692,6 +2778,10 @@ msgstr "{app} הופעלה"
 msgid "Leave"
 msgstr "יציאה"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "מאפשר לבוט הזה לארגן, לכוונן ולתזמן את הבוטים שהוא יוצר. כל שינוי דורש את אישורך."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "בהיר"
@@ -2716,9 +2806,14 @@ msgstr "תצוגת רשימה"
 msgid "Listen"
 msgstr "האזנה"
 
+#: src/components/call/CallCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
 msgstr "מאזין"
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Listening…"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Load earlier messages"
@@ -2894,13 +2989,10 @@ msgstr "בינוני"
 msgid "Medium"
 msgstr "בינוני"
 
+#. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
-msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "בוטים ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-
-#: src/pages/GroupPanel.tsx
-msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "בוטים (יש לבחור {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
+msgid "Members ({0})"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -2980,6 +3072,10 @@ msgstr "מזעור"
 msgid "Minimize bots"
 msgstr "מזעור הבוטים"
 
+#: src/components/call/CallCard.tsx
+msgid "Minimize call"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "minute"
 msgstr "דקה"
@@ -2988,6 +3084,10 @@ msgstr "דקה"
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "דקות"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Missed call"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3071,6 +3171,10 @@ msgstr "העברה אל"
 #: src/components/call/CallCard.tsx
 msgid "Mute"
 msgstr "השתקה"
+
+#: src/components/call/CallCard.tsx
+msgid "Muted"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Auth.tsx
@@ -3173,6 +3277,7 @@ msgstr "עדיין אין פעילות של בוטים."
 msgid "No bots"
 msgstr "אין בוטים"
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr "אין בוטים תואמים"
@@ -3212,6 +3317,10 @@ msgstr "עדיין לא הותקנו מקורות כלים של MCP או API."
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "עדיין אין שרתי MCP."
+
+#: src/pages/GroupPanel.tsx
+msgid "No members yet"
+msgstr ""
 
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "No messages with {peerBotName} yet."
@@ -3323,11 +3432,6 @@ msgstr "חיבור OAuth נכשל"
 msgid "OAuth expired"
 msgstr "תוקף OAuth פג"
 
-#. placeholder {0}: call.botName
-#: src/components/call/CallCard.tsx
-msgid "On a call with {0}"
-msgstr "בשיחה עם {0}"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr "לפי תזמון"
@@ -3363,6 +3467,15 @@ msgstr "יש לפתוח את <0>{0}</0> ולהזין את הקוד הזה:"
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
 msgstr "יש לפתוח את <0>{0}</0> כדי להשלים את ההתחברות."
+
+#: src/pages/Shell.tsx
+msgid "Open call"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Open chat with {0}"
+msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Open computer settings"
@@ -3502,10 +3615,18 @@ msgstr "יש להדביק את מפתח ה-API ולבדוק שוב."
 msgid "Paused"
 msgstr "מושהה"
 
+#: src/components/call/VoiceChatCard.tsx
+msgid "Phone call"
+msgstr ""
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
 msgstr "תמונה"
+
+#: src/pages/GroupPanel.tsx
+msgid "Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -3739,6 +3860,11 @@ msgstr "הסרה"
 msgid "Remove {0}"
 msgstr "הסרת {0}"
 
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Remove {0} from the group"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
 msgstr "הסרת {full}"
@@ -3909,6 +4035,11 @@ msgstr "לנסות שוב עכשיו"
 #: src/pages/Shell.tsx
 msgid "Retry screen"
 msgstr "טעינת המסך מחדש"
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Return to call with {0}"
+msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx
 msgid "Return to Rakazo"
@@ -4137,6 +4268,10 @@ msgstr "שליחת קוד מחיקה"
 msgid "Send it"
 msgstr "שליחה"
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Send recording"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Send reset link"
 msgstr "שליחת קישור לאיפוס"
@@ -4220,6 +4355,10 @@ msgstr "מיומנויות משותפות"
 msgid "Shell"
 msgstr "Shell"
 
+#: src/pages/GroupPanel.tsx
+msgid "Show all"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr "הצגת בוטים"
@@ -4239,6 +4378,10 @@ msgstr "הצגת עוד"
 #: src/components/I18nBootstrap.tsx
 msgid "Show password"
 msgstr "הצגת סיסמה"
+
+#: src/pages/GroupPanel.tsx
+msgid "Show selected"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Show settings"
@@ -4318,6 +4461,10 @@ msgstr "הודעת Slack"
 msgid "Slack not enabled"
 msgstr "Slack לא מופעל"
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Slide up to lock"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "עדכון תוכנה"
@@ -4358,6 +4505,10 @@ msgstr "הקראה בלבד"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "הקראת התשובה"
+
+#: src/components/call/CallCard.tsx
+msgid "Speaking"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
@@ -4540,6 +4691,7 @@ msgstr "ספק הזיכרון שנבחר אינו זמין בגרסה הזו."
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr "לא ניתן לקרוא את ההגדרות השמורות. יש להסיר ולהוסיף מחדש."
 
+#: src/components/call/CallCard.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
@@ -4554,6 +4706,10 @@ msgstr "חשיבה: {activeThinkingLabel}"
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "הבוט הזה פועל על המחשב הזה, לא על שולחן עבודה של Linux. המעטפת והקבצים משתמשים בתיקיית הבית."
+
+#: src/components/call/IncomingCall.tsx
+msgid "This call is no longer ringing."
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "This can't be undone."
@@ -4690,6 +4846,10 @@ msgstr "מקורות כלים"
 #: src/pages/PluginsOverlay.tsx
 msgid "Tools"
 msgstr "כלים"
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Transcribing…"
+msgstr ""
 
 #: src/components/call/CallCard.tsx
 msgid "Transcript"
@@ -4879,6 +5039,10 @@ msgstr "לסיסמאות יש להשתמש בקלט מוגן."
 msgid "Use this model"
 msgstr "שימוש במודל הזה"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Use up to 512 letters, digits, _ or -."
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Use your own key"
 msgstr "שימוש במפתח משלך"
@@ -4917,15 +5081,10 @@ msgid "View chat"
 msgstr "צפייה בצ׳אט"
 
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "קול"
-
-#: src/components/call/VoiceChatCard.tsx
-msgid "Voice chat"
-msgstr "צ׳אט קולי"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -5021,6 +5180,10 @@ msgstr "לא יבוצע"
 msgid "Working…"
 msgstr "עובד…"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Workspace"
+msgstr ""
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Wrote {path}"
 msgstr "נכתב {path}"
@@ -5045,6 +5208,10 @@ msgstr "אפשר לסגור את הכרטיסייה אם אין הפניה או�
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "אפשר לסגור את החלון."
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "You declined"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "You have control"

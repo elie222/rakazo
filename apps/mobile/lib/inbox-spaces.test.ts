@@ -56,6 +56,7 @@ const bot: MobileBot = {
   modelId: null,
   thinkingLevel: null,
   autoSpeak: false,
+  fleetManagement: false,
 };
 
 describe("spaceInboxItems", () => {
@@ -103,6 +104,44 @@ describe("spaceInboxItems", () => {
     expect(headings.filter((item) => item.space)).toEqual([
       { type: "heading", key: work.id, title: work.name, space: work },
     ]);
+  });
+
+  it("keeps empty section headings actionable only in the selected space", () => {
+    const section = {
+      id: "empty",
+      name: "Old ideas",
+      position: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const current = space({
+      bots: [
+        { ...bot, pinned: true },
+        { ...bot, id: "loose" },
+      ],
+      botSections: [section],
+    });
+    const other = space({ id: "other", botSections: [{ ...section, id: "other-section" }] });
+    const headings = spaceInboxItems([current, other], new Set(), current.id).filter(
+      (item) => item.type === "heading",
+    );
+    expect(headings.find((item) => item.title === "Old ideas")).toMatchObject({
+      sectionId: "empty",
+    });
+    expect(headings.filter((item) => item.sectionId).map((item) => item.sectionId)).toEqual([
+      "empty",
+    ]);
+    expect(
+      spaceInboxItems([current]).some((item) => item.type === "heading" && item.sectionId),
+    ).toBe(false);
+    expect(
+      spaceInboxItems([space({ isDefault: true, botSections: [section] })], new Set(), current.id),
+    ).toContainEqual({
+      type: "heading",
+      key: `${current.id}:section:empty`,
+      title: "Old ideas",
+      sectionId: "empty",
+    });
   });
 
   it("keeps populated default-space chrome minimal and retains group rows", () => {

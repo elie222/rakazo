@@ -92,6 +92,7 @@ import {
   prepareApiInstall,
   prepareGraphqlInstall,
   prepareManagedConnectorForTransaction,
+  prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   prepareStoredModelAuth,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
@@ -113,6 +114,7 @@ import {
   scriptedCatalogEntry,
   selectDefaultCredentialId,
   serializeModelSecret,
+  settleCallRequest,
   stableStringify,
   storeBotSecret,
   storedOpenAiCompatibleProbeKey,
@@ -121,10 +123,10 @@ import {
   touchRunningComputer,
   UNAVAILABLE_MODEL_FOR_AUTH_MESSAGE,
   updateTicket,
+  validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
   validateRoutineWatch,
-  validateStoredModelAuth,
   verifyMcpInstall,
 } from "@rakazo/adapters";
 import type { Auth } from "@rakazo/auth";
@@ -151,6 +153,7 @@ import {
   canonicalPiProviderId,
   foldComputerCommands,
   IntegrationProviderIdSchema,
+  isDeletableMemoryDocument,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
   storedPiProviderIds,
@@ -172,12 +175,14 @@ import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from 
 import {
   appendEventInTransaction,
   BotSectionNameConflictError,
+  botProfileLabelsChanged,
   CannotDeleteDefaultSpaceError,
   CannotDeleteLastSpaceError,
   CannotDeleteSpaceAsNonOwnerError,
   CannotRenameSpaceAsNonOwnerError,
   ComputerLimitError,
   claimEmptySpaceDeletionForMember,
+  commitBotUpdate,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
@@ -239,7 +244,6 @@ import {
   listSpaceArtifacts,
 } from "./artifacts.js";
 import type { BillingService } from "./billing.js";
-import { botProfileLabelsChanged, commitBotUpdate } from "./bot-update.js";
 import {
   executionBlocksUserTakeover,
   resolveBusyBotName,
@@ -595,6 +599,8 @@ export interface RouterDeps {
   billing?: BillingService;
   env: {
     ticketBoardEnabled?: boolean;
+    phoneCallsEnabled?: boolean;
+    phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     agentRuntime: string;
     teamChatJudgeProvider?: string;
@@ -771,7 +777,10 @@ export function createRouter(deps: RouterDeps) {
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
   }>();
-  const repos = createRepos(deps.prisma);
+  const repos = createRepos(deps.prisma, {
+    phoneCallsEnabled: deps.env?.phoneCallsEnabled,
+    phoneCallRingSeconds: deps.env?.phoneCallRingSeconds,
+  });
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
@@ -794,6 +803,11 @@ export function createRouter(deps: RouterDeps) {
   const authed = os.use(async ({ context, next }) => {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
     return next({ context: { ...context, actor: context.actor } });
+  });
+
+  const callsEnabled = authed.use(async ({ next }) => {
+    if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
+    return next();
   });
 
   const boardEnabled = os
@@ -1729,100 +1743,29 @@ export function createRouter(deps: RouterDeps) {
           });
           if (!section) throw new IsolationError();
         }
-        // Web settings resend the saved model on every save. Reject an
-        // incompatible override only when this request is changing it; a run
-        // still rejects a Spark model the subscription sign-in cannot call.
-        const settingModel =
-          input.modelProvider !== undefined &&
-          input.modelId !== undefined &&
-          (input.modelProvider !== existing.modelProvider || input.modelId !== existing.modelId);
-        if (settingModel && input.modelProvider && input.modelId) {
-          const credential = await findModelCredential(
-            deps.prisma,
-            context.actor,
-            input.modelProvider,
-            input.modelId,
-          );
-          if (!credential) {
-            throw new ORPCError("BAD_REQUEST", { message: "Connect that model provider first" });
-          }
-          const knownModels = [...listPiCatalog(), scriptedCatalogEntry];
-          const inCatalog = knownModels.some(
-            (item) =>
-              item.provider === canonicalPiProviderId(input.modelProvider ?? "") &&
-              item.id === input.modelId,
-          );
-          if (!inCatalog && credential.defaultModel !== input.modelId) {
-            throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
-          }
-          if (inCatalog) {
-            const authError = await validateStoredModelAuth(
-              deps.prisma,
-              deps.secrets,
-              context.actor.userId,
-              credential.secretId,
-              input.modelProvider,
-              input.modelId,
-              codexCatalog,
-              {
-                onExpiredToken: () =>
-                  refreshExpiredCredential(
-                    context.actor,
-                    credential.secretId,
-                    input.modelProvider!,
-                  ),
-              },
-            );
-            if (authError) throw new ORPCError("BAD_REQUEST", { message: authError });
-          }
-        }
+        const modelChange = await validateBotModelChange(
+          {
+            prisma: deps.prisma,
+            secretStore: deps.secrets,
+            codexCatalog,
+            refreshExpiredCredential,
+            defaultModel: async () => {
+              const me = await meDto(deps, context.actor);
+              return { provider: me.defaultProvider, model: me.defaultModel };
+            },
+          },
+          {
+            userId: context.actor.userId,
+            spaceId: context.actor.spaceId,
+            provider:
+              input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
+            model: input.modelId !== undefined ? input.modelId : existing.modelId,
+            thinkingLevel: input.thinkingLevel,
+            current: { provider: existing.modelProvider, model: existing.modelId },
+          },
+        );
+        if (!modelChange.ok) throw new ORPCError("BAD_REQUEST", { message: modelChange.error });
         const thinkingLevel = input.thinkingLevel;
-        if (input.thinkingLevel) {
-          const provider =
-            input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
-          const modelId = input.modelId !== undefined ? input.modelId : existing.modelId;
-          const me = await meDto(deps, context.actor);
-          const effectiveProvider = provider ?? me.defaultProvider;
-          const effectiveModelId = modelId ?? me.defaultModel;
-          if (effectiveProvider && effectiveModelId) {
-            const entry = listPiCatalog().find(
-              (item) =>
-                item.provider === canonicalPiProviderId(effectiveProvider) &&
-                item.id === effectiveModelId,
-            );
-            let allowed = entry?.thinkingLevels;
-            if (effectiveProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
-              allowed = ["off"];
-              const credential = await findModelCredential(
-                deps.prisma,
-                context.actor,
-                effectiveProvider,
-              );
-              if (credential && credential.defaultModel === effectiveModelId) {
-                const secret = await deps.prisma.secret.findFirst({
-                  where: { id: credential.secretId, userId: context.actor.userId, spaceId: null },
-                  select: { ciphertext: true },
-                });
-                if (secret) {
-                  try {
-                    allowed =
-                      modelCredentialDto(
-                        credential,
-                        await deps.secrets.load(secret.ciphertext, credential.secretId),
-                      ).thinkingLevels ?? allowed;
-                  } catch {
-                    // Unreadable connections must not advertise reasoning support.
-                  }
-                }
-              }
-            }
-            if (allowed && !allowed.includes(input.thinkingLevel)) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: `Thinking level must be one of: ${allowed.join(", ")}`,
-              });
-            }
-          }
-        }
         if (!existing.thread) throw new IsolationError();
         await commitBotUpdate({
           prisma: deps.prisma,
@@ -1853,6 +1796,9 @@ export function createRouter(deps: RouterDeps) {
               ? { teamChatAmbientEnabled: input.teamChatAmbientEnabled }
               : {}),
             ...(input.teamChatRules !== undefined ? { teamChatRules: input.teamChatRules } : {}),
+            ...(input.fleetManagement !== undefined
+              ? { fleetManagement: input.fleetManagement }
+              : {}),
             ...(input.disabledBuiltinTools !== undefined
               ? { disabledBuiltinTools: input.disabledBuiltinTools }
               : {}),
@@ -2188,6 +2134,9 @@ export function createRouter(deps: RouterDeps) {
           throw error;
         }
       }),
+      remove: authed.botSections.remove.handler(async ({ context, input }) =>
+        repos.deleteBotSection(context.actor, input),
+      ),
     },
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {
@@ -2487,13 +2436,54 @@ export function createRouter(deps: RouterDeps) {
         }
         return { ok: true as const };
       }),
-      endCall: authed.threads.endCall.handler(async ({ context, input }) => {
+      answerCall: callsEnabled.threads.answerCall.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot") throw new IsolationError();
+        const answered = await settleCallRequest(deps, {
+          threadId: target.threadId,
+          callId: input.callId,
+          from: ["ringing"],
+          status: "answered",
+        });
+        if (answered?.status !== "answered")
+          throw new ORPCError("CONFLICT", { message: "This call is no longer ringing." });
+        return { opening: answered.opening, reason: answered.reason };
+      }),
+      declineCall: callsEnabled.threads.declineCall.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot") throw new IsolationError();
+        await settleCallRequest(deps, {
+          threadId: target.threadId,
+          callId: input.callId,
+          from: ["ringing"],
+          status: input.outcome,
+        });
+        return { ok: true as const };
+      }),
+      endCall: callsEnabled.threads.endCall.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind !== "bot") throw new IsolationError();
         await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         const { botId, threadId } = target;
+        // The bot's own call: its card keeps how long the user stayed on.
+        await settleCallRequest(deps, {
+          threadId,
+          callId: input.callId,
+          from: ["answered"],
+          ...(input.durationSeconds === undefined
+            ? {}
+            : { durationSeconds: input.durationSeconds }),
+        });
         const blocks = [
-          { kind: "voice_call" as const, callId: input.callId, title: "", farewell: "" },
+          {
+            kind: "voice_call" as const,
+            callId: input.callId,
+            title: "",
+            farewell: "",
+            ...(input.durationSeconds === undefined
+              ? {}
+              : { durationSeconds: input.durationSeconds }),
+          },
         ];
         const committed = await deps.prisma
           .$transaction(async (tx) => {
@@ -3381,6 +3371,37 @@ export function createRouter(deps: RouterDeps) {
           revision: updated.revision,
           updatedAt: new Date().toISOString(),
         };
+      }),
+      remove: authed.memory.remove.handler(async ({ context, input }) => {
+        const doc = await deps.prisma.memoryDocument.findFirst({
+          where: {
+            id: input.documentId,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          },
+        });
+        if (!doc) throw new IsolationError();
+        if (!isDeletableMemoryDocument(doc.path)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${doc.path} cannot be deleted; edit its content instead.`,
+          });
+        }
+        await deps.memory.remove(
+          {
+            id: doc.id,
+            scope: doc.scope as "bot" | "user",
+            botId: doc.botId ?? undefined,
+            path: doc.path,
+          },
+          {
+            operationId: "mem",
+            traceId: "mem",
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+            signal: new AbortController().signal,
+          },
+        );
+        return { ok: true as const };
       }),
       exportMarkdown: authed.memory.exportMarkdown.handler(async ({ context, input }) => {
         const docs = await deps.prisma.memoryDocument.findMany({
@@ -6539,6 +6560,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   ]);
   return {
     ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
+    phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
     userId: actor.userId,
     email: user.email,
@@ -6587,46 +6609,18 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
   };
 }
 
-/**
- * Thinking levels a caller may set for a provider/model. Catalog models answer from
- * `thinkingLevels`; unknown catalog ids return undefined (no check). OpenAI-compatible
- * connections only advertise levels when the stored endpoint's saved model matches.
- */
-async function prepareAllowedThinkingLevels(
+function prepareAllowedThinkingLevels(
   deps: RouterDeps,
   actor: Actor,
   provider: string,
   modelId: string,
-): Promise<{ allowed: string[] | undefined; secret?: { id: string; ciphertext: string } }> {
-  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return {
-      allowed: listPiCatalog().find(
-        (item) => item.provider === canonicalPiProviderId(provider) && item.id === modelId,
-      )?.thinkingLevels,
-    };
-  }
-  let allowed: string[] | undefined = ["off"];
-  let savedSecret: { id: string; ciphertext: string } | undefined;
-  const credential = await findModelCredential(deps.prisma, actor, provider);
-  if (credential && credential.defaultModel === modelId) {
-    const secret = await deps.prisma.secret.findFirst({
-      where: { id: credential.secretId, userId: actor.userId, spaceId: null },
-      select: { ciphertext: true },
-    });
-    if (secret) {
-      savedSecret = { id: credential.secretId, ciphertext: secret.ciphertext };
-      try {
-        allowed =
-          modelCredentialDto(
-            credential,
-            await deps.secrets.load(secret.ciphertext, credential.secretId),
-          ).thinkingLevels ?? allowed;
-      } catch {
-        // Unreadable connections must not advertise reasoning support.
-      }
-    }
-  }
-  return { allowed, secret: savedSecret };
+) {
+  return prepareModelThinkingLevels(
+    { prisma: deps.prisma, secretStore: deps.secrets },
+    actor,
+    provider,
+    modelId,
+  );
 }
 
 async function allowedThinkingLevels(

@@ -2646,7 +2646,14 @@ describe("sendUserMessage", () => {
     ).resolves.toEqual({ messageId: "message-1", seq: 4, taskId: null, runId: "run-user" });
 
     expect(tx.steeringMessage.create).toHaveBeenCalledWith({
-      data: { messageId: "message-1", botId: "bot-1", userId: "user-1", runId: "run-user" },
+      data: {
+        messageId: "message-1",
+        botId: "bot-1",
+        userId: "user-1",
+        runId: "run-user",
+        // Kept so an unclaimed release continues as messaging, never as an owner follow-up.
+        originTrigger: "messaging",
+      },
     });
   });
 });

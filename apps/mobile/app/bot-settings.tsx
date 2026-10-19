@@ -26,6 +26,7 @@ import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
 import { NativeSymbol } from "../components/native-symbol";
 import { Chevron } from "../components/row-accessories";
+import { SettingsFooter } from "../components/settings-group";
 import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { rpc } from "../lib/api";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
@@ -56,6 +57,7 @@ export default function BotSettingsScreen() {
   const [modelKey, setModelKey] = useState("");
   const [thinkingLevel, setThinkingLevel] = useState("");
   const [autoSpeak, setAutoSpeak] = useState(false);
+  const [fleetManagement, setFleetManagement] = useState(false);
   const [credentials, setCredentials] = useState<MobileModelCredential[]>([]);
   const [catalog, setCatalog] = useState<MobileModel[]>([]);
   const [me, setMe] = useState<MobileMe | null>(null);
@@ -88,6 +90,7 @@ export default function BotSettingsScreen() {
         );
         setThinkingLevel(next.thinkingLevel ?? "");
         setAutoSpeak(next.autoSpeak);
+        setFleetManagement(next.fleetManagement);
       })
       .catch((err) => setError(errorText(err, t("Could not load bot"))));
   }, [botId]);
@@ -484,6 +487,32 @@ export default function BotSettingsScreen() {
             value={autoSpeak}
           />
         </View>
+        <View style={[styles.row, { marginTop: 20 }]}>
+          <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
+            {t("Fleet management")}
+          </Text>
+          <NativeSwitch
+            accessibilityLabel={t("Fleet management")}
+            disabled={pending}
+            onValueChange={(value) => {
+              if (!botId || pending) return;
+              setFleetManagement(value);
+              setPending(true);
+              void rpc("bots/update", { botId, fleetManagement: value })
+                .catch((err) => {
+                  setFleetManagement(!value);
+                  setError(errorText(err, t("Could not save bot")));
+                })
+                .finally(() => setPending(false));
+            }}
+            value={fleetManagement}
+          />
+        </View>
+        <SettingsFooter>
+          {t(
+            "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+          )}
+        </SettingsFooter>
         {deviceVoiceEnabled ? (
           voiceError ? (
             <Pressable

@@ -32,7 +32,8 @@ function createPlatform(
   adapterOverrides: Partial<Adapter> = {},
 ) {
   let chat: ChatInstance | undefined;
-  const adapter: Adapter = createMockAdapter(overrides.provider ?? "mock", {
+  const adapterName = overrides.adapterName ?? overrides.provider ?? "mock";
+  const adapter: Adapter = createMockAdapter(adapterName, {
     initialize: vi.fn(async (instance: ChatInstance) => {
       chat = instance;
     }),
@@ -567,29 +568,39 @@ describe("ChatSdkMessagingSurface outbound", () => {
 });
 
 describe("ChatSdkMessagingSurface thread history", () => {
-  it("returns the messages before the asking one, oldest first, without the bot's own", async () => {
-    const message = (id: string, isMe = false) =>
-      createTestMessage(id, `text ${id}`, {
-        threadId: "mock:C1:100",
-        author: { userId: "U1", userName: "ada", fullName: "Ada", isBot: false, isMe },
+  it.each(["mock", "mock-work"])(
+    "returns history with provider %s, oldest first, without the bot's own",
+    async (provider) => {
+      const message = (id: string, isMe = false) =>
+        createTestMessage(id, `text ${id}`, {
+          threadId: "mock:C1:100",
+          author: { userId: "U1", userName: "ada", fullName: "Ada", isBot: false, isMe },
+        });
+      const fetchMessages = vi.fn(async () => ({
+        messages: [message("100"), message("101", true), message("102"), message("103")],
+      }));
+      const { surface } = createSurface({ provider, adapterName: "mock" }, { fetchMessages });
+
+      const history = await surface.fetchThreadHistory(
+        `${provider}:C1:100`,
+        { before: "103", limit: 50 },
+        context,
+      );
+
+      expect(fetchMessages).toHaveBeenCalledWith("mock:C1:100", {
+        limit: 51,
+        direction: "backward",
       });
-    const fetchMessages = vi.fn(async () => ({
-      messages: [message("100"), message("101", true), message("102"), message("103")],
-    }));
-    const { surface } = createSurface({}, { fetchMessages });
-
-    const history = await surface.fetchThreadHistory(
-      "mock:C1:100",
-      { before: "103", limit: 50 },
-      context,
-    );
-
-    expect(fetchMessages).toHaveBeenCalledWith("mock:C1:100", { limit: 51, direction: "backward" });
-    expect(history.map((event) => [event.handle, event.content, event.isDirect])).toEqual([
-      ["100", "text 100", false],
-      ["102", "text 102", false],
-    ]);
-  });
+      expect(history.map((event) => [event.provider, event.threadId])).toEqual([
+        [provider, `${provider}:C1:100`],
+        [provider, `${provider}:C1:100`],
+      ]);
+      expect(history.map((event) => [event.handle, event.content, event.isDirect])).toEqual([
+        ["100", "text 100", false],
+        ["102", "text 102", false],
+      ]);
+    },
+  );
 
   it("returns nothing when the asking message is outside the fetched page", async () => {
     const fetchMessages = vi.fn(async () => ({
@@ -604,11 +615,13 @@ describe("ChatSdkMessagingSurface thread history", () => {
 });
 
 describe("ChatSdkMessagingSurface acknowledge", () => {
-  it("reacts with eyes on reaction platforms", async () => {
+  it.each(["mock", "mock-work"])("reacts with eyes on provider %s", async (provider) => {
     const { surface, adapter } = createSurface({
+      provider,
+      adapterName: "mock",
       capabilities: { direct: true, groups: true, receipt: "reaction" },
     });
-    await surface.acknowledge("mock:Duser:1", "1700000000.000100", context);
+    await surface.acknowledge(`${provider}:Duser:1`, "1700000000.000100", context);
     expect(adapter.addReaction).toHaveBeenCalledWith("mock:Duser:1", "1700000000.000100", "eyes");
     expect(adapter.startTyping).not.toHaveBeenCalled();
   });

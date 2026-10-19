@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import type { MobileBot, MobileBotSection } from "../lib/api";
 import { mobileTokens } from "../lib/appearance";
+import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
 import { errorText } from "../lib/user-error";
@@ -31,6 +32,7 @@ export function BotOrganizeModal({
   onUpdate,
   onCreateSection,
   onRenameSection,
+  onDeleteSection,
 }: {
   bot: Pick<MobileBot, "name" | "pinned" | "sectionId"> &
     Partial<Pick<MobileBot, "notifyOnFinish">>;
@@ -39,6 +41,7 @@ export function BotOrganizeModal({
   onUpdate: (update: BotOrganizationUpdate) => Promise<void>;
   onCreateSection: (name: string) => Promise<void>;
   onRenameSection: (sectionId: string, name: string) => Promise<void>;
+  onDeleteSection: (sectionId: string) => Promise<void>;
 }) {
   const styles = useThemedStyles(createBotOrganizeStyles);
   const { t } = useI18n();
@@ -48,7 +51,7 @@ export function BotOrganizeModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(request: () => Promise<void>) {
+  async function save(request: () => Promise<void>, fallback = t("Could not update chat")) {
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -56,7 +59,7 @@ export function BotOrganizeModal({
       await request();
       onClose();
     } catch (err) {
-      setError(errorText(err, t("Could not update chat")));
+      setError(errorText(err, fallback));
       setSaving(false);
     }
   }
@@ -72,6 +75,15 @@ export function BotOrganizeModal({
     setMode("rename");
     setName(currentSection.name);
     setError(null);
+  }
+
+  function confirmDelete() {
+    if (!currentSection) return;
+    confirmDeleteSection(
+      currentSection,
+      t,
+      () => void save(() => onDeleteSection(currentSection.id), t("Could not delete section")),
+    );
   }
 
   return (
@@ -188,6 +200,24 @@ export function BotOrganizeModal({
                 >
                   <NativeSymbol ios="pencil" android="pencil-outline" size={18} />
                   <Text style={styles.actionLabel}>{t("Rename section")}</Text>
+                </Pressable>
+              ) : null}
+              {currentSection ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={saving}
+                  onPress={confirmDelete}
+                  style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+                >
+                  <NativeSymbol
+                    ios="trash"
+                    android="trash-outline"
+                    size={18}
+                    color={mobileTokens().destructive}
+                  />
+                  <Text style={[styles.actionLabel, styles.destructive]}>
+                    {t("Delete section")}
+                  </Text>
                 </Pressable>
               ) : null}
             </>
@@ -312,6 +342,7 @@ function createBotOrganizeStyles() {
       paddingHorizontal: 12,
       fontSize: 16,
     },
+    destructive: { color: tokens.destructive },
     error: {
       color: tokens.destructive,
       fontSize: 13,

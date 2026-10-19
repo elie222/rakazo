@@ -260,6 +260,7 @@ function fixture(runId = "run-1") {
       read: async () => ({ documents: [] }),
       search: async () => [],
       commit: memoryCommit,
+      remove: vi.fn(async () => ({ removed: false })),
       exportMarkdown: async function* () {},
     },
     memoryProviders: { resolve: async () => null },

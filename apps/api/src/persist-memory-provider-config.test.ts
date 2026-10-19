@@ -95,6 +95,55 @@ function connectionInput(mode: "cloud" | "local", baseUrl?: string) {
 }
 
 describe("persistMemoryProviderConfig", () => {
+  it("stores Honcho credentials only in the secret and never serializes them to the client", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url) !== "https://api.honcho.dev/v3/workspaces")
+        throw new Error("Unexpected request");
+      return new Response("", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const settings = { workspaceId: "team-notes", reasoningLevel: "low" };
+    const { deps, upsert, secretCreate } = makeDeps({
+      upsertResult: {
+        provider: "honcho",
+        settings,
+        defaultMemoryScope: "isolated",
+        updatedAt: new Date("2026-08-19T00:00:00.000Z"),
+      },
+    });
+    try {
+      const result = await persistMemoryProviderConfig(deps, actor, {
+        provider: "honcho",
+        settings: { ...settings, apiKey: "discard", baseUrl: "http://localhost" },
+        credentials: { apiKey: "hch-test-key" },
+        defaultMemoryScope: "isolated",
+      });
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(deps.secrets.put).toHaveBeenCalledWith(
+        JSON.stringify({ apiKey: "hch-test-key" }),
+        expect.any(Object),
+      );
+      expect(secretCreate).toHaveBeenCalledWith({
+        data: expect.objectContaining({ ciphertext: "cipher", kind: "memory-provider" }),
+      });
+      expect(upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ settings, secretId: "secret-new" }),
+          update: expect.objectContaining({ settings, secretId: "secret-new" }),
+        }),
+      );
+      expect(result).toEqual({
+        provider: "honcho",
+        settings,
+        defaultMemoryScope: "isolated",
+        updatedAt: "2026-08-19T00:00:00.000Z",
+      });
+      expect(JSON.stringify(result)).not.toMatch(/apiKey|hch-test-key|cipher|secret/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("rejects unknown providers as bad requests without probing or writing", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

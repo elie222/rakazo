@@ -34,6 +34,7 @@ function bot(id = "bot-1"): Bot {
     voiceId: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
+    fleetManagement: false,
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,

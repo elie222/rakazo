@@ -241,6 +241,7 @@ export default function Layout() {
                       name="group-settings"
                       options={glassHeaderOptions(t("Group settings"))}
                     />
+                    <Stack.Screen name="bot-profile" options={glassHeaderOptions(t("Profile"))} />
                     <Stack.Screen
                       name="bot-settings"
                       options={glassHeaderOptions(t("Chat settings"))}

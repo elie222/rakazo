@@ -63,6 +63,14 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Docker, E2B, Daytona, CreateOS, and Box
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
+## Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rakazo-template)
+
+Deploy a private Rakazo instance with PostgreSQL, persistent storage and Railway computers.
+Enter your email and Railway API token, then connect a model after signing in.
+See [setup, security defaults and backups](./infra/railway/README.md).
+
 ## Quick start (published images)
 
 You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.
@@ -220,9 +228,9 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
 Português (Brasil), 简体中文, Español, and Русский under **Settings → Language**. The Expo
-app ships English, 简体中文, Русский, and Deutsch catalogs; **Account → Language** offers
-English and 简体中文, and the other catalogs follow the device language or
-`EXPO_PUBLIC_DEFAULT_UI_LOCALE`. The marketing
+app ships English, 简体中文, Русский, and Deutsch catalogs, and **Account → Language**
+lists all four. A device language or `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects
+the starting catalog before a saved choice. The marketing
 homepage (`apps/www`) is available in en/de/ko/zh via footer language links (`/`, `/de/`,
 `/ko/`, `/zh/`); other marketing pages stay English. The Russian marketing homepage and
 native Electron setup/menu remain separate follow-up work.
@@ -256,6 +264,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for the development workflow and test m
 - [Desktop releases](./docs/desktop-release.md)
 - [Mobile releases](./docs/mobile-release.md)
 - [Performance testing](./docs/performance.md)
+- [Fleet management](./docs/fleet-management.md)
 
 ## Contributing
 

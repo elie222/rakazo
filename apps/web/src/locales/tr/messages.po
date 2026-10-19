@@ -60,6 +60,11 @@ msgstr ""
 msgid "{0} handling"
 msgstr ""
 
+#. placeholder {0}: bot.name
+#: src/components/call/IncomingCall.tsx
+msgid "{0} is calling you"
+msgstr ""
+
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
 msgid "{0} KB"
@@ -367,6 +372,11 @@ msgstr "Etkinlik"
 msgid "Add"
 msgstr "Ekle"
 
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Add {0} to the group"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Add a command to run"
 msgstr "Çalıştırılacak bir komut ekleyin"
@@ -580,6 +590,11 @@ msgstr "Bir entegrasyon aracı"
 msgid "Answer"
 msgstr "Yanıtla"
 
+#: src/components/call/IncomingCall.tsx
+msgctxt "incoming call"
+msgid "Answer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 msgid "Answered"
 msgstr "Yanıtlandı"
@@ -604,6 +619,7 @@ msgstr ""
 #: src/components/AskCard.tsx
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/lib/localized-provider-hint.ts
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -884,6 +900,27 @@ msgstr ""
 msgid "Built-in"
 msgstr "Yerleşik"
 
+#: src/pages/Shell.tsx
+msgid "Call"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Call back"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Call with {0}"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Calling you…"
+msgstr ""
+
+#: src/components/call/CallCard.tsx
+msgid "Calling…"
+msgstr ""
+
 #: src/App.tsx
 msgid "Can't reach the server."
 msgstr "Sunucuya ulaşılamıyor."
@@ -1144,6 +1181,10 @@ msgstr "Kod"
 msgid "Collapse {0}"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "{label} daralt"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "Renk"
@@ -1243,6 +1284,7 @@ msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "URL'nin bu tarayıcı oturumundan erişilebilir olduğunu doğrula, sonra yeniden test et."
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
@@ -1293,6 +1335,7 @@ msgstr "Bağlandı. Araçları bir sonraki mesajından itibaren kullanılabilir.
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 #: src/pages/shell/message-cards.tsx
@@ -1462,6 +1505,10 @@ msgstr "MCP sunucusu silinemedi"
 #: src/pages/shell/dialogs.tsx
 msgid "Could not delete routine"
 msgstr "Rutin silinemedi"
+
+#: src/pages/shell/dialogs.tsx
+msgid "Could not delete section"
+msgstr "Bölüm silinemedi"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Could not delete skill"
@@ -1639,6 +1686,7 @@ msgstr "Model sunucusuna ulaşılamadı."
 msgid "Could not reach the server"
 msgstr "Sunucuya ulaşılamadı"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "Kaldırılamadı"
@@ -1746,6 +1794,7 @@ msgstr ""
 msgid "Could not send reset email"
 msgstr "Sıfırlama e-postası gönderilemedi"
 
+#: src/components/call/IncomingCall.tsx
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "Gönderilemedi"
@@ -1925,6 +1974,7 @@ msgstr ""
 msgid "days"
 msgstr "gün"
 
+#: src/components/call/IncomingCall.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Decline"
 msgstr ""
@@ -1995,6 +2045,10 @@ msgid "Delete memories too"
 msgstr "Hafızayı da sil"
 
 #: src/pages/Shell.tsx
+msgid "Delete section"
+msgstr "Bölümü sil"
+
+#: src/pages/Shell.tsx
 msgid "Delete space"
 msgstr ""
 
@@ -2050,6 +2104,10 @@ msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Discard recording"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
@@ -2278,6 +2336,10 @@ msgstr "Genişlet"
 msgid "Expand {0}"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "{label} genişlet"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Dışa aktar"
@@ -2351,6 +2413,10 @@ msgstr "Bilgisayardaki dosya veya klasörler"
 msgid "Files or folders, one per line"
 msgstr "Dosya veya klasörler, her satıra bir tane"
 
+#: src/pages/GroupPanel.tsx
+msgid "Filter bots"
+msgstr ""
+
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
 msgstr ""
@@ -2394,6 +2460,10 @@ msgstr "MCP bağlantısı tamamlanıyor…"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
 msgstr ""
 
 #: src/pages/Auth.tsx
@@ -2520,6 +2590,14 @@ msgstr "Yüksek"
 msgid "High"
 msgstr ""
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Hold to talk, release to send"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "hour"
 msgstr "saat"
@@ -2571,6 +2649,10 @@ msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Inbox & email"
+msgstr ""
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Incoming call"
 msgstr ""
 
 #: src/pages/shell/bot-panel.tsx
@@ -2637,6 +2719,10 @@ msgstr "Yalıtılmış"
 msgid "Isolated preview — no access to your account"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Its bots and groups are kept and leave the section."
+msgstr "Botları ve grupları korunur ve bölümden çıkarılır."
+
 #: src/pages/shell/dialogs.tsx
 msgid "Its conversation, files, and routines will be permanently deleted. Bots it created stay in your list."
 msgstr "Sohbeti, dosyaları ve rutinleri kalıcı olarak silinecek. Oluşturduğu botlar listende kalır."
@@ -2692,6 +2778,10 @@ msgstr ""
 msgid "Leave"
 msgstr ""
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "Bu botun oluşturduğu botları düzenlemesine, ayarlamasına ve zamanlamasına izin verir. Her değişikliği siz onaylarsınız."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Açık"
@@ -2716,8 +2806,13 @@ msgstr ""
 msgid "Listen"
 msgstr ""
 
+#: src/components/call/CallCard.tsx
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Listening"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Listening…"
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -2894,13 +2989,10 @@ msgstr "Orta"
 msgid "Medium"
 msgstr ""
 
+#. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
-msgid "Members ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "Üyeler ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-
-#: src/pages/GroupPanel.tsx
-msgid "Members (pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX})"
-msgstr "Üyeler ({GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX} seç)"
+msgid "Members ({0})"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/MemorySettingsOverlay.tsx
@@ -2980,6 +3072,10 @@ msgstr "Küçült"
 msgid "Minimize bots"
 msgstr ""
 
+#: src/components/call/CallCard.tsx
+msgid "Minimize call"
+msgstr ""
+
 #: src/pages/RoutineSchedule.tsx
 msgid "minute"
 msgstr "dakika"
@@ -2988,6 +3084,10 @@ msgstr "dakika"
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "dakika"
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "Missed call"
+msgstr ""
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -3071,6 +3171,10 @@ msgstr "Taşı"
 #: src/components/call/CallCard.tsx
 msgid "Mute"
 msgstr "Sesi kapat"
+
+#: src/components/call/CallCard.tsx
+msgid "Muted"
+msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Auth.tsx
@@ -3173,6 +3277,7 @@ msgstr "Henüz bot etkinliği yok."
 msgid "No bots"
 msgstr ""
 
+#: src/pages/GroupPanel.tsx
 #: src/pages/shell/bot-picker.tsx
 msgid "No bots match"
 msgstr ""
@@ -3212,6 +3317,10 @@ msgstr "Henüz MCP veya API araç kaynağı kurulmadı."
 #: src/pages/McpServersOverlay.tsx
 msgid "No MCP servers yet."
 msgstr "Henüz MCP sunucusu yok."
+
+#: src/pages/GroupPanel.tsx
+msgid "No members yet"
+msgstr ""
 
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "No messages with {peerBotName} yet."
@@ -3323,11 +3432,6 @@ msgstr "OAuth bağlantısı başarısız"
 msgid "OAuth expired"
 msgstr ""
 
-#. placeholder {0}: call.botName
-#: src/components/call/CallCard.tsx
-msgid "On a call with {0}"
-msgstr "{0} ile görüşmede"
-
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
 msgstr ""
@@ -3362,6 +3466,15 @@ msgstr ""
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Open <0>{0}</0> to finish signing in."
+msgstr ""
+
+#: src/pages/Shell.tsx
+msgid "Open call"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Open chat with {0}"
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
@@ -3502,10 +3615,18 @@ msgstr "API anahtarını yapıştır, sonra yeniden test et."
 msgid "Paused"
 msgstr ""
 
+#: src/components/call/VoiceChatCard.tsx
+msgid "Phone call"
+msgstr ""
+
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Photo"
 msgstr "Fotoğraf"
+
+#: src/pages/GroupPanel.tsx
+msgid "Pick {GROUP_MEMBER_MIN}–{GROUP_MEMBER_MAX}"
+msgstr ""
 
 #: src/lib/model-connection-preflight.ts
 msgid "Pick a model from the catalog."
@@ -3739,6 +3860,11 @@ msgstr "Kaldır"
 msgid "Remove {0}"
 msgstr "{0} kaldır"
 
+#. placeholder {0}: bot.name
+#: src/pages/GroupPanel.tsx
+msgid "Remove {0} from the group"
+msgstr ""
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Remove {full}"
 msgstr "{full} modelini kaldır"
@@ -3908,6 +4034,11 @@ msgstr "Şimdi tekrar dene"
 
 #: src/pages/Shell.tsx
 msgid "Retry screen"
+msgstr ""
+
+#. placeholder {0}: call.botName
+#: src/components/call/CallCard.tsx
+msgid "Return to call with {0}"
 msgstr ""
 
 #: src/pages/McpOAuthCallback.tsx
@@ -4137,6 +4268,10 @@ msgstr "Silme kodu gönder"
 msgid "Send it"
 msgstr "Gönder"
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Send recording"
+msgstr ""
+
 #: src/pages/Auth.tsx
 msgid "Send reset link"
 msgstr "Sıfırlama bağlantısı gönder"
@@ -4220,6 +4355,10 @@ msgstr "Paylaşılan beceriler"
 msgid "Shell"
 msgstr "Kabuk"
 
+#: src/pages/GroupPanel.tsx
+msgid "Show all"
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "Show bots"
 msgstr ""
@@ -4238,6 +4377,10 @@ msgstr "Daha fazla göster"
 
 #: src/components/I18nBootstrap.tsx
 msgid "Show password"
+msgstr ""
+
+#: src/pages/GroupPanel.tsx
+msgid "Show selected"
 msgstr ""
 
 #: src/pages/Shell.tsx
@@ -4318,6 +4461,10 @@ msgstr ""
 msgid "Slack not enabled"
 msgstr ""
 
+#: src/components/composer/HoldToTalk.tsx
+msgid "Slide up to lock"
+msgstr ""
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr ""
@@ -4358,6 +4505,10 @@ msgstr "Yalnızca seslendir"
 #: src/pages/Shell.tsx
 msgid "Speak this reply"
 msgstr "Bu yanıtı seslendir"
+
+#: src/components/call/CallCard.tsx
+msgid "Speaking"
+msgstr ""
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Speech model"
@@ -4540,6 +4691,7 @@ msgstr "Seçilen hafıza sağlayıcısı bu sürümde kullanılamıyor."
 msgid "These saved settings can't be read. Remove it and add it again."
 msgstr ""
 
+#: src/components/call/CallCard.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/RoutineEditor.tsx
@@ -4554,6 +4706,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "This bot runs on this computer, not a Linux desktop. Shell and files use your home folder."
 msgstr "Bu bot bir Linux masaüstünde değil, bu bilgisayarda çalışır. Kabuk ve dosyalar senin kullanıcı klasörünü kullanır."
+
+#: src/components/call/IncomingCall.tsx
+msgid "This call is no longer ringing."
+msgstr ""
 
 #: src/pages/Artifacts.tsx
 msgid "This can't be undone."
@@ -4689,6 +4845,10 @@ msgstr "Araç kaynakları"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Tools"
+msgstr ""
+
+#: src/components/composer/HoldToTalk.tsx
+msgid "Transcribing…"
 msgstr ""
 
 #: src/components/call/CallCard.tsx
@@ -4879,6 +5039,10 @@ msgstr ""
 msgid "Use this model"
 msgstr "Bu modeli kullan"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Use up to 512 letters, digits, _ or -."
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Use your own key"
 msgstr "Kendi anahtarınızı kullanın"
@@ -4917,15 +5081,10 @@ msgid "View chat"
 msgstr "Sohbeti görüntüle"
 
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Voice"
 msgstr "Ses"
-
-#: src/components/call/VoiceChatCard.tsx
-msgid "Voice chat"
-msgstr "Sesli sohbet"
 
 #: src/lib/model-connection-preflight.ts
 msgid "Wait a moment and test again."
@@ -5021,6 +5180,10 @@ msgstr ""
 msgid "Working…"
 msgstr "Çalışıyor…"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "Workspace"
+msgstr ""
+
 #: src/components/computer/TerminalApp.tsx
 msgid "Wrote {path}"
 msgstr ""
@@ -5045,6 +5208,10 @@ msgstr "Otomatik yönlendirilmezsen bu sekmeyi kapatabilirsin."
 #: src/pages/McpOAuthCallback.tsx
 msgid "You can close this window."
 msgstr "Bu pencereyi kapatabilirsin."
+
+#: src/components/call/VoiceChatCard.tsx
+msgid "You declined"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "You have control"

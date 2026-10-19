@@ -10,10 +10,17 @@ import { errorText } from "../lib/user-error";
 import { NativeActionButton } from "./native-action-button";
 
 const styles = StyleSheet.create({
-  actions: { flexDirection: "row", gap: 8 },
+  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   badge: { alignItems: "center", borderRadius: 8, height: 28, justifyContent: "center", width: 28 },
   badgeText: { fontSize: 12, fontWeight: "600" },
-  card: { borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, gap: 8 },
+  card: {
+    width: "100%",
+    maxWidth: 576,
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
+  },
   description: { fontSize: 13.5, opacity: 0.75 },
   header: { alignItems: "center", flexDirection: "row", gap: 12 },
   headline: { flex: 1, gap: 2 },

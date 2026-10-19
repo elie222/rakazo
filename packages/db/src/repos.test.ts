@@ -482,3 +482,53 @@ describe("createRepos.reorderBots", () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+it("finds incoming calls independently of the sidebar message window", async () => {
+  const blocks = [
+    {
+      kind: "call_request",
+      callId: "call-1",
+      reason: "Review",
+      opening: "Ready?",
+      status: "ringing",
+      expiresAt: new Date(Date.now() + 45_000).toISOString(),
+    },
+  ];
+  const messageQuery = vi.fn(async () => [{ threadId: "thread-1", role: "bot", blocks }]);
+  const prisma = {
+    bot: {
+      findMany: vi.fn(async () => [
+        baseBot,
+        { ...baseBot, id: "bot-2", thread: { ...baseBot.thread, id: "thread-2" } },
+      ]),
+    },
+    message: { findMany: messageQuery },
+  } as unknown as PrismaClient;
+  const now = Date.now();
+  const bots = await createRepos(prisma, {
+    phoneCallsEnabled: true,
+    phoneCallRingSeconds: 90,
+  }).listBots(actor);
+  expect(bots[0]?.incomingCall?.callId).toBe("call-1");
+  expect(messageQuery).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        createdAt: { gt: expect.any(Date) },
+        threadId: { in: ["thread-1", "thread-2"] },
+        role: "bot",
+        clientNonce: { startsWith: "call:", endsWith: ":request" },
+      }),
+      distinct: ["threadId"],
+    }),
+  );
+  const cutoff = (
+    messageQuery.mock.calls[0] as unknown as [{ where: { createdAt: { gt: Date } } }]
+  )[0].where.createdAt.gt.getTime();
+  expect(cutoff).toBeGreaterThanOrEqual(now - 90_000);
+  expect(cutoff).toBeLessThanOrEqual(Date.now() - 90_000);
+  expect(messageQuery).toHaveBeenCalledOnce();
+  expect(bots[1]?.incomingCall).toBeNull();
+  messageQuery.mockClear();
+  expect((await createRepos(prisma).listBots(actor))[0]?.incomingCall).toBeNull();
+  expect(messageQuery).not.toHaveBeenCalled();
+});
