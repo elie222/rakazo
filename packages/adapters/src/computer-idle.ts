@@ -11,6 +11,7 @@ import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
+import { isSandboxGoneError } from "./e2b-sandbox.js";
 
 export const DEFAULT_SANDBOX_IDLE_MS = 10 * 60 * 1000;
 /**
@@ -338,6 +339,24 @@ export async function sleepComputerIfIdle(
       return;
     }
   } catch (error) {
+    if (isSandboxGoneError(error)) {
+      // Nothing is left to checkpoint or stop. Retrying would fail the same way every idle
+      // window, so clear the dead ref and let the next use boot from the last saved revision.
+      await deps.prisma.computer.updateMany({
+        where: suspensionClaim,
+        data: {
+          state: "stopped",
+          providerRef: null,
+          runningSince: null,
+          controlHolder: "none",
+          controlLeaseId: null,
+          controlLeaseExpiresAt: null,
+          controlBotId: null,
+          controlRunId: null,
+        },
+      });
+      return;
+    }
     await deps.prisma.computer.updateMany({
       where: suspensionClaim,
       data: { state: "running" },
