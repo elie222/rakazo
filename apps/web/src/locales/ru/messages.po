@@ -17,11 +17,6 @@ msgstr ""
 msgid " (unread)"
 msgstr " (непрочитано)"
 
-#. placeholder {0}: enabledCount || group.entries.length
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "{0, plural, one {# model} other {# models}}"
-msgstr "{0, plural, one {# модель} few {# модели} many {# моделей} other {# модели}}"
-
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -284,6 +279,10 @@ msgstr "@{0}"
 msgid "A bit of everything"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "A command's output"
+msgstr "Вывод команды"
+
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -368,6 +367,14 @@ msgstr "Активность"
 msgid "Add"
 msgstr "Добавить"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Add a command to run"
+msgstr "Добавьте команду для выполнения"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Add a file or folder to watch"
+msgstr "Добавьте файл или папку для отслеживания"
+
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "Чтобы использовать это, добавьте модель в настройках."
@@ -376,14 +383,6 @@ msgstr "Чтобы использовать это, добавьте модел�
 msgid "Add a run time for this one-shot."
 msgstr "Добавьте время выполнения для разового запуска."
 
-#: src/pages/Shell.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger"
-msgstr "Добавьте расписание, вебхук, GitHub или триггер сообщения."
-
-#: src/pages/RoutineEditor.tsx
-msgid "Add a schedule, webhook, GitHub, or message trigger to run this routine."
-msgstr "Добавьте расписание, вебхук, GitHub или триггер сообщения для запуска этой задачи."
-
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
 msgstr "Добавьте имя сервера."
@@ -391,6 +390,11 @@ msgstr "Добавьте имя сервера."
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a stdio command."
 msgstr "Добавьте команду stdio."
+
+#: src/pages/RoutineEditor.tsx
+#: src/pages/Shell.tsx
+msgid "Add a trigger to run this routine."
+msgstr "Добавьте триггер для запуска этой процедуры."
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -567,6 +571,10 @@ msgstr "Всегда разрешено"
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Для этого поставщика сохранен API-ключ, а не вход по подписке."
+
+#: src/pages/RoutineEditor.tsx
+msgid "An integration tool"
+msgstr "Инструмент интеграции"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -880,6 +888,10 @@ msgstr "Встроенный"
 msgid "Can't reach the server."
 msgstr "Не удаётся связаться с сервером."
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Can't read images"
+msgstr "Не может читать изображения"
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
@@ -944,10 +956,6 @@ msgstr "Не удалось отобразить диаграмму: {error}."
 msgid "Chat apps"
 msgstr "Приложения для чата"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Chat apps, group channels, and agent connections."
-msgstr "Приложения чата, групповые каналы и подключения агентов."
-
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Настройки чата"
@@ -957,9 +965,18 @@ msgstr "Настройки чата"
 msgid "Check again"
 msgstr ""
 
+#: src/pages/RoutineEditor.tsx
+msgid "Check every"
+msgstr "Проверять каждые"
+
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
 msgstr "Проверка не удалась"
+
+#. placeholder {0}: state.detail ?? ""
+#: src/pages/RoutineEditor.tsx
+msgid "Check failed: {0}"
+msgstr "Ошибка проверки: {0}"
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -1012,10 +1029,6 @@ msgstr "Выберите новый пароль"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Выбрать файл"
-
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Choose which connected model Rakazo uses."
-msgstr "Выберите, какую подключенную модель использует Rakazo."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1148,6 +1161,7 @@ msgid "Coming soon"
 msgstr "Скоро"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "Команда"
 
@@ -1239,10 +1253,6 @@ msgstr "Подключить"
 msgid "Connect a model"
 msgstr "Подключить модель"
 
-#: src/pages/ModelBackupsSettings.tsx
-msgid "Connect a provider to add backups."
-msgstr "Подключите провайдера, чтобы добавить резервные модели."
-
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "Подключить API-ключ"
@@ -1259,10 +1269,6 @@ msgstr "Подключите MCP-сервер «{name}»"
 msgid "Connect OAuth"
 msgstr "Подключить OAuth"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connect this provider to use it as your personal model."
-msgstr "Подключите этого провайдера, чтобы использовать его в качестве своей личной модели."
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Подключить Treg"
@@ -1276,21 +1282,10 @@ msgstr "Подключить Treg"
 msgid "Connected"
 msgstr "Подключено"
 
-#. placeholder {0}: credential.label
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected · {0}"
-msgstr "Подключено · {0}"
-
 #. placeholder {0}: selected.name
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Подключено: {0}."
-
-#. placeholder {0}: selected.label
-#. placeholder {0}: selectedLabelRef.current ?? "this model"
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Connected and using {0}."
-msgstr "Подключено и используется {0}."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
@@ -1608,6 +1603,10 @@ msgstr "Не удалось загрузить статус обновления
 msgid "Could not load voice settings"
 msgstr "Не удалось загрузить голосовые настройки."
 
+#: src/lib/sign-out.ts
+msgid "Could not log out. Try again."
+msgstr "Не удалось выйти. Попробуйте ещё раз."
+
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
@@ -1806,6 +1805,10 @@ msgstr "Не удалось обновить аватары"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "Не удалось обновить настройки обмена сообщениями."
+
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Couldn't update your timezone"
+msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
@@ -2323,6 +2326,14 @@ msgstr "Неуспешный."
 msgid "Failure handling"
 msgstr "Обработка сбоев"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Fields that mark a change"
+msgstr "Поля, указывающие на изменение"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Fields to compare, e.g. id, modifiedTime (optional)"
+msgstr "Поля для сравнения, например id, modifiedTime (необязательно)"
+
 #. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
 msgid "File exceeds the {0} upload limit."
@@ -2331,6 +2342,14 @@ msgstr "Файл превышает ограничение загрузки в {
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders on the computer"
+msgstr "Файлы или папки на компьютере"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Files or folders, one per line"
+msgstr "Файлы или папки, по одному на строку"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -2651,6 +2670,16 @@ msgstr "Знание"
 msgid "Language"
 msgstr "Язык"
 
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: changed"
+msgstr "Последняя проверка {0}: есть изменения"
+
+#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
+#: src/pages/RoutineEditor.tsx
+msgid "Last check {0}: no changes"
+msgstr "Последняя проверка {0}: без изменений"
+
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "Позже"
@@ -2802,10 +2831,6 @@ msgstr "Управление серверами MCP"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "Управление настройками обмена сообщениями"
-
-#: src/pages/MemorySettingsOverlay.tsx
-msgid "Manage the Space semantic memory provider."
-msgstr "Управляйте провайдером семантической памяти Space."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -2959,6 +2984,7 @@ msgstr "Свернуть ботов"
 msgid "minute"
 msgstr "минута"
 
+#: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "минуты"
@@ -3489,9 +3515,17 @@ msgstr "Выберите модель из каталога."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "Выберите модель из списка или введите id модели, который обслуживает этот адрес."
 
+#: src/pages/RoutineEditor.tsx
+msgid "Pick a tool to check"
+msgstr "Выберите инструмент для проверки"
+
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Закрепить"
+
+#: src/components/ArtifactFileCard.tsx
+msgid "Play {name}"
+msgstr "Воспроизвести {name}"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Playing…"
@@ -3500,6 +3534,10 @@ msgstr "Воспроизведение…"
 #: src/pages/KnowledgeSection.tsx
 msgid "Plugin"
 msgstr "Плагин"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Post \"No changes\" in chat"
+msgstr "Писать «Без изменений» в чат"
 
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
@@ -3584,6 +3622,10 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Недавние"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Reconnect"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Reconnect OAuth"
@@ -3704,6 +3746,10 @@ msgstr "Удалить {full}"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Remove change trigger"
+msgstr "Удалить триггер изменений"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -3959,10 +4005,6 @@ msgstr "Сохранить резервные модели"
 msgid "Save credential"
 msgstr ""
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Save limits"
-msgstr ""
-
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save new value"
 msgstr ""
@@ -4129,6 +4171,7 @@ msgstr "Имя сервера"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
+#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "URL-адрес сервера"
 
@@ -4373,10 +4416,6 @@ msgstr "Остановлено."
 msgid "Stored encrypted"
 msgstr "Хранится в зашифрованном виде"
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Stored securely. Never shown here."
-msgstr "Хранится безопасно. Здесь не отображается."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "Потоковые ответы"
@@ -4597,6 +4636,10 @@ msgstr ""
 msgid "Time of day"
 msgstr "Время суток"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Timezone"
+msgstr ""
+
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
@@ -4624,6 +4667,22 @@ msgstr "К:"
 msgid "Today"
 msgstr "Сегодня"
 
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments (JSON)"
+msgstr "Аргументы инструмента (JSON)"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be a JSON object"
+msgstr "Аргументы должны быть объектом JSON"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool arguments must be JSON"
+msgstr "Аргументы должны быть в формате JSON"
+
+#: src/pages/RoutineEditor.tsx
+msgid "Tool name"
+msgstr "Название инструмента"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
 msgstr "Источники инструментов"
@@ -4635,6 +4694,10 @@ msgstr "Инструменты"
 #: src/components/call/CallCard.tsx
 msgid "Transcript"
 msgstr "Расшифровка"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Transcription model"
+msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
@@ -4785,6 +4848,12 @@ msgstr ""
 msgid "Usage"
 msgstr "Использование"
 
+#. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
+#. placeholder {0}: deviceTimezone.replaceAll("_", " ")
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Use {0}"
+msgstr ""
+
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "Используйте {hostLabel}"
@@ -4920,8 +4989,16 @@ msgid "What to return"
 msgstr "Что вернуть"
 
 #: src/pages/RoutineEditor.tsx
+msgid "What to watch"
+msgstr "Что отслеживать"
+
+#: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "Когда срабатывает вебхук"
+
+#: src/pages/RoutineEditor.tsx
+msgid "When something changes"
+msgstr "При изменениях"
 
 #: src/pages/RoutineEditor.tsx
 msgid "When to run"

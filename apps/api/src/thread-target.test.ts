@@ -117,6 +117,7 @@ describe("reaction messages", () => {
     const prisma = {
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
     } as unknown as PrismaClient;
+    const jobs = { enqueue: vi.fn() };
     const actor = { spaceId: "space-1", userId: "user-1" } as Actor;
     const target = { kind: "bot", botId: "bot-1", threadId: "thread-1" } as ThreadTarget;
     for (const [clientNonce, reaction] of [
@@ -125,10 +126,11 @@ describe("reaction messages", () => {
       ["third", "❤️"],
       ["third", "❤️"],
     ] as const) {
-      await reactToThreadMessage({ prisma }, actor, target, {
+      await reactToThreadMessage({ prisma, jobs: jobs as never }, actor, target, {
         messageId: "parent",
         reaction,
         clientNonce,
+        mayStartTurn: true,
       });
     }
     expect(tx.message.create).toHaveBeenCalledTimes(3);
@@ -156,17 +158,370 @@ describe("reaction messages", () => {
     expect(tx.run.create).not.toHaveBeenCalled();
     expect(tx.message.findFirst).toHaveBeenCalledWith({
       where: { id: "parent", threadId: "thread-1" },
-      select: { id: true },
+      select: { id: true, seq: true, role: true, botId: true, runId: true },
     });
     tx.message.findFirst.mockResolvedValueOnce(null);
     await expect(
-      reactToThreadMessage({ prisma }, actor, target, {
+      reactToThreadMessage({ prisma, jobs: jobs as never }, actor, target, {
         messageId: "elsewhere",
         reaction: "❤️",
         clientNonce: "fourth",
+        mayStartTurn: true,
       }),
     ).rejects.toThrow();
     expect(tx.message.create).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("reaction turns", () => {
+  const ask = {
+    id: "parent",
+    blocks: [{ kind: "ask", text: "Shall I book it?", status: "pending" }],
+  };
+
+  function fixture(options: {
+    reaction?: "👍" | "👎" | "❤️";
+    parent?: { role: string; botId: string | null; runId: string | null };
+    newer?: Array<{ role: string; blocks: MessageBlock[]; replyToMessageId: string | null }>;
+    activeRuns?: Array<{ id: string; taskId: string; status: string }>;
+    mayStartTurn?: boolean;
+    recentReaction?: boolean;
+    groupMembers?: string[];
+    askBlocks?: MessageBlock[];
+    withoutRelease?: boolean;
+  }) {
+    const tx = {
+      steeringMessage: { create: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
+      $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
+      thread: {
+        update: vi.fn(async ({ data }: { data: { nextMessageSeq?: unknown } }) =>
+          data.nextMessageSeq ? { nextMessageSeq: 9 } : { nextEventSeq: 4 },
+        ),
+      },
+      message: {
+        findFirst: vi
+          .fn()
+          .mockResolvedValueOnce({
+            id: "parent",
+            seq: 7,
+            ...(options.parent ?? { role: "bot", botId: "bot-1", runId: "run-done" }),
+          })
+          .mockResolvedValue({
+            ...ask,
+            blocks: options.askBlocks ?? ask.blocks,
+            threadId: "thread-1",
+            runId: "run-waiting",
+            role: "bot",
+          }),
+        findUnique: vi.fn().mockResolvedValue(null),
+        findMany: vi
+          .fn()
+          .mockResolvedValueOnce(options.newer ?? [])
+          .mockResolvedValue([{ ...ask, blocks: options.askBlocks ?? ask.blocks }]),
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          id: "reaction-1",
+          ...data,
+        })),
+        update: vi.fn(),
+      },
+      chatGroup: {
+        update: vi.fn(),
+        findFirst: vi.fn().mockResolvedValue({
+          members: (options.groupMembers ?? []).map((id) => ({
+            bot: { id, name: id, color: null },
+          })),
+        }),
+      },
+      run: {
+        findMany: vi.fn().mockResolvedValue(options.activeRuns ?? []),
+        findFirst: vi.fn(async (args?: { where?: { trigger?: string } }) =>
+          args?.where?.trigger === "reaction"
+            ? options.recentReaction
+              ? { id: "recent" }
+              : null
+            : { botId: "bot-1", userId: "user-1" },
+        ),
+        findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        create: vi.fn().mockResolvedValue({ id: "run-new", taskId: "task-new", status: "queued" }),
+      },
+      task: {
+        create: vi.fn().mockResolvedValue({ id: "task-new" }),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
+      event: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+          seq: 4,
+          threadId: "thread-1",
+          ...data,
+        })),
+      },
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+    } as unknown as PrismaClient;
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const releaseTakeover = vi.fn().mockResolvedValue(undefined);
+    const react = () =>
+      reactToThreadMessage(
+        { prisma, jobs: { enqueue } as never },
+        { spaceId: "space-1", userId: "user-1" } as Actor,
+        (options.groupMembers
+          ? {
+              kind: "group",
+              groupId: "group-1",
+              memberBotIds: ["bot-1", "bot-2"],
+              threadId: "thread-1",
+            }
+          : { kind: "bot", botId: "bot-1", threadId: "thread-1" }) as ThreadTarget,
+        {
+          messageId: "parent",
+          reaction: options.reaction ?? "👍",
+          clientNonce: "nonce-1",
+          mayStartTurn: options.mayStartTurn ?? true,
+        },
+        options.withoutRelease ? undefined : releaseTakeover,
+      );
+    return { tx, enqueue, react, releaseTakeover };
+  }
+
+  it("treats a thumbs up on a pending takeover as done and hands control back", async () => {
+    const { tx, enqueue, react, releaseTakeover } = fixture({
+      parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
+      activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
+    });
+    await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: ["run-takeover"] });
+    expect(tx.steeringMessage.create).toHaveBeenCalledWith({
+      data: { messageId: "reaction-1", botId: "bot-1", userId: "user-1", runId: "run-takeover" },
+    });
+    expect(releaseTakeover).toHaveBeenCalledWith("run-takeover");
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("leaves a pending takeover alone when control cannot be handed back", async () => {
+    const { tx, enqueue, react } = fixture({
+      withoutRelease: true,
+      parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
+      activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
+    });
+    await react();
+    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("retries the takeover handoff when the same reaction is replayed", async () => {
+    const { tx, react, releaseTakeover } = fixture({});
+    tx.message.findUnique.mockResolvedValueOnce({ id: "reaction-1" });
+    tx.steeringMessage.findFirst.mockResolvedValueOnce({
+      run: { id: "run-takeover", taskId: "task-1", status: "waiting_takeover" },
+    });
+    await expect(react()).resolves.toEqual({ eventSeq: null, runIds: ["run-takeover"] });
+    expect(releaseTakeover).toHaveBeenCalledWith("run-takeover");
+    expect(tx.message.create).not.toHaveBeenCalled();
+  });
+
+  it.each(["👎", "❤️"] as const)("leaves a pending takeover alone on %s", async (reaction) => {
+    const { tx, enqueue, react, releaseTakeover } = fixture({
+      reaction,
+      parent: { role: "bot", botId: "bot-1", runId: "run-takeover" },
+      activeRuns: [{ id: "run-takeover", taskId: "task-1", status: "waiting_takeover" }],
+    });
+    await react();
+    expect(tx.steeringMessage.create).not.toHaveBeenCalled();
+    expect(releaseTakeover).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("starts the bot's turn when its latest message gets a thumbs up", async () => {
+    const { tx, enqueue, react } = fixture({
+      newer: [
+        {
+          role: "user",
+          blocks: [{ kind: "text", text: "❤️" }],
+          replyToMessageId: "parent",
+        },
+      ],
+    });
+    await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: ["run-new"] });
+    expect(tx.task.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ botId: "bot-1", prompt: "👍", status: "queued" }),
+    });
+    expect(tx.run.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        trigger: "reaction",
+        sourceMessageId: "reaction-1",
+        status: "queued",
+      }),
+    });
+    expect(tx.event.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        runId: "run-new",
+        payload: expect.objectContaining({ runIds: ["run-new"] }),
+      }),
+    });
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("lets other emoji wake an idle bot", async () => {
+    const { tx, react } = fixture({ reaction: "❤️" });
+    await react();
+    expect(tx.run.create).toHaveBeenCalledOnce();
+    expect(tx.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          trigger: "reaction",
+          status: { not: "cancelled" },
+          createdAt: { gte: expect.any(Date) },
+        }),
+      }),
+    );
+  });
+
+  it("checks a 30-second cooldown for this bot and thread", async () => {
+    const now = Date.parse("2026-10-01T12:00:00Z");
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const { tx, react } = fixture({ recentReaction: true });
+      await expect(react()).resolves.toEqual({ eventSeq: 3, runIds: [] });
+      expect(tx.run.findFirst).toHaveBeenCalledWith({
+        where: {
+          threadId: "thread-1",
+          botId: "bot-1",
+          trigger: "reaction",
+          status: { not: "cancelled" },
+          createdAt: { gte: new Date(now - 30_000) },
+        },
+        select: { id: true },
+      });
+      expect(tx.message.create).toHaveBeenCalledOnce();
+      expect(tx.run.create).not.toHaveBeenCalled();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it.each([
+    {
+      kind: "ask" as const,
+      text: "Approve?",
+      status: "pending" as const,
+      approvalEffectId: "effect-1",
+      actions: [
+        { id: "allow", label: "Allow" },
+        { id: "deny", label: "Deny" },
+      ],
+    },
+    { kind: "ask" as const, text: "Secret?", status: "pending" as const, input: "secret" as const },
+  ])("leaves protected asks on their cards", async (askBlock) => {
+    const { tx, enqueue, react } = fixture({
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+      askBlocks: [askBlock],
+    });
+    await react();
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it("fails quiet when the newer-message scan is capped", async () => {
+    const newer = Array.from({ length: 50 }, () => ({
+      role: "user",
+      blocks: [{ kind: "text" as const, text: "❤️" }],
+      replyToMessageId: "parent",
+    }));
+    const { tx, react } = fixture({
+      newer: [...newer, { role: "bot", blocks: [], replyToMessageId: null }],
+    });
+    await react();
+    expect(tx.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 51 }));
+    expect(tx.run.create).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["👍", "yes"],
+    ["👎", "no"],
+  ] as const)("resolves %s to an offered Yes/No choice", async (reaction, label) => {
+    const { tx, react } = fixture({
+      reaction,
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+      askBlocks: [
+        {
+          kind: "ask",
+          text: "Proceed?",
+          status: "pending",
+          actions: [
+            { id: "accept", label: "Yes" },
+            { id: "reject", label: "No" },
+          ],
+        },
+      ],
+    });
+    await react();
+    expect(tx.task.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { prompt: `Selected choice ${label === "yes" ? "accept: Yes" : "reject: No"}` },
+      }),
+    );
+  });
+
+  it("answers the bot's pending ask with a thumbs down", async () => {
+    const { tx, enqueue, react } = fixture({
+      reaction: "👎",
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+    });
+    await react();
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { runs: { some: { id: "run-waiting" } } },
+      data: { prompt: "no" },
+    });
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it("answers a pending ask even inside the reaction cooldown", async () => {
+    const { tx, enqueue, react } = fixture({
+      reaction: "👍",
+      recentReaction: true,
+      parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+      activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+    });
+    await react();
+    expect(tx.task.updateMany).toHaveBeenCalledWith({
+      where: { runs: { some: { id: "run-waiting" } } },
+      data: { prompt: "yes" },
+    });
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ name: "run.continue" }));
+  });
+
+  it.each([
+    ["a recent reaction turn", { recentReaction: true }],
+    ["a departed group bot", { groupMembers: ["bot-2", "bot-3"] }],
+    [
+      "a non-thumb on a pending ask",
+      {
+        reaction: "❤️" as const,
+        parent: { role: "bot", botId: "bot-1", runId: "run-waiting" },
+        activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }],
+      },
+    ],
+    ["an older message", { newer: [{ role: "bot", blocks: [], replyToMessageId: null }] }],
+    ["the user's own message", { parent: { role: "user", botId: null, runId: null } }],
+    ["a busy bot", { activeRuns: [{ id: "run-busy", taskId: "task-busy", status: "running" }] }],
+    [
+      "another run's ask",
+      { activeRuns: [{ id: "run-waiting", taskId: "task-1", status: "waiting_input" }] },
+    ],
+    ["a thread that cannot start a run", { mayStartTurn: false }],
+  ])("stays quiet for %s", async (_case, options) => {
+    const { tx, enqueue, react } = fixture(options);
+    await react();
+    expect(tx.message.create).toHaveBeenCalledOnce();
+    expect(tx.run.create).not.toHaveBeenCalled();
+    expect(tx.task.updateMany).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });
 

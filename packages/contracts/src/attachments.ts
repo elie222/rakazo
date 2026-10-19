@@ -13,7 +13,15 @@ export const ATTACHMENT_IMAGE_MIME_TYPES = [
   "image/gif",
 ] as const;
 
+export const ATTACHMENT_AUDIO_MIME_TYPES = [
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
+  "audio/mp4",
+] as const;
+
 export const ATTACHMENT_FILE_MIME_TYPES = [
+  ...ATTACHMENT_AUDIO_MIME_TYPES,
   "video/mp4",
   "application/pdf",
   "text/plain",
@@ -33,6 +41,10 @@ export type AttachmentMimeType = (typeof ATTACHMENT_ALLOWED_MIME_TYPES)[number];
 
 export function isAttachmentImageMimeType(mimeType: string): boolean {
   return (ATTACHMENT_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
+}
+
+export function isAttachmentAudioMimeType(mimeType: string): boolean {
+  return (ATTACHMENT_AUDIO_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
 export function isAllowedAttachmentMimeType(mimeType: string): mimeType is AttachmentMimeType {

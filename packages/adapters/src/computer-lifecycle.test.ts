@@ -1008,7 +1008,12 @@ describe("computer provisioning", () => {
             updatedAt: expect.any(Date),
             bots: { some: { id: "bot-1", archivedAt: null } },
           },
-          data: { state: "running", providerRef: next.providerRef, kind: next.kind },
+          data: {
+            state: "running",
+            providerRef: next.providerRef,
+            kind: next.kind,
+            runningSince: expect.any(Date),
+          },
         });
         expect(destroy).not.toHaveBeenCalled();
         expect(stop).not.toHaveBeenCalled();
@@ -1359,6 +1364,7 @@ describe("Team Computer wake", () => {
     state: "stopped" | "running",
     findMany = vi.fn().mockResolvedValue([{ id: "deleted-bot" }]),
     provisioned: Partial<ComputerRef> = {},
+    stored: Record<string, unknown> = {},
   ) {
     const ref = {
       id: "sandbox-1",
@@ -1386,6 +1392,7 @@ describe("Team Computer wake", () => {
           controlLeaseId: null,
           maintenanceId: null,
           updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+          ...stored,
         }),
         updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
@@ -1421,6 +1428,46 @@ describe("Team Computer wake", () => {
       await rm(dataDir, { recursive: true, force: true });
     }
   }
+
+  function activation(harness: ReturnType<typeof wakeHarness>) {
+    const calls = vi.mocked(harness.prisma.computer.updateMany).mock.calls;
+    return calls.map(([args]) => args).find((args) => args.data.state === "running")?.data;
+  }
+
+  it("starts the active-lifetime clock when a stopped computer starts", async () => {
+    const harness = wakeHarness("stopped", undefined, {}, { runningSince: null });
+    const before = Date.now();
+
+    await boot(harness);
+
+    const runningSince = activation(harness)?.runningSince as Date;
+    expect(runningSince).toBeInstanceOf(Date);
+    expect(runningSince.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("keeps the active-lifetime clock when reconnecting to a running computer", async () => {
+    const runningSince = new Date("2024-01-01T00:00:00.000Z");
+    const harness = wakeHarness("running", undefined, {}, { runningSince });
+
+    await boot(harness);
+
+    expect(activation(harness)?.runningSince).toEqual(runningSince);
+  });
+
+  it("restarts the active-lifetime clock when reconnecting had to start the computer", async () => {
+    const harness = wakeHarness(
+      "running",
+      undefined,
+      { started: true },
+      { runningSince: new Date("2024-01-01T00:00:00.000Z") },
+    );
+    const before = Date.now();
+
+    await boot(harness);
+
+    const runningSince = activation(harness)?.runningSince as Date;
+    expect(runningSince.getTime()).toBeGreaterThanOrEqual(before);
+  });
 
   it("removes folders of bots deleted while the Team Computer was stopped", async () => {
     const harness = wakeHarness("stopped");

@@ -163,11 +163,11 @@ describe("emulated sendblue platform delivery status", () => {
   });
 });
 
-describe("emulated sendblue platform typing", () => {
-  it("records DM typing indicators", async () => {
+describe("emulated sendblue platform receipt", () => {
+  it("acknowledges a DM with a typing indicator", async () => {
     const { emulator, surface } = createHarness();
     const threadId = await surface.openDirectThread("sendblue", "+15557654321", context);
-    await surface.sendTyping(threadId, context);
+    await surface.acknowledge(threadId, "inbound-1", context);
 
     expect(emulator.typingIndicators).toEqual(["+15557654321"]);
   });

@@ -102,7 +102,7 @@ import {
   stableJsonValue,
   toolEffectIdempotencyKey,
 } from "@rakazo/core/node/approval-effect-key";
-import type { McpServer, Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
   createSpaceForMember,
@@ -114,6 +114,7 @@ import {
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
+  Prisma,
   parseComputerMode,
   readHistory,
   recordUsage,
@@ -242,6 +243,7 @@ import {
   unchangedVisualStreakAfterPageBrowser,
 } from "./computer-tools.js";
 import { checkpointRunComputerWorkspace } from "./computer-workspace.js";
+import { connectedContext, selectRunConnections } from "./connection-context.js";
 import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
 import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
@@ -317,6 +319,8 @@ import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 import { assertSafeRemoteUrl } from "./remote-mcp.js";
 import { loadReplyContext, messageToAgentHistoryText } from "./reply-context.js";
+import { tickRoutineWatch } from "./routine-watch.js";
+import { lazyRunComputer } from "./run-computer.js";
 import {
   commitConsumedRunSecret,
   normalizeSecretAskPurpose,
@@ -327,9 +331,13 @@ import {
   secretPausedToolResult,
   tryCompleteConnectionWithCode,
 } from "./run-secret.js";
+
+export { selectRunConnections } from "./connection-context.js";
+
 import { withRuntimeCleanup } from "./runtime-stream.js";
 import {
   cancelScheduleFromTool,
+  commandWatchFromTool,
   compactScheduleInput,
   createScheduleFromTool,
   filterBuiltinToolsForRun,
@@ -372,7 +380,10 @@ import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
+  listRecentThreadFiles,
   materializeCurrentTurnFiles,
+  materializeRecentThreadFiles,
+  recentThreadFilesInstruction,
 } from "./thread-artifacts.js";
 import type { TicketChangeNotifier } from "./ticket-changes.js";
 import { loadAgentTicketContext } from "./ticket-context.js";
@@ -386,12 +397,14 @@ import {
 import { advanceToolCallLoopGuard, loopGuardStopText } from "./tool-loop.js";
 import { textContentArg } from "./tool-text.js";
 import {
+  assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
   isProgressMessageTruncated,
   isUserProgressClientNonce,
+  messageUserMaxLength,
   midTurnProgressBudgetAllows,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -3143,23 +3156,38 @@ export function createRunExecutor(deps: ExecutorDeps) {
           })
         : null;
       const thread = targetThread ?? bot.thread;
+      // A change trigger checks first, without a model; only news becomes a run.
+      const watchTick =
+        routine.watch == null
+          ? null
+          : await tickRoutineWatch(
+              { ...deps, commandRefusal: protectedComputerLifecycleRefusal },
+              routine,
+              { threadId: thread.id, botId: bot.id },
+              scheduledAt,
+            );
+      if (watchTick && !watchTick.run) return;
       // A schedule with no valid parseable cron among its crons (e.g. a
       // legacy row accepted before cron validation was added) fires the
       // already-due run once, then nextRunAt stays null and the routine
       // pauses rather than crash-looping the wakeup job.
-      const nextRunAt = isOneShotRoutineCrons(routine.crons)
-        ? null
-        : nextCronDateAcross(
-            routine.crons,
-            new Date(Math.max(Date.now(), scheduledAt.getTime())),
-            routine.timezone,
-          );
+      const nextRunAt = watchTick?.run
+        ? watchTick.nextRunAt
+        : isOneShotRoutineCrons(routine.crons)
+          ? null
+          : nextCronDateAcross(
+              routine.crons,
+              new Date(Math.max(Date.now(), scheduledAt.getTime())),
+              routine.timezone,
+            );
       const previousLastRunAt = routine.lastRunAt;
       const skillRecords = await listAgentSkillRecords(deps.prisma, {
         spaceId: routine.spaceId,
         userId: routine.userId,
       });
-      const routinePrompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+      const routinePrompt =
+        expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
+        (watchTick?.run ? watchTick.note : "");
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
           where: {
@@ -3172,6 +3200,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             lastRunAt: new Date(),
             nextRunAt,
             ...(nextRunAt ? {} : { active: false }),
+            ...(watchTick?.run ? { watchState: watchTick.state } : {}),
           },
         });
         if (updated.count !== 1) return null;
@@ -3228,6 +3257,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
               nextRunAt: scheduledAt,
               active: true,
               lastRunAt: previousLastRunAt,
+              // Put the old fingerprint back too, or the retry would see no change.
+              ...(watchTick?.run
+                ? { watchState: (routine.watchState as Prisma.InputJsonValue) ?? Prisma.DbNull }
+                : {}),
             },
           });
         });
@@ -3693,13 +3726,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           runId,
           screenLeaseId: screenLeaseIdForRun(computerScreenLease, runId, fence),
           signal: runAbortController.signal,
-          connectedConnections: connectedPlugins.map((row) => ({
-            id: row.id,
-            connectorId: row.connectorId,
-            externalId: row.provider,
-            displayName: row.displayName,
-            providerRef: row.providerRef ?? undefined,
-          })),
+          ...connectedContext(connectedPlugins),
           connectedProviders: connectedComposio.map((row) => row.provider),
         };
         const memoryScope = configuredMemory
@@ -3736,6 +3763,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             historyCompactedUpToSeq: thread.historyCompactedUpToSeq,
           },
           messagingChannelRun,
+          run.sourceMessageId,
         );
         const compactedHistory = selectCompactedHistory({
           messages: threadContext.messages,
@@ -3943,38 +3971,68 @@ export function createRunExecutor(deps: ExecutorDeps) {
         if (!bot.computer) throw new Error("Bot has no computer");
         const storedComputer = bot.computer;
         const computerMode = parseComputerMode(storedComputer.scope);
-        const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
-        screenRelease = { computer, context, keepWarm: false };
-        scheduleComputerSleep(deps.jobs, storedComputer.id);
-        const workspaceCheckpoint = createRunWorkspaceCheckpoint(() =>
-          checkpointRunComputerWorkspace(deps, storedComputer, computer, context),
+        const artifacts = deps.artifacts;
+        const recentFilesInput = {
+          context,
+          computerMode,
+          skipMessageId: currentTurnMessage?.id,
+          maxTurns: RECENT_TURN_IMAGE_TURNS,
+        };
+        const runComputer = lazyRunComputer(
+          async () => {
+            const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
+            screenRelease = { computer, context, keepWarm: false };
+            scheduleComputerSleep(deps.jobs, storedComputer.id);
+            // Earlier attachments wait for the computer's first use; every start copies them
+            // again, so they need no checkpoint, and each copy logs and skips its own failure.
+            if (artifacts) {
+              await materializeRecentThreadFiles({ ...deps, artifacts }, history, historyMessages, {
+                ...recentFilesInput,
+                computer: async () => computer,
+              });
+            }
+            return computer;
+          },
+          () => runAbortController?.abort(),
         );
-        let currentTurnFiles: Awaited<ReturnType<typeof materializeCurrentTurnFiles>>;
+        const computerKind = (await deps.sandbox.provisionKind?.()) ?? storedComputer.kind;
+        const workspaceCheckpoint = createRunWorkspaceCheckpoint(async () => {
+          if (!runComputer.ready) return;
+          await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
+        });
+        let currentTurnFiles: Awaited<ReturnType<typeof materializeCurrentTurnFiles>> = [];
+        let recentThreadFiles: Awaited<ReturnType<typeof listRecentThreadFiles>> = [];
         try {
-          currentTurnFiles = deps.artifacts
-            ? await materializeCurrentTurnFiles(
-                {
-                  prisma: deps.prisma,
-                  artifacts: deps.artifacts,
-                  maxUploadSizeBytes: deps.maxUploadSizeBytes,
-                  sandbox: deps.sandbox,
-                },
-                turnBlocks,
-                {
-                  context,
-                  computer,
-                  computerMode,
-                  markWorkspaceDirty: workspaceCheckpoint.markDirty,
-                },
-              )
-            : [];
+          if (artifacts) {
+            currentTurnFiles = await materializeCurrentTurnFiles(
+              { ...deps, artifacts },
+              turnBlocks,
+              {
+                context,
+                computer: runComputer.get,
+                computerMode,
+                markWorkspaceDirty: workspaceCheckpoint.markDirty,
+              },
+            );
+            recentThreadFiles = await listRecentThreadFiles(
+              deps,
+              history,
+              historyMessages,
+              recentFilesInput,
+            );
+          }
         } catch (error) {
           await workspaceCheckpoint.flush().catch(() => undefined);
           throw error;
         }
-        const attachedFilesPrompt = currentTurnFilesInstruction(currentTurnFiles);
+        const attachedFilesPrompt = [
+          currentTurnFilesInstruction(currentTurnFiles),
+          recentThreadFilesInstruction(recentThreadFiles),
+        ]
+          .filter(Boolean)
+          .join("\n\n");
         const graphical =
-          computer.kind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
+          computerKind !== "desktop" && deps.sandbox.describe().capabilities.graphical;
         // Gate on the model this run will actually call — the pair written to the run row
         // above. Deriving it a second time here dropped the deployment fallback, so a
         // vision-capable default was gated as "scripted" and lost its screenshot tools.
@@ -4101,7 +4159,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           disabled: disabledBuiltinTools,
         });
         const dockerToolInstruction = dockerComputerToolInstruction(
-          computer.kind,
+          computerKind,
           disabledBuiltinTools,
         );
         const computerInstruction = dockerToolInstruction
@@ -4123,8 +4181,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
         // Rehydrate from this run's prior progress rows so a resume after ask/takeover
         // still knows progress was already published (skip hollow finals; status outcome).
         let publishedMidTurnUserMessage = false;
-        // Routine runs discard promoted narration instead of posting it as chat.
+        // Some runs hold back pre-tool narration instead of posting it as chat.
+        // Keep the last segment in case the model supplies no final reply.
         let discardedMidTurnNarration = false;
+        let lastDiscardedMidTurnNarration = "";
+        let explicitNoResponse = false;
+        let assistantTurnText = "";
+        const recordExplicitNoResponse = (text: string) => {
+          explicitNoResponse ||= isExactNoResponse(text) || /\bNO_RESPONSE\b/.test(text);
+        };
         const midTurnUserTexts: string[] = [];
         let midTurnProgressCount = 0;
         const turnStartedAtMs = run.startedAt?.getTime() ?? Date.now();
@@ -4174,6 +4239,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let pendingProgress = "";
         let lastProgressAt = 0;
         let hasStreamedText = false;
+        // Set by a tool call: the next text starts a new assistant turn and needs a break
+        // from the earlier text that stayed in this reply (held-back narration).
+        let assistantTurnBreakPending = false;
         let toolCallStreak: ToolCallStreak = { key: undefined, count: 0 };
         let lastComputerFrameId: string | undefined;
         let unchangedVisualStreak: UnchangedVisualStreak = { count: 0 };
@@ -4221,6 +4289,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!canPublish) {
             assembled = "";
             discardedMidTurnNarration = true;
+            lastDiscardedMidTurnNarration = narration;
             return;
           }
           assembled = "";
@@ -4531,11 +4600,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
             viaConnector,
             declaredReadOnly,
           );
+          // This schedules unattended shell execution; require a person to approve
+          // the command once, rather than letting an allow rule or reviewer schedule it.
+          const commandWatch =
+            name === "schedule_create" && commandWatchFromTool(args.watch) !== undefined;
           const requiresApprovalByDefault =
+            commandWatch ||
             requiresUnattendedApproval ||
             toolRequiresApproval(name, viaConnector, declaredReadOnly);
           const requiresMandatoryApproval =
-            requiresUnattendedApproval || toolRequiresExplicitApproval(name);
+            commandWatch || requiresUnattendedApproval || toolRequiresExplicitApproval(name);
           const connectorKind = connectorKindFromToolName(
             name,
             connectedPlugins.map((plugin) => plugin.provider),
@@ -5032,7 +5106,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               };
             }
             return computerScreenToolResult(async () =>
-              formatObservation(await deps.sandbox.observe(computer, context)),
+              formatObservation(await deps.sandbox.observe(await runComputer.get(), context)),
             );
           }
           if (name === "computer_act") {
@@ -5052,7 +5126,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
               const result = await deps.sandbox.act(
-                computer,
+                await runComputer.get(),
                 {
                   actions,
                   observe: args.observe !== false,
@@ -5072,7 +5146,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "list_files") {
             const requestedPath = String(args.path ?? "");
             const entries = await deps.sandbox.listFiles(
-              computer,
+              await runComputer.get(),
               resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
               context,
             );
@@ -5089,7 +5163,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
-              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
+              bytes = await deps.sandbox.readFile(await runComputer.get(), storedPath, context, {
                 maxBytes: MAX_MODEL_FILE_BYTES,
               });
             } catch (error) {
@@ -5135,7 +5209,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             workspaceCheckpoint.markDirty();
             try {
               await deps.sandbox.writeFile(
-                computer,
+                await runComputer.get(),
                 { path: resolveBotWorkspacePath(computerMode, bot.id, filePath), content },
                 context,
               );
@@ -5168,7 +5242,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 typeof args.data_path === "string" && args.data_path ? args.data_path : undefined;
               if (!rows && dataPath) {
                 const bytes = await deps.sandbox.readFile(
-                  computer,
+                  await runComputer.get(),
                   resolveBotWorkspacePath(computerMode, bot.id, dataPath),
                   context,
                   { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
@@ -5190,7 +5264,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : `charts/plot-${Date.now()}.png`;
               workspaceCheckpoint.markDirty();
               await deps.sandbox.writeFile(
-                computer,
+                await runComputer.get(),
                 {
                   path: resolveBotWorkspacePath(computerMode, bot.id, outPath),
                   content: png,
@@ -5257,7 +5331,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
-              bytes = await deps.sandbox.readFile(computer, storedPath, context, {
+              bytes = await deps.sandbox.readFile(await runComputer.get(), storedPath, context, {
                 maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
               });
             } catch {
@@ -5360,7 +5434,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               };
               const observed = await observeShellCommand(
                 deps.sandbox.execute(
-                  computer,
+                  await runComputer.get(),
                   {
                     argv: [
                       "bash",
@@ -5446,7 +5520,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return computerScreenToolResult(async () => {
               try {
                 const result = await deps.sandbox.act(
-                  computer,
+                  await runComputer.get(),
                   {
                     actions: [
                       {
@@ -5482,7 +5556,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return computerScreenToolResult(async () => {
               try {
                 const result = await deps.sandbox.act(
-                  computer,
+                  await runComputer.get(),
                   {
                     actions: [
                       {
@@ -5576,8 +5650,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : null;
             return computerScreenToolResult(async () => {
               const result = tool
-                ? redactConnectorPayload(await tool(browser, computer, context, args), redactions())
-                : await browserActFromTool(browser, computer, context, args, {
+                ? redactConnectorPayload(
+                    await tool(browser, await runComputer.get(), context, args),
+                    redactions(),
+                  )
+                : await browserActFromTool(browser, await runComputer.get(), context, args, {
                     redactions,
                     resolveSecretFill: async (step) => {
                       const resolved = await resolveLoginFill({
@@ -5726,6 +5803,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             );
           }
           if (name === "schedule_create") {
+            const command = commandWatchFromTool(args.watch);
+            const refusal =
+              command === undefined ? undefined : protectedComputerLifecycleRefusal(command);
+            if (graphical && refusal)
+              return finish({ error: desktopProtectionGuardMessage(refusal) });
             const created = await createScheduleFromTool(deps, {
               spaceId: run.spaceId,
               botId: bot.id,
@@ -5741,6 +5823,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 runAt: args.runAt,
                 delayMinutes: args.delayMinutes,
                 delaySeconds: args.delaySeconds,
+                watch: args.watch,
               }),
             });
             return finish(created);
@@ -6447,6 +6530,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               spawnKey: effectKey,
               name: String(args.name ?? ""),
               title: args.title ? String(args.title) : undefined,
+              description: args.description ? String(args.description) : undefined,
               instructions: args.instructions ? String(args.instructions) : undefined,
               prompt: args.prompt ? String(args.prompt) : undefined,
               computerMode,
@@ -6561,9 +6645,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           if (name === "message_user") {
             const rawMessage = redactSecrets(String(args.message ?? ""), runSecrets);
-            const text = clampUserProgressMessage(rawMessage);
+            const maxLength = messageUserMaxLength();
+            const text = clampUserProgressMessage(rawMessage, maxLength);
             if (!text) return finish({ error: "message is required" });
-            const truncated = isProgressMessageTruncated(rawMessage);
+            const truncated = isProgressMessageTruncated(rawMessage, maxLength);
             await flushProgress();
             await publishMidTurnNarration();
             if (!canPublishDurableProgress()) {
@@ -6587,7 +6672,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 ? {
                     ok: true,
                     truncated: true,
-                    note: "This progress update was cut off at 500 characters and the user only saw the truncated version above — it did NOT deliver your full content. message_user is for short interim beats only, never the final answer. Put your complete answer in your normal final reply instead of relying on this truncated update.",
+                    note: `This progress update was cut off at ${maxLength} characters and the user only saw the truncated version above — it did NOT deliver your full content. message_user is for short interim beats only, never the final answer. Put your complete answer in your normal final reply instead of relying on this truncated update.`,
                   }
                 : { ok: true },
             );
@@ -6800,15 +6885,26 @@ export function createRunExecutor(deps: ExecutorDeps) {
           { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
         );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
+        let userTimeZone: string | null | undefined;
+        try {
+          userTimeZone = (
+            await deps.prisma.user.findUnique({
+              where: { id: run.userId },
+              select: { timezone: true },
+            })
+          )?.timezone;
+        } catch {
+          // Timezone is optional context; a lookup failure must not prevent a run.
+        }
         const prompt = [
           replyContext,
-          basePrompt,
+          run.trigger === "reaction" && replyContext ? undefined : basePrompt,
           takeoverResume?.promptNote,
           approvalContinuation,
           // A hang-up turn is read, not heard: no spoken-reply constraint.
           voiceCall && !callEndRun ? voiceCallInstruction(disabledBuiltinTools) : undefined,
           // Per-turn, not in the system prompt: the timestamp changes every call and would break the cacheable prefix.
-          formatCurrentTimeInstruction(),
+          formatCurrentTimeInstruction(new Date(), userTimeZone),
         ]
           .filter(Boolean)
           .join("\n\n");
@@ -7084,7 +7180,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                                   item.blocks,
                                   {
                                     context,
-                                    computer,
+                                    computer: runComputer.get,
                                     computerMode,
                                     markWorkspaceDirty: workspaceCheckpoint.markDirty,
                                   },
@@ -7143,7 +7239,23 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
             }
 
+            // Check complete assistant turns so split sentinel chunks are recognized
+            // without treating a partial identifier (NO_RESPONSE_POLICY) as silence.
+            if (event.type === "tool" || event.type === "takeover") {
+              recordExplicitNoResponse(assistantTurnText);
+              assistantTurnText = "";
+            }
             if (event.type === "text") {
+              assistantTurnText += event.text;
+              if (assistantTurnBreakPending && event.text) {
+                assistantTurnBreakPending = false;
+                const separator = assistantTurnSeparator(assembled, event.text);
+                if (separator) {
+                  assembled += separator;
+                  currentTextSegment += separator;
+                  pendingProgress += progressRedactor.push(separator);
+                }
+              }
               assembled += event.text;
               currentTextSegment += event.text;
               toolCallStreak = { key: undefined, count: 0 };
@@ -7223,6 +7335,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return;
             } else if (event.type === "takeover") {
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
+              // The user takes over the computer's screen, so it must be up before the run waits.
+              await runComputer.get();
               const safeReason = redactSecrets(event.reason, runSecrets);
               // Publish pending narration as tagged mid-turn progress so reconciliation
               // does not treat pre-takeover text as the delegated final result.
@@ -7242,6 +7356,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   publishedMidTurnUserMessage = true;
                 } else if (narration) {
                   discardedMidTurnNarration = true;
+                  lastDiscardedMidTurnNarration = narration;
                 }
                 assembled = "";
                 hasStreamedText = false;
@@ -7288,6 +7403,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               if (event.name !== "message_user") {
                 await publishMidTurnNarration();
               }
+              assistantTurnBreakPending = true;
               await deps.events.append({
                 spaceId: run.spaceId,
                 threadId: thread.id,
@@ -7449,6 +7565,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 operationId: runId,
               });
             } else if (event.type === "done") {
+              recordExplicitNoResponse(event.text ?? "");
               if (!assembled && event.text) {
                 if (publishedMidTurnUserMessage || discardedMidTurnNarration) {
                   // Mid-turn narration was already published or discarded (routines).
@@ -7462,6 +7579,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
           }
 
+          recordExplicitNoResponse(assistantTurnText);
+          runComputer.throwIfFailed();
           if (approvalPausePending || !leaseValid) return;
           approvedEffectReplays.assertDrained();
           pendingProgress += progressRedactor.finish();
@@ -7471,7 +7590,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             for (const file of turn.files ?? []) {
               workspaceCheckpoint.markDirty();
               await deps.sandbox.writeFile(
-                computer,
+                await runComputer.get(),
                 {
                   path: resolveBotWorkspacePath(computerMode, bot.id, file.path),
                   content: new TextEncoder().encode(file.content),
@@ -7505,10 +7624,24 @@ export function createRunExecutor(deps: ExecutorDeps) {
           await workspaceCheckpoint.flush();
           terminalCheckpointComplete = true;
 
+          // Preserve the last held-back preview as a normal final reply when the
+          // model supplies none, unless it chose silence or already delivered that text.
+          // Persisting peer results here also lets outcome delivery retry after completion.
+          recordExplicitNoResponse(lastDiscardedMidTurnNarration);
+          if (
+            !isBackgroundRunTrigger(run.trigger) &&
+            !handedOff &&
+            !explicitNoResponse &&
+            !assembled.trim() &&
+            lastDiscardedMidTurnNarration &&
+            !midTurnUserTexts.includes(lastDiscardedMidTurnNarration)
+          ) {
+            assembled = lastDiscardedMidTurnNarration;
+            currentTextSegment = assembled;
+          }
           flushPendingTools();
-          // Only routine runs are instructed to emit NO_RESPONSE. Other
-          // allowSilentEmpty wakes (FYI, messaging) may finish truly empty.
-          const silentReply = runAllowsSilentEmpty(run.trigger)
+          // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
+          const silentReply = allowSilentEmptyRun
             ? stripNoResponseReply(assembled, messageSegments)
             : { assembled, blocks: messageSegments };
           let completionBlocks = silentReply.blocks;
@@ -7630,6 +7763,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             getLogger().error("history.compact enqueue failed", error);
           }
         } catch (error) {
+          // A computer that could not start fails setup, as it did when every run started it.
+          runComputer.throwIfFailed();
           if (!terminalCheckpointComplete) {
             await workspaceCheckpoint.flush().catch(() => undefined);
           }
@@ -8345,7 +8480,7 @@ export function userTurnInstructions(parts: {
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
       "update_bot",
-      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+      "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     ),
     offeredBuiltinClause(
       parts.disabledBuiltinTools,
@@ -8386,7 +8521,7 @@ export function userTurnInstructions(parts: {
   ];
 }
 
-export function threadContextForRun<T>(
+export function threadContextForRun<T extends { id?: string; role: string }>(
   trigger: string,
   context: {
     messages: T[];
@@ -8394,7 +8529,15 @@ export function threadContextForRun<T>(
     historyCompactedUpToSeq: number | null;
   },
   messagingChannelRun: boolean,
+  sourceMessageId?: string | null,
 ) {
+  // The current reaction is supplied with its target in the prompt, once.
+  if (trigger === "reaction" && sourceMessageId) {
+    context = {
+      ...context,
+      messages: context.messages.filter((message) => message.id !== sourceMessageId),
+    };
+  }
   // Routine runs stay isolated from thread history. The creation intro does
   // too: a message that arrives during it waits and is answered afterward.
   if (trigger === "created" || trigger === "routine") {
@@ -8410,19 +8553,46 @@ export function threadContextForRun<T>(
     : { ...context, includeSemanticRecall: true };
 }
 
+/** Name, title, and description, skipping any part that is blank. */
+function publicProfile(
+  name: string,
+  title: string | null | undefined,
+  description: string,
+): string {
+  const trimmedTitle = title?.trim() ?? "";
+  const heading = trimmedTitle ? `${name}: ${trimmedTitle}` : name;
+  return description ? `${heading}\n${description}` : heading;
+}
+
 /** Profile fields the creation intro is asked to explain. Other runs keep the prior identity line. */
 export function runIdentityInstruction(
-  bot: { name: string; title: string; description: string; instructions: string },
+  bot: {
+    name: string;
+    title?: string | null;
+    description?: string | null;
+    instructions?: string | null;
+  },
   trigger: string,
 ): string {
+  const description = bot.description?.trim() ?? "";
+  const rawInstructions = bot.instructions ?? "";
+  const instructions = rawInstructions.trim();
   if (trigger !== "created") {
-    return bot.instructions || `${bot.name}: ${bot.title}\n${bot.description}`;
+    const identity = publicProfile(bot.name, bot.title, description);
+    // Older bots saved one text as both fields; do not repeat it.
+    if (!instructions || instructions === description) {
+      return instructions ? rawInstructions : identity;
+    }
+    return [
+      identity,
+      "Teammates see only the profile above. These instructions are private to you:",
+      instructions,
+    ].join("\n");
   }
-  const instructions = bot.instructions.trim();
   return [
     `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${bot.title.trim() || "(none)"}`,
-    `Description: ${bot.description.trim() || "(none)"}`,
+    `Title: ${(bot.title ?? "").trim() || "(none)"}`,
+    `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");
 }
@@ -8445,27 +8615,35 @@ export function mayOpenModelStream(
 
 export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply };
 
-export const LONG_WORK_PROGRESS_GUIDANCE =
-  "Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at 500 characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.";
+export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
+  return `Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
+}
 
 export const ROUTINE_SILENT_REPLY_GUIDANCE = `If this routine's prompt says to stay silent when there is nothing to report, the entire final assistant reply must be exactly ${NO_RESPONSE} — no surrounding prose, no variants, no progress updates, no all-clear, and no meta note that you are staying silent. Do not call message_user unless you have something to report.`;
 
+export const REACTION_SILENT_REPLY_GUIDANCE = `The user reacted with an emoji to your message. Reply only if the reaction calls for it, such as a correction after 👎, a go-ahead on something you proposed, or a question. Otherwise the entire final assistant reply must be exactly ${NO_RESPONSE}, with no message_user call.`;
+
 export function runAllowsSilentEmpty(trigger: string): boolean {
-  return trigger === "routine" || isBackgroundRunTrigger(trigger);
+  return trigger === "reaction" || trigger === "routine" || isBackgroundRunTrigger(trigger);
 }
 
+/**
+ * Whether text written before a tool call may become a durable mid-turn chat bubble.
+ * Routine and bot-to-bot runs hold it back, using the last segment as the final reply
+ * only when the model supplies none and has not explicitly chosen silence.
+ * Background runs never promote it.
+ */
 export function runPromotesMidTurnNarration(trigger: string): boolean {
-  return trigger !== "routine" && !isBackgroundRunTrigger(trigger);
+  return trigger !== "routine" && trigger !== "bot_message" && !isBackgroundRunTrigger(trigger);
 }
 
 export const TICKET_SILENT_REPLY_GUIDANCE =
   "Ticket work is reported on the board, not in chat. Put updates and results in ticket_comment and keep the ticket status current with ticket_update. Use the existing ask or approval mechanism when user input is needed. Leave the final reply empty.";
 
 export function runReplyGuidance(trigger: string): string {
+  if (trigger === "reaction") return REACTION_SILENT_REPLY_GUIDANCE;
   if (isBackgroundRunTrigger(trigger)) return TICKET_SILENT_REPLY_GUIDANCE;
-  return runAllowsSilentEmpty(trigger)
-    ? ROUTINE_SILENT_REPLY_GUIDANCE
-    : LONG_WORK_PROGRESS_GUIDANCE;
+  return runAllowsSilentEmpty(trigger) ? ROUTINE_SILENT_REPLY_GUIDANCE : longWorkProgressGuidance();
 }
 
 function replyGuidanceForOfferedTools(
@@ -8473,8 +8651,11 @@ function replyGuidanceForOfferedTools(
   disabled?: ReadonlySet<string>,
 ): string | undefined {
   if (!disabled?.has("message_user")) return guidance;
-  if (guidance === LONG_WORK_PROGRESS_GUIDANCE) {
+  if (guidance === longWorkProgressGuidance()) {
     return "Always put the complete final answer in your normal reply.";
+  }
+  if (guidance === REACTION_SILENT_REPLY_GUIDANCE) {
+    return guidance.replace(", with no message_user call.", ".");
   }
   if (guidance === ROUTINE_SILENT_REPLY_GUIDANCE) {
     return guidance.replace(" Do not call message_user unless you have something to report.", "");
@@ -8547,7 +8728,7 @@ export function completionMarksUnread(
 ): boolean {
   if (trigger === "bot_message") return userFacingPeerReply;
   if (isBackgroundRunTrigger(trigger)) return false;
-  return trigger !== "routine" || Boolean(text);
+  return (trigger !== "routine" && trigger !== "reaction") || Boolean(text);
 }
 
 export function missingTurnImagesInstruction(
@@ -9173,31 +9354,6 @@ function cloudflareRunFields(resolved: { accountId?: string; gatewayId?: string 
     ...(resolved.accountId ? { accountId: resolved.accountId } : {}),
     ...(resolved.gatewayId ? { gatewayId: resolved.gatewayId } : {}),
   };
-}
-
-export function selectRunConnections<
-  T extends { connectorId: string; provider: string; status: string },
->(rows: T[], connectedComposioProviders: string[]): T[] {
-  const liveProviders = new Set(
-    connectedComposioProviders.map((provider) => provider.trim().toLowerCase()).filter(Boolean),
-  );
-  const connectedKeys = new Set(
-    rows
-      .filter((row) => row.status === "connected")
-      .map((row) => `${row.connectorId}:${row.provider.trim().toLowerCase()}`),
-  );
-  return rows.filter((row) => {
-    if (row.status === "connected") return true;
-    if (row.status === "revoked") return false;
-    // Recover a pending/error Composio row only when this provider has no
-    // connected row of its own. A sibling that shares the slug must not
-    // pull a non-live row — and its dead providerRef — into the run.
-    if (row.connectorId !== "composio") return false;
-    if (row.status !== "pending" && row.status !== "error") return false;
-    const providerKey = row.provider.trim().toLowerCase();
-    if (!liveProviders.has(providerKey)) return false;
-    return !connectedKeys.has(`composio:${providerKey}`);
-  });
 }
 
 export async function loadCurrentTurnImages(

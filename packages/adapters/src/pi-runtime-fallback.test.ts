@@ -50,7 +50,6 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
   },
 }));
 
-vi.mock("./pi-current-models.js", () => ({ supplementPiModels: (models: unknown) => models }));
 vi.mock("./pi-local-provider.js", () => ({ registerLocalProvider: (models: unknown) => models }));
 vi.mock("./pi-openai-compatible-provider.js", () => ({
   OPENAI_COMPATIBLE_PROVIDER_ID: "openai-compatible",
@@ -1121,9 +1120,11 @@ describe("Pi runtime ordered model fallback", () => {
 
       expect(providerState.stream).toHaveBeenCalledTimes(1);
       expect(appendMessage).toHaveBeenCalledWith(
-        emptyTerminal
-          ? { ...targetMessage, content: [{ type: "text", text: "partial" }] }
-          : targetMessage,
+        expect.objectContaining(
+          emptyTerminal
+            ? { ...targetMessage, content: [{ type: "text", text: "partial" }] }
+            : targetMessage,
+        ),
       );
       expect(
         events

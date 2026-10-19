@@ -26,6 +26,7 @@ export interface SandboxProviderOptions {
   railwayApiToken?: string;
   railwayEnvironmentId?: string;
   railwayMaxWorkspaceFileBytes?: string;
+  railwaySandboxRegion?: string;
   boxApiKey?: string;
   boxApiUrl?: string;
   dataDir?: string;
@@ -75,6 +76,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         token: opts.railwayApiToken,
         environmentId: opts.railwayEnvironmentId,
         maxWorkspaceFileBytes: opts.railwayMaxWorkspaceFileBytes,
+        region: opts.railwaySandboxRegion,
       });
     case "docker":
       return new DockerSandboxProvider(

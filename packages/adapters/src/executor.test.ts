@@ -13,6 +13,7 @@ import {
   missingTurnImagesInstruction,
   parseUpdateBotPatch,
   persistentComputerInstruction,
+  REACTION_SILENT_REPLY_GUIDANCE,
   runNotificationsEnabled,
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
@@ -1167,7 +1168,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
@@ -1377,6 +1378,29 @@ describe("userTurnInstructions", () => {
     expect(text).toContain("web_search");
     expect(text).toContain("destination_write");
     expect(text).toContain("Always put the complete final answer in your normal reply.");
+  });
+
+  it("keeps the reaction silence rule when message_user is off", () => {
+    const text = userTurnInstructions({
+      ...base,
+      replyGuidance: REACTION_SILENT_REPLY_GUIDANCE,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+      disabledBuiltinTools: new Set(["message_user"]),
+    })
+      .filter(Boolean)
+      .join("\n");
+    expect(text).toContain("The user reacted with an emoji to your message.");
+    expect(text).toContain("must be exactly NO_RESPONSE.");
+    expect(text).not.toContain("message_user");
   });
 
   it("keeps the credential safeguard when secret tools are off and shell stays on", () => {
@@ -1608,6 +1632,25 @@ describe("createRunExecutor", () => {
       historyCompactedUpToSeq: null,
       includeSemanticRecall: false,
     });
+  });
+
+  it("keeps the current reaction out of history because its target is supplied in the prompt", () => {
+    const messages = [
+      { id: "parent", role: "assistant", content: "Proceed?" },
+      {
+        id: "reaction",
+        role: "user",
+        content: "User reacted with 👍 to <reaction_target>Proceed?</reaction_target>",
+      },
+    ];
+    expect(
+      threadContextForRun(
+        "reaction",
+        { messages, summary: null, historyCompactedUpToSeq: null },
+        false,
+        "reaction",
+      ).messages,
+    ).toEqual([messages[0]]);
   });
 
   it("isolates routine runs from every thread-history source", () => {

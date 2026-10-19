@@ -57,6 +57,29 @@ Remote paths still need a working API/worker; they do not replace Postgres or
 the web UI. They require egress to the provider. For air-gapped hosts prefer
 `docker` with pre-loaded images, or `none`.
 
+A run starts its computer only when it first uses a computer tool. With idle sleep on,
+a computer suspends after `SANDBOX_IDLE_MS` idle. On providers that bill while running
+(E2B, Daytona, Box, CreateOS, Railway), it also suspends after `COMPUTER_MAX_ACTIVE_MS`
+(default 2 hours) up in one stretch, even with background work or an open screen, unless
+a run is executing on it or a user is in control of its screen. `0` turns the cap off.
+That exception lifts only the uptime cap; idle suspension after `SANDBOX_IDLE_MS` still
+applies once nothing holds the computer.
+Docker and this-Mac computers are never capped. The next use resumes it.
+
+### E2B computer template
+
+E2B computers start from the `rakazo-computer` template: E2B's stock desktop at
+2 vCPU and 4 GB instead of its 8 vCPU and 8 GB. Build it once in the E2B team that
+owns `E2B_API_KEY`, and again whenever its definition in
+`packages/adapters/src/e2b-template.ts` changes:
+
+```bash
+E2B_API_KEY=<deployment key> pnpm sandbox:e2b-template
+```
+
+Until it exists, new computers use the stock desktop template. Existing computers keep
+the size they were created with until they are replaced.
+
 ## Verify a provider change
 
 After changing provider or keys (from the published-images drop directory that

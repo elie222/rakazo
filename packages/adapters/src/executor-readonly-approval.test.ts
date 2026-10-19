@@ -187,6 +187,7 @@ function fixture({
     selfUpdateInstructions,
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findFirst: vi.fn(async () =>
         pendingInstructionsRunId ? { id: pendingInstructionsRunId } : null,
@@ -1009,6 +1010,36 @@ describe("self instruction proposals", () => {
       });
       expect(f.effects).toEqual([]);
       expect(f.instructionState.instructions).toBe("Draft only");
+    },
+  );
+});
+
+describe("command watch creation approval", () => {
+  beforeEach(() => reviewMock.mockReset());
+  it.each([false, true])(
+    "requires explicit approval for command watch JSON=%s even with an allow rule",
+    async (json) => {
+      const f = fixture({
+        name: "schedule_create",
+        builtin: true,
+        autoReview: true,
+        rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "schedule_create" }],
+      });
+      const watch = { kind: "command", command: "echo changed" };
+      f.setCalls([
+        {
+          args: {
+            name: "Check",
+            prompt: "Summarize changes",
+            watch: json ? JSON.stringify(watch) : watch,
+          },
+          executionId: "call-1",
+        },
+      ]);
+      await f.run();
+      expect(f.pauseRunForInput).toHaveBeenCalledOnce();
+      expect(isApprovalPausedResult(f.results[0])).toBe(true);
+      expect(reviewMock).not.toHaveBeenCalled();
     },
   );
 });

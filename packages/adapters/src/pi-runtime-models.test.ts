@@ -2,6 +2,7 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
+import { defaultCatalogModelId, isCatalogModelChoice } from "./model-selection.js";
 import { modelAcceptsImageInput } from "./model-vision.js";
 import { listPiCatalog } from "./pi-models.js";
 import { resolveModelAuth } from "./pi-oauth.js";
@@ -123,4 +124,19 @@ describe("resolveRuntimeModel", () => {
     expect(resolved.model).toBeUndefined();
     expect(resolved.provider).toBe("anthropic");
   });
+});
+
+it("resolves a saved Azure provider reference without changing its model id", () => {
+  const provider = "azure-openai-responses";
+  const id = "gpt-4o";
+  const resolved = resolveRuntimeModel({ provider, id, apiKey: "test-azure-key" });
+  expect(resolved.provider).toBe("azure");
+  expect(resolved.model).toMatchObject({ provider: "azure", id });
+  expect(resolved.apiKey).toBe("test-azure-key");
+  expect(modelsForRequest({ model: { provider, id } }, provider).getModel(provider, id)).toEqual(
+    resolved.model,
+  );
+  expect(modelAcceptsImageInput(provider, id)).toBe(true);
+  expect(isCatalogModelChoice(provider, id)).toBe(true);
+  expect(defaultCatalogModelId(provider)).toBeTruthy();
 });

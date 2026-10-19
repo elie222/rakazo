@@ -5,6 +5,7 @@ import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
   CodexCatalogCache,
@@ -29,16 +30,21 @@ import type { RouterDeps } from "./router.js";
 import { createRouter, enqueueBotIntroRun, HEARTBEAT_MS, SESSION_RECHECK_MS } from "./router.js";
 
 describe("account preferences", () => {
-  function preferencesDeps(avatarStyle: string) {
+  function preferencesDeps(avatarStyle: string, timezone: string | null = null) {
     const update = vi.fn().mockResolvedValue({});
+    const user = { email: "user@rakazo.test", name: "Test User", avatarStyle, timezone };
+    const updateMany = vi.fn(
+      async ({ where, data }: { where: { timezone: null }; data: { timezone: string } }) => {
+        if (user.timezone !== where.timezone) return { count: 0 };
+        Object.assign(user, data);
+        return { count: 1 };
+      },
+    );
     const prisma = {
       user: {
         update,
-        findUniqueOrThrow: vi.fn().mockResolvedValue({
-          email: "user@rakazo.test",
-          name: "Test User",
-          avatarStyle,
-        }),
+        updateMany,
+        findUniqueOrThrow: vi.fn().mockResolvedValue(user),
       },
       spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue(null) },
@@ -60,7 +66,7 @@ describe("account preferences", () => {
       email: "user@rakazo.test",
       isDeploymentOwner: true,
     } satisfies Actor;
-    return { update, deps, actor, handler: new RPCHandler(createRouter(deps)) };
+    return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
 
   it("reports model credential store outages as service unavailable", async () => {
@@ -144,6 +150,112 @@ describe("account preferences", () => {
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  async function updatePreferences(
+    { handler, actor }: ReturnType<typeof preferencesDeps>,
+    json: unknown,
+  ) {
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/update", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    if (!response) throw new Error("no response");
+    return response;
+  }
+
+  it("persists an IANA timezone without touching the avatar style", async () => {
+    const setup = preferencesDeps("organic");
+
+    const response = await updatePreferences(setup, { timezone: "Pacific/Auckland" });
+
+    expect(response.status).toBe(200);
+    expect(setup.update).toHaveBeenCalledWith({
+      where: { id: "user-1" },
+      data: { timezone: "Pacific/Auckland" },
+    });
+  });
+
+  it.each([null, "Europe/London"])(
+    "adopts the browser timezone only while the saved value is null (%s)",
+    async (timezone) => {
+      const setup = preferencesDeps("organic", timezone);
+      const client = createRouterClient(createRouter(setup.deps), {
+        context: { actor: setup.actor } as never,
+      });
+      const me = await client.preferences.adoptTimezone({ timezone: "Pacific/Auckland" });
+      expect(setup.updateMany).toHaveBeenCalledWith({
+        where: { id: "user-1", timezone: null },
+        data: { timezone: "Pacific/Auckland" },
+      });
+      expect(me.timezone).toBe(timezone ?? "Pacific/Auckland");
+      expect(setup.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([{ timezone: "Mars/Olympus_Mons" }, { timezone: "" }, {}])(
+    "rejects an unknown timezone or an empty update: %j",
+    async (json) => {
+      const setup = preferencesDeps("robot");
+
+      const response = await updatePreferences(setup, json);
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(setup.update).not.toHaveBeenCalled();
+    },
+  );
+
+  it("adopts a detected timezone only while none is saved", async () => {
+    const setup = preferencesDeps("robot");
+    const { response } = await setup.handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { timezone: "Pacific/Auckland" } }),
+      }),
+      { prefix: "/rpc", context: { actor: setup.actor } },
+    );
+
+    expect(response?.status).toBe(200);
+    expect(setup.updateMany).toHaveBeenCalledWith({
+      where: { id: "user-1", timezone: null },
+      data: { timezone: "Pacific/Auckland" },
+    });
+    expect(setup.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects adopting an unknown timezone", async () => {
+    const setup = preferencesDeps("robot");
+    const { response } = await setup.handler.handle(
+      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: { timezone: "Mars/Olympus_Mons" } }),
+      }),
+      { prefix: "/rpc", context: { actor: setup.actor } },
+    );
+
+    expect(response?.status).toBeGreaterThanOrEqual(400);
+    expect(setup.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reports an unset timezone as null", async () => {
+    const { actor, handler } = preferencesDeps("robot");
+    const { response } = await handler.handle(
+      new Request("http://127.0.0.1/rpc/me", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ json: null }),
+      }),
+      { prefix: "/rpc", context: { actor } },
+    );
+    await expect(response?.json()).resolves.toEqual({
+      json: expect.objectContaining({ timezone: null }),
+    });
   });
 
   it.each(["robot", "organic", "custom-cdn"])(
@@ -1953,6 +2065,219 @@ describe("interrupted computer reservation release", () => {
   });
 });
 
+describe("OpenAI-compatible model probes", () => {
+  const actor = {
+    spaceId: "workspace-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+  const baseUrl = "https://127.0.0.1:8000/v1";
+  const stored = JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" });
+
+  function fixture(options: { credentialUserId?: string; secretUserId?: string } = {}) {
+    const credential = {
+      id: "cred-1",
+      userId: options.credentialUserId ?? actor.userId,
+      provider: "openai-compatible",
+      secretId: "secret-1",
+    };
+    const credentials = [credential];
+    const findCredential = vi.fn(
+      async ({ where }: { where: { userId: string; provider: string } }) =>
+        where.userId === credential.userId && where.provider === credential.provider
+          ? credential
+          : null,
+    );
+    const findCredentials = vi.fn(
+      async ({ where }: { where: { userId: string; provider: string } }) =>
+        credentials.filter(
+          (candidate) => candidate.userId === where.userId && candidate.provider === where.provider,
+        ),
+    );
+    const findSecret = vi.fn(
+      async ({ where }: { where: { userId: string; id: { in: string[] }; spaceId: null } }) =>
+        credentials
+          .filter(
+            (candidate) =>
+              where.userId === (options.secretUserId ?? candidate.userId) &&
+              where.id.in.includes(candidate.secretId) &&
+              where.spaceId === null,
+          )
+          .map((candidate) => ({ id: candidate.secretId, ciphertext: "fake-ciphertext" })),
+    );
+    const load = vi.fn().mockResolvedValue(stored);
+    const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+      Response.json({ data: [{ id: "test-model" }] }),
+    );
+    const probe = adapters.probeOpenAiCompatibleModels;
+    vi.spyOn(adapters, "probeOpenAiCompatibleModels").mockImplementation((input, _, signal) =>
+      probe(input, fetch, signal),
+    );
+    const deps = {
+      prisma: {
+        spaceModelPreference: { findFirst: vi.fn().mockResolvedValue(null) },
+        userModelCredential: { findFirst: findCredential, findMany: findCredentials },
+        secret: { findMany: findSecret },
+      },
+      secrets: { load },
+      env: { sandboxProvider: "fake" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return { client, fetch, credentials, findCredential, findCredentials, findSecret, load };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([undefined, "", "   "])("uses the saved key for a blank key %j", async (apiKey) => {
+    const { client, fetch, findSecret, load } = fixture();
+    const response = await client.models.probeOpenAiCompatible({ baseUrl, apiKey });
+    expect(fetch).toHaveBeenCalledWith(
+      new URL(`${baseUrl}/models`),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer fake-saved-key" }),
+      }),
+    );
+    expect(findSecret).toHaveBeenCalledWith({
+      where: { id: { in: ["secret-1"] }, userId: actor.userId, spaceId: null },
+      select: { id: true, ciphertext: true },
+    });
+    expect(load).toHaveBeenCalledWith("fake-ciphertext", "secret-1");
+    expect(response).toEqual({ models: ["test-model"] });
+    expect(JSON.stringify(response)).not.toContain("fake-saved-key");
+  });
+
+  it("uses a typed key without looking up the stored credential", async () => {
+    const { client, fetch, findCredential, findCredentials, findSecret, load } = fixture();
+    await client.models.probeOpenAiCompatible({ baseUrl, apiKey: " fake-typed-key " });
+    expect(fetch).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer fake-typed-key" }),
+      }),
+    );
+    expect(findCredential).not.toHaveBeenCalled();
+    expect(findCredentials).not.toHaveBeenCalled();
+    expect(findSecret).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it.each(["different endpoint", "unreadable", "matching endpoint"])(
+    "tries the preferred credential first, then another matching credential when preferred is %s",
+    async (preferred) => {
+      const { client, fetch, credentials, findCredentials, findSecret, load } = fixture();
+      credentials.push({
+        id: "cred-2",
+        userId: actor.userId,
+        provider: "openai-compatible",
+        secretId: "secret-2",
+      });
+      load.mockImplementation(async (_, secretId) => {
+        if (secretId === "secret-2") return stored;
+        if (preferred === "unreadable") throw new Error("Secret unavailable");
+        return JSON.stringify({
+          kind: "openai_compatible",
+          baseUrl: preferred === "matching endpoint" ? baseUrl : "https://127.0.0.2:8000/v1",
+          apiKey: "fake-preferred-key",
+        });
+      });
+
+      await client.models.probeOpenAiCompatible({ baseUrl });
+
+      expect(findCredentials).toHaveBeenCalledWith({
+        where: { userId: actor.userId, provider: "openai-compatible" },
+        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      });
+      expect(findSecret).toHaveBeenCalledExactlyOnceWith({
+        where: { id: { in: ["secret-1", "secret-2"] }, userId: actor.userId, spaceId: null },
+        select: { id: true, ciphertext: true },
+      });
+      expect(fetch.mock.calls[0]?.[1]?.headers).toHaveProperty(
+        "Authorization",
+        preferred === "matching endpoint" ? "Bearer fake-preferred-key" : "Bearer fake-saved-key",
+      );
+      expect(load.mock.calls.map((call) => call[1])).toEqual(
+        preferred === "matching endpoint" ? ["secret-1"] : ["secret-1", "secret-2"],
+      );
+    },
+  );
+
+  it("never uses another user's matching credential after the preferred endpoint differs", async () => {
+    const { client, fetch, credentials, findSecret, load } = fixture();
+    credentials.push({
+      id: "cred-other",
+      userId: "other-user",
+      provider: "openai-compatible",
+      secretId: "secret-other",
+    });
+    load.mockImplementation(async (_, secretId) =>
+      secretId === "secret-other"
+        ? stored
+        : JSON.stringify({
+            kind: "openai_compatible",
+            baseUrl: "https://127.0.0.2:8000/v1",
+            apiKey: "fake-preferred-key",
+          }),
+    );
+
+    await client.models.probeOpenAiCompatible({ baseUrl });
+
+    expect(findSecret).toHaveBeenCalledExactlyOnceWith({
+      where: { id: { in: ["secret-1"] }, userId: actor.userId, spaceId: null },
+      select: { id: true, ciphertext: true },
+    });
+    expect(load).toHaveBeenCalledExactlyOnceWith("fake-ciphertext", "secret-1");
+    expect(fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("does not send the saved key to a different endpoint", async () => {
+    const { client, fetch } = fixture();
+    await client.models.probeOpenAiCompatible({ baseUrl: "https://127.0.0.2:8000/v1" });
+    expect(fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
+  });
+
+  it.each([{ credentialUserId: "other-user" }, { secretUserId: "other-user" }])(
+    "does not load another user's credential or secret: %j",
+    async (options) => {
+      const { client, fetch, findCredential, load } = fixture(options);
+      await client.models.probeOpenAiCompatible({ baseUrl });
+      expect(findCredential).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: actor.userId, provider: "openai-compatible" } }),
+      );
+      expect(load).not.toHaveBeenCalled();
+      expect(fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
+    },
+  );
+
+  it.each(["unavailable", "corrupt"])(
+    "falls back when the stored secret is %s",
+    async (failure) => {
+      const { client, fetch, load } = fixture();
+      if (failure === "unavailable") load.mockRejectedValue(new Error("Secret unavailable"));
+      else load.mockResolvedValue('{"kind":"openai_compatible"}');
+      await expect(client.models.probeOpenAiCompatible({ baseUrl })).resolves.toEqual({
+        models: ["test-model"],
+      });
+      expect(fetch.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
+    },
+  );
+
+  it("still rejects saved keys on public HTTP endpoints", async () => {
+    vi.stubEnv("RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC", "1");
+    try {
+      const { client, fetch, load } = fixture();
+      const baseUrl = "http://example.invalid/v1";
+      load.mockResolvedValue(
+        JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "fake-saved-key" }),
+      );
+      await expect(client.models.probeOpenAiCompatible({ baseUrl })).rejects.toThrow(/HTTPS/);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
 describe("model credential persistence", () => {
   const actor = {
     spaceId: "workspace-1",
@@ -2057,6 +2382,67 @@ describe("model credential persistence", () => {
         provider: "anthropic",
         modelId: persisted.create.modelId,
       }),
+    });
+  });
+
+  it("updates a saved legacy Azure credential when replacing its key", async () => {
+    const { deps, handler } = persistDeps();
+    const existing = {
+      id: "cred-azure",
+      userId: actor.userId,
+      provider: "azure-openai-responses",
+      label: "Azure",
+      secretId: "old-secret",
+    };
+    const update = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({
+      ...existing,
+      ...data,
+    }));
+    const findFirst = vi.fn(
+      async ({ where }: { where: { provider: string | { in: string[] } } }) => {
+        const provider = where.provider;
+        return provider === existing.provider ||
+          (typeof provider !== "string" && provider.in.includes(existing.provider))
+          ? existing
+          : null;
+      },
+    );
+    Object.assign(deps.prisma.userModelCredential, {
+      findFirst,
+      update,
+      count: vi.fn().mockResolvedValue(0),
+    });
+    // The fixture shares this client with the write transaction.
+    const transaction = deps.prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+    transaction.mockImplementation(async (fn) =>
+      fn({
+        userModelCredential: deps.prisma.userModelCredential,
+        userVoiceCredential: { count: vi.fn().mockResolvedValue(0) },
+        spaceModelPreference: deps.prisma.spaceModelPreference,
+        secret: {
+          create: vi.fn().mockResolvedValue({ id: "new-secret" }),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+      }),
+    );
+    Object.assign(deps.prisma, {
+      secret: { findFirst: vi.fn().mockResolvedValue(null) },
+    });
+
+    const response = await call(handler, "models/connect", {
+      provider: "azure",
+      apiKey: "fake-replacement-key",
+      modelId: "gpt-4o",
+    });
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: existing.id },
+      data: { label: "azure", secretId: "new-secret" },
+    });
+    expect(deps.prisma.userModelCredential.create).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      json: { id: existing.id, provider: "azure" },
     });
   });
 
@@ -3669,6 +4055,20 @@ describe("routines.update", () => {
     });
   });
 
+  it("keeps thinking when the saved Azure provider alias is canonicalized", async () => {
+    const { call, update } = fixture(false, false, {
+      modelProvider: "azure-openai-responses",
+      modelId: "gpt-4o",
+      thinkingLevel: "high",
+    });
+    expect((await call({ modelProvider: "azure", modelId: "gpt-4o" })).response.status).toBe(200);
+    expect(update.mock.calls[0]![0].data).toMatchObject({
+      modelProvider: "azure",
+      modelId: "gpt-4o",
+      thinkingLevel: "high",
+    });
+  });
+
   it("keeps an explicitly supplied thinking level when changing models", async () => {
     const { call, update } = fixture(false, false, ownModel);
     expect((await call({ modelId: "new-model", thinkingLevel: "low" })).response.status).toBe(200);
@@ -4877,5 +5277,84 @@ describe("link favicons", () => {
       code: "UNAUTHORIZED",
     });
     expect(favicon).not.toHaveBeenCalled();
+  });
+});
+
+describe("routine watch creation boundaries", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@rakazo.test",
+    isDeploymentOwner: true,
+  } satisfies Actor;
+
+  function fixture() {
+    const create = vi.fn();
+    const update = vi.fn();
+    const findBot = vi.fn(async () => ({ id: "bot-1", computer: { scope: "team" } }));
+    const findRoutine = vi.fn(async () => ({
+      id: "routine-1",
+      botId: "bot-1",
+      crons: [],
+      watch: null,
+    }));
+    const client = createRouterClient(
+      createRouter({
+        prisma: {
+          bot: { findFirst: findBot },
+          routine: { findFirst: findRoutine, create, update },
+        },
+        env: { sandboxProvider: "fake" },
+      } as unknown as RouterDeps),
+      { context: { actor } as never },
+    );
+    return { client, create, update, findBot, findRoutine };
+  }
+
+  it("rejects team file escapes on create and update before writing", async () => {
+    const { client, create, update } = fixture();
+    const watch = { kind: "files" as const, paths: ["/etc"], everyMinutes: 5, loud: false };
+    await expect(
+      client.routines.create({ botId: "bot-1", name: "Check", prompt: "Check changes", watch }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("inside the bot's folder"),
+    });
+    await expect(client.routines.update({ routineId: "routine-1", watch })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: expect.stringContaining("inside the bot's folder"),
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("uses the owner boundary before creating or changing a command watch", async () => {
+    const { client, create, update, findBot, findRoutine } = fixture();
+    findBot.mockResolvedValueOnce(null as never);
+    const watch = {
+      kind: "command" as const,
+      command: "echo changed",
+      everyMinutes: 5,
+      loud: false,
+    };
+    await expect(
+      client.routines.create({ botId: "bot-1", name: "Check", prompt: "Check changes", watch }),
+    ).rejects.toBeDefined();
+    expect(findBot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+      }),
+    );
+    findRoutine.mockResolvedValueOnce(null as never);
+    await expect(client.routines.update({ routineId: "routine-1", watch })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(findRoutine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ spaceId: actor.spaceId, userId: actor.userId }),
+      }),
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 });

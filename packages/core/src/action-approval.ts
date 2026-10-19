@@ -93,6 +93,30 @@ export function connectorToolRequiresApproval(toolName: string, readOnly?: boole
   return !READ_ONLY_CONNECTOR_PATTERN.test(toolName);
 }
 
+/** Unattended watches require explicit read-only metadata and must respect approval rules. */
+export function watchToolRefusal(input: {
+  toolName: string;
+  readOnly?: boolean;
+  connectorKind?: string;
+  rules: ActionApprovalRule[];
+}): string | null {
+  const { toolName, readOnly } = input;
+  if (readOnly !== true) {
+    return `${toolName} can change data, so a change trigger can't run it. Pick a read-only tool.`;
+  }
+  if (
+    resolveActionApprovalDetail({
+      toolName,
+      connectorKind: input.connectorKind,
+      readOnly,
+      rules: input.rules,
+    }).decision === "ask"
+  ) {
+    return `${toolName} needs approval under this space's rules, and a change check cannot ask.`;
+  }
+  return null;
+}
+
 export function toolRequiresApproval(
   toolName: string,
   viaConnector: boolean,

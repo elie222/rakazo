@@ -45,6 +45,7 @@ async function failRun(scenario: Scenario) {
     throw scenario.error;
   });
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
@@ -314,6 +315,7 @@ function retryHarness(scenario: RetryScenario = {}) {
     },
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => failed),
       findFirst: vi.fn(async ({ select }: { select: { id?: boolean } }) =>

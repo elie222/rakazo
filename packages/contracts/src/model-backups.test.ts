@@ -185,3 +185,23 @@ describe("connected backup model choices", () => {
     );
   });
 });
+
+it("keeps saved Azure connections available for backup selection", () => {
+  const legacy = { provider: "azure-openai-responses", modelId: "gpt-4o" };
+  const current = { provider: "azure", modelId: "gpt-4o" };
+  expect(
+    connectedBackupOptions(
+      [{ provider: "azure", id: "gpt-4o", label: "GPT-4o", billing: "" }],
+      [
+        {
+          id: "credential-azure",
+          provider: legacy.provider,
+          label: "Azure",
+          hasKey: true,
+          isDefault: true,
+        },
+      ],
+    ),
+  ).toMatchObject([current]);
+  expect(sameBackupChoices([legacy], [current])).toBe(true);
+});

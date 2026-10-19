@@ -3,8 +3,42 @@ import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
+import {
+  buildModelConnectPlaintext,
+  modelCredentialDto,
+  storedOpenAiCompatibleProbeKey,
+} from "./model-connect.js";
 import { parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
+
+describe("stored OpenAI-compatible probe key", () => {
+  const baseUrl = "https://example.invalid/v1";
+  const stored = serializeModelSecret({
+    kind: "openai_compatible",
+    baseUrl,
+    apiKey: "fake-saved-key",
+  });
+
+  it.each([baseUrl, `${baseUrl}/`, "https://example.invalid", "https://example.invalid/"])(
+    "reuses the key for the matching normalized URL %s",
+    (url) => {
+      expect(storedOpenAiCompatibleProbeKey(url, stored)).toBe("fake-saved-key");
+    },
+  );
+
+  it("does not transfer a key to a different host", () => {
+    expect(storedOpenAiCompatibleProbeKey("https://other.invalid/v1", stored)).toBeUndefined();
+  });
+
+  it.each([
+    undefined,
+    serializeModelSecret({ kind: "openai_compatible", baseUrl }),
+    JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "   " }),
+    serializeModelSecret({ kind: "api_key", key: "fake-other-key" }),
+    '{"kind":"openai_compatible",',
+  ])("ignores absent, keyless, unrelated or corrupt secrets: %s", (plaintext) => {
+    expect(storedOpenAiCompatibleProbeKey(baseUrl, plaintext)).toBeUndefined();
+  });
+});
 
 describe("built-in provider output limits", () => {
   const row = {
@@ -737,4 +771,16 @@ describe("compatible connection updates", () => {
     const legacy = serializeModelSecret({ kind: "openai_compatible", baseUrl, apiKey: "fake-key" });
     expect(() => buildModelConnectPlaintext({ ...input, baseUrl }, legacy)).toThrow(/HTTPS/);
   });
+});
+
+it("exposes saved Azure credentials under the catalog provider id", () => {
+  expect(
+    modelCredentialDto({
+      id: "credential-azure",
+      provider: "azure-openai-responses",
+      label: "Azure",
+      isDefault: true,
+      defaultModel: "gpt-4o",
+    }),
+  ).toMatchObject({ provider: "azure", modelId: "gpt-4o" });
 });

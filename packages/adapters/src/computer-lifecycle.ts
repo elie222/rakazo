@@ -191,7 +191,11 @@ export async function provisionComputer(
           maintenanceId: existing.maintenanceId ?? null,
           ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
         },
-        data: { updatedAt: new Date() },
+        // A row activated by an older release has no clock yet; start it now.
+        data: {
+          updatedAt: new Date(),
+          ...(existing.runningSince ? {} : { runningSince: new Date() }),
+        },
       });
       if (retained.count !== 1) throw new ComputerBusyError();
       await deps.sandbox.prepare(ref, context);
@@ -366,6 +370,11 @@ export async function provisionComputer(
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
+        // A reconnect to a computer that stayed up continues its stretch; any start begins one.
+        runningSince:
+          existing.state === "running" && existing.runningSince && !ref.started && !replacement
+            ? existing.runningSince
+            : new Date(),
         ...(!reconnecting
           ? {
               controlHolder: activeControl ? "user" : controlHolder,
