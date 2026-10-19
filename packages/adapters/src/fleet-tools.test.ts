@@ -1076,6 +1076,22 @@ describe("organizeBot refusals", () => {
     return organizeBot({ ...fleetDeps, runSecrets }, run, args);
   };
 
+  it("refuses a group below the active member minimum before creating a section", async () => {
+    const { prisma } = fakeFleet({
+      bots: [
+        { id: "bot-active", name: "Active" },
+        { id: "bot-gone", name: "Gone", archivedAt: new Date(0) },
+      ],
+      groups: [{ id: "group-small", name: "Small", memberIds: ["bot-active", "bot-gone"] }],
+    });
+    expect(
+      await organizeBot(writeDeps(prisma), run, { group_id: "group-small", section: "Research" }),
+    ).toEqual({
+      error: "That bot or group is no longer available. Call list_fleet and try again.",
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it("refuses section together with clear_section", async () => {
     expect(await organize({ bot_name: "Ops", section: "Research", clear_section: true })).toEqual({
       error: "Pass section or clear_section, not both.",

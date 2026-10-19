@@ -660,6 +660,11 @@ export async function organizeBot(
     }
     const target = await resolveGroup(deps.prisma, run, args);
     if ("error" in target) return { error: target.error };
+    if (
+      target.members.filter((member) => member.bot.archivedAt === null).length < GROUP_MEMBER_MIN
+    ) {
+      return { error: NOT_FOUND };
+    }
     if (section) {
       await createRepos(deps.prisma).createBotSection(actor, { groupId: target.id, name: section });
     }
