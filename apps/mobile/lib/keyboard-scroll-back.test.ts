@@ -27,6 +27,14 @@ describe("keyboard dismissal on a scroll toward older messages", () => {
     expect(back.onScroll(at(60))).toBe(false);
   });
 
+  it("fires when a drag toward newer messages turns back toward older ones", () => {
+    const back = new KeyboardScrollBack({ inverted: true });
+    back.onDragStart(at(100));
+
+    expect(back.onScroll(at(80))).toBe(false);
+    expect(back.onScroll(at(90))).toBe(true);
+  });
+
   it("ignores a move under the threshold", () => {
     const back = new KeyboardScrollBack({ inverted: true });
     back.onDragStart(at(100));

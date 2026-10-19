@@ -27,7 +27,11 @@ export class KeyboardScrollBack {
 
   onScroll(metrics: ScrollMetrics): boolean {
     if (this.dragStart === null) return false;
-    if (this.dragStart - this.distanceFromOldest(metrics) <= THRESHOLD) return false;
+    const distance = this.distanceFromOldest(metrics);
+    // Measure from the newest point of the drag, so a drag that turns back toward older
+    // messages hides the keyboard without first returning to where it started.
+    this.dragStart = Math.max(this.dragStart, distance);
+    if (this.dragStart - distance <= THRESHOLD) return false;
     this.dragStart = null;
     return true;
   }
