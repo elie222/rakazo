@@ -336,10 +336,6 @@ msgstr "תווית חשבון"
 msgid "Accounts"
 msgstr "חשבונות"
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Action confirmations"
-msgstr "אישורי פעולות"
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: sectionMenu.section.name
@@ -1282,6 +1278,10 @@ msgstr "אימות סיסמה"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הדפדפן הזה, ואז לבדוק שוב."
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Confirmations"
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -4024,6 +4024,7 @@ msgstr "משחזר את סביבת העבודה"
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "לנסות שוב"
 
@@ -4473,6 +4474,10 @@ msgstr "עדכון תוכנה"
 #: src/lib/user-error.ts
 msgid "Something went wrong. Try again."
 msgstr "משהו השתבש. אפשר לנסות שוב."
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Space"
+msgstr ""
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."

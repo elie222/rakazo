@@ -16,7 +16,9 @@ const voice = vi.hoisted(() => ({
   setSpeechModel: vi.fn(),
 }));
 
-vi.mock("../lib/rpc", () => ({ rpc: { voice } }));
+const { speak } = vi.hoisted(() => ({ speak: vi.fn(async () => undefined) }));
+vi.mock("../lib/tts.js", () => ({ speaker: { speak, state: {} } }));
+vi.mock("../lib/rpc", () => ({ rpc: { voice }, rpcForSpace: () => ({ voice }) }));
 vi.mock("@lingui/react/macro", () => {
   const t = (parts: TemplateStringsArray) => parts.join("");
   return { useLingui: () => ({ t }), Trans: ({ children }: { children: ReactNode }) => children };
@@ -43,6 +45,7 @@ vi.mock("@rakazo/ui-web", () => {
   };
 });
 
+import { SpaceRpcProvider } from "../lib/space-rpc";
 import { VoiceSettingsOverlay } from "./VoiceSettingsOverlay";
 
 const fish = {
@@ -304,3 +307,38 @@ it.each([
     }
   },
 );
+
+it.each([null, "space-edited"])("plays a sample for the bound space %s", async (spaceId) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  speak.mockClear();
+  voice.catalog.mockResolvedValue([
+    { id: "fish-audio", name: "Fish Audio", description: "", transcribe: true },
+  ]);
+  voice.credentials.mockResolvedValue([fish]);
+  voice.status.mockResolvedValue({ ready: true, provider: fish.provider });
+  voice.voices.mockResolvedValue([{ id: fish.voiceId, label: "Aria" }]);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      const panel = <VoiceSettingsOverlay embedded onClose={() => undefined} />;
+      root.render(spaceId ? <SpaceRpcProvider spaceId={spaceId}>{panel}</SpaceRpcProvider> : panel);
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === "Hear a sample")
+        ?.click();
+    });
+    await vi.waitFor(() =>
+      expect(speak).toHaveBeenCalledWith(
+        "Hi, this is how I'll sound when I read replies out loud.",
+        { spaceId },
+      ),
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

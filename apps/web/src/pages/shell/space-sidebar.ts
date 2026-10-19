@@ -24,6 +24,8 @@ function spaceHeaderMenu(space: { canRename?: boolean; canDelete?: boolean }, ho
   return {
     canRenameSpace: hostsMenu && space.canRename === true,
     canDeleteSpace: hostsMenu && space.canDelete === true,
+    // Every member can open a space's settings, so the menu does not depend on rename or delete.
+    canOpenSpaceSettings: hostsMenu,
   };
 }
 
@@ -115,7 +117,9 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
           spaceName: space.name,
           ...spaceHeaderMenu(space, false),
         }));
-    if (!showSpaceNames && space.canRename !== true && space.canDelete !== true) {
+    // A lone space is the selected one, so its settings stay in the account menu too.
+    const lone = !showSpaceNames && !space.canRename && !space.canDelete;
+    if (lone && (needle || emptySections.length > 0)) {
       return emptySections;
     }
     return [

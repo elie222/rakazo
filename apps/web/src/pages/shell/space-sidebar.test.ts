@@ -108,6 +108,32 @@ describe("sidebarGroupsForSpaces", () => {
     });
   });
 
+  it("keeps the space menu for a member who cannot rename or delete, for Settings", () => {
+    const groups = sidebarGroupsForSpaces(
+      [space("space-1", "Personal", { canRename: true }), space("space-2", "Shared")],
+      "",
+    );
+
+    expect(groups[1]).toMatchObject({
+      title: "Shared",
+      canRenameSpace: false,
+      canDeleteSpace: false,
+      canOpenSpaceSettings: true,
+    });
+  });
+
+  it("keeps settings reachable in a member's only empty space", () => {
+    expect(sidebarGroupsForSpaces([space("space-1", "Shared", { bots: [] })], "")).toEqual([
+      expect.objectContaining({
+        title: null,
+        spaceName: "Shared",
+        canRenameSpace: false,
+        canDeleteSpace: false,
+        canOpenSpaceSettings: true,
+      }),
+    ]);
+  });
+
   it("hides space actions while a search removes every chat from the only space", () => {
     expect(
       sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "missing"),

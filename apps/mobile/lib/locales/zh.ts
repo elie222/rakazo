@@ -635,6 +635,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
   "https://executor.example/mcp": "https://executor.example/mcp",
+  Diagram: "图表",
   Image: "图片",
   "Markdown file": "Markdown 文件",
   "Message from {peer}": "来自 {peer} 的消息",

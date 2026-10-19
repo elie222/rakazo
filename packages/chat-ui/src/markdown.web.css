@@ -168,6 +168,19 @@
   margin: 0;
 }
 
+/* A Mermaid diagram sits on the same card a code block uses. A wide one scrolls sideways. */
+.rk-chat-markdown-diagram {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.75em;
+  background: var(--card);
+  padding: 0.8em 0.9em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
 .rk-chat-markdown-copy {
   position: absolute;
   top: 0.5em;
@@ -238,6 +251,15 @@
   height: auto;
   margin: 0.65em 0;
   border-radius: 0.65em;
+}
+
+/* Shrinks to fit, but not below 80% of its drawn size: past that the card scrolls instead. */
+.rk-chat-markdown .rk-chat-markdown-diagram img {
+  display: block;
+  max-width: max(100%, calc(var(--rk-diagram-width) * 0.8));
+  height: auto;
+  margin: 0 auto;
+  border-radius: 0;
 }
 
 .rk-chat-markdown input[type="checkbox"] {

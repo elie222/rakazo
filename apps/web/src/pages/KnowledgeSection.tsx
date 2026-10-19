@@ -13,7 +13,7 @@ import {
 } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { downloadArtifactBytes } from "../lib/artifact-open";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 
 const fieldClass = "mt-2 w-full font-mono text-[13px] leading-relaxed";
 
@@ -32,6 +32,7 @@ export function KnowledgeSection({
   botId: string;
   onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   return (
     <section className="mt-6" data-testid="bot-knowledge">
@@ -62,6 +63,7 @@ export function KnowledgeSection({
 
 /** The space's shared memory documents, mounted in the Memory settings overlay. */
 export function SpaceMemorySection() {
+  const rpc = useSpaceRpc();
   return (
     <div className="mt-6" data-testid="space-memory-documents">
       <div className="mb-2 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground">
@@ -85,6 +87,7 @@ function MemoryDocumentList({
   exportFilename: string;
   testId: string;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
@@ -295,6 +298,7 @@ function AgentSkills({
 }: {
   onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const [loading, setLoading] = useState(true);
   const [skills, setSkills] = useState<AgentSkillCatalogEntry[]>([]);

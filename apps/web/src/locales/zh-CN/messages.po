@@ -336,10 +336,6 @@ msgstr ""
 msgid "Accounts"
 msgstr ""
 
-#: src/components/ApprovalRulesSettings.tsx
-msgid "Action confirmations"
-msgstr "操作确认"
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: sectionMenu.section.name
@@ -1282,6 +1278,10 @@ msgstr "确认密码"
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Confirmations"
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
@@ -4024,6 +4024,7 @@ msgstr ""
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "重试"
 
@@ -4473,6 +4474,10 @@ msgstr "软件更新"
 #: src/lib/user-error.ts
 msgid "Something went wrong. Try again."
 msgstr "出了点问题。请重试。"
+
+#: src/pages/SettingsOverlay.tsx
+msgid "Space"
+msgstr ""
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."

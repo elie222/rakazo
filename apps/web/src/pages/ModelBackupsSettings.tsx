@@ -9,7 +9,8 @@ import {
 } from "@rakazo/contracts";
 import { Button, NativeSelect, NativeSelectOption } from "@rakazo/ui-web";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { rpc, selectedSpaceId } from "../lib/rpc";
+import { selectedSpaceId } from "../lib/rpc";
+import { useBoundSpaceId, useSpaceRpc } from "../lib/space-rpc";
 
 type Scope = { userId: string; spaceId: string };
 type BackupsState = {
@@ -28,7 +29,9 @@ function scopeKey(scope: Scope): string {
   return JSON.stringify([scope.userId, scope.spaceId]);
 }
 
-function isSelectedSpace(spaceId: string): boolean {
+/** Backups load and save only while the space they belong to is the one settings act on. */
+function isSelectedSpace(spaceId: string, boundSpaceId: string | null): boolean {
+  if (boundSpaceId) return boundSpaceId === spaceId;
   const selected = selectedSpaceId();
   return selected === null || selected === spaceId;
 }
@@ -39,6 +42,8 @@ export function ModelBackupsSettings({
   catalog,
   credentials,
 }: Scope & { catalog: ModelCatalogEntry[]; credentials: ModelCredential[] }) {
+  const rpc = useSpaceRpc();
+  const boundSpaceId = useBoundSpaceId();
   const { t } = useLingui();
   const activeScopeKey = scopeKey({ userId, spaceId });
   const activeScopeRef = useRef(activeScopeKey);
@@ -65,7 +70,7 @@ export function ModelBackupsSettings({
     [options],
   );
   const currentState = state.scopeKey === activeScopeKey ? state : null;
-  const selectedSpaceMatches = isSelectedSpace(spaceId);
+  const selectedSpaceMatches = isSelectedSpace(spaceId, boundSpaceId);
   const dirty = currentState ? !sameBackupChoices(currentState.saved, currentState.draft) : false;
   const draftKeys = new Set(currentState?.draft.map(backupChoiceKey) ?? []);
   const addableOptions = options.filter((option) => !draftKeys.has(backupChoiceKey(option)));
@@ -81,7 +86,7 @@ export function ModelBackupsSettings({
       !cancelled &&
       generation === requestGenerationRef.current &&
       activeScopeRef.current === activeScopeKey &&
-      isSelectedSpace(spaceId);
+      isSelectedSpace(spaceId, boundSpaceId);
     setState({
       scopeKey: activeScopeKey,
       loading: true,
@@ -95,7 +100,7 @@ export function ModelBackupsSettings({
     });
     void (async () => {
       try {
-        if (!isSelectedSpace(spaceId)) {
+        if (!isSelectedSpace(spaceId, boundSpaceId)) {
           throw new Error(t`Space changed. Reopen Models to load its backup list.`);
         }
         const currentMe = (await rpc.me({ context: { spaceId } })) as Me;
@@ -172,7 +177,7 @@ export function ModelBackupsSettings({
       currentState.loading ||
       currentState.saving ||
       !dirty ||
-      !isSelectedSpace(spaceId)
+      !isSelectedSpace(spaceId, boundSpaceId)
     ) {
       return;
     }
@@ -181,7 +186,7 @@ export function ModelBackupsSettings({
     const isCurrent = () =>
       generation === requestGenerationRef.current &&
       activeScopeRef.current === activeScopeKey &&
-      isSelectedSpace(spaceId);
+      isSelectedSpace(spaceId, boundSpaceId);
     setState((previous) =>
       previous.scopeKey === activeScopeKey
         ? { ...previous, saving: true, error: null, notice: null }

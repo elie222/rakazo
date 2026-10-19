@@ -761,6 +761,18 @@ function SpaceShell() {
   useEffect(() => {
     callsEnabledRef.current = bootstrapMe?.phoneCallsEnabled === true;
   }, [bootstrapMe?.phoneCallsEnabled]);
+  const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
+  // null: settings follow the space the app is showing.
+  const [settingsSpaceId, setSettingsSpaceId] = useState<string | null>(null);
+  const settingsSpace =
+    spaces.find((space) => space.id === (settingsSpaceId ?? currentSpaceId)) ?? null;
+  // Never fall back to another space's settings when the edited space goes away.
+  const settingsSpaceGone = settingsSpaceId !== null && !settingsSpace;
+  useEffect(() => {
+    if (!settingsSpaceGone) return;
+    setSettingsOpen(false);
+    setSettingsSpaceId(null);
+  }, [settingsSpaceGone]);
   const [keepComputerRecovery, setKeepComputerRecovery] = useState(false);
   const recoveryHoldTimer = useRef<number | undefined>(undefined);
   const showComputerRecoveryHint =
@@ -2618,8 +2630,16 @@ function SpaceShell() {
   }
 
   function openSettings(section: SettingsSection = "general") {
+    setSettingsSpaceId(null);
     setSettingsSection(section);
     setSettingsOpen(true);
+  }
+
+  // Space-scoped sections bind their own rpc client to this space, so another
+  // space's settings open in place without switching the app or reloading.
+  function openSpaceSettings(spaceId: string) {
+    openSettings("models");
+    setSettingsSpaceId(spaceId);
   }
 
   async function createBot(input: {
@@ -3212,7 +3232,7 @@ function SpaceShell() {
                   nestedRows.flatMap((row) =>
                     row.item.kind === "bot" && row.parentId === parentId ? [row.item.chat.id] : [],
                   );
-                const hasSpaceActions = group.canRenameSpace || group.canDeleteSpace;
+                const hasSpaceActions = group.canOpenSpaceSettings;
                 const headerDropTarget: RosterDropTarget | null =
                   group.spaceId === bootstrapMe?.spaceId &&
                   !group.emptySpaceId &&
@@ -4640,6 +4660,17 @@ function SpaceShell() {
               sideOffset={0}
               className="w-[220px]"
             >
+              {spaceMenuTarget ? (
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSpaceMenu(null);
+                    openSpaceSettings(spaceMenuTarget.id);
+                  }}
+                >
+                  <Settings />
+                  {t`Settings`}
+                </DropdownMenuItem>
+              ) : null}
               {spaceMenuTarget?.canRename ? (
                 <DropdownMenuItem
                   onClick={() => {
@@ -4938,8 +4969,12 @@ function SpaceShell() {
       </Suspense>
 
       <Suspense fallback={null}>
-        {settingsOpen ? (
+        {settingsOpen && !settingsSpaceGone ? (
           <SettingsOverlay
+            space={settingsSpace}
+            spaces={spaces}
+            currentSpaceId={currentSpaceId}
+            onSpaceChange={setSettingsSpaceId}
             name={userName}
             email={session.data?.user.email}
             usage={usage}

@@ -196,6 +196,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Failed to stop work": "Arbeit konnte nicht gestoppt werden",
   File: "Datei",
   "Hide {label}": "{label} ausblenden",
+  Diagram: "Diagramm",
   Image: "Bild",
   "Jump to latest": "Zur neuesten Nachricht springen",
   "Jump to latest, new messages": "Zur neuesten Nachricht springen, neue Nachrichten",

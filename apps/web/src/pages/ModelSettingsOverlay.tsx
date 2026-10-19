@@ -66,7 +66,7 @@ import {
   runModelConnectionPreflight,
   unavailableSelectedModel,
 } from "../lib/model-connection-preflight";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 import { useModelOAuthSignIn } from "../lib/use-model-oauth-signin";
 import { errorText } from "../lib/user-error";
 import { ModelBackupsSettings } from "./ModelBackupsSettings";
@@ -88,6 +88,7 @@ export function ModelSettingsOverlay({
   embedded?: boolean;
   localOwner?: boolean;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const [catalog, setCatalog] = useState<ModelCatalogEntry[]>([]);
   const [credentials, setCredentials] = useState<ModelCredential[]>([]);
