@@ -3624,14 +3624,13 @@ describe("bot model auth on save", () => {
 
   function saveDeps(options: {
     modelId: string;
-    thinkingLevel?: string | null;
     preferences: (args: { where: { modelId?: string; credential?: { provider?: string } } }) => {
       credential: ReturnType<typeof credentialRow>;
       isDefault: boolean;
       modelId: string;
     } | null;
   }) {
-    const bot = { ...storedBot(options.modelId), thinkingLevel: options.thinkingLevel ?? null };
+    const bot = storedBot(options.modelId);
     const preferenceFindFirst = vi.fn(options.preferences);
     const secretFindFirst = vi.fn(async (args: { where: { id?: string } }) => {
       if (args.where.id === "secret-api") {
@@ -3711,26 +3710,6 @@ describe("bot model auth on save", () => {
         data: expect.objectContaining({ name: "Ada renamed", modelId: spark }),
       }),
     );
-  });
-
-  it("saves a rename while resending a saved thinking level the model no longer lists", async () => {
-    const stale = { modelId: spark, thinkingLevel: "max", preferences: () => null };
-    const rename = await call(saveDeps(stale).handler, "bots/update", {
-      botId: "bot-1",
-      name: "Ada renamed",
-      modelProvider: "openai-codex",
-      modelId: spark,
-      thinkingLevel: "max",
-    });
-    expect(rename.status).toBe(200);
-
-    const change = await call(saveDeps({ ...stale, thinkingLevel: null }).handler, "bots/update", {
-      botId: "bot-1",
-      modelProvider: "openai-codex",
-      modelId: spark,
-      thinkingLevel: "max",
-    });
-    expect(change.status).toBe(400);
   });
 
   it("rejects setting Codex Spark on the space's ChatGPT subscription credential", async () => {

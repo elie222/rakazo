@@ -1731,14 +1731,6 @@ export function createRouter(deps: RouterDeps) {
           });
           if (!section) throw new IsolationError();
         }
-        const nextProvider =
-          input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider;
-        const nextModel = input.modelId !== undefined ? input.modelId : existing.modelId;
-        // Settings resend the saved level on every save; check it only when it or the model changes.
-        const checkThinkingLevel =
-          nextProvider !== existing.modelProvider ||
-          nextModel !== existing.modelId ||
-          (input.thinkingLevel ?? null) !== (existing.thinkingLevel ?? null);
         const modelChange = await validateBotModelChange(
           {
             prisma: deps.prisma,
@@ -1753,9 +1745,10 @@ export function createRouter(deps: RouterDeps) {
           {
             userId: context.actor.userId,
             spaceId: context.actor.spaceId,
-            provider: nextProvider,
-            model: nextModel,
-            thinkingLevel: checkThinkingLevel ? input.thinkingLevel : undefined,
+            provider:
+              input.modelProvider !== undefined ? input.modelProvider : existing.modelProvider,
+            model: input.modelId !== undefined ? input.modelId : existing.modelId,
+            thinkingLevel: input.thinkingLevel,
             current: { provider: existing.modelProvider, model: existing.modelId },
           },
         );
