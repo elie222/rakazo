@@ -169,17 +169,19 @@ export default function HomeRoute() {
 }
 
 /** The chat list beside the open chat on a wide window. */
-export function InboxPane() {
-  return <HomeSession embedded />;
+type InboxPaneProps = { onSelectSpace?: (spaceId: string) => void };
+
+export function InboxPane({ onSelectSpace }: InboxPaneProps) {
+  return <HomeSession embedded onSelectSpace={onSelectSpace} />;
 }
 
-function HomeSession({ embedded = false }: { embedded?: boolean }) {
+function HomeSession({ embedded = false, onSelectSpace }: InboxPaneProps & { embedded?: boolean }) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  return <Home key={`${generation}:${ready}`} embedded={embedded} />;
+  return <Home key={`${generation}:${ready}`} embedded={embedded} onSelectSpace={onSelectSpace} />;
 }
 
-function Home({ embedded }: { embedded: boolean }) {
+function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
@@ -226,7 +228,10 @@ function Home({ embedded }: { embedded: boolean }) {
     kind: "bot" | "group";
     id: string;
     spaceId?: string;
+    chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup;
+    sections: MobileBotSection[];
   } | null>(null);
+  const organizeRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
     active: [],
@@ -509,14 +514,16 @@ function Home({ embedded }: { embedded: boolean }) {
     visibleGroups,
   ]);
   const initials = userInitials(me?.name ?? "");
-  const organizeSpace =
-    organizeTarget?.spaceId && organizeTarget.spaceId !== me?.spaceId
-      ? spaces.find((space) => space.id === organizeTarget.spaceId)
-      : undefined;
+  const organizeSpace = organizeTarget
+    ? organizeTarget.spaceId === me?.spaceId
+      ? { bots, groups, botSections }
+      : spaces.find((space) => space.id === organizeTarget.spaceId)
+    : undefined;
   const organizeChat = organizeTarget
     ? organizeTarget.kind === "bot"
-      ? (organizeSpace?.bots ?? bots).find((bot) => bot.id === organizeTarget.id)
-      : (organizeSpace?.groups ?? groups).find((group) => group.id === organizeTarget.id)
+      ? (organizeSpace?.bots.find((bot) => bot.id === organizeTarget.id) ?? organizeTarget.chat)
+      : (organizeSpace?.groups.find((group) => group.id === organizeTarget.id) ??
+        organizeTarget.chat)
     : null;
   const insets = useSafeAreaInsets();
   // An unfolded or tablet window keeps the inbox in a centred column.
@@ -560,6 +567,8 @@ function Home({ embedded }: { embedded: boolean }) {
       inboxRequestId.current += 1;
       activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
+      // Close a chat in another space before selection can change its request context.
+      onSelectSpace?.(spaceId);
       try {
         const refresh = async () => {
           spaceActionRef.current.recoveryId = null;
@@ -582,7 +591,7 @@ function Home({ embedded }: { embedded: boolean }) {
         setSpaceBusy(false);
       }
     },
-    [refreshBots, loadActivity, t],
+    [refreshBots, loadActivity, onSelectSpace, t],
   );
 
   const deleteInboxSpace = useCallback(
@@ -810,21 +819,68 @@ function Home({ embedded }: { embedded: boolean }) {
     },
     [openChat],
   );
+  const organize = useCallback(
+    async (kind: "bot" | "group", chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup) => {
+      const requestId = ++organizeRequestId.current;
+      const generation = currentSessionGeneration();
+      const apiBase = currentApiBase();
+      const spaceId = chat.spaceId ?? me?.spaceId;
+      let space =
+        spaceId === me?.spaceId
+          ? { bots, groups, botSections }
+          : spaces.find((space) => space.id === spaceId);
+      let target = (kind === "bot" ? space?.bots : space?.groups)?.find(
+        (item) => item.id === chat.id,
+      );
+      if (!target && spaceId) {
+        try {
+          // Independent of inbox polling: only a newer organize press supersedes this request.
+          const context = await captureApiRequestContext();
+          const navigation = await rpc<MobileSpaceNavigation>("spaces/list", undefined, {
+            requestContext: {
+              ...context,
+              headers: { ...context.headers, "x-rakazo-space-id": spaceId },
+            },
+            skipSpaceAuthRecovery: true,
+          });
+          if (navigation.current.id !== spaceId) return;
+          space = navigation.current;
+          target = (kind === "bot" ? space.bots : space.groups).find((item) => item.id === chat.id);
+        } catch (err) {
+          if (
+            requestId === organizeRequestId.current &&
+            generation === currentSessionGeneration() &&
+            apiBase === currentApiBase()
+          ) {
+            Alert.alert(t("Could not load bots"), errorText(err, t("Try again.")));
+          }
+          return;
+        }
+      }
+      if (
+        !space ||
+        !target ||
+        requestId !== organizeRequestId.current ||
+        generation !== currentSessionGeneration() ||
+        apiBase !== currentApiBase()
+      )
+        return;
+      setOrganizeTarget({ kind, id: chat.id, spaceId, chat: target, sections: space.botSections });
+      void loadBots();
+    },
+    [bots, groups, botSections, spaces, me?.spaceId, loadBots, t],
+  );
   const organizeBot = useCallback(
     (bot: MobileBot | SpaceBot) => {
-      void loadBots().then((loaded) => {
-        if (loaded) setOrganizeTarget({ kind: "bot", id: bot.id, spaceId: bot.spaceId });
-      });
+      void organize("bot", bot);
     },
-    [loadBots],
+    [organize],
   );
   const organizeGroup = useCallback(
     (group: MobileGroup | SpaceGroup) => {
-      void loadBots().then((loaded) => {
-        if (loaded) setOrganizeTarget({ kind: "group", id: group.id, spaceId: group.spaceId });
-      });
+      void organize("group", group);
     },
-    [loadBots],
+    [organize],
   );
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
@@ -1217,8 +1273,11 @@ function Home({ embedded }: { embedded: boolean }) {
       {organizeChat && organizeTarget ? (
         <BotOrganizeModal
           bot={organizeChat}
-          sections={organizeSpace?.botSections ?? botSections}
-          onClose={() => setOrganizeTarget(null)}
+          sections={organizeSpace?.botSections ?? organizeTarget.sections}
+          onClose={() => {
+            organizeRequestId.current += 1;
+            setOrganizeTarget(null);
+          }}
           onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
           onCreateSection={async (name) => {
             await chatRpc(organizeTarget.spaceId, "botSections/create", {

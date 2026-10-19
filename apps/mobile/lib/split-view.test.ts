@@ -3,9 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("react-native", () => ({ useWindowDimensions: () => ({ width: 0, height: 0 }) }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
 
-const { inboxPaneWidth, splitsWindow } = await import("./split-view");
+const { closesSplitChat, inboxPaneWidth, splitsWindow } = await import("./split-view");
 
 describe("split view", () => {
+  it("closes an open chat when a heading selects a different or unknown space", () => {
+    expect(closesSplitChat(true, "space-a", "space-b")).toBe(true);
+    expect(closesSplitChat(true, null, "space-b")).toBe(true);
+    expect(closesSplitChat(true, "space-a", "space-a")).toBe(false);
+    expect(closesSplitChat(false, null, "space-b")).toBe(false);
+  });
+
   it("splits an unfolded foldable or a tablet, not a phone or a half-screen window", () => {
     expect(splitsWindow(412)).toBe(false);
     expect(splitsWindow(673)).toBe(false);

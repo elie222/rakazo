@@ -4,7 +4,14 @@ import {
   MarkdownLinkPromptProvider,
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
-import { DarkTheme, Stack, ThemeProvider, usePathname } from "expo-router";
+import {
+  DarkTheme,
+  Stack,
+  ThemeProvider,
+  useGlobalSearchParams,
+  usePathname,
+  useRouter,
+} from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
@@ -51,6 +58,7 @@ import { clearSavedChats } from "../lib/saved-chats";
 import { registerSessionDiskCache } from "../lib/session";
 import {
   chooseInboxWidth,
+  closesSplitChat,
   inboxPaneWidth,
   loadInboxWidth,
   setInboxHidden,
@@ -71,6 +79,13 @@ const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"
 /** On a wide window the chat list stays on the left and the stack shows the open chat beside it. */
 function SplitFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { botId, groupId } = useGlobalSearchParams<{ botId?: string; groupId?: string }>();
+  const chatId = pathname === "/thread" ? botId : pathname === "/group-thread" ? groupId : null;
+  const chatSpace = useRef<string | null>(null);
+  useEffect(() => {
+    chatSpace.current = chatId ? selectedSpaceId() : null;
+  }, [chatId]);
   const { split, inboxHidden, inboxWidth, windowWidth } = useSplitView();
   const tokens = useMobileTokens();
   const home = pathname === "/";
@@ -105,7 +120,13 @@ function SplitFrame({ children }: { children: ReactNode }) {
             { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: tokens.border },
           ]}
         >
-          <InboxPane />
+          <InboxPane
+            onSelectSpace={(spaceId) => {
+              if (closesSplitChat(Boolean(chatId), chatSpace.current, spaceId)) {
+                router.dismissTo("/");
+              }
+            }}
+          />
         </Animated.View>
       ) : null}
       {/* Keeps its place among the children so the navigation stack survives folding. */}

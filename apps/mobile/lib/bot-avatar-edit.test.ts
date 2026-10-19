@@ -23,6 +23,7 @@ describe("bot avatar editing", () => {
   it("replaces a photo with a plain color", () => {
     const photo = "data:image/webp;base64,AAAA";
     expect(isAvatarPhoto(photo)).toBe(true);
+    expect(isAvatarPhoto(avatarColor(photo))).toBe(false);
     expect(withAvatarColor(photo, "#6A6BF5")).toBe("#6A6BF5");
     expect(avatarShape(photo)).toBeNull();
   });
