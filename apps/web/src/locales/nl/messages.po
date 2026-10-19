@@ -125,7 +125,6 @@ msgid "{count} years"
 msgstr "{count} jaar"
 
 #: src/lib/relative-time.ts
-#: src/pages/ActivityList.tsx
 msgid "{days}d ago"
 msgstr "{days}d geleden"
 
@@ -134,12 +133,10 @@ msgid "{hidden, plural, one {+# earlier step} other {+# earlier steps}}"
 msgstr "{hidden, plural, one {+# eerdere stap} other {+# eerdere stappen}}"
 
 #: src/lib/relative-time.ts
-#: src/pages/ActivityList.tsx
 msgid "{hours}h ago"
 msgstr "{hours}u geleden"
 
 #: src/lib/relative-time.ts
-#: src/pages/ActivityList.tsx
 msgid "{minutes}m ago"
 msgstr "{minutes}m geleden"
 
@@ -587,6 +584,7 @@ msgid "Answer"
 msgstr "Antwoorden"
 
 #: src/components/call/IncomingCall.tsx
+msgctxt "incoming call"
 msgid "Answer"
 msgstr "Antwoorden"
 
@@ -2735,7 +2733,6 @@ msgid "Jump to replied message: {excerpt}"
 msgstr "Spring naar het beantwoorde bericht: {excerpt}"
 
 #: src/lib/relative-time.ts
-#: src/pages/ActivityList.tsx
 msgid "just now"
 msgstr "zojuist"
 
