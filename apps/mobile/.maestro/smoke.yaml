@@ -4,18 +4,16 @@ name: Rakazo mobile smoke
 - launchApp:
     clearState: true
 
-- assertVisible: "Sign in to Rakazo"
-- assertVisible: "Sign up"
-- tapOn: "Sign up"
 - assertVisible: "Sign up for Rakazo"
 - assertVisible: "Name"
 - tapOn: "Sign in"
+- runFlow: helpers/server.yaml
 - assertVisible: "Sign in to Rakazo"
 - tapOn: "Email"
 - inputText: ${RAKAZO_E2E_EMAIL}
 - tapOn: "Password"
 - inputText: ${RAKAZO_E2E_PASSWORD}
-- tapOn: "Sign in to Rakazo"
+- hideKeyboard
 - tapOn: "Sign in"
 
 - extendedWaitUntil:

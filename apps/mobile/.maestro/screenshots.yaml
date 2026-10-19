@@ -22,13 +22,17 @@ tags:
     timeout: 30000
 - takeScreenshot: "02-sign-up"
 - tapOn: "Sign in"
-- assertVisible: "Sign in to Rakazo"
-- takeScreenshot: "01-sign-in"
-
-- tapOn: "Use a custom server"
+- runFlow:
+    when:
+      notVisible:
+        id: "server-address"
+    commands:
+      - assertVisible: "Sign in to Rakazo"
+      - takeScreenshot: "01-sign-in"
+      - tapOn: "Use a custom server"
 - assertVisible: "Server"
 - takeScreenshot: "03-server"
-- tapOn: "Cancel"
+- runFlow: helpers/server.yaml
 
 - tapOn: "Email"
 - inputText: ${RAKAZO_SCREENSHOT_EMAIL}

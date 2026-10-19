@@ -110,6 +110,7 @@ export default function ServerScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <TextInput
+            testID="server-address"
             accessibilityLabel={t("Server")}
             autoCapitalize="none"
             autoComplete="off"

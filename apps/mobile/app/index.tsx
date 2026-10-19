@@ -307,6 +307,7 @@ function Home({ embedded }: { embedded: boolean }) {
         navigation,
         nextMe,
       );
+      return true;
     } catch (err) {
       if (
         requestId !== inboxRequestId.current ||
@@ -809,12 +810,22 @@ function Home({ embedded }: { embedded: boolean }) {
     },
     [openChat],
   );
-  const organizeBot = useCallback((bot: MobileBot | SpaceBot) => {
-    setOrganizeTarget({ kind: "bot", id: bot.id, spaceId: bot.spaceId });
-  }, []);
-  const organizeGroup = useCallback((group: MobileGroup | SpaceGroup) => {
-    setOrganizeTarget({ kind: "group", id: group.id, spaceId: group.spaceId });
-  }, []);
+  const organizeBot = useCallback(
+    (bot: MobileBot | SpaceBot) => {
+      void loadBots().then((loaded) => {
+        if (loaded) setOrganizeTarget({ kind: "bot", id: bot.id, spaceId: bot.spaceId });
+      });
+    },
+    [loadBots],
+  );
+  const organizeGroup = useCallback(
+    (group: MobileGroup | SpaceGroup) => {
+      void loadBots().then((loaded) => {
+        if (loaded) setOrganizeTarget({ kind: "group", id: group.id, spaceId: group.spaceId });
+      });
+    },
+    [loadBots],
+  );
   // One path for the long-press sheet and the swipe actions.
   const [sendReadState] = useState(() => createLatestQueue<boolean>());
   const updateChat = useCallback(

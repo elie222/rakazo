@@ -33,7 +33,6 @@ import {
   avatarColor,
   avatarShape,
   isAvatarPhoto,
-  pickAvatarPhoto,
   withAvatarColor,
   withAvatarShape,
 } from "../lib/bot-avatar-edit";
@@ -401,32 +400,17 @@ export default function BotSettingsScreen() {
         {bot ? (
           <View style={{ alignItems: "center", marginBottom: 24 }}>
             <BotAvatar color={color} identity={bot.id} size={64} status={bot.status} />
-            <View style={{ flexDirection: "row", gap: 16, marginTop: 12 }}>
+            {isAvatarPhoto(color) ? (
               <Pressable
                 accessibilityRole="button"
-                onPress={() =>
-                  void pickAvatarPhoto()
-                    .then((photo) => {
-                      if (photo) setColor(photo);
-                    })
-                    .catch(() => setError(t("Could not use that photo")))
-                }
+                onPress={() => setColor(avatarColor(bot.color))}
+                style={{ marginTop: 12 }}
               >
-                <Text style={{ color: tokens.primary, fontSize: 15, fontWeight: "600" }}>
-                  {t("Choose photo")}
+                <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
+                  {t("Remove photo")}
                 </Text>
               </Pressable>
-              {isAvatarPhoto(color) ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => setColor(avatarColor(bot.color))}
-                >
-                  <Text style={{ color: tokens.mutedForeground, fontSize: 15 }}>
-                    {t("Remove photo")}
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
+            ) : null}
           </View>
         ) : null}
         <Text style={{ color: tokens.mutedForeground, fontSize: 14 }}>{t("Name")}</Text>

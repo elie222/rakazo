@@ -105,7 +105,6 @@ vi.mock("./bot-avatar-edit", () => ({
   avatarColor: (value: string) => value,
   avatarShape: () => null,
   isAvatarPhoto: () => false,
-  pickAvatarPhoto: async () => null,
   withAvatarColor: (_value: string, color: string) => color,
   withAvatarShape: (value: string) => value,
 }));

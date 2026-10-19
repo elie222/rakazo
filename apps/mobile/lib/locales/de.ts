@@ -846,9 +846,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Could not restore instructions": "Anweisungen konnten nicht wiederhergestellt werden",
   "Hide chats": "Chats ausblenden",
   "Show chats": "Chats einblenden",
-  "Choose photo": "Foto auswählen",
   "Remove photo": "Foto entfernen",
   Shape: "Form",
   "Shape {number}": "Form {number}",
-  "Could not use that photo": "Dieses Foto konnte nicht verwendet werden",
 };

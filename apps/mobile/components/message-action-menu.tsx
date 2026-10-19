@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../lib/i18n";
+import { messageMenuPlacement } from "../lib/message-menu-placement";
 import { useMobileTokens } from "../lib/native";
 
 export type MessageMenuItem = {
@@ -49,9 +50,6 @@ function subscribe(listener: () => void) {
 
 const getMenu = () => current;
 const MENU_MAX_WIDTH = 340;
-const EDGE = 12;
-/** The emoji row: 44pt buttons, 8pt padding, and the gap below it. */
-const REACTIONS_HEIGHT = 70;
 
 /** Mounted once at the root; draws the menu over everything while one is open. */
 export function MessageMenuHost() {
@@ -70,14 +68,14 @@ export function MessageMenuHost() {
     close();
     action();
   };
-  const menuWidth = Math.min(MENU_MAX_WIDTH, width - EDGE * 2);
-  const left = Math.min(Math.max(EDGE, menu.anchor.x - menuWidth / 2), width - menuWidth - EDGE);
-  const top = size
-    ? Math.min(
-        Math.max(insets.top + EDGE, menu.anchor.y - size.height / 3),
-        height - insets.bottom - size.height - EDGE,
-      )
-    : menu.anchor.y;
+  const { left, top, menuWidth, maxHeight } = messageMenuPlacement({
+    width,
+    height,
+    insets,
+    anchor: menu.anchor,
+    measuredHeight: size?.height ?? 0,
+    maxWidth: MENU_MAX_WIDTH,
+  });
   return (
     <Modal transparent visible animationType="fade" statusBarTranslucent onRequestClose={close}>
       <Pressable
@@ -94,51 +92,40 @@ export function MessageMenuHost() {
           top,
           width: menuWidth,
           opacity: size ? 1 : 0,
-          gap: 10,
+          maxHeight,
         }}
       >
-        {menu.reactions.length > 0 ? (
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              padding: 8,
-              borderRadius: 28,
-              backgroundColor: tokens.card,
-            }}
-          >
-            {menu.reactions.map((reaction) => (
-              <Pressable
-                key={reaction.emoji}
-                accessibilityRole="button"
-                accessibilityLabel={reaction.emoji}
-                onPress={() => run(reaction.onPress)}
-                style={({ pressed }) => ({
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  backgroundColor: pressed ? tokens.accent : tokens.muted,
-                })}
-              >
-                <Text style={{ fontSize: 24 }}>{reaction.emoji}</Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
-        <ScrollView
-          style={{
-            maxHeight:
-              height -
-              insets.top -
-              insets.bottom -
-              EDGE * 2 -
-              (menu.reactions.length > 0 ? REACTIONS_HEIGHT : 0),
-          }}
-          contentContainerStyle={{ gap: 10 }}
-          bounces={false}
-        >
+        <ScrollView style={{ maxHeight }} bounces={false} contentContainerStyle={{ gap: 10 }}>
+          {menu.reactions.length > 0 ? (
+            <View
+              style={{
+                flexDirection: "row",
+                justifyContent: "space-between",
+                padding: 8,
+                borderRadius: 28,
+                backgroundColor: tokens.card,
+              }}
+            >
+              {menu.reactions.map((reaction) => (
+                <Pressable
+                  key={reaction.emoji}
+                  accessibilityRole="button"
+                  accessibilityLabel={reaction.emoji}
+                  onPress={() => run(reaction.onPress)}
+                  style={({ pressed }) => ({
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: pressed ? tokens.accent : tokens.muted,
+                  })}
+                >
+                  <Text style={{ fontSize: 24 }}>{reaction.emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           {menu.groups
             .filter((group) => group.length > 0)
             .map((group, groupIndex) => (

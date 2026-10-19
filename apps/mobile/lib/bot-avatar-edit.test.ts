@@ -1,11 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-vi.mock("expo-image-manipulator", () => ({ ImageManipulator: {}, SaveFormat: { WEBP: "webp" } }));
-vi.mock("expo-image-picker", () => ({ launchImageLibraryAsync: vi.fn() }));
-
-const { avatarColor, avatarShape, isAvatarPhoto, withAvatarColor, withAvatarShape } = await import(
-  "./bot-avatar-edit"
-);
+import {
+  avatarColor,
+  avatarShape,
+  isAvatarPhoto,
+  withAvatarColor,
+  withAvatarShape,
+} from "./bot-avatar-edit";
 
 describe("bot avatar editing", () => {
   it("keeps the shape when the color changes", () => {

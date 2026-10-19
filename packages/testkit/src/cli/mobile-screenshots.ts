@@ -145,6 +145,8 @@ async function runFlow(flow: string, fixture: Awaited<ReturnType<typeof seedFixt
       "--output",
       path.join(REPORT_DIR, `${flow}.html`),
       "-e",
+      `RAKAZO_MOBILE_API_URL=http://10.0.2.2:${API_PORT}`,
+      "-e",
       `RAKAZO_SCREENSHOT_EMAIL=${EMAIL}`,
       "-e",
       `RAKAZO_SCREENSHOT_PASSWORD=${PASSWORD}`,
