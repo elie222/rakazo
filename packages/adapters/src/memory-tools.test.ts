@@ -48,3 +48,25 @@ describe("appendMemoryFact", () => {
     expect(appendMemoryFact("a\n", "   ")).toBe("a\n");
   });
 });
+
+describe("multiline memory facts", () => {
+  it("recognizes a complete block at the beginning, middle, or end", () => {
+    for (const existing of [
+      "Office:\nBerlin\n",
+      "before\nOffice:\nBerlin\nafter\n",
+      "before\nOffice:\nBerlin",
+    ]) {
+      expect(appendMemoryFact(existing, "Office:\nBerlin")).toBe(existing);
+    }
+  });
+
+  it("does not match partial lines or nonconsecutive lines", () => {
+    for (const existing of [
+      "Main Office:\nBerlin\n",
+      "Office:\nBerlin Mitte\n",
+      "Office:\nother\nBerlin\n",
+    ]) {
+      expect(appendMemoryFact(existing, "Office:\nBerlin")).toBe(`${existing}Office:\nBerlin\n`);
+    }
+  });
+});

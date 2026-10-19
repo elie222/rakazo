@@ -827,7 +827,7 @@ describe("Pi connector tool dispatch", () => {
     );
   });
 
-  it("runs schedule tools sequentially so a list in the same turn sees a create", async () => {
+  it("runs schedule tools and remember sequentially", async () => {
     const executeTool = vi.fn(async () => ({ ok: true }));
     const runtime = new PiAgentRuntime();
 
@@ -839,7 +839,13 @@ describe("Pi connector tool dispatch", () => {
         prompt: "remind me in ten minutes",
         instructions: "Use schedule_create then schedule_list.",
         history: [],
-        tools: [scheduleCreateTool, scheduleListTool, scheduleCancelTool, destinationTool],
+        tools: [
+          scheduleCreateTool,
+          scheduleListTool,
+          scheduleCancelTool,
+          destinationTool,
+          builtinAgentTools.find((tool) => tool.name === "remember")!,
+        ],
         model: { provider: "test", id: "dispatch-test-model" },
         executeTool,
       },
@@ -862,6 +868,7 @@ describe("Pi connector tool dispatch", () => {
     expect(modes.get("schedule_create")).toBe("sequential");
     expect(modes.get("schedule_list")).toBe("sequential");
     expect(modes.get("schedule_cancel")).toBe("sequential");
+    expect(modes.get("remember")).toBe("sequential");
     expect(modes.get("destination_write")).toBe("default");
   });
 

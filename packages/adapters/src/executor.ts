@@ -5718,7 +5718,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }, finish);
           }
           if (name === "remember") {
-            const path = String(args.path ?? "MEMORY.md");
+            const path = String(args.path ?? "").trim() || "MEMORY.md";
             // A fact is added to the document, never replaces it. A concurrent save
             // changes the revision, so re-read and append again.
             for (let attempt = 1; ; attempt += 1) {

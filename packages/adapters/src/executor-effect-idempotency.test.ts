@@ -469,6 +469,30 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.results[0]).toEqual({ ok: true });
   });
 
+  it.each(["", "   ", "  MEMORY.md  "])(
+    "normalizes remember path %j before reading and committing",
+    async (path) => {
+      const f = fixture("run-path");
+      f.memoryDocuments.push(
+        { id: "other", path: "other.md", content: "unrelated\n", revision: 7 },
+        { id: "memory", path: "MEMORY.md", content: "existing\n", revision: 2 },
+      );
+      f.setCalls([
+        { name: "remember", args: { path, content: "new fact" }, executionId: "call_0" },
+      ]);
+
+      await f.run();
+
+      expect(f.memoryCommit).toHaveBeenCalledOnce();
+      expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
+        path: "MEMORY.md",
+        content: "existing\nnew fact\n",
+        expectedRevision: 2,
+      });
+      expect(f.results[0]).toEqual({ ok: true });
+    },
+  );
+
   it("does not save a fact the bot's memory already holds", async () => {
     const f = fixture("run-known");
     f.memoryDocuments.push({
@@ -494,7 +518,16 @@ describe("mutating tool effect idempotency keys", () => {
 
   it("re-reads and appends again when another save wins the race", async () => {
     const f = fixture("run-race");
-    f.memoryCommit.mockRejectedValueOnce(new Error(MEMORY_REVISION_CONFLICT_ERROR));
+    f.memoryCommit.mockImplementationOnce(async () => {
+      f.memoryDocuments.push({
+        id: "doc-1",
+        path: "MEMORY.md",
+        content: "another writer fact\n",
+        revision: 1,
+        updatedAt: new Date(0).toISOString(),
+      });
+      throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
+    });
     f.setCalls([
       {
         name: "remember",
@@ -506,6 +539,14 @@ describe("mutating tool effect idempotency keys", () => {
     await f.run();
 
     expect(f.memoryCommit).toHaveBeenCalledTimes(2);
+    expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
+      content: "durable fact\n",
+      expectedRevision: 0,
+    });
+    expect(f.memoryCommit.mock.calls[1]?.[0]).toMatchObject({
+      content: "another writer fact\ndurable fact\n",
+      expectedRevision: 1,
+    });
     expect(f.results[0]).toEqual({ ok: true });
   });
 
