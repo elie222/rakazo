@@ -1144,6 +1144,10 @@ msgstr "코드"
 msgid "Collapse {0}"
 msgstr "{0} 접기"
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "{label} 접기"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "색상"
@@ -1639,6 +1643,7 @@ msgstr "모델 서버에 연결하지 못했습니다."
 msgid "Could not reach the server"
 msgstr "서버에 연결할 수 없습니다"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "삭제하지 못했습니다."
@@ -2278,6 +2283,10 @@ msgstr "펼치기"
 msgid "Expand {0}"
 msgstr "{0} 펼치기"
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "{label} 펼치기"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "내보내기"
@@ -2395,6 +2404,10 @@ msgstr "MCP 연결을 마무리하는 중…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
 msgstr "예상하지 못한 작업 표시"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -2691,6 +2704,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "나가기"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "이 봇이 자신이 만든 봇을 정리하고 조정하고 예약할 수 있습니다. 각 변경은 사용자가 승인합니다."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"

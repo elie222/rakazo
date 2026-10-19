@@ -144,7 +144,7 @@ export function AskCard({
             ? "instruction-approval-card"
             : undefined
       }
-      className="max-w-[74%] rounded-2xl border border-border bg-card px-5 py-4"
+      className="w-full min-w-0 max-w-xl rounded-2xl border border-border bg-card px-5 py-4"
     >
       <div className="text-[15.5px] leading-[1.5] text-foreground">
         {block.instructionUpdate ? (
@@ -164,7 +164,13 @@ export function AskCard({
         </div>
       ) : null}
       {block.detail && !secretInput ? (
-        <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground">
+        <pre
+          className={
+            block.detailFormat === "text"
+              ? "mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-[15.5px] leading-[1.5] text-foreground"
+              : "mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-muted px-3.5 py-3 font-mono text-[12.5px] leading-[1.7] text-muted-foreground"
+          }
+        >
           {block.detail}
         </pre>
       ) : null}
@@ -190,7 +196,9 @@ export function AskCard({
           </Button>
         </form>
       ) : block.status === "answered" ? (
-        <div className="mt-3.5 text-[13.5px] font-medium text-success">
+        <div
+          className={`mt-3.5 text-[13.5px] font-medium ${block.answer === "deny" ? "text-muted-foreground" : "text-success"}`}
+        >
           {block.instructionUpdate
             ? block.answer === "deny"
               ? t`Dismissed`
@@ -208,12 +216,12 @@ export function AskCard({
           <Trans>No longer active</Trans>
         </div>
       ) : askActions?.length ? (
-        <div className="mt-3.5 space-y-1.5">
+        <div className={approvalActions ? "mt-3.5 flex flex-wrap gap-2" : "mt-3.5 space-y-1.5"}>
           {displayActions?.map((action) => (
             <Button
               key={action.id}
               variant={approvalActions && action.id === "allow" ? "default" : "outline"}
-              className="h-auto w-full justify-start whitespace-normal px-3.5 py-3 text-start font-normal"
+              className={`h-auto min-w-0 whitespace-normal px-3.5 py-3 text-start font-normal ${approvalActions ? "" : "w-full justify-start"}`}
               disabled={submitting}
               onClick={() =>
                 action.id === "edit" && block.instructionUpdate

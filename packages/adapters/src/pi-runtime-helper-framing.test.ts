@@ -1,3 +1,4 @@
+import { FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { builtinAgentTools } from "./builtin-tools.js";
 
@@ -9,6 +10,8 @@ type FakeTool = {
 const seen = vi.hoisted(() => ({
   helperSystemPrompt: "",
   helperPrompt: "",
+  helperToolNames: [] as string[],
+  toolExecutionIds: new Map<string, string>(),
   resultForParent: undefined as unknown,
 }));
 
@@ -25,6 +28,7 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
     async prompt(text: string) {
       const delegate = this.tools.find((tool) => tool.name === "run_subagent");
       if (delegate) {
+        await this.tools.find((tool) => tool.name === "list_fleet")?.execute("main-call-1", {});
         // The main bot hands work to a helper and reads back what the tool returns.
         seen.resultForParent = await delegate.execute("call-1", {
           name: "scout",
@@ -35,6 +39,10 @@ vi.mock("@earendil-works/pi-agent-core", () => ({
       // The helper: record what it was told, then answer.
       seen.helperSystemPrompt = this.systemPrompt;
       seen.helperPrompt = text;
+      seen.helperToolNames = this.tools.map((tool) => tool.name);
+      await this.tools
+        .find((tool) => tool.name === "update_bot")
+        ?.execute("helper-call-1", { bot_id: "child-1", name: "Obeys" });
       this.state.messages = [
         { role: "assistant", content: [{ type: "text", text: "There are 3 files." }] },
       ];
@@ -59,12 +67,15 @@ vi.mock("./pi-openai-compatible-provider.js", () => ({
   registerOpenAiCompatibleRuntime: (models: unknown) => models,
 }));
 
+import { isSubagentToolExecution } from "./executor.js";
 import { PiAgentRuntime } from "./pi-runtime.js";
 
 describe("helpers know who they are talking to", () => {
   beforeEach(async () => {
     seen.helperSystemPrompt = "";
     seen.helperPrompt = "";
+    seen.helperToolNames = [];
+    seen.toolExecutionIds.clear();
     seen.resultForParent = undefined;
     for await (const _event of new PiAgentRuntime().run(
       {
@@ -76,7 +87,10 @@ describe("helpers know who they are talking to", () => {
         history: [],
         tools: builtinAgentTools,
         model: { provider: "test", id: "plain-model" },
-        executeTool: vi.fn(async () => ({ ok: true })),
+        executeTool: vi.fn(async (name: string, _args: unknown, executionId: string) => {
+          seen.toolExecutionIds.set(name, executionId);
+          return { ok: true };
+        }),
       } as never,
       {
         operationId: "1",
@@ -101,6 +115,18 @@ describe("helpers know who they are talking to", () => {
     expect(seen.helperPrompt).toBe(
       "Task from the parent bot (not from the user):\ncount the files",
     );
+  });
+
+  it("never lets the helper inherit any fleet tool", () => {
+    expect(seen.helperToolNames.length).toBeGreaterThan(0);
+    for (const name of FLEET_TOOL_NAMES) expect(seen.helperToolNames).not.toContain(name);
+  });
+
+  it("marks helper calls so the executor refuses update_bot's fleet form from them", () => {
+    expect(isSubagentToolExecution(seen.toolExecutionIds.get("update_bot")!)).toBe(true);
+    const mainCall = seen.toolExecutionIds.get("list_fleet");
+    expect(mainCall).toBeDefined();
+    expect(isSubagentToolExecution(mainCall!)).toBe(false);
   });
 
   it("hands the helper's answer back to the bot as the helper's, not the user's", () => {

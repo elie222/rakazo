@@ -69,5 +69,13 @@ function snapshot(documents: MemorySnapshot["documents"]): MemorySnapshot {
 }
 
 function storeWith(read: MemoryStore["read"]): MemoryStore {
-  return { read } as MemoryStore;
+  return {
+    describe: vi.fn<MemoryStore["describe"]>(),
+    read,
+    search: vi.fn<MemoryStore["search"]>(),
+    commit: vi.fn<MemoryStore["commit"]>(),
+    remove: vi.fn<MemoryStore["remove"]>(),
+    exportMarkdown: vi.fn<MemoryStore["exportMarkdown"]>(),
+    importMarkdown: vi.fn<MemoryStore["importMarkdown"]>(),
+  };
 }

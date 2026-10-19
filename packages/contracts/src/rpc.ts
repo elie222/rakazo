@@ -36,6 +36,7 @@ import {
   BillingStatusSchema,
   BotMcpServerSchema,
   BotSchema,
+  BotSectionName,
   BotSectionSchema,
   CapabilityInstallSchema,
   ComputerModeSchema,
@@ -348,12 +349,8 @@ export const appContract = {
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),
-    create: oc
-      .input(threadTarget.safeExtend({ name: z.string().trim().min(1).max(60) }))
-      .output(BotSectionSchema),
-    update: oc
-      .input(z.object({ sectionId: Id, name: z.string().trim().min(1).max(60) }))
-      .output(BotSectionSchema),
+    create: oc.input(threadTarget.safeExtend({ name: BotSectionName })).output(BotSectionSchema),
+    update: oc.input(z.object({ sectionId: Id, name: BotSectionName })).output(BotSectionSchema),
   },
   threads: {
     head: oc.input(threadTarget).output(
@@ -502,6 +499,7 @@ export const appContract = {
     update: oc
       .input(z.object({ documentId: Id, content: z.string() }))
       .output(MemoryDocumentSchema),
+    remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
     providerConfig: oc.output(SpaceMemoryConfigSchema.nullable()),
     connectProvider: oc

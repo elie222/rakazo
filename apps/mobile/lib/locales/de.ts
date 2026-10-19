@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
+    "Erlaubt diesem Bot, die von ihm erstellten Bots zu organisieren, anzupassen und zu planen. Du genehmigst jede Änderung.",
   "Too many attempts. Try again in a few minutes.":
     "Zu viele Versuche. Versuche es in ein paar Minuten erneut.",
   "The server had a problem. Try again in a moment.":
@@ -849,4 +851,5 @@ export const DE_MESSAGES: Record<string, string> = {
   "Remove photo": "Foto entfernen",
   Shape: "Form",
   "Shape {number}": "Form {number}",
+  "Fleet management": "Flottenverwaltung",
 };

@@ -1144,6 +1144,10 @@ msgstr "Kod"
 msgid "Collapse {0}"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "{label} daralt"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "Renk"
@@ -1639,6 +1643,7 @@ msgstr "Model sunucusuna ulaşılamadı."
 msgid "Could not reach the server"
 msgstr "Sunucuya ulaşılamadı"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "Kaldırılamadı"
@@ -2278,6 +2283,10 @@ msgstr "Genişlet"
 msgid "Expand {0}"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "{label} genişlet"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Dışa aktar"
@@ -2394,6 +2403,10 @@ msgstr "MCP bağlantısı tamamlanıyor…"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
 msgstr ""
 
 #: src/pages/Auth.tsx
@@ -2691,6 +2704,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "Bu botun oluşturduğu botları düzenlemesine, ayarlamasına ve zamanlamasına izin verir. Her değişikliği siz onaylarsınız."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"

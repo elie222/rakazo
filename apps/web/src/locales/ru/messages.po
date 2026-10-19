@@ -1144,6 +1144,10 @@ msgstr "Код"
 msgid "Collapse {0}"
 msgstr "Свернуть {0}"
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "Свернуть {label}"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "Цвет"
@@ -1639,6 +1643,7 @@ msgstr "Не удалось связаться с сервером модели.
 msgid "Could not reach the server"
 msgstr "Не удалось связаться с сервером"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "Не удалось удалить"
@@ -2278,6 +2283,10 @@ msgstr "Развернуть"
 msgid "Expand {0}"
 msgstr "Развернуть {0}"
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "Развернуть {label}"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Экспорт"
@@ -2395,6 +2404,10 @@ msgstr "Завершение подключения MCP…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
 msgstr "Пометить неожиданные действия"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -2691,6 +2704,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "Выйти"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "Позволяет этому боту организовывать, настраивать и планировать работу созданных им ботов. Вы одобряете каждое изменение."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"

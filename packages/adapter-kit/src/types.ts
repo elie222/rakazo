@@ -310,6 +310,14 @@ export interface MemoryCommitRequest {
   sourceThreadId?: string;
 }
 
+export interface MemoryRemoveRequest {
+  /** When set, only this exact document is removed, never a newer one at the same path. */
+  id?: string;
+  scope: "bot" | "user";
+  botId?: string;
+  path: string;
+}
+
 export interface MemoryRevision {
   id: string;
   path: string;
@@ -904,10 +912,15 @@ export interface BrowserSnapshotResult {
   error?: string;
 }
 
-export type BrowserActKind = "click" | "fill" | "type";
+export type BrowserActKind = "click" | "fill" | "type" | "upload";
+
+/** Most files one upload step may attach. */
+export const MAX_BROWSER_UPLOAD_FILES = 10;
 
 export type BrowserActStep =
   | { kind: "click"; ref: string }
+  /** Attaches computer files to a file input without opening a native file chooser. */
+  | { kind: "upload"; ref: string; paths: string[]; roots?: string[] }
   | {
       kind: "fill" | "type";
       ref: string;

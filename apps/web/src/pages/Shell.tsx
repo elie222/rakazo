@@ -34,12 +34,14 @@ import {
   MESSAGE_REACTIONS,
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
-import type { ComposerMention, SlashActionId } from "@rakazo/core";
+import type { ComposerMention, FoldedTranscript, SlashActionId } from "@rakazo/core";
 import {
   attachmentsForThread,
   buildComposerMentionOptions,
   clampMentionHighlightIndex,
   cronFromPreset,
+  expandPeerReplies,
+  foldPeerReplies,
   formatMessageTime,
   groupVoiceChats,
   inferAttachmentMimeType,
@@ -64,7 +66,6 @@ import {
   speechFromBlocks,
   timeSeparatorIds,
   truncateSlashDescription,
-  userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import type { GroupAvatarMember } from "@rakazo/ui-web";
@@ -1485,6 +1486,7 @@ function SpaceShell() {
           event.type === "bot.spawned" ||
           event.type === "bot.deleted" ||
           event.type === "bot.updated" ||
+          event.type === "group.created" ||
           event.type === "run.started" ||
           isRunTerminalEvent(event) ||
           event.type === "thread.cleared"
@@ -1591,6 +1593,7 @@ function SpaceShell() {
         if (
           event.type === "run.started" ||
           event.type === "bot.updated" ||
+          event.type === "group.updated" ||
           isRunTerminalEvent(event)
         ) {
           void refreshBots().catch(() => undefined);
@@ -1867,9 +1870,11 @@ function SpaceShell() {
     if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    const targetInPage = userVisibleMessages(page.messages, { includePeerReceipts: true }).some(
-      (message) => message.id === target.messageId,
-    );
+    // A reply folded under its peer marker counts: the transcript expands the marker to show it.
+    const pageTranscript = foldPeerReplies(page.messages, { includePeerReceipts: true });
+    const targetInPage =
+      pageTranscript.markerOf.has(target.messageId) ||
+      pageTranscript.messages.some((message) => message.id === target.messageId);
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = targetInPage
       ? {
@@ -1992,10 +1997,14 @@ function SpaceShell() {
   const handleRunErrorPresented = useCallback((runId: string) => {
     rememberSeenRunErrorId(runId);
   }, []);
-  const transcriptMessages = useMemo(
-    () => userVisibleMessages(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
+  const transcript = useMemo(
+    () => foldPeerReplies(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
     [activeSnapshot?.messages],
   );
+  const transcriptRef = useRef(transcript);
+  useLayoutEffect(() => {
+    transcriptRef.current = transcript;
+  }, [transcript]);
   const transcriptArtifactTarget = useMemo<ArtifactTarget>(
     () => (inGroup ? { groupId: groupId ?? "" } : { botId: active?.id ?? "" }),
     [active?.id, groupId, inGroup],
@@ -2170,8 +2179,10 @@ function SpaceShell() {
   const openBot = useCallback((id: string) => navigate(`/app/${id}`), [navigate]);
   const loadOlder = useCallback(() => loadOlderMessagesRef.current(), []);
   const jumpToReplyMessage = useCallback((messageId: string) => {
-    const existing = document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
-    if (existing) {
+    const inTranscript =
+      transcriptRef.current.markerOf.has(messageId) ||
+      document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+    if (inTranscript) {
       // Cancel any in-flight around-fetch so it cannot overwrite this scroll.
       jumpGeneration.current += 1;
       setScrollRequest({ messageId, nonce: jumpGeneration.current });
@@ -3923,7 +3934,7 @@ function SpaceShell() {
             scrollRequest={scrollRequest}
             onScrollRequestHandled={clearScrollRequest}
             artifactTarget={transcriptArtifactTarget}
-            messages={transcriptMessages}
+            transcript={transcript}
             showToolActivity={showToolActivity}
             olderCursor={activeSnapshot?.olderCursor ?? null}
             loadingOlder={loadingOlder}
@@ -4227,7 +4238,7 @@ function SpaceShell() {
                 memoryProviderConfigured={memoryProviderConfig != null}
                 onSkillsChange={setAgentSkills}
                 onSave={async ({ computerMode, ...patch }) => {
-                  if (computerMode !== active.computerMode) {
+                  if (computerMode !== undefined && computerMode !== active.computerMode) {
                     await rpc.bots.setComputer({
                       botId: active.id,
                       mode: computerMode,
@@ -5099,7 +5110,7 @@ const Transcript = memo(function Transcript({
   scrollRequest,
   onScrollRequestHandled,
   artifactTarget,
-  messages,
+  transcript,
   showToolActivity,
   olderCursor,
   loadingOlder,
@@ -5128,7 +5139,7 @@ const Transcript = memo(function Transcript({
   scrollRequest: { messageId: string; nonce: number } | null;
   onScrollRequestHandled: () => void;
   artifactTarget: ArtifactTarget;
-  messages: ThreadMessage[];
+  transcript: FoldedTranscript<ThreadMessage>;
   showToolActivity: boolean;
   olderCursor: number | null;
   loadingOlder: boolean;
@@ -5160,6 +5171,31 @@ const Transcript = memo(function Transcript({
   const lastScrollTop = useRef<number | null>(null);
   const autoScrollTimer = useRef<number | undefined>(undefined);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
+  const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const togglePeerReplies = useCallback((markerId: string) => {
+    // Like a pointer press: a keyboard toggle must not snap the transcript to its end.
+    following.current = false;
+    autoScrolling.current = false;
+    setExpandedPeerMarkers((expanded) => {
+      const next = new Set(expanded);
+      if (!next.delete(markerId)) next.add(markerId);
+      return next;
+    });
+  }, []);
+  // A jump to a folded reply expands its marker; the scroll effect below then finds the row.
+  useLayoutEffect(() => {
+    const markerId = scrollRequest && transcript.markerOf.get(scrollRequest.messageId);
+    if (!markerId) return;
+    setExpandedPeerMarkers((expanded) =>
+      expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
+    );
+  }, [scrollRequest, transcript]);
+  const messages = useMemo(
+    () => expandPeerReplies(transcript, expandedPeerMarkers),
+    [transcript, expandedPeerMarkers],
+  );
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
@@ -5465,11 +5501,15 @@ const Transcript = memo(function Transcript({
                     className={
                       peerReceipt
                         ? undefined
-                        : `relative w-fit min-w-0 ${
-                            message.role === "user"
-                              ? "max-w-[min(84%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[84%]"
-                              : "max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
-                          }`
+                        : message.blocks.some(
+                              (block) => block.kind === "ask" || block.kind === "mcp_approval",
+                            )
+                          ? "relative w-full min-w-0 max-w-full"
+                          : `relative w-fit min-w-0 ${
+                              message.role === "user"
+                                ? "max-w-[min(84%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[84%]"
+                                : "max-w-[min(88%,calc(100%_-_8rem))] [@media(hover:none)]:max-w-[88%]"
+                            }`
                     }
                   >
                     <MessageView
@@ -5478,6 +5518,14 @@ const Transcript = memo(function Transcript({
                       canAnswer={message.id === answerableAskMessageId}
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
+                      peerReplies={
+                        transcript.folded.has(message.id)
+                          ? expandedPeerMarkers.has(message.id)
+                            ? "expanded"
+                            : "collapsed"
+                          : undefined
+                      }
+                      onTogglePeerReplies={togglePeerReplies}
                       onAnswer={onAnswer}
                       speakerName={
                         peerReceipt
@@ -6880,6 +6928,8 @@ const MessageView = memo(function MessageView({
   onAnswer,
   onOpenBot,
   onOpenPeerMessages,
+  peerReplies,
+  onTogglePeerReplies,
   speakerName,
   memberName,
   peerBot,
@@ -6900,6 +6950,9 @@ const MessageView = memo(function MessageView({
   onAnswer: (message: ThreadMessage, text: string, username?: string) => Promise<void>;
   onOpenBot: (botId: string) => void;
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
+  /** Set on a received marker whose peer run has folded replies. */
+  peerReplies?: "collapsed" | "expanded";
+  onTogglePeerReplies: (markerId: string) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
@@ -7069,6 +7122,15 @@ const MessageView = memo(function MessageView({
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+              replies={
+                !sent && peerReplies
+                  ? {
+                      expanded: peerReplies === "expanded",
+                      label: peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
+                      onToggle: () => onTogglePeerReplies(message.id),
+                    }
+                  : undefined
+              }
             />
           );
         }

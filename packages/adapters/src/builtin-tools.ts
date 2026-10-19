@@ -4,6 +4,7 @@ import {
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BotSecretName,
   botSecretDestinationSchema,
+  FLEET_TOOL_NAMES,
   SecretAskPurpose,
   SecretHttpRequest,
   TICKET_PRIORITIES,
@@ -66,13 +67,14 @@ function secretAskToolSurface() {
   return secretAskSurface;
 }
 
-export const DELEGATION_TOOL_NAMES = new Set([
+export const DELEGATION_TOOL_NAMES = new Set<string>([
   "run_subagent",
   "spawn_bot",
   "archive_bot",
   "delete_bot",
   "handoff_to_bot",
   "message_bot",
+  ...FLEET_TOOL_NAMES,
 ]);
 
 const scheduleCreateProperties = {
@@ -146,9 +148,12 @@ const scheduleTimingSpecs = {
   },
 };
 
-function scheduleCreateBranch(active: readonly (keyof typeof scheduleTimingSpecs)[]) {
+function scheduleCreateBranch(
+  active: readonly (keyof typeof scheduleTimingSpecs)[],
+  extraProperties: Record<string, unknown> = {},
+) {
   const activeNames = new Set<string>(active);
-  const properties: Record<string, unknown> = { ...scheduleCreateProperties };
+  const properties: Record<string, unknown> = { ...extraProperties, ...scheduleCreateProperties };
   for (const name of scheduleTimingNames) {
     properties[name] = activeNames.has(name) ? scheduleTimingSpecs[name] : blankScheduleTiming;
   }
@@ -170,6 +175,32 @@ const scheduleCreateInputSchema = {
     scheduleCreateBranch(["delaySeconds"]),
     scheduleCreateBranch(["watch"]),
   ],
+};
+
+const childRoutineTargetProperties = {
+  bot_id: { type: "string", description: "Id of a bot you created." },
+  bot_name: { type: "string", description: "Exact name of a bot you created." },
+};
+
+/** Same exactly-one-timing-method rule as schedule_create, plus the target bot. */
+const createChildRoutineInputSchema = {
+  oneOf: [
+    scheduleCreateBranch(["cron"], childRoutineTargetProperties),
+    scheduleCreateBranch(["every", "unit"], childRoutineTargetProperties),
+    scheduleCreateBranch(["runAt"], childRoutineTargetProperties),
+    scheduleCreateBranch(["delayMinutes"], childRoutineTargetProperties),
+    scheduleCreateBranch(["delaySeconds"], childRoutineTargetProperties),
+  ],
+};
+
+const fleetBotTargetProperties = {
+  bot_id: { type: "string", description: "Id of the bot." },
+  bot_name: { type: "string", description: "Exact name of the bot." },
+};
+
+const fleetGroupTargetProperties = {
+  group_id: { type: "string", description: "Id of the group." },
+  group_name: { type: "string", description: "Exact name of the group." },
 };
 
 export const builtinAgentTools: ConnectorTool[] = [
@@ -277,7 +308,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_act",
     description:
-      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, fill_secret). fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
+      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, upload, fill_secret). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
     inputSchema: {
       type: "object",
       properties: {
@@ -286,9 +317,17 @@ export const builtinAgentTools: ConnectorTool[] = [
           items: {
             type: "object",
             properties: {
-              kind: { type: "string", enum: ["click", "fill", "type", "fill_secret"] },
+              kind: {
+                type: "string",
+                enum: ["click", "fill", "type", "upload", "fill_secret"],
+              },
               ref: { type: "string", description: "Element ref from browser_snapshot." },
               text: { type: "string", description: "Text for fill or type." },
+              paths: {
+                type: "array",
+                items: { type: "string" },
+                description: "Files to attach, for upload.",
+              },
               secret: { type: "string", description: "Saved login name for fill_secret." },
               field: {
                 type: "string",
@@ -1171,8 +1210,114 @@ export const builtinAgentTools: ConnectorTool[] = [
           type: "boolean",
           description: "true notifies the user when this bot finishes a run; false silences that.",
         },
+        bot_id: {
+          type: "string",
+          description: "A bot you created, to update its profile instead of yours.",
+        },
       },
     },
+  },
+  {
+    name: "list_fleet",
+    description:
+      "List the bots and groups of this user with their ids, sections and pinned state, and which bots you created. Pass bot_id of a bot you created to read only its full instructions and instructionsVersion, which set_child_instructions needs as expected_version. Call this before changing the fleet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bot_id: {
+          type: "string",
+          description:
+            "A bot you created, to read its instructions and version instead of the roster.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_group",
+    description:
+      "Create a group of 2 to 10 of this user's bots. Pass bot_ids or bot_names (exact). Needs the owner's approval.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1 },
+        bot_ids: { type: "array", items: { type: "string" } },
+        bot_names: { type: "array", items: { type: "string" } },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_group",
+    description:
+      "Rename a group or add and remove its members. Works on any group of this user, not only ones you created. Identify it by group_id or group_name (exact). A group keeps 2 to 10 members. Needs the owner's approval.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...fleetGroupTargetProperties,
+        name: { type: "string", minLength: 1, description: "New group name." },
+        add_bot_ids: { type: "array", items: { type: "string" } },
+        remove_bot_ids: { type: "array", items: { type: "string" } },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "organize_bot",
+    description:
+      "Move a bot or group into a sidebar section, clear its section, or pin and unpin it. Works on any bot or group of this user, not only ones you created. Identify it by bot_id, bot_name, group_id or group_name (exact). section is a section name; clear_section: true takes it out of its section.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...fleetBotTargetProperties,
+        ...fleetGroupTargetProperties,
+        section: { type: "string", minLength: 1, description: "Section name." },
+        clear_section: { type: "boolean", description: "Take it out of its section." },
+        pinned: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_child_instructions",
+    description:
+      "Replace the instructions of a bot you created. Identify it by bot_id or bot_name (exact). Only bots you created. Pass expected_version from list_fleet with that bot_id. One instruction edit per bot per run. Needs the owner's approval.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...fleetBotTargetProperties,
+        instructions: { type: "string", minLength: 1, maxLength: BOT_INSTRUCTIONS_MAX_LENGTH },
+        expected_version: {
+          type: "string",
+          description: "instructionsVersion from list_fleet for that bot.",
+        },
+      },
+      required: ["instructions", "expected_version"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_child_bot_model",
+    description:
+      "Set the model of a bot you created, or reset it to the default with clear: true. Identify it by bot_id or bot_name (exact). Only bots you created. Needs the owner's approval.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ...fleetBotTargetProperties,
+        provider: { type: "string" },
+        model: { type: "string" },
+        thinking_level: { type: "string" },
+        clear: { type: "boolean", description: "Reset to the default model." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "create_child_routine",
+    description:
+      "Schedule a routine that wakes a bot you created in its own thread. Identify it by bot_id or bot_name (exact). Only bots you created. Repeats: cron or every/unit (min 1 minute). One-shot: runAt, delayMinutes, or delaySeconds. Needs the owner's approval.",
+    inputSchema: createChildRoutineInputSchema,
   },
   {
     name: "archive_bot",

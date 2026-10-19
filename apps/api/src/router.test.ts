@@ -4618,6 +4618,76 @@ describe("link favicons", () => {
   });
 });
 
+describe("memory documents", () => {
+  const actor = { userId: "user-1", spaceId: "space-1", email: "user@rakazo.test" };
+
+  function memoryClient(
+    doc: { id: string; path: string; scope: string; botId: string | null } | null,
+    session: typeof actor | null = actor,
+  ) {
+    const memoryDocument = { findFirst: vi.fn(async () => doc) };
+    const memory = { remove: vi.fn(async () => ({ removed: true })) };
+    const deps = {
+      prisma: { memoryDocument },
+      memory,
+      env: { webOrigin: "https://example.test" },
+    } as unknown as RouterDeps;
+    const client = createRouterClient(createRouter(deps), { context: { actor: session } as never });
+    return { client, memoryDocument, memory };
+  }
+
+  it("deletes a memory document owned by the caller through the memory store", async () => {
+    const { client, memoryDocument, memory } = memoryClient({
+      id: "doc-1",
+      path: "projects/retired.md",
+      scope: "bot",
+      botId: "bot-1",
+    });
+    await expect(client.memory.remove({ documentId: "doc-1" })).resolves.toEqual({ ok: true });
+    expect(memoryDocument.findFirst).toHaveBeenCalledWith({
+      where: { id: "doc-1", spaceId: "space-1", userId: "user-1" },
+    });
+    expect(memory.remove).toHaveBeenCalledWith(
+      { id: "doc-1", scope: "bot", botId: "bot-1", path: "projects/retired.md" },
+      expect.objectContaining({ spaceId: "space-1", userId: "user-1" }),
+    );
+  });
+
+  it("requires a session before looking up or deleting a document", async () => {
+    const { client, memoryDocument, memory } = memoryClient(null, null);
+    await expect(client.memory.remove({ documentId: "doc-1" })).rejects.toMatchObject({
+      code: "UNAUTHORIZED",
+    });
+    expect(memoryDocument.findFirst).not.toHaveBeenCalled();
+    expect(memory.remove).not.toHaveBeenCalled();
+  });
+
+  it("does not report success when the memory adapter fails", async () => {
+    const { client, memory } = memoryClient({
+      id: "doc-1",
+      path: "projects/retired.md",
+      scope: "user",
+      botId: null,
+    });
+    memory.remove.mockRejectedValueOnce(new Error("Memory unavailable"));
+    await expect(client.memory.remove({ documentId: "doc-1" })).rejects.toThrow(
+      "Memory unavailable",
+    );
+  });
+
+  it("keeps MEMORY.md and does not reach another user's document", async () => {
+    const index = memoryClient({ id: "doc-1", path: "MEMORY.md", scope: "user", botId: null });
+    await expect(index.client.memory.remove({ documentId: "doc-1" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(index.memory.remove).not.toHaveBeenCalled();
+
+    const foreign = memoryClient(null);
+    await expect(foreign.client.memory.remove({ documentId: "doc-2" })).rejects.toBeTruthy();
+    expect(foreign.memory.remove).not.toHaveBeenCalled();
+  });
+});
+
 describe("routine watch creation boundaries", () => {
   const actor = {
     spaceId: "space-1",

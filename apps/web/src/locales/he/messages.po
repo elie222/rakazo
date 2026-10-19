@@ -1144,6 +1144,10 @@ msgstr "קוד"
 msgid "Collapse {0}"
 msgstr "כיווץ {0}"
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "כיווץ {label}"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "צבע"
@@ -1639,6 +1643,7 @@ msgstr "אין גישה לשרת המודל."
 msgid "Could not reach the server"
 msgstr "אין גישה לשרת"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "לא ניתן להסיר"
@@ -2278,6 +2283,10 @@ msgstr "הרחבה"
 msgid "Expand {0}"
 msgstr "הרחבת {0}"
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "הרחבת {label}"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "ייצוא"
@@ -2395,6 +2404,10 @@ msgstr "משלים את חיבור ה-MCP…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
 msgstr "סימון פעולות לא צפויות"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -2691,6 +2704,10 @@ msgstr "{app} הופעלה"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "יציאה"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "מאפשר לבוט הזה לארגן, לכוונן ולתזמן את הבוטים שהוא יוצר. כל שינוי דורש את אישורך."
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"

@@ -30,6 +30,7 @@ import {
   isServerUnreachable,
   isUnreachableStatus,
   mergeThreadHistory,
+  messagingProviderLabel,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -959,6 +960,7 @@ export type MobileBot = Pick<
   | "modelId"
   | "thinkingLevel"
   | "autoSpeak"
+  | "fleetManagement"
 > &
   Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 
@@ -1089,20 +1091,7 @@ export function prependMobileMessagePage(
   return prependThreadHistoryPage(prev, page);
 }
 
-const MESSAGING_PROVIDER_LABELS: Record<string, string> = {
-  sendblue: "iMessage",
-  slack: "Slack",
-  whatsapp: "WhatsApp",
-  telegram: "Telegram",
-  lark: "Feishu",
-};
-
-export function messagingProviderLabel(provider: string, transport?: string): string {
-  if (provider === "sendblue" && ["iMessage", "SMS", "RCS"].includes(transport ?? "")) {
-    return transport!;
-  }
-  return MESSAGING_PROVIDER_LABELS[provider] ?? provider;
-}
+export { messagingProviderLabel };
 
 /** The message's text exactly as written, for a view that selects part of it. */
 export function selectableMobileMessageText(message: MobileMessage): string {

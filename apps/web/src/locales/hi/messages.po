@@ -1144,6 +1144,10 @@ msgstr "कोड"
 msgid "Collapse {0}"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "{label} संक्षिप्त करें"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "रंग"
@@ -1639,6 +1643,7 @@ msgstr "मॉडल सर्वर तक नहीं पहुँच सक�
 msgid "Could not reach the server"
 msgstr "सर्वर से संपर्क नहीं हो सका"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "हटाया नहीं जा सका"
@@ -2278,6 +2283,10 @@ msgstr "विस्तृत करें"
 msgid "Expand {0}"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "{label} विस्तृत करें"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "एक्सपोर्ट करें"
@@ -2394,6 +2403,10 @@ msgstr "MCP कनेक्शन पूरा हो रहा है…"
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
+msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
 msgstr ""
 
 #: src/pages/Auth.tsx
@@ -2691,6 +2704,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "इस बॉट को अपने बनाए बॉट व्यवस्थित करने, समायोजित करने और शेड्यूल करने देता है। हर बदलाव को आप मंज़ूरी देते हैं।"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"

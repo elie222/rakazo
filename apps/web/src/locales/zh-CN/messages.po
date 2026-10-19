@@ -1144,6 +1144,10 @@ msgstr "代码"
 msgid "Collapse {0}"
 msgstr "折叠 {0}"
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "折叠 {label}"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "颜色"
@@ -1639,6 +1643,7 @@ msgstr "无法连接到模型服务器。"
 msgid "Could not reach the server"
 msgstr "无法连接服务器"
 
+#: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
 msgstr "无法移除"
@@ -2278,6 +2283,10 @@ msgstr "展开"
 msgid "Expand {0}"
 msgstr "展开 {0}"
 
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "展开 {label}"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "导出"
@@ -2395,6 +2404,10 @@ msgstr "正在完成 MCP 连接…"
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Flag unexpected actions"
 msgstr "标记异常操作"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Fleet management"
+msgstr ""
 
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
@@ -2691,6 +2704,10 @@ msgstr ""
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "退出"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
+msgstr "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。"
 
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"

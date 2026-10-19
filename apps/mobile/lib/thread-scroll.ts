@@ -4,6 +4,14 @@ export type { ThreadScrollState } from "@rakazo/core";
 
 export type ThreadScrollAction = "jump" | "smooth" | null;
 
+/** The last row that isn't a folded peer reply, so expanding or collapsing a fold isn't an arrival. */
+export function latestArrivalMessageId<M extends { id: string }>(
+  visible: readonly M[],
+  markerOf: ReadonlyMap<string, string>,
+): string | null {
+  return visible.findLast((message) => !markerOf.has(message.id))?.id ?? null;
+}
+
 export class ThreadScrollBehavior {
   private threadKey: string | null = null;
   private laidOut = false;

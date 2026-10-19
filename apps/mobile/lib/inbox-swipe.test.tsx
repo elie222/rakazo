@@ -6,7 +6,9 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { InboxSwipeRowProps } from "../components/inbox-swipe-row";
 import { InboxSwipeRow } from "../components/inbox-swipe-row.ios";
+import type { MobileBotSection } from "./api";
 import type { InboxRowAction } from "./inbox-swipe";
 import {
   applyUnreadOverrides,
@@ -20,7 +22,6 @@ import {
 const testFileUrl = import.meta.url;
 
 const swift = vi.hoisted(() => ({
-  buttons: [] as Array<Record<string, unknown>>,
   groups: [] as Array<{ edge?: string; allowsFullSwipe?: boolean; labels: string[] }>,
 }));
 
@@ -30,58 +31,128 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("./native", () => ({
-  native: { page: "page" },
+  native: { page: "page", fill: "fill" },
   useResolvedAppearance: () => "light",
 }));
 vi.mock("./i18n", () => ({ useI18n: () => ({ t: (text: string) => text }) }));
+// SwiftUI views render as plain DOM so tests can read the row's structure.
 vi.mock("@expo/ui/swift-ui", async () => {
   const { Children, isValidElement } = await import("react");
-  const SwipeActions = ({ children }: { children: ReactNode }) => <div>{children}</div>;
-  SwipeActions.Actions = ({
-    edge,
-    allowsFullSwipe,
-    children,
-  }: {
-    edge?: string;
-    allowsFullSwipe?: boolean;
-    children: ReactNode;
-  }) => {
+  const box =
+    (name: string) =>
+    ({ children }: { children?: ReactNode }) => <div data-ui={name}>{children}</div>;
+  const SwipeActions = box("SwipeActions") as ReturnType<typeof box> & {
+    Actions: (props: {
+      edge?: string;
+      allowsFullSwipe?: boolean;
+      children: ReactNode;
+    }) => ReactNode;
+  };
+  SwipeActions.Actions = ({ edge, allowsFullSwipe, children }) => {
     const labels = Children.toArray(children).map((child) =>
       isValidElement<{ label: string }>(child) ? child.props.label : "",
     );
     swift.groups.push({ edge, allowsFullSwipe, labels });
-    return <div>{children}</div>;
+    return <div data-ui="SwipeActions.Actions">{children}</div>;
   };
+  const ContextMenu = Object.assign(box("ContextMenu"), {
+    Trigger: box("ContextMenu.Trigger"),
+    Preview: box("ContextMenu.Preview"),
+    Items: box("ContextMenu.Items"),
+  });
   return {
-    Host: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-    List: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-    RNHostView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    Host: box("Host"),
+    List: box("List"),
+    RNHostView: box("RNHostView"),
+    VStack: box("VStack"),
+    HStack: box("HStack"),
+    Text: ({ children }: { children?: ReactNode }) => <span data-ui="Text">{children}</span>,
+    Spacer: () => null,
+    Divider: () => <hr />,
     SwipeActions,
-    Button: (props: Record<string, unknown>) => {
-      swift.buttons.push(props);
-      return null;
-    },
+    ContextMenu,
+    Menu: ({
+      label,
+      systemImage,
+      children,
+    }: {
+      label: string;
+      systemImage?: string;
+      children: ReactNode;
+    }) => (
+      <div data-ui="Menu" data-label={label} data-image={systemImage}>
+        {children}
+      </div>
+    ),
+    Toggle: ({
+      label,
+      isOn,
+      onIsOnChange,
+    }: {
+      label: string;
+      isOn: boolean;
+      onIsOnChange: (isOn: boolean) => void;
+    }) => (
+      <button
+        type="button"
+        data-ui="Toggle"
+        data-label={label}
+        data-on={String(isOn)}
+        onClick={() => onIsOnChange(!isOn)}
+      />
+    ),
+    Button: ({
+      label,
+      systemImage,
+      role,
+      modifiers,
+      onPress,
+    }: {
+      label: string;
+      systemImage?: string;
+      role?: string;
+      modifiers?: unknown[];
+      onPress: () => void;
+    }) => (
+      <button
+        type="button"
+        data-ui="Button"
+        data-label={label}
+        data-image={systemImage}
+        data-role={role}
+        data-modifiers={JSON.stringify(modifiers ?? [])}
+        onClick={onPress}
+      />
+    ),
   };
 });
 vi.mock("@expo/ui/swift-ui/modifiers", () => {
   const modifier = (name: string) => (value: unknown) => ({ name, value });
-  return Object.fromEntries(
-    [
-      "labelStyle",
-      "listRowBackground",
-      "listRowInsets",
-      "listRowSeparator",
-      "listStyle",
-      "scrollContentBackground",
-      "scrollDisabled",
-      "tint",
-    ].map((name) => [name, modifier(name)]),
-  );
+  return {
+    shapes: { roundedRectangle: (value: unknown) => ({ shape: "roundedRectangle", value }) },
+    ...Object.fromEntries(
+      [
+        "background",
+        "font",
+        "foregroundStyle",
+        "frame",
+        "labelStyle",
+        "lineLimit",
+        "listRowBackground",
+        "listRowInsets",
+        "listRowSeparator",
+        "listStyle",
+        "padding",
+        "scrollContentBackground",
+        "scrollDisabled",
+        "tint",
+      ].map((name) => [name, modifier(name)]),
+    ),
+  };
 });
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  swift.buttons = [];
   swift.groups = [];
 });
 afterEach(() => {
@@ -169,52 +240,264 @@ describe("latest queue", () => {
 });
 
 describe("iOS swipe row", () => {
-  function render(rows: Array<{ key: string; unread?: boolean; pinned?: boolean }>) {
-    const onAction = vi.fn<(key: string, action: InboxRowAction) => void>();
+  const sections = [
+    { id: "s1", name: "Work" },
+    { id: "s2", name: "Home" },
+  ] as MobileBotSection[];
+
+  function render(
+    row: Partial<InboxSwipeRowProps> & { key?: string } = {},
+    preview: InboxSwipeRowProps["preview"] = { title: "Ada", message: "Hi", avatar: <i /> },
+  ) {
+    const key = row.key ?? "bot:1";
+    const onAction = vi.fn<(action: InboxRowAction) => void>();
+    const onOrganize = vi.fn<InboxSwipeRowProps["onOrganize"]>();
+    const onEditSection = vi.fn<InboxSwipeRowProps["onEditSection"]>();
     const container = document.createElement("div");
     const root = createRoot(container);
     act(() =>
       root.render(
-        rows.map((row) => (
-          <InboxSwipeRow
-            key={row.key}
-            rowKey={row.key}
-            unread={row.unread}
-            pinned={row.pinned}
-            onAction={(action) => onAction(row.key, action)}
-          >
-            <span>{row.key}</span>
-          </InboxSwipeRow>
-        )),
+        <InboxSwipeRow
+          rowKey={key}
+          sections={sections}
+          preview={preview}
+          onAction={onAction}
+          onOrganize={onOrganize}
+          onEditSection={onEditSection}
+          {...row}
+        >
+          <span>{key}</span>
+        </InboxSwipeRow>,
       ),
     );
-    return { onAction, root };
+    const find = (selector: string) => container.querySelector<HTMLElement>(selector);
+    const items = find('[data-ui="ContextMenu.Items"]')!;
+    const press = (label: string) =>
+      act(() => items.querySelector<HTMLElement>(`[data-label="${label}"]`)!.click());
+    return { container, find, items, press, onAction, onOrganize, onEditSection, root };
   }
 
+  const entry = (item: Element) => [
+    item.getAttribute("data-label"),
+    item.getAttribute("data-image") ?? item.getAttribute("data-on"),
+    item.getAttribute("data-role"),
+  ];
+  const entries = (parent: Element) =>
+    Array.from(parent.children)
+      .filter((child) => child.getAttribute("data-ui"))
+      .map(entry);
+
   it("uses system swipe actions with a full swipe only on the read toggle", () => {
-    const { onAction, root } = render([{ key: "bot:1", unread: true, pinned: true }]);
+    const { container, onAction, root } = render({ unread: true, pinned: true });
     expect(swift.groups).toEqual([
       { edge: "leading", allowsFullSwipe: undefined, labels: ["Mark as Read"] },
       { edge: "trailing", allowsFullSwipe: false, labels: ["Archive", "Unpin"] },
     ]);
-    expect(swift.buttons.map(({ label, systemImage, role }) => [label, systemImage, role])).toEqual(
-      [
-        ["Mark as Read", "checkmark.message.fill", undefined],
-        ["Archive", "eye.slash", "destructive"],
-        ["Unpin", "pin.slash", undefined],
-      ],
+    const buttons = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-ui="SwipeActions.Actions"] > button'),
     );
-    expect(swift.buttons[0]!.modifiers).toContainEqual({
+    expect(buttons.map(entry)).toEqual([
+      ["Mark as Read", "checkmark.message.fill", null],
+      ["Archive", "eye.slash", "destructive"],
+      ["Unpin", "pin.slash", null],
+    ]);
+    expect(JSON.parse(buttons[0]!.dataset.modifiers!)).toContainEqual({
       name: "tint",
       value: { semantic: ["systemBlue"] },
     });
-    for (const button of swift.buttons) (button.onPress as () => void)();
-    expect(onAction.mock.calls).toEqual([
-      ["bot:1", "read"],
-      ["bot:1", "archive"],
-      ["bot:1", "unpin"],
+    act(() => {
+      for (const button of buttons) button.click();
+    });
+    expect(onAction.mock.calls).toEqual([["read"], ["archive"], ["unpin"]]);
+    act(() => root.unmount());
+  });
+
+  it("opens the system context menu with a preview on the same list row as the swipe actions", () => {
+    const { find, root } = render();
+    const menu = find('[data-ui="SwipeActions"] > [data-ui="ContextMenu"]');
+    expect(menu?.querySelector('[data-ui="ContextMenu.Trigger"]')?.textContent).toBe("bot:1");
+    expect(menu?.querySelector('[data-ui="ContextMenu.Preview"]')).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("offers read state, pin, notifications, move and archive last for a bot", () => {
+    const { items, find, root } = render({
+      unread: true,
+      pinned: false,
+      notifyOnFinish: true,
+      sectionId: "s1",
+    });
+    expect(entries(items)).toEqual([
+      ["Mark as Read", "checkmark.message.fill", null],
+      ["Pin", "pin", null],
+      ["Silence notifications", "bell.slash", null],
+      ["Move to", "folder", null],
+      ["Archive", "eye.slash", "destructive"],
+    ]);
+    // Menu items keep their titles; only the swipe buttons are icon-only.
+    for (const button of items.querySelectorAll<HTMLElement>("button")) {
+      expect(button.dataset.modifiers ?? "[]").toBe("[]");
+    }
+    expect(entries(find('[data-ui="Menu"]')!)).toEqual([
+      ["Work", "true", null],
+      ["Home", "false", null],
+      ["Unassigned", "false", null],
+      ["New section", "folder.badge.plus", null],
+      ["Rename section", "pencil", null],
     ]);
     act(() => root.unmount());
+  });
+
+  it("offers a group's actions without notifications or renaming outside a section", () => {
+    const { items, find, root } = render({ key: "group:1", unread: false, pinned: true });
+    expect(entries(items).map(([label]) => label)).toEqual([
+      "Mark as Unread",
+      "Unpin",
+      "Move to",
+      "Archive",
+    ]);
+    expect(entries(find('[data-ui="Menu"]')!)).toEqual([
+      ["Work", "false", null],
+      ["Home", "false", null],
+      ["Unassigned", "true", null],
+      ["New section", "folder.badge.plus", null],
+    ]);
+    act(() => root.unmount());
+  });
+
+  it("runs menu items through the swipe and organize paths", () => {
+    const { press, onAction, onOrganize, onEditSection, root } = render({
+      unread: false,
+      pinned: false,
+      notifyOnFinish: false,
+      sectionId: "s1",
+    });
+    press("Mark as Unread");
+    press("Pin");
+    press("Resume notifications");
+    press("Work");
+    press("Home");
+    press("Unassigned");
+    press("New section");
+    press("Rename section");
+    press("Archive");
+    expect(onAction.mock.calls).toEqual([["unread"], ["pin"], ["archive"]]);
+    // Choosing the current section again changes nothing.
+    expect(onOrganize.mock.calls).toEqual([
+      [{ notifyOnFinish: true }],
+      [{ sectionId: "s2" }],
+      [{ sectionId: null }],
+    ]);
+    expect(onEditSection.mock.calls).toEqual([["create"], ["rename"]]);
+    act(() => root.unmount());
+  });
+
+  it("previews the chat's last message as the server sent it, or says there are none", () => {
+    // The server already stores the preview as plain text; literal marks in it are content.
+    const message = "Run `pnpm test`, then <b>ship</b> *now*";
+    const withMessage = render({}, { title: "Ada", message: ` ${message}\n`, avatar: <i /> });
+    const preview = withMessage.find('[data-ui="ContextMenu.Preview"]')!;
+    expect(
+      Array.from(preview.querySelectorAll('[data-ui="Text"]')).map((text) => text.textContent),
+    ).toEqual(["Ada", message]);
+    act(() => withMessage.root.unmount());
+    const empty = render({}, { title: "Ada", message: "", avatar: <i /> });
+    expect(empty.find('[data-ui="ContextMenu.Preview"]')!.textContent).toBe("AdaNo messages yet");
+    act(() => empty.root.unmount());
+  });
+});
+
+describe("inbox row long press", () => {
+  const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8").replace(/\s+/g, "");
+
+  it("leaves long press to the system menu on iOS rows and keeps the sheet elsewhere", () => {
+    for (const kind of ["bot", "group"]) {
+      const name = kind === "bot" ? "organizeBot" : "organizeGroup";
+      expect(source).toContain(`onLongPress={!SWIPE_ROWS?${name}:undefined}`);
+    }
+  });
+});
+
+describe("cross-space organize", () => {
+  const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
+  const handler = source.slice(
+    source.indexOf("  const organize = useCallback("),
+    source.indexOf("  const organizeBot = useCallback("),
+  );
+
+  function setup(cached: boolean) {
+    const chat = { id: "bot-other", spaceId: "space-other" };
+    const space = { id: chat.spaceId, bots: [chat], groups: [], botSections: [] };
+    const scope = {
+      useCallback: (callback: unknown) => callback,
+      organizeRequestId: { current: 0 },
+      currentSessionGeneration: () => 1,
+      currentApiBase: () => "",
+      me: { spaceId: "space-current" },
+      bots: [],
+      groups: [],
+      botSections: [],
+      spaces: cached ? [space] : [],
+      captureApiRequestContext: vi.fn(async () => ({ headers: { authorization: "Bearer fake" } })),
+      rpc: vi.fn(async () => ({ current: space })),
+      setOrganizeTarget: vi.fn(),
+      // A background poll must not delay showing an already available chat.
+      loadBots: vi.fn(() => new Promise(() => {})),
+      Alert: { alert: vi.fn() },
+      errorText: (_error: unknown, fallback: string) => fallback,
+      t: (text: string) => text,
+    };
+    const compiled = ts.transpileModule(`${handler}\nreturn organize;`, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    }).outputText;
+    const organize = new Function(...Object.keys(scope), compiled)(...Object.values(scope)) as (
+      kind: string,
+      chat: { id: string; spaceId: string },
+    ) => Promise<void>;
+    return { ...scope, organize, chat, space };
+  }
+
+  it("opens immediately from the other space's cached data", async () => {
+    const h = setup(true);
+    const done = h.organize("bot", h.chat);
+    expect(h.setOrganizeTarget).toHaveBeenCalledWith({
+      kind: "bot",
+      id: h.chat.id,
+      spaceId: h.chat.spaceId,
+      chat: h.chat,
+      sections: [],
+    });
+    expect(h.rpc).not.toHaveBeenCalled();
+    await done;
+  });
+
+  it("fetches missing data in the target space independently of inbox polling", async () => {
+    const h = setup(false);
+    await h.organize("bot", h.chat);
+    expect(h.rpc).toHaveBeenCalledWith("spaces/list", undefined, {
+      requestContext: {
+        headers: { authorization: "Bearer fake", "x-rakazo-space-id": h.chat.spaceId },
+      },
+      skipSpaceAuthRecovery: true,
+    });
+    expect(h.setOrganizeTarget).toHaveBeenCalledWith(expect.objectContaining({ chat: h.chat }));
+  });
+
+  it("ignores a fallback response after the organize target is closed", async () => {
+    const h = setup(false);
+    let finish!: (value: { current: typeof h.space }) => void;
+    h.rpc.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const done = h.organize("bot", h.chat);
+    await Promise.resolve();
+    h.organizeRequestId.current += 1;
+    finish({ current: h.space });
+    await done;
+    expect(h.setOrganizeTarget).not.toHaveBeenCalled();
   });
 });
 

@@ -1,9 +1,10 @@
 import { Label } from "@rakazo/ui-web/components/ui/label";
 import { Separator } from "@rakazo/ui-web/components/ui/separator";
+import { Switch } from "@rakazo/ui-web/components/ui/switch";
 
 import { cn } from "@rakazo/ui-web/lib/utils";
 import { cva, type VariantProps } from "class-variance-authority";
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (
@@ -152,7 +153,7 @@ function FieldSeparator({
       <Separator className="absolute inset-0 top-1/2" />
       {children && (
         <span
-          className="relative mx-auto block w-fit bg-background px-2 text-muted-foreground"
+          className="relative mx-auto block w-fit bg-background px-2 text-muted-foreground in-data-[slot=dialog-content]:bg-dialog"
           data-slot="field-separator-content"
         >
           {children}
@@ -208,6 +209,57 @@ function FieldError({
   );
 }
 
+/**
+ * A setting that is on or off: the switch, its label beside it, and an optional note below.
+ * Use it for every toggle so settings read as one list.
+ */
+function SwitchField({
+  label,
+  description,
+  checked,
+  onCheckedChange,
+  disabled = false,
+  className,
+  "data-testid": testId,
+}: {
+  label: React.ReactNode;
+  description?: React.ReactNode;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  disabled?: boolean;
+  className?: string;
+  "data-testid"?: string;
+}) {
+  const id = useId();
+  // Named from the label explicitly: Base UI only finds it after hydration otherwise.
+  const labelId = useId();
+  const descriptionId = useId();
+  return (
+    <Field
+      orientation="horizontal"
+      data-disabled={disabled}
+      className={cn("items-start gap-3", className)}
+    >
+      <Switch
+        id={id}
+        aria-labelledby={labelId}
+        aria-describedby={description ? descriptionId : undefined}
+        data-testid={testId}
+        className="mt-0.5"
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onCheckedChange}
+      />
+      <FieldContent>
+        <FieldLabel id={labelId} htmlFor={id} className="font-normal text-foreground/75">
+          {label}
+        </FieldLabel>
+        {description ? <FieldDescription id={descriptionId}>{description}</FieldDescription> : null}
+      </FieldContent>
+    </Field>
+  );
+}
+
 export {
   Field,
   FieldContent,
@@ -219,4 +271,5 @@ export {
   FieldSeparator,
   FieldSet,
   FieldTitle,
+  SwitchField,
 };

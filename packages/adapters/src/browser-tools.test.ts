@@ -1,5 +1,5 @@
 import type { AdapterContext, ComputerRef } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   browserActFromTool,
   browserNavigateFromTool,
@@ -81,6 +81,111 @@ describe("browser tools", () => {
       actions: [{ kind: "fill", ref: nameRef, text: "Ada" }],
     });
     expect(acted).toMatchObject({ ok: true, completed: 1 });
+  });
+
+  it("parses upload steps and bounds their file list", () => {
+    expect(
+      parseBrowserActions([{ kind: "upload", ref: "e3", paths: [" receipts/march.pdf "] }]),
+    ).toEqual([{ kind: "upload", ref: "e3", paths: ["receipts/march.pdf"] }]);
+    expect(() => parseBrowserActions([{ kind: "upload", ref: "e3" }])).toThrow(/paths/);
+    expect(() => parseBrowserActions([{ kind: "upload", ref: "e3", paths: [""] }])).toThrow(
+      /paths/,
+    );
+    expect(() =>
+      parseBrowserActions([{ kind: "upload", ref: "e3", paths: Array(11).fill("a.pdf") }]),
+    ).toThrow(/at most 10/);
+  });
+
+  it.each([undefined, ["bots/b1", "shared"]])(
+    "uses only trusted upload roots: %j",
+    async (uploadRoots) => {
+      const browser = new FakeBrowserProvider();
+      const act = vi.spyOn(browser, "act").mockResolvedValue({
+        ok: true,
+        completed: 2,
+        url: "https://example.test",
+        title: "Fixture",
+      });
+      const actions = [
+        { kind: "upload", ref: "e1", paths: ["a.txt"], roots: ["bots/b2"] },
+        { kind: "upload", ref: "e2", paths: ["shared/b.txt"], roots: ["."] },
+      ];
+      expect(parseBrowserActions(actions)).toEqual([
+        { kind: "upload", ref: "e1", paths: ["a.txt"] },
+        { kind: "upload", ref: "e2", paths: ["shared/b.txt"] },
+      ]);
+      await browserActFromTool(
+        browser,
+        computer,
+        context,
+        { actions },
+        {
+          uploadRoots,
+          resolveUploadPath: (path) => (path.startsWith("shared/") ? path : `bots/b1/${path}`),
+        },
+      );
+      expect(act.mock.calls[0]?.[1].actions).toEqual([
+        {
+          kind: "upload",
+          ref: "e1",
+          paths: ["bots/b1/a.txt"],
+          ...(uploadRoots ? { roots: uploadRoots } : {}),
+        },
+        {
+          kind: "upload",
+          ref: "e2",
+          paths: ["shared/b.txt"],
+          ...(uploadRoots ? { roots: uploadRoots } : {}),
+        },
+      ]);
+    },
+  );
+
+  it("uploads workspace files to a hidden file input by ref", async () => {
+    const browser = new FakeBrowserProvider({
+      pages: {
+        "https://example.test/expense": {
+          title: "Expense",
+          html: `<!doctype html><html><head><title>Expense</title></head><body>
+            <label>Receipt <input type="file" role="button" aria-hidden="true" style="display:none" /></label>
+            <button>Save</button>
+          </body></html>`,
+        },
+      },
+    });
+    await browserNavigateFromTool(browser, computer, context, {
+      url: "https://example.test/expense",
+    });
+    const snap = (await browserSnapshotFromTool(browser, computer, context, {})) as {
+      elements: Array<{ ref: string; role: string }>;
+    };
+    const upload = snap.elements.find((el) => el.role === "file upload");
+    expect(upload).toBeDefined();
+
+    const resolved: string[] = [];
+    const acted = await browserActFromTool(
+      browser,
+      computer,
+      context,
+      { actions: [{ kind: "upload", ref: upload!.ref, paths: ["receipts/march.pdf"] }] },
+      {
+        resolveUploadPath: (path) => {
+          resolved.push(path);
+          return `bots/b1/${path}`;
+        },
+      },
+    );
+    expect(resolved).toEqual(["receipts/march.pdf"]);
+    expect(acted).toMatchObject({ ok: true, completed: 1 });
+    expect(String((acted as { tree?: string }).tree)).toContain('value="march.pdf"');
+
+    const freshRef = (acted as { elements: Array<{ ref: string; role: string }> }).elements.find(
+      (el) => el.role === "file upload",
+    )!.ref;
+    const refused = await browserActFromTool(browser, computer, context, {
+      actions: [{ kind: "upload", ref: freshRef, paths: ["a.pdf", "b.pdf"] }],
+    });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringContaining("one file") });
   });
 
   it("parses fill_secret without a value and rejects unknown fields", () => {
