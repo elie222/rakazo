@@ -1,5 +1,20 @@
 import * as z from "zod";
 
+/** Fleet management tools. Only list_fleet is read-only. */
+export const FLEET_TOOL_NAMES = [
+  "list_fleet",
+  "create_group",
+  "update_group",
+  "organize_bot",
+  "set_child_instructions",
+  "set_child_bot_model",
+  "create_child_routine",
+] as const;
+
+export const FLEET_WRITE_TOOL_NAMES = FLEET_TOOL_NAMES.filter(
+  (name): name is Exclude<(typeof FLEET_TOOL_NAMES)[number], "list_fleet"> => name !== "list_fleet",
+);
+
 /** Built-in tool names a bot may disable. Kept aligned with the adapter tool list. */
 export const BUILTIN_TOOL_NAMES = [
   "computer_observe",
@@ -53,6 +68,7 @@ export const BUILTIN_TOOL_NAMES = [
   "schedule_list",
   "schedule_cancel",
   "end_call",
+  "call_user",
   "skill_read",
   "skill_create",
   "skill_update",
@@ -62,6 +78,7 @@ export const BUILTIN_TOOL_NAMES = [
   "create_space",
   "spawn_bot",
   "update_bot",
+  ...FLEET_TOOL_NAMES,
   "archive_bot",
   "message_bot",
   "handoff_to_bot",

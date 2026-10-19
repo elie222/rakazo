@@ -54,7 +54,12 @@ export function groupVoiceChats<T extends VoiceChatMessage>(messages: T[]): Thre
           open = undefined;
           continue;
         }
-        if (message.callId === open.callId && message.runId) openRunIds.add(message.runId);
+        if (
+          message.callId === open.callId &&
+          message.runId &&
+          message.blocks[0]?.kind !== "call_request"
+        )
+          openRunIds.add(message.runId);
         continue;
       }
       open = undefined;
@@ -68,7 +73,10 @@ export function groupVoiceChats<T extends VoiceChatMessage>(messages: T[]): Thre
         callId: message.callId,
         messages: [message],
       };
-      openRunIds = new Set(message.runId ? [message.runId] : []);
+      // A request belongs to the calling run, not to a spoken turn.
+      openRunIds = new Set(
+        message.runId && message.blocks[0]?.kind !== "call_request" ? [message.runId] : [],
+      );
       items.push(open);
       continue;
     }
@@ -115,8 +123,16 @@ export function voiceChatSummary(group: VoiceChatGroup): string {
     : sentence;
 }
 
-/** Whole seconds between the call's first and last message. */
+/** The connected time the caller recorded, else whole seconds between the first and last message. */
 export function voiceChatDuration(group: VoiceChatGroup): number {
+  const marker = group.marker?.blocks[0];
+  if (marker?.kind === "voice_call" && marker.durationSeconds !== undefined) {
+    return marker.durationSeconds;
+  }
+  const request = group.messages[0]?.blocks[0];
+  if (request?.kind === "call_request" && request.durationSeconds !== undefined) {
+    return request.durationSeconds;
+  }
   const first = group.messages[0];
   const last = group.messages[group.messages.length - 1];
   if (!first || !last) return 0;

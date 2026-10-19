@@ -1,6 +1,7 @@
-import type { Prisma, PrismaClient } from "@rakazo/db";
-import { appendEventInTransaction, writeBotInstructions } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { writeBotInstructions } from "./bot-instructions.js";
+import type { Prisma, PrismaClient } from "./client.js";
+import { appendEventInTransaction } from "./events.js";
 
 type AppendEvent = typeof appendEventInTransaction;
 
@@ -19,7 +20,13 @@ export async function commitBotUpdate(
     data: Omit<Prisma.BotUncheckedUpdateInput, "instructions"> & { instructions?: string };
     emitBotUpdated: boolean;
     expectedInstructions?: string;
+    expectedModel?: {
+      modelProvider: string | null;
+      modelId: string | null;
+      thinkingLevel: string | null;
+    };
     instructionRestore?: { versionId: string; undo?: boolean };
+    reason?: string;
   },
   appendEvent: AppendEvent = appendEventInTransaction,
 ): Promise<{ id: string; name: string; title: string; description: string }> {
@@ -29,7 +36,7 @@ export async function commitBotUpdate(
     !options.instructionRestore
   ) {
     return options.prisma.bot.update({
-      where: { id: options.botId },
+      where: { id: options.botId, ...options.expectedModel },
       data: options.data,
       select: { id: true, name: true, title: true, description: true },
     });
@@ -43,13 +50,13 @@ export async function commitBotUpdate(
       await writeBotInstructions(tx, {
         botId: options.botId,
         instructions,
-        reason: options.instructionRestore ? "Restore" : "Manual edit",
+        reason: options.instructionRestore ? "Restore" : (options.reason ?? "Manual edit"),
         expectedInstructions: options.expectedInstructions,
         ...options.instructionRestore,
       });
     }
     const updated = await tx.bot.update({
-      where: { id: options.botId },
+      where: { id: options.botId, ...options.expectedModel },
       data,
       select: { id: true, name: true, title: true, description: true },
     });

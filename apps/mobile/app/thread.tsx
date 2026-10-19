@@ -160,6 +160,7 @@ import {
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
+import { plainAskTitle } from "../lib/ask-title";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
@@ -1008,6 +1009,14 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   const botActions = [
+    {
+      text: t("Profile"),
+      onPress: () =>
+        router.push({
+          pathname: "/bot-profile",
+          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+        }),
+    },
     {
       text: t("Chat settings"),
       onPress: () =>
@@ -3579,7 +3588,8 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <View
           style={{
-            width: "90%",
+            width: "100%",
+            maxWidth: 576,
             borderRadius: 18,
             borderWidth: 1,
             borderColor: tokens.border,
@@ -3601,18 +3611,21 @@ const MessageBubble = memo(function MessageBubble({
                   {...actionProps}
                   style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
                 >
-                  {askBlock.instructionUpdate ? t("Update instructions?") : askBlock.text}
+                  {askBlock.instructionUpdate
+                    ? t("Update instructions?")
+                    : plainAskTitle(askBlock.text)}
                 </Text>
               ) : null}
               {askBlock.detail ? (
                 <Text
                   {...(askBlock.text ? {} : actionProps)}
                   style={{
-                    color: tokens.mutedForeground,
+                    color:
+                      askBlock.detailFormat === "text" ? tokens.foreground : tokens.mutedForeground,
                     marginTop: askBlock.text ? 8 : 0,
-                    fontSize: 12.5,
-                    fontFamily: "Menlo",
-                    lineHeight: 20,
+                    fontSize: askBlock.detailFormat === "text" ? 15.5 : 12.5,
+                    fontFamily: askBlock.detailFormat === "text" ? undefined : "Menlo",
+                    lineHeight: askBlock.detailFormat === "text" ? 23 : 20,
                   }}
                 >
                   {askBlock.detail}
@@ -3622,7 +3635,7 @@ const MessageBubble = memo(function MessageBubble({
                 <Text
                   {...actionProps}
                   style={{
-                    color: tokens.success,
+                    color: askBlock.answer === "deny" ? tokens.mutedForeground : tokens.success,
                     marginTop: 12,
                     fontSize: 13.5,
                     fontWeight: "600",
@@ -4082,7 +4095,7 @@ function AskBlock({
         {...actionProps}
         style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
       >
-        {ask.text}
+        {plainAskTitle(ask.text)}
       </Text>
       {secretInput && ask.credential ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>

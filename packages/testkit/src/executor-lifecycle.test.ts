@@ -753,8 +753,9 @@ describeIntegration("run executor lifecycle", () => {
     const continuation = await handles.prisma.run.findUniqueOrThrow({
       where: { id: result.continuationRunId },
     });
+    // The direct-line delivery in the batch keeps the continuation from counting as owner-started.
     expect(continuation).toMatchObject({
-      trigger: "follow_up",
+      trigger: "messaging",
       sourceMessageId: privateMessage.id,
     });
     const steering = await handles.prisma.steeringMessage.findUniqueOrThrow({

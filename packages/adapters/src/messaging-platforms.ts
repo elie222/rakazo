@@ -2,6 +2,7 @@ import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
 import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
@@ -25,6 +26,8 @@ export interface MessagingEnvironmentValues {
   whatsappVerifyToken?: string | undefined;
   telegramBotToken?: string | undefined;
   telegramWebhookSecret?: string | undefined;
+  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
+  telegramBots?: TelegramBotCredentials[] | undefined;
   larkAppId?: string | undefined;
   larkAppSecret?: string | undefined;
   larkVerificationToken?: string | undefined;
@@ -51,12 +54,46 @@ export function messagingEnvFromProcess(
     whatsappVerifyToken: clean(env.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: clean(env.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    telegramBots: telegramBotsFromEnv(env),
     larkAppId: clean(env.LARK_APP_ID),
     larkAppSecret: clean(env.LARK_APP_SECRET),
     larkVerificationToken: clean(env.LARK_VERIFICATION_TOKEN),
     larkEncryptKey: clean(env.LARK_ENCRYPT_KEY),
     larkDomain: clean(env.LARK_DOMAIN),
   };
+}
+
+/** One extra Telegram bot, mounted as provider `telegram-<name>`. */
+export interface TelegramBotCredentials {
+  name: string;
+  botToken: string;
+  webhookSecret: string;
+}
+
+const TELEGRAM_NAMED_TOKEN = /^TELEGRAM_BOT_TOKEN_([A-Z0-9]+)$/;
+
+/**
+ * Extra Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> plus
+ * TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>. Each is its own Telegram bot (own
+ * token, own getUpdates slot), so one person can link a different Rakazo bot
+ * — typically one per space — to each. <NAME> is letters and digits only and
+ * becomes the provider id `telegram-<name>` (lowercased), which also names
+ * its webhook route. A name with no secret is skipped, like the default bot.
+ */
+export function telegramBotsFromEnv(
+  env: Record<string, string | undefined>,
+): TelegramBotCredentials[] {
+  const bots: TelegramBotCredentials[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    const suffix = TELEGRAM_NAMED_TOKEN.exec(key)?.[1];
+    if (!suffix) continue;
+    const botToken = value?.trim();
+    const webhookSecret = env[`TELEGRAM_WEBHOOK_SECRET_TOKEN_${suffix}`]?.trim();
+    if (!botToken || !webhookSecret) continue;
+    bots.push({ name: suffix.toLowerCase(), botToken, webhookSecret });
+  }
+  bots.sort((a, b) => a.name.localeCompare(b.name));
+  return bots;
 }
 
 /**
@@ -157,9 +194,11 @@ export function messagingPlatformsFromEnv(
     });
   }
 
+  const telegramTokens = new Set<string>();
   // Both required: without the secret token the adapter accepts unsigned
   // webhook posts, so a forged update could reach inbound processing.
   if (env.telegramBotToken && env.telegramWebhookSecret) {
+    telegramTokens.add(env.telegramBotToken.trim());
     platforms.push({
       provider: "telegram",
       capabilities: { direct: true, groups: false, receipt: null },
@@ -177,6 +216,29 @@ export function messagingPlatformsFromEnv(
       adapter: createTelegramAdapter({
         botToken: env.telegramBotToken,
         secretToken: env.telegramWebhookSecret,
+        mode: options.pollInboundMessages ? "auto" : "webhook",
+      }),
+    });
+  }
+
+  // Same rules as the default bot; each named bot has its own token and so
+  // its own getUpdates slot. The surface maps their native "telegram:" thread
+  // ids to "telegram-<name>:" so conversations with each bot stay distinct.
+  for (const bot of env.telegramBots ?? []) {
+    if (telegramTokens.has(bot.botToken.trim())) {
+      getLogger().warn("skipping Telegram bot that reuses another bot's token", {
+        provider: `telegram-${bot.name}`,
+      });
+      continue;
+    }
+    telegramTokens.add(bot.botToken.trim());
+    platforms.push({
+      provider: `telegram-${bot.name}`,
+      adapterName: "telegram",
+      capabilities: { direct: true, groups: false, receipt: null },
+      adapter: createTelegramAdapter({
+        botToken: bot.botToken,
+        secretToken: bot.webhookSecret,
         mode: options.pollInboundMessages ? "auto" : "webhook",
       }),
     });

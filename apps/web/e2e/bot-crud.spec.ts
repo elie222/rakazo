@@ -188,3 +188,51 @@ test("bot creation, editing, and deletion persist", async ({ page }, testInfo) =
   await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
   await captureScreenshot(page, testInfo, "31-deleted-bot-fallback");
 });
+
+test("fleet management switch persists", async ({ page }, testInfo) => {
+  await signup(
+    page,
+    `fleet-management-${Date.now()}@rakazo.test`,
+    "password12",
+    "Fleet Management",
+  );
+  await completeOnboarding(page);
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+
+  const openAdvanced = async () => {
+    await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+    const settings = page.getByTestId("bot-settings");
+    await settings.getByText("Advanced", { exact: true }).click();
+    return settings.getByRole("switch", { name: "Fleet management" });
+  };
+
+  const fleetSwitch = await openAdvanced();
+  await expect(fleetSwitch).not.toBeChecked();
+  await expect(
+    page.getByText(
+      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+    ),
+  ).toBeVisible();
+  await page
+    .getByText(
+      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+    )
+    .scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "32-fleet-management-switch-off");
+  await fleetSwitch.click();
+  await expect(fleetSwitch).toBeChecked();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
+  const reloadedSwitch = await openAdvanced();
+  await expect(reloadedSwitch).toBeChecked();
+  await page
+    .getByText(
+      "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
+    )
+    .scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "32-fleet-management-switch");
+});

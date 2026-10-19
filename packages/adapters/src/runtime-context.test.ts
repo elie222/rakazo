@@ -121,6 +121,12 @@ describe("runtime context policy", () => {
     context.messages.push(
       call("read", "skill_read"),
       result("read", "skill_read", skill),
+      call("fleet", "list_fleet"),
+      result(
+        "fleet",
+        "list_fleet",
+        JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "x".repeat(20_000) } }),
+      ),
       call("shell-1", "shell"),
       result("shell-1", "shell", shellOutput),
       call("shell-2", "shell"),
@@ -137,6 +143,9 @@ describe("runtime context policy", () => {
       ) as Extract<Message, { role: "toolResult" }>;
       return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
     };
+    expect(body("fleet")).toBe(
+      JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "x".repeat(20_000) } }),
+    );
     expect(skill.length).toBeGreaterThan(2500);
     expect(body("read")).toBe(skill);
     expect(body("shell-1")).toContain("[Tool result truncated to fit context");

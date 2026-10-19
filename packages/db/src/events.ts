@@ -481,7 +481,7 @@ export async function sendUserMessage(
             userId: input.userId,
             // External deliveries retain their origin and never become app follow-ups.
             runId: held ? null : busy.id,
-            ...(held && (input.trigger === "messaging" || input.trigger === "webhook")
+            ...(input.trigger === "messaging" || input.trigger === "webhook"
               ? { originTrigger: input.trigger }
               : {}),
             ...(input.modelPin
@@ -1431,7 +1431,8 @@ export async function createPendingSteeringRun(
     orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
   });
   if (pending.length === 0) return null;
-  // One origin per continuation so a group channel and a direct chat are not answered together.
+  // One origin per continuation so a group channel and the owner's private chat are not answered
+  // together. The app and the owner's direct line are one private conversation.
   const origin = steeringOrigin(pending[0]!);
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
@@ -1457,7 +1458,18 @@ export async function createPendingSteeringRun(
       taskId: task.id,
       userId: batch[0]!.userId,
       status: "queued",
-      trigger: origin === "app" ? "follow_up" : origin === "webhook" ? "webhook" : "messaging",
+      // A private continuation is a follow-up the owner wrote only when every message in it came
+      // from the app; one direct-line delivery keeps it messaging, so it is never owner-started.
+      // Rows queued before origins were recorded are recognized by their channel message.
+      trigger:
+        origin === "webhook"
+          ? "webhook"
+          : origin === "private" &&
+              batch.every(
+                (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
+              )
+            ? "follow_up"
+            : "messaging",
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
@@ -1493,14 +1505,18 @@ function continuationModelPin(
   };
 }
 
+function hasChannelMessage(blocks: unknown): boolean {
+  return (blocks as MessageBlock[]).some((block) => block.kind === "channel_message");
+}
+
 function steeringOrigin(item: {
   originTrigger: string | null;
   message: { blocks: unknown };
 }): string {
   if (item.originTrigger === "webhook") return "webhook";
-  if (item.originTrigger !== "messaging") return "app";
+  if (item.originTrigger !== "messaging") return "private";
   const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
-  return channelId ? `channel:${channelId}` : "dm";
+  return channelId ? `channel:${channelId}` : "private";
 }
 
 export async function appendEventInTransaction(

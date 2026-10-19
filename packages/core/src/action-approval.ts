@@ -22,6 +22,8 @@ const APPROVAL_EXEMPT_TOOLS = new Set([
   "schedule_create",
   "schedule_list",
   "schedule_cancel",
+  "list_fleet",
+  "organize_bot",
 ]);
 
 const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
@@ -37,13 +39,22 @@ const APPROVAL_REQUIRED_BUILTIN_TOOLS = new Set([
   "cloud_agent_reply",
   "cloud_agent_cancel",
 ]);
-const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set(["create_space", "propose_instructions_update"]);
+const EXPLICIT_APPROVAL_BUILTIN_TOOLS = new Set([
+  "create_space",
+  "propose_instructions_update",
+  "create_group",
+  "update_group",
+  "set_child_instructions",
+  "set_child_bot_model",
+  "create_child_routine",
+]);
 
 const UNATTENDED_SAFE_BUILTIN_TOOLS = new Set([
   "browser_snapshot",
   "cloud_agent_status",
   "computer_observe",
   "list_files",
+  "list_fleet",
   "list_secrets",
   "read_file",
   "recall_memory",
@@ -132,6 +143,15 @@ export function toolRequiresApproval(
 /** Security-boundary changes cannot be auto-reviewed or permanently allowed. */
 export function toolRequiresExplicitApproval(toolName: string): boolean {
   return EXPLICIT_APPROVAL_BUILTIN_TOOLS.has(toolName);
+}
+
+/**
+ * A run the owner started: their own message, a follow-up they wrote, or the close of their call.
+ * Bot messages, channels, spawns, tickets, webhooks and routines are not, nor is anything new.
+ */
+export function isOwnerStartedRun(trigger: string, followUpFromUser: boolean): boolean {
+  if (trigger === "follow_up") return followUpFromUser;
+  return trigger === "user" || trigger === "call_end";
 }
 
 /** External webhook runs may inspect state unattended, but side effects always need the owner. */
@@ -273,6 +293,12 @@ export function applyJudgeDecision(input: {
   if (input.decision === "ask") return "ask";
   return input.consequential ? "ask" : "allow";
 }
+
+/**
+ * The Markdown characters an approval card title escapes in the names it shows, as a regular
+ * expression character class. Web renders the title as Markdown; plain-text surfaces unescape them.
+ */
+export const CARD_TITLE_ESCAPED_CHARACTERS = "[\\\\`*_[\\]<>~|]";
 
 export function isSecretAskBlock(block: {
   kind: string;

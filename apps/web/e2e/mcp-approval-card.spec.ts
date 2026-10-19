@@ -16,6 +16,11 @@ test("keeps the approved MCP card state after the thread remounts", async ({ pag
   await expect(card).toContainText("Fixture MCP");
   await expect(card.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
   await captureScreenshot(page, testInfo, "mcp-approval-card");
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 400, height: 900 });
+  await expect(card).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  if (viewport) await page.setViewportSize(viewport);
 
   await card.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(card.getByText(/Connected/i)).toBeVisible({ timeout: 15_000 });

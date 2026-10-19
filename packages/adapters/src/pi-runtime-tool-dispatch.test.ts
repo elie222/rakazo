@@ -2135,6 +2135,51 @@ describe("Pi connector tool dispatch", () => {
     expect(JSON.parse(result.content[0]!.text)).toEqual(skill);
   });
 
+  it("delivers full child instructions and their version past the tool result bound", async () => {
+    const listing = {
+      bot: { id: "child", instructionsVersion: "v2", instructions: "x".repeat(20_000) },
+      bots: [],
+      groups: [],
+      sections: [],
+      truncated: false,
+    };
+    fakeAgentState.invoke = { name: "list_fleet", args: { bot_id: "child" } };
+    const runtime = new PiAgentRuntime();
+
+    for await (const _event of runtime.run(
+      {
+        botId: "b",
+        threadId: "t",
+        runId: "large-child",
+        prompt: "edit the child",
+        instructions: "Read the child before updating it.",
+        history: [],
+        tools: [
+          {
+            name: "list_fleet",
+            description: "Read a child by id",
+            inputSchema: { type: "object", properties: { bot_id: { type: "string" } } },
+          },
+        ],
+        model: { provider: "test", id: "dispatch-test-model" },
+        executeTool: vi.fn(async () => listing),
+      },
+      {
+        operationId: "large-child",
+        traceId: "large-child",
+        spaceId: "w",
+        userId: "u",
+        signal: new AbortController().signal,
+      },
+    )) {
+      // Exhaust so the fake agent executes the tool.
+    }
+
+    const result = fakeAgentState.toolResult as { content: Array<{ type: string; text: string }> };
+    expect(result.content[0]!.text.length).toBeGreaterThan(TOOL_RESULT_TEXT_LIMIT);
+    expect(JSON.parse(result.content[0]!.text)).toEqual(listing);
+  });
+
   it("serialises object content instead of writing [object Object] for write_file", async () => {
     fakeAgentState.invoke = {
       name: "write_file",
