@@ -3095,6 +3095,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               scope,
               override!.modelProvider!,
               override!.modelId,
+              { intent: "existing" },
             )
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
@@ -3726,6 +3727,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 run,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
+                { intent: "existing" },
               )
             : null;
         runAbortController = new AbortController();

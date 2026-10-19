@@ -236,10 +236,29 @@ describe("BotSettings model choices", () => {
 });
 
 describe("BotSettings thinking options", () => {
+  it("preserves saved thinking on a profile save when options are hidden", async () => {
+    await render("Billing", {
+      modelProvider: "openai-compatible",
+      modelId: "beta",
+      thinkingLevel: "high",
+    });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("thinkingLevel");
+  });
+
   it("shows the connection's thinking levels for a bot on a second enabled model", async () => {
     i18n.load("en", {});
     i18n.activate("en");
     vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      {
+        id: "newer",
+        provider: "openai-compatible",
+        label: "Newer",
+        hasKey: true,
+        isDefault: false,
+        enabledModelIds: ["beta"],
+        thinkingLevels: ["off"],
+      },
       {
         id: "cred-compatible",
         provider: "openai-compatible",

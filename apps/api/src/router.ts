@@ -66,6 +66,7 @@ import {
   enqueueTakeoverContinuation,
   ensureComputerWorkspaceLayout,
   expireComputerControl,
+  findConnectedModelCredential,
   forgetBotSecret,
   hasActiveComputerControl,
   hostCredentialSource,
@@ -100,6 +101,7 @@ import {
   provisionComputer,
   queueComputerUpdate,
   releaseComputerExecutionLease,
+  rememberConnectedModelChoice,
   replaceComputer,
   resolveAutoReviewChecker,
   resolveBotUploadPath,
@@ -1321,12 +1323,7 @@ export function createRouter(deps: RouterDeps) {
           // routines, backups) serializable. Concurrent saves of the same connection are
           // last-write-wins, as before this list existed, so one save's ticks can be dropped.
           const saved = parseModelSecret(plaintext);
-          await assertNoDanglingModelPins(
-            deps,
-            context.actor,
-            saved.kind === "openai_compatible" ? (saved.enabledModelIds ?? []) : [],
-            input.modelId ?? "",
-          );
+          await assertNoDanglingModelPins(deps, context.actor, saved, input.modelId ?? "");
         }
         return persistModelCredential(
           deps,
@@ -1549,6 +1546,7 @@ export function createRouter(deps: RouterDeps) {
                   context.actor,
                   input.provider,
                   input.modelId,
+                  "choice",
                 )
               : { allowed: undefined, secret: undefined };
           if (compatible) {
@@ -1838,6 +1836,18 @@ export function createRouter(deps: RouterDeps) {
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
+        if (
+          modelChange.provider !== existing.modelProvider ||
+          modelChange.model !== existing.modelId
+        ) {
+          await rememberConnectedModelChoice(
+            deps.prisma,
+            deps.secrets,
+            context.actor,
+            modelChange.provider,
+            modelChange.model,
+          );
+        }
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
@@ -3519,6 +3529,13 @@ export function createRouter(deps: RouterDeps) {
             nextRunAt,
           },
         });
+        await rememberConnectedModelChoice(
+          deps.prisma,
+          deps.secrets,
+          context.actor,
+          input.modelProvider,
+          input.modelId,
+        );
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -3725,6 +3742,15 @@ export function createRouter(deps: RouterDeps) {
             }
             throw error;
           });
+        if (modelChanged) {
+          await rememberConnectedModelChoice(
+            deps.prisma,
+            deps.secrets,
+            context.actor,
+            modelProvider,
+            modelId,
+          );
+        }
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -6642,12 +6668,14 @@ function prepareAllowedThinkingLevels(
   actor: Actor,
   provider: string,
   modelId: string,
+  intent: "existing" | "choice" = "existing",
 ) {
   return prepareModelThinkingLevels(
     { prisma: deps.prisma, secretStore: deps.secrets },
     actor,
     provider,
     modelId,
+    { intent },
   );
 }
 
@@ -7133,32 +7161,56 @@ function refuseModelPins(
   });
 }
 
-/**
- * Refuse a compatible connect whose saved list would leave one of the actor's pins, in any
- * space, outside that space's effective list (`stored` plus the space's own default; the
- * actor's space gets `actorDefault`). The secret is per user and account-wide.
- */
+/** Refuse only pins that runtime selection cannot serve after this connection save. */
 async function assertNoDanglingModelPins(
   deps: RouterDeps,
   actor: Actor,
-  stored: string[],
+  secret: ReturnType<typeof parseModelSecret>,
   actorDefault: string,
 ) {
-  const [preferences, pins] = await Promise.all([
+  const stored = secret.kind === "openai_compatible" ? (secret.enabledModelIds ?? []) : [];
+  const [connection, preferences, pins] = await Promise.all([
+    deps.prisma.userModelCredential.findFirst({
+      where: { userId: actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID },
+      orderBy: newestModelCredentialOrder,
+    }),
     deps.prisma.spaceModelPreference.findMany({
       where: {
         userId: actor.userId,
         credential: { userId: actor.userId, provider: OPENAI_COMPATIBLE_PROVIDER_ID },
       },
-      select: { spaceId: true, modelId: true },
+      select: { spaceId: true, modelId: true, credentialId: true },
     }),
-    compatibleModelPins(deps, actor, {
-      modelId: { notIn: stored },
-    }),
+    compatibleModelPins(deps, actor, { modelId: { notIn: stored } }),
   ]);
-  const defaults = new Map(preferences.map((row) => [row.spaceId, usableModelId(row.modelId)]));
+  if (!connection) return;
+  const defaults = new Map(
+    preferences
+      .filter((row) => row.credentialId === connection.id)
+      .map((row) => [row.spaceId, usableModelId(row.modelId)]),
+  );
   defaults.set(actor.spaceId, usableModelId(actorDefault));
-  refuseModelPins(pins, (row) => row.modelId !== null && row.modelId !== defaults.get(row.spaceId));
+  const dangling = new Set<ModelPinRow>();
+  for (const row of [...pins.named, ...pins.backups]) {
+    if (!row.modelId || row.modelId === defaults.get(row.spaceId)) continue;
+    const selected = await findConnectedModelCredential(
+      deps.prisma,
+      deps.secrets,
+      { ...actor, spaceId: row.spaceId },
+      OPENAI_COMPATIBLE_PROVIDER_ID,
+      row.modelId,
+      {
+        intent: "existing",
+        replacement: {
+          credentialId: connection.id,
+          secret,
+          defaultModel: defaults.get(row.spaceId) ?? null,
+        },
+      },
+    );
+    if (selected?.id === connection.id || !selected) dangling.add(row);
+  }
+  refuseModelPins(pins, (row) => dangling.has(row));
 }
 
 /**
@@ -7200,6 +7252,7 @@ async function assertRoutineModel(
     actor,
     model.modelProvider,
     model.modelId,
+    { intent: "choice" },
   );
   if (message) throw new ORPCError("BAD_REQUEST", { message });
 }

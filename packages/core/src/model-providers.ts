@@ -1,5 +1,9 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
-import { canonicalPiProviderId, normalizeOpenAiCompatibleBaseUrl } from "@rakazo/contracts";
+import {
+  canonicalPiProviderId,
+  compatibleModelKeepsPreferred,
+  normalizeOpenAiCompatibleBaseUrl,
+} from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
 /** Effort choices an OpenAI-compatible endpoint stores when reasoning is enabled. */
@@ -151,6 +155,7 @@ type CredentialModelRef = {
   label: string;
   modelId?: string | null;
   enabledModelIds?: readonly string[] | null;
+  isDefault?: boolean;
 };
 
 function modelToken(value: string): string {
@@ -237,12 +242,32 @@ export function credentialForModel<C extends CredentialModelRef>(
   credentials: readonly C[],
   provider: string | null | undefined,
   modelId: string | null | undefined,
+  intent: "existing" | "choice" = "existing",
 ): C | undefined {
   if (!provider || !modelId) return undefined;
-  return credentials.find(
-    (credential) =>
-      credential.provider === provider &&
-      (credential.modelId === modelId || (credential.enabledModelIds?.includes(modelId) ?? false)),
+  const candidates = credentials.filter((credential) => credential.provider === provider);
+  const matching = candidates.filter((credential) => credential.modelId === modelId);
+  const preferred =
+    candidates.find((credential) => credential.isDefault) ??
+    candidates.find((credential) => credential.modelId) ??
+    candidates[0];
+  return (
+    matching.find((credential) => credential.isDefault) ??
+    matching[0] ??
+    (preferred &&
+    provider === "openai-compatible" &&
+    compatibleModelKeepsPreferred({
+      modelId,
+      defaultModel: preferred.modelId,
+      enabledModelIds: preferred.enabledModelIds,
+      intent,
+    })
+      ? preferred
+      : undefined) ??
+    candidates.find((credential) => credential.enabledModelIds?.includes(modelId)) ??
+    (provider === "openai-compatible" && preferred?.enabledModelIds === undefined
+      ? preferred
+      : undefined)
   );
 }
 

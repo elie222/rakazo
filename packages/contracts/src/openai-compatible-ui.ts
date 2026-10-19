@@ -38,3 +38,17 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
 /** Self-hosted voice defaults: Kokoro and Whisper as mlx-audio names them. */
 export const DEFAULT_COMPATIBLE_TTS_MODEL = "mlx-community/Kokoro-82M-bf16";
 export const DEFAULT_COMPATIBLE_STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16";
+
+/** Ownership wins when it serves the id; existing list-less pins keep their endpoint. */
+export function compatibleModelKeepsPreferred(input: {
+  modelId: string;
+  defaultModel?: string | null;
+  enabledModelIds?: readonly string[] | null;
+  intent: "existing" | "choice";
+}): boolean {
+  return (
+    input.defaultModel === input.modelId ||
+    Boolean(input.enabledModelIds?.includes(input.modelId)) ||
+    (input.intent === "existing" && input.enabledModelIds === undefined)
+  );
+}

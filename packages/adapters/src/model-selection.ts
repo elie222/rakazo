@@ -1,7 +1,11 @@
 import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
-import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
+import {
+  canonicalPiProviderId,
+  compatibleModelKeepsPreferred,
+  usableModelId,
+} from "@rakazo/contracts";
 import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
 import { chooseModelCredential, findModelCredential } from "@rakazo/db";
 import { modelCredentialDto } from "./model-connect.js";
@@ -377,6 +381,12 @@ async function loadModelSecret(
   }
 }
 
+export type ConnectedModelResolution = {
+  intent?: "existing" | "choice";
+  /** Preview a connection save using the same runtime selection. */
+  replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
+};
+
 /** Keep space/model ownership first, then use another connection that explicitly enables the id. */
 export async function findConnectedModelCredential(
   prisma: PrismaClient,
@@ -384,15 +394,33 @@ export async function findConnectedModelCredential(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId?: string | null,
+  resolution: ConnectedModelResolution = {},
 ): Promise<ModelCredential> {
-  const selected = await findModelCredential(prisma, actor, provider, modelId);
+  let selected = await findModelCredential(prisma, actor, provider, modelId);
+  const replacement = resolution.replacement;
+  if (
+    selected &&
+    selected.id === replacement?.credentialId &&
+    replacement.defaultModel !== undefined
+  ) {
+    selected = { ...selected, defaultModel: replacement.defaultModel };
+  }
+  const readSecret = (credential: { id: string; secretId: string }) =>
+    credential.id === replacement?.credentialId
+      ? Promise.resolve(replacement.secret)
+      : loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
   const id = usableModelId(modelId);
   if (!selected || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id) return selected;
   if (selected.defaultModel === id) return selected;
-  const secret = await loadModelSecret(prisma, secretStore, actor.userId, selected.secretId);
+  const secret = await readSecret(selected);
   if (
     secret?.kind === "openai_compatible" &&
-    (secret.enabledModelIds === undefined || secret.enabledModelIds.includes(id))
+    compatibleModelKeepsPreferred({
+      modelId: id,
+      defaultModel: selected.defaultModel,
+      enabledModelIds: secret.enabledModelIds,
+      intent: resolution.intent ?? "choice",
+    })
   ) {
     return selected;
   }
@@ -402,12 +430,41 @@ export async function findConnectedModelCredential(
   });
   for (const credential of credentials) {
     if (credential.id === selected.id) continue;
-    const candidate = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+    const candidate = await readSecret(credential);
     if (candidate?.kind === "openai_compatible" && candidate.enabledModelIds?.includes(id)) {
       return { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null };
     }
   }
   return selected;
+}
+
+/** Retain an explicit choice when legacy pin routing would otherwise use another endpoint. */
+export async function rememberConnectedModelChoice(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string | null | undefined,
+  modelId: string | null | undefined,
+) {
+  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !modelId) return;
+  const chosen = await findConnectedModelCredential(prisma, secretStore, actor, provider, modelId, {
+    intent: "choice",
+  });
+  const existing = await findConnectedModelCredential(
+    prisma,
+    secretStore,
+    actor,
+    provider,
+    modelId,
+    { intent: "existing" },
+  );
+  if (!chosen || chosen.id === existing?.id) return;
+  const scope = { spaceId: actor.spaceId, userId: actor.userId };
+  await prisma.spaceModelPreference.upsert({
+    where: { spaceId_userId_credentialId: { ...scope, credentialId: chosen.id } },
+    create: { ...scope, credentialId: chosen.id, modelId, isDefault: false },
+    update: { modelId, thinkingLevel: null },
+  });
 }
 
 export type BotModelChangeDeps = {
@@ -453,6 +510,7 @@ export async function validateBotModelChange(
       scope,
       provider,
       model,
+      { intent: "choice" },
     );
     if (!credential) return { ok: false, error: "Connect that model provider first" };
     const inCatalog = isCatalogModelChoice(provider, model);
@@ -463,6 +521,7 @@ export async function validateBotModelChange(
         scope,
         provider,
         model,
+        { intent: "choice" },
       );
       if (error) return { ok: false, error };
     } else if (!inCatalog && credential.defaultModel !== model) {
@@ -495,6 +554,7 @@ export async function validateBotModelChange(
         scope,
         effectiveProvider,
         effectiveModelId,
+        { intent: changing ? "choice" : "existing" },
       );
       if (allowed && !allowed.includes(thinkingLevel)) {
         return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };
@@ -514,6 +574,7 @@ export async function prepareAllowedThinkingLevels(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
+  resolution: ConnectedModelResolution = { intent: "existing" },
 ): Promise<{
   allowed: string[] | undefined;
   secret?: { id: string; ciphertext: string };
@@ -533,6 +594,7 @@ export async function prepareAllowedThinkingLevels(
     actor,
     provider,
     modelId,
+    resolution,
   );
   if (!credential) return { allowed: ["off"] };
   const secret = await loadStoredModelSecret(
@@ -588,6 +650,7 @@ export async function validateConnectedModelChoice(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
+  resolution: ConnectedModelResolution = {},
 ) {
   const credential = await findConnectedModelCredential(
     prisma,
@@ -595,6 +658,7 @@ export async function validateConnectedModelChoice(
     actor,
     provider,
     modelId,
+    resolution,
   );
   if (!credential) return "Connect that model provider first";
   if (!usableModelId(modelId)) return "Unknown model for that provider";

@@ -4412,6 +4412,30 @@ describe("openai-compatible enabled models", () => {
     expect(state.credential).toEqual(initialCredential);
   });
 
+  it.each(["bot", "routine", "backup"])(
+    "keeps a working %s on another connection when saving this one",
+    async (kind) => {
+      const { call } = fixture({
+        plaintext: secretText(["m-a"]),
+        alternatePlaintext: secretText(["m-b"]),
+        defaultModel: "m-a",
+        bots: kind === "bot" ? [{ name: "Ada", modelId: "m-b" }] : [],
+        routines: kind === "routine" ? [{ name: "Digest", modelId: "m-b" }] : [],
+        backups: kind === "backup" ? ["m-b"] : [],
+      });
+      expect(
+        (
+          await call("models/connect", {
+            provider: compatible,
+            baseUrl,
+            modelId: "m-a",
+            enabledModelIds: ["m-a"],
+          })
+        ).status,
+      ).toBe(200);
+    },
+  );
+
   it("does not let an archived bot pinned on a removed id block the save", async () => {
     const { call, secrets } = fixture({
       plaintext: secretText(["m-a", "m-b"]),
@@ -4611,34 +4635,38 @@ describe("openai-compatible enabled models", () => {
     expect(saved).toMatchObject({ kind: "openai_compatible", enabledModelIds: ["m-a", "m-b"] });
   });
 
-  it("sets the default on the connection enabling the model, preserving its reasoning", async () => {
-    const { call, prisma } = fixture({
-      plaintext: secretText(["m-a"], false),
-      alternatePlaintext: secretText(["m-b"], true),
-      defaultModel: "m-a",
-    });
-    expect(
-      (
-        await call("models/setDefault", {
-          provider: compatible,
-          modelId: "m-b",
-          thinkingLevel: "high",
-        })
-      ).status,
-    ).toBe(200);
-    expect(prisma.spaceModelPreference.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          spaceId_userId_credentialId: {
-            spaceId: actor.spaceId,
-            userId: actor.userId,
-            credentialId: "cred-alternate",
+  it.each([secretText(["m-a"], false), secretText()])(
+    "sets the default on the connection enabling the model, preserving its reasoning (%s)",
+    async (plaintext) => {
+      const { call, prisma } = fixture({
+        plaintext,
+        bots: [{ name: "Ada", modelId: "m-a" }],
+        alternatePlaintext: secretText(["m-b"], true),
+        defaultModel: "m-a",
+      });
+      expect(
+        (
+          await call("models/setDefault", {
+            provider: compatible,
+            modelId: "m-b",
+            thinkingLevel: "high",
+          })
+        ).status,
+      ).toBe(200);
+      expect(prisma.spaceModelPreference.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            spaceId_userId_credentialId: {
+              spaceId: actor.spaceId,
+              userId: actor.userId,
+              credentialId: "cred-alternate",
+            },
           },
-        },
-        update: expect.objectContaining({ modelId: "m-b", thinkingLevel: "high" }),
-      }),
-    );
-  });
+          update: expect.objectContaining({ modelId: "m-b", thinkingLevel: "high" }),
+        }),
+      );
+    },
+  );
 
   it("refuses setDefault to an id outside a listed secret", async () => {
     const { call, prisma } = fixture({

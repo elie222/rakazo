@@ -270,6 +270,39 @@ describe("connected model choices", () => {
     expect(credentialForModel(credentials, null, "alpha")).toBeUndefined();
   });
 
+  it("prefers a matching space model over a newer enabled match", () => {
+    const newer = {
+      provider: "openai-compatible",
+      label: "Newer",
+      modelId: null,
+      enabledModelIds: ["Y"],
+      thinkingLevels: ["off"],
+    };
+    const owner = {
+      provider: "openai-compatible",
+      label: "Owner",
+      modelId: "Y",
+      enabledModelIds: ["Y"],
+      thinkingLevels: ["off", "high"],
+    };
+    expect(credentialForModel([newer, owner], "openai-compatible", "Y")).toBe(owner);
+    const preferred = { ...owner, modelId: "X", isDefault: true };
+    expect(credentialForModel([newer, preferred], "openai-compatible", "Y")).toBe(preferred);
+  });
+
+  it("keeps existing legacy pins but resolves explicit choices to an enabled connection", () => {
+    const legacy = {
+      provider: "openai-compatible",
+      label: "Legacy",
+      modelId: "X",
+      isDefault: true,
+    };
+    const listed = { provider: "openai-compatible", label: "Listed", enabledModelIds: ["Y"] };
+    expect(credentialForModel([listed, legacy], "openai-compatible", "Y")).toBe(legacy);
+    expect(credentialForModel([listed, legacy], "openai-compatible", "Y", "choice")).toBe(listed);
+    expect(credentialForModel([legacy], "openai-compatible", "Y", "choice")).toBe(legacy);
+  });
+
   it("resolves a saved display label to the API id used on save", () => {
     expect(resolveSelectableModelId(deepseek, "deepseek", "DeepSeek-V4.1-Flash")).toBe(
       "deepseek-flash",
