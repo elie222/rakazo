@@ -100,7 +100,9 @@ export function MessageMenuHost() {
             <View
               style={{
                 flexDirection: "row",
+                flexWrap: "wrap",
                 justifyContent: "space-between",
+                gap: 4,
                 padding: 8,
                 borderRadius: 28,
                 backgroundColor: tokens.card,
