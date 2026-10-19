@@ -5173,6 +5173,9 @@ const Transcript = memo(function Transcript({
           if (item.kind === "voiceChat") {
             return (
               <div key={item.key}>
+                {item.messages.some((message) => message.id === unreadFromId) ? (
+                  <UnreadSeparator />
+                ) : null}
                 {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
                   <TimeSeparator
                     createdAt={item.messages[0].createdAt}

@@ -2169,6 +2169,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     ({ item }: ListRenderItemInfo<ThreadItem<MobileMessage>>) =>
       item.kind === "voiceChat" ? (
         <View style={messageListStyles.row}>
+          {item.messages.some((message) => message.id === unreadFromId) ? (
+            <UnreadSeparator />
+          ) : null}
           {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
             <TimeSeparator createdAt={item.messages[0].createdAt} />
           ) : null}
@@ -2177,7 +2180,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds],
+    [renderMessageRow, separatorIds, unreadFromId],
   );
   const listContentStyle = useMemo(
     () => ({
