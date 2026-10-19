@@ -34,12 +34,13 @@ export function connectedBackupOptions(
       providerName: entry.providerName ?? entry.provider,
     });
   }
-  const compatibleCredential = credentials.find(
-    (credential) =>
-      credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID && credential.modelId?.trim(),
-  );
-  if (compatibleCredential?.modelId) {
-    for (const modelId of compatibleCredential.enabledModelIds ?? [compatibleCredential.modelId]) {
+  const seen = new Set<string>();
+  for (const credential of credentials) {
+    if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) continue;
+    for (const raw of credential.enabledModelIds ?? [credential.modelId ?? ""]) {
+      const modelId = raw.trim();
+      if (!modelId || seen.has(modelId)) continue;
+      seen.add(modelId);
       const entry = catalog.find(
         (candidate) =>
           candidate.provider === OPENAI_COMPATIBLE_PROVIDER_ID && candidate.id === modelId,

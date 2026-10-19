@@ -3,6 +3,7 @@ import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   ModelConnectInputSchema,
 } from "@rakazo/contracts";
+import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildModelConnectPlaintext,
@@ -351,13 +352,12 @@ describe("modelCredentialDto", () => {
       baseUrl: "https://example.invalid/v1",
       modelId: "qwen3-4b",
       reasoning: false,
-      enabledModelIds: ["qwen3-4b"],
       thinkingLevels: ["off"],
     });
   });
 
   it.each([
-    { name: "legacy secret", enabledModelIds: undefined, expected: ["Y"] },
+    { name: "legacy secret", enabledModelIds: undefined, expected: undefined },
     { name: "listed secret with the default", enabledModelIds: ["Y", "X"], expected: ["Y", "X"] },
     { name: "listed secret without the default", enabledModelIds: ["X"], expected: ["Y", "X"] },
   ])("exposes the effective enabled models for a $name", ({ enabledModelIds, expected }) => {
@@ -373,7 +373,14 @@ describe("modelCredentialDto", () => {
       isDefault: true,
       defaultModel: "Y",
     };
-    expect(modelCredentialDto(row, plaintext).enabledModelIds).toEqual(expected);
+    const dto = modelCredentialDto(row, plaintext);
+    expect(dto.enabledModelIds).toEqual(expected);
+    if (enabledModelIds === undefined) {
+      expect(dto).not.toHaveProperty("enabledModelIds");
+      expect(canUseCompatibleModelAsDefault(dto.enabledModelIds, "new-default")).toBe(true);
+    } else {
+      expect(canUseCompatibleModelAsDefault(dto.enabledModelIds, "new-default")).toBe(false);
+    }
   });
 
   it("projects image support for the selected model only", () => {

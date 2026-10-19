@@ -2,12 +2,8 @@ import type { AgentRunRequest, SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
-import {
-  chooseModelCredential,
-  type findDefaultModelCredential,
-  findModelCredential,
-  type PrismaClient,
-} from "@rakazo/db";
+import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
+import { chooseModelCredential, findModelCredential } from "@rakazo/db";
 import type { ModelCredentialAuthKind } from "./pi-catalog-availability.js";
 import {
   catalogModelAvailableForAuth,
@@ -380,6 +376,36 @@ async function loadModelSecret(
   }
 }
 
+/** Keep space/model ownership first, then use another connection that explicitly enables the id. */
+export async function findConnectedModelCredential(
+  prisma: PrismaClient,
+  secretStore: Pick<SecretStore, "load">,
+  actor: Pick<Actor, "userId" | "spaceId">,
+  provider: string,
+  modelId?: string | null,
+): Promise<ModelCredential> {
+  const selected = await findModelCredential(prisma, actor, provider, modelId);
+  const id = usableModelId(modelId);
+  if (!selected || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id) return selected;
+  if (selected.defaultModel === id) return selected;
+  const secret = await loadModelSecret(prisma, secretStore, actor.userId, selected.secretId);
+  if (secret?.kind === "openai_compatible" && secret.enabledModelIds?.includes(id)) {
+    return selected;
+  }
+  const credentials = await prisma.userModelCredential.findMany({
+    where: { userId: actor.userId, provider },
+    orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+  });
+  for (const credential of credentials) {
+    if (credential.id === selected.id) continue;
+    const candidate = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+    if (candidate?.kind === "openai_compatible" && candidate.enabledModelIds?.includes(id)) {
+      return { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null };
+    }
+  }
+  return selected;
+}
+
 export async function validateConnectedModelChoice(
   prisma: PrismaClient,
   secretStore: Pick<SecretStore, "load">,
@@ -387,7 +413,13 @@ export async function validateConnectedModelChoice(
   provider: string,
   modelId: string,
 ) {
-  const credential = await findModelCredential(prisma, actor, provider);
+  const credential = await findConnectedModelCredential(
+    prisma,
+    secretStore,
+    actor,
+    provider,
+    modelId,
+  );
   if (!credential) return "Connect that model provider first";
   if (!usableModelId(modelId)) return "Unknown model for that provider";
   // Compatible catalog entries are placeholders, not evidence that this

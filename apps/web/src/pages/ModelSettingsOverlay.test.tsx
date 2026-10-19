@@ -768,7 +768,7 @@ it("keeps a saved model listed, unticked, after a refused save", async () => {
   }
 });
 
-it("allows Use this model when the saved list could not be read", async () => {
+it("allows Use this model for a legacy connection without a saved list", async () => {
   vi.mocked(rpc.me).mockResolvedValue(account("openai-compatible", "model-a"));
   models.list.mockResolvedValue([compatibleEntry]);
   const { enabledModelIds: _unread, ...unreadable } = compatibleCredential;

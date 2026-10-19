@@ -167,6 +167,20 @@ describe("connected backup model choices", () => {
     ]);
   });
 
+  it("offers enabled ids without a space default across all connections, once each", () => {
+    const connection = credentials[1]!;
+    expect(
+      connectedBackupOptions(
+        [],
+        [
+          { ...connection, modelId: undefined, enabledModelIds: ["a", "b"] },
+          { ...connection, id: "second", modelId: undefined, enabledModelIds: ["b", "c"] },
+          { ...connection, id: "empty", modelId: undefined },
+        ],
+      ).map((option) => option.modelId),
+    ).toEqual(["a", "b", "c"]);
+  });
+
   it("moves a backup one place without changing the source list", () => {
     expect(moveBackupChoice(choices, 1, -1)).toEqual([choices[1], choices[0]]);
     expect(choices).toEqual([

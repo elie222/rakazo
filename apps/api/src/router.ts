@@ -67,6 +67,7 @@ import {
   enqueueTakeoverContinuation,
   ensureComputerWorkspaceLayout,
   expireComputerControl,
+  findConnectedModelCredential,
   forgetBotSecret,
   hasActiveComputerControl,
   hostCredentialSource,
@@ -1581,6 +1582,9 @@ export function createRouter(deps: RouterDeps) {
                   authFailure ??= auth.message;
                   continue;
                 }
+                // The enabled-list check and execution must use the same connection.
+                if (compatible && thinking.secret && candidate.secretId !== thinking.secret.id)
+                  continue;
                 readyIds.push(candidate.id);
               }
               const chosenId = selectDefaultCredentialId({
@@ -6627,7 +6631,13 @@ async function prepareAllowedThinkingLevels(
       )?.thinkingLevels,
     };
   }
-  const credential = await findModelCredential(deps.prisma, actor, provider);
+  const credential = await findConnectedModelCredential(
+    deps.prisma,
+    deps.secrets,
+    actor,
+    provider,
+    modelId,
+  );
   if (!credential) return { allowed: ["off"] };
   const secret = await loadStoredModelSecret(
     deps.prisma,
@@ -7135,7 +7145,7 @@ async function compatibleModelPins(
       select: { ...pin, name: true },
     }),
     deps.prisma.routine.findMany({
-      where: { ...where, modelProvider: provider },
+      where: { ...where, modelProvider: provider, bot: { archivedAt: null } },
       select: { ...pin, name: true },
     }),
     deps.prisma.spaceBackupModel.findMany({ where: { ...where, provider }, select: pin }),

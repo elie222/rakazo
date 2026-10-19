@@ -997,7 +997,10 @@ describe("connected model validation", () => {
   it("accepts catalog and saved free-form models but rejects unavailable choices", async () => {
     const catalogPrisma = {
       spaceModelPreference: { findFirst: async () => null },
-      userModelCredential: { findFirst: async () => credential("xai", null) },
+      userModelCredential: {
+        findMany: vi.fn(async () => []),
+        findFirst: async () => credential("xai", null),
+      },
     } as unknown as PrismaClient;
     await expect(
       validateConnectedModelChoice(catalogPrisma, noStore, actor, "xai", "grok-4.6"),
@@ -1040,7 +1043,7 @@ describe("connected model validation", () => {
     );
     const customPrisma = {
       spaceModelPreference: { findFirst: preferenceFindFirst },
-      userModelCredential: { findFirst: async () => null },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
       secret: { findFirst: async () => null },
     } as unknown as PrismaClient;
     await expect(
@@ -1075,7 +1078,7 @@ describe("connected model validation", () => {
 
     const disconnectedPrisma = {
       spaceModelPreference: { findFirst: async () => null },
-      userModelCredential: { findFirst: async () => null },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
     } as unknown as PrismaClient;
     await expect(
       validateConnectedModelChoice(
@@ -1123,8 +1126,8 @@ describe("enabled openai-compatible models", () => {
   function compatiblePrisma(defaultModel: string, ciphertext: string | null) {
     return {
       spaceModelPreference: {
-        findFirst: async (args: { where: { modelId?: string } }) => {
-          if (args.where.modelId !== undefined) {
+        findFirst: async (args: { where: { modelId?: string }; select?: unknown }) => {
+          if (args.where.modelId !== undefined && args.select) {
             return args.where.modelId === defaultModel ? { id: "preference" } : null;
           }
           return {
@@ -1135,7 +1138,7 @@ describe("enabled openai-compatible models", () => {
           };
         },
       },
-      userModelCredential: { findFirst: async () => null },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
       secret: {
         findFirst: vi.fn(async () =>
           ciphertext === null ? null : { id: "secret-openai-compatible", ciphertext },

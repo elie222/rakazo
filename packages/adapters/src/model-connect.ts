@@ -313,7 +313,9 @@ export function modelCredentialDto(
     ...(parsed.maxImagesPerPrompt !== undefined
       ? { maxImagesPerPrompt: parsed.maxImagesPerPrompt }
       : {}),
-    enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel),
+    ...(parsed.enabledModelIds !== undefined
+      ? { enabledModelIds: enabledOpenAiCompatibleModelIds(parsed, row.defaultModel) }
+      : {}),
     thinkingLevels: getSupportedThinkingLevels(
       openAiCompatibleModel(row.defaultModel ?? "custom", parsed.baseUrl, parsed.reasoning),
     ) as ThinkingLevel[],

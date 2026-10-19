@@ -25,7 +25,7 @@ import {
   voiceCallInstruction,
   withRecentTurnImages,
 } from "./executor.js";
-import { UnavailableModelForAuthError } from "./model-selection.js";
+import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 
 describe("bot tool permissions", () => {
@@ -966,7 +966,7 @@ function compatiblePrismaParts(defaults: Record<string, string>, plaintext: stri
   );
   return {
     spaceModelPreference: { findFirst },
-    userModelCredential: { findFirst: vi.fn(async () => null) },
+    userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
     deploymentSettings: { findUnique: vi.fn(async () => null) },
     secret: {
       findFirst: vi.fn(async () => ({ id: "secret-compat", ciphertext: plaintext })),
@@ -2571,7 +2571,7 @@ description: Prepare standup notes
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
       connection: { findMany: vi.fn(async () => []) },
       spaceModelPreference: { findFirst: vi.fn(async () => null) },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       taughtSkill: { findMany: vi.fn(async () => []) },
       agentSecret: { findMany: vi.fn(async () => []) },
@@ -2677,7 +2677,7 @@ description: Prepare standup notes
             : null,
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       taughtSkill: { findMany: vi.fn(async () => []) },
       botSecret: { findMany: vi.fn(async () => []) },
@@ -2740,7 +2740,7 @@ description: Prepare standup notes
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
@@ -2783,7 +2783,7 @@ description: Prepare standup notes
     );
     const prisma = {
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const executor = createRunExecutor({
@@ -2833,7 +2833,7 @@ description: Prepare standup notes
     const plaintext = compatibleSecret();
     const prisma = {
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-compat", ciphertext: plaintext })),
         findUnique: vi.fn(async () => null),
@@ -2867,6 +2867,84 @@ description: Prepare standup notes
       ),
     ).rejects.toThrow("Unknown model for that provider");
   });
+
+  it.each([false, true])(
+    "uses the connection enabling the offered model (preferred also enables: %s)",
+    async (shared) => {
+      const scope = { userId: "user-1", spaceId: "ws-1" };
+      const preference = {
+        ...modelPreference({
+          provider: COMPATIBLE_PROVIDER,
+          secretId: "preferred",
+          modelId: "space-model",
+          isDefault: true,
+        }),
+        updatedAt: new Date("2026-08-30"),
+        thinkingLevel: null,
+      };
+      const alternate = { ...preference.credential, id: "alternate", secretId: "alternate" };
+      const secrets = {
+        preferred: serializeModelSecret({
+          kind: "openai_compatible",
+          baseUrl: "https://preferred.example/v1",
+          apiKey: "fake-preferred",
+          enabledModelIds: shared ? ["second-model"] : ["space-model"],
+        }),
+        alternate: serializeModelSecret({
+          kind: "openai_compatible",
+          baseUrl: "https://alternate.example/v1",
+          apiKey: "fake-alternate",
+          enabledModelIds: ["second-model"],
+          reasoning: true,
+        }),
+      };
+      const prisma = {
+        spaceModelPreference: {
+          findMany: vi.fn(async () => [preference]),
+          findFirst: vi.fn(async () => null),
+        },
+        userModelCredential: { findMany: vi.fn(async () => [alternate, preference.credential]) },
+        secret: {
+          findFirst: vi.fn(async ({ where }: { where: { id: keyof typeof secrets } }) => ({
+            id: where.id,
+            ciphertext: secrets[where.id],
+          })),
+        },
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: COMPATIBLE_PROVIDER,
+            modelId: "second-model",
+            thinkingLevel: null,
+          })),
+        },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+      };
+      const secretStore = { load: vi.fn(async (value: string) => value), put: vi.fn() };
+      const executor = createRunExecutor({ prisma, secretStore } as unknown as Parameters<
+        typeof createRunExecutor
+      >[0]);
+      await expect(
+        validateConnectedModelChoice(
+          prisma as unknown as PrismaClient,
+          secretStore,
+          scope,
+          COMPATIBLE_PROVIDER,
+          "second-model",
+        ),
+      ).resolves.toBeUndefined();
+      const expected = {
+        id: "second-model",
+        baseUrl: shared ? "https://preferred.example/v1" : "https://alternate.example/v1",
+        apiKey: shared ? "fake-preferred" : "fake-alternate",
+      };
+      await expect(
+        executor.resolveConnectedModel(scope, COMPATIBLE_PROVIDER, "second-model"),
+      ).resolves.toMatchObject(expected);
+      await expect(executor.resolveModel({ ...scope, botId: "bot-1" })).resolves.toMatchObject(
+        expected,
+      );
+    },
+  );
 
   it("resolves a helper model enabled only in the connection's list", async () => {
     const plaintext = compatibleSecret(["space-model", "second-model"]);
@@ -3023,7 +3101,7 @@ description: Prepare standup notes
           }),
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
@@ -3068,7 +3146,7 @@ description: Prepare standup notes
           }),
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
@@ -3132,7 +3210,7 @@ description: Prepare standup notes
           }),
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
@@ -3174,7 +3252,7 @@ description: Prepare standup notes
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-scripted", ciphertext: plaintext })),
@@ -3226,7 +3304,7 @@ description: Prepare standup notes
     const prisma = {
       bot: { findFirst: vi.fn(async () => bot) },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({
@@ -3286,7 +3364,7 @@ description: Prepare standup notes
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
@@ -3325,7 +3403,7 @@ description: Prepare standup notes
     const prisma = {
       bot: { findFirst: vi.fn(async () => null) },
       spaceModelPreference: { findFirst: vi.fn(async () => null) },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: {
         findUnique: vi.fn(async () => ({
           defaultModelProvider: "anthropic",
@@ -3367,7 +3445,7 @@ description: Prepare standup notes
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;

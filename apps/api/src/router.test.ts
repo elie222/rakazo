@@ -3914,6 +3914,7 @@ describe("routines.update", () => {
     );
     const enqueue = vi.fn(async () => undefined);
     const prisma = {
+      secret: { findFirst: vi.fn(async () => null) },
       spaceModelPreference: {
         findMany: vi.fn(async () => []),
         findFirst: vi.fn(async () => ({ id: "preference-1" })),
@@ -4109,6 +4110,7 @@ describe("openai-compatible enabled models", () => {
   type PinWhere = {
     spaceId?: string;
     archivedAt?: null;
+    bot?: { archivedAt: null };
     userId?: string;
     modelProvider?: string;
     provider?: string;
@@ -4134,7 +4136,7 @@ describe("openai-compatible enabled models", () => {
           (where.modelProvider ?? where.provider) === compatible &&
           (where.spaceId === undefined || pin.spaceId === where.spaceId) &&
           (where.userId === undefined || pin.userId === where.userId) &&
-          !(where.archivedAt === null && pin.archived) &&
+          !((where.archivedAt === null || where.bot?.archivedAt === null) && pin.archived) &&
           (typeof where.modelId === "string"
             ? pin.modelId === where.modelId
             : !where.modelId?.notIn?.includes(pin.modelId)),
@@ -4236,6 +4238,7 @@ describe("openai-compatible enabled models", () => {
   function fixture(options: {
     /** Stored plaintext; null makes the stored ciphertext unreadable. */
     plaintext: string | null;
+    alternatePlaintext?: string;
     defaultModel: string;
     preferenceIsDefault?: boolean;
     /** The actor's compatible default in other spaces, by space id. */
@@ -4267,10 +4270,15 @@ describe("openai-compatible enabled models", () => {
         updatedAt: new Date(0),
       } as Record<string, unknown>,
     };
+    const alternate = { ...state.credential, id: "cred-alternate", secretId: "secret-alternate" };
     const initialCredential = { ...state.credential };
     const ciphertexts = new Map([["secret-compat", "cipher-compat"]]);
     const plaintexts = new Map<string, string>();
     if (options.plaintext !== null) plaintexts.set("cipher-compat", options.plaintext);
+    if (options.alternatePlaintext) {
+      ciphertexts.set("secret-alternate", "cipher-alternate");
+      plaintexts.set("cipher-alternate", options.alternatePlaintext);
+    }
     const pins = pinStores(options);
     const bot = botRow(options.botModelId ?? options.defaultModel);
     const prisma = {
@@ -4290,7 +4298,9 @@ describe("openai-compatible enabled models", () => {
       spaceModelPreference: preferenceStore(state, options.otherSpaceDefaults),
       userModelCredential: {
         findMany: vi.fn(async ({ where }: { where: { provider?: string } }) =>
-          where.provider === compatible ? [state.credential] : [],
+          where.provider === compatible
+            ? [state.credential, ...(options.alternatePlaintext ? [alternate] : [])]
+            : [],
         ),
         findFirst: vi.fn(async ({ where }: { where: { provider?: string | { in: string[] } } }) =>
           (
@@ -4419,6 +4429,24 @@ describe("openai-compatible enabled models", () => {
     expect(result.status).toBe(200);
     expect(secrets.put).toHaveBeenCalledOnce();
   });
+
+  it.each(["models/connect", "models/setDefault"])(
+    "ignores pins from routines on archived bots in %s",
+    async (route) => {
+      const { call } = fixture({
+        plaintext: route === "models/setDefault" ? secretText() : secretText(["m-a", "m-b"]),
+        defaultModel: "m-a",
+        routines: [{ name: "Paused routine", modelId: "m-a", archived: true }],
+      });
+      const result = await call(route, {
+        provider: compatible,
+        baseUrl,
+        modelId: "m-b",
+        enabledModelIds: ["m-b"],
+      });
+      expect(result.status).toBe(200);
+    },
+  );
 
   it("ignores another user's bot in the same space", async () => {
     const { call } = fixture({
@@ -4581,6 +4609,35 @@ describe("openai-compatible enabled models", () => {
     expect(result.status).toBe(200);
     const saved = parseModelSecret(secrets.put.mock.calls[0]![0]);
     expect(saved).toMatchObject({ kind: "openai_compatible", enabledModelIds: ["m-a", "m-b"] });
+  });
+
+  it("sets the default on the connection enabling the model, preserving its reasoning", async () => {
+    const { call, prisma } = fixture({
+      plaintext: secretText(["m-a"], false),
+      alternatePlaintext: secretText(["m-b"], true),
+      defaultModel: "m-a",
+    });
+    expect(
+      (
+        await call("models/setDefault", {
+          provider: compatible,
+          modelId: "m-b",
+          thinkingLevel: "high",
+        })
+      ).status,
+    ).toBe(200);
+    expect(prisma.spaceModelPreference.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          spaceId_userId_credentialId: {
+            spaceId: actor.spaceId,
+            userId: actor.userId,
+            credentialId: "cred-alternate",
+          },
+        },
+        update: expect.objectContaining({ modelId: "m-b", thinkingLevel: "high" }),
+      }),
+    );
   });
 
   it("refuses setDefault to an id outside a listed secret", async () => {

@@ -109,7 +109,6 @@ import {
   createThreadMessageInTransaction,
   effectiveMemoryScope,
   findDefaultModelCredential,
-  findModelCredential,
   InstructionConflictError,
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
@@ -276,6 +275,7 @@ import type { MemoryProviderResolver } from "./memory-provider-factory.js";
 import { selectMemoryTools } from "./memory-tools.js";
 import {
   enabledOpenAiCompatibleModelIds,
+  findConnectedModelCredential,
   isCatalogModelChoice,
   pinnedModelCredentialError,
   routineRunModelPin,
@@ -3000,7 +3000,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
       modelId,
     );
     if (validationError) throw new Error(validationError);
-    const credential = await findModelCredential(deps.prisma, scope, provider, modelId);
+    const credential = await findConnectedModelCredential(
+      deps.prisma,
+      deps.secretStore,
+      scope,
+      provider,
+      modelId,
+    );
     if (!credential) throw new Error("Connect that model provider first");
     const resolved = await resolveModelKey(
       deps,
@@ -3061,7 +3067,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
       const hasOverride = Boolean(override?.modelProvider && override.modelId);
       const [overrideCredential, defaultCredential, settings] = await Promise.all([
         hasOverride
-          ? findModelCredential(deps.prisma, scope, override!.modelProvider!, override!.modelId)
+          ? findConnectedModelCredential(
+              deps.prisma,
+              deps.secretStore,
+              scope,
+              override!.modelProvider!,
+              override!.modelId,
+            )
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
         deps.prisma.deploymentSettings.findUnique({
@@ -3686,8 +3698,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const hasModelOverride = Boolean(modelChoice.modelProvider && modelChoice.modelId);
         const overrideCredential =
           hasModelOverride && modelChoice.modelProvider
-            ? await findModelCredential(
+            ? await findConnectedModelCredential(
                 deps.prisma,
+                deps.secretStore,
                 run,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
@@ -4637,8 +4650,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               (checker
                 ? isAutoReviewCheckerConfigured({}) ||
                   Boolean(
-                    await findModelCredential(
+                    await findConnectedModelCredential(
                       deps.prisma,
+                      deps.secretStore,
                       { userId: run.userId, spaceId: run.spaceId },
                       checker.provider,
                     ),
@@ -4717,8 +4731,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 if (kind === "jev" || kind === "scripted") {
                   provider = createAutoReviewProvider(kind);
                 } else {
-                  const reviewCredential = await findModelCredential(
+                  const reviewCredential = await findConnectedModelCredential(
                     deps.prisma,
+                    deps.secretStore,
                     { userId: run.userId, spaceId: run.spaceId },
                     checker!.provider,
                     checker!.model,
