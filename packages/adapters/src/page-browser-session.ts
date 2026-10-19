@@ -122,6 +122,20 @@ export class PageBrowserSession {
 
   private applyAction(el: DomElement, action: BrowserActStep): void {
     const win = this.dom.window;
+    if (action.kind === "upload") {
+      if (!(el instanceof win.HTMLInputElement) || el.type !== "file") {
+        throw new Error("upload needs a file upload element from browser_snapshot");
+      }
+      if (action.paths.length > 1 && !el.multiple) {
+        throw new Error("This file upload accepts one file");
+      }
+      // jsdom cannot build a FileList, so page handlers get named, empty files instead.
+      const files = action.paths.map((path) => new win.File([], path.split("/").pop() ?? path));
+      Object.defineProperty(el, "files", { configurable: true, value: files });
+      el.dispatchEvent(new win.Event("input", { bubbles: true }));
+      el.dispatchEvent(new win.Event("change", { bubbles: true }));
+      return;
+    }
     if (action.kind === "click") {
       if (el instanceof win.HTMLAnchorElement && el.href) {
         const next = new URL(el.href, this.url);
@@ -220,11 +234,14 @@ export class PageBrowserSession {
 
 function isIgnored(win: DomWindow, el: DomElement): boolean {
   if (el instanceof win.HTMLInputElement && el.type === "hidden") return true;
-  if (el.getAttribute("aria-hidden") === "true") return true;
+  // Sites often aria-hide the real file input behind a styled button; it is still the upload target.
+  if (el.getAttribute("aria-hidden") === "true")
+    return !(el instanceof win.HTMLInputElement && el.type === "file");
   return false;
 }
 
 function roleFor(win: DomWindow, el: DomElement): string {
+  if (el instanceof win.HTMLInputElement && el.type === "file") return "file upload";
   const explicit = el.getAttribute("role");
   if (explicit) return explicit;
   const tag = el.tagName.toLowerCase();
@@ -260,6 +277,7 @@ function nameFor(win: DomWindow, el: DomElement): string {
 function valueFor(win: DomWindow, el: DomElement): string | undefined {
   if (el instanceof win.HTMLInputElement) {
     if (el.type === "checkbox" || el.type === "radio") return el.checked ? "checked" : "unchecked";
+    if (el.type === "file") return Array.from(el.files ?? [], (file) => file.name).join(", ");
     if (el.type === "password") return el.value ? "••••" : "";
     return el.value;
   }

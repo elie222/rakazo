@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { Checkbox } from "./components/ui/checkbox.js";
+import { Disclosure } from "./components/ui/disclosure.js";
 import { Input } from "./components/ui/input.js";
 import { NativeSelect, NativeSelectOption } from "./components/ui/native-select.js";
 
@@ -59,8 +60,7 @@ export function ModelThinkingOptions({
   const imagesId = useId();
   const maxImagesId = useId();
   return (
-    <details className="mt-4 text-sm text-muted-foreground">
-      <summary className="cursor-pointer">{advancedLabel}</summary>
+    <Disclosure className="mt-4 text-sm text-muted-foreground" summary={advancedLabel}>
       {showThinking && onReasoningChange && thinkingLabel ? (
         <label htmlFor={id} className="mt-3 flex items-center gap-2">
           <Checkbox
@@ -161,6 +161,6 @@ export function ModelThinkingOptions({
           />
         </label>
       ) : null}
-    </details>
+    </Disclosure>
   );
 }

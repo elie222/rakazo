@@ -63,6 +63,14 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Docker, E2B, Daytona, CreateOS, and Box
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
+## Deploy on Railway
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/rakazo-template)
+
+Deploy a private Rakazo instance with PostgreSQL, persistent storage and Railway computers.
+Enter your email and Railway API token, then connect a model after signing in.
+See [setup, security defaults and backups](./infra/railway/README.md).
+
 ## Quick start (published images)
 
 You need Docker Engine, the Compose plugin, curl, and OpenSSL. No clone or Node install.

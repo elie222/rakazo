@@ -277,7 +277,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_act",
     description:
-      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, fill_secret). fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
+      'Click or fill page elements by ref from browser_snapshot (kinds: click, fill, type, upload, fill_secret). upload attaches your files to a "file upload" element; use it instead of clicking upload buttons. fill_secret types the username or password of a login saved with request_secret, only on the site it was saved for; you never see the value. Prefer this over computer_act for web pages. If the result includes fallback:"computer_act", use computer_act instead.',
     inputSchema: {
       type: "object",
       properties: {
@@ -286,9 +286,17 @@ export const builtinAgentTools: ConnectorTool[] = [
           items: {
             type: "object",
             properties: {
-              kind: { type: "string", enum: ["click", "fill", "type", "fill_secret"] },
+              kind: {
+                type: "string",
+                enum: ["click", "fill", "type", "upload", "fill_secret"],
+              },
               ref: { type: "string", description: "Element ref from browser_snapshot." },
               text: { type: "string", description: "Text for fill or type." },
+              paths: {
+                type: "array",
+                items: { type: "string" },
+                description: "Files to attach, for upload.",
+              },
               secret: { type: "string", description: "Saved login name for fill_secret." },
               field: {
                 type: "string",

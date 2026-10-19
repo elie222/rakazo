@@ -1144,6 +1144,10 @@ msgstr "Código"
 msgid "Collapse {0}"
 msgstr "Contraer {0}"
 
+#: src/pages/Shell.tsx
+msgid "Collapse {label}"
+msgstr "Contraer {label}"
+
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Color"
 msgstr "Color"
@@ -2285,6 +2289,10 @@ msgstr "Expandir"
 #: src/pages/Shell.tsx
 msgid "Expand {0}"
 msgstr "Expandir {0}"
+
+#: src/pages/Shell.tsx
+msgid "Expand {label}"
+msgstr "Expandir {label}"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"

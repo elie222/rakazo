@@ -18,6 +18,7 @@ export * from "./components/ui/card.js";
 export * from "./components/ui/checkbox.js";
 export * from "./components/ui/command.js";
 export * from "./components/ui/dialog.js";
+export * from "./components/ui/disclosure.js";
 export * from "./components/ui/dropdown-menu.js";
 export * from "./components/ui/field.js";
 export * from "./components/ui/input.js";

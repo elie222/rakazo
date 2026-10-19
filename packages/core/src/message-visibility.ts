@@ -1,14 +1,18 @@
 import type { MessageBlock } from "@rakazo/contracts";
+import { messageReaction } from "./message-reactions.js";
 
 type PresentableMessage = {
+  id: string;
   runId?: string;
+  role?: string;
+  replyToMessageId?: string | null;
   blocks: readonly MessageBlock[];
 };
 
 export type UserVisibleMessagesOptions = {
   /**
    * Keep `bot_message_sent` / `bot_message_received` rows as compact chips
-   * (web CollaborationMarker; mobile AgentEventLabel). Peer bodies stay hidden.
+   * (web CollaborationMarker; mobile AgentEventLabel). Peer replies fold under the received chip.
    */
   includePeerReceipts?: boolean;
   /** Peer-run ids from `run.trigger === "bot_message"` when receipts may be out of window. */
@@ -42,30 +46,98 @@ export function isBackgroundInputBlock(block: unknown): boolean {
   );
 }
 
-/** Drop peer-run activity/replies; optionally keep sent/received receipt rows. */
-export function userVisibleMessages<T extends PresentableMessage>(
+/** Cards a peer run stays inline for: the user has to act on them. */
+function isPeerInputBlock(block: MessageBlock): boolean {
+  return isBackgroundInputBlock(block) || block.kind === "choice";
+}
+
+function isAskBlock(block: MessageBlock): boolean {
+  return block.kind === "ask";
+}
+
+export type FoldedTranscript<T> = {
+  messages: T[];
+  /** Peer-run replies keyed by the id of the `bot_message_received` marker they fold under. */
+  folded: ReadonlyMap<string, readonly T[]>;
+  /** The marker each folded message folds under, so a jump can expand it. */
+  markerOf: ReadonlyMap<string, string>;
+};
+
+/**
+ * Drop peer-run activity; optionally keep sent/received receipt rows. With receipts kept, a
+ * peer run's bot text replies fold under its received marker; its user-input cards stay inline.
+ */
+export function foldPeerReplies<T extends PresentableMessage>(
   messages: readonly T[],
   options: UserVisibleMessagesOptions = {},
-): T[] {
-  const peerRunIds = new Set([
-    ...(options.knownPeerRunIds ?? []),
-    ...messages
-      .filter((message) => message.blocks.some((block) => block.kind === "bot_message_received"))
-      .flatMap((message) => (message.runId ? [message.runId] : [])),
-  ]);
+): FoldedTranscript<T> {
   const includePeerReceipts = options.includePeerReceipts === true;
+  const markerByRunId = new Map<string, string>();
+  for (const message of messages) {
+    if (
+      message.runId &&
+      !markerByRunId.has(message.runId) &&
+      message.blocks.some((block) => block.kind === "bot_message_received")
+    ) {
+      markerByRunId.set(message.runId, message.id);
+    }
+  }
+  const peerRunIds = new Set([...(options.knownPeerRunIds ?? []), ...markerByRunId.keys()]);
   const backgroundRunIds = new Set(options.backgroundRunIds ?? []);
+  const includeText = options.includeDelegatedReplyText !== false;
+  const folded = new Map<string, T[]>();
+  const markerOf = new Map<string, string>();
+  const fold = (markerId: string, message: T) => {
+    folded.set(markerId, [...(folded.get(markerId) ?? []), message]);
+    markerOf.set(message.id, markerId);
+    return false;
+  };
 
-  return messages.filter((message) => {
+  const visible = messages.filter((message) => {
     if (message.runId && backgroundRunIds.has(message.runId)) {
       return message.blocks.some(isBackgroundInputBlock);
     }
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
+    // A reaction folds with its folded parent so the count shows when the parent is expanded.
+    const parentMarkerId = message.replyToMessageId
+      ? markerOf.get(message.replyToMessageId)
+      : undefined;
+    if (
+      parentMarkerId !== undefined &&
+      message.role !== undefined &&
+      messageReaction({ ...message, role: message.role, blocks: [...message.blocks] })
+    )
+      return fold(parentMarkerId, message);
     if (!message.runId || !peerRunIds.has(message.runId)) return true;
-    // Keep peer-run ask cards, and (unless the caller opts out) the bot's own text reply.
-    const includeText = options.includeDelegatedReplyText !== false;
-    return message.blocks.some(
-      (block) => block.kind === "ask" || (includeText && block.kind === "text"),
-    );
+    // User-input cards stay inline; previews without receipts keep only asks, as before.
+    if (message.blocks.some(includePeerReceipts ? isPeerInputBlock : isAskBlock)) return true;
+    if (!includeText || !message.blocks.some((block) => block.kind === "text")) return false;
+    // Only bot replies fold: a person's answer, steering or reaction in the run stays inline.
+    if (message.role !== "bot") return true;
+    const markerId = includePeerReceipts ? markerByRunId.get(message.runId) : undefined;
+    // A reply whose marker is outside the loaded page stays inline.
+    if (markerId === undefined) return true;
+    return fold(markerId, message);
   });
+  return { messages: visible, folded, markerOf };
+}
+
+export function userVisibleMessages<T extends PresentableMessage>(
+  messages: readonly T[],
+  options: UserVisibleMessagesOptions = {},
+): T[] {
+  return foldPeerReplies(messages, options).messages;
+}
+
+/** The transcript with each expanded marker's folded replies drawn right after it. */
+export function expandPeerReplies<T extends PresentableMessage>(
+  transcript: FoldedTranscript<T>,
+  expandedMarkerIds: ReadonlySet<string>,
+): T[] {
+  if (expandedMarkerIds.size === 0) return transcript.messages;
+  return transcript.messages.flatMap((message) =>
+    expandedMarkerIds.has(message.id)
+      ? [message, ...(transcript.folded.get(message.id) ?? [])]
+      : [message],
+  );
 }

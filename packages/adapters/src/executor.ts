@@ -228,6 +228,7 @@ import {
 import { withComputerScreenAvailability } from "./computer-screens.js";
 import {
   displayBotWorkspacePath,
+  resolveBotUploadPath,
   resolveBotWorkspaceCwd,
   resolveBotWorkspacePath,
   teamBotWorkspaceDirectory,
@@ -5658,6 +5659,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   )
                 : await browserActFromTool(browser, await runComputer.get(), context, args, {
                     redactions,
+                    // Team bots may send only their own folder or shared/ off the computer; a
+                    // private computer's helper already confines uploads to its home folder.
+                    uploadRoots:
+                      computerMode === "team"
+                        ? [teamBotWorkspaceDirectory(bot.id), "shared"]
+                        : undefined,
+                    resolveUploadPath: (path) =>
+                      computerMode === "team"
+                        ? resolveBotUploadPath(computerMode, bot.id, path)
+                        : path,
                     resolveSecretFill: async (step) => {
                       const resolved = await resolveLoginFill({
                         prisma: deps.prisma,
