@@ -2857,7 +2857,7 @@ msgstr "Tools laden…"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
-msgstr "Spraakaoekers laden…"
+msgstr "Spraakanbieders laden…"
 
 #: src/App.tsx
 #: src/pages/Artifacts.tsx
@@ -3928,7 +3928,7 @@ msgstr "Space hernoemen"
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Renews {day}"
-msgstr "Verloopt op {day}"
+msgstr "Wordt verlengd op {day}"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Reopen"
