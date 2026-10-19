@@ -172,6 +172,7 @@ import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt"
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
+import { KeyboardScrollBack } from "../lib/keyboard-scroll-back";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
@@ -480,6 +481,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
+  const liveScrollBack = useRef(new KeyboardScrollBack("increasing"));
+  const pinnedScrollBack = useRef(new KeyboardScrollBack("decreasing"));
   const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const nativeMomentumActive = useRef(false);
   const loadingOlderContent = useRef(false);
@@ -2451,15 +2454,22 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 viewport: layoutMeasurement.height,
                 content: contentSize.height,
               };
+              if (pinnedScrollBack.current.onScroll(contentOffset.y) && Platform.OS === "ios") {
+                KeyboardController.dismiss();
+              }
               loadNewerNearEnd();
             }}
-            onScrollBeginDrag={() => {
+            onScrollBeginDrag={(event) => {
+              pinnedScrollBack.current.onDragStart(event.nativeEvent.contentOffset.y);
               newerLoadFailed.current = false;
               if (!jumpAnchor.current.holds()) return;
               jumpAnchor.current.release();
               jumpScrollTarget.current = null;
             }}
-            onScrollEndDrag={updatePinnedScroll}
+            onScrollEndDrag={(event) => {
+              pinnedScrollBack.current.onDragEnd();
+              updatePinnedScroll(event);
+            }}
             onMomentumScrollEnd={updatePinnedScroll}
           >
             {loadEarlierControl}
@@ -2489,18 +2499,26 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             contentContainerStyle={listContentStyle}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
-            onScrollBeginDrag={() => {
+            onScrollBeginDrag={(event) => {
               clearTimeout(scrollIdleTimer.current);
               nativeMomentumActive.current = false;
               scrollBehavior.current.onUserDragStart();
+              liveScrollBack.current.onDragStart(event.nativeEvent.contentOffset.y);
             }}
             onScroll={(event) => {
+              if (
+                liveScrollBack.current.onScroll(event.nativeEvent.contentOffset.y) &&
+                Platform.OS === "ios"
+              ) {
+                KeyboardController.dismiss();
+              }
               if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
             }}
             // Keep tracking after release: a fling can cross the threshold mid-momentum.
             onScrollEndDrag={(event) => {
               updateUserScroll(event);
               scrollBehavior.current.onUserDragEnd();
+              liveScrollBack.current.onDragEnd();
               scheduleScrollIdle();
             }}
             onMomentumScrollBegin={() => {
