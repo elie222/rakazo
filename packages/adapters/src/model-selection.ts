@@ -389,7 +389,10 @@ export async function findConnectedModelCredential(
   if (!selected || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id) return selected;
   if (selected.defaultModel === id) return selected;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, selected.secretId);
-  if (secret?.kind === "openai_compatible" && secret.enabledModelIds?.includes(id)) {
+  if (
+    secret?.kind === "openai_compatible" &&
+    (secret.enabledModelIds === undefined || secret.enabledModelIds.includes(id))
+  ) {
     return selected;
   }
   const credentials = await prisma.userModelCredential.findMany({

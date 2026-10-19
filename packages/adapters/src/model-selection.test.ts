@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   defaultCatalogModelId,
   enabledOpenAiCompatibleModelIds,
+  findConnectedModelCredential,
   inboundRoutineModelPin,
   loadStoredModelSecret,
   modelCredentialAuthKindsForSpace,
@@ -980,6 +981,57 @@ describe("model auth availability", () => {
     expect(
       validateModelAuthAvailability("openai-codex", "gpt-5.3-codex-spark", "sk-test-api-key"),
     ).toBeUndefined();
+  });
+});
+
+describe("connected model credential selection", () => {
+  it("keeps a legacy connection for a non-default bot model enabled on another connection", async () => {
+    const selected = credential("openai-compatible", "X");
+    const alternate = { ...selected, id: "alternate", secretId: "secret-alternate" };
+    const secrets: Record<string, string> = {
+      [selected.secretId]: JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://legacy.example/v1",
+      }),
+      [alternate.secretId]: JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://alternate.example/v1",
+        enabledModelIds: ["Y"],
+      }),
+    };
+    const prisma = {
+      spaceModelPreference: {
+        findMany: vi.fn(async () => [
+          {
+            id: "preference",
+            credential: selected,
+            modelId: "X",
+            isDefault: true,
+            thinkingLevel: null,
+            updatedAt: new Date(0),
+          },
+        ]),
+      },
+      userModelCredential: { findMany: vi.fn(async () => [alternate, selected]) },
+      secret: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: secrets[where.id],
+        })),
+      },
+    };
+    const load = vi.fn(async (plaintext: string) => plaintext);
+
+    await expect(
+      findConnectedModelCredential(
+        prisma as unknown as PrismaClient,
+        { load },
+        { userId: "user-1", spaceId: "space-1" },
+        "openai-compatible",
+        "Y",
+      ),
+    ).resolves.toEqual({ ...selected, isDefault: true });
+    expect(load).not.toHaveBeenCalledWith(secrets[alternate.secretId], alternate.secretId);
   });
 });
 
