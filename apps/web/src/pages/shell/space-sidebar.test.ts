@@ -38,7 +38,24 @@ describe("sidebarGroupsForSpaces", () => {
     const groups = sidebarGroupsForSpaces([space("space-1", "Personal"), empty], "");
     expect(groups.filter((group) => group.spaceId === empty.id)).toEqual([
       expect.objectContaining({ emptySpaceId: "space-2", title: "Support" }),
+      expect.objectContaining({
+        sectionId: "saved",
+        title: "Support · Archived projects",
+        bots: [],
+        emptySpaceId: undefined,
+      }),
     ]);
+  });
+
+  it("keeps an empty section deletable when the only space has no chats", () => {
+    const input = {
+      ...space("space-1", "Personal", { bots: [] }),
+      botSections: [{ id: "old", name: "Old ideas" }],
+    };
+    expect(sidebarGroupsForSpaces([input], "")).toEqual([
+      expect.objectContaining({ key: "section:old", sectionId: "old", title: "Old ideas" }),
+    ]);
+    expect(sidebarGroupsForSpaces([input], "Old")).toEqual([]);
   });
 
   it("retains empty section and Unassigned drop targets when not searching", () => {

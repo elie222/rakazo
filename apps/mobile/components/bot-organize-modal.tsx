@@ -51,7 +51,7 @@ export function BotOrganizeModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function save(request: () => Promise<void>) {
+  async function save(request: () => Promise<void>, fallback = t("Could not update chat")) {
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -59,7 +59,7 @@ export function BotOrganizeModal({
       await request();
       onClose();
     } catch (err) {
-      setError(errorText(err, t("Could not update chat")));
+      setError(errorText(err, fallback));
       setSaving(false);
     }
   }
@@ -82,7 +82,7 @@ export function BotOrganizeModal({
     confirmDeleteSection(
       currentSection,
       t,
-      () => void save(() => onDeleteSection(currentSection.id)),
+      () => void save(() => onDeleteSection(currentSection.id), t("Could not delete section")),
     );
   }
 
