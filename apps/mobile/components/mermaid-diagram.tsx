@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { currentApiBase, subscribeApiBase } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 import {
   DIAGRAM_TIMEOUT_MS,
   diagramBootScript,
@@ -26,6 +27,7 @@ function isDiagramDocument(url: string): boolean {
  * its height, and comes back for good if Mermaid cannot load or parse the source.
  */
 export function MermaidDiagram({ source, palette, colorScheme, fallback }: MermaidDiagramProps) {
+  const { t } = useI18n();
   const endpoint = useSyncExternalStore(subscribeApiBase, currentApiBase, currentApiBase);
   const html = useMemo(() => diagramDocument(diagramScriptUrl(endpoint)), [endpoint]);
   const boot = useMemo(
@@ -70,7 +72,7 @@ export function MermaidDiagram({ source, palette, colorScheme, fallback }: Merma
         pointerEvents={drawn ? "auto" : "none"}
         accessible={drawn}
         accessibilityRole="image"
-        accessibilityLabel="Diagram"
+        accessibilityLabel={t("Diagram")}
       >
         <WebView
           key={page}

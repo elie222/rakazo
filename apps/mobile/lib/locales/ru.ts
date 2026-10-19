@@ -654,6 +654,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "https://example.com/mcp": "https://example.com/mcp",
   "https://example.com/openapi.json": "https://example.com/openapi.json",
   "https://executor.example/mcp": "https://executor.example/mcp",
+  Diagram: "Диаграмма",
   Image: "Изображение",
   "Markdown file": "Файл Markdown",
   "Message from {peer}": "Сообщение от {peer}",
