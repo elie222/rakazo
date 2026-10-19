@@ -1,6 +1,7 @@
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { LayoutChangeEvent } from "react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -40,7 +41,28 @@ export default function ArtifactsScreen() {
   const insets = useSafeAreaInsets();
 
   const [bots, setBots] = useState<MobileBot[]>([]);
-  const [activeBotId, setActiveBotId] = useState<string | null>(null);
+  const { botId } = useLocalSearchParams<{ botId?: string }>();
+  const [activeBotId, setActiveBotId] = useState<string | null>(botId || null);
+  const chipsScrollRef = useRef<ScrollView>(null);
+  const initialChipLayout = useRef({
+    viewportWidth: 0,
+    contentWidth: 0,
+    chip: null as { x: number; width: number } | null,
+    revealed: false,
+  });
+
+  function revealInitialChip() {
+    const layout = initialChipLayout.current;
+    if (layout.revealed || !layout.viewportWidth || !layout.chip) return;
+    const right = layout.chip.x + layout.chip.width;
+    if (layout.contentWidth < right) return;
+    chipsScrollRef.current?.scrollTo({
+      x: Math.max(0, right - layout.viewportWidth),
+      animated: false,
+    });
+    layout.revealed = true;
+  }
+
   const [items, setItems] = useState<MobileArtifactSummary[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -204,6 +226,15 @@ export default function ArtifactsScreen() {
       <FlatList<MobileArtifactSummary>
         ListHeaderComponent={
           <ScrollView
+            ref={chipsScrollRef}
+            onLayout={(event) => {
+              initialChipLayout.current.viewportWidth = event.nativeEvent.layout.width;
+              revealInitialChip();
+            }}
+            onContentSizeChange={(width) => {
+              initialChipLayout.current.contentWidth = width;
+              revealInitialChip();
+            }}
             horizontal
             contentInsetAdjustmentBehavior="never"
             showsHorizontalScrollIndicator={false}
@@ -218,6 +249,14 @@ export default function ArtifactsScreen() {
             {bots.map((bot) => (
               <Chip
                 key={bot.id}
+                onLayout={
+                  bot.id === botId && activeBotId === botId
+                    ? (event) => {
+                        initialChipLayout.current.chip = event.nativeEvent.layout;
+                        revealInitialChip();
+                      }
+                    : undefined
+                }
                 label={bot.name}
                 active={activeBotId === bot.id}
                 onPress={() => setActiveBotId(bot.id)}
@@ -300,11 +339,13 @@ function Chip({
   active,
   onPress,
   avatar,
+  onLayout,
 }: {
   label: string;
   active: boolean;
   onPress: () => void;
   avatar?: ReactNode;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }) {
   const styles = useThemedStyles(createStyles);
   return (
@@ -312,6 +353,7 @@ function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       onPress={onPress}
+      onLayout={onLayout}
       style={[styles.chip, active && styles.chipActive]}
     >
       {avatar}

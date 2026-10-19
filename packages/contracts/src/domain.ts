@@ -110,6 +110,16 @@ export const BotSchema = z.object({
   webhookConfigured: z.boolean(),
   /** Present when created with an idempotency key (e.g. onboarding:first). */
   spawnKey: z.string().nullable(),
+  /** The bot is ringing the user right now. */
+  incomingCall: z
+    .object({
+      callId: z.string(),
+      reason: z.string(),
+      opening: z.string(),
+      expiresAt: z.string(),
+    })
+    .nullable()
+    .optional(),
 });
 export type Bot = z.infer<typeof BotSchema>;
 
@@ -1404,6 +1414,7 @@ export type ServerUpdateRequest = z.infer<typeof ServerUpdateRequestSchema>;
 export const MeSchema = z.object({
   maxUploadSizeBytes: z.number().int().positive().optional(),
   ticketBoardEnabled: z.boolean(),
+  phoneCallsEnabled: z.boolean().default(false),
   userId: Id,
   email: z.string().email(),
   name: z.string(),

@@ -279,6 +279,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not load integrations": "Не удалось загрузить интеграции",
   "Could not load model settings": "Не удалось загрузить настройки модели.",
   "Could not load routine": "Не удалось загрузить программу",
+  "Could not load routines": "Не удалось загрузить задачи",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "Не удалось загрузить рабочий стол. Это устройство не может получить доступ к URL-адресу экрана.",
   "Could not load this file.": "Не удалось загрузить этот файл.",
@@ -442,6 +443,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "New group": "Новая группа",
   "New section": "Новый раздел",
   "Rename section": "Переименовать раздел",
+  "Section actions for {name}": "Действия с разделом {name}",
+  "Could not delete section": "Не удалось удалить раздел",
+  "Delete section": "Удалить раздел",
+  "Its bots and groups are kept and leave the section.":
+    "Боты и группы из него сохранятся и выйдут из раздела.",
   "Save section name": "Сохранить название раздела",
   "New space": "Новое пространство",
   "No apps match your search.": "Нет приложений, соответствующих вашему запросу.",
@@ -481,6 +487,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Point this app at your self-hosted Rakazo origin, the same HTTPS URL you open in a browser.":
     "Направьте это приложение на свой собственный источник Rakazo, тот же URL-адрес HTTPS, который вы открываете в браузере.",
   Private: "Личный",
+  Profile: "Профиль",
   Providers: "Провайдеры",
   "Public servers need https://. HTTP only works on your local network.":
     "Публичным серверам требуется https://. HTTP работает только в вашей локальной сети.",
@@ -518,6 +525,7 @@ export const RU_MESSAGES: Record<string, string> = {
   Robot: "Робот",
   Routine: "Задача",
   "Routine link is incomplete": "Ссылка на задачу неполная",
+  Routines: "Задачи",
   Running: "Выполняется",
   Save: "Сохранить",
   "Saved.": "Сохранено.",
@@ -833,6 +841,12 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in to your existing account to link SSO":
     "Войдите в существующий аккаунт, чтобы привязать SSO",
   "SSO is temporarily unavailable. Try again.": "SSO временно недоступен. Попробуйте снова.",
+  "Members ({count})": "Участники ({count})",
+  "Show all": "Показать всех",
+  "Show selected": "Показать выбранных",
+  "Filter bots": "Фильтровать ботов",
+  "Pick {min}–{max}": "Выберите {min}–{max}",
+  "No members yet": "Пока нет участников",
   Applied: "Применено",
   Apply: "Применить",
   Dismissed: "Отклонено",

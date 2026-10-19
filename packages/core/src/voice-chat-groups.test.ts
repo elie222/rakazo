@@ -21,6 +21,33 @@ function message(fields: Partial<ThreadMessage> & { role: ThreadMessage["role"] 
 }
 
 describe("groupVoiceChats", () => {
+  it.each(["ringing", "missed", "answered"] as const)(
+    "keeps the calling run's chat reply outside a %s request",
+    (status) => {
+      const request = message({
+        role: "bot",
+        callId: "call-1",
+        runId: "request-run",
+        blocks: [
+          {
+            kind: "call_request",
+            callId: "call-1",
+            status,
+            reason: "Review",
+            opening: "Ready?",
+            expiresAt: "2026-10-15T00:00:45Z",
+          },
+        ],
+      });
+      const reply = message({ role: "bot", runId: "request-run" });
+      const spoken = message({ role: "user", callId: "call-1", runId: "voice-run" });
+      const spokenReply = message({ role: "bot", runId: "voice-run" });
+      expect(
+        groupVoiceChats([request, reply, spoken, spokenReply]).map((item) => item.kind),
+      ).toEqual(["voiceChat", "message", "voiceChat"]);
+    },
+  );
+
   it("keeps two calls in separate groups", () => {
     const items = groupVoiceChats([
       message({ role: "user", callId: "call-1" }),
@@ -185,5 +212,19 @@ describe("voiceChatDuration", () => {
     expect(group?.kind === "voiceChat" && voiceChatDuration(group)).toBe(
       Math.round((Date.parse(end.createdAt) - Date.parse(start.createdAt)) / 1000),
     );
+  });
+
+  it("prefers the connected time the caller recorded on the marker", () => {
+    const start = message({ role: "user", callId: "call-1", runId: "run-1" });
+    const end = message({
+      role: "bot",
+      runId: "run-1",
+      blocks: [
+        { kind: "voice_call", callId: "call-1", title: "", farewell: "", durationSeconds: 83 },
+      ],
+    });
+    const [group] = groupVoiceChats([start, end]);
+
+    expect(group?.kind === "voiceChat" && voiceChatDuration(group)).toBe(83);
   });
 });

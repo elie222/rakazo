@@ -114,6 +114,7 @@ import {
   scriptedCatalogEntry,
   selectDefaultCredentialId,
   serializeModelSecret,
+  settleCallRequest,
   stableStringify,
   storeBotSecret,
   storedOpenAiCompatibleProbeKey,
@@ -598,6 +599,8 @@ export interface RouterDeps {
   billing?: BillingService;
   env: {
     ticketBoardEnabled?: boolean;
+    phoneCallsEnabled?: boolean;
+    phoneCallRingSeconds?: number;
     maxUploadSizeBytes?: number;
     agentRuntime: string;
     teamChatJudgeProvider?: string;
@@ -774,7 +777,10 @@ export function createRouter(deps: RouterDeps) {
     /** Re-runs the request's auth so a long-lived stream notices sign-out and revocation. */
     stillAuthorized?: () => Promise<boolean>;
   }>();
-  const repos = createRepos(deps.prisma);
+  const repos = createRepos(deps.prisma, {
+    phoneCallsEnabled: deps.env?.phoneCallsEnabled,
+    phoneCallRingSeconds: deps.env?.phoneCallRingSeconds,
+  });
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
@@ -797,6 +803,11 @@ export function createRouter(deps: RouterDeps) {
   const authed = os.use(async ({ context, next }) => {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
     return next({ context: { ...context, actor: context.actor } });
+  });
+
+  const callsEnabled = authed.use(async ({ next }) => {
+    if (!deps.env?.phoneCallsEnabled) throw new ORPCError("NOT_FOUND");
+    return next();
   });
 
   const boardEnabled = os
@@ -2123,6 +2134,9 @@ export function createRouter(deps: RouterDeps) {
           throw error;
         }
       }),
+      remove: authed.botSections.remove.handler(async ({ context, input }) =>
+        repos.deleteBotSection(context.actor, input),
+      ),
     },
     threads: {
       head: authed.threads.head.handler(async ({ context, input }) => {
@@ -2422,13 +2436,54 @@ export function createRouter(deps: RouterDeps) {
         }
         return { ok: true as const };
       }),
-      endCall: authed.threads.endCall.handler(async ({ context, input }) => {
+      answerCall: callsEnabled.threads.answerCall.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot") throw new IsolationError();
+        const answered = await settleCallRequest(deps, {
+          threadId: target.threadId,
+          callId: input.callId,
+          from: ["ringing"],
+          status: "answered",
+        });
+        if (answered?.status !== "answered")
+          throw new ORPCError("CONFLICT", { message: "This call is no longer ringing." });
+        return { opening: answered.opening, reason: answered.reason };
+      }),
+      declineCall: callsEnabled.threads.declineCall.handler(async ({ context, input }) => {
+        const target = await resolveThreadTarget(deps.prisma, context.actor, input);
+        if (target.kind !== "bot") throw new IsolationError();
+        await settleCallRequest(deps, {
+          threadId: target.threadId,
+          callId: input.callId,
+          from: ["ringing"],
+          status: input.outcome,
+        });
+        return { ok: true as const };
+      }),
+      endCall: callsEnabled.threads.endCall.handler(async ({ context, input }) => {
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind !== "bot") throw new IsolationError();
         await assertTeachingSendAllowed(deps.prisma, context.actor.spaceId, target.botId);
         const { botId, threadId } = target;
+        // The bot's own call: its card keeps how long the user stayed on.
+        await settleCallRequest(deps, {
+          threadId,
+          callId: input.callId,
+          from: ["answered"],
+          ...(input.durationSeconds === undefined
+            ? {}
+            : { durationSeconds: input.durationSeconds }),
+        });
         const blocks = [
-          { kind: "voice_call" as const, callId: input.callId, title: "", farewell: "" },
+          {
+            kind: "voice_call" as const,
+            callId: input.callId,
+            title: "",
+            farewell: "",
+            ...(input.durationSeconds === undefined
+              ? {}
+              : { durationSeconds: input.durationSeconds }),
+          },
         ];
         const committed = await deps.prisma
           .$transaction(async (tx) => {
@@ -6505,6 +6560,7 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
   ]);
   return {
     ticketBoardEnabled: deps.env.ticketBoardEnabled === true,
+    phoneCallsEnabled: deps.env.phoneCallsEnabled === true,
     maxUploadSizeBytes: attachmentMaxBytes(deps.env),
     userId: actor.userId,
     email: user.email,

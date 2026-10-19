@@ -75,14 +75,12 @@ export default function NewGroup() {
             fontSize: 16,
           }}
         />
-        <Text style={{ color: tokens.mutedForeground, fontSize: 14, marginTop: 20 }}>
-          {t("Members")}
-        </Text>
         <BotMemberPicker
           bots={bots}
           selected={selected}
           onChange={setSelected}
           disabled={pending}
+          initiallyExpanded
         />
         {error ? <Text style={{ color: tokens.destructive, marginTop: 12 }}>{error}</Text> : null}
         <NativeActionButton

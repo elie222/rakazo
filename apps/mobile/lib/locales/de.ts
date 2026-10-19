@@ -333,6 +333,10 @@ export const DE_MESSAGES: Record<string, string> = {
   "Teams message": "Teams-Nachricht",
   "This routine no longer exists": "Diese Routine gibt es nicht mehr",
   Webhook: "Webhook",
+  // app/bot-profile.tsx
+  Profile: "Profil",
+  Routines: "Routinen",
+  "Could not load routines": "Routinen konnten nicht geladen werden",
   // app/computer.tsx
   "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",
@@ -609,6 +613,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "New section": "Neuer Abschnitt",
   Pin: "Anheften",
   "Rename section": "Abschnitt umbenennen",
+  "Section actions for {name}": "Abschnittsaktionen für {name}",
+  "Could not delete section": "Abschnitt konnte nicht gelöscht werden",
+  "Delete section": "Abschnitt löschen",
+  "Its bots and groups are kept and leave the section.":
+    "Seine Bots und Gruppen bleiben erhalten und verlassen den Abschnitt.",
   "Resume notifications": "Benachrichtigungen wieder einschalten",
   "Save section name": "Abschnittsnamen speichern",
   "Section name": "Abschnittsname",
@@ -833,6 +842,12 @@ export const DE_MESSAGES: Record<string, string> = {
     "Melde dich bei deinem bestehenden Konto an, um SSO zu verknüpfen",
   "SSO is temporarily unavailable. Try again.":
     "SSO ist vorübergehend nicht verfügbar. Versuche es erneut.",
+  "Members ({count})": "Mitglieder ({count})",
+  "Show all": "Alle anzeigen",
+  "Show selected": "Ausgewählte anzeigen",
+  "Filter bots": "Bots filtern",
+  "Pick {min}–{max}": "{min}–{max} auswählen",
+  "No members yet": "Noch keine Mitglieder",
   Applied: "Angewendet",
   Apply: "Anwenden",
   Dismissed: "Verworfen",

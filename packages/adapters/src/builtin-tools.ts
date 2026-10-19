@@ -1014,6 +1014,27 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "call_user",
+    description:
+      "Ring the user's devices for a voice call. Use when the user asked you to call them, or when you have reminded them about the same thing three times and they have not replied. Your opening is spoken the moment they answer, then the conversation continues on the call. If they miss or decline it, the chat shows a missed call. Never call for routine updates a message can carry.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        reason: {
+          type: "string",
+          description:
+            'Why you are calling, shown on the incoming call, e.g. "3 reminders without a reply: send the report". Max 120 chars.',
+        },
+        opening: {
+          type: "string",
+          description:
+            "The first thing you say when they answer, one or two short spoken sentences in the user's language. Max 240 chars.",
+        },
+      },
+      required: ["reason", "opening"],
+    },
+  },
+  {
     name: "skill_read",
     description:
       "Load a Claude Agent Skill (SKILL.md recipe) by exact name. Call this when a catalog skill matches the user's request, then follow it immediately.",

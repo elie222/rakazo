@@ -20,6 +20,7 @@ const payloadSchemas = {
     leaseId: z.string().min(1),
   }),
   "skill.teaching-expire": z.object({ skillId: z.string().min(1) }),
+  "call.expire": z.object({ threadId: z.string().min(1), callId: z.string().min(1) }),
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
@@ -119,6 +120,15 @@ export function skillTeachingExpireJob(skillId: string, availableAt: Date): Back
     payload: { skillId },
     availableAt,
     replaceKey: skillTeachingExpireJobKey(skillId),
+  };
+}
+
+export function callExpireJob(threadId: string, callId: string, availableAt: Date): BackgroundJob {
+  return {
+    name: "call.expire",
+    payload: { threadId, callId },
+    availableAt,
+    replaceKey: `call.expire:${callId}`,
   };
 }
 

@@ -10,6 +10,7 @@ type SectionedBot = { pinned: boolean; sectionId: string | null };
 export function groupBotsForSidebar<T extends SectionedBot>(
   bots: readonly T[],
   sections: readonly Section[],
+  options: { includeEmptySections?: boolean } = {},
 ): BotListSection<T>[] {
   const knownSectionIds = new Set(sections.map((section) => section.id));
   const pinned: T[] = [];
@@ -34,7 +35,7 @@ export function groupBotsForSidebar<T extends SectionedBot>(
   }
   for (const section of sections) {
     const members = sectionMembers.get(section.id) ?? [];
-    if (members.length > 0) {
+    if (members.length > 0 || options.includeEmptySections) {
       grouped.push({ key: `section:${section.id}`, title: section.name, bots: members });
     }
   }

@@ -1069,6 +1069,14 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   const botActions = [
     {
+      text: t("Profile"),
+      onPress: () =>
+        router.push({
+          pathname: "/bot-profile",
+          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+        }),
+    },
+    {
       text: t("Chat settings"),
       onPress: () =>
         router.push({

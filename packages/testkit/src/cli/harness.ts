@@ -58,7 +58,10 @@ async function main() {
     process.env.WAKEUP_DRIVER = "memory";
     process.env.SANDBOX_PROVIDER = sandboxProvider;
     process.env.AGENT_RUNTIME = agentRuntime;
-    if (!integration) process.env.TICKET_BOARD_ENABLED = "true";
+    if (!integration) {
+      process.env.TICKET_BOARD_ENABLED = "true";
+      process.env.PHONE_CALLS_ENABLED = "true";
+    }
     // Playwright/E2E force the offline cloud-agent emulator; clear Cursor keys so cards never hit a live VM.
     process.env.CLOUD_AGENT_PROVIDER = "emulator";
     delete process.env.CURSOR_API_KEY;
@@ -116,6 +119,7 @@ async function main() {
         "packages/adapters/src/wakeup.postgres.test.ts",
         "packages/adapters/src/realtime.postgres.test.ts",
         "packages/adapters/src/job-reconciler.postgres.test.ts",
+        "packages/adapters/src/call-request.postgres.test.ts",
         "packages/adapters/src/cloud-agent.postgres.test.ts",
       ];
       // Each app reconciles all durable work in its database, including intentionally

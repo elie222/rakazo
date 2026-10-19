@@ -4,6 +4,14 @@ import { aiRecipient } from "./ai-consent.js";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("mobile AI recipient disclosure", () => {
+  it("identifies Honcho memory and its privacy policy without requesting credentials", () => {
+    expect(aiRecipient({ provider: "honcho", use: "memory" })).toMatchObject({
+      name: "Honcho",
+      use: "memory",
+      detail: "",
+      privacyUrl: "https://app.honcho.dev/privacy",
+    });
+  });
   it("identifies both gateways without querying or changing their routing", () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

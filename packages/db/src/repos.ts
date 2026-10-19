@@ -1,6 +1,12 @@
 import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/contracts";
 import { BOT_COLORS, canonicalPiProviderId, InstructionVersionSchema } from "@rakazo/contracts";
-import { BACKGROUND_RUN_TRIGGERS, isBackgroundRunTrigger, userVisibleMessages } from "@rakazo/core";
+import {
+  BACKGROUND_RUN_TRIGGERS,
+  isBackgroundRunTrigger,
+  phoneCallSettings,
+  ringingCall,
+  userVisibleMessages,
+} from "@rakazo/core";
 import type { PrismaClient } from "./client.js";
 import type { ComputerMode } from "./computers.js";
 import { ensureComputerRecord, parseComputerMode } from "./computers.js";
@@ -82,6 +88,7 @@ function mapBot(
   status = "idle",
   runErrorId: string | null = null,
   updatedAt: Date = bot.updatedAt,
+  incomingCall: Bot["incomingCall"] = null,
 ): Bot {
   if (!bot.thread) {
     throw new IsolationError("Bot is missing its thread");
@@ -121,10 +128,14 @@ function mapBot(
     disabledBuiltinTools: bot.disabledBuiltinTools ?? [],
     webhookConfigured: Boolean(bot.webhookSecretId),
     spawnKey: bot.spawnKey ?? null,
+    incomingCall,
   };
 }
 
-export function createRepos(prisma: PrismaClient) {
+export function createRepos(
+  prisma: PrismaClient,
+  capabilities: { phoneCallsEnabled?: boolean; phoneCallRingSeconds?: number } = {},
+) {
   async function listBotSectionsForSpaces(
     actor: Actor,
     spaceIds: string[],
@@ -309,6 +320,27 @@ export function createRepos(prisma: PrismaClient) {
       }
     },
 
+    /** Delete one of the actor's sections; its bots and groups stay, unsectioned (FK SetNull). */
+    async deleteBotSection(actor: Actor, input: { sectionId: string }) {
+      return prisma.$transaction(async (tx) => {
+        // The row lock blocks concurrent moves into this section until the delete commits.
+        const locked = await tx.$queryRaw<Array<{ id: string }>>`
+          SELECT id
+          FROM bot_sections
+          WHERE id = ${input.sectionId}
+            AND "spaceId" = ${actor.spaceId}
+            AND "userId" = ${actor.userId}
+          FOR UPDATE
+        `;
+        if (locked.length !== 1) throw new IsolationError();
+        const where = { sectionId: input.sectionId };
+        const releasedBots = await tx.bot.count({ where });
+        const releasedGroups = await tx.chatGroup.count({ where });
+        await tx.botSection.delete({ where: { id: input.sectionId } });
+        return { id: input.sectionId, releasedBots, releasedGroups };
+      });
+    },
+
     async listBots(actor: Actor, options: { archived?: boolean } = {}): Promise<Bot[]> {
       const bots = await prisma.bot.findMany({
         where: {
@@ -328,6 +360,30 @@ export function createRepos(prisma: PrismaClient) {
         },
         orderBy: [{ pinned: "desc" }, { position: "asc" }, { createdAt: "asc" }],
       });
+      const callThreadIds = capabilities.phoneCallsEnabled
+        ? bots.flatMap((bot) => (bot.thread ? [bot.thread.id] : []))
+        : [];
+      const callMessages = callThreadIds.length
+        ? await prisma.message.findMany({
+            where: {
+              threadId: { in: callThreadIds },
+              createdAt: {
+                gt: new Date(
+                  Date.now() -
+                    (capabilities.phoneCallRingSeconds ??
+                      phoneCallSettings().phoneCallRingSeconds) *
+                      1000,
+                ),
+              },
+              role: "bot",
+              clientNonce: { startsWith: "call:", endsWith: ":request" },
+            },
+            orderBy: { seq: "desc" },
+            distinct: ["threadId"],
+            select: { threadId: true, role: true, blocks: true },
+          })
+        : [];
+      const callsByThread = new Map(callMessages.map((message) => [message.threadId, message]));
       const candidateRunIds = [
         ...new Set(
           bots.flatMap((bot) =>
@@ -398,6 +454,11 @@ export function createRepos(prisma: PrismaClient) {
             bot.runs[0]?.status ?? "idle",
             rosterRunErrorId(bot.thread?.runs[0], bot.runs[0]),
             updatedAt,
+            ringingCall(
+              bot.thread && callsByThread.has(bot.thread.id)
+                ? [callsByThread.get(bot.thread.id)!]
+                : [],
+            ),
           );
         }),
       );
