@@ -118,6 +118,7 @@ import {
   Smile,
   Square,
   SquareKanban,
+  Store,
   TextQuote,
   Trash2,
   X,
@@ -342,6 +343,9 @@ const SettingsOverlay = lazyOverlay(() =>
 );
 const PeerMessagesOverlay = lazyOverlay(() =>
   import("./PeerMessagesOverlay").then((module) => module.PeerMessagesOverlay),
+);
+const MarketplaceOverlay = lazyOverlay(() =>
+  import("./MarketplaceOverlay").then((module) => module.MarketplaceOverlay),
 );
 const PluginsOverlay = lazyOverlay(() =>
   import("./PluginsOverlay").then((module) => module.PluginsOverlay),
@@ -635,6 +639,7 @@ function SpaceShell() {
     commitSnapshot(update(snapshotRef.current));
   }
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(() => searchParams.has("marketplace"));
   const [mcpOpen, setMcpOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
@@ -3733,6 +3738,18 @@ function SpaceShell() {
         </div>
         <button
           type="button"
+          onClick={() => setMarketplaceOpen(true)}
+          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
+        >
+          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
+            <Store size={15} strokeWidth={1.8} />
+          </span>
+          <span className="text-[14px] font-medium text-foreground/90">
+            <Trans>Marketplace</Trans>
+          </span>
+        </button>
+        <button
+          type="button"
           onClick={() => setPluginsOpen(true)}
           className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
         >
@@ -4952,6 +4969,20 @@ function SpaceShell() {
           />
         ) : null}
 
+        {marketplaceOpen ? (
+          <MarketplaceOverlay
+            activeBotId={activeBotId.current}
+            initialTab={searchParams.get("marketplace") === "installed" ? "installed" : "discover"}
+            onClose={() => {
+              setMarketplaceOpen(false);
+              if (searchParams.has("marketplace")) {
+                const next = new URLSearchParams(searchParams);
+                next.delete("marketplace");
+                setSearchParams(next, { replace: true });
+              }
+            }}
+          />
+        ) : null}
         {pluginsOpen ? (
           <PluginsOverlay
             activeBotId={activeBotId.current}

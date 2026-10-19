@@ -72,6 +72,8 @@ import {
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
   OPENAI_COMPATIBLE_PROVIDER_ID,
+  PluginMarketplaceCatalogSchema,
+  PluginPreviewSchema,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   RoutineSchema,
@@ -707,6 +709,11 @@ export const appContract = {
     update: oc.input(UpdateAgentSkillInput).output(AgentSkillSchema),
     remove: oc.input(z.object({ skillId: Id })).output(z.object({ ok: z.literal(true) })),
   },
+  marketplace: {
+    catalog: oc
+      .input(z.object({ query: z.string().trim().max(200).default("") }))
+      .output(PluginMarketplaceCatalogSchema),
+  },
   capabilities: {
     list: oc.output(z.array(CapabilityInstallSchema)),
     catalogSearch: oc
@@ -730,9 +737,19 @@ export const appContract = {
           source: z.string().min(1).max(2048),
           config: z.record(z.string(), z.unknown()).default({}),
           credential: z.string().max(16_384).optional(),
+          /** Required for plugins: confirms the exact previewed package content. */
+          pluginDigest: z
+            .string()
+            .regex(/^sha256:[a-f0-9]{64}$/)
+            .optional(),
         }),
       )
       .output(CapabilityInstallSchema),
+    /** Fetch and parse a plugin repo without installing: shows the skills,
+     * MCP endpoints, variables, and skipped parts before confirmation. */
+    pluginPreview: oc
+      .input(z.object({ source: z.string().min(1).max(2048) }))
+      .output(PluginPreviewSchema),
     remove: oc.input(z.object({ id: Id })).output(z.object({ ok: z.literal(true) })),
   },
   mcp: {

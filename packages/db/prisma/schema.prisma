@@ -863,10 +863,14 @@ model AgentSkill {
   content     String
   /// user | builtin | plugin — only user skills are writable via API/tools.
   source      String   @default("user")
+  /// Plugin install that created this skill (source = "plugin").
+  installId   String?
+  install     CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([spaceId, userId])
+  @@index([installId])
   // Case-insensitive unique index agent_skills_spaceId_userId_name_lower_key is created in SQL.
   @@map("agent_skills")
 }
@@ -903,6 +907,9 @@ model CapabilityInstall {
   secretId  String?
   config    Json     @default("{}")
   createdAt DateTime @default(now())
+
+  agentSkills AgentSkill[]
+  mcpServers  McpServer[]
 
   @@index([spaceId, userId])
   @@map("capability_installs")
@@ -1179,6 +1186,9 @@ model McpServer {
   headers       Json              @default("{}")
   secretId      String?
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
+  /// Plugin install that created this server, if any.
+  installId     String?
+  install       CapabilityInstall? @relation(fields: [installId], references: [id], onDelete: Cascade)
   enabled       Boolean           @default(true)
   revision      Int               @default(1)
   createdAt     DateTime          @default(now())
@@ -1188,6 +1198,7 @@ model McpServer {
 
   @@unique([spaceId, userId, slug])
   @@index([spaceId, userId])
+  @@index([installId])
   @@map("mcp_servers")
 }
 

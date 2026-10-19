@@ -444,6 +444,10 @@ msgstr "MCP सर्वर जोड़ें"
 msgid "Add OpenAPI"
 msgstr "OpenAPI जोड़ें"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Add plugin"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "रिमोट MCP सर्वर जोड़ें"
@@ -472,6 +476,7 @@ msgstr ""
 msgid "Added"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -773,6 +778,7 @@ msgstr ""
 
 #: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Back"
@@ -929,6 +935,7 @@ msgstr "तस्वीरें नहीं पढ़ सकता"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1120,6 +1127,10 @@ msgstr "छवि प्रीव्यू बंद करें"
 msgid "Close integrations"
 msgstr "इंटीग्रेशन बंद करें"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Close marketplace"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Close MCP servers"
 msgstr "MCP सर्वर बंद करें"
@@ -1272,6 +1283,10 @@ msgstr "डिलीट की पुष्टि करें"
 msgid "Confirm password"
 msgstr "पासवर्ड की पुष्टि करें"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Confirm removal"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "पुष्टि करें कि यह URL इस ब्राउज़र सत्र से पहुँच योग्य है, फिर फिर से परीक्षण करें।"
@@ -1281,6 +1296,7 @@ msgid "Confirmations"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1313,6 +1329,7 @@ msgid "Connect Treg"
 msgstr "Treg कनेक्ट करें"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1331,6 +1348,7 @@ msgid "Connected. Its tools are available from your next message."
 msgstr "कनेक्टेड। इसके टूल आपके अगले संदेश से उपलब्ध हैं।"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1556,9 +1574,17 @@ msgstr "{name} डाउनलोड नहीं हो सका। पुन�
 msgid "Could not download file"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not enable tools"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "कनेक्टर इंस्टॉल नहीं हो सका"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not install plugin"
+msgstr ""
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not list files"
@@ -1601,10 +1627,18 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load installed plugins"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "इंटीग्रेशन लोड नहीं हो सके"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load marketplace"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not load MCP servers"
@@ -1672,6 +1706,10 @@ msgstr "टर्मिनल नहीं खोला जा सका"
 msgid "Could not play a test clip"
 msgstr "टेस्ट क्लिप नहीं चलाई जा सकी"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not preview plugin"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "मॉडल सर्वर तक नहीं पहुँच सके।"
@@ -1683,6 +1721,10 @@ msgstr "मॉडल सर्वर तक नहीं पहुँच सक�
 msgid "Could not reach the server"
 msgstr "सर्वर से संपर्क नहीं हो सका"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not refresh installed plugins"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1691,6 +1733,10 @@ msgstr "हटाया नहीं जा सका"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "कनेक्टर हटाया नहीं जा सका"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not remove plugin"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -1795,6 +1841,10 @@ msgstr "रीसेट ईमेल नहीं भेजा जा सका"
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "वह भेजा नहीं जा सका"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not sign in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -2129,6 +2179,10 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "डिस्कनेक्ट हो रहा है…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Discover"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -2241,6 +2295,10 @@ msgstr "इस ईमेल को पंजीकरण की अनुमत�
 #: src/lib/user-error.ts
 msgid "Email verification required"
 msgstr "ईमेल सत्यापन आवश्यक है"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Enabled for this bot"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2660,6 +2718,14 @@ msgstr "डिफ़ॉल्ट का पालन करें"
 msgid "Inputs"
 msgstr "इनपुट"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Install from GitHub"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Installed"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "इंस्टेंस API कुंजी"
@@ -2835,6 +2901,10 @@ msgstr "गतिविधि लोड हो रही है…"
 msgid "Loading integrations…"
 msgstr "इंटीग्रेशन लोड हो रहे हैं…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Loading marketplace…"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
 msgstr "मेमोरी सेटिंग्स लोड हो रही हैं…"
@@ -2844,6 +2914,7 @@ msgid "Loading model catalog…"
 msgstr "मॉडल कैटलॉग लोड हो रहा है…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/pages/MarketplaceOverlay.tsx
 msgid "Loading preview…"
 msgstr "प्रीव्यू लोड हो रहा है…"
 
@@ -2943,6 +3014,11 @@ msgstr "पढ़ा हुआ चिह्नित करें"
 msgid "Mark as Unread"
 msgstr "अपठित चिह्नित करें"
 
+#: src/pages/MarketplaceOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Marketplace"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -2975,6 +3051,7 @@ msgstr "अधिकतम आउटपुट टोकन"
 msgid "MCP endpoint"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "MCP servers"
 msgstr "MCP सर्वर"
@@ -3334,6 +3411,14 @@ msgstr "कोई मॉडल कैटलॉग उपलब्ध नही�
 msgid "No models listed."
 msgstr "कोई मॉडल सूचीबद्ध नहीं।"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins found"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins installed"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "No providers found."
 msgstr "कोई प्रोवाइडर नहीं मिला।"
@@ -3353,6 +3438,10 @@ msgstr ""
 
 #: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No sign-in required"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -3656,12 +3745,24 @@ msgstr "प्ले हो रहा है…"
 msgid "Plugin"
 msgstr "प्लगइन"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin GitHub URL"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin installed. Could not load connection status."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "चैट में “कोई बदलाव नहीं” पोस्ट करें"
 
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Preview"
 msgstr ""
 
 #. placeholder {0}: props.name
@@ -3744,6 +3845,7 @@ msgstr ""
 msgid "Recent"
 msgstr "हाल के"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Reconnect"
 msgstr ""
@@ -3890,6 +3992,10 @@ msgstr "उल्लेख {0} हटाएं"
 msgid "Remove message trigger"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Remove plugin"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove schedule"
 msgstr ""
@@ -4023,6 +4129,7 @@ msgstr ""
 
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
@@ -4032,6 +4139,10 @@ msgstr "फिर कोशिश करें"
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "Retry now"
 msgstr "अभी पुनः प्रयास करें"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Retry preview"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Retry screen"
@@ -4223,6 +4334,10 @@ msgstr ""
 msgid "Search models"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Search plugins"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Search providers"
 msgstr "प्रोवाइडर्स खोजें"
@@ -4372,6 +4487,7 @@ msgstr ""
 msgid "Show list"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Show more"
 msgstr "और दिखाएँ"
@@ -4402,6 +4518,7 @@ msgstr ""
 
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
@@ -4431,6 +4548,10 @@ msgstr "सब्सक्रिप्शन से साइन इन कर�
 msgid "Sign up"
 msgstr "साइन अप करें"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Sign-in cancelled. Try again."
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
 msgstr ""
@@ -4439,6 +4560,14 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
 msgstr "स्किल {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills apply to all your bots. MCP tools require separate approval."
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
@@ -4454,6 +4583,10 @@ msgstr "छोड़ें या डिप्लॉय कुंजी दे�
 msgid "Skipped {0}"
 msgstr "{0} को छोड़ा गया"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skipped components"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Slack message"
 msgstr ""
@@ -4468,6 +4601,10 @@ msgstr "लॉक करने के लिए ऊपर खिसकाएँ"
 
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Some registries are unavailable"
 msgstr ""
 
 #: src/App.tsx
@@ -5034,6 +5171,10 @@ msgstr "कुंजी जाँचने के लिए कनेक्ट �
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Use in this bot"
 msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx

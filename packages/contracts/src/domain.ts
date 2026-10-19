@@ -736,6 +736,65 @@ export const CapabilityInstallSchema = z.object({
 });
 export type CapabilityInstall = z.infer<typeof CapabilityInstallSchema>;
 
+export const PluginPreviewSkillSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+export const PluginPreviewMcpServerSchema = z.object({
+  name: z.string(),
+  transport: z.enum(["streamable_http", "sse"]),
+  endpoint: z.string(),
+  staticHeaderKeys: z.array(z.string()),
+});
+export const PluginPreviewSkippedSchema = z.object({
+  kind: z.enum([
+    "mcp_stdio",
+    "mcp_invalid",
+    "skill_invalid",
+    "editor_only",
+    "unsupported_transport",
+    "unsupported_field",
+  ]),
+  name: z.string(),
+  reason: z.string(),
+});
+export const PluginPreviewSchema = z.object({
+  format: z.enum(["agent-plugins", "cursor", "grok"]),
+  name: z.string(),
+  version: z.string().nullable(),
+  description: z.string(),
+  author: z.string().nullable(),
+  homepage: z.string().nullable(),
+  repository: z.string().nullable(),
+  license: z.string().nullable(),
+  keywords: z.array(z.string()),
+  resolvedSha: z.string().regex(/^[a-f0-9]{40}$/),
+  /** Immutable source for confirming this preview, present on new API responses. */
+  pinnedSource: z.string().optional(),
+  digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  skills: z.array(PluginPreviewSkillSchema),
+  mcpServers: z.array(PluginPreviewMcpServerSchema),
+  skipped: z.array(PluginPreviewSkippedSchema),
+});
+export type PluginPreview = z.infer<typeof PluginPreviewSchema>;
+
+export const PluginMarketplaceEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  keywords: z.array(z.string()),
+  registry: z.string(),
+  source: z.string(),
+  installedSource: z.string(),
+});
+export type PluginMarketplaceEntry = z.infer<typeof PluginMarketplaceEntrySchema>;
+export const PluginMarketplaceCatalogSchema = z.object({
+  entries: z.array(PluginMarketplaceEntrySchema),
+  unavailableRegistries: z.array(z.string()),
+  skippedEntries: z.number().int().nonnegative(),
+});
+export type PluginMarketplaceCatalog = z.infer<typeof PluginMarketplaceCatalogSchema>;
+
 export const IntegrationCatalogSurfaceSchema = z.object({
   kind: z.enum(["mcp", "openapi", "graphql", "cli"]),
   slug: z.string(),
@@ -803,6 +862,7 @@ export type McpServerConfigInput = z.infer<typeof McpServerConfigInput>;
 export const McpServerSchema = z.object({
   id: Id,
   spaceId: Id,
+  installId: Id.nullable().optional(),
   slug: z.string(),
   name: z.string(),
   description: z.string(),

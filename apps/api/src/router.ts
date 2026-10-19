@@ -31,6 +31,8 @@ import type {
   IntegrationProviderSettings,
   MemoryProviderResolver,
   PiOAuthLogins,
+  PluginRepoFetcher,
+  PluginTextReader,
   RemoteConnectorDependencies,
   TicketChangeNotifier,
 } from "@rakazo/adapters";
@@ -56,6 +58,7 @@ import {
   computerSupportsUpdate,
   computerUpdateView,
   createFaviconResolver,
+  createPluginMarketplace,
   createTicket,
   createVoiceProvider,
   defaultCatalogModelId,
@@ -91,11 +94,13 @@ import {
   persistPreparedSecret,
   pickReusableConnection,
   planLiveConnectionSync,
+  pluginPreviewDto,
   prepareApiInstall,
   prepareGraphqlInstall,
   prepareManagedConnectorForTransaction,
   prepareAllowedThinkingLevels as prepareModelThinkingLevels,
   prepareStoredModelAuth,
+  previewPluginInstall,
   probeCatalogProviderModels,
   probeOpenAiCompatibleModels,
   provisionComputer,
@@ -272,6 +277,7 @@ import {
   promptFocus,
   startOnboarding,
 } from "./onboarding.js";
+import { installPlugin } from "./plugin-installs.js";
 import { listRoutineRuns } from "./routine-runs.js";
 import { listSpaceRuns } from "./runs.js";
 import { addScreenProxyCapability } from "./screen-proxy.js";
@@ -465,6 +471,7 @@ function mcpServerDto(
     env: unknown;
     headers: unknown;
     secretId: string | null;
+    installId?: string | null;
     enabled: boolean;
     revision: number;
     createdAt: Date;
@@ -493,6 +500,7 @@ function mcpServerDto(
     args,
     envKeys,
     headerKeys,
+    installId: row.installId ?? null,
     hasSecret: row.secretId !== null,
     oauthStatus,
     enabled: row.enabled,
@@ -594,6 +602,8 @@ export interface RouterDeps {
   mcpOAuth?: McpOAuthBroker;
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
+  pluginRepoFetcher?: PluginRepoFetcher;
+  pluginMarketplaceRead?: PluginTextReader;
   artifacts: ArtifactStore;
   dataDir: string;
   /** Present when the external messaging surface is enabled. */
@@ -802,6 +812,7 @@ export function createRouter(deps: RouterDeps) {
     dataDir: deps.dataDir,
   });
   const agentSkills = createAgentSkillsService(deps.prisma);
+  const pluginMarketplace = createPluginMarketplace(deps.pluginMarketplaceRead);
 
   const authed = os.use(async ({ context, next }) => {
     if (!context.actor) throw new ORPCError("UNAUTHORIZED");
@@ -4111,6 +4122,11 @@ export function createRouter(deps: RouterDeps) {
         agentSkills.remove(context.actor, input.skillId),
       ),
     },
+    marketplace: {
+      catalog: authed.marketplace.catalog.handler(({ input }) =>
+        pluginMarketplace.catalog(input.query),
+      ),
+    },
     capabilities: {
       list: authed.capabilities.list.handler(async ({ context }) => {
         const rows = await deps.prisma.capabilityInstall.findMany({
@@ -4148,6 +4164,19 @@ export function createRouter(deps: RouterDeps) {
         }
       }),
       install: authed.capabilities.install.handler(async ({ context, input }) => {
+        if (input.kind === "plugin") {
+          return installPlugin(
+            {
+              prisma: deps.prisma,
+              secrets: deps.secrets,
+              fetcher: deps.pluginRepoFetcher,
+              assertEndpoint: (endpoint) => assertMcpRemoteEndpoint(endpoint, context.actor, deps),
+            },
+            context.actor,
+            input,
+            context.signal,
+          );
+        }
         let source = input.source.trim();
         let config = input.config;
         const credential = input.credential?.trim() || undefined;
@@ -4269,7 +4298,28 @@ export function createRouter(deps: RouterDeps) {
           createdAt: row.createdAt.toISOString(),
         };
       }),
+      pluginPreview: authed.capabilities.pluginPreview.handler(async ({ context, input }) => {
+        try {
+          const preview = await previewPluginInstall({
+            source: input.source,
+            signal: context.signal,
+            fetcher: deps.pluginRepoFetcher,
+          });
+          for (const server of preview.mcpServers) {
+            await assertMcpRemoteEndpoint(server.endpoint, context.actor, deps);
+          }
+          return {
+            ...pluginPreviewDto(preview),
+            pinnedSource: `${preview.source.gitUrl}@${preview.resolvedSha}${preview.source.subdir ? `#${preview.source.subdir}` : ""}`,
+          };
+        } catch {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Could not preview a supported plugin from this repository",
+          });
+        }
+      }),
       remove: authed.capabilities.remove.handler(async ({ context, input }) => {
+        const notify: Array<{ threadId: string; seq: number }> = [];
         await deps.prisma.$transaction(async (tx) => {
           const existing = await tx.capabilityInstall.findFirst({
             where: {
@@ -4279,6 +4329,39 @@ export function createRouter(deps: RouterDeps) {
             },
           });
           if (!existing) return;
+          // Plugin installs own child rows: skills and MCP servers created at
+          // install time. Delete OAuth secret material atomically with children;
+          // the FK cascade alone would leave encrypted secrets behind.
+          if (existing.kind === "plugin") {
+            const servers = await tx.mcpServer.findMany({
+              where: {
+                installId: existing.id,
+                spaceId: context.actor.spaceId,
+                userId: context.actor.userId,
+              },
+              select: { id: true, secretId: true },
+            });
+            for (const server of servers) {
+              const painted = await dismissMcpServerApprovals(
+                onboardingDeps,
+                context.actor,
+                server.id,
+                tx,
+              );
+              notify.push(...painted);
+              await tx.mcpServer.delete({ where: { id: server.id } });
+              if (server.secretId) {
+                await tx.secret.deleteMany({
+                  where: {
+                    id: server.secretId,
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                  },
+                });
+              }
+            }
+            await tx.agentSkill.deleteMany({ where: { installId: existing.id } });
+          }
           await tx.capabilityInstall.delete({ where: { id: existing.id } });
           if (existing.secretId) {
             const shared = await tx.capabilityInstall.count({
@@ -4295,6 +4378,7 @@ export function createRouter(deps: RouterDeps) {
             }
           }
         });
+        for (const event of notify) await deps.events.notify(event.threadId, event.seq);
         return { ok: true as const };
       }),
     },

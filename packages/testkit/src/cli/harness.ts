@@ -4,6 +4,7 @@ import path from "node:path";
 import { loadRootEnv } from "@rakazo/core/node/load-root-env";
 import { PostgreSqlContainer } from "@testcontainers/postgresql";
 import type { createApp } from "../../../../apps/api/src/app.ts";
+import { PluginMarketplaceFixture } from "../plugin-marketplace-fixture.js";
 import { runProcess } from "./process.js";
 
 loadRootEnv();
@@ -115,6 +116,7 @@ async function main() {
         "packages/db/src/messaging.postgres.test.ts",
         "packages/db/src/billing.postgres.test.ts",
         "apps/api/src/billing.postgres.test.ts",
+        "apps/api/src/plugin-installs.postgres.test.ts",
         "packages/memory/src/commit.postgres.test.ts",
         "packages/adapters/src/wakeup.postgres.test.ts",
         "packages/adapters/src/realtime.postgres.test.ts",
@@ -173,6 +175,7 @@ async function main() {
     ] = await Promise.all([import("@rakazo/adapters"), import("../../../../apps/api/src/app.ts")]);
     const { serve } = await import("@hono/node-server");
     const thirdParties = new ThirdPartyConnectorEmulator();
+    const marketplace = new PluginMarketplaceFixture(thirdParties.fetch);
     const pipedream = new PipedreamConnector(
       {
         clientId: "fake-client-id",
@@ -191,9 +194,11 @@ async function main() {
       pipedream,
       email,
       remoteConnectors: {
-        fetch: thirdParties.fetch,
+        fetch: marketplace.fetch,
         resolveHostname: thirdParties.resolveHostname,
       },
+      pluginRepoFetcher: marketplace.repo,
+      pluginMarketplaceRead: marketplace.index,
       integrationsCatalogUrl: "https://catalog.example.test/",
     });
     let activeRequests = 0;

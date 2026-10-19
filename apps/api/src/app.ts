@@ -15,6 +15,8 @@ import type {
   ComposioProvider,
   ConnectorRegistry,
   DestinationEmulator,
+  PluginRepoFetcher,
+  PluginTextReader,
   RemoteConnectorDependencies,
 } from "@rakazo/adapters";
 import {
@@ -169,6 +171,8 @@ export async function createApp(
     email?: TransactionalEmailProvider;
     billing?: BillingProvider;
     remoteConnectors?: RemoteConnectorDependencies;
+    pluginRepoFetcher?: PluginRepoFetcher;
+    pluginMarketplaceRead?: PluginTextReader;
     logger?: Logger;
     runtime?: AgentRuntime;
     contextStrategy?: AgentContextStrategy;
@@ -184,6 +188,8 @@ export async function createApp(
     email: emailOverride,
     billing: billingOverride,
     remoteConnectors,
+    pluginRepoFetcher,
+    pluginMarketplaceRead,
     logger: loggerOverride,
     runtime: runtimeOverride,
     contextStrategy,
@@ -546,6 +552,8 @@ export async function createApp(
   reconciler?.start();
 
   const router = createRouter({
+    pluginRepoFetcher,
+    pluginMarketplaceRead,
     cloudAgent,
     codexCatalog,
     prisma,

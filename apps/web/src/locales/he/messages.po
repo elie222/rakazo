@@ -444,6 +444,10 @@ msgstr "הוספת שרת MCP"
 msgid "Add OpenAPI"
 msgstr "הוספת OpenAPI"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Add plugin"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "הוספת שרת MCP מרוחק"
@@ -472,6 +476,7 @@ msgstr "הוספת טריגר"
 msgid "Added"
 msgstr "נוסף"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -773,6 +778,7 @@ msgstr "אווטארים"
 
 #: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Back"
@@ -929,6 +935,7 @@ msgstr "לא ניתן לקרוא תמונות"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1120,6 +1127,10 @@ msgstr "סגירת התצוגה המקדימה של התמונה"
 msgid "Close integrations"
 msgstr "סגירת האינטגרציות"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Close marketplace"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Close MCP servers"
 msgstr "סגירת שרתי MCP"
@@ -1272,6 +1283,10 @@ msgstr "אישור מחיקה"
 msgid "Confirm password"
 msgstr "אימות סיסמה"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Confirm removal"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "יש לוודא שאפשר להגיע לכתובת ה-URL מסשן הדפדפן הזה, ואז לבדוק שוב."
@@ -1281,6 +1296,7 @@ msgid "Confirmations"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1313,6 +1329,7 @@ msgid "Connect Treg"
 msgstr "חיבור Treg"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1331,6 +1348,7 @@ msgid "Connected. Its tools are available from your next message."
 msgstr "מחובר. הכלים שלו יהיו זמינים החל מההודעה הבאה."
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1556,9 +1574,17 @@ msgstr "לא ניתן להוריד את {name}. אפשר לנסות שוב."
 msgid "Could not download file"
 msgstr "לא ניתן להוריד את הקובץ"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not enable tools"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "לא ניתן להתקין את החיבור"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not install plugin"
+msgstr ""
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not list files"
@@ -1601,10 +1627,18 @@ msgstr "לא ניתן לטעון את הפקודות"
 msgid "Could not load credentials."
 msgstr "לא ניתן לטעון את פרטי הגישה."
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load installed plugins"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "לא ניתן לטעון את האינטגרציות"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load marketplace"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not load MCP servers"
@@ -1672,6 +1706,10 @@ msgstr "לא ניתן לפתוח את הטרמינל"
 msgid "Could not play a test clip"
 msgstr "לא ניתן להשמיע קטע בדיקה"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not preview plugin"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "אין גישה לשרת המודל."
@@ -1683,6 +1721,10 @@ msgstr "אין גישה לשרת המודל."
 msgid "Could not reach the server"
 msgstr "אין גישה לשרת"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not refresh installed plugins"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1691,6 +1733,10 @@ msgstr "לא ניתן להסיר"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "לא ניתן להסיר את החיבור"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not remove plugin"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -1795,6 +1841,10 @@ msgstr "לא ניתן לשלוח אימייל לאיפוס"
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "לא ניתן לשלוח את זה"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not sign in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -2129,6 +2179,10 @@ msgstr "{0} נותק."
 msgid "Disconnecting…"
 msgstr "מנתק…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Discover"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -2241,6 +2295,10 @@ msgstr "האימייל הזה לא מורשה להירשם"
 #: src/lib/user-error.ts
 msgid "Email verification required"
 msgstr "נדרש אימות אימייל"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Enabled for this bot"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2660,6 +2718,14 @@ msgstr "ירושה מברירת המחדל"
 msgid "Inputs"
 msgstr "קלטים"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Install from GitHub"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Installed"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "מפתח API של המופע"
@@ -2835,6 +2901,10 @@ msgstr "טוען פעילות…"
 msgid "Loading integrations…"
 msgstr "טוען אינטגרציות…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Loading marketplace…"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
 msgstr "טוען הגדרות זיכרון…"
@@ -2844,6 +2914,7 @@ msgid "Loading model catalog…"
 msgstr "טוען קטלוג מודלים…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/pages/MarketplaceOverlay.tsx
 msgid "Loading preview…"
 msgstr "טוען תצוגה מקדימה…"
 
@@ -2943,6 +3014,11 @@ msgstr "סימון כנקראה"
 msgid "Mark as Unread"
 msgstr "סימון כלא נקראה"
 
+#: src/pages/MarketplaceOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Marketplace"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -2975,6 +3051,7 @@ msgstr "מספר טוקנים מרבי בפלט"
 msgid "MCP endpoint"
 msgstr "נקודת קצה של MCP"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "MCP servers"
 msgstr "שרתי MCP"
@@ -3334,6 +3411,14 @@ msgstr "אין קטלוג מודלים זמין."
 msgid "No models listed."
 msgstr "לא נמצאו מודלים ברשימה."
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins found"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins installed"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "No providers found."
 msgstr "לא נמצאו ספקים."
@@ -3354,6 +3439,10 @@ msgstr "אין הרצות שתואמות למסננים האלה."
 #: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
 msgstr "עדיין אין הרצות"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No sign-in required"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -3656,6 +3745,14 @@ msgstr "מתנגן…"
 msgid "Plugin"
 msgstr "תוסף"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin GitHub URL"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin installed. Could not load connection status."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Post \"No changes\" in chat"
 msgstr ""
@@ -3663,6 +3760,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST אל"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Preview"
+msgstr ""
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -3744,6 +3845,7 @@ msgstr "שליפה בלבד"
 msgid "Recent"
 msgstr "אחרונים"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Reconnect"
 msgstr "חיבור מחדש"
@@ -3890,6 +3992,10 @@ msgstr "הסרת האזכור {0}"
 msgid "Remove message trigger"
 msgstr "הסרת טריגר ההודעה"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Remove plugin"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove schedule"
 msgstr "הסרת התזמון"
@@ -4023,6 +4129,7 @@ msgstr "משחזר את סביבת העבודה"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
@@ -4032,6 +4139,10 @@ msgstr "לנסות שוב"
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "Retry now"
 msgstr "לנסות שוב עכשיו"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Retry preview"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Retry screen"
@@ -4223,6 +4334,10 @@ msgstr "חיפוש ב-integrations.sh"
 msgid "Search models"
 msgstr "חיפוש מודלים"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Search plugins"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Search providers"
 msgstr "חיפוש ספקים"
@@ -4372,6 +4487,7 @@ msgstr "הצגת המחשב"
 msgid "Show list"
 msgstr "הצגת רשימה"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Show more"
 msgstr "הצגת עוד"
@@ -4402,6 +4518,7 @@ msgstr "צפיפות סרגל הצד"
 
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
@@ -4431,6 +4548,10 @@ msgstr "אפשר להתחבר עם המנוי, או לבדוק את מפתח ה-
 msgid "Sign up"
 msgstr "הרשמה"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Sign-in cancelled. Try again."
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
 msgstr "אתר"
@@ -4439,6 +4560,14 @@ msgstr "אתר"
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
 msgstr "מיומנות {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills apply to all your bots. MCP tools require separate approval."
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
@@ -4453,6 +4582,10 @@ msgstr "דילוג או מפתח התקנה"
 #: src/pages/Shell.tsx
 msgid "Skipped {0}"
 msgstr "דולגו: {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skipped components"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Slack message"
@@ -4469,6 +4602,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "עדכון תוכנה"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Some registries are unavailable"
+msgstr ""
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -5035,6 +5172,10 @@ msgstr "יש ללחוץ על חיבור כדי לאמת את המפתח."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
 msgstr "שימוש בהנחיות ברירת המחדל"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Use in this bot"
+msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."
