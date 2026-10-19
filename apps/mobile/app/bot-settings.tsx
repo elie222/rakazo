@@ -140,14 +140,7 @@ export default function BotSettingsScreen() {
             resolveSelectableModelId(catalog, entry.provider, entry.id) === effectiveModelId,
         )
       : undefined;
-  const effectiveCredential = credentialForModel(
-    credentials,
-    effectiveProvider,
-    effectiveModelId,
-    effectiveProvider === bot?.modelProvider && effectiveModelId === bot?.modelId
-      ? "existing"
-      : "choice",
-  );
+  const effectiveCredential = credentialForModel(credentials, effectiveProvider, effectiveModelId);
   const thinkingOptions = (
     effectiveCredential?.thinkingLevels ??
     effectiveEntry?.thinkingLevels ??

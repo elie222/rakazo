@@ -128,9 +128,9 @@ function compareDescendingId(left: string, right: string) {
   return left < right ? 1 : -1;
 }
 
-function comparePreferenceOrder<C extends OrderedCredential>(
-  left: OrderedPreference<C>,
-  right: OrderedPreference<C>,
+export function comparePreferenceOrder(
+  left: Pick<OrderedPreference<OrderedCredential>, "id" | "isDefault" | "updatedAt">,
+  right: Pick<OrderedPreference<OrderedCredential>, "id" | "isDefault" | "updatedAt">,
 ) {
   if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
   const updated = right.updatedAt.getTime() - left.updatedAt.getTime();

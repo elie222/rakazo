@@ -34,7 +34,7 @@ import { approvalDetailLength, MAX_APPROVAL_SUMMARY_LENGTH } from "./approval-as
 import { resolveUpdateBotAvatar } from "./bot-avatar.js";
 import { createdByWhere } from "./child-bots.js";
 import type { BotModelChangeDeps } from "./model-selection.js";
-import { rememberConnectedModelChoice, validateBotModelChange } from "./model-selection.js";
+import { validateBotModelChange } from "./model-selection.js";
 import { listPiCatalog, scriptedCatalogEntry } from "./pi-models.js";
 import type { ScheduleToolDeps } from "./schedule-tools.js";
 import {
@@ -978,15 +978,6 @@ export async function setChildBotModel(
     if (error && typeof error === "object" && "code" in error && error.code === "P2025")
       return { error: "That bot's model changed since you approved; ask again." };
     throw error;
-  }
-  if (validated.provider !== child.modelProvider || validated.model !== child.modelId) {
-    await rememberConnectedModelChoice(
-      deps.prisma,
-      deps.modelChange.secretStore,
-      run,
-      validated.provider,
-      validated.model,
-    );
   }
   return {
     ok: true,

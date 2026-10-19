@@ -3,7 +3,7 @@ import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  compatibleModelKeepsPreferred,
+  selectCompatibleModelCredential,
   usableModelId,
 } from "@rakazo/contracts";
 import type { findDefaultModelCredential, PrismaClient } from "@rakazo/db";
@@ -382,7 +382,6 @@ async function loadModelSecret(
 }
 
 export type ConnectedModelResolution = {
-  intent?: "existing" | "choice";
   /** Preview a connection save using the same runtime selection. */
   replacement?: { credentialId: string; secret: StoredModelSecret; defaultModel?: string | null };
 };
@@ -413,58 +412,27 @@ export async function findConnectedModelCredential(
   if (!selected || provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !id) return selected;
   if (selected.defaultModel === id) return selected;
   const secret = await readSecret(selected);
-  if (
-    secret?.kind === "openai_compatible" &&
-    compatibleModelKeepsPreferred({
-      modelId: id,
-      defaultModel: selected.defaultModel,
-      enabledModelIds: secret.enabledModelIds,
-      intent: resolution.intent ?? "choice",
-    })
-  ) {
-    return selected;
-  }
+  const preferred = {
+    credential: selected,
+    enabledModelIds: secret?.kind === "openai_compatible" ? secret.enabledModelIds : [],
+    defaultModel: selected.defaultModel,
+  };
+  if (preferred.enabledModelIds?.includes(id)) return selected;
   const credentials = await prisma.userModelCredential.findMany({
     where: { userId: actor.userId, provider },
     orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
   });
+  const candidates = [];
   for (const credential of credentials) {
     if (credential.id === selected.id) continue;
     const candidate = await readSecret(credential);
-    if (candidate?.kind === "openai_compatible" && candidate.enabledModelIds?.includes(id)) {
-      return { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null };
-    }
+    candidates.push({
+      credential: { ...credential, isDefault: false, defaultModel: null, thinkingLevel: null },
+      defaultModel: null,
+      enabledModelIds: candidate?.kind === "openai_compatible" ? candidate.enabledModelIds : [],
+    });
   }
-  return selected;
-}
-
-/** Retain an explicit choice when legacy pin routing would otherwise use another endpoint. */
-export async function rememberConnectedModelChoice(
-  prisma: PrismaClient,
-  secretStore: Pick<SecretStore, "load">,
-  actor: Pick<Actor, "userId" | "spaceId">,
-  provider: string | null | undefined,
-  modelId: string | null | undefined,
-) {
-  if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID || !modelId) return;
-  const chosen = await findConnectedModelCredential(prisma, secretStore, actor, provider, modelId, {
-    intent: "choice",
-  });
-  const existing = await findConnectedModelCredential(
-    prisma,
-    secretStore,
-    actor,
-    provider,
-    modelId,
-    { intent: "existing" },
-  );
-  if (!chosen || chosen.id === existing?.id) return;
-  const scope = { spaceId: actor.spaceId, userId: actor.userId };
-  await prisma.spaceModelPreference.upsert({
-    where: { spaceId_userId_credentialId: { ...scope, credentialId: chosen.id } },
-    create: { ...scope, credentialId: chosen.id, modelId, isDefault: false },
-    update: { modelId, thinkingLevel: null },
-  });
+  return selectCompatibleModelCredential(preferred, candidates, id)?.credential ?? selected;
 }
 
 export type BotModelChangeDeps = {
@@ -510,7 +478,6 @@ export async function validateBotModelChange(
       scope,
       provider,
       model,
-      { intent: "choice" },
     );
     if (!credential) return { ok: false, error: "Connect that model provider first" };
     const inCatalog = isCatalogModelChoice(provider, model);
@@ -521,7 +488,6 @@ export async function validateBotModelChange(
         scope,
         provider,
         model,
-        { intent: "choice" },
       );
       if (error) return { ok: false, error };
     } else if (!inCatalog && credential.defaultModel !== model) {
@@ -554,7 +520,6 @@ export async function validateBotModelChange(
         scope,
         effectiveProvider,
         effectiveModelId,
-        { intent: changing ? "choice" : "existing" },
       );
       if (allowed && !allowed.includes(thinkingLevel)) {
         return { ok: false, error: `Thinking level must be one of: ${allowed.join(", ")}` };
@@ -574,7 +539,7 @@ export async function prepareAllowedThinkingLevels(
   actor: Pick<Actor, "userId" | "spaceId">,
   provider: string,
   modelId: string,
-  resolution: ConnectedModelResolution = { intent: "existing" },
+  resolution: ConnectedModelResolution = {},
 ): Promise<{
   allowed: string[] | undefined;
   secret?: { id: string; ciphertext: string };
@@ -637,7 +602,11 @@ export function compatibleThinkingLevels(
   }
   const enabled = enabledOpenAiCompatibleModelIds(parsed, row.defaultModel);
   return {
-    allowed: enabled.includes(modelId.trim()) ? (levels ?? ["off"]) : ["off"],
+    allowed:
+      parsed?.kind === "openai_compatible" &&
+      (parsed.enabledModelIds === undefined || enabled.includes(modelId.trim()))
+        ? (levels ?? ["off"])
+        : ["off"],
     enabledModelIds: enabled,
     storedEnabledModelIds:
       parsed?.kind === "openai_compatible" ? parsed.enabledModelIds : undefined,
@@ -678,11 +647,7 @@ export async function validateConnectedModelChoice(
   });
   if (savedChoice) return undefined;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
-  if (
-    secret?.kind === "openai_compatible" &&
-    secret.enabledModelIds === undefined &&
-    isCatalogModelChoice(provider, modelId)
-  )
+  if (secret?.kind === "openai_compatible" && secret.enabledModelIds === undefined)
     return undefined;
   const enabled = secret && enabledOpenAiCompatibleModelIds(secret, credential.defaultModel);
   return enabled?.includes(modelId.trim()) ? undefined : "Unknown model for that provider";

@@ -1084,6 +1084,8 @@ export function modelOutputLeavesInputRoom(
 }
 
 export const ModelCredentialSchema = z.object({
+  /** Computed space preference order; credentials themselves remain newest first. */
+  preferenceRank: z.number().int().nonnegative().optional(),
   ...ModelContextLimitsSchema.shape,
   id: Id,
   provider: z.string(),

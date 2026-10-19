@@ -12,6 +12,7 @@ import {
   ComputerBusyError,
   ComputerScreenUnavailableError,
   EncryptedSecretStore,
+  findConnectedModelCredential,
   IntegrationProviderSettings,
   LocalAgentHomeStore,
   listPiCatalog,
@@ -4767,6 +4768,71 @@ describe("openai-compatible enabled models", () => {
 
     expect(result.status).toBe(200);
     expect(state.preference).toMatchObject({ modelId: "m-y", isDefault: true });
+  });
+
+  it("keeps two bots on an enabled connection after successive saves and a failed save", async () => {
+    const { call, prisma, secrets, state } = fixture({
+      plaintext: secretText(),
+      alternatePlaintext: secretText(["Y", "Z"], true),
+      defaultModel: "X",
+    });
+    const bots = [botRow("X"), { ...botRow("X"), id: "bot-2" }];
+    prisma.bot.findFirst.mockImplementation(async (...args: unknown[]) => {
+      const { where } = args[0] as { where: { id: string } };
+      return bots.find((bot) => bot.id === where.id)!;
+    });
+    prisma.bot.findMany.mockImplementation(async () => bots);
+    prisma.bot.update.mockImplementation(async (...args: unknown[]) => {
+      const { where, data } = args[0] as { where: { id: string }; data: Record<string, unknown> };
+      return Object.assign(
+        bots.find((bot) => bot.id === where.id)!,
+        Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)),
+      );
+    });
+    const assertRouting = async () => {
+      for (const bot of bots.filter((bot) => bot.modelId !== "X")) {
+        await expect(
+          findConnectedModelCredential(
+            prisma as unknown as PrismaClient,
+            secrets,
+            actor,
+            compatible,
+            bot.modelId,
+          ),
+        ).resolves.toMatchObject({ id: "cred-alternate" });
+      }
+      expect(state.preference).toMatchObject({ modelId: "X", isDefault: true });
+      expect(prisma.spaceModelPreference.upsert).not.toHaveBeenCalled();
+    };
+    for (const [botId, modelId] of [
+      ["bot-1", "Y"],
+      ["bot-2", "Z"],
+      ["bot-1", "Y"],
+    ]) {
+      expect(
+        (
+          await call("bots/update", {
+            botId,
+            modelProvider: compatible,
+            modelId,
+            thinkingLevel: "high",
+          })
+        ).status,
+      ).toBe(200);
+      await assertRouting();
+    }
+    prisma.bot.update.mockRejectedValueOnce(new Error("save aborted"));
+    expect(
+      (await call("bots/update", { botId: "bot-2", modelProvider: compatible, modelId: "Y" }))
+        .status,
+    ).toBe(500);
+    expect(bots.map((bot) => bot.modelId)).toEqual(["Y", "Z"]);
+    await assertRouting();
+    expect(
+      (await call("bots/update", { botId: "bot-2", modelProvider: compatible, modelId: "Z" }))
+        .status,
+    ).toBe(200);
+    await assertRouting();
   });
 
   it("saves a bot thinking level on a non-default enabled id when the endpoint reasons", async () => {

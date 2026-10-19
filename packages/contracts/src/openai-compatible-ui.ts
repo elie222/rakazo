@@ -39,16 +39,19 @@ export function normalizeOpenAiCompatibleBaseUrl(raw: string): string {
 export const DEFAULT_COMPATIBLE_TTS_MODEL = "mlx-community/Kokoro-82M-bf16";
 export const DEFAULT_COMPATIBLE_STT_MODEL = "mlx-community/whisper-large-v3-turbo-asr-fp16";
 
-/** Ownership wins when it serves the id; existing list-less pins keep their endpoint. */
-export function compatibleModelKeepsPreferred(input: {
-  modelId: string;
-  defaultModel?: string | null;
-  enabledModelIds?: readonly string[] | null;
-  intent: "existing" | "choice";
-}): boolean {
+/** Preferred default, explicit enabled id (preferred first), then a list-less legacy fallback.
+ * Candidates must be in stable credential order, newest first.
+ */
+export function selectCompatibleModelCredential<
+  C extends {
+    defaultModel?: string | null;
+    enabledModelIds?: readonly string[] | null;
+  },
+>(preferred: C, candidates: readonly C[], modelId: string): C | undefined {
+  if (preferred.defaultModel === modelId || preferred.enabledModelIds?.includes(modelId))
+    return preferred;
   return (
-    input.defaultModel === input.modelId ||
-    Boolean(input.enabledModelIds?.includes(input.modelId)) ||
-    (input.intent === "existing" && input.enabledModelIds === undefined)
+    candidates.find((candidate) => candidate.enabledModelIds?.includes(modelId)) ??
+    (preferred.enabledModelIds === undefined ? preferred : undefined)
   );
 }

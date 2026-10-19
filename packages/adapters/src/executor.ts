@@ -292,7 +292,6 @@ import { selectMemoryTools } from "./memory-tools.js";
 import {
   enabledOpenAiCompatibleModelIds,
   findConnectedModelCredential,
-  isCatalogModelChoice,
   pinnedModelCredentialError,
   routineRunModelPin,
   runModelChoice,
@@ -3038,7 +3037,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       provider,
       modelId,
       registerSecrets,
-      { requireStoredSecret, requireDefaultForLegacyCompatible: true },
+      { requireStoredSecret },
     );
     return {
       provider,
@@ -3095,7 +3094,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
               scope,
               override!.modelProvider!,
               override!.modelId,
-              { intent: "existing" },
             )
           : Promise.resolve(null),
         findDefaultModelCredential(deps.prisma, scope),
@@ -3727,7 +3725,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 run,
                 modelChoice.modelProvider,
                 modelChoice.modelId,
-                { intent: "existing" },
               )
             : null;
         runAbortController = new AbortController();
@@ -3984,7 +3981,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
             runModelProvider,
             runModelId,
             (values) => runSecrets.push(...values),
-            { requireDefaultForLegacyCompatible: run.modelPinned === true },
           );
         } catch (error) {
           // A dead or account-switched credential is already deleted. Retrying
@@ -9309,18 +9305,11 @@ function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefi
  */
 const CODEX_LIVE_RUN_WAIT_MS = 8_000;
 
-// Free-form compatible ids must be enabled on the connection whose baseUrl
-// this run uses, in the run's own space; a stale pin fails here. Connections
-// saved before enabled lists existed keep their previous rules: bot runs resolve
-// any id, while pinned runs and connected-model lookups require the saved
-// default so a fallback to another same-provider credential never mixes
-// baseUrl. The connect guard surfaces those pins before a list is first saved.
+// Listed connections serve enabled ids and their space default; legacy connections serve any id.
 function assertCompatibleModelEnabled(
   credential: { provider: string; defaultModel?: string | null },
   secret: StoredModelSecret,
-  provider: string,
   modelId: string,
-  requireDefaultForLegacy: boolean,
 ) {
   if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) return;
   if (secret.kind !== "openai_compatible") return;
@@ -9329,13 +9318,6 @@ function assertCompatibleModelEnabled(
       throw new UnavailableModelForAuthError("Unknown model for that provider");
     }
     return;
-  }
-  if (
-    requireDefaultForLegacy &&
-    !isCatalogModelChoice(provider, modelId) &&
-    credential.defaultModel !== modelId
-  ) {
-    throw new UnavailableModelForAuthError("Unknown model for that provider");
   }
 }
 
@@ -9353,10 +9335,7 @@ async function resolveModelKey(
   provider: string,
   modelId: string,
   registerSecrets?: (values: string[]) => void,
-  {
-    requireStoredSecret = false,
-    requireDefaultForLegacyCompatible = false,
-  }: { requireStoredSecret?: boolean; requireDefaultForLegacyCompatible?: boolean } = {},
+  { requireStoredSecret = false }: { requireStoredSecret?: boolean } = {},
 ): Promise<{
   apiKey?: string;
   accountId?: string;
@@ -9442,13 +9421,7 @@ async function resolveModelKey(
         if (!liveListed) throw new UnavailableModelForAuthError(authError);
       }
       resolved ??= await resolveAuth();
-      assertCompatibleModelEnabled(
-        credential,
-        resolved.secret,
-        provider,
-        modelId,
-        requireDefaultForLegacyCompatible,
-      );
+      assertCompatibleModelEnabled(credential, resolved.secret, modelId);
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;

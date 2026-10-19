@@ -101,7 +101,6 @@ import {
   provisionComputer,
   queueComputerUpdate,
   releaseComputerExecutionLease,
-  rememberConnectedModelChoice,
   replaceComputer,
   resolveAutoReviewChecker,
   resolveBotUploadPath,
@@ -186,6 +185,7 @@ import {
   ComputerLimitError,
   claimEmptySpaceDeletionForMember,
   commitBotUpdate,
+  comparePreferenceOrder,
   createExternalConversationRepos,
   createGroupRepos,
   createRepos,
@@ -1196,6 +1196,12 @@ export function createRouter(deps: RouterDeps) {
             })
           : [];
         const ciphertextById = new Map(secrets.map((secret) => [secret.id, secret.ciphertext]));
+        const preferenceRanks = new Map(
+          rows
+            .flatMap((row) => row.preferences)
+            .sort(comparePreferenceOrder)
+            .map((preference, index) => [preference.id, index]),
+        );
         return Promise.all(
           rows.map(async (row) => {
             const preference = row.preferences[0];
@@ -1205,17 +1211,18 @@ export function createRouter(deps: RouterDeps) {
               defaultModel: preference?.modelId ?? null,
               thinkingLevel: preference?.thinkingLevel ?? null,
             };
+            const dto = (plaintext?: string) => ({
+              ...modelCredentialDto(selected, plaintext),
+              ...(preference ? { preferenceRank: preferenceRanks.get(preference.id) } : {}),
+            });
             const ciphertext = ciphertextById.get(row.secretId);
-            if (!ciphertext) return modelCredentialDto(selected);
+            if (!ciphertext) return dto();
             try {
-              return modelCredentialDto(
-                selected,
-                await deps.secrets.load(ciphertext, row.secretId),
-              );
+              return dto(await deps.secrets.load(ciphertext, row.secretId));
             } catch (error) {
               if (error instanceof SecretStoreUnavailableError)
                 throw new ORPCError("SERVICE_UNAVAILABLE", { cause: error });
-              return modelCredentialDto(selected);
+              return dto();
             }
           }),
         );
@@ -1546,7 +1553,6 @@ export function createRouter(deps: RouterDeps) {
                   context.actor,
                   input.provider,
                   input.modelId,
-                  "choice",
                 )
               : { allowed: undefined, secret: undefined };
           if (compatible) {
@@ -1836,18 +1842,6 @@ export function createRouter(deps: RouterDeps) {
           if (!(error instanceof InstructionConflictError)) throw error;
           throw new ORPCError("CONFLICT", { message: error.message });
         });
-        if (
-          modelChange.provider !== existing.modelProvider ||
-          modelChange.model !== existing.modelId
-        ) {
-          await rememberConnectedModelChoice(
-            deps.prisma,
-            deps.secrets,
-            context.actor,
-            modelChange.provider,
-            modelChange.model,
-          );
-        }
         const bots = await repos.listBots(context.actor);
         const bot = bots.find((b) => b.id === input.botId);
         if (!bot) throw new IsolationError();
@@ -3529,13 +3523,6 @@ export function createRouter(deps: RouterDeps) {
             nextRunAt,
           },
         });
-        await rememberConnectedModelChoice(
-          deps.prisma,
-          deps.secrets,
-          context.actor,
-          input.modelProvider,
-          input.modelId,
-        );
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -3742,15 +3729,6 @@ export function createRouter(deps: RouterDeps) {
             }
             throw error;
           });
-        if (modelChanged) {
-          await rememberConnectedModelChoice(
-            deps.prisma,
-            deps.secrets,
-            context.actor,
-            modelProvider,
-            modelId,
-          );
-        }
         if (bot.thread) {
           await deps.events.append({
             spaceId: context.actor.spaceId,
@@ -6668,14 +6646,12 @@ function prepareAllowedThinkingLevels(
   actor: Actor,
   provider: string,
   modelId: string,
-  intent: "existing" | "choice" = "existing",
 ) {
   return prepareModelThinkingLevels(
     { prisma: deps.prisma, secretStore: deps.secrets },
     actor,
     provider,
     modelId,
-    { intent },
   );
 }
 
@@ -7200,7 +7176,6 @@ async function assertNoDanglingModelPins(
       OPENAI_COMPATIBLE_PROVIDER_ID,
       row.modelId,
       {
-        intent: "existing",
         replacement: {
           credentialId: connection.id,
           secret,
@@ -7252,7 +7227,6 @@ async function assertRoutineModel(
     actor,
     model.modelProvider,
     model.modelId,
-    { intent: "choice" },
   );
   if (message) throw new ORPCError("BAD_REQUEST", { message });
 }

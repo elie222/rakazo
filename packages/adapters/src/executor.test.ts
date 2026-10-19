@@ -2908,7 +2908,7 @@ description: Prepare standup notes
     );
   });
 
-  it("rejects a free-form selection when the owning preference disappears", async () => {
+  it("rejects a free-form selection when the owning preference disappears on a listed connection", async () => {
     const preference = modelPreference({
       provider: "openai-compatible",
       secretId: "secret-compat",
@@ -2928,7 +2928,7 @@ description: Prepare standup notes
         return null;
       },
     );
-    const plaintext = compatibleSecret();
+    const plaintext = compatibleSecret(["newest-model"]);
     const prisma = {
       spaceModelPreference: { findFirst },
       userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
@@ -3067,7 +3067,6 @@ description: Prepare standup notes
 
   it.each([
     ["a model missing from the enabled list", compatibleSecret(["space-model", "second-model"])],
-    ["a non-default model on a connection saved before lists", compatibleSecret()],
   ])("fails a pinned routine run on %s before the model call", async (_case, plaintext) => {
     const { finalizeRun, runtimeRun, enqueue } = await continuePinnedRoutineRun(
       plaintext,
@@ -3081,14 +3080,14 @@ description: Prepare standup notes
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it("lets a pinned routine run past model setup on a non-default enabled model", async () => {
-    const { finalizeRun } = await continuePinnedRoutineRun(
-      compatibleSecret(["space-model", "second-model"]),
-      "second-model",
-    );
+  it.each([compatibleSecret(["space-model", "second-model"]), compatibleSecret()])(
+    "lets a pinned routine use a non-default model on a listed or legacy connection",
+    async (plaintext) => {
+      const { finalizeRun } = await continuePinnedRoutineRun(plaintext, "second-model");
 
-    expect(finalizeRun).not.toHaveBeenCalled();
-  });
+      expect(finalizeRun).not.toHaveBeenCalled();
+    },
+  );
 
   it("resolves a legacy-secret bot pinned on a non-default model, as before lists", async () => {
     const plaintext = compatibleSecret();

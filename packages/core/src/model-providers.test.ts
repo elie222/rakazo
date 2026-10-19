@@ -290,7 +290,29 @@ describe("connected model choices", () => {
     expect(credentialForModel([newer, preferred], "openai-compatible", "Y")).toBe(preferred);
   });
 
-  it("keeps existing legacy pins but resolves explicit choices to an enabled connection", () => {
+  it("uses server preference order without changing stable enabled-connection order", () => {
+    const newest = {
+      provider: "openai-compatible",
+      label: "Newest",
+      modelId: "Y",
+      preferenceRank: 2,
+      enabledModelIds: ["Y", "Z"],
+    };
+    const preferred = { ...newest, label: "Preferred", preferenceRank: 1 };
+    const legacy = {
+      provider: "openai-compatible",
+      label: "Legacy",
+      modelId: "X",
+      isDefault: true,
+      preferenceRank: 0,
+    };
+    const credentials = [newest, preferred, legacy];
+    expect(credentialForModel(credentials, "openai-compatible", "Y")).toBe(preferred);
+    expect(credentialForModel(credentials, "openai-compatible", "Z")).toBe(newest);
+    expect(credentialForModel(credentials, "openai-compatible", "X")).toBe(legacy);
+  });
+
+  it("uses enabled connections before a legacy fallback for every choice", () => {
     const legacy = {
       provider: "openai-compatible",
       label: "Legacy",
@@ -298,9 +320,8 @@ describe("connected model choices", () => {
       isDefault: true,
     };
     const listed = { provider: "openai-compatible", label: "Listed", enabledModelIds: ["Y"] };
-    expect(credentialForModel([listed, legacy], "openai-compatible", "Y")).toBe(legacy);
-    expect(credentialForModel([listed, legacy], "openai-compatible", "Y", "choice")).toBe(listed);
-    expect(credentialForModel([legacy], "openai-compatible", "Y", "choice")).toBe(legacy);
+    expect(credentialForModel([listed, legacy], "openai-compatible", "Y")).toBe(listed);
+    expect(credentialForModel([legacy], "openai-compatible", "Y")).toBe(legacy);
   });
 
   it("resolves a saved display label to the API id used on save", () => {

@@ -1,8 +1,8 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
 import {
   canonicalPiProviderId,
-  compatibleModelKeepsPreferred,
   normalizeOpenAiCompatibleBaseUrl,
+  selectCompatibleModelCredential,
 } from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
@@ -156,6 +156,7 @@ type CredentialModelRef = {
   modelId?: string | null;
   enabledModelIds?: readonly string[] | null;
   isDefault?: boolean;
+  preferenceRank?: number;
 };
 
 function modelToken(value: string): string {
@@ -242,33 +243,36 @@ export function credentialForModel<C extends CredentialModelRef>(
   credentials: readonly C[],
   provider: string | null | undefined,
   modelId: string | null | undefined,
-  intent: "existing" | "choice" = "existing",
 ): C | undefined {
   if (!provider || !modelId) return undefined;
   const candidates = credentials.filter((credential) => credential.provider === provider);
-  const matching = candidates.filter((credential) => credential.modelId === modelId);
-  const preferred =
-    candidates.find((credential) => credential.isDefault) ??
-    candidates.find((credential) => credential.modelId) ??
-    candidates[0];
-  return (
-    matching.find((credential) => credential.isDefault) ??
-    matching[0] ??
-    (preferred &&
-    provider === "openai-compatible" &&
-    compatibleModelKeepsPreferred({
-      modelId,
-      defaultModel: preferred.modelId,
-      enabledModelIds: preferred.enabledModelIds,
-      intent,
-    })
-      ? preferred
-      : undefined) ??
-    candidates.find((credential) => credential.enabledModelIds?.includes(modelId)) ??
-    (provider === "openai-compatible" && preferred?.enabledModelIds === undefined
-      ? preferred
-      : undefined)
+  const preferences = [...candidates].sort(
+    (left, right) =>
+      Number(Boolean(right.isDefault)) - Number(Boolean(left.isDefault)) ||
+      (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
   );
+  const matching = preferences.filter((credential) => credential.modelId === modelId);
+  const preferred =
+    preferences.find(
+      (credential) =>
+        credential.isDefault || credential.preferenceRank !== undefined || credential.modelId,
+    ) ?? candidates[0];
+  const selected = matching.find((credential) => credential.isDefault) ?? matching[0] ?? preferred;
+  if (provider !== "openai-compatible")
+    return (
+      matching[0] ?? candidates.find((credential) => credential.enabledModelIds?.includes(modelId))
+    );
+  if (!selected) return undefined;
+  const refs = candidates.map((credential) => ({
+    credential,
+    defaultModel: credential.modelId,
+    enabledModelIds: credential.enabledModelIds,
+  }));
+  return selectCompatibleModelCredential(
+    refs.find((ref) => ref.credential === selected)!,
+    refs,
+    modelId,
+  )?.credential;
 }
 
 /**
