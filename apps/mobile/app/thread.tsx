@@ -2172,15 +2172,12 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
             <TimeSeparator createdAt={item.messages[0].createdAt} />
           ) : null}
-          {item.messages.some((message) => message.id === unreadFromId) ? (
-            <UnreadSeparator />
-          ) : null}
           <VoiceChatCard group={item} />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds, unreadFromId],
+    [renderMessageRow, separatorIds],
   );
   const listContentStyle = useMemo(
     () => ({

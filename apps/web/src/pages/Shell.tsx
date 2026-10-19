@@ -5179,9 +5179,6 @@ const Transcript = memo(function Transcript({
                     locale={i18n.locale || "en"}
                   />
                 ) : null}
-                {item.messages.some((message) => message.id === unreadFromId) ? (
-                  <UnreadSeparator />
-                ) : null}
                 <VoiceChatCard group={item} revealMessageId={scrollRequest?.messageId} />
               </div>
             );
