@@ -15,6 +15,11 @@ function sliceBetween(source: string, start: string, end: string) {
 }
 
 describe("Models settings form", () => {
+  it("keeps model counts out of provider rows", () => {
+    expect(screen).not.toContain('"{count} model"');
+    expect(screen).not.toContain('"{count} models"');
+  });
+
   it("aligns limit fields with the other inputs and drops the billing line", () => {
     const field = sliceBetween(screen, "function limitField(", "const compatConfig");
     expect(field).toContain("styles.sectionTitle");

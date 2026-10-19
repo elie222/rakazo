@@ -2853,6 +2853,21 @@ description: Prepare standup notes
     ).rejects.toThrow("Unknown model for that provider");
   });
 
+  it("rejects a compatible lookup if its secret disappears after validation", async () => {
+    const plaintext = compatibleSecret(["second-model"]);
+    const prisma = compatiblePrismaParts({ "ws-1": "space-model" }, plaintext);
+    prisma.secret.findFirst.mockResolvedValueOnce({ id: "secret-compat", ciphertext: plaintext });
+    prisma.secret.findFirst.mockResolvedValueOnce(null as never);
+    const executor = compatibleExecutor(prisma, plaintext);
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-1" },
+        COMPATIBLE_PROVIDER,
+        "second-model",
+      ),
+    ).rejects.toThrow("Unknown model for that provider");
+  });
+
   it("resolves a helper model enabled only in the connection's list", async () => {
     const plaintext = compatibleSecret(["space-model", "second-model"]);
     const executor = compatibleExecutor(
@@ -2944,7 +2959,7 @@ description: Prepare standup notes
     ).resolves.toMatchObject({ id: "model-y" });
   });
 
-  it("still resolves a catalog-listed compatible placeholder id", async () => {
+  it("rejects a catalog placeholder outside the enabled list", async () => {
     const plaintext = compatibleSecret(["space-model"]);
     const executor = compatibleExecutor(
       compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
@@ -2957,7 +2972,7 @@ description: Prepare standup notes
         COMPATIBLE_PROVIDER,
         "custom",
       ),
-    ).resolves.toMatchObject({ id: "custom", baseUrl: COMPATIBLE_BASE_URL });
+    ).rejects.toThrow("Unknown model for that provider");
   });
 
   it("keeps a bot's thinking level on a non-default enabled model", async () => {

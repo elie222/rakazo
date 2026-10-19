@@ -9150,14 +9150,18 @@ function assertCompatibleModelEnabled(
   requireDefaultForLegacy: boolean,
 ) {
   if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) return;
-  if (secret.kind !== "openai_compatible" || isCatalogModelChoice(provider, modelId)) return;
+  if (secret.kind !== "openai_compatible") return;
   if (secret.enabledModelIds !== undefined) {
     if (!enabledOpenAiCompatibleModelIds(secret, credential.defaultModel).includes(modelId)) {
       throw new UnavailableModelForAuthError("Unknown model for that provider");
     }
     return;
   }
-  if (requireDefaultForLegacy && credential.defaultModel !== modelId) {
+  if (
+    requireDefaultForLegacy &&
+    !isCatalogModelChoice(provider, modelId) &&
+    credential.defaultModel !== modelId
+  ) {
     throw new UnavailableModelForAuthError("Unknown model for that provider");
   }
 }
@@ -9208,6 +9212,9 @@ async function resolveModelKey(
       });
       if (!row) {
         if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
+        if (credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+          throw new UnavailableModelForAuthError("Unknown model for that provider");
+        }
         cloudflareGatewayProviderEnv({ provider });
         return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
       }

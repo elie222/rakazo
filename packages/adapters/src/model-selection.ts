@@ -390,10 +390,10 @@ export async function validateConnectedModelChoice(
   const credential = await findModelCredential(prisma, actor, provider);
   if (!credential) return "Connect that model provider first";
   if (!usableModelId(modelId)) return "Unknown model for that provider";
-  if (isCatalogModelChoice(provider, modelId)) return undefined;
-  // Free-form saved IDs only resolve at runtime for openai-compatible connections.
+  // Compatible catalog entries are placeholders, not evidence that this
+  // connection enables that id. Only legacy connections keep that exception.
   if (provider !== OPENAI_COMPATIBLE_PROVIDER_ID) {
-    return "Unknown model for that provider";
+    return isCatalogModelChoice(provider, modelId) ? undefined : "Unknown model for that provider";
   }
   const savedChoice = await prisma.spaceModelPreference.findFirst({
     where: {
@@ -406,6 +406,12 @@ export async function validateConnectedModelChoice(
   });
   if (savedChoice) return undefined;
   const secret = await loadModelSecret(prisma, secretStore, actor.userId, credential.secretId);
+  if (
+    secret?.kind === "openai_compatible" &&
+    secret.enabledModelIds === undefined &&
+    isCatalogModelChoice(provider, modelId)
+  )
+    return undefined;
   const enabled = secret && enabledOpenAiCompatibleModelIds(secret, credential.defaultModel);
   return enabled?.includes(modelId.trim()) ? undefined : "Unknown model for that provider";
 }

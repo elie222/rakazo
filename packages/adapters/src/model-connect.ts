@@ -6,6 +6,7 @@ import {
   canonicalPiProviderId,
   cloudflareGatewayRouting,
   isCloudflareAiGatewayProvider,
+  MAX_ENABLED_MODEL_IDS,
   modelOutputLeavesInputRoom,
 } from "@rakazo/contracts";
 import { enabledOpenAiCompatibleModelIds } from "./model-selection.js";
@@ -124,7 +125,13 @@ export function buildModelConnectPlaintext(
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(prepared.apiKey ? { apiKey: prepared.apiKey } : {}),
       ...(includeVisionModelIds ? { visionModelIds } : {}),
-      enabledModelIds,
+      // The default is always implicit in the effective list. At the input limit,
+      // keep the explicit selections rather than growing storage by one on every
+      // save from a different space.
+      enabledModelIds:
+        enabledModelIds.length > MAX_ENABLED_MODEL_IDS
+          ? enabledModelIds.filter((id) => id !== prepared.modelId)
+          : enabledModelIds,
       ...(maxImagesPerPrompt !== undefined ? { maxImagesPerPrompt } : {}),
     };
     return serializeModelSecret(secret);

@@ -1242,6 +1242,7 @@ export function createRouter(deps: RouterDeps) {
               });
             }
             if (
+              choice.provider !== OPENAI_COMPATIBLE_PROVIDER_ID &&
               catalog.some(
                 (entry) =>
                   entry.provider === canonicalPiProviderId(choice.provider) &&
@@ -1781,7 +1782,7 @@ export function createRouter(deps: RouterDeps) {
               item.provider === canonicalPiProviderId(input.modelProvider ?? "") &&
               item.id === input.modelId,
           );
-          if (!inCatalog) {
+          if (!inCatalog || input.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
             const error =
               input.modelProvider === OPENAI_COMPATIBLE_PROVIDER_ID
                 ? await validateConnectedModelChoice(
@@ -7119,13 +7120,6 @@ function nextRoutineDate(crons: string[], timezone: string): Date {
   return next;
 }
 
-/** Catalog-listed compatible ids pass today's gates without the connection's list. */
-function catalogCompatibleModelIds() {
-  return listPiCatalog()
-    .filter((entry) => entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID)
-    .map((entry) => entry.id);
-}
-
 /** The actor's active compatible bot, routine and backup pins matching `filter`. */
 async function compatibleModelPins(
   deps: RouterDeps,
@@ -7184,7 +7178,7 @@ async function assertNoDanglingModelPins(
       select: { spaceId: true, modelId: true },
     }),
     compatibleModelPins(deps, actor, {
-      modelId: { notIn: [...stored, ...catalogCompatibleModelIds()] },
+      modelId: { notIn: stored },
     }),
   ]);
   const defaults = new Map(preferences.map((row) => [row.spaceId, usableModelId(row.modelId)]));
@@ -7210,7 +7204,7 @@ async function assertCompatibleDefaultChange(
     throw new ORPCError("BAD_REQUEST", { message: "Unknown model for that provider" });
   }
   const outgoing = enabled.find((id) => id !== requested && !stored?.includes(id));
-  if (!outgoing || catalogCompatibleModelIds().includes(outgoing)) return;
+  if (!outgoing) return;
   const pins = await compatibleModelPins(deps, actor, {
     spaceId: actor.spaceId,
     modelId: outgoing,

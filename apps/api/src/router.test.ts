@@ -4292,8 +4292,14 @@ describe("openai-compatible enabled models", () => {
         findMany: vi.fn(async ({ where }: { where: { provider?: string } }) =>
           where.provider === compatible ? [state.credential] : [],
         ),
-        findFirst: vi.fn(async ({ where }: { where: { provider?: string } }) =>
-          where.provider === compatible ? state.credential : null,
+        findFirst: vi.fn(async ({ where }: { where: { provider?: string | { in: string[] } } }) =>
+          (
+            typeof where.provider === "string"
+              ? where.provider === compatible
+              : where.provider?.in.includes(compatible)
+          )
+            ? state.credential
+            : null,
         ),
         create: vi.fn(),
         update: vi.fn(async ({ data }: { data: Record<string, unknown> }) =>
@@ -4529,7 +4535,7 @@ describe("openai-compatible enabled models", () => {
     expect(secrets.put).toHaveBeenCalledOnce();
   });
 
-  it("never blocks a save for a pin on a catalog-listed compatible id", async () => {
+  it("refuses disabling a catalog placeholder that a bot pins", async () => {
     const { call } = fixture({
       plaintext: secretText(["m-a"]),
       defaultModel: "m-a",
@@ -4543,7 +4549,7 @@ describe("openai-compatible enabled models", () => {
       enabledModelIds: ["m-a"],
     });
 
-    expect(result.status).toBe(200);
+    expect(result).toEqual({ status: 400, message: refusal("Ada") });
   });
 
   it("refuses an old client's default change while a bot pins the old default", async () => {

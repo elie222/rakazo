@@ -128,6 +128,17 @@ const availableModel = listPiCatalog().find(
 )!;
 
 describe("model backup settings API", () => {
+  it("rejects a compatible catalog placeholder outside the enabled list", async () => {
+    const { call, spaceBackupModel } = setup({
+      compatible: { enabledModelIds: ["enabled"], defaultModel: "enabled" },
+    });
+    const { response } = await call("models/setBackups", [
+      { provider: "openai-compatible", modelId: "custom" },
+    ]);
+    expect(response.status).toBe(400);
+    expect(spaceBackupModel.createMany).not.toHaveBeenCalled();
+  });
+
   it("returns an empty list for a new user and reads only that user's active Space", async () => {
     const { call, spaceBackupModel } = setup({
       existing: [

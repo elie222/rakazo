@@ -1,6 +1,7 @@
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  ModelConnectInputSchema,
 } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -783,4 +784,41 @@ it("exposes saved Azure credentials under the catalog provider id", () => {
       defaultModel: "gpt-4o",
     }),
   ).toMatchObject({ provider: "azure", modelId: "gpt-4o" });
+});
+
+describe("compatible model selection limit", () => {
+  it("round-trips a full list across spaces without growing it or dropping selected models", () => {
+    const ids = Array.from({ length: 500 }, (_, index) => `model-${index}`);
+    let plaintext: string | undefined;
+    for (const modelId of ["space-a", "space-b", "space-c", "space-a"]) {
+      const input = ModelConnectInputSchema.parse({
+        provider: "openai-compatible",
+        baseUrl: "http://localhost:8000/v1",
+        modelId,
+        enabledModelIds: ids,
+      });
+      plaintext = buildModelConnectPlaintext(input, plaintext);
+      const parsed = parseModelSecret(plaintext);
+      expect(parsed.kind).toBe("openai_compatible");
+      if (parsed.kind !== "openai_compatible") throw new Error("Wrong secret kind");
+      expect(parsed.enabledModelIds).toEqual(ids);
+      const dto = modelCredentialDto(
+        {
+          id: "credential",
+          provider: input.provider,
+          label: "Local",
+          isDefault: true,
+          defaultModel: modelId,
+        },
+        plaintext,
+      );
+      expect(dto.enabledModelIds).toEqual([modelId, ...ids]);
+      expect(
+        ModelConnectInputSchema.safeParse({
+          ...input,
+          enabledModelIds: dto.enabledModelIds?.filter((id) => id !== modelId),
+        }).success,
+      ).toBe(true);
+    }
+  });
 });

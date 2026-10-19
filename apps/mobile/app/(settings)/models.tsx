@@ -1595,10 +1595,6 @@ export default function Models() {
                   ? (group.entries.find((entry) => entry.id === groupCredential.modelId)?.label ??
                     groupCredential.modelId)
                   : null;
-                const groupModelCount =
-                  (group.id === OPENAI_COMPATIBLE_PROVIDER_ID &&
-                    groupCredential?.enabledModelIds?.length) ||
-                  group.entries.length;
                 return (
                   <Pressable
                     key={group.id}
@@ -1609,12 +1605,9 @@ export default function Models() {
                   >
                     <View style={styles.providerCopy}>
                       <Text style={styles.providerName}>{group.name}</Text>
-                      <Text style={styles.secondary}>
-                        {savedModelLabel ??
-                          t(groupModelCount === 1 ? "{count} model" : "{count} models", {
-                            count: groupModelCount,
-                          })}
-                      </Text>
+                      {savedModelLabel ? (
+                        <Text style={styles.secondary}>{savedModelLabel}</Text>
+                      ) : null}
                     </View>
                     {group.id === provider ? <Checkmark /> : null}
                   </Pressable>
@@ -1635,11 +1628,6 @@ export default function Models() {
             >
               <View style={styles.providerCopy}>
                 <Text style={styles.providerName}>{group.name}</Text>
-                <Text style={styles.secondary}>
-                  {t(group.entries.length === 1 ? "{count} model" : "{count} models", {
-                    count: group.entries.length,
-                  })}
-                </Text>
               </View>
               {group.id === provider ? <Checkmark /> : null}
             </Pressable>

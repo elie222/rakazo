@@ -28,6 +28,26 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("bounds the count and length of compatible model selections", () => {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "default",
+    };
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, enabledModelIds: ["x".repeat(512)] }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, enabledModelIds: ["x".repeat(513)] }).success,
+    ).toBe(false);
+    expect(
+      ModelConnectInputSchema.safeParse({
+        ...input,
+        enabledModelIds: Array.from({ length: 501 }, (_, i) => `model-${i}`),
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts structured live activity progress", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },

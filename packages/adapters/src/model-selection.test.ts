@@ -1182,6 +1182,13 @@ describe("enabled openai-compatible models", () => {
     );
   });
 
+  it("enforces enabled ids even for the catalog placeholder, with legacy compatibility", async () => {
+    await expect(validate(compatiblePrisma("Y", listed), "custom")).resolves.toBe(
+      "Unknown model for that provider",
+    );
+    await expect(validate(compatiblePrisma("Y", legacy), "custom")).resolves.toBeUndefined();
+  });
+
   it("propagates an unavailable secret store", async () => {
     await expect(validate(compatiblePrisma("Y", "down"), "X")).rejects.toBeInstanceOf(
       SecretStoreUnavailableError,
