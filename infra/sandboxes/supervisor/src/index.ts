@@ -1238,6 +1238,11 @@ async function ensureManagedScreen(
     if (info.State?.StartedAt === screen.info.State?.StartedAt) {
       // Confirm the pending boot marker only after setup completes against the same boot.
       if (info.State?.StartedAt) computerScreenBoots.set(id, info.State.StartedAt);
+      try {
+        await rejoinComputerNetwork(info);
+      } catch (error) {
+        getLogger().error("computer network rejoin failed", error);
+      }
       return { ...screen, info };
     }
     clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
@@ -1480,6 +1485,17 @@ async function publishedScreenUrl(
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("computer screen port was not published");
+}
+
+// Control and observe address the computer on its own network. A recreated
+// supervisor container comes back on the Compose network only, and screen setup
+// (publishedScreenUrl) may never run again for an already-running computer, so
+// rejoin here before every use. Idempotent: one network inspect when attached.
+async function rejoinComputerNetwork(info: Docker.ContainerInspectInfo) {
+  if (screenNetworkMode !== "isolated") return;
+  const runtime = supervisorInfo ?? (await inspectSupervisorContainer());
+  const networkName = info.HostConfig.NetworkMode;
+  if (runtime && networkName) await connectComposeScreenPeers(networkName, runtime);
 }
 
 async function setInteractiveScreen(

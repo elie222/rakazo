@@ -336,6 +336,45 @@ describe("createRepos.listBots", () => {
     ]);
     expect(messageFindMany).toHaveBeenCalledTimes(4);
   });
+
+  it("dates the row by its newest message, not the bot's last settings write", async () => {
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          {
+            ...baseBot,
+            updatedAt: new Date("2026-08-21T09:00:00.000Z"),
+            thread: {
+              ...baseBot.thread,
+              messages: [
+                {
+                  seq: 2,
+                  createdAt: new Date("2026-08-20T10:30:00.000Z"),
+                  blocks: [{ kind: "text", text: "Latest answer" }],
+                },
+                {
+                  seq: 1,
+                  createdAt: new Date("2026-08-20T10:00:00.000Z"),
+                  blocks: [{ kind: "text", text: "Question" }],
+                },
+              ],
+            },
+          },
+        ]),
+      },
+      run: { findMany: vi.fn(async () => []) },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ updatedAt: "2026-08-20T10:30:00.000Z" }),
+    ]);
+  });
+
+  it("keeps the bot's own updatedAt for a chat with no messages", async () => {
+    await expect(reposFor(null).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ updatedAt: "2026-08-19T00:00:00.000Z" }),
+    ]);
+  });
 });
 
 describe("createRepos.listSpaceBotsForSpaces", () => {
@@ -354,7 +393,12 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           unread: true,
-          messages: [{ blocks: [{ kind: "text", text: "Waiting for a reply" }] }],
+          messages: [
+            {
+              createdAt: new Date("2026-08-19T12:00:00.000Z"),
+              blocks: [{ kind: "text", text: "Waiting for a reply" }],
+            },
+          ],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running" }],
@@ -377,10 +421,21 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         preview: "Waiting for a reply",
         status: "running",
         runErrorId: "run-failed",
-        updatedAt: "2026-08-20T00:00:00.000Z",
+        updatedAt: "2026-08-19T12:00:00.000Z",
       },
     ]);
     const query = findMany.mock.calls[0]![0];
+    expect(query.select.thread).toEqual(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          messages: {
+            orderBy: { seq: "desc" },
+            take: 1,
+            select: { blocks: true, createdAt: true },
+          },
+        }),
+      }),
+    );
     expect(query.where).toEqual(
       expect.objectContaining({ spaceId: { in: ["ws-2"] }, userId: actor.userId }),
     );

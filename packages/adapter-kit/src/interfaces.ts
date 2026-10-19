@@ -47,6 +47,7 @@ import type {
   MemorySearchResult,
   MemorySnapshot,
   MessagingInboundEvent,
+  MessagingInboundMessage,
   MessagingPlatformDescriptor,
   MessagingSendRequest,
   MessagingSendResult,
@@ -87,6 +88,8 @@ import type {
 } from "./types.js";
 
 export interface SandboxProvider {
+  /** True when every running minute is billed, so the active-lifetime cap applies. */
+  billsWhileRunning?(computer: ComputerRef): boolean;
   describe(): AdapterDescriptor<SandboxCapabilities>;
   /** Optional live browser on the same leased screen as observe/act. */
   pageBrowser?(
@@ -104,6 +107,11 @@ export interface SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef>;
+  /**
+   * The kind provision() would return now, without starting anything. Only providers that
+   * choose between kinds at provision time implement it.
+   */
+  provisionKind?(): Promise<ComputerRef["kind"]>;
   /** Read-only probe: true only when this exact reference is already running. */
   isRunning?(computer: ComputerRef, context: AdapterContext): Promise<boolean>;
   /** Perform idempotent provider setup after the lifecycle has captured the reference. */
@@ -397,10 +405,19 @@ export interface MessagingSurface {
   /** Resolve (or create) the 1:1 thread for a provider address. */
   openDirectThread(provider: string, address: string, context: AdapterContext): Promise<string>;
   /**
-   * Best-effort "…" typing bubbles for 1:1 chats. Cosmetic: never gates
-   * message delivery, and silently no-ops on platforms without support.
+   * Best-effort receipt for inbound message `handle`. Never gates delivery;
+   * no-ops on platforms without a receipt.
    */
-  sendTyping(threadId: string, context: AdapterContext): Promise<void>;
+  acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void>;
+  /**
+   * Up to `limit` messages posted in a thread before the `before` handle,
+   * oldest first, normalized like inbound events. Absent when no platform can.
+   */
+  fetchThreadHistory?(
+    threadId: string,
+    options: { before: string; limit: number },
+    context: AdapterContext,
+  ): Promise<MessagingInboundMessage[]>;
   /**
    * Start the surface eagerly instead of waiting for the first inbound
    * webhook or outbound send to touch it. Needed for adapters that pull

@@ -4,6 +4,21 @@ import { describe, expect, it } from "vitest";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
 describe("filterPickedAttachments", () => {
+  it("accepts picked MP3 audio but retains the 10 MiB cap", () => {
+    const candidate = {
+      name: "song.mp3",
+      mimeType: inferAttachmentMimeType("song.mp3", "audio/mp3"),
+      size: 10 * 1024 * 1024,
+      contentBase64: "YXVkaW8=",
+    };
+    const result = filterPickedAttachments(0, [
+      candidate,
+      { ...candidate, name: "large.mp3", size: candidate.size + 1 },
+    ]);
+    expect(result.attachments).toHaveLength(1);
+    expect(result.attachments[0]).toMatchObject({ name: "song.mp3", mimeType: "audio/mpeg" });
+    expect(result.skipped).toEqual([{ name: "large.mp3", reason: "over 10 MiB" }]);
+  });
   it("uses the server limit and falls back for older servers", () => {
     const candidate = {
       name: "large.txt",

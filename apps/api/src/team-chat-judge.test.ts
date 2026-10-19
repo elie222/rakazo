@@ -45,6 +45,7 @@ describe("team chat engagement judge", () => {
   it("persists cache-read and cache-write tokens from usage events", async () => {
     const create = vi.fn(async () => ({ id: "usage-1" }));
     const prisma = {
+      user: { findUnique: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       spaceModelPreference: { findFirst: vi.fn(async () => null) },
       usageRecord: { create },
@@ -113,4 +114,62 @@ describe("team chat engagement judge", () => {
       },
     });
   });
+
+  it.each(["saved", "lookup failure"])(
+    "judges with optional owner timezone (%s)",
+    async (state) => {
+      const findUnique = vi.fn(async () => ({ timezone: "Pacific/Auckland" }));
+      if (state === "lookup failure") {
+        findUnique.mockRejectedValueOnce(new Error("lookup unavailable"));
+      }
+      const prisma = {
+        user: { findUnique },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+        spaceModelPreference: { findFirst: vi.fn(async () => null) },
+        usageRecord: { create: vi.fn(async () => ({ id: "usage-1" })) },
+      };
+      let instructions = "";
+      const runtime = {
+        run: async function* (request: { instructions: string }) {
+          instructions = request.instructions;
+          yield { type: "done", text: '{"act":true,"reason":"Standing rule matches."}' };
+        },
+      };
+      const judge = new ModelTeamChatEngagementJudge({
+        prisma: prisma as never,
+        runtime: runtime as never,
+        secrets: {} as never,
+        deploymentProvider: "google",
+        deploymentModel: "gemini-3.8-flash",
+        deploymentModelKey: "test-key",
+      });
+
+      const decision = await judge.decide({
+        bot: {
+          id: "bot-1",
+          spaceId: "space-1",
+          userId: "user-1",
+          name: "Arthur",
+          modelProvider: null,
+          modelId: null,
+        },
+        channelId: "C1",
+        rules: "Only reply during work hours.",
+        messages: [],
+      });
+
+      expect(findUnique).toHaveBeenCalledWith({
+        where: { id: "user-1" },
+        select: { timezone: true },
+      });
+      expect(decision).toEqual({ act: true, reason: "Standing rule matches." });
+      if (state === "lookup failure") {
+        expect(instructions).toMatch(/Current date and time: .*Z \(UTC\)\./);
+        expect(instructions).not.toContain("Current date and time for the user:");
+      } else {
+        expect(instructions).toContain("Current date and time for the user:");
+        expect(instructions).toContain("(Pacific/Auckland)");
+      }
+    },
+  );
 });

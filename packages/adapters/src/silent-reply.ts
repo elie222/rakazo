@@ -1,6 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 
-/** Exact token a silent routine must emit as its entire final assistant reply. */
+/** Exact token a silent run must emit as its entire final assistant reply. */
 export const NO_RESPONSE = "NO_RESPONSE";
 
 function textBlocksOf(
@@ -24,7 +24,7 @@ function joinedText(blocks: readonly MessageBlock[]): string {
  */
 const SENTINEL_ONLY = /^(?:NO_RESPONSE\s*)+$/;
 
-/** True when trimmed text is only the silent-routine sentinel, once or repeated. Extra prose does not match. */
+/** True when trimmed text is only the silent-reply sentinel, once or repeated. Extra prose does not match. */
 export function isExactNoResponse(text: string): boolean {
   return SENTINEL_ONLY.test(text.trim());
 }

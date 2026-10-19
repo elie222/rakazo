@@ -42,9 +42,14 @@ export interface RailwaySandboxOptions {
   token: string;
   environmentId: string;
   maxWorkspaceFileBytes?: string;
+  region?: string;
 }
 
 export class RailwaySandboxProvider implements SandboxProvider {
+  billsWhileRunning(): boolean {
+    return true;
+  }
+
   private readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: WORKSPACE,
@@ -71,7 +76,9 @@ export class RailwaySandboxProvider implements SandboxProvider {
 
   private readonly maxWorkspaceFileBytes: number;
 
-  constructor({ maxWorkspaceFileBytes, ...options }: RailwaySandboxOptions) {
+  private readonly region: string | undefined;
+
+  constructor({ maxWorkspaceFileBytes, region, ...options }: RailwaySandboxOptions) {
     this.maxWorkspaceFileBytes = z.coerce
       .number()
       .int()
@@ -79,6 +86,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
       .max(Number.MAX_SAFE_INTEGER - 1)
       .default(64 * 1024 * 1024)
       .parse(maxWorkspaceFileBytes);
+    this.region = region;
     // Node's native WebSocket can recurse when the SDK closes a failed handshake.
     this.options = {
       ...options,
@@ -147,6 +155,7 @@ export class RailwaySandboxProvider implements SandboxProvider {
         // Railway public domains require the sandbox to join the private network.
         networkIsolation: "PRIVATE",
         domains: [{ port: SCREEN_PORT }],
+        ...(this.region && { region: this.region }),
       });
       createdId = sandbox.id;
       assertPrivateNetwork(sandbox);

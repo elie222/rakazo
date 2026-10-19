@@ -184,6 +184,8 @@ separate from the app and database. Recreate existing `ISOLATED` computers befor
 The desktop is installed on first start. Stopping a computer saves its portable
 home and destroys the sandbox; the next start restores that home in a new sandbox.
 Railway sandbox usage is metered.
+New computers start in Railway's default region. Set `RAILWAY_SANDBOX_REGION` (for example
+`asia-southeast1-eqsg3a`) to keep them near the API; a running computer moves on its next start.
 Workspace exports reject files above 64 MiB without truncating them. Set `RAILWAY_MAX_WORKSPACE_FILE_BYTES` to change this limit.
 
 ## Desktop and mobile

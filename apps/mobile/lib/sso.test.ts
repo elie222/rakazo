@@ -23,6 +23,8 @@ vi.mock("./session", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(fetchMobileJson).mockReset();
+  vi.mocked(replaceSessionTokenIfCurrent).mockReset().mockResolvedValue(true);
   vi.mocked(currentApiBase).mockReturnValue("https://rakazo.example.test");
   vi.mocked(currentSessionGeneration).mockReturnValue(1);
   vi.mocked(clearSpace).mockResolvedValue(true);
@@ -118,4 +120,18 @@ it("does not send a different server's token during authenticated linking", asyn
   await expect(continueWithSso("link")).rejects.toThrow();
   expect(fetchMobileJson).not.toHaveBeenCalled();
   expect(openAuthSessionAsync).not.toHaveBeenCalled();
+});
+
+it("explains technical session persistence failures", async () => {
+  vi.mocked(replaceSessionTokenIfCurrent).mockRejectedValueOnce(new Error("SecureStoreException"));
+  await expect(continueWithSso()).rejects.toThrow(
+    "Could not save your sign-in on this device. Try again.",
+  );
+});
+it("maps an unavailable session endpoint", async () => {
+  vi.mocked(fetchMobileJson).mockResolvedValueOnce({
+    response: new Response(null, { status: 503 }),
+    body: {},
+  });
+  await expect(continueWithSso()).rejects.toThrow("Could not reach the server");
 });
