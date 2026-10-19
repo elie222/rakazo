@@ -848,6 +848,15 @@ describe("Dictation web speech", () => {
     expect(instances[0]?.lang).toBe("nl-NL");
   });
 
+  it("keeps the browser language when the app has no catalog for it", async () => {
+    vi.stubGlobal("navigator", { language: "it-IT" });
+
+    const dictation = new Dictation();
+    await dictation.listen({ mode: "hold", onFinal: () => undefined });
+
+    expect(instances[0]?.lang).toBe("it-IT");
+  });
+
   it("rides out a pause in the middle of a sentence", async () => {
     vi.useFakeTimers();
     const onFinal = vi.fn();

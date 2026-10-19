@@ -118,6 +118,20 @@ export function speechLocaleTag(locale: UiLocale): string | undefined {
 }
 
 /**
+ * The language the recognizer listens in: the app's own language when the UI is
+ * in another one, and the browser's otherwise.
+ *
+ * English is also the app's fallback for a browser language it ships no catalog
+ * for, so an Italian browser would lose its Italian recognition by following the
+ * app. The browser's language stays in that case.
+ */
+export function recognitionLanguage(): string {
+  const browser = navigator.language || "en-US";
+  const tag = speechLocaleTag(getActiveUiLocale());
+  return tag && tag !== "en-US" ? tag : browser;
+}
+
+/**
  * Language hint for server transcription: the primary subtag of the app's own locale
  * (`es`, `pt`, `zh`). Undefined leaves detection to the provider.
  */
@@ -295,9 +309,7 @@ export class Dictation {
     let live = true;
     rec.continuous = true;
     rec.interimResults = true;
-    // The recognizer follows the language the app is set to, so a Dutch UI is
-    // dictated in Dutch; the browser language stays the fallback.
-    rec.lang = speechLocaleTag(getActiveUiLocale()) ?? (navigator.language || "en-US");
+    rec.lang = recognitionLanguage();
     // Chrome numbers results per session, so a restart starts over: keep the earlier text.
     let carried = "";
     let sessionStartedAt = Date.now();
