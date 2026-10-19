@@ -482,10 +482,9 @@ export async function* keepingAwake<T>(
   items: AsyncIterable<T>,
 ): AsyncIterable<T> {
   const idleMs = sandboxIdleMs();
-  const timer = setInterval(
-    () => void desktop.setTimeout(idleMs).catch(() => undefined),
-    Math.min(60_000, idleMs / 2),
-  );
+  const extend = () => void desktop.setTimeout(idleMs).catch(() => undefined);
+  extend();
+  const timer = setInterval(extend, Math.min(60_000, idleMs / 2));
   try {
     yield* items;
   } finally {

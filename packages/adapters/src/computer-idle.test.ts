@@ -243,6 +243,20 @@ describe("sandbox idle", () => {
     expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
+  it("stops a computer whose sandbox is gone before the background-work probe", async () => {
+    const gone = Object.assign(new Error("Paused sandbox computer not found"), {
+      name: "SandboxNotFoundError",
+    });
+    const harness = idleHarness({ probeError: gone, exportError: gone });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("stopped");
+    expect(harness.computer.providerRef).toBeNull();
+    expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
   it("retains the saved revision when the database transition after stopping fails", async () => {
     const harness = idleHarness();
     harness.prisma.computer.update.mockRejectedValueOnce(new Error("database unavailable"));
@@ -730,6 +744,7 @@ function idleHarness(
     backgroundWorkProbeCodes?: number[];
     backgroundWorkProbeFailed?: boolean;
     exportError?: Error;
+    probeError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
     runningSince?: Date | null;
     billsWhileRunning?: boolean;
@@ -783,6 +798,7 @@ function idleHarness(
     billsWhileRunning:
       options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
     execute: vi.fn(async function* () {
+      if (options.probeError) throw options.probeError;
       const code = backgroundWorkProbeCodes.shift() ?? options.backgroundWorkProbeCode ?? 1;
       if (code === 1 && !options.backgroundWorkProbeFailed) {
         yield { type: "stdout", data: "rakazo-background-idle\n" } as const;

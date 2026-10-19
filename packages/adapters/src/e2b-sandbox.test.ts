@@ -908,6 +908,8 @@ describe("keepingAwake", () => {
         for await (const item of keepingAwake(desktop, slow)) read.push(item);
       })();
 
+      await vi.advanceTimersByTimeAsync(0);
+      expect(desktop.setTimeout).toHaveBeenCalledTimes(1);
       await vi.advanceTimersByTimeAsync(200_000);
       expect(desktop.setTimeout).toHaveBeenCalledWith(180_000);
       expect(desktop.setTimeout.mock.calls.length).toBeGreaterThanOrEqual(2);
