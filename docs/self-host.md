@@ -424,6 +424,14 @@ encryption-key fallback also applies here. Anonymous access has service limits; 
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
+To choose [Keenable](https://docs.keenable.ai) instead, set `WEB_PROVIDER=keenable` and restart
+both the API and worker. The same bot tools then return search snippets and extracted page
+markdown through HTTPS MCP at `https://api.keenable.ai/mcp`, without an account or API key. This
+option sends search queries and requested page URLs to Keenable, which retrieves pages on its
+servers. Anonymous access is rate limited per IP address; set `KEENABLE_API_KEY` on the API and
+worker to send a key and lift those limits. Errors, per-bot disabled tools and the way back to
+the default work as described for Parallel.
+
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud

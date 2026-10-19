@@ -77,6 +77,7 @@ export * from "./installed-connectors.js";
 export * from "./integration-provider-settings.js";
 export * from "./jev-auto-review.js";
 export * from "./job-reconciler.js";
+export * from "./keenable-web.js";
 export * from "./keyless-http-web.js";
 export * from "./mcp-connector.js";
 export * from "./mcp-emulator.js";
