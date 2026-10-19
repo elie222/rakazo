@@ -1,9 +1,10 @@
 import type { ResolvedAppearance } from "@rakazo/ui-tokens";
 import { tokensForAppearance } from "@rakazo/ui-tokens";
+import type mermaid from "mermaid";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { chatMermaidConfig } from "./mermaid";
 
-type Mermaid = typeof import("mermaid")["default"];
+type Mermaid = typeof mermaid;
 
 // Mermaid is large. It loads the first time a message contains a diagram, never with the chat.
 let mermaidLoad: Promise<Mermaid> | undefined;
@@ -28,6 +29,8 @@ function inTurn<T>(task: () => Promise<T>): Promise<T> {
   renderQueue = run.catch(() => undefined);
   return run;
 }
+
+export const MERMAID_RENDER_TIMEOUT_MS = 15_000;
 
 const MAX_RENDERED = 64;
 // Source that does not parse is remembered as null, so it is not parsed again on every redraw.
@@ -59,23 +62,50 @@ export function renderMermaidSvg(
     // The same diagram twice on screen queues twice; the second takes the first one's drawing.
     const drawn = rendered.get(key);
     if (drawn !== undefined) return drawn;
-    const mermaid = await loadMermaid();
-    mermaid.initialize(chatMermaidConfig(tokensForAppearance(appearance), appearance));
+    const load = loadMermaid();
     const id = `rk-mermaid-${++renderCount}`;
-    let svg: string | null = null;
-    try {
-      if (await mermaid.parse(source, { suppressErrors: true })) {
-        svg = (await mermaid.render(id, source)).svg;
-      }
-    } catch {
-      svg = null;
-    } finally {
+    let loading = true;
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
       // Mermaid measures in a scratch node on <body>; a throw can leave it behind.
       document.getElementById(id)?.remove();
       document.getElementById(`d${id}`)?.remove();
+    };
+    const draw = async () => {
+      const mermaid = await load;
+      loading = false;
+      if (timedOut) return null;
+      mermaid.initialize(chatMermaidConfig(tokensForAppearance(appearance), appearance));
+      try {
+        if ((await mermaid.parse(source, { suppressErrors: true })) && !timedOut) {
+          return (await mermaid.render(id, source)).svg;
+        }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        cleanup();
+      }
+    };
+    try {
+      const svg = await Promise.race([
+        draw(),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => {
+            timedOut = true;
+            if (loading && mermaidLoad === load) mermaidLoad = undefined;
+            resolve(null);
+          }, MERMAID_RENDER_TIMEOUT_MS);
+        }),
+      ]);
+      // A later mount may retry a timed-out chunk load or render.
+      if (!timedOut) remember(key, svg);
+      return svg;
+    } finally {
+      clearTimeout(timer);
+      cleanup();
     }
-    remember(key, svg);
-    return svg;
   });
 }
 
