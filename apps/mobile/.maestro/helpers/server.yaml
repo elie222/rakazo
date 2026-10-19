@@ -11,8 +11,9 @@ appId: com.rakazo.app
     id: "server-address"
 - eraseText
 - inputText: ${RAKAZO_MOBILE_API_URL}
-- hideKeyboard
-- tapOn: "Save"
+# Android form sheets can omit native-stack header buttons. Submit the URL
+# through TextInput.onSubmitEditing while its keyboard remains focused.
+- pressKey: Enter
 - extendedWaitUntil:
     notVisible:
       id: "server-address"

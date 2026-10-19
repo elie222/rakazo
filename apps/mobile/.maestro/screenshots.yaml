@@ -112,6 +112,9 @@ tags:
 - takeScreenshot: "13-integrations"
 - tapOn:
     id: "integrations-advanced"
+- scrollUntilVisible:
+    element: "Add MCP server"
+    direction: DOWN
 - assertVisible: "Add MCP server"
 - takeScreenshot: "14-integrations-advanced"
 
@@ -151,7 +154,7 @@ tags:
 - assertVisible: "Copy"
 - assertNotVisible: "Speak message"
 - tapOn: "Reply"
-- assertVisible: "Replying to"
+- assertVisible: "Cancel reply"
 - tapOn: "Cancel reply"
 - tapOn: "Bot actions"
 - assertVisible: "Clear conversation"

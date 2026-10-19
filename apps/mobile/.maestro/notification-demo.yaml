@@ -86,3 +86,5 @@ name: Android live working status demonstration
 - assertNotVisible: "Researcher is working"
 - takeScreenshot: "31-live-working-stopped"
 - stopRecording
+# Leave the next flow an unobscured app window.
+- back

@@ -157,7 +157,7 @@ async function runFlow(flow: string, fixture: Awaited<ReturnType<typeof seedFixt
       "-e",
       `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
       "-e",
-      `RAKAZO_NOTIFICATION_VIDEO=${path.join(REPORT_DIR, "notification-demo")}`,
+      "RAKAZO_NOTIFICATION_VIDEO=notification-demo",
       "-e",
       `RAKAZO_EXPAND_NOTIFICATIONS_URL=${EXPAND_NOTIFICATIONS_URL}`,
       path.join(FLOW_DIR, `${flow}.yaml`),
