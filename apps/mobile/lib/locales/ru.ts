@@ -81,6 +81,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Medium: "Средний",
   Minimal: "Минимальный",
   "Open web app": "Открыть веб-приложение",
+  "Open marketplace": "Открыть каталог плагинов",
+  "Could not open marketplace": "Не удалось открыть каталог плагинов",
   "Project ID": "ID проекта",
   Reconnecting: "Повторное подключение",
   "Recovering Team Computer": "Восстановление компьютера команды",

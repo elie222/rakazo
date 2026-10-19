@@ -444,6 +444,10 @@ msgstr "添加 MCP 服务器"
 msgid "Add OpenAPI"
 msgstr "添加 OpenAPI"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Add plugin"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "添加远程 MCP 服务器"
@@ -472,6 +476,7 @@ msgstr "添加触发器"
 msgid "Added"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -773,6 +778,7 @@ msgstr "头像"
 
 #: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Back"
@@ -929,6 +935,7 @@ msgstr "无法读取图像"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1120,6 +1127,10 @@ msgstr "关闭图片预览"
 msgid "Close integrations"
 msgstr "关闭集成"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Close marketplace"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Close MCP servers"
 msgstr "关闭 MCP 服务器"
@@ -1272,6 +1283,10 @@ msgstr "确认删除"
 msgid "Confirm password"
 msgstr "确认密码"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Confirm removal"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "请确认此浏览器会话可以访问该 URL，然后重新测试。"
@@ -1281,6 +1296,7 @@ msgid "Confirmations"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1313,6 +1329,7 @@ msgid "Connect Treg"
 msgstr "连接 Treg"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1331,6 +1348,7 @@ msgid "Connected. Its tools are available from your next message."
 msgstr "已连接，下一条消息起即可使用其工具。"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1556,9 +1574,17 @@ msgstr "无法下载 {name}。请重试。"
 msgid "Could not download file"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not enable tools"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "无法安装连接器"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not install plugin"
+msgstr ""
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not list files"
@@ -1601,10 +1627,18 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load installed plugins"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "无法加载集成"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load marketplace"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not load MCP servers"
@@ -1672,6 +1706,10 @@ msgstr "无法打开终端"
 msgid "Could not play a test clip"
 msgstr "无法播放测试片段"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not preview plugin"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "无法连接到模型服务器。"
@@ -1683,6 +1721,10 @@ msgstr "无法连接到模型服务器。"
 msgid "Could not reach the server"
 msgstr "无法连接服务器"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not refresh installed plugins"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1691,6 +1733,10 @@ msgstr "无法移除"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "无法移除连接器"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not remove plugin"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -1795,6 +1841,10 @@ msgstr "无法发送重置邮件"
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "无法发送"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not sign in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -2129,6 +2179,10 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "正在断开…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Discover"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -2241,6 +2295,10 @@ msgstr "该邮箱不允许注册"
 #: src/lib/user-error.ts
 msgid "Email verification required"
 msgstr "需要验证邮箱"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Enabled for this bot"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2660,6 +2718,14 @@ msgstr "沿用默认"
 msgid "Inputs"
 msgstr "输入"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Install from GitHub"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Installed"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "实例 API 密钥"
@@ -2835,6 +2901,10 @@ msgstr "正在加载动态…"
 msgid "Loading integrations…"
 msgstr "正在加载集成…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Loading marketplace…"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
 msgstr "正在加载记忆设置…"
@@ -2844,6 +2914,7 @@ msgid "Loading model catalog…"
 msgstr "正在加载模型目录…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/pages/MarketplaceOverlay.tsx
 msgid "Loading preview…"
 msgstr "正在加载预览…"
 
@@ -2943,6 +3014,11 @@ msgstr "标为已读"
 msgid "Mark as Unread"
 msgstr "标为未读"
 
+#: src/pages/MarketplaceOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Marketplace"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -2975,6 +3051,7 @@ msgstr "最大输出 token 数"
 msgid "MCP endpoint"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "MCP servers"
 msgstr "MCP 服务器"
@@ -3334,6 +3411,14 @@ msgstr "没有可用的模型目录。"
 msgid "No models listed."
 msgstr "未列出模型。"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins found"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins installed"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "No providers found."
 msgstr "未找到提供方。"
@@ -3354,6 +3439,10 @@ msgstr ""
 #: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
 msgstr "还没有运行记录"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No sign-in required"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -3656,6 +3745,14 @@ msgstr "播放中…"
 msgid "Plugin"
 msgstr "插件"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin GitHub URL"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin installed. Could not load connection status."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "在聊天中发布“无变化”"
@@ -3663,6 +3760,10 @@ msgstr "在聊天中发布“无变化”"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST 到"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Preview"
+msgstr ""
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -3744,6 +3845,7 @@ msgstr ""
 msgid "Recent"
 msgstr "最近"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Reconnect"
 msgstr ""
@@ -3890,6 +3992,10 @@ msgstr "移除提及 {0}"
 msgid "Remove message trigger"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Remove plugin"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove schedule"
 msgstr "移除计划"
@@ -4023,6 +4129,7 @@ msgstr ""
 
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
@@ -4032,6 +4139,10 @@ msgstr "重试"
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "Retry now"
 msgstr "立即重试"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Retry preview"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Retry screen"
@@ -4223,6 +4334,10 @@ msgstr ""
 msgid "Search models"
 msgstr "搜索模型"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Search plugins"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Search providers"
 msgstr "搜索提供方"
@@ -4372,6 +4487,7 @@ msgstr ""
 msgid "Show list"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Show more"
 msgstr "显示更多"
@@ -4402,6 +4518,7 @@ msgstr ""
 
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
@@ -4431,6 +4548,10 @@ msgstr "请使用订阅登录，或改为测试 API 密钥。"
 msgid "Sign up"
 msgstr "注册"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Sign-in cancelled. Try again."
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
 msgstr ""
@@ -4439,6 +4560,14 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
 msgstr "技能 {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills apply to all your bots. MCP tools require separate approval."
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
@@ -4453,6 +4582,10 @@ msgstr "跳过或使用部署密钥"
 #: src/pages/Shell.tsx
 msgid "Skipped {0}"
 msgstr "已跳过 {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skipped components"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Slack message"
@@ -4469,6 +4602,10 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "软件更新"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Some registries are unavailable"
+msgstr ""
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -5034,6 +5171,10 @@ msgstr "请使用“连接”验证密钥。"
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Use in this bot"
 msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx

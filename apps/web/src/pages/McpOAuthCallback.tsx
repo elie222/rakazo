@@ -2,7 +2,11 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import { Button } from "@rakazo/ui-web";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
+import {
+  consumeMcpOAuthReturnPath,
+  MCP_OAUTH_CHANNEL,
+  mcpOAuthReturnPath,
+} from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -17,6 +21,7 @@ export function McpOAuthCallbackPage() {
   const [params] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [returnPath] = useState(mcpOAuthReturnPath);
   const handledState = useRef<string | null>(null);
   useEffect(() => {
     const code = params.get("code");
@@ -30,6 +35,7 @@ export function McpOAuthCallbackPage() {
     void rpc.mcp.oauth
       .complete({ sessionId: state, code, state })
       .then(() => {
+        consumeMcpOAuthReturnPath();
         const channel = new BroadcastChannel(POPUP_NAME);
         channel.postMessage({ type: "mcp-oauth-complete" });
         channel.close();
@@ -38,10 +44,12 @@ export function McpOAuthCallbackPage() {
           window.close();
           return;
         }
-        navigate("/app?mcp_oauth=connected", { replace: true });
+        navigate(returnPath === "/app" ? "/app?mcp_oauth=connected" : returnPath, {
+          replace: true,
+        });
       })
       .catch((err: unknown) => setError(errorText(err, t`Could not complete OAuth`)));
-  }, [navigate, params, t]);
+  }, [navigate, params, returnPath, t]);
   const showReturn = Boolean(error) && window.name !== POPUP_NAME;
   return (
     <div className="grid min-h-screen place-items-center bg-background p-6 text-center">
@@ -57,7 +65,14 @@ export function McpOAuthCallbackPage() {
         </div>
         {error ? <p className="mt-2 max-w-md text-sm text-muted-foreground">{error}</p> : null}
         {showReturn ? (
-          <Button type="button" className="mt-5" onClick={() => navigate("/app")}>
+          <Button
+            type="button"
+            className="mt-5"
+            onClick={() => {
+              consumeMcpOAuthReturnPath();
+              navigate(returnPath);
+            }}
+          >
             <Trans>Return to Rakazo</Trans>
           </Button>
         ) : (

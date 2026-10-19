@@ -2,6 +2,27 @@ import { rpc } from "./rpc";
 
 export const MCP_OAUTH_CHANNEL = "rakazo-mcp-oauth";
 const MCP_OAUTH_TIMEOUT_MS = 2 * 60 * 1000;
+const MARKETPLACE_RETURN_KEY = "rakazo:mcp-marketplace-return";
+
+/** A fixed same-origin return intent, never an arbitrary redirect URL. */
+export function mcpOAuthReturnPath(): string {
+  try {
+    return window.sessionStorage.getItem(MARKETPLACE_RETURN_KEY) === "1"
+      ? "/app?marketplace=installed"
+      : "/app";
+  } catch {
+    return "/app";
+  }
+}
+export function consumeMcpOAuthReturnPath(): string {
+  const target = mcpOAuthReturnPath();
+  try {
+    window.sessionStorage.removeItem(MARKETPLACE_RETURN_KEY);
+  } catch {
+    /* Storage is optional. */
+  }
+  return target;
+}
 
 export type McpOauthResult =
   | "connected"
@@ -15,12 +36,21 @@ export type McpOauthResult =
  *
  * The BroadcastChannel (not window.opener) is the completion signal because
  * provider login pages with COOP sever the opener link. */
-export async function connectMcpOauth(serverId: string): Promise<McpOauthResult> {
+export async function connectMcpOauth(
+  serverId: string,
+  options: { returnToMarketplace?: boolean } = {},
+): Promise<McpOauthResult> {
   const started = await rpc.mcp.oauth.begin({
     serverId,
     redirectUri: `${window.location.origin}/mcp/oauth/callback`,
   });
   if (started.status !== "authorization_required") return started.status;
+  try {
+    if (options.returnToMarketplace) window.sessionStorage.setItem(MARKETPLACE_RETURN_KEY, "1");
+    else window.sessionStorage.removeItem(MARKETPLACE_RETURN_KEY);
+  } catch {
+    /* OAuth still works when session storage is unavailable. */
+  }
   const popup = window.open(
     started.authorizationUrl,
     MCP_OAUTH_CHANNEL,
@@ -42,6 +72,7 @@ export async function connectMcpOauth(serverId: string): Promise<McpOauthResult>
       window.clearInterval(pollTimer);
       window.clearTimeout(timeoutTimer);
       channel.close();
+      consumeMcpOAuthReturnPath();
       resolve(result);
     };
     pollTimer = window.setInterval(() => {

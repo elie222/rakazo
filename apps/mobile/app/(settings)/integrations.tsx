@@ -1,4 +1,9 @@
-import type { CapabilityInstall, Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import type {
+  CapabilityInstall,
+  Connection,
+  ConnectionCatalogItem,
+  IntegrationSetupState,
+} from "@rakazo/contracts";
 import {
   abortableDelay,
   buildFeaturedConnectorTiles,
@@ -711,6 +716,20 @@ export default function Integrations() {
     );
   }
 
+  async function openMarketplace() {
+    const focus = focusGeneration.current;
+    try {
+      const setup = await rpc<IntegrationSetupState>("integrationSetup/get");
+      if (!mounted.current || focusGeneration.current !== focus) return;
+      const url = new URL("/app", setup.webUrl);
+      url.searchParams.set("marketplace", "1");
+      await Linking.openURL(url.toString());
+    } catch (err) {
+      if (mounted.current && focusGeneration.current === focus)
+        setCatalogError(errorText(err, t("Could not open marketplace")));
+    }
+  }
+
   return (
     <SafeAreaView edges={["bottom"]} style={styles.screen}>
       <ScrollView
@@ -718,6 +737,14 @@ export default function Integrations() {
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
       >
+        {!detailItem ? (
+          <NativeActionButton
+            label={t("Open marketplace")}
+            fill={false}
+            prominence="secondary"
+            onPress={() => void openMarketplace()}
+          />
+        ) : null}
         {!detailItem ? (
           <TextInput
             value={query}

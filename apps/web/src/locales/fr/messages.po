@@ -444,6 +444,10 @@ msgstr "Ajouter un serveur MCP"
 msgid "Add OpenAPI"
 msgstr "Ajouter OpenAPI"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Add plugin"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Add remote MCP server"
 msgstr "Ajouter un serveur MCP distant"
@@ -472,6 +476,7 @@ msgstr "Ajouter un déclencheur"
 msgid "Added"
 msgstr "Ajouté"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Adding…"
@@ -773,6 +778,7 @@ msgstr "Avatars"
 
 #: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 msgid "Back"
@@ -929,6 +935,7 @@ msgstr "Ne peut pas lire les images"
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/Artifacts.tsx
 #: src/pages/KnowledgeSection.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -1120,6 +1127,10 @@ msgstr "Fermer l'aperçu de l'image"
 msgid "Close integrations"
 msgstr "Fermer les intégrations"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Close marketplace"
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Close MCP servers"
 msgstr "Fermer les serveurs MCP"
@@ -1272,6 +1283,10 @@ msgstr "Confirmer la suppression"
 msgid "Confirm password"
 msgstr "Confirmer le mot de passe"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Confirm removal"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Confirm the URL is reachable from this browser session, then test again."
 msgstr "Confirmez que l'URL est accessible depuis cette session du navigateur, puis testez à nouveau."
@@ -1281,6 +1296,7 @@ msgid "Confirmations"
 msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
@@ -1313,6 +1329,7 @@ msgid "Connect Treg"
 msgstr "Connecter Treg"
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpOAuthCallback.tsx
 #: src/pages/MemorySettingsOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
@@ -1331,6 +1348,7 @@ msgid "Connected. Its tools are available from your next message."
 msgstr "Connecté. Ses outils sont disponibles dès votre prochain message."
 
 #: src/components/integrations/IntegrationSetup.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/memory-providers/HonchoSettingsForm.tsx
 #: src/pages/memory-providers/SerenitySettingsForm.tsx
@@ -1556,9 +1574,17 @@ msgstr "Impossible de télécharger {name}. Réessayez."
 msgid "Could not download file"
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not enable tools"
+msgstr ""
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Impossible d'installer le connecteur"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not install plugin"
+msgstr ""
 
 #: src/components/computer/FilesApp.tsx
 msgid "Could not list files"
@@ -1601,10 +1627,18 @@ msgstr ""
 msgid "Could not load credentials."
 msgstr ""
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load installed plugins"
+msgstr ""
+
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not load integrations"
 msgstr "Impossible de charger les intégrations"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not load marketplace"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not load MCP servers"
@@ -1672,6 +1706,10 @@ msgstr "Impossible d'ouvrir le terminal"
 msgid "Could not play a test clip"
 msgstr "Impossible de lire un extrait de test"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not preview plugin"
+msgstr ""
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Impossible de joindre le serveur du modèle."
@@ -1683,6 +1721,10 @@ msgstr "Impossible de joindre le serveur du modèle."
 msgid "Could not reach the server"
 msgstr "Impossible d'atteindre le serveur"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not refresh installed plugins"
+msgstr ""
+
 #: src/pages/KnowledgeSection.tsx
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not remove"
@@ -1691,6 +1733,10 @@ msgstr "Impossible de retirer"
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not remove connector"
 msgstr "Impossible de retirer le connecteur"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not remove plugin"
+msgstr ""
 
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Could not remove rule"
@@ -1795,6 +1841,10 @@ msgstr "Impossible d'envoyer l'e-mail de réinitialisation"
 #: src/lib/call-session.ts
 msgid "Could not send that"
 msgstr "Impossible d'envoyer cela"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Could not sign in"
+msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Could not start OAuth"
@@ -2129,6 +2179,10 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Déconnexion en cours…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Discover"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
@@ -2241,6 +2295,10 @@ msgstr "Cette adresse e-mail ne peut pas s’inscrire"
 #: src/lib/user-error.ts
 msgid "Email verification required"
 msgstr "Vérification de l’e-mail requise"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Enabled for this bot"
+msgstr ""
 
 #: src/pages/BillingSettingsPanel.tsx
 msgid "Ends {day}"
@@ -2660,6 +2718,14 @@ msgstr "Hériter du défaut"
 msgid "Inputs"
 msgstr "Entrées"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Install from GitHub"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Installed"
+msgstr ""
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "Clé API de l'instance"
@@ -2835,6 +2901,10 @@ msgstr "Chargement de l'activité…"
 msgid "Loading integrations…"
 msgstr "Chargement des intégrations…"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Loading marketplace…"
+msgstr ""
+
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Loading memory settings…"
 msgstr "Chargement des paramètres de mémoire…"
@@ -2844,6 +2914,7 @@ msgid "Loading model catalog…"
 msgstr "Chargement du catalogue de modèles…"
 
 #: src/components/ArtifactFileCard.tsx
+#: src/pages/MarketplaceOverlay.tsx
 msgid "Loading preview…"
 msgstr "Chargement de l'aperçu…"
 
@@ -2943,6 +3014,11 @@ msgstr "Marquer comme lu"
 msgid "Mark as Unread"
 msgstr "Marquer comme non lu"
 
+#: src/pages/MarketplaceOverlay.tsx
+#: src/pages/Shell.tsx
+msgid "Marketplace"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "Max"
@@ -2975,6 +3051,7 @@ msgstr "Jetons de sortie maximum"
 msgid "MCP endpoint"
 msgstr "Point de terminaison MCP"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "MCP servers"
 msgstr "Serveurs MCP"
@@ -3334,6 +3411,14 @@ msgstr "Aucun catalogue de modèles disponible."
 msgid "No models listed."
 msgstr "Aucun modèle listé."
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins found"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No plugins installed"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "No providers found."
 msgstr "Aucun fournisseur trouvé."
@@ -3354,6 +3439,10 @@ msgstr ""
 #: src/pages/RoutineRunHistory.tsx
 msgid "No runs yet"
 msgstr "Aucune exécution pour le moment"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "No sign-in required"
+msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
 msgid "No skills yet"
@@ -3656,6 +3745,14 @@ msgstr "Lecture en cours…"
 msgid "Plugin"
 msgstr "Plugin"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin GitHub URL"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Plugin installed. Could not load connection status."
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Post \"No changes\" in chat"
 msgstr "Publier « Aucun changement » dans le chat"
@@ -3663,6 +3760,10 @@ msgstr "Publier « Aucun changement » dans le chat"
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
 msgstr "POST vers"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Preview"
+msgstr ""
 
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
@@ -3744,6 +3845,7 @@ msgstr "Rappel uniquement"
 msgid "Recent"
 msgstr "Récent"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Reconnect"
 msgstr ""
@@ -3890,6 +3992,10 @@ msgstr "Retirer la mention {0}"
 msgid "Remove message trigger"
 msgstr "Retirer le déclencheur de message"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Remove plugin"
+msgstr ""
+
 #: src/pages/RoutineEditor.tsx
 msgid "Remove schedule"
 msgstr "Retirer la planification"
@@ -4023,6 +4129,7 @@ msgstr "Restauration de votre espace de travail"
 
 #: src/components/AccountAccess.tsx
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
@@ -4032,6 +4139,10 @@ msgstr "Réessayer"
 #: src/pages/PeerMessagesOverlay.tsx
 msgid "Retry now"
 msgstr "Réessayer maintenant"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Retry preview"
+msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Retry screen"
@@ -4223,6 +4334,10 @@ msgstr "Rechercher sur integrations.sh"
 msgid "Search models"
 msgstr "Rechercher des modèles"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Search plugins"
+msgstr ""
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Search providers"
 msgstr "Rechercher des fournisseurs"
@@ -4372,6 +4487,7 @@ msgstr "Afficher l'ordinateur"
 msgid "Show list"
 msgstr "Afficher la liste"
 
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Show more"
 msgstr "Afficher plus"
@@ -4402,6 +4518,7 @@ msgstr ""
 
 #: src/lib/localized-provider-hint.ts
 #: src/pages/Auth.tsx
+#: src/pages/MarketplaceOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 #: src/pages/Welcome.tsx
@@ -4431,6 +4548,10 @@ msgstr "Connectez-vous avec l'abonnement, ou testez la clé API à la place."
 msgid "Sign up"
 msgstr "S'inscrire"
 
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Sign-in cancelled. Try again."
+msgstr ""
+
 #: src/pages/shell/bot-credentials.tsx
 msgid "Site"
 msgstr ""
@@ -4439,6 +4560,14 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Skill {0}"
 msgstr "Compétence {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills"
+msgstr ""
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skills apply to all your bots. MCP tools require separate approval."
+msgstr ""
 
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
@@ -4453,6 +4582,10 @@ msgstr "Passer ou clé de déploiement"
 #: src/pages/Shell.tsx
 msgid "Skipped {0}"
 msgstr "Ignoré {0}"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Skipped components"
+msgstr ""
 
 #: src/pages/RoutineEditor.tsx
 msgid "Slack message"
@@ -4469,6 +4602,10 @@ msgstr "Glisser vers le haut pour verrouiller"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Software update"
 msgstr "Mise à jour logicielle"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Some registries are unavailable"
+msgstr ""
 
 #: src/App.tsx
 #: src/lib/user-error.ts
@@ -5035,6 +5172,10 @@ msgstr "Utilisez Connecter pour vérifier la clé."
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Use default guidance"
 msgstr "Utiliser les instructions par défaut"
+
+#: src/pages/MarketplaceOverlay.tsx
+msgid "Use in this bot"
+msgstr ""
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Use Protected input for passwords."

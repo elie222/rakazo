@@ -109,6 +109,8 @@ export * from "./pi-runtime.js";
 export * from "./pi-session.js";
 export { shutdownPiTelemetry } from "./pi-telemetry.js";
 export * from "./pipedream-connector.js";
+export * from "./plugin-connectors.js";
+export * from "./plugin-marketplace.js";
 export * from "./private-endpoint.js";
 export * from "./railway-sandbox.js";
 export * from "./realtime.js";

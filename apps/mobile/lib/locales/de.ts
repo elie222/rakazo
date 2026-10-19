@@ -510,6 +510,8 @@ export const DE_MESSAGES: Record<string, string> = {
   "Finish MCP authorization in the web app.": "Schließe die MCP-Autorisierung in der Web-App ab.",
   "Get credentials": "Zugangsdaten abrufen",
   "Open web app": "Web-App öffnen",
+  "Open marketplace": "Marktplatz öffnen",
+  "Could not open marketplace": "Marktplatz konnte nicht geöffnet werden",
   "Project ID": "Projekt-ID",
   "Set up Executor on your server in the web app.":
     "Richte Executor auf deinem Server in der Web-App ein.",
