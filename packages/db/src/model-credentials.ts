@@ -1,4 +1,4 @@
-import { canonicalPiProviderId, storedPiProviderIds, usableModelId } from "@rakazo/contracts";
+import { usableModelId } from "@rakazo/contracts";
 import type { PrismaClient } from "./client.js";
 
 export const newestCredentialOrder = [
@@ -8,11 +8,6 @@ export const newestCredentialOrder = [
 ];
 
 export const newestModelCredentialOrder = newestCredentialOrder;
-
-export function modelCredentialProviderFilter(provider: string): string | { in: string[] } {
-  const ids = storedPiProviderIds(provider);
-  return ids.length === 1 ? provider : { in: ids };
-}
 
 type ModelCredentialScope = { userId: string; spaceId: string };
 
@@ -102,7 +97,7 @@ export function findNewestUserModelCredential(
   provider: string,
 ) {
   return prisma.userModelCredential.findFirst({
-    where: { userId, provider: modelCredentialProviderFilter(provider) },
+    where: { userId, provider },
     orderBy: newestModelCredentialOrder,
   });
 }
@@ -162,11 +157,7 @@ export function chooseModelCredential<C extends OrderedCredential>(input: {
   | null {
   const requestedModelId = usableModelId(input.modelId);
   const preferences = input.preferences
-    .filter(
-      (preference) =>
-        canonicalPiProviderId(preference.credential.provider) ===
-        canonicalPiProviderId(input.provider),
-    )
+    .filter((preference) => preference.credential.provider === input.provider)
     .sort(comparePreferenceOrder);
   if (requestedModelId) {
     const matching = preferences.find((preference) => preference.modelId === requestedModelId);
@@ -175,9 +166,7 @@ export function chooseModelCredential<C extends OrderedCredential>(input: {
   const providerPreference = preferences[0];
   if (providerPreference) return { source: "preference", preference: providerPreference };
   const credential = input.credentials
-    .filter(
-      (item) => canonicalPiProviderId(item.provider) === canonicalPiProviderId(input.provider),
-    )
+    .filter((item) => item.provider === input.provider)
     .sort(compareCredentialOrder)[0];
   return credential ? { source: "credential", credential } : null;
 }
@@ -205,17 +194,10 @@ export function defaultModelCredentialCandidates<C extends OrderedCredential>(in
 }): C[] {
   const requestedModelId = usableModelId(input.modelId);
   const preferences = input.preferences
-    .filter(
-      (preference) =>
-        canonicalPiProviderId(preference.credential.provider) ===
-        canonicalPiProviderId(input.provider),
-    )
+    .filter((preference) => preference.credential.provider === input.provider)
     .sort(comparePreferenceOrder);
   const credentials = input.credentials
-    .filter(
-      (credential) =>
-        canonicalPiProviderId(credential.provider) === canonicalPiProviderId(input.provider),
-    )
+    .filter((credential) => credential.provider === input.provider)
     .sort(compareCredentialOrder);
 
   if (requestedModelId) {
@@ -281,12 +263,12 @@ export async function findModelCredential(
         where: {
           spaceId: scope.spaceId,
           userId: scope.userId,
-          credential: { provider: modelCredentialProviderFilter(provider) },
+          credential: { provider },
         },
         include: { credential: true },
       }),
       prisma.userModelCredential.findMany({
-        where: { userId: scope.userId, provider: modelCredentialProviderFilter(provider) },
+        where: { userId: scope.userId, provider },
       }),
     ]);
     return credentialFromChoice(
@@ -303,7 +285,7 @@ export async function findModelCredential(
         spaceId: scope.spaceId,
         userId: scope.userId,
         modelId: requestedModelId,
-        credential: { provider: modelCredentialProviderFilter(provider) },
+        credential: { provider },
       },
       include: { credential: true },
       orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],
@@ -318,7 +300,7 @@ export async function findModelCredential(
     where: {
       spaceId: scope.spaceId,
       userId: scope.userId,
-      credential: { provider: modelCredentialProviderFilter(provider) },
+      credential: { provider },
     },
     include: { credential: true },
     orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }, { id: "desc" }],

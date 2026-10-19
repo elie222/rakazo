@@ -17,7 +17,6 @@
     "db:generate": "pnpm --filter @rakazo/db generate",
     "db:migrate": "pnpm --filter @rakazo/db migrate",
     "sandbox:build": "docker build -t rakazo/computer:local infra/sandboxes/computer",
-    "sandbox:e2b-template": "tsx packages/adapters/src/cli/build-e2b-template.ts",
     "test": "vitest run",
     "test:compose-smoke": "bash infra/compose/run-smokes.sh",
     "test:integration": "tsx packages/testkit/src/cli/harness.ts --integration",
@@ -36,13 +35,13 @@
     "compose:down": "docker compose --env-file .env -f infra/compose/docker-compose.yml down -v"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
-    "@types/node": "24.19.2",
+    "@biomejs/biome": "2.5.13",
+    "@types/node": "24.13.3",
     "cross-env": "10.1.0",
-    "tsx": "4.23.15",
-    "turbo": "2.11.9",
+    "tsx": "4.23.13",
+    "turbo": "2.10.12",
     "typescript": "7.0.2",
-    "vitest": "4.1.12"
+    "vitest": "4.1.11"
   },
   "pnpm": {
     "overrides": {

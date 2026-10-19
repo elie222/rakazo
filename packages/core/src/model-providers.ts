@@ -1,5 +1,4 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
-import { canonicalPiProviderId } from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
 /** Effort choices an OpenAI-compatible endpoint stores when reasoning is enabled. */
@@ -69,13 +68,9 @@ export function featuredModelProviders(
     ...providers.filter((entry) => !POPULAR_MODEL_PROVIDER_ID_SET.has(entry.provider)),
   ];
   const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
-  const selected = byId.get(canonicalPiProviderId(selectedProvider));
+  const selected = byId.get(selectedProvider);
 
-  if (
-    !selected ||
-    featured.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  )
-    return featured;
+  if (!selected || featured.some((entry) => entry.provider === selectedProvider)) return featured;
   return [...featured.slice(0, DEFAULT_PROVIDER_COUNT - 1), selected];
 }
 
@@ -94,9 +89,7 @@ export function pickCatalogModelId(
   provider: string,
   preferredId?: string | null,
 ): string {
-  const entries = catalog.filter(
-    (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(provider),
-  );
+  const entries = catalog.filter((entry) => entry.provider === provider);
   if (preferredId) {
     if (entries.some((entry) => entry.id === preferredId)) return preferredId;
     const basename = preferredId.split("/").at(-1);
@@ -114,12 +107,10 @@ export function selectedProviderOutsideSearchResults(
   allProviders: readonly ModelCatalogEntry[],
   selectedProvider: string,
 ): ModelCatalogEntry | undefined {
-  if (
-    filteredProviders.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
-  ) {
+  if (filteredProviders.some((entry) => entry.provider === selectedProvider)) {
     return undefined;
   }
-  return allProviders.find((entry) => entry.provider === canonicalPiProviderId(selectedProvider));
+  return allProviders.find((entry) => entry.provider === selectedProvider);
 }
 
 /**
@@ -168,16 +159,13 @@ function canonicalApiModelId(provider: string, modelId: string): string | undefi
 }
 
 export function modelOptionKey(provider: string, modelId: string): string {
-  return `${canonicalPiProviderId(provider)}::${modelId}`;
+  return `${provider}::${modelId}`;
 }
 
 export function parseModelOptionKey(key: string): { provider: string; modelId: string } | null {
   const separator = key.indexOf("::");
   if (separator <= 0) return null;
-  return {
-    provider: canonicalPiProviderId(key.slice(0, separator)),
-    modelId: key.slice(separator + 2),
-  };
+  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
 }
 
 /**
@@ -194,11 +182,7 @@ export function resolveSelectableModelId(
   if (!trimmed) return "";
   const canonical = canonicalApiModelId(provider, trimmed);
   if (canonical) return canonical;
-  const entries = catalog.filter(
-    (entry) =>
-      canonicalPiProviderId(entry.provider) === canonicalPiProviderId(provider) &&
-      !entry.placeholder,
-  );
+  const entries = catalog.filter((entry) => entry.provider === provider && !entry.placeholder);
   if (entries.some((entry) => entry.id === trimmed)) return trimmed;
   const token = modelToken(trimmed);
   const byId = entries.filter((entry) => modelToken(entry.id) === token);
@@ -223,9 +207,7 @@ export function connectedModelChoices(
   const seen = new Set<string>();
   for (const credential of credentials) {
     const providerModels = catalog.filter(
-      (entry) =>
-        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
-        !entry.placeholder,
+      (entry) => entry.provider === credential.provider && !entry.placeholder,
     );
     const raw = credential.modelId?.trim() ?? "";
     const resolved = raw ? resolveSelectableModelId(providerModels, credential.provider, raw) : "";

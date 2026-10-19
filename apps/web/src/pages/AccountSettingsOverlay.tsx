@@ -1,17 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
-import {
-  BotAvatar,
-  Button,
-  Field,
-  FieldLabel,
-  Input,
-  Label,
-  NativeSelect,
-  NativeSelectOption,
-  Switch,
-  Toggle,
-} from "@rakazo/ui-web";
+import { BotAvatar, Button, Field, FieldLabel, Input, Label, Switch, Toggle } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
@@ -28,13 +17,7 @@ import {
   setBotsSidebarDensity,
   subscribeBotsSidebarDensity,
 } from "../lib/bots-sidebar-density-pref";
-import {
-  getComposerEnterToSend,
-  setComposerEnterToSend,
-  subscribeComposerEnterToSend,
-} from "../lib/composer-enter-to-send-pref";
 import { getActiveUiLocale, setUiLocale } from "../lib/i18n";
-import { localTimezone, sameTimeZone, timezoneOptions } from "../lib/local-timezone";
 import {
   getRemoteImagesPreference,
   setRemoteImagesPreference,
@@ -58,9 +41,6 @@ export type SettingsGeneralProps = {
   name: string;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
-  /** The user's saved IANA timezone, or null before one is set. */
-  timezone?: string | null;
-  onTimezoneChange?: (timezone: string) => Promise<void>;
   messagingEnabled?: boolean;
   onOpenMessaging?: () => void;
   isDeploymentOwner?: boolean;
@@ -71,8 +51,6 @@ export function GeneralSettingsPanels({
   name,
   avatarStyle,
   onAvatarStyleChange,
-  timezone = null,
-  onTimezoneChange,
   messagingEnabled = false,
   onOpenMessaging,
   isDeploymentOwner = false,
@@ -98,22 +76,12 @@ export function GeneralSettingsPanels({
     () => getToolActivityPreference() === "on",
   );
   const showToolActivityId = useId();
-  const enterToSend = useSyncExternalStore(
-    subscribeComposerEnterToSend,
-    getComposerEnterToSend,
-    () => false,
-  );
-  const enterToSendId = useId();
   const [loadRemoteImages, setLoadRemoteImages] = useState(
     () => getRemoteImagesPreference() === "on",
   );
   const loadRemoteImagesId = useId();
   const [avatarPending, setAvatarPending] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
-  const timezoneId = useId();
-  const [timezonePending, setTimezonePending] = useState(false);
-  const [timezoneError, setTimezoneError] = useState<string | null>(null);
-  const deviceTimezone = localTimezone();
 
   function chooseLocale(next: UiLocale) {
     if (next === locale) return;
@@ -138,19 +106,6 @@ export function GeneralSettingsPanels({
     }
   }
 
-  async function chooseTimezone(next: string) {
-    if (!onTimezoneChange || timezonePending || next === timezone) return;
-    setTimezonePending(true);
-    setTimezoneError(null);
-    try {
-      await onTimezoneChange(next);
-    } catch {
-      setTimezoneError(t`Couldn't update your timezone`);
-    } finally {
-      setTimezonePending(false);
-    }
-  }
-
   return (
     <div className="space-y-5">
       <section className="rounded-xl border border-border px-4 py-4">
@@ -171,6 +126,9 @@ export function GeneralSettingsPanels({
           <h3 className="text-[15px] font-medium text-foreground">
             <Trans>Messaging</Trans>
           </h3>
+          <p className="mt-3 text-[13px] text-muted-foreground/70">
+            <Trans>Chat apps, group channels, and agent connections.</Trans>
+          </p>
           <Button variant="secondary" className="mt-3 rounded-full" onClick={onOpenMessaging}>
             <Trans>Manage messaging settings</Trans>
           </Button>
@@ -224,50 +182,6 @@ export function GeneralSettingsPanels({
         <UiLocalePicker value={locale} onChange={chooseLocale} />
       </section>
 
-      {onTimezoneChange ? (
-        <section
-          className="rounded-xl border border-border px-4 py-4"
-          data-testid="timezone-settings"
-        >
-          <h3 id={timezoneId} className="text-[15px] font-medium text-foreground">
-            <Trans>Timezone</Trans>
-          </h3>
-          <NativeSelect
-            aria-labelledby={timezoneId}
-            data-testid="timezone-select"
-            value={timezone ?? deviceTimezone}
-            disabled={timezonePending}
-            onChange={(event) => void chooseTimezone(event.target.value)}
-            className="mt-3 w-full"
-          >
-            {timezoneOptions(timezone ?? deviceTimezone).map((zone) => (
-              <NativeSelectOption key={zone} value={zone}>
-                {zone.replaceAll("_", " ")}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-          {!timezone || !sameTimeZone(timezone, deviceTimezone) ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 h-auto max-w-full py-1.5 text-left whitespace-normal"
-              disabled={timezonePending}
-              data-testid="timezone-use-device"
-              onClick={() => void chooseTimezone(deviceTimezone)}
-            >
-              <Trans comment="Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'">
-                Use {deviceTimezone.replaceAll("_", " ")}
-              </Trans>
-            </Button>
-          ) : null}
-          {timezoneError ? (
-            <p role="alert" className="mt-3 text-[12.5px] text-destructive">
-              {timezoneError}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-
       <section
         className="rounded-xl border border-border px-4 py-4"
         data-testid="avatar-style-select"
@@ -319,18 +233,6 @@ export function GeneralSettingsPanels({
           </span>
         </summary>
         <div className="border-t border-border px-4 pb-5">
-          <div className="flex items-start gap-3 pt-5">
-            <Switch
-              id={enterToSendId}
-              data-testid="composer-enter-to-send-toggle"
-              className="mt-0.5"
-              checked={enterToSend}
-              onCheckedChange={(checked) => setComposerEnterToSend(checked)}
-            />
-            <Label htmlFor={enterToSendId} className="text-[14px] font-normal text-foreground/75">
-              <Trans>Send with Enter</Trans>
-            </Label>
-          </div>
           <div className="flex items-start gap-3 pt-5">
             <Switch
               id={streamRepliesId}

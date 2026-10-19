@@ -9,8 +9,6 @@ import { NativeSymbol } from "./native-symbol";
 export function NativeActionButton({
   label,
   accessibilityLabel,
-  accessibilityActions,
-  onAccessibilityAction,
   onPress,
   disabled = false,
   busy = false,
@@ -30,8 +28,6 @@ export function NativeActionButton({
   const colors = buttonColors(effectiveProminence, stretches, tokens);
   return (
     <Pressable
-      accessibilityActions={accessibilityActions}
-      onAccessibilityAction={onAccessibilityAction}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={actionAccessibilityState(inactive, selected)}

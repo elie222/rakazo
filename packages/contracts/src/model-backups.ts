@@ -1,6 +1,5 @@
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
-import { canonicalPiProviderId } from "./model-provider.js";
 
 export type ConnectedBackupOption = ModelBackupChoice & {
   label: string;
@@ -8,20 +7,18 @@ export type ConnectedBackupOption = ModelBackupChoice & {
 };
 
 export function backupChoiceKey(choice: ModelBackupChoice): string {
-  return JSON.stringify([canonicalPiProviderId(choice.provider), choice.modelId]);
+  return JSON.stringify([choice.provider, choice.modelId]);
 }
 
 export function connectedBackupOptions(
   catalog: ModelCatalogEntry[],
   credentials: ModelCredential[],
 ): ConnectedBackupOption[] {
-  const connected = new Set(
-    credentials.map((credential) => canonicalPiProviderId(credential.provider)),
-  );
+  const connected = new Set(credentials.map((credential) => credential.provider));
   const options: ConnectedBackupOption[] = [];
   for (const entry of catalog) {
     if (
-      !connected.has(canonicalPiProviderId(entry.provider)) ||
+      !connected.has(entry.provider) ||
       entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
       entry.placeholder
     ) {
@@ -73,9 +70,7 @@ export function sameBackupChoices(left: ModelBackupChoice[], right: ModelBackupC
     left.length === right.length &&
     left.every(
       (choice, index) =>
-        canonicalPiProviderId(choice.provider) ===
-          canonicalPiProviderId(right[index]?.provider ?? "") &&
-        choice.modelId === right[index]?.modelId,
+        choice.provider === right[index]?.provider && choice.modelId === right[index]?.modelId,
     )
   );
 }

@@ -20,22 +20,18 @@ import {
   Alert,
   AppState,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
-import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
 import { BotOrganizeModal } from "../components/bot-organize-modal";
 import { GroupAvatar } from "../components/group-avatar";
-import { InboxSwipeRow } from "../components/inbox-swipe-row";
 import { NativeSymbol } from "../components/native-symbol";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
@@ -44,7 +40,6 @@ import {
   formatActivityRelativeTime,
 } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
-import { readableGutter } from "../lib/adaptive-layout";
 import type {
   MobileBot,
   MobileBotSection,
@@ -54,7 +49,6 @@ import type {
   MobileSpaceNavigation,
 } from "../lib/api";
 import {
-  captureApiRequestContext,
   currentApiBase,
   loadSessionToken,
   rpc,
@@ -77,15 +71,6 @@ import {
   selectInboxSpace,
   spaceInboxItems,
 } from "../lib/inbox-spaces";
-import type { InboxChatKind, InboxRowAction } from "../lib/inbox-swipe";
-import {
-  applyUnreadOverrides,
-  chatTarget,
-  createLatestQueue,
-  INBOX_ROW_ACTIONS,
-  inboxRowActionList,
-  unreadOverrideKey,
-} from "../lib/inbox-swipe";
 import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -103,8 +88,6 @@ import {
 import { errorText } from "../lib/user-error";
 
 const FALLBACK_COLOR = botColors[3];
-// Swipe actions are iOS list behaviour; other platforms keep the long-press sheet.
-const SWIPE_ROWS = Platform.OS === "ios";
 
 type InboxItem = InboxSpaceItem | { type: "search"; hit: SearchHit };
 
@@ -162,9 +145,6 @@ function Home() {
   const [searching, setSearching] = useState(false);
   const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
-    () => new Map(),
-  );
   const [organizeTarget, setOrganizeTarget] = useState<{
     kind: "bot" | "group";
     id: string;
@@ -382,16 +362,14 @@ function Home() {
     };
   }, [query, searching]);
 
-  const visible = useMemo(
-    () => filterBots(applyUnreadOverrides("bot", bots, unreadOverrides), query),
-    [bots, query, unreadOverrides],
-  );
+  const visible = useMemo(() => filterBots(bots, query), [bots, query]);
   const visibleGroups = useMemo(() => {
-    const shown = applyUnreadOverrides("group", groups, unreadOverrides);
     const needle = query.trim().toLowerCase();
-    if (!needle) return shown;
-    return shown.filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle));
-  }, [groups, query, unreadOverrides]);
+    if (!needle) return groups;
+    return groups.filter((group) =>
+      `${group.name} ${group.preview}`.toLowerCase().includes(needle),
+    );
+  }, [groups, query]);
   const listData = useMemo((): InboxItem[] => {
     if (query.trim() && searching) {
       return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
@@ -444,11 +422,6 @@ function Home() {
       : groups.find((group) => group.id === organizeTarget.id)
     : null;
   const insets = useSafeAreaInsets();
-  // An unfolded or tablet window keeps the inbox in a centred column.
-  const columnInset = readableGutter(
-    useWindowDimensions().width,
-    Math.max(insets.left, insets.right),
-  );
   // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
   const nativeHeader = iosAtLeast(26);
   const navigation = useNavigation();
@@ -586,19 +559,6 @@ function Home() {
     [createQuickBot, router],
   );
 
-  const openCreateChooser = useCallback(() => {
-    Alert.alert(
-      t("Create"),
-      undefined,
-      [
-        { text: t("New bot"), onPress: () => runCreateAction("bot") },
-        { text: t("New group"), onPress: () => runCreateAction("group") },
-        { text: t("New space"), onPress: () => runCreateAction("space") },
-      ],
-      { cancelable: true },
-    );
-  }, [runCreateAction, t]);
-
   useLayoutEffect(() => {
     if (!nativeHeader) return;
     const signedIn = ready && hasSession;
@@ -728,102 +688,6 @@ function Home() {
   const organizeGroup = useCallback((group: MobileGroup | SpaceGroup) => {
     setOrganizeTarget({ kind: "group", id: group.id });
   }, []);
-  // One path for the long-press sheet and the swipe actions.
-  const [sendReadState] = useState(() => createLatestQueue<boolean>());
-  const updateChat = useCallback(
-    async (
-      kind: InboxChatKind,
-      chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
-      update: BotOrganizationUpdate,
-    ) => {
-      await rpc(`${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
-      if (kind === "bot" && update.notifyOnFinish !== undefined) {
-        await resumeLiveNotifications(
-          currentApiBase(),
-          await loadSessionToken(),
-          selectedSpaceId() ?? "",
-        ).catch(() => undefined);
-        if (!update.notifyOnFinish && "threadId" in chat) {
-          await dismissThreadNotifications({ threadId: chat.threadId }).catch(() => undefined);
-        }
-      }
-      await loadBots();
-    },
-    [loadBots],
-  );
-  const runRowAction = useCallback(
-    async (
-      kind: InboxChatKind,
-      chat: MobileBot | MobileGroup | SpaceBot | SpaceGroup,
-      action: InboxRowAction,
-    ) => {
-      if (action === "read" || action === "unread") {
-        const key = unreadOverrideKey(kind, chat.id);
-        // Queued changes belong to the session and Space the chat was swiped in.
-        const spaceId = selectedSpaceId();
-        const session = currentSessionGeneration();
-        setUnreadOverrides((current) => new Map(current).set(key, action === "unread"));
-        await sendReadState(
-          key,
-          action === "unread",
-          async (unread) => {
-            const context = await captureApiRequestContext();
-            if (context.sessionGeneration !== session) return;
-            const headers = { ...context.headers };
-            if (spaceId) headers["x-rakazo-space-id"] = spaceId;
-            else delete headers["x-rakazo-space-id"];
-            await rpc(
-              unread ? "threads/markUnread" : "threads/markRead",
-              chatTarget(kind, chat.id),
-              { requestContext: { ...context, headers } },
-            );
-            const mark = <T extends { id: string; unread: boolean }>(chats: T[]) =>
-              chats.map((item) => (item.id === chat.id ? { ...item, unread } : item));
-            if (kind === "bot") setBots(mark);
-            else setGroups(mark);
-            await loadBots();
-          },
-          // The override stays until the last queued change for this chat is done.
-          () =>
-            setUnreadOverrides((current) => {
-              const next = new Map(current);
-              next.delete(key);
-              return next;
-            }),
-        ).catch((err) => {
-          // A change from a session that has since ended is dropped quietly.
-          if (session !== currentSessionGeneration()) return;
-          Alert.alert(t("Could not update chat"), errorText(err, t("Try again.")));
-        });
-        return;
-      }
-      if (action === "archive") {
-        try {
-          await rpc(`${kind}s/archive`, chatTarget(kind, chat.id));
-        } catch (err) {
-          Alert.alert(
-            kind === "bot" ? t("Could not archive bot") : t("Could not update chat"),
-            errorText(err, t("Try again.")),
-          );
-        }
-        await loadBots();
-        return;
-      }
-      await updateChat(kind, chat, { pinned: action === "pin" }).catch((err) =>
-        Alert.alert(t("Could not update chat"), errorText(err, t("Try again."))),
-      );
-    },
-    [loadBots, sendReadState, t, updateChat],
-  );
-  const botAction = useCallback(
-    (action: InboxRowAction, bot: MobileBot | SpaceBot) => void runRowAction("bot", bot, action),
-    [runRowAction],
-  );
-  const groupAction = useCallback(
-    (action: InboxRowAction, group: MobileGroup | SpaceGroup) =>
-      void runRowAction("group", group, action),
-    [runRowAction],
-  );
 
   const renderItem = useCallback(
     ({ item }: { item: InboxItem }) =>
@@ -881,7 +745,6 @@ function Home() {
           day={day}
           onPress={openGroup}
           onLongPress={item.group.spaceId === me?.spaceId ? organizeGroup : undefined}
-          onAction={SWIPE_ROWS && item.group.spaceId === me?.spaceId ? groupAction : undefined}
         />
       ) : (
         <BotRow
@@ -893,17 +756,14 @@ function Home() {
           onToggleChildren={toggleRosterParent}
           onPress={openBot}
           onLongPress={item.bot.spaceId === me?.spaceId ? organizeBot : undefined}
-          onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
         />
       ),
     [
       appearance,
-      botAction,
       chooseInboxSpace,
       collapsedRosterParents,
       confirmDeleteSpace,
       day,
-      groupAction,
       me?.spaceId,
       openBot,
       openGroup,
@@ -930,15 +790,7 @@ function Home() {
   return (
     <View style={styles.screen}>
       {nativeHeader ? null : (
-        <View
-          style={[
-            styles.header,
-            {
-              paddingTop: Math.max(insets.top, 20) + 8,
-              paddingHorizontal: 16 + columnInset,
-            },
-          ]}
-        >
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 8 }]}>
           <View style={styles.circleButton}>
             <HeaderButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
               <Text style={styles.profileInitials}>{initials}</Text>
@@ -976,36 +828,28 @@ function Home() {
             >
               <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
             </HeaderButton>
-            {Platform.OS === "android" ? (
-              // A plain button: the native Android menu trigger collapses to zero width when the
-              // installed app binary is older than the JS update, which hid the only way to create.
-              <HeaderButton accessibilityLabel={t("Create")} onPress={openCreateChooser}>
-                <NativeSymbol ios="plus" android="add" size={18} />
-              </HeaderButton>
-            ) : (
-              <MenuView
-                actions={[
-                  { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
-                  { id: "group", title: t("New group"), image: "person.2" },
-                  { id: "space", title: t("New space"), image: "square.grid.2x2" },
-                ]}
-                colorScheme={appearance}
-                onPressAction={({ nativeEvent }) => {
-                  const action = nativeEvent.event;
-                  if (action === "bot" || action === "group" || action === "space") {
-                    runCreateAction(action);
-                  }
-                }}
+            <MenuView
+              actions={[
+                { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
+                { id: "group", title: t("New group"), image: "person.2" },
+                { id: "space", title: t("New space"), image: "square.grid.2x2" },
+              ]}
+              colorScheme={appearance}
+              onPressAction={({ nativeEvent }) => {
+                const action = nativeEvent.event;
+                if (action === "bot" || action === "group" || action === "space") {
+                  runCreateAction(action);
+                }
+              }}
+            >
+              <View
+                accessibilityLabel={t("Create")}
+                accessibilityRole="button"
+                style={styles.headerButton}
               >
-                <View
-                  accessibilityLabel={t("Create")}
-                  accessibilityRole="button"
-                  style={styles.headerButton}
-                >
-                  <NativeSymbol ios="plus" android="add" size={18} />
-                </View>
-              </MenuView>
-            )}
+                <NativeSymbol ios="plus" android="add" size={18} />
+              </View>
+            </MenuView>
           </View>
         </View>
       )}
@@ -1024,7 +868,6 @@ function Home() {
         indicatorStyle={appearance === "dark" ? "white" : "black"}
         contentContainerStyle={[
           styles.list,
-          { paddingHorizontal: columnInset },
           // iOS moves the active search bar to the bottom and removes the navigation inset.
           nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
         ]}
@@ -1106,7 +949,25 @@ function Home() {
           bot={organizeChat}
           sections={botSections}
           onClose={() => setOrganizeTarget(null)}
-          onUpdate={(update) => updateChat(organizeTarget.kind, organizeChat, update)}
+          onUpdate={async (update) => {
+            await rpc(`${organizeTarget.kind}s/update`, {
+              [`${organizeTarget.kind}Id`]: organizeChat.id,
+              ...update,
+            });
+            if (organizeTarget.kind === "bot" && update.notifyOnFinish !== undefined) {
+              await resumeLiveNotifications(
+                currentApiBase(),
+                await loadSessionToken(),
+                selectedSpaceId() ?? "",
+              ).catch(() => undefined);
+              if (!update.notifyOnFinish && "threadId" in organizeChat) {
+                await dismissThreadNotifications({ threadId: organizeChat.threadId }).catch(
+                  () => undefined,
+                );
+              }
+            }
+            await loadBots();
+          }}
           onCreateSection={async (name) => {
             await rpc("botSections/create", {
               [`${organizeTarget.kind}Id`]: organizeChat.id,
@@ -1220,8 +1081,6 @@ function ConversationRow({
   onToggleChildren,
   onPress,
   onLongPress,
-  actions = [],
-  onAction,
   accessibilityLabel,
   accessibilityHint,
 }: {
@@ -1238,8 +1097,6 @@ function ConversationRow({
   onToggleChildren?: () => void;
   onPress: () => void;
   onLongPress?: () => void;
-  actions?: InboxRowAction[];
-  onAction?: (action: InboxRowAction) => void;
   accessibilityLabel: string;
   accessibilityHint?: string;
 }) {
@@ -1248,24 +1105,18 @@ function ConversationRow({
   const toggleLabel = collapsed
     ? t("Expand {name}", { name: title })
     : t("Collapse {name}", { name: title });
-  const rowActions = [
-    ...(hasChildren ? [{ name: "toggleChildren", label: toggleLabel }] : []),
-    ...actions.map((action) => ({ name: action, label: t(INBOX_ROW_ACTIONS[action].label) })),
-  ];
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      // Screen readers treat the row as one element, so the chevron and swipe actions are offered
-      // as row actions.
+      // Screen readers treat the row as one element, so the chevron is offered as a row action.
       accessibilityState={hasChildren ? { expanded: !collapsed } : undefined}
-      accessibilityActions={rowActions.length > 0 ? rowActions : undefined}
+      accessibilityActions={
+        hasChildren ? [{ name: "toggleChildren", label: toggleLabel }] : undefined
+      }
       onAccessibilityAction={(event) => {
-        const name = event.nativeEvent.actionName;
-        const action = actions.find((item) => item === name);
-        if (name === "toggleChildren") onToggleChildren?.();
-        else if (action) onAction?.(action);
+        if (event.nativeEvent.actionName === "toggleChildren") onToggleChildren?.();
       }}
       onPress={onPress}
       onLongPress={onLongPress}
@@ -1389,7 +1240,6 @@ const BotRow = memo(function BotRow({
   onToggleChildren,
   onPress,
   onLongPress,
-  onAction,
 }: {
   bot: MobileBot | SpaceBot;
   day: number;
@@ -1399,7 +1249,6 @@ const BotRow = memo(function BotRow({
   onToggleChildren?: (botId: string) => void;
   onPress: (bot: MobileBot | SpaceBot) => void;
   onLongPress?: (bot: MobileBot | SpaceBot) => void;
-  onAction?: (action: InboxRowAction, bot: MobileBot | SpaceBot) => void;
 }) {
   const { t } = useI18n();
   const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
@@ -1422,8 +1271,7 @@ const BotRow = memo(function BotRow({
   ]
     .filter(Boolean)
     .join(", ");
-  const runAction = (action: InboxRowAction) => onAction?.(action, bot);
-  const row = (
+  return (
     <ConversationRow
       title={bot.name}
       preview={preview}
@@ -1440,8 +1288,6 @@ const BotRow = memo(function BotRow({
       }
       onPress={() => onPress(bot)}
       onLongPress={onLongPress ? () => onLongPress(bot) : undefined}
-      actions={onAction ? inboxRowActionList(bot) : undefined}
-      onAction={runAction}
       indicator={working ? <WorkingIndicator compact tint={tint} /> : null}
       avatar={
         <BotAvatar
@@ -1453,18 +1299,6 @@ const BotRow = memo(function BotRow({
       }
     />
   );
-  return onAction ? (
-    <InboxSwipeRow
-      rowKey={`bot:${bot.id}`}
-      unread={bot.unread}
-      pinned={bot.pinned}
-      onAction={runAction}
-    >
-      {row}
-    </InboxSwipeRow>
-  ) : (
-    row
-  );
 });
 
 const GroupRow = memo(function GroupRow({
@@ -1472,20 +1306,17 @@ const GroupRow = memo(function GroupRow({
   day,
   onPress,
   onLongPress,
-  onAction,
 }: {
   group: MobileGroup | SpaceGroup;
   day: number;
   onPress: (group: MobileGroup | SpaceGroup) => void;
   onLongPress?: (group: MobileGroup | SpaceGroup) => void;
-  onAction?: (action: InboxRowAction, group: MobileGroup | SpaceGroup) => void;
 }) {
   const { t } = useI18n();
   const preview =
     previewSnippet(group.preview, 40) || group.members.map((member) => member.name).join(", ");
   const time = group.updatedAt ? formatThreadTime(group.updatedAt, new Date(day)) : "";
-  const runAction = (action: InboxRowAction) => onAction?.(action, group);
-  const row = (
+  return (
     <ConversationRow
       title={group.name}
       preview={preview}
@@ -1497,22 +1328,8 @@ const GroupRow = memo(function GroupRow({
       accessibilityHint={onLongPress ? t("Long press to pin or move to a section") : undefined}
       onPress={() => onPress(group)}
       onLongPress={onLongPress ? () => onLongPress(group) : undefined}
-      actions={onAction ? inboxRowActionList(group) : undefined}
-      onAction={runAction}
       avatar={<GroupAvatar members={group.members} size={54} />}
     />
-  );
-  return onAction ? (
-    <InboxSwipeRow
-      rowKey={`group:${group.id}`}
-      unread={group.unread}
-      pinned={group.pinned}
-      onAction={runAction}
-    >
-      {row}
-    </InboxSwipeRow>
-  ) : (
-    row
   );
 });
 

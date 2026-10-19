@@ -8,12 +8,7 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
-import {
-  BOT_DESCRIPTION_MAX_LENGTH,
-  BOT_INSTRUCTIONS_MAX_LENGTH,
-  GROUP_MEMBER_MIN,
-} from "@rakazo/contracts";
+import { type Actor, type Bot, type ComputerMode, GROUP_MEMBER_MIN } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
   cancelRunsInTransaction,
@@ -64,7 +59,6 @@ export async function spawnBot(
     spawnKey: string;
     name: string;
     title?: string;
-    description?: string;
     instructions?: string;
     prompt?: string;
     computerMode?: ComputerMode;
@@ -85,8 +79,8 @@ export async function spawnBot(
     created = await createRepos(deps.prisma).createBot(actor, {
       name,
       title: (input.title ?? "").trim(),
-      description: (input.description ?? "").trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
-      instructions: (input.instructions ?? "").trim().slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
+      description: "",
+      instructions: (input.instructions ?? "").trim(),
       notifyOnFinish: true,
       parentBotId: input.spawnedBy.id,
       spawnKey: input.spawnKey,

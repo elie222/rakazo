@@ -14,7 +14,6 @@ export function routineStatusLine(routine: Routine): string {
         : routine.messageProvider
           ? [t("Message event")]
           : []),
-    ...(routine.watch ? [t("When something changes")] : []),
   ].join(", ");
   return [routine.active ? t("Active") : t("Paused"), triggers, routine.timezone]
     .filter(Boolean)

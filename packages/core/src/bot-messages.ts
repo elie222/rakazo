@@ -7,18 +7,11 @@ import {
 export const BOT_MESSAGE_MAX_LENGTH = 8_000;
 
 /**
- * Default for how many bot-started deliveries may chain before the next one is
- * refused. Messaging is fire-and-forget, so nothing stops two bots replying to
- * each other forever; a person's own message always starts a fresh chain at hop 0.
+ * How many bot-started deliveries may chain before the next one is refused.
+ * Messaging is fire-and-forget, so nothing stops two bots replying to each
+ * other forever; a person's own message always starts a fresh chain at hop 0.
  */
-export const DEFAULT_BOT_MESSAGE_MAX_HOPS = 6;
-
-/** The hop limit: `BOT_MESSAGE_MAX_HOPS` when it is a positive integer, else the default. */
-export function botMessageMaxHops(): number {
-  const value = process.env.BOT_MESSAGE_MAX_HOPS?.trim();
-  const raw = Number(value || DEFAULT_BOT_MESSAGE_MAX_HOPS);
-  return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_BOT_MESSAGE_MAX_HOPS;
-}
+export const BOT_MESSAGE_MAX_HOPS = 6;
 
 /** Cap total description characters across the rendered teammate directory. */
 export const BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH = 8_000;
@@ -43,7 +36,7 @@ export function nextBotMessageHop(sourceHop: number | undefined): number {
 }
 
 export function botMessageHopExhausted(hop: number): boolean {
-  return hop > botMessageMaxHops();
+  return hop > BOT_MESSAGE_MAX_HOPS;
 }
 
 export type BotMessageContext = Extract<MessageBlock, { kind: "bot_message_received" }>;

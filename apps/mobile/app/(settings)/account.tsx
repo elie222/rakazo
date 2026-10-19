@@ -1,6 +1,6 @@
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -27,7 +27,7 @@ import {
   SettingsSwitch,
   useStackedSettings,
 } from "../../components/settings-group";
-import type { MobileMe } from "../../lib/api";
+import type { MobileBot, MobileMe } from "../../lib/api";
 import {
   currentApiBase,
   deleteAccount,
@@ -44,7 +44,6 @@ import {
   mobileTokens,
   setAppearancePreference,
 } from "../../lib/appearance";
-import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { promptAccountDeletion } from "../../lib/delete-account-prompt";
 import { setUiLocale, useI18n } from "../../lib/i18n";
@@ -106,9 +105,7 @@ export default function Account() {
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [archivedCount, setArchivedCount] = useState(0);
-  // A list that fails to refresh keeps its last count, so a passing error doesn't hide the row.
-  const archivedCounts = useRef({ bots: 0, groups: 0 });
+  const [archivedBots, setArchivedBots] = useState<MobileBot[]>([]);
   const [usage, setUsage] = useState<{
     runs: number;
     inputTokens: number | null;
@@ -173,11 +170,11 @@ export default function Account() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      void loadArchivedChats().then((loaded) => {
-        if (!active) return;
-        archivedCounts.current = archivedChatCounts(archivedCounts.current, loaded);
-        setArchivedCount(archivedCounts.current.bots + archivedCounts.current.groups);
-      });
+      void rpc<MobileBot[]>("bots/listArchived")
+        .then((bots) => {
+          if (active) setArchivedBots(bots);
+        })
+        .catch(() => undefined);
       return () => {
         active = false;
       };
@@ -458,6 +455,7 @@ export default function Account() {
           <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
             <SettingsSwitch
               label={t("Live working status")}
+              detail={t("While agents are working")}
               value={notifications.liveConnection}
               disabled={notificationPending || !notificationsReady}
               onChange={(liveConnection) =>
@@ -473,6 +471,7 @@ export default function Account() {
             />
             <SettingsSwitch
               label={t("Scheduled tasks")}
+              detail={t("Alerts from routines")}
               value={notifications.scheduledTasks}
               disabled={notificationPending || !notificationsReady}
               onChange={(scheduledTasks) =>
@@ -583,14 +582,14 @@ export default function Account() {
           </SettingsGroup>
         </View>
 
-        {archivedCount > 0 ? (
+        {archivedBots.length > 0 ? (
           <SettingsGroup>
             <SettingsRow
               accessibilityRole="button"
               chevron="right"
               onPress={() => router.push("/archived-bots")}
-              title={t("Archived")}
-              value={String(archivedCount)}
+              title={t("Archived bots")}
+              value={String(archivedBots.length)}
             />
           </SettingsGroup>
         ) : null}

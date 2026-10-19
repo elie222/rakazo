@@ -60,7 +60,7 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     this.capabilities = {
       direct: options.capabilities?.direct ?? true,
       groups: options.capabilities?.groups ?? true,
-      receipt: options.capabilities?.receipt ?? null,
+      typing: options.capabilities?.typing ?? false,
     };
   }
 
@@ -150,7 +150,9 @@ export class MessagingTeamChatEmulator implements MessagingSurface {
     return `${this.provider}:dm:${address}`;
   }
 
-  async acknowledge(_threadId: string, _handle: string, _context: AdapterContext): Promise<void> {}
+  async sendTyping(threadId: string, _context: AdapterContext): Promise<void> {
+    if (!this.capabilities.typing || providerOfThreadId(threadId) !== this.provider) return;
+  }
 
   resetWitnesses(): void {
     this.sent.length = 0;

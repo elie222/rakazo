@@ -34,13 +34,6 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         throw new Error("Scripted run failure");
       }
       if (shouldHang(request.prompt)) {
-        // Long-running work happens on the computer, which starts it like any real run would.
-        yield {
-          type: "tool",
-          name: "list_files",
-          args: { path: "" },
-          executionId: `${request.runId}:list_files:hang`,
-        };
         yield { type: "progress", text: "still working…", activity: true };
         while (!controller.signal.aborted && !signal.aborted) {
           await abortableDelay(50, controller.signal);
@@ -300,35 +293,36 @@ code-b
       },
     ];
   }
-  const hasChoices =
+  if (
     lower.includes("tappable choices") ||
     lower.includes("choice buttons") ||
-    lower.includes("pick from these cities");
+    lower.includes("pick from these cities")
+  ) {
+    return [
+      {
+        assistant: "pick one to continue.",
+        ask: {
+          text: "Which city should I use?",
+          detail: "Tap one option.",
+          actions: [
+            { id: "choice-1", label: "Berlin" },
+            { id: "choice-2", label: "Seoul" },
+            { id: "choice-3", label: "Toronto" },
+            { id: "choice-4", label: "Lisbon" },
+          ],
+        },
+      },
+    ];
+  }
   if (
-    hasChoices ||
     lower.includes("ask me") ||
     lower.includes("which city") ||
     lower.includes("need a decision")
   ) {
-    // Background resumes retain the task and append the answered question.
-    if (/\nAnswer:/.test(prompt)) {
-      return [{ assistant: "thanks. done.", complete: true }];
-    }
     return [
       {
-        assistant: hasChoices ? "pick one to continue." : "i need a decision before i continue.",
-        ask: hasChoices
-          ? {
-              text: "Which city should I use?",
-              detail: "Tap one option.",
-              actions: [
-                { id: "choice-1", label: "Berlin" },
-                { id: "choice-2", label: "Seoul" },
-                { id: "choice-3", label: "Toronto" },
-                { id: "choice-4", label: "Lisbon" },
-              ],
-            }
-          : { text: "Which city should I use?", detail: "Reply with one city name." },
+        assistant: "i need a decision before i continue.",
+        ask: { text: "Which city should I use?", detail: "Reply with one city name." },
       },
     ];
   }
@@ -371,20 +365,6 @@ code-b
       {
         assistant: "archiving that bot.",
         toolCalls: [{ name: "archive_bot", args: { confirm_name: name } }],
-        complete: true,
-      },
-    ];
-  }
-  if (lower.includes("propose an instruction update")) {
-    return [
-      {
-        assistant: "",
-        toolCalls: [
-          {
-            name: "propose_instructions_update",
-            args: { instructions: "Draft only. Ask before sending.", reason: "Learned preference" },
-          },
-        ],
         complete: true,
       },
     ];

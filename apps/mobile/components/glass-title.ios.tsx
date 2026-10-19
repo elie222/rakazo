@@ -1,19 +1,8 @@
 import { Host, Text } from "@expo/ui/swift-ui";
-import {
-  dynamicTypeSize,
-  font,
-  frame,
-  glassEffect,
-  lineLimit,
-  padding,
-} from "@expo/ui/swift-ui/modifiers";
-import { Text as RNText, StyleSheet, useWindowDimensions, View } from "react-native";
+import { font, glassEffect, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
+import { Text as RNText, StyleSheet, View } from "react-native";
 import { useResolvedAppearance } from "../lib/native";
-import {
-  HEADER_CONTROL_SIZE,
-  HEADER_TITLE_MAX_FONT_SCALE,
-  iosAtLeast,
-} from "../lib/native-controls";
+import { iosAtLeast } from "../lib/native-controls";
 
 /**
  * Liquid Glass title capsule. The bar sizes its title view before SwiftUI measures,
@@ -21,27 +10,18 @@ import {
  */
 export function GlassTitle({ title }: { title: string }) {
   const scheme = useResolvedAppearance();
-  // Bar titles stay between the default text size and xxxLarge; the sizer must match the text.
-  const { fontScale } = useWindowDimensions();
-  const scale = Math.min(Math.max(fontScale, 1), HEADER_TITLE_MAX_FONT_SCALE);
   if (!title.trim()) return null;
   return (
     <View accessibilityLabel={title} accessibilityRole="header" accessible style={styles.frame}>
-      <RNText
-        allowFontScaling={false}
-        numberOfLines={1}
-        style={[styles.sizer, { fontSize: 17 * scale }]}
-      >
+      <RNText numberOfLines={1} style={styles.sizer}>
         {title}
       </RNText>
       <Host colorScheme={scheme} style={StyleSheet.absoluteFill}>
         <Text
           modifiers={[
-            font({ textStyle: "body", weight: "semibold" }),
-            dynamicTypeSize({ min: "large", max: "xxxLarge" }),
+            font({ size: 17, weight: "semibold" }),
             lineLimit(1),
-            padding({ horizontal: 16 }),
-            frame({ height: HEADER_CONTROL_SIZE }),
+            padding({ horizontal: 16, vertical: 11 }),
             glassEffect({ glass: { variant: "regular" }, shape: "capsule" }),
           ]}
         >
@@ -68,12 +48,13 @@ export function glassHeaderOptions(title: string) {
 const styles = StyleSheet.create({
   frame: {
     maxWidth: 240,
-    height: HEADER_CONTROL_SIZE,
+    height: 44,
     paddingHorizontal: 16,
     justifyContent: "center",
   },
   sizer: {
     opacity: 0,
+    fontSize: 17,
     fontWeight: "600",
   },
 });

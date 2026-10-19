@@ -18,8 +18,6 @@ function routine(partial: Partial<Routine>): Routine {
     modelProvider: null,
     modelId: null,
     thinkingLevel: null,
-    watch: null,
-    watchState: null,
     lastRunAt: null,
     nextRunAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -28,14 +26,6 @@ function routine(partial: Partial<Routine>): Routine {
 }
 
 describe("routineStatusLine", () => {
-  it("names a change trigger", () => {
-    expect(
-      routineStatusLine(
-        routine({ watch: { kind: "files", paths: ["inbox"], everyMinutes: 15, loud: false } }),
-      ),
-    ).toBe("Active · When something changes · UTC");
-  });
-
   it("shows readable schedules instead of cron expressions", () => {
     expect(routineStatusLine(routine({ crons: ["0 6 * * *"] }))).toBe(
       "Active · Every day at 6:00 AM · UTC",

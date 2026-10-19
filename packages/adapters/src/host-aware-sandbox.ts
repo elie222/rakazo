@@ -79,11 +79,6 @@ export class HostAwareSandbox implements SandboxProvider {
     return computer.kind === "desktop" ? this.host : this.isolated;
   }
 
-  async provisionKind() {
-    const provider = (await this.hostEnabled()) ? this.host : this.isolated;
-    return provider.describe().id as ComputerRef["kind"];
-  }
-
   async provision(
     request: {
       botId: string;
@@ -182,10 +177,6 @@ export class HostAwareSandbox implements SandboxProvider {
 
   snapshot(computer: ComputerRef, context: AdapterContext) {
     return this.route(computer).snapshot(computer, context);
-  }
-
-  billsWhileRunning(computer: ComputerRef): boolean {
-    return this.route(computer).billsWhileRunning?.(computer) ?? false;
   }
 
   keepAlive(computer: ComputerRef) {

@@ -10,7 +10,6 @@ import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { E2BSandboxProvider } from "./e2b-sandbox.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { NoneSandboxProvider } from "./none-sandbox.js";
-import { RailwaySandboxProvider } from "./railway-sandbox.js";
 
 export interface SandboxProviderOptions {
   supervisorUrl?: string;
@@ -23,17 +22,13 @@ export interface SandboxProviderOptions {
   createosBaseUrl?: string;
   createosShape?: string;
   createosRootfs?: string;
-  railwayApiToken?: string;
-  railwayEnvironmentId?: string;
-  railwayMaxWorkspaceFileBytes?: string;
-  railwaySandboxRegion?: string;
   boxApiKey?: string;
   boxApiUrl?: string;
   dataDir?: string;
 }
 
 function missingRemoteKey(
-  provider: "e2b" | "daytona" | "createos" | "box" | "railway",
+  provider: "e2b" | "daytona" | "createos" | "box",
   envName: string,
 ): SandboxProvider {
   return new NoneSandboxProvider(
@@ -68,16 +63,6 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
     case "box":
       if (!opts.boxApiKey?.trim()) return missingRemoteKey("box", "BOX_API_KEY");
       return new BoxSandboxProvider({ apiKey: opts.boxApiKey, apiUrl: opts.boxApiUrl });
-    case "railway":
-      if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
-      if (!opts.railwayEnvironmentId?.trim())
-        return missingRemoteKey("railway", "RAILWAY_ENVIRONMENT_ID");
-      return new RailwaySandboxProvider({
-        token: opts.railwayApiToken,
-        environmentId: opts.railwayEnvironmentId,
-        maxWorkspaceFileBytes: opts.railwayMaxWorkspaceFileBytes,
-        region: opts.railwaySandboxRegion,
-      });
     case "docker":
       return new DockerSandboxProvider(
         opts.supervisorUrl ?? "http://127.0.0.1:7091",
@@ -97,7 +82,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | box | railway | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | box | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
       );
   }
 }

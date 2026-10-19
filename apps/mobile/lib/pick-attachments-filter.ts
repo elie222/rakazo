@@ -1,5 +1,8 @@
-import type { AttachmentMimeType } from "@rakazo/contracts";
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
+import {
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_COUNT,
+  type AttachmentMimeType,
+} from "@rakazo/contracts";
 
 export type PickedAttachment = {
   id: string;
@@ -20,7 +23,6 @@ export function filterPickedAttachments(
     contentBase64: string;
     previewUri?: string;
   }>,
-  maxBytes = ATTACHMENT_MAX_BYTES,
 ): { attachments: PickedAttachment[]; skipped: PickSkip[] } {
   const attachments: PickedAttachment[] = [];
   const skipped: PickSkip[] = [];
@@ -29,8 +31,8 @@ export function filterPickedAttachments(
       skipped.push({ name: candidate.name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` });
       continue;
     }
-    if (candidate.size > maxBytes) {
-      skipped.push({ name: candidate.name, reason: `over ${attachmentSizeLabel(maxBytes)}` });
+    if (candidate.size > ATTACHMENT_MAX_BYTES) {
+      skipped.push({ name: candidate.name, reason: "over 10 MiB" });
       continue;
     }
     if (!candidate.mimeType) {

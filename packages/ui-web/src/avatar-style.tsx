@@ -1,9 +1,8 @@
-import type { ReactNode } from "react";
-import { createContext, useContext } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 
 export type AvatarStyle = "robot" | "organic";
 
-const AvatarStyleContext = createContext<AvatarStyle>("organic");
+const AvatarStyleContext = createContext<AvatarStyle>("robot");
 
 export function AvatarStyleProvider({
   children,

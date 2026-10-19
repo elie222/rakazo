@@ -32,20 +32,8 @@ describe("Android mobile platform contract", () => {
     expect(thread).not.toContain("automaticOffset");
     expect(thread).not.toContain("KeyboardStickyView");
     expect(thread).toContain("useSafeAreaInsets");
-    // The composer's bottom padding follows the keyboard instead of switching once it has hidden.
-    expect(thread).toContain("useKeyboardHandler");
-    expect(thread).toContain("onInteractive");
-    expect(thread).toMatch(
-      /const composerRestingPadding =\s*Platform\.OS === "ios" \? insets\.bottom : Math\.max\(insets\.bottom \+ 12, 24\)/,
-    );
-    expect(thread).toContain(
-      "interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12])",
-    );
-    expect(thread).not.toContain("useKeyboardState");
-    // Both the live list and the pinned page hide the keyboard on a drag.
-    expect(
-      thread.split('keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}'),
-    ).toHaveLength(3);
+    expect(thread).toContain("useKeyboardState");
+    expect(thread).toContain("keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24)");
   });
 
   it("requests live-update promotion and exposes its Android settings", () => {
@@ -215,10 +203,10 @@ describe("Android mobile platform contract", () => {
     expect(nonSpaceAtStart.test("\u200Btext")).toBe(true);
   });
 
-  it("trailing-aligns the latest-message control and clears a thread's Android notifications when read", () => {
+  it("centers the latest-message control and clears a thread's Android notifications when read", () => {
     const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
     const notifications = readFileSync(resolve(mobileRoot, "lib/live-notifications.ts"), "utf8");
-    expect(thread).toContain('position: "absolute", end: 0, bottom: 12');
+    expect(thread).toContain('left: "50%"');
     expect(thread).toContain("dismissThreadNotifications");
     expect(notifications).toContain("getPresentedNotificationsAsync");
     expect(notifications).toContain("dismissNotificationAsync");

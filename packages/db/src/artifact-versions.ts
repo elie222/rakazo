@@ -46,7 +46,10 @@ export async function withResolvedArtifactVersion<T>(
     groupId?: string | null;
     name: string;
   },
-  attempt: (db: Prisma.TransactionClient, version: ArtifactVersionWrite) => Promise<T>,
+  attempt: (
+    db: Pick<Prisma.TransactionClient, "artifact">,
+    version: ArtifactVersionWrite,
+  ) => Promise<T>,
 ): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < MAX_VERSION_ALLOCATION_ATTEMPTS; i++) {

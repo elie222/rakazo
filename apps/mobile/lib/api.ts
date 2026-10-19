@@ -60,12 +60,7 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
-import {
-  authErrorText,
-  authResponseErrorText,
-  errorText,
-  sessionSaveErrorText,
-} from "./user-error";
+import { authErrorText, errorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -496,7 +491,7 @@ async function authenticateWithEmail(
   action: "sign-in" | "sign-up",
   input: { email: string; password: string; name?: string },
 ) {
-  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
+  const { response, body } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/${action}/email`,
     {
       method: "POST",
@@ -505,8 +500,8 @@ async function authenticateWithEmail(
     },
     {},
   );
-  if (!response.ok || invalidJson) {
-    throw new Error(authResponseErrorText(response.status, body, invalidJson));
+  if (!response.ok) {
+    throw new Error(authErrorText(body, t("Could not continue")));
   }
   const token = tokenFromAuthResponse(response, body);
   if (action === "sign-up" && signupRequiresEmailVerification(body))
@@ -519,13 +514,8 @@ async function authenticateWithEmail(
           : "Sign-up did not return a session",
       ),
     );
-  try {
-    if (!(await clearSpace()))
-      throw new Error(t("Could not save your sign-in on this device. Try again."));
-    await saveSessionToken(token);
-  } catch (error) {
-    throw new Error(sessionSaveErrorText(error));
-  }
+  if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
+  await saveSessionToken(token);
   return { verificationRequired: false };
 }
 
@@ -617,7 +607,7 @@ export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
-): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
+): Promise<{ response: Response; body: T }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
@@ -636,7 +626,7 @@ export async function fetchMobileJson<T>(
       return { response, body };
     } catch (error) {
       if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
-        return { response, body: invalidJsonFallback, invalidJson: true };
+        return { response, body: invalidJsonFallback };
       }
       throw requestError(error, controller.signal);
     }
@@ -944,8 +934,6 @@ export type MobileBot = Pick<
   | "preview"
   | "title"
   | "color"
-  | "instructionHistory"
-  | "selfUpdateInstructions"
   | "notifyOnFinish"
   | "threadId"
   | "pinned"
@@ -960,7 +948,7 @@ export type MobileBot = Pick<
   | "thinkingLevel"
   | "autoSpeak"
 > &
-  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
+  Partial<Pick<Bot, "parentBotId" | "spaceId">>;
 
 export type MobileBotSection = BotSection;
 

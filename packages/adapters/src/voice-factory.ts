@@ -2,10 +2,6 @@ import type { VoiceProvider } from "@rakazo/adapter-kit";
 import { CartesiaVoiceProvider } from "./cartesia-voice.js";
 import { ElevenLabsVoiceProvider } from "./elevenlabs-voice.js";
 import { FishAudioVoiceProvider } from "./fish-audio-voice.js";
-import {
-  OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
-  OpenAiCompatibleVoiceProvider,
-} from "./openai-compatible-voice.js";
 import { OpenAIVoiceProvider } from "./openai-voice.js";
 import { SCRIPTED_VOICE_CATALOG_ENTRY, ScriptedVoiceProvider } from "./scripted-voice.js";
 
@@ -32,12 +28,6 @@ export const VOICE_CATALOG = [
     id: "fish-audio",
     name: "Fish Audio",
     description: "Voice models, cloning, and expressive speech with optional transcription.",
-    transcribe: true,
-  },
-  {
-    id: OPENAI_COMPATIBLE_VOICE_PROVIDER_ID,
-    name: "Self-hosted",
-    description: "Any OpenAI-compatible speech server, like Kokoro or Whisper.",
     transcribe: true,
   },
 ] as const;
@@ -78,8 +68,6 @@ export function createVoiceProvider(kind: string): VoiceProvider {
       return new CartesiaVoiceProvider();
     case "fish-audio":
       return new FishAudioVoiceProvider();
-    case OPENAI_COMPATIBLE_VOICE_PROVIDER_ID:
-      return new OpenAiCompatibleVoiceProvider();
     case "scripted":
       if (!scriptedVoiceEnabled()) break;
       return new ScriptedVoiceProvider();
@@ -87,7 +75,7 @@ export function createVoiceProvider(kind: string): VoiceProvider {
       break;
   }
   throw new Error(
-    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio | openai-compatible.`,
+    `Unknown voice provider "${kind}". Use elevenlabs | openai | cartesia | fish-audio.`,
   );
 }
 

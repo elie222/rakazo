@@ -9,7 +9,6 @@ import {
   claimSteering,
   clearThread,
   completedRunBlocks,
-  discardAnsweredSteering,
   finalizeComputerControlRelease,
   finalizeRun,
   followThreadEvents,
@@ -98,7 +97,6 @@ describe("finalizeRun", () => {
         findMany: vi.fn(async () => []),
         updateMany: vi.fn(async () => ({ count: 0 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const transaction = vi
@@ -165,7 +163,6 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -234,7 +231,6 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -325,7 +321,6 @@ describe("finalizeRun", () => {
         ]),
         updateMany: vi.fn(async () => ({ count: 1 })),
       },
-      message: { findFirst: vi.fn(async () => null) },
       bot: { update: vi.fn(async () => ({})) },
     };
     const prisma = {
@@ -1037,81 +1032,6 @@ describe("answerRunInput", () => {
       }),
     );
     expect(publish).toHaveBeenCalledWith("thread:thread-1", JSON.stringify({ cursor: 9 }));
-  });
-
-  it("keeps a routine's instructions and every earlier answer across choice resumes", async () => {
-    // A routine run sees no thread history: its resumed attempt only has the task prompt.
-    const answerChoice = async (prompt: string, question: string, answer: string) => {
-      const tx = {
-        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
-        message: {
-          findFirst: vi.fn().mockResolvedValue({
-            id: "message-1",
-            blocks: [
-              {
-                kind: "ask",
-                text: question,
-                status: "pending",
-                actions: [
-                  { id: "choice-1", label: "Two people" },
-                  { id: "choice-2", label: "Italian" },
-                ],
-              },
-            ],
-          }),
-          update: vi.fn().mockResolvedValue({ id: "message-1" }),
-        },
-        run: {
-          findFirst: vi.fn().mockResolvedValue({
-            botId: "bot-2",
-            trigger: "routine",
-            task: { prompt },
-          }),
-          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-          findUnique: vi.fn().mockResolvedValue({
-            status: "queued",
-            createdAt: new Date("2026-08-16T12:00:00.000Z"),
-            threadId: "thread-1",
-          }),
-        },
-        task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
-        thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
-        event: {
-          create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
-            ...event(data.seq),
-            type: data.type,
-          })),
-          findFirst: vi.fn().mockResolvedValue(null),
-        },
-      };
-      const prisma = {
-        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
-      } as unknown as PrismaClient;
-      await expect(
-        answerRunInput(prisma, {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          runId: "run-1",
-          messageId: "message-1",
-          answeredByUserId: "user-1",
-          answer,
-        }),
-      ).resolves.toBe(true);
-      return (tx.task.updateMany.mock.calls[0]![0] as { data: { prompt: string } }).data.prompt;
-    };
-
-    const afterFirst = await answerChoice("Plan tonight's dinner.", "Who is eating?", "choice-1");
-    expect(afterFirst).toBe(
-      "Plan tonight's dinner.\n\nWho is eating?\nAnswer: Selected choice choice-1: Two people",
-    );
-    const afterSecond = await answerChoice(afterFirst, "Which cuisine?", "choice-2");
-    expect(afterSecond).toBe(
-      [
-        "Plan tonight's dinner.",
-        "Who is eating?\nAnswer: Selected choice choice-1: Two people",
-        "Which cuisine?\nAnswer: Selected choice choice-2: Italian",
-      ].join("\n\n"),
-    );
   });
 
   it("records a spoken call answer as a user utterance with the call identity", async () => {
@@ -2424,7 +2344,6 @@ describe("sendUserMessage", () => {
         botId: "bot-1",
         userId: "user-1",
         runId: null,
-        originTrigger: "webhook",
         modelProvider: "openai-compatible",
         modelId: "private-model",
         thinkingLevel: "low",
@@ -2655,15 +2574,7 @@ describe("claimSteering", () => {
   it("claims pending messages for the fenced run in message order", async () => {
     const tx = {
       $queryRaw: vi.fn(),
-      run: {
-        findFirst: vi.fn().mockResolvedValue({ id: "run-1", spaceId: "space-1" }),
-        findUnique: vi.fn().mockResolvedValue({ status: "running", startedAt: null }),
-      },
-      thread: {
-        findUniqueOrThrow: vi.fn().mockResolvedValue({ nextMessageSeq: 7 }),
-        update: vi.fn().mockResolvedValue({ nextEventSeq: 1 }),
-      },
-      event: { create: vi.fn() },
+      run: { findFirst: vi.fn().mockResolvedValue({ id: "run-1" }) },
       steeringMessage: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -2731,12 +2642,6 @@ describe("claimSteering", () => {
         where: expect.objectContaining({ leaseOwner: "worker-1", leaseFence: 2 }),
       }),
     );
-    expect(tx.event.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        type: "run.steering.claimed",
-        payload: { steeringIds: ["steer-1", "steer-2"], nextMessageSeq: 7 },
-      }),
-    });
     expect(tx.steeringMessage.updateMany).toHaveBeenCalledWith({
       where: { id: { in: ["steer-1", "steer-2"] }, claimedAt: null },
       data: { runId: "run-1", claimedAt: expect.any(Date) },
@@ -2800,44 +2705,6 @@ describe("claimSteering", () => {
       }),
     );
   });
-
-  it.each(["user", "follow_up", "messaging"])(
-    "keeps held webhook deliveries out of a %s turn",
-    async (trigger) => {
-      const tx = {
-        $queryRaw: vi.fn(),
-        run: {
-          findFirst: vi.fn(async () => ({
-            id: "run-1",
-            trigger,
-            sourceMessage: { blocks: [{ kind: "channel_message", channelId: "channel-1" }] },
-          })),
-        },
-        steeringMessage: { findMany: vi.fn(async () => []), updateMany: vi.fn() },
-      };
-      const prisma = {
-        $transaction: async (action: (client: typeof tx) => unknown) => action(tx),
-      } as unknown as PrismaClient;
-      await claimSteering(prisma, {
-        threadId: "thread-1",
-        botId: "bot-1",
-        runId: "run-1",
-        leaseOwner: "worker-1",
-        leaseFence: 1,
-        seenIds: [],
-      });
-      expect(tx.steeringMessage.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            OR: [
-              { runId: null, originTrigger: trigger === "messaging" ? "messaging" : null },
-              { runId: "run-1" },
-            ],
-          }),
-        }),
-      );
-    },
-  );
 
   it("leaves channel and in-app pending rows for a direct-message run", async () => {
     const tx = {
@@ -3259,181 +3126,5 @@ describe("appendEvent", () => {
     ).rejects.toThrow(RunHistoryWriteError);
     expect(tx.run.findUnique).not.toHaveBeenCalled();
     expect(tx.event.create).not.toHaveBeenCalled();
-  });
-});
-
-describe("instruction proposal answers", () => {
-  function fixture() {
-    const request = {
-      instructions: "Draft only",
-      reason: "Learned preference",
-      previousInstructions: "Original",
-    };
-    const block = {
-      kind: "ask",
-      approvalEffectId: "effect-1",
-      text: "Update instructions?",
-      status: "pending",
-      instructionUpdate: {
-        botId: "bot-1",
-        before: "Original",
-        after: "Draft only",
-        reason: "Learned preference",
-      },
-      actions: [
-        { id: "allow", label: "Apply" },
-        { id: "deny", label: "Dismiss" },
-      ],
-    };
-    const tx = {
-      $queryRaw: vi.fn(async () => []),
-      run: {
-        findFirst: vi.fn(async () => ({ botId: "bot-1", userId: "owner" })),
-        updateMany: vi.fn(async () => ({ count: 1 })),
-        findUnique: vi.fn(async () => ({ status: "queued" })),
-      },
-      message: {
-        findFirst: vi.fn(async () => ({ id: "message-1", blocks: [block] })),
-        update: vi.fn(async () => ({ id: "message-1" })),
-      },
-      externalEffect: {
-        findFirst: vi.fn(async () => ({
-          id: "effect-1",
-          kind: "propose_instructions_update",
-          request,
-        })),
-        findUniqueOrThrow: vi.fn(async () => ({ request })),
-        update: vi.fn(),
-      },
-      bot: { updateMany: vi.fn() },
-      task: { updateMany: vi.fn() },
-      thread: { update: vi.fn(async () => ({ nextEventSeq: 10 })) },
-      event: {
-        create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
-          ...event(data.seq),
-          type: data.type,
-        })),
-      },
-    };
-    const prisma = { $transaction: async (action: (client: typeof tx) => unknown) => action(tx) };
-    const answer = (value: string, userId = "owner") =>
-      answerRunInput(
-        prisma as never,
-        {
-          spaceId: "workspace-1",
-          threadId: "thread-1",
-          runId: "run-1",
-          messageId: "message-1",
-          answeredByUserId: userId,
-          answer: value,
-        },
-        new TestFanout(),
-      );
-    return { tx, answer };
-  }
-  it("stores edited text as the approved request without replacing the user's task", async () => {
-    const f = fixture();
-    expect(await f.answer(JSON.stringify({ instructions: "Never send" }))).toBe(true);
-    expect(f.tx.externalEffect.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          request: {
-            instructions: "Never send",
-            reason: "Learned preference",
-            previousInstructions: "Original",
-          },
-          idempotencyKey: expect.any(String),
-        }),
-      }),
-    );
-    expect(f.tx.externalEffect.update).toHaveBeenCalledWith({
-      where: { id: "effect-1" },
-      data: { status: "approved" },
-    });
-    expect(f.tx.task.updateMany).not.toHaveBeenCalled();
-    expect(f.tx.message.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          blocks: [
-            expect.objectContaining({
-              instructionUpdate: expect.objectContaining({ after: "Never send" }),
-              detail: "Learned preference\n\n- Original\n+ Never send",
-            }),
-          ],
-        },
-      }),
-    );
-  });
-  it("rejects edits from another user, invalid payloads, and generic always-allow", async () => {
-    const f = fixture();
-    for (const value of [
-      '{"instructions":42}',
-      '{"instructions":"new","botId":"other"}',
-      JSON.stringify({ instructions: "x".repeat(20001) }),
-      "always",
-    ])
-      expect(await f.answer(value)).toBe(false);
-    expect(await f.answer('{"instructions":"new"}', "other-user")).toBe(false);
-    expect(f.tx.externalEffect.update).not.toHaveBeenCalled();
-    expect(f.tx.run.updateMany).not.toHaveBeenCalled();
-  });
-  it("dismisses and frees the bot reservation", async () => {
-    const f = fixture();
-    expect(await f.answer("deny")).toBe(true);
-    expect(f.tx.bot.updateMany).toHaveBeenCalledWith({
-      where: { id: "bot-1", pendingInstructionsRunId: "run-1" },
-      data: { pendingInstructionsRunId: null },
-    });
-    expect(f.tx.externalEffect.update).toHaveBeenCalledWith({
-      where: { id: "effect-1" },
-      data: { status: "denied" },
-    });
-  });
-});
-
-describe("discardAnsweredSteering", () => {
-  function client(reply: { seq: number } | null, payloads: unknown[] = []) {
-    return {
-      message: { findFirst: vi.fn().mockResolvedValue(reply) },
-      event: { findMany: vi.fn().mockResolvedValue(payloads.map((payload) => ({ payload }))) },
-      steeringMessage: { deleteMany: vi.fn() },
-    };
-  }
-
-  it("requires a text reply and a durable claim watermark", async () => {
-    const tx = client(null);
-    await discardAnsweredSteering(tx as never, { threadId: "thread-1", runId: "run-1" });
-    expect(tx.message.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          NOT: expect.arrayContaining([
-            { blocks: { array_contains: [{ kind: "ask" }] } },
-            { blocks: { array_contains: [{ kind: "steps" }] } },
-          ]),
-        }),
-      }),
-    );
-    expect(tx.event.findMany).not.toHaveBeenCalled();
-    expect(tx.steeringMessage.deleteMany).not.toHaveBeenCalled();
-    tx.message.findFirst.mockResolvedValue({ seq: 8 });
-    await discardAnsweredSteering(tx as never, { threadId: "thread-1", runId: "run-1" });
-    expect(tx.steeringMessage.deleteMany).not.toHaveBeenCalled();
-  });
-
-  it("only discards claims ordered before a reply, including the next sequence", async () => {
-    const tx = client({ seq: 8 }, [
-      { steeringIds: ["answered"], nextMessageSeq: 8 },
-      { steeringIds: ["later"], nextMessageSeq: 9 },
-      { steeringIds: ["legacy"] },
-      null,
-    ]);
-    await discardAnsweredSteering(tx as never, { threadId: "thread-1", runId: "run-1" });
-    expect(tx.steeringMessage.deleteMany).toHaveBeenCalledWith({
-      where: {
-        runId: "run-1",
-        claimedAt: { not: null },
-        id: { in: ["answered"] },
-      },
-    });
   });
 });

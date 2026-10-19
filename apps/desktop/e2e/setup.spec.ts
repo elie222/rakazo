@@ -7,8 +7,6 @@ import { promisify } from "node:util";
 import { type ElectronApplication, _electron as electron, expect, test } from "@playwright/test";
 
 const APP_MARKER = "Existing Rakazo instance ready";
-/** Outlasts the shell's 20s wait for a mounted app before it rejects the server. */
-const NOT_READY_TIMEOUT_MS = 30_000;
 const execFileAsync = promisify(execFile);
 
 let server: Server;
@@ -251,7 +249,6 @@ test("an HTTP error document is not accepted after a healthy probe", async () =>
 });
 
 test("a session-pending shell skeleton is not accepted as a ready app", async () => {
-  test.setTimeout(2 * NOT_READY_TIMEOUT_MS);
   const skeletonHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Rakazo</title></head>
 <body><div id="root"><div data-rakazo-app-state="session-pending"><aside></aside><main><div>Opening your Space…</div></main></div></div></body></html>`;
   const skeleton = createServer((request, response) => {
@@ -276,7 +273,7 @@ test("a session-pending shell skeleton is not accepted as a ready app", async ()
     await setup.getByRole("button", { name: "Continue" }).click();
 
     await expect(setup.locator("#status")).toContainText("Could not open that server.", {
-      timeout: NOT_READY_TIMEOUT_MS,
+      timeout: 15_000,
     });
     await expect(async () => {
       await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
@@ -352,7 +349,6 @@ for (const { name, surface } of [
 }
 
 test("a shell mount before workspace bootstrap is not accepted", async () => {
-  test.setTimeout(2 * NOT_READY_TIMEOUT_MS);
   const preBootstrapHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Rakazo</title></head>
 <body><div id="root"><div data-rakazo-app-state="ready"><div data-testid="shell-root" data-ready="false">Workspace</div></div></div></body></html>`;
   const preBootstrap = createServer((request, response) => {
@@ -377,7 +373,7 @@ test("a shell mount before workspace bootstrap is not accepted", async () => {
     await setup.getByRole("button", { name: "Continue" }).click();
 
     await expect(setup.locator("#status")).toContainText("Could not open that server.", {
-      timeout: NOT_READY_TIMEOUT_MS,
+      timeout: 15_000,
     });
     await expect(async () => {
       await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();
@@ -390,7 +386,6 @@ test("a shell mount before workspace bootstrap is not accepted", async () => {
 });
 
 test("a session-ready marker without a route surface is not accepted", async () => {
-  test.setTimeout(2 * NOT_READY_TIMEOUT_MS);
   const emptyReadyHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Rakazo</title></head>
 <body><div id="root"><div data-rakazo-app-state="ready" class="h-full"></div></div></body></html>`;
   const emptyReady = createServer((request, response) => {
@@ -415,7 +410,7 @@ test("a session-ready marker without a route surface is not accepted", async () 
     await setup.getByRole("button", { name: "Continue" }).click();
 
     await expect(setup.locator("#status")).toContainText("Could not open that server.", {
-      timeout: NOT_READY_TIMEOUT_MS,
+      timeout: 15_000,
     });
     await expect(async () => {
       await expect(readFile(path.join(userData, "setup.json"), "utf8")).rejects.toThrow();

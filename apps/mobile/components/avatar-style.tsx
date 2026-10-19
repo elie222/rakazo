@@ -10,7 +10,7 @@ const AvatarStyleContext = createContext<{
   avatarStyle: AvatarStyle;
   updateAvatarStyle: (avatarStyle: AvatarStyle) => Promise<void>;
 }>({
-  avatarStyle: "organic",
+  avatarStyle: "robot",
   updateAvatarStyle: async () => undefined,
 });
 

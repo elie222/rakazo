@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr " (sin leer)"
 
+#. placeholder {0}: group.entries.length
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "{0, plural, one {# model} other {# models}}"
+msgstr "{0, plural, one {# modelo} other {# modelos}}"
+
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -35,10 +40,9 @@ msgid "{0} (max {ATTACHMENT_MAX_COUNT} attachments)"
 msgstr "{0} (máx. {ATTACHMENT_MAX_COUNT} archivos adjuntos)"
 
 #. placeholder {0}: file.name
-#. placeholder {1}: attachmentSizeLabel(attachmentMaxBytes(bootstrapMe))
 #: src/pages/Shell.tsx
-msgid "{0} (over {1})"
-msgstr "{0} (más de {1})"
+msgid "{0} (over 10 MiB)"
+msgstr "{0} (más de 10 MiB)"
 
 #. placeholder {0}: preset.n
 #: src/pages/RoutineSchedule.tsx
@@ -153,86 +157,6 @@ msgstr "{name} terminó"
 msgid "{name} stopped"
 msgstr "{name} se detuvo"
 
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} could not find the requested model."
-msgstr "{provider} no pudo encontrar el modelo solicitado."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} is rate limiting requests. Try again shortly."
-msgstr "{provider} está limitando las solicitudes. Vuelve a intentarlo en breve."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} key hit its daily limit."
-msgstr "{provider} alcanzó el límite diario de la clave."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} key hit its limit."
-msgstr "{provider} alcanzó el límite de la clave."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} key hit its monthly limit."
-msgstr "{provider} alcanzó el límite mensual de la clave."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} key hit its weekly limit."
-msgstr "{provider} alcanzó el límite semanal de la clave."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its credit limit."
-msgstr "{provider} alcanzó el límite de crédito."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its daily credit limit."
-msgstr "{provider} alcanzó el límite diario de crédito."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its daily spending limit."
-msgstr "{provider} alcanzó el límite diario de gasto."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its monthly credit limit."
-msgstr "{provider} alcanzó el límite mensual de crédito."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its monthly spending limit."
-msgstr "{provider} alcanzó el límite mensual de gasto."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its spending limit."
-msgstr "{provider} alcanzó el límite de gasto."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its weekly credit limit."
-msgstr "{provider} alcanzó el límite semanal de crédito."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} reached its weekly spending limit."
-msgstr "{provider} alcanzó el límite semanal de gasto."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} rejected the API key. Check your connection settings."
-msgstr "{provider} rechazó la clave de API. Revisa la configuración de conexión."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{provider} took too long to respond. Try again."
-msgstr "{provider} tardó demasiado en responder. Vuelve a intentarlo."
-
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "{remaining} left · bot is watching, not acting"
 msgstr "Quedan {remaining} · el bot observa, no actúa"
@@ -252,11 +176,6 @@ msgstr ""
 #: src/components/ToolActivityDisclosure.tsx
 msgid "{stepCount, plural, one {Working… · # tool} other {Working… · # tools}}"
 msgstr ""
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "{summary} Resets {date}."
-msgstr "{summary} Se restablece el {date}."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -278,10 +197,6 @@ msgstr "@{0}"
 #: src/pages/shell/message-cards.tsx
 msgid "A bit of everything"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "A command's output"
-msgstr "La salida de un comando"
 
 #. placeholder {0}: oauth.verificationUri.replace(/^https:\/\//, "")
 #: src/pages/ModelSettingsOverlay.tsx
@@ -367,14 +282,6 @@ msgstr "Actividad"
 msgid "Add"
 msgstr "Agregar"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Add a command to run"
-msgstr "Añade un comando para ejecutar"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Add a file or folder to watch"
-msgstr "Añade un archivo o carpeta para observar"
-
 #: src/components/ApprovalRulesSettings.tsx
 msgid "Add a model in Settings to use this."
 msgstr "Agrega un modelo en Configuración para usarlo."
@@ -383,6 +290,14 @@ msgstr "Agrega un modelo en Configuración para usarlo."
 msgid "Add a run time for this one-shot."
 msgstr "Agrega una hora de ejecución para este one-shot."
 
+#: src/pages/Shell.tsx
+msgid "Add a schedule, webhook, GitHub, or message trigger"
+msgstr ""
+
+#: src/pages/RoutineEditor.tsx
+msgid "Add a schedule, webhook, GitHub, or message trigger to run this routine."
+msgstr ""
+
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
 msgstr "Agrega un nombre de servidor."
@@ -390,11 +305,6 @@ msgstr "Agrega un nombre de servidor."
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a stdio command."
 msgstr "Agrega un comando stdio."
-
-#: src/pages/RoutineEditor.tsx
-#: src/pages/Shell.tsx
-msgid "Add a trigger to run this routine."
-msgstr "Añade un activador para ejecutar esta rutina."
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Add an HTTPS server URL."
@@ -572,10 +482,6 @@ msgstr "Siempre permitido"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Hay una clave de API guardada para este proveedor, no un inicio de sesión por suscripción."
 
-#: src/pages/RoutineEditor.tsx
-msgid "An integration tool"
-msgstr "Una herramienta de integración"
-
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "Responder"
@@ -617,10 +523,6 @@ msgstr "Encabezado de clave de API"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Appearance"
 msgstr "Apariencia"
-
-#: src/components/AskCard.tsx
-msgid "Apply"
-msgstr "Aplicar"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Approval boundaries"
@@ -888,10 +790,6 @@ msgstr "Integrado"
 msgid "Can't reach the server."
 msgstr "No se puede alcanzar el servidor."
 
-#: src/pages/ModelSettingsOverlay.tsx
-msgid "Can't read images"
-msgstr "No puede leer imágenes"
-
 #: src/components/AskCard.tsx
 #: src/components/ComputerMaintenanceActions.tsx
 #: src/components/ComputerUpdateProgress.tsx
@@ -956,6 +854,10 @@ msgstr "No se pudo renderizar el gráfico: {error}"
 msgid "Chat apps"
 msgstr "Apps de chat"
 
+#: src/pages/AccountSettingsOverlay.tsx
+msgid "Chat apps, group channels, and agent connections."
+msgstr "Apps de chat, canales de grupo y conexiones de agentes."
+
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Configuración del chat"
@@ -965,18 +867,9 @@ msgstr "Configuración del chat"
 msgid "Check again"
 msgstr ""
 
-#: src/pages/RoutineEditor.tsx
-msgid "Check every"
-msgstr "Comprobar cada"
-
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
 msgstr "La comprobación falló"
-
-#. placeholder {0}: state.detail ?? ""
-#: src/pages/RoutineEditor.tsx
-msgid "Check failed: {0}"
-msgstr "Error al comprobar: {0}"
 
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx
@@ -1029,6 +922,10 @@ msgstr "Elige una contraseña nueva"
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Choose file"
 msgstr "Elegir archivo"
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Choose which connected model Rakazo uses."
+msgstr "Elige qué modelo conectado usa Rakazo."
 
 #: src/pages/shell/dialogs.tsx
 msgid "Clear"
@@ -1161,7 +1058,6 @@ msgid "Coming soon"
 msgstr "Próximamente"
 
 #: src/pages/McpServersOverlay.tsx
-#: src/pages/RoutineEditor.tsx
 msgid "Command"
 msgstr "Comando"
 
@@ -1253,6 +1149,10 @@ msgstr "Conectar"
 msgid "Connect a model"
 msgstr "Conectar un modelo"
 
+#: src/pages/ModelBackupsSettings.tsx
+msgid "Connect a provider to add backups."
+msgstr "Conecta un proveedor para agregar modelos de respaldo."
+
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "Conectar clave de API"
@@ -1269,6 +1169,10 @@ msgstr "Conectar servidor MCP “{name}”"
 msgid "Connect OAuth"
 msgstr "Conectar OAuth"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connect this provider to use it as your personal model."
+msgstr "Conecta este proveedor para usarlo como tu modelo personal."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Treg"
 msgstr "Conectar Treg"
@@ -1282,10 +1186,21 @@ msgstr "Conectar Treg"
 msgid "Connected"
 msgstr "Conectado"
 
+#. placeholder {0}: credential.label
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connected · {0}"
+msgstr "Conectado · {0}"
+
 #. placeholder {0}: selected.name
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Connected {0}."
 msgstr "Se conectó {0}."
+
+#. placeholder {0}: selected.label
+#. placeholder {0}: selectedLabelRef.current ?? "this model"
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Connected and using {0}."
+msgstr "Conectado y usando {0}."
 
 #: src/pages/shell/message-cards.tsx
 msgid "Connected. Its tools are available from your next message."
@@ -1603,10 +1518,6 @@ msgstr "No se pudo cargar el estado de actualización"
 msgid "Could not load voice settings"
 msgstr "No se pudo cargar la configuración de voz"
 
-#: src/lib/sign-out.ts
-msgid "Could not log out. Try again."
-msgstr "No se pudo cerrar sesión. Inténtalo de nuevo."
-
 #: src/pages/BillingSettingsPanel.tsx
 #: src/pages/Paywall.tsx
 msgid "Could not open billing"
@@ -1685,7 +1596,6 @@ msgstr "No se pudo ejecutar la rutina"
 
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/KnowledgeSection.tsx
-#: src/pages/Shell.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Could not save"
 msgstr "No se pudo guardar"
@@ -1805,10 +1715,6 @@ msgstr "No se pudieron actualizar los avatares"
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Couldn't update messaging settings"
 msgstr "No se pudo actualizar la configuración de mensajería"
-
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Couldn't update your timezone"
-msgstr ""
 
 #: src/pages/Board.tsx
 #: src/pages/Shell.tsx
@@ -2040,10 +1946,6 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
-#: src/pages/Shell.tsx
-msgid "Details"
-msgstr "Detalles"
-
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
@@ -2074,7 +1976,6 @@ msgstr ""
 msgid "Disconnecting…"
 msgstr "Desconectando…"
 
-#: src/components/AskCard.tsx
 #: src/components/ComputerUpdateProgress.tsx
 #: src/components/teach/TeachComputerOverlay.tsx
 #: src/pages/shell/message-cards.tsx
@@ -2084,10 +1985,6 @@ msgstr "Descartar"
 #: src/pages/Shell.tsx
 msgid "Dismiss error"
 msgstr "Descartar error"
-
-#: src/components/AskCard.tsx
-msgid "Dismissed"
-msgstr "Descartado"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Dismissed. Reconnect anytime from MCP settings."
@@ -2162,10 +2059,6 @@ msgstr "Duplicar"
 #: src/pages/shell/bot-panel.tsx
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "p. ej. Hivenet Agent, Presales, bot de hojas de horas"
-
-#: src/components/AskCard.tsx
-msgid "Edit"
-msgstr "Editar"
 
 #: src/components/AskCard.tsx
 msgid "Edit first"
@@ -2326,30 +2219,13 @@ msgstr "Falló."
 msgid "Failure handling"
 msgstr "Manejo de fallos"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Fields that mark a change"
-msgstr "Campos que indican un cambio"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Fields to compare, e.g. id, modifiedTime (optional)"
-msgstr "Campos para comparar, p. ej. id, modifiedTime (opcional)"
-
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
 #: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "El archivo supera el límite de subida de {0}."
+msgid "File is too large to upload."
+msgstr ""
 
 #: src/components/computer/ComputerWorkspace.tsx
 msgid "Files"
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Files or folders on the computer"
-msgstr "Archivos o carpetas del equipo"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Files or folders, one per line"
-msgstr "Archivos o carpetas, uno por línea"
 
 #: src/pages/Artifacts.tsx
 msgid "Filter by date"
@@ -2501,7 +2377,7 @@ msgstr "Hola, así sonaré cuando lea las respuestas en voz alta."
 msgid "Hide bots"
 msgstr ""
 
-#: src/components/I18nBootstrap.tsx
+#: src/pages/Auth.tsx
 msgid "Hide password"
 msgstr "Ocultar contraseña"
 
@@ -2589,19 +2465,6 @@ msgstr "Clave de API de instancia"
 msgid "Instruction"
 msgstr "Instrucción"
 
-#: src/components/InstructionSettings.tsx
-msgid "Instruction history"
-msgstr "Historial de instrucciones"
-
-#: src/components/AskCard.tsx
-#: src/components/InstructionSettings.tsx
-msgid "Instructions"
-msgstr "Instrucciones"
-
-#: src/components/AskCard.tsx
-msgid "Instructions updated"
-msgstr "Instrucciones actualizadas"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Integration domain"
 msgstr ""
@@ -2669,16 +2532,6 @@ msgstr "Conocimientos"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Language"
 msgstr "Idioma"
-
-#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
-msgid "Last check {0}: changed"
-msgstr "Última comprobación {0}: cambios"
-
-#. placeholder {0}: new Date(state.checkedAt).toLocaleString()
-#: src/pages/RoutineEditor.tsx
-msgid "Last check {0}: no changes"
-msgstr "Última comprobación {0}: sin cambios"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
@@ -2832,6 +2685,10 @@ msgstr "Gestionar servidores MCP"
 msgid "Manage messaging settings"
 msgstr "Administrar configuración de mensajería"
 
+#: src/pages/MemorySettingsOverlay.tsx
+msgid "Manage the Space semantic memory provider."
+msgstr "Administra el proveedor de memoria semántica del Space."
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
 msgstr ""
@@ -2984,7 +2841,6 @@ msgstr ""
 msgid "minute"
 msgstr "minuto"
 
-#: src/pages/RoutineEditor.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "minutes"
 msgstr "minutos"
@@ -3519,17 +3375,9 @@ msgstr "Elige un modelo del catálogo."
 msgid "Pick a model from the list or enter a model id served by this endpoint."
 msgstr "Elige un modelo de la lista o introduce un id de modelo que sirva este endpoint."
 
-#: src/pages/RoutineEditor.tsx
-msgid "Pick a tool to check"
-msgstr "Elige una herramienta para comprobar"
-
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Fijar"
-
-#: src/components/ArtifactFileCard.tsx
-msgid "Play {name}"
-msgstr "Reproducir {name}"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Playing…"
@@ -3538,10 +3386,6 @@ msgstr "Reproduciendo…"
 #: src/pages/KnowledgeSection.tsx
 msgid "Plugin"
 msgstr "Plugin"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Post \"No changes\" in chat"
-msgstr "Publicar «Sin cambios» en el chat"
 
 #: src/pages/RoutineEditor.tsx
 msgid "POST to"
@@ -3626,10 +3470,6 @@ msgstr ""
 #: src/pages/ActivityList.tsx
 msgid "Recent"
 msgstr "Recientes"
-
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Reconnect"
-msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Reconnect OAuth"
@@ -3726,10 +3566,6 @@ msgstr "Ceder el control"
 msgid "Release interrupted computer?"
 msgstr ""
 
-#: src/components/InstructionSettings.tsx
-msgid "Reload"
-msgstr "Recargar"
-
 #: src/components/ApprovalRulesSettings.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -3750,10 +3586,6 @@ msgstr "Quitar {full}"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Remove {secretName}? This bot will no longer be able to use it."
 msgstr ""
-
-#: src/pages/RoutineEditor.tsx
-msgid "Remove change trigger"
-msgstr "Eliminar activador de cambios"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
@@ -3878,7 +3710,6 @@ msgstr "Cambiar tamaño del panel"
 msgid "Restart to update"
 msgstr ""
 
-#: src/components/InstructionSettings.tsx
 #: src/pages/Shell.tsx
 msgid "Restore"
 msgstr "Restaurar"
@@ -3890,10 +3721,6 @@ msgstr "Restaurar el último espacio de trabajo guardado."
 #: src/components/ComputerMaintenanceActions.tsx
 msgid "Restore the last saved workspace. Unsaved work on the computer is lost."
 msgstr "Restaura el último espacio de trabajo guardado. Se pierde el trabajo sin guardar en la computadora."
-
-#: src/components/AskCard.tsx
-msgid "Restored"
-msgstr "Restaurado"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Restoring your workspace"
@@ -4007,6 +3834,10 @@ msgstr "Guardar respaldos"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Save credential"
+msgstr ""
+
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Save limits"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
@@ -4145,10 +3976,6 @@ msgstr "Enviarlo"
 msgid "Send reset link"
 msgstr "Enviar enlace de restablecimiento"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Send with Enter"
-msgstr "Enviar con Enter"
-
 #: src/components/AskCard.tsx
 msgid "Sending…"
 msgstr "Enviando…"
@@ -4175,7 +4002,6 @@ msgstr "Nombre del servidor"
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
-#: src/pages/VoiceSettingsOverlay.tsx
 msgid "Server URL"
 msgstr "URL del servidor"
 
@@ -4209,7 +4035,7 @@ msgid "Shared"
 msgstr "Compartido"
 
 #: src/pages/shell/dialogs.tsx
-msgid "Shared chat with {GROUP_MEMBER_MIN}-{GROUP_MEMBER_MAX} bots. They all reply in the same thread."
+msgid "Shared chat with 2-6 bots. They all reply in the same thread."
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -4240,7 +4066,7 @@ msgstr ""
 msgid "Show more"
 msgstr "Mostrar más"
 
-#: src/components/I18nBootstrap.tsx
+#: src/pages/Auth.tsx
 msgid "Show password"
 msgstr "Mostrar contraseña"
 
@@ -4420,6 +4246,10 @@ msgstr "Detenido."
 msgid "Stored encrypted"
 msgstr "Almacenado cifrado"
 
+#: src/pages/ModelSettingsOverlay.tsx
+msgid "Stored securely. Never shown here."
+msgstr "Almacenado de forma segura. Nunca se muestra aquí."
+
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Stream replies"
 msgstr "Transmitir respuestas"
@@ -4526,11 +4356,6 @@ msgstr "La API no volvió. Actualiza esta página."
 #: src/lib/model-connection-preflight.ts
 msgid "The connection timed out."
 msgstr "Se agotó el tiempo de conexión."
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "The model provider returned an error."
-msgstr "El proveedor de modelos devolvió un error."
 
 #: src/lib/model-connection-preflight.ts
 msgid "The provider is rate-limiting requests."
@@ -4640,10 +4465,6 @@ msgstr ""
 msgid "Time of day"
 msgstr "Hora del día"
 
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Timezone"
-msgstr ""
-
 #: src/pages/Board.tsx
 #: src/pages/shell/bot-panel.tsx
 msgid "Title"
@@ -4671,22 +4492,6 @@ msgstr "Para:"
 msgid "Today"
 msgstr "Hoy"
 
-#: src/pages/RoutineEditor.tsx
-msgid "Tool arguments (JSON)"
-msgstr "Argumentos de la herramienta (JSON)"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Tool arguments must be a JSON object"
-msgstr "Los argumentos deben ser un objeto JSON"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Tool arguments must be JSON"
-msgstr "Los argumentos deben ser JSON"
-
-#: src/pages/RoutineEditor.tsx
-msgid "Tool name"
-msgstr "Nombre de la herramienta"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Tool sources"
 msgstr "Fuentes de herramientas"
@@ -4698,10 +4503,6 @@ msgstr ""
 #: src/components/call/CallCard.tsx
 msgid "Transcript"
 msgstr "Transcripción"
-
-#: src/pages/VoiceSettingsOverlay.tsx
-msgid "Transcription model"
-msgstr ""
 
 #: src/pages/ExternalConversationSettings.tsx
 msgid "Treat like a person"
@@ -4747,10 +4548,6 @@ msgstr "Sin asignar"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Unavailable"
 msgstr "No disponible"
-
-#: src/components/AskCard.tsx
-msgid "Undo"
-msgstr "Deshacer"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Uninstall"
@@ -4803,10 +4600,6 @@ msgstr "Falló la actualización"
 msgid "Update finished with errors"
 msgstr "La actualización terminó con errores"
 
-#: src/components/AskCard.tsx
-msgid "Update instructions?"
-msgstr "¿Actualizar instrucciones?"
-
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Update progress"
 msgstr ""
@@ -4851,12 +4644,6 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "Uso"
-
-#. Switches the saved timezone to this device's, e.g. 'Use Pacific/Auckland'
-#. placeholder {0}: deviceTimezone.replaceAll("_", " ")
-#: src/pages/AccountSettingsOverlay.tsx
-msgid "Use {0}"
-msgstr ""
 
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
@@ -4993,16 +4780,8 @@ msgid "What to return"
 msgstr "Qué devolver"
 
 #: src/pages/RoutineEditor.tsx
-msgid "What to watch"
-msgstr "Qué observar"
-
-#: src/pages/RoutineEditor.tsx
 msgid "When a webhook fires"
 msgstr "Cuando se dispara un webhook"
-
-#: src/pages/RoutineEditor.tsx
-msgid "When something changes"
-msgstr "Cuando algo cambie"
 
 #: src/pages/RoutineEditor.tsx
 msgid "When to run"
@@ -5054,33 +4833,13 @@ msgstr "Puedes cerrar esta ventana."
 msgid "You have control"
 msgstr "Tienes el control"
 
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "Your Anthropic"
-msgstr "Tu Anthropic"
-
 #: src/pages/Auth.tsx
 msgid "Your email address"
 msgstr "Tu dirección de correo"
 
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "Your model provider"
-msgstr "Tu proveedor de modelos"
-
 #: src/pages/Auth.tsx
 msgid "Your name"
 msgstr "Tu nombre"
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "Your OpenAI"
-msgstr "Tu OpenAI"
-
-#. js-lingui-explicit-id
-#: src/lib/run-error.ts
-msgid "Your OpenRouter"
-msgstr "Tu OpenRouter"
 
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."

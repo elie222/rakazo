@@ -45,7 +45,6 @@ export const SandboxKind = z.enum([
   "daytona",
   "createos",
   "box",
-  "railway",
   "desktop",
   "fake",
 ]);

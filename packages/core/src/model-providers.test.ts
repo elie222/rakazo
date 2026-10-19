@@ -278,13 +278,3 @@ describe("filterModelCatalog", () => {
     expect(filterModelCatalog(models, "gemini")).toEqual([]);
   });
 });
-
-it("offers Azure catalog models for a credential saved with the old provider id", () => {
-  const catalog = [{ provider: "azure", id: "gpt-4o", label: "GPT-4o" }];
-  const choices = connectedModelChoices(
-    [{ provider: "azure-openai-responses", label: "Azure", modelId: "gpt-4o" }],
-    catalog,
-  );
-  expect(choices).toMatchObject([{ key: "azure::gpt-4o", provider: "azure", modelId: "gpt-4o" }]);
-  expect(pickCatalogModelId(catalog, "azure-openai-responses", "gpt-4o")).toBe("gpt-4o");
-});

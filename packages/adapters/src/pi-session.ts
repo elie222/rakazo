@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { constants } from "node:fs";
-import { mkdir, open, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { type AgentMessage, type Branch, JsonlSessionRepo } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT } from "@earendil-works/pi-agent-core/harness/context";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { getLogger } from "@rakazo/logging";
 
 export const PI_SESSION_RETENTION_DAYS = 30;
@@ -69,8 +69,6 @@ export interface PiSessionRetentionOptions {
   now?: number;
   maxAgeMs?: number;
   maxFiles?: number;
-  /** Keep the transcript being started even when timestamps tie or clocks move. */
-  protectedFile?: string;
 }
 
 interface PiSessionFile {
@@ -117,14 +115,12 @@ export async function prunePiSessionFiles(
   const files: PiSessionFile[] = [];
   await collectPiSessionFiles(root, files);
   const cutoff = (options.now ?? Date.now()) - maxAgeMs;
-  const candidates = files.filter((file) => file.path !== options.protectedFile);
-  const availableSlots = maxFiles - (files.length - candidates.length);
-  const expired = candidates.filter((file) => file.mtimeMs < cutoff);
-  const retained = candidates.filter((file) => file.mtimeMs >= cutoff);
+  const expired = files.filter((file) => file.mtimeMs < cutoff);
+  const retained = files.filter((file) => file.mtimeMs >= cutoff);
   retained.sort((left, right) => right.mtimeMs - left.mtimeMs);
 
   await Promise.all(
-    [...expired, ...retained.slice(availableSlots)].map((file) => rm(file.path, { force: true })),
+    [...expired, ...retained.slice(maxFiles)].map((file) => rm(file.path, { force: true })),
   );
 }
 
@@ -150,46 +146,36 @@ export interface PiSessionRecorder {
 }
 
 /**
- * Persists the low-level Agent transcript using Pi's format-4 JSONL records.
- * Pi 1.0 removed its session writer; keep the recording subset local.
+ * Persists the low-level Agent transcript using Pi's native JSONL session format.
  * This is deliberately a recorder only: Rakazo remains responsible for running
  * the agent and for its product history in Postgres.
  */
 export class PiJsonlSessionRecorder implements PiSessionRecorder {
   private readonly cwd: string;
   private readonly sessionsRoot: string;
+  private readonly fs: NodeExecutionEnv;
 
   constructor(sessionsRoot: string, cwd = process.cwd()) {
     this.cwd = path.resolve(cwd);
     this.sessionsRoot = path.resolve(sessionsRoot);
+    this.fs = new NodeExecutionEnv({ cwd: this.cwd });
   }
 
   async start(input: PiSessionStart): Promise<PiSessionHandle> {
     const sessionsRoot = piSessionBotRoot(this.sessionsRoot, input.userId, input.botId);
-    await mkdir(sessionsRoot, { recursive: true });
-    const createdAt = Date.now();
-    const file = path.join(sessionsRoot, `${createdAt}_${randomUUID()}.jsonl`);
-    await writeFile(
-      file,
-      `${JSON.stringify({
-        v: 4,
-        kind: "header",
+    const repo = new JsonlSessionRepo({
+      fileSystem: this.fs,
+      sessionsRoot,
+    });
+    const session = await repo.create(
+      {
         id: input.runId,
-        storageVersion: 1,
-        createdAt,
         cwd: this.cwd,
-      })}\n${JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: 1,
-        namespace: "pi.branch.tip",
-        key: "main",
-        value: null,
-      })}\n`,
-      { flag: "wx", mode: 0o600 },
+      },
+      BACKGROUND_CONTEXT,
     );
     try {
-      await prunePiSessionFiles(sessionsRoot, { protectedFile: file });
+      await prunePiSessionFiles(sessionsRoot);
     } catch (error) {
       getLogger().warn("Pi session retention cleanup failed", {
         userId: input.userId,
@@ -197,7 +183,10 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
         error,
       });
     }
-    const handle = new BestEffortPiSession(file, input.runId);
+    const handle = new BestEffortPiSession(
+      await session.createBranch("main", null, BACKGROUND_CONTEXT),
+      input.runId,
+    );
 
     await handle.appendCustomEntry("rakazo_context", {
       rakazoUserId: input.userId,
@@ -220,18 +209,15 @@ export class PiJsonlSessionRecorder implements PiSessionRecorder {
 
 class BestEffortPiSession implements PiSessionHandle {
   private failureLogged = false;
-  private seq = 2;
-  private parentId: string | null = null;
-  private queue: Promise<void> = Promise.resolve();
 
   constructor(
-    private readonly file: string,
+    private readonly session: Branch,
     private readonly runId: string,
   ) {}
 
   async appendMessage(message: AgentMessage): Promise<void> {
     try {
-      await this.appendEntry({ type: "message", message });
+      await this.session.appendMessage(message, BACKGROUND_CONTEXT);
     } catch (error) {
       this.logFailure("message", error);
     }
@@ -239,55 +225,10 @@ class BestEffortPiSession implements PiSessionHandle {
 
   async appendCustomEntry(customType: string, data: Record<string, string>): Promise<void> {
     try {
-      await this.appendEntry({ type: "custom", customType, data });
+      await this.session.appendCustomEntry(customType, data, BACKGROUND_CONTEXT);
     } catch (error) {
       this.logFailure("context", error);
     }
-  }
-
-  private appendEntry(
-    entry:
-      | { type: "message"; message: AgentMessage }
-      | { type: "custom"; customType: string; data: Record<string, string> },
-  ): Promise<void> {
-    const pending = this.queue.then(async () => {
-      if (
-        entry.type === "message" &&
-        entry.message.role === "assistant" &&
-        entry.message.stopReason === "pending"
-      ) {
-        throw new Error("Cannot record a pending assistant message");
-      }
-      const id = randomUUID();
-      const records = [
-        {
-          kind: "entry",
-          ...entry,
-          id,
-          parentId: this.parentId,
-          seq: this.seq,
-          timestamp: Date.now(),
-        },
-        {
-          kind: "value",
-          op: "set",
-          seq: this.seq + 1,
-          namespace: "pi.branch.tip",
-          key: "main",
-          value: id,
-        },
-      ];
-      const file = await open(this.file, constants.O_WRONLY | constants.O_APPEND);
-      try {
-        await file.writeFile(`${JSON.stringify(records)}\n`);
-      } finally {
-        await file.close();
-      }
-      this.seq += 2;
-      this.parentId = id;
-    });
-    this.queue = pending.catch(() => undefined);
-    return pending;
   }
 
   private logFailure(kind: string, error: unknown): void {

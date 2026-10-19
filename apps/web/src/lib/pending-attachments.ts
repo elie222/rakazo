@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-
 export type PendingAttachmentPreview = {
   previewUrl?: string;
 };
@@ -40,13 +38,4 @@ export function readFileAsBase64(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
-}
-
-/** Release the latest previews when the shell leaves, including space remounts. */
-export function usePendingAttachmentPreviewCleanup(
-  attachments: readonly PendingAttachmentPreview[],
-): void {
-  const latest = useRef(attachments);
-  latest.current = attachments;
-  useEffect(() => () => revokePendingAttachmentPreviews(latest.current), []);
 }

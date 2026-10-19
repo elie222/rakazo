@@ -16,7 +16,6 @@ import {
 } from "@rakazo/db";
 import type { RouterDeps } from "./router.js";
 import { resolveThreadTarget } from "./thread-target.js";
-import { voiceCredentialServer } from "./voice.js";
 
 export async function aiConsentStatus(
   deps: RouterDeps,
@@ -217,17 +216,8 @@ export async function aiConsentStatus(
       );
     }
   }
-  for (const voice of voices) {
-    // A self-hosted server is disclosed by its own origin, like a custom model endpoint.
-    const endpoint = (await voiceCredentialServer(deps, actor, voice.credential))?.endpoint;
-    add(
-      aiRecipient({
-        provider: voice.credential.provider,
-        use: "voice",
-        ...(endpoint ? { baseUrl: endpoint } : {}),
-      }),
-    );
-  }
+  for (const voice of voices)
+    add(aiRecipient({ provider: voice.credential.provider, use: "voice" }));
   if (memory)
     add(
       aiRecipient({

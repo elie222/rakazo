@@ -69,10 +69,6 @@ interface BoxCommandResult {
 }
 
 export class BoxSandboxProvider implements SandboxProvider {
-  billsWhileRunning(): boolean {
-    return true;
-  }
-
   private readonly client: BoxSandboxSdk;
   private readonly desktops = new LinuxDesktop({
     environment: async () => ({

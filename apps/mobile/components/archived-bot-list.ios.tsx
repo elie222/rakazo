@@ -11,8 +11,6 @@ import {
   Text,
 } from "@expo/ui/swift-ui";
 import {
-  accessibilityElement,
-  accessibilityLabel,
   buttonStyle,
   disabled,
   foregroundStyle,
@@ -21,7 +19,7 @@ import {
   listStyle,
 } from "@expo/ui/swift-ui/modifiers";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { MobileBot, MobileGroup } from "../lib/api";
+import type { MobileBot } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -29,12 +27,10 @@ import type { ArchivedBotListProps } from "./archived-bot-list";
 
 export function ArchivedBotList({
   bots,
-  groups,
   pending,
   onOpen,
   onRestore,
   onDelete,
-  onRestoreGroup,
 }: ArchivedBotListProps) {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
@@ -56,15 +52,6 @@ export function ArchivedBotList({
           onPress={() => onDelete(bot)}
         />
       </>
-    );
-  }
-  function groupActions(group: MobileGroup) {
-    return (
-      <Button
-        label={t("Restore")}
-        systemImage="arrow.uturn.backward"
-        onPress={() => onRestoreGroup(group)}
-      />
     );
   }
   return (
@@ -102,32 +89,6 @@ export function ArchivedBotList({
                   <ContextMenu.Items>{actions(bot)}</ContextMenu.Items>
                 </ContextMenu>
                 <SwipeActions.Actions allowsFullSwipe={false}>{actions(bot)}</SwipeActions.Actions>
-              </SwipeActions>
-            ))}
-            {groups.map((group) => (
-              <SwipeActions key={`group-${group.id}`} modifiers={[disabled(pending)]}>
-                <ContextMenu>
-                  <ContextMenu.Trigger>
-                    <HStack
-                      spacing={12}
-                      modifiers={[
-                        accessibilityElement("ignore"),
-                        accessibilityLabel(`${group.name}, ${t("Group")}`),
-                      ]}
-                    >
-                      <Image
-                        systemName="person.2"
-                        modifiers={[foregroundStyle({ type: "hierarchical", style: "secondary" })]}
-                      />
-                      <Text modifiers={[foregroundStyle(tokens.foreground)]}>{group.name}</Text>
-                      <Spacer />
-                    </HStack>
-                  </ContextMenu.Trigger>
-                  <ContextMenu.Items>{groupActions(group)}</ContextMenu.Items>
-                </ContextMenu>
-                <SwipeActions.Actions allowsFullSwipe={false}>
-                  {groupActions(group)}
-                </SwipeActions.Actions>
               </SwipeActions>
             ))}
           </List.ForEach>

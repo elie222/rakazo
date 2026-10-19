@@ -369,10 +369,6 @@ interface CreateOSScreenConnection {
 }
 
 export class CreateOSSandboxProvider implements SandboxProvider {
-  billsWhileRunning(): boolean {
-    return true;
-  }
-
   private readonly baseUrl: string;
   private readonly shape: string;
   private readonly rootfs: string;

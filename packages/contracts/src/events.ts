@@ -18,7 +18,6 @@ export const ProductEventType = z.enum([
   "thread.cloud_agent",
   "thread.call.ended",
   "run.started",
-  "run.steering.claimed",
   "run.checkpointed",
   "run.waiting_input",
   "run.completed",
@@ -103,15 +102,6 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("ask"),
     text: z.string(),
     approvalEffectId: Id.optional(),
-    instructionUpdate: z
-      .object({
-        botId: Id,
-        before: z.string(),
-        after: z.string(),
-        reason: z.string(),
-        undoVersionId: Id.optional(),
-      })
-      .optional(),
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */

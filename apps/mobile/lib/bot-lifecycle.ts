@@ -3,18 +3,13 @@ import { rpc } from "./api";
 import { t } from "./i18n";
 import { errorText } from "./user-error";
 
-export function confirmDeleteBot(
-  bot: { id: string; name: string },
-  onDeleted: () => void,
-  // False once the screen that asked has gone, so a late failure doesn't alert elsewhere.
-  current: () => boolean = () => true,
-) {
+export function confirmDeleteBot(bot: { id: string; name: string }, onDeleted: () => void) {
   const remove = async (deleteMemories: boolean) => {
     try {
       await rpc("bots/remove", { botId: bot.id, deleteMemories });
       onDeleted();
     } catch (error) {
-      if (current()) Alert.alert(t("Could not delete bot"), errorText(error, t("Try again.")));
+      Alert.alert(t("Could not delete bot"), errorText(error, t("Try again.")));
     }
   };
 

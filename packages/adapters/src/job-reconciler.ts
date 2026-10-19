@@ -106,7 +106,6 @@ export function createJobReconciler(
     leadership?: ReconciliationLeadership;
     reconcileComputerUpdates?: () => Promise<void>;
     reconcileCloudAgents?: () => Promise<void>;
-    reconcileRoutineRetryNotices?: () => Promise<void>;
   },
   options: { intervalMs?: number; batchSize?: number } = {},
 ) {
@@ -126,11 +125,9 @@ export function createJobReconciler(
       if (deps.leadership && !(await deps.leadership.tryAcquire())) return;
 
       const auxiliary = await Promise.allSettled(
-        [
-          deps.reconcileCloudAgents,
-          deps.reconcileComputerUpdates,
-          deps.reconcileRoutineRetryNotices,
-        ].map(async (reconcile) => reconcile?.()),
+        [deps.reconcileCloudAgents, deps.reconcileComputerUpdates].map(async (reconcile) =>
+          reconcile?.(),
+        ),
       );
       for (const result of auxiliary) {
         if (result.status === "rejected")
@@ -329,11 +326,8 @@ export function createJobReconciler(
         );
       }
 
-      // A queued run already has a job while it waits out failure backoff.
-      // Default replace would zero that job's attempts and run it now. keepExisting
-      // leaves the job while attempts remain, and still replaces one that is exhausted.
       await Promise.all([
-        ...runs.map((run) => deps.jobs.enqueue({ ...runContinueJob(run.id), keepExisting: true })),
+        ...runs.map((run) => deps.jobs.enqueue(runContinueJob(run.id))),
         ...routines.flatMap((routine) =>
           routine.nextRunAt
             ? [deps.jobs.enqueue(routineWakeupJob(routine.id, routine.nextRunAt))]

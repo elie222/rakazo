@@ -5,11 +5,12 @@ import {
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
 import { DarkTheme, Stack, ThemeProvider } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { Dimensions, Platform, View } from "react-native";
+import { Platform, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,7 +39,6 @@ import {
 } from "../lib/live-notifications";
 import { native, useMobileTokens, useResolvedAppearance } from "../lib/native";
 import { useNotificationResponses } from "../lib/open-notification";
-import { syncOrientation } from "../lib/orientation";
 import {
   getCachedRemoteImagesEnabled,
   loadRemoteImagesPreference,
@@ -88,12 +88,10 @@ function ChatContentProviders({
 
 export default function Layout() {
   useEffect(() => {
-    // Screen changes include folding; window resizing must not lock a tablet in split-screen.
-    const subscription = Dimensions.addEventListener("change", () => {
-      void syncOrientation();
-    });
-    void syncOrientation();
-    return () => subscription.remove();
+    // The app is portrait-only; the computer screen unlocks rotation while it is open.
+    void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+      () => undefined,
+    );
   }, []);
   const { t } = useI18n();
   const insets = useSafeAreaInsets();

@@ -106,11 +106,8 @@ export function isComputerControlUnavailable(error: unknown) {
   if (error.name === "TimeoutError" || error.name === "AbortError") return false;
   const text = errorText(error);
   // Only pre-connect failures prove no actions ran. Mid-flight resets/hang-ups can
-  // happen after the service already applied steps. undici's connect timeout
-  // ("Connect Timeout Error", UND_ERR_CONNECT_TIMEOUT) fires before the socket
-  // opens, e.g. when the supervisor is no longer on the computer's network.
+  // happen after the service already applied steps.
   return (
-    text.includes("connect timeout") ||
     text.includes("econnrefused") ||
     text.includes("enotfound") ||
     text.includes("ehostunreach") ||
@@ -221,10 +218,7 @@ export function nextScreenIndex(
       ) {
         throw new Error("This Team Computer screen is owned by a newer execution.");
       }
-      if (existing.leaseId !== leaseId && canTakeScreenLease(existing.leaseId, leaseId)) {
-        existing.leaseId = leaseId;
-        delete existing.idleAt;
-      }
+      if (canTakeScreenLease(existing.leaseId, leaseId)) existing.leaseId = leaseId;
     }
     return existing.index;
   }
@@ -261,35 +255,6 @@ export function completeReleasedScreen(
   if (slot?.releasing && slot.index === index) assigned.delete(screenId);
 }
 
-export function completeWarmReleasedScreen(
-  assigned: Map<string, ScreenAssignment>,
-  screenId: string,
-  index: number,
-  idleAt: number,
-): void {
-  const slot = assigned.get(screenId);
-  if (slot?.releasing && slot.index === index) {
-    delete slot.releasing;
-    delete slot.controlled;
-    slot.idleAt = idleAt;
-  }
-}
-
-export function oldestIdleScreen(
-  assigned: Map<string, ScreenAssignment>,
-  limit: number,
-): string | undefined {
-  return [...assigned.entries()]
-    .filter(
-      ([, slot]) =>
-        !slot.releasing && !slot.controlled && slot.idleAt !== undefined && slot.index < limit,
-    )
-    .sort(
-      ([screenA, a], [screenB, b]) =>
-        (a.idleAt ?? 0) - (b.idleAt ?? 0) || a.index - b.index || screenA.localeCompare(screenB),
-    )[0]?.[0];
-}
-
 export async function teardownReleasedScreen(
   assigned: Map<string, ScreenAssignment>,
   screenId: string,
@@ -306,36 +271,13 @@ export interface ScreenAssignment {
   leaseId?: string;
   releasing?: boolean;
   viewToken?: string;
-  idleAt?: number;
-  controlled?: boolean;
 }
 
-/** Forget screen assignments and their boot marker together on every cleanup path. */
 export function clearComputerScreenRegistry(
   registry: Map<string, Map<string, ScreenAssignment>>,
-  boots: Map<string, string>,
   containerId: string,
 ) {
   registry.delete(containerId);
-  boots.delete(containerId);
-}
-
-/** Screen processes do not survive a container restart (crash, OOM kill, daemon restart).
- * A registry recorded under an earlier boot describes processes that no longer exist, and
- * a slot it left "releasing" would otherwise refuse every later screen and release request. */
-export function currentComputerScreens(
-  registry: Map<string, Map<string, ScreenAssignment>>,
-  boots: Map<string, string>,
-  containerId: string,
-  startedAt: string | undefined,
-): Map<string, ScreenAssignment> | undefined {
-  const assigned = registry.get(containerId);
-  const recordedBoot = boots.get(containerId);
-  if (assigned && startedAt && recordedBoot && recordedBoot !== startedAt) {
-    clearComputerScreenRegistry(registry, boots, containerId);
-    return undefined;
-  }
-  return assigned;
 }
 
 /** Choose the stop command for DELETE /screen cancel/release.

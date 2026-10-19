@@ -53,7 +53,6 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
-      he: async () => ({ messages: { Settings: "הגדרות" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -95,9 +94,6 @@ describe("activateUiLocale", () => {
       fr: async () => {
         throw new Error("fr missing");
       },
-      he: async () => {
-        throw new Error("he missing");
-      },
     });
 
     const locale = await activateUiLocale("ko");
@@ -122,7 +118,6 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
-      he: async () => ({ messages: { Settings: "הגדרות" } }),
     });
 
     const first = activateUiLocale("de");
@@ -152,7 +147,6 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
-      he: async () => ({ messages: { Settings: "הגדרות" } }),
     });
 
     await activateUiLocale("en");
@@ -187,7 +181,6 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
-      he: async () => ({ messages: { Settings: "הגדרות" } }),
     });
 
     await activateUiLocale("en");

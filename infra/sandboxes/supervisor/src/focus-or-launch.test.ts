@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 const computerDir = path.resolve(import.meta.dirname, "../../computer");
 
@@ -17,7 +17,7 @@ describe("focus-or-launch desktop helper", () => {
 
   it.skipIf(process.platform === "win32")(
     "activates a matching window and only spawns when absent",
-    async () => {
+    () => {
       const temp = mkdtempSync(path.join(tmpdir(), "focus-or-launch-"));
       const bin = path.join(temp, "bin");
       const argvLog = path.join(temp, "argv");
@@ -41,7 +41,7 @@ describe("focus-or-launch desktop helper", () => {
         for (const name of ["wmctrl", "xterm", "rakazo-browser"]) {
           chmodSync(path.join(bin, name), 0o755);
         }
-        const run = async (listing: string, argv: string[], expected: string[]) => {
+        const run = (listing: string, argv: string[]) => {
           writeFileSync(windows, listing);
           writeFileSync(argvLog, "");
           const result = spawnSync(
@@ -58,17 +58,10 @@ describe("focus-or-launch desktop helper", () => {
             },
           );
           expect(result.status, result.stderr).toBe(0);
-          // The launcher is detached; its stub may be scheduled after the helper exits.
-          await vi.waitFor(
-            () => {
-              const actual = readFileSync(argvLog, "utf8")
-                .split("\n")
-                .map((line) => line.trim())
-                .filter(Boolean);
-              expect(actual).toEqual(expected);
-            },
-            { timeout: 5_000, interval: 20 },
-          );
+          return readFileSync(argvLog, "utf8")
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
         };
         const listing = [
           "0x04000001  0 101 uxterm.UXTerm      box  uxterm",
@@ -76,19 +69,16 @@ describe("focus-or-launch desktop helper", () => {
           "0x04000003  0 102 xterm.XTerm        box  Terminal",
           "",
         ].join("\n");
-        await run(listing, ["xterm"], ["wmctrl -ia 0x04000003"]);
-        await run("", ["xterm"], ["xterm"]);
+        expect(run(listing, ["xterm"])).toEqual(["wmctrl -ia 0x04000003"]);
+        expect(run("", ["xterm"])).toEqual(["xterm"]);
         // A URI still reaches the live browser's launcher, then raises its window.
-        await run(
-          listing,
-          ["rakazo-browser", "https://example.test"],
-          ["rakazo-browser https://example.test", "wmctrl -ia 0x01800003"],
-        );
-        await run(
-          "",
-          ["rakazo-browser", "https://example.test"],
-          ["rakazo-browser https://example.test"],
-        );
+        expect(run(listing, ["rakazo-browser", "https://example.test"])).toEqual([
+          "rakazo-browser https://example.test",
+          "wmctrl -ia 0x01800003",
+        ]);
+        expect(run("", ["rakazo-browser", "https://example.test"])).toEqual([
+          "rakazo-browser https://example.test",
+        ]);
         // A launcher that stays up must not block the raise of the window already found.
         const pids = path.join(temp, "pids");
         writeFileSync(
@@ -104,11 +94,10 @@ describe("focus-or-launch desktop helper", () => {
         chmodSync(path.join(bin, "rakazo-browser"), 0o755);
         writeFileSync(pids, "");
         const started = Date.now();
-        await run(
-          listing,
-          ["rakazo-browser", "https://example.test"],
-          ["rakazo-browser https://example.test", "wmctrl -ia 0x01800003"],
-        );
+        expect(run(listing, ["rakazo-browser", "https://example.test"])).toEqual([
+          "rakazo-browser https://example.test",
+          "wmctrl -ia 0x01800003",
+        ]);
         expect(Date.now() - started).toBeLessThan(5_000);
         for (const pid of readFileSync(pids, "utf8").split("\n")) {
           if (!pid.trim()) continue;
