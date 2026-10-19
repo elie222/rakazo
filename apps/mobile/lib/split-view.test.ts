@@ -3,14 +3,28 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("react-native", () => ({ useWindowDimensions: () => ({ width: 0, height: 0 }) }));
 vi.mock("expo-secure-store", () => ({ getItemAsync: vi.fn(), setItemAsync: vi.fn() }));
 
-const { closesSplitChat, inboxPaneWidth, splitsWindow } = await import("./split-view");
+const { closesSplitPane, inboxPaneWidth, splitsWindow } = await import("./split-view");
 
 describe("split view", () => {
-  it("closes an open chat when a heading selects a different or unknown space", () => {
-    expect(closesSplitChat(true, "space-a", "space-b")).toBe(true);
-    expect(closesSplitChat(true, null, "space-b")).toBe(true);
-    expect(closesSplitChat(true, "space-a", "space-a")).toBe(false);
-    expect(closesSplitChat(false, null, "space-b")).toBe(false);
+  it.each([
+    "/thread",
+    "/group-thread",
+    "/bot-settings",
+    "/group-settings",
+    "/computer",
+    "/artifacts",
+    "/artifact",
+    "/routine",
+    "/bot-profile",
+  ])("closes %s when a heading selects a different or unknown space", (pathname) => {
+    expect(closesSplitPane(pathname, "space-a", "space-b")).toBe(true);
+    expect(closesSplitPane(pathname, null, "space-b")).toBe(true);
+    expect(closesSplitPane(pathname, "space-a", "space-a")).toBe(false);
+  });
+
+  it("keeps the empty pane when a heading selects a space", () => {
+    expect(closesSplitPane("/", null, "space-b")).toBe(false);
+    expect(closesSplitPane("/", "space-a", "space-b")).toBe(false);
   });
 
   it("splits an unfolded foldable or a tablet, not a phone or a half-screen window", () => {

@@ -17,13 +17,13 @@ function update(next: Partial<SplitState>) {
   for (const listener of listeners) listener();
 }
 
-/** A space heading must not leave a chat making requests in another space. */
-export function closesSplitChat(
-  chatOpen: boolean,
-  chatSpaceId: string | null,
+/** A space heading must not leave a pane making requests in another space. */
+export function closesSplitPane(
+  pathname: string,
+  paneSpaceId: string | null,
   selectedSpaceId: string,
 ): boolean {
-  return chatOpen && chatSpaceId !== selectedSpaceId;
+  return pathname !== "/" && paneSpaceId !== selectedSpaceId;
 }
 
 export function splitsWindow(windowWidth: number): boolean {

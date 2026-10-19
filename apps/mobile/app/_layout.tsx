@@ -58,7 +58,7 @@ import { clearSavedChats } from "../lib/saved-chats";
 import { registerSessionDiskCache } from "../lib/session";
 import {
   chooseInboxWidth,
-  closesSplitChat,
+  closesSplitPane,
   inboxPaneWidth,
   loadInboxWidth,
   setInboxHidden,
@@ -80,12 +80,13 @@ const FULL_WINDOW_ROUTES = new Set(["/sign-in", "/server", "/image", "/computer"
 function SplitFrame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { botId, groupId } = useGlobalSearchParams<{ botId?: string; groupId?: string }>();
-  const chatId = pathname === "/thread" ? botId : pathname === "/group-thread" ? groupId : null;
-  const chatSpace = useRef<string | null>(null);
+  const params = useGlobalSearchParams();
+  const routeKey = JSON.stringify([pathname, params]);
+  const paneSpace = useRef<string | null>(null);
+  // Capture the space when any route opens, including another entity on the same route.
   useEffect(() => {
-    chatSpace.current = chatId ? selectedSpaceId() : null;
-  }, [chatId]);
+    paneSpace.current = pathname === "/" ? null : selectedSpaceId();
+  }, [routeKey]);
   const { split, inboxHidden, inboxWidth, windowWidth } = useSplitView();
   const tokens = useMobileTokens();
   const home = pathname === "/";
@@ -122,7 +123,7 @@ function SplitFrame({ children }: { children: ReactNode }) {
         >
           <InboxPane
             onSelectSpace={(spaceId) => {
-              if (closesSplitChat(Boolean(chatId), chatSpace.current, spaceId)) {
+              if (closesSplitPane(pathname, paneSpace.current, spaceId)) {
                 router.dismissTo("/");
               }
             }}

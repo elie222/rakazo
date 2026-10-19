@@ -569,7 +569,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       inboxRequestId.current += 1;
       activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
-      // Close a chat in another space before selection can change its request context.
+      // Close a pane in another space before selection can change its request context.
       onSelectSpace?.(spaceId);
       try {
         const refresh = async () => {
