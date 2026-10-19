@@ -364,6 +364,7 @@ test("connects, lists, and uses an OpenAI-compatible endpoint", async ({ page },
       select.size = select.options.length;
       select.style.height = "auto";
     });
+    await botModelSelect.scrollIntoViewIfNeeded();
     await captureScreenshot(page, testInfo, "openai-compatible-model-picker");
     await botModelSelect.evaluate((select: HTMLSelectElement) => {
       select.size = 0;
