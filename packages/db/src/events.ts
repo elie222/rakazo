@@ -1,11 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
-import type {
-  BotSecretDestination,
-  MessageBlock,
-  ProductEvent,
-  ThreadReadState,
-} from "@rakazo/contracts";
+import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   encodeLoginSecret,
   LoginSecretValue,
   MessageBlock as MessageBlockSchema,
@@ -13,6 +9,7 @@ import {
 import {
   blocksToAgentHistoryText,
   callIdFromClientNonce,
+  instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
@@ -20,6 +17,7 @@ import {
   resolveAskChoice,
   sanitizeJsonValue,
 } from "@rakazo/core";
+import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -82,7 +80,7 @@ export interface FinalizeComputerControlReleaseInput {
   computerId: string;
   botId: string;
   runId: string | null;
-  leaseId: string;
+  leaseId: string | null;
   holder: "bot" | "none";
   reason: "done" | "expired" | "released" | "skipped";
 }
@@ -174,6 +172,22 @@ function resumeChoiceLabel(
   } catch {
     return selected.label;
   }
+}
+
+/**
+ * A conversational run's request and earlier answers stay in thread history, so its resumed
+ * attempt gets just the answer. A background run's prompt never reaches the thread, so it keeps
+ * its instructions and every earlier answer; otherwise the resumed attempt forgets them.
+ */
+function resumePrompt(
+  run: { trigger: string; task?: { prompt: string } | null },
+  question: string,
+  answer: string,
+): string {
+  if (isConversationalRun(run.trigger)) return answer;
+  return [run.task?.prompt.trim(), `${question.trim()}\nAnswer: ${answer}`]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export interface PauseRunForTakeover {
@@ -316,8 +330,6 @@ export async function clearThread(
       await tx.thread.update({
         where: { id: input.threadId },
         data: {
-          lastReadSeq: thread.nextMessageSeq - 1,
-          lastUnreadSeq: -1,
           historyCompactedUpToSeq: thread.nextMessageSeq - 1,
           historyCompactionSummary: null,
           historyCompactionGeneration: { increment: 1 },
@@ -327,8 +339,6 @@ export async function clearThread(
       await tx.thread.update({
         where: { id: input.threadId },
         data: {
-          lastReadSeq: -1,
-          lastUnreadSeq: -1,
           historyCompactionSummary: null,
           historyCompactionGeneration: { increment: 1 },
         },
@@ -345,14 +355,7 @@ export async function clearThread(
     const event = await appendEventInTransaction(tx, {
       ...input,
       type: "thread.cleared",
-      payload: {
-        historyGeneration: thread.historyCompactionGeneration + 1,
-        readState: {
-          lastReadSeq: thread.nextMessageSeq - 1,
-          lastUnreadSeq: -1,
-          unread: false,
-        },
-      },
+      payload: {},
     });
     return {
       event,
@@ -470,15 +473,17 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = !isConversationalRun(busy.trigger);
+        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
             botId: input.botId,
             userId: input.userId,
-            // Keep messaging on the hold so the later run is mirrored back to that app.
+            // External deliveries retain their origin and never become app follow-ups.
             runId: held ? null : busy.id,
-            ...(held && input.trigger === "messaging" ? { originTrigger: "messaging" } : {}),
+            ...(held && (input.trigger === "messaging" || input.trigger === "webhook")
+              ? { originTrigger: input.trigger }
+              : {}),
             ...(input.modelPin
               ? {
                   modelProvider: input.modelPin.modelProvider,
@@ -540,7 +545,12 @@ export async function claimSteering(
         leaseOwner: input.leaseOwner,
         leaseFence: input.leaseFence,
       },
-      select: { id: true, trigger: true, sourceMessage: { select: { blocks: true } } },
+      select: {
+        id: true,
+        spaceId: true,
+        trigger: true,
+        sourceMessage: { select: { blocks: true } },
+      },
     });
     if (!run || run.trigger === "created") return [];
     const channelId =
@@ -552,7 +562,7 @@ export async function claimSteering(
     const pendingWhere = directMessage
       ? { runId: null, originTrigger: "messaging" }
       : channelId
-        ? { runId: null }
+        ? { runId: null, originTrigger: "messaging" }
         : { runId: null, originTrigger: null };
     const steering = await tx.steeringMessage.findMany({
       where: {
@@ -580,6 +590,20 @@ export async function claimSteering(
     await tx.steeringMessage.updateMany({
       where: { id: { in: steering.map((item) => item.id) }, claimedAt: null },
       data: { runId: input.runId, claimedAt: new Date() },
+    });
+    // The thread lock serializes this watermark with message writes. Unlike claim
+    // timestamps, it cannot drift from the database clock or tie with a reply.
+    const { nextMessageSeq } = await tx.thread.findUniqueOrThrow({
+      where: { id: input.threadId },
+      select: { nextMessageSeq: true },
+    });
+    await appendEventInTransaction(tx, {
+      threadId: input.threadId,
+      spaceId: run.spaceId,
+      botId: input.botId,
+      runId: input.runId,
+      type: "run.steering.claimed",
+      payload: { steeringIds: steering.map((item) => item.id), nextMessageSeq },
     });
     return steering.map((item) => ({
       id: item.id,
@@ -630,7 +654,13 @@ async function commitAnswerRunInput(
       threadId: input.threadId,
       status: "waiting_input",
     },
-    select: { botId: true, userId: true, checkpoint: true },
+    select: {
+      botId: true,
+      userId: true,
+      checkpoint: true,
+      trigger: true,
+      task: { select: { prompt: true } },
+    },
   });
   if (!run) return null;
   const message = await tx.message.findFirst({
@@ -661,10 +691,27 @@ async function commitAnswerRunInput(
     : undefined;
   if (login && !login.success) return null;
   let approvalEffect: { id: string; kind: string } | null = null;
+  let editedInstructions: string | undefined;
+  let approvalAnswer = input.answer;
+  if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
+    try {
+      const edited = JSON.parse(input.answer);
+      if (
+        typeof edited.instructions !== "string" ||
+        edited.instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH ||
+        Object.keys(edited).length !== 1
+      )
+        return null;
+      editedInstructions = edited.instructions;
+      approvalAnswer = "allow";
+    } catch {
+      return null;
+    }
+  }
   let approvalUserId: string | null = null;
 
   if (approvalAsk) {
-    if (!pendingAsk.actions?.some((action) => action.id === input.answer)) return null;
+    if (!pendingAsk.actions?.some((action) => action.id === approvalAnswer)) return null;
     approvalEffect = await tx.externalEffect.findFirst({
       where: {
         id: pendingAsk.approvalEffectId,
@@ -674,6 +721,15 @@ async function commitAnswerRunInput(
       },
     });
     if (!approvalEffect) return null;
+    if (pendingAsk.instructionUpdate) {
+      if (
+        approvalEffect.kind !== "propose_instructions_update" ||
+        pendingAsk.instructionUpdate.botId !== run.botId ||
+        (approvalAnswer !== "allow" && approvalAnswer !== "deny") ||
+        run.userId !== input.answeredByUserId
+      )
+        return null;
+    }
     if (input.answer === "always") {
       if (run.userId !== input.answeredByUserId) return null;
       approvalUserId = input.answeredByUserId;
@@ -694,7 +750,7 @@ async function commitAnswerRunInput(
   });
   if (queued.count !== 1) return null;
 
-  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? input.answer);
+  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
   const recordsCallUtterance = Boolean(callId && !secretAsk);
 
@@ -721,7 +777,30 @@ async function commitAnswerRunInput(
   }
 
   if (approvalAsk) {
-    const allowed = input.answer === "allow" || input.answer === "always";
+    if (pendingAsk.instructionUpdate) {
+      if (editedInstructions !== undefined) {
+        const stored = await tx.externalEffect.findUniqueOrThrow({
+          where: { id: approvalEffect!.id },
+        });
+        const request = stored.request as Record<string, Prisma.InputJsonValue>;
+        await tx.externalEffect.update({
+          where: { id: approvalEffect!.id },
+          data: {
+            request: { ...request, instructions: editedInstructions },
+            idempotencyKey: approvalEffectKey(input.runId, approvalEffect!.kind, {
+              ...request,
+              instructions: editedInstructions,
+            }),
+          },
+        });
+      }
+      if (approvalAnswer === "deny")
+        await tx.bot.updateMany({
+          where: { id: run.botId, pendingInstructionsRunId: input.runId },
+          data: { pendingInstructionsRunId: null },
+        });
+    }
+    const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
@@ -776,9 +855,11 @@ async function commitAnswerRunInput(
     const task = await tx.task.updateMany({
       where: { runs: { some: { id: input.runId } } },
       data: {
-        prompt: selectedChoice
-          ? `Selected choice ${selectedChoice.id}: ${resumeLabel}`
-          : input.answer,
+        prompt: resumePrompt(
+          run,
+          pendingAsk.text,
+          selectedChoice ? `Selected choice ${selectedChoice.id}: ${resumeLabel}` : input.answer,
+        ),
       },
     });
     if (task.count !== 1) throw new Error("Run task was not available to answer");
@@ -790,6 +871,16 @@ async function commitAnswerRunInput(
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
+          ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
+            ? {
+                instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
+                detail: instructionUpdateDiff(
+                  pendingAsk.instructionUpdate.before,
+                  editedInstructions,
+                  pendingAsk.instructionUpdate.reason,
+                ),
+              }
+            : {}),
         }
       : block,
   );
@@ -1024,15 +1115,25 @@ export async function finalizeComputerControlRelease(
   input: FinalizeComputerControlReleaseInput,
   realtime?: RealtimeFanout,
 ): Promise<FinalizeComputerControlReleaseResult | false> {
+  if (!input.leaseId && !input.runId) return false;
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const cleared = await tx.computer.updateMany({
-      where: {
-        id: input.computerId,
-        spaceId: input.spaceId,
-        controlBotId: input.botId,
-        controlLeaseId: input.leaseId,
-        controlRunId: input.runId,
-      },
+      where: input.leaseId
+        ? {
+            id: input.computerId,
+            spaceId: input.spaceId,
+            controlBotId: input.botId,
+            controlLeaseId: input.leaseId,
+            controlRunId: input.runId,
+          }
+        : {
+            id: input.computerId,
+            spaceId: input.spaceId,
+            controlHolder: "none",
+            controlBotId: null,
+            controlLeaseId: null,
+            controlRunId: input.runId,
+          },
       data: {
         controlHolder: input.holder,
         controlLeaseId: null,
@@ -1114,32 +1215,6 @@ export async function appendEvent(
   const productEvent = mapProductEvent(event);
   await notifyRealtime(realtime, event.threadId, event.seq);
   return productEvent;
-}
-
-/** Keep edits and their event atomic, using the same thread-first lock order as clearThread. */
-export async function updateThreadMessageWithEvent(
-  prisma: PrismaClient,
-  input: AppendEventInput & {
-    type: "thread.message.updated";
-    payload: { messageId: string; blocks: MessageBlock[] } & Record<string, unknown>;
-  },
-): Promise<ProductEvent | null> {
-  const event = await withTransactionRetry(() =>
-    prisma.$transaction(async (tx) => {
-      const [thread] = await tx.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM threads WHERE id = ${input.threadId}
-          AND "spaceId" = ${input.spaceId} FOR UPDATE`;
-      if (!thread) return null;
-      const updated = await tx.message.updateMany({
-        where: { id: input.payload.messageId, threadId: input.threadId },
-        data: { blocks: input.payload.blocks as Prisma.InputJsonValue },
-      });
-      // A clear may have won the lock after the caller loaded the card to edit.
-      if (updated.count === 0) return null;
-      return appendEventInTransaction(tx, input);
-    }),
-  );
-  return event ? mapProductEvent(event) : null;
 }
 
 export async function finalizeRun(
@@ -1271,6 +1346,7 @@ async function finalizeRunOnce(
         data: { runId: null },
       });
     } else {
+      await discardAnsweredSteering(tx, input);
       const { sourceMessage } = await tx.run.findUniqueOrThrow({
         where: { id: input.runId },
         select: { sourceMessage: { select: { seq: true } } },
@@ -1288,6 +1364,46 @@ async function finalizeRunOnce(
     const continuationRunId = await createPendingSteeringRun(tx, input);
     await tx.bot.update({ where: { id: input.botId }, data: { updatedAt: now } });
     return { threadId: lastEvent.threadId, seq: lastEvent.seq, continuationRunId };
+  });
+}
+
+export async function discardAnsweredSteering(
+  tx: Prisma.TransactionClient,
+  input: { threadId: string; runId: string },
+) {
+  const lastReply = await tx.message.findFirst({
+    where: {
+      threadId: input.threadId,
+      runId: input.runId,
+      role: "bot",
+      blocks: { array_contains: [{ kind: "text" }] },
+      NOT: ["ask", "computer", "steps", "subagent"].map((kind) => ({
+        blocks: { array_contains: [{ kind }] },
+      })),
+    },
+    orderBy: { seq: "desc" },
+    select: { seq: true },
+  });
+  if (!lastReply) return;
+  const claims = await tx.event.findMany({
+    where: { threadId: input.threadId, runId: input.runId, type: "run.steering.claimed" },
+    select: { payload: true },
+  });
+  const answeredIds = new Set<string>();
+  for (const claim of claims) {
+    const payload = claim.payload as { steeringIds?: unknown; nextMessageSeq?: unknown } | null;
+    if (!payload || !Array.isArray(payload.steeringIds)) continue;
+    for (const id of payload.steeringIds) {
+      if (typeof id !== "string") continue;
+      if (typeof payload.nextMessageSeq === "number" && payload.nextMessageSeq <= lastReply.seq) {
+        answeredIds.add(id);
+      }
+    }
+  }
+  // Old runs without a durable claim watermark are deliberately replayed.
+  if (answeredIds.size === 0) return;
+  await tx.steeringMessage.deleteMany({
+    where: { runId: input.runId, claimedAt: { not: null }, id: { in: [...answeredIds] } },
   });
 }
 
@@ -1326,7 +1442,10 @@ export async function createPendingSteeringRun(
       botId: input.botId,
       threadId: input.threadId,
       userId: batch[0]!.userId,
-      prompt: "Respond to the user's steering context.",
+      prompt:
+        origin === "webhook"
+          ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
+          : "Respond to the user's steering context.",
       status: "queued",
     },
   });
@@ -1338,7 +1457,7 @@ export async function createPendingSteeringRun(
       taskId: task.id,
       userId: batch[0]!.userId,
       status: "queued",
-      trigger: origin === "app" ? "follow_up" : "messaging",
+      trigger: origin === "app" ? "follow_up" : origin === "webhook" ? "webhook" : "messaging",
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
@@ -1378,6 +1497,7 @@ function steeringOrigin(item: {
   originTrigger: string | null;
   message: { blocks: unknown };
 }): string {
+  if (item.originTrigger === "webhook") return "webhook";
   if (item.originTrigger !== "messaging") return "app";
   const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
   return channelId ? `channel:${channelId}` : "dm";
@@ -1390,7 +1510,7 @@ export async function appendEventInTransaction(
   const thread = await tx.thread.update({
     where: { id: input.threadId },
     data: { nextEventSeq: { increment: 1 } },
-    select: { nextEventSeq: true, lastReadSeq: true, lastUnreadSeq: true, unread: true },
+    select: { nextEventSeq: true },
   });
   // run.cancelled is appended after the run row already reads cancelled, so it
   // asserts the terminal status where every other event needs a writable run.
@@ -1400,22 +1520,7 @@ export async function appendEventInTransaction(
     await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
   }
   // Unpaired UTF-16 surrogates (e.g. a split emoji high half) are invalid JSON for Postgres.
-  let eventPayload = input.payload;
-  if (input.type === "thread.message.created" || input.type === "thread.message.updated") {
-    const messageId = input.payload.messageId;
-    if (typeof messageId !== "string") throw new Error("Message event requires a message id");
-    const message = await tx.message.findFirstOrThrow({
-      where: { id: messageId, threadId: input.threadId },
-      select: { seq: true },
-    });
-    const readState: ThreadReadState = {
-      lastReadSeq: thread.lastReadSeq,
-      lastUnreadSeq: thread.lastUnreadSeq,
-      unread: thread.unread,
-    };
-    eventPayload = { ...eventPayload, messageSeq: message.seq, readState };
-  }
-  const payload = sanitizeJsonValue(eventPayload);
+  const payload = sanitizeJsonValue(input.payload);
   return tx.event.create({
     data: {
       spaceId: input.spaceId,

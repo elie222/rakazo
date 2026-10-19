@@ -49,13 +49,13 @@ function createFakeSurface(sendError?: Error) {
       capabilities: { providers: ["sendblue"] },
     }),
     platforms: () => [
-      { provider: "sendblue", capabilities: { direct: true, groups: true, typing: true } },
+      { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
     ],
     handleWebhook: () => null,
     onInbound: () => undefined,
     sendToThread,
     openDirectThread,
-    sendTyping: vi.fn(async () => undefined),
+    acknowledge: vi.fn(async () => undefined),
   };
   return { messaging, sendToThread, openDirectThread };
 }
@@ -80,7 +80,6 @@ function createDeps(overrides: {
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
-      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       findMany: vi.fn(
         async () =>
           overrides.messages ?? [
@@ -634,7 +633,6 @@ function createChannelDeps(
   const txMock = {
     thread: { update: vi.fn(async () => ({ nextMessageSeq: 5, nextEventSeq: 10 })) },
     message: {
-      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const message = { id: `ctx-${contextMessages.length + 1}`, seq: 4, ...data };
         contextMessages.push(message);
@@ -655,7 +653,6 @@ function createChannelDeps(
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     message: {
-      findFirstOrThrow: vi.fn().mockResolvedValue({ seq: 1 }),
       findMany: vi.fn(
         async () => overrides.messages ?? [{ id: "m-1", blocks: [{ kind: "text", text }] }],
       ),

@@ -1,13 +1,14 @@
 import { BOT_DESCRIPTION_MAX_LENGTH } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BOT_DIRECTORY_DESCRIPTIONS_MAX_LENGTH,
-  BOT_MESSAGE_MAX_HOPS,
   BOT_MESSAGE_MAX_LENGTH,
   botMessageAllowsSilence,
   botMessageHopExhausted,
+  botMessageMaxHops,
   buildBotMessageWakePrompt,
   clampBotMessage,
+  DEFAULT_BOT_MESSAGE_MAX_HOPS,
   formatBotRosterLines,
   nextBotMessageHop,
   renderBotDirectory,
@@ -40,6 +41,9 @@ describe("bot message silence", () => {
 });
 
 describe("hop bounding", () => {
+  beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
+  afterEach(() => vi.unstubAllEnvs());
+
   it("starts a chain at 1 when a person's message woke the sender", () => {
     expect(nextBotMessageHop(undefined)).toBe(1);
     expect(nextBotMessageHop(0)).toBe(1);
@@ -51,9 +55,33 @@ describe("hop bounding", () => {
   });
 
   it("refuses only past the limit", () => {
-    expect(botMessageHopExhausted(BOT_MESSAGE_MAX_HOPS)).toBe(false);
-    expect(botMessageHopExhausted(BOT_MESSAGE_MAX_HOPS + 1)).toBe(true);
+    expect(botMessageHopExhausted(DEFAULT_BOT_MESSAGE_MAX_HOPS)).toBe(false);
+    expect(botMessageHopExhausted(DEFAULT_BOT_MESSAGE_MAX_HOPS + 1)).toBe(true);
   });
+
+  it("defaults to six hops when BOT_MESSAGE_MAX_HOPS is unset", () => {
+    vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined);
+    expect(botMessageMaxHops()).toBe(6);
+  });
+
+  it.each([
+    ["1", 1],
+    ["10", 10],
+    [" 12 ", 12],
+  ])("reads BOT_MESSAGE_MAX_HOPS=%j", (value, expected) => {
+    vi.stubEnv("BOT_MESSAGE_MAX_HOPS", value);
+    expect(botMessageMaxHops()).toBe(expected);
+    expect(botMessageHopExhausted(expected)).toBe(false);
+    expect(botMessageHopExhausted(expected + 1)).toBe(true);
+  });
+
+  it.each(["", " ", "0", "-1", "2.5", "NaN", "Infinity", "ten", "8hops"])(
+    "falls back to the default for BOT_MESSAGE_MAX_HOPS=%j",
+    (value) => {
+      vi.stubEnv("BOT_MESSAGE_MAX_HOPS", value);
+      expect(botMessageMaxHops()).toBe(DEFAULT_BOT_MESSAGE_MAX_HOPS);
+    },
+  );
 
   it("stops a two-bot volley in a bounded number of deliveries", () => {
     let hop = nextBotMessageHop(undefined);
@@ -62,7 +90,7 @@ describe("hop bounding", () => {
       delivered += 1;
       hop = nextBotMessageHop(hop);
     }
-    expect(delivered).toBe(BOT_MESSAGE_MAX_HOPS);
+    expect(delivered).toBe(DEFAULT_BOT_MESSAGE_MAX_HOPS);
   });
 });
 

@@ -30,6 +30,36 @@ function space(
 }
 
 describe("sidebarGroupsForSpaces", () => {
+  it("keeps an empty space with saved sections openable", () => {
+    const empty = {
+      ...space("space-2", "Support", { canRename: true, bots: [] }),
+      botSections: [{ id: "saved", name: "Archived projects" }],
+    };
+    const groups = sidebarGroupsForSpaces([space("space-1", "Personal"), empty], "");
+    expect(groups.filter((group) => group.spaceId === empty.id)).toEqual([
+      expect.objectContaining({ emptySpaceId: "space-2", title: "Support" }),
+    ]);
+  });
+
+  it("retains empty section and Unassigned drop targets when not searching", () => {
+    const input = {
+      ...space("space-1", "Personal"),
+      bots: [{ ...chat("a", "Alpha"), sectionId: "s1" }],
+      botSections: [
+        { id: "s1", name: "Projects" },
+        { id: "s2", name: "Empty" },
+      ],
+    };
+    expect(sidebarGroupsForSpaces([input], "").map((group) => group.key)).toEqual([
+      "section:s1",
+      "section:s2",
+      "unassigned",
+    ]);
+    expect(sidebarGroupsForSpaces([input], "Alpha").map((group) => group.key)).toEqual([
+      "section:s1",
+    ]);
+  });
+
   it("keeps rename on the only space without showing its name", () => {
     const [group] = sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "");
 

@@ -184,6 +184,53 @@ it.each([{ apiBase: "https://other.example.test" }, { userId: "user-b" }, { spac
   },
 );
 
+it("omits hidden credential settings and protected answers from saved secret requests", () => {
+  const snapshot = thread(1);
+  snapshot.messages[0]!.blocks = [
+    {
+      kind: "ask",
+      text: "API credential",
+      input: "secret",
+      purpose: "api_key",
+      status: "answered",
+      credential: {
+        name: "service-key",
+        origin: "https://service.example.test",
+        auth: { type: "basic", username: "private-placeholder" },
+      },
+      detail: "hidden-placeholder",
+      answer: "protected-placeholder",
+    },
+    { kind: "ask", text: "Question", answer: "Visible answer", status: "answered" },
+  ];
+  writeSavedThread(scope, "bot:bot-a", snapshot);
+  const saved = readSavedThread(scope, "bot:bot-a")!;
+  expect(saved.messages[0]!.blocks).toEqual([
+    {
+      kind: "ask",
+      text: "API credential",
+      input: "secret",
+      purpose: "api_key",
+      status: "answered",
+    },
+    snapshot.messages[0]!.blocks[1],
+  ]);
+  const contents = [...state.files.values()].join("");
+  for (const value of ["private-placeholder", "hidden-placeholder", "protected-placeholder"])
+    expect(contents).not.toContain(value);
+  expect(snapshot.messages[0]!.blocks[0]).toHaveProperty("credential");
+});
+
+it("deletes the old cache format, including other scopes, before restoring saved chats", async () => {
+  state.files.set("cache/saved-chats-v1/old-session/space-a/inbox.json", "private-placeholder");
+  state.files.set("cache/saved-chats-v1/other-session/space-b/bot.json", "private-placeholder");
+  state.verified = verified;
+  expect(await loadSavedInbox()).toBeNull();
+  expect(state.files.size).toBe(0);
+  writeSavedThread(scope, "bot:bot-a", thread(1));
+  expect([...state.files.keys()][0]).toContain("saved-chats-v2");
+});
+
 it("never reads what an earlier session of the same account left behind", async () => {
   // A wipe failed; signing in again rotates the namespace, so the old files are unreachable.
   state.verified = verified;

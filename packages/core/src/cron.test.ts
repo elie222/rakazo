@@ -146,9 +146,51 @@ describe("formatCron", () => {
     expect(formatCron("0 6 * * *")).toBe("Every day at 6:00 AM");
     expect(formatCron("0 * * * *")).toBe("Every hour");
     expect(formatCron("0 9 1 * *")).toBe("Monthly on the 1st at 9:00 AM");
-    expect(formatCron("0 6 * * 6,0")).toBe("Cron 0 6 * * 6,0");
     expect(formatCron("0 6 1 * 0")).toBe("Cron 0 6 1 * 0");
     expect(presetFromCron("0 6 * * 0")).toMatchObject({ freq: "Advanced", cron: "0 6 * * 0" });
+  });
+
+  it("describes weekends, day lists and day ranges", () => {
+    expect(formatCron("0 6 * * 6,0")).toBe("Weekends at 6:00 AM");
+    expect(formatCron("0 9 * * 0,6")).toBe("Weekends at 9:00 AM");
+    expect(formatCron("0 9 * * 6,7")).toBe("Weekends at 9:00 AM");
+    expect(formatCron("0 9 * * 1,3,5")).toBe("Every Monday, Wednesday and Friday at 9:00 AM");
+    expect(formatCron("30 7 * * 2,4")).toBe("Every Tuesday and Thursday at 7:30 AM");
+    expect(formatCron("0 9 * * 0,3")).toBe("Every Wednesday and Sunday at 9:00 AM");
+    expect(formatCron("0 9 * * 2-4")).toBe("Tuesday to Thursday at 9:00 AM");
+    expect(formatCron("0 9 * * 5-7")).toBe("Friday to Sunday at 9:00 AM");
+    expect(formatCron("0 9 * * 1-3,5")).toBe(
+      "Every Monday, Tuesday, Wednesday and Friday at 9:00 AM",
+    );
+    expect(formatCron("0 8 * * 1,2,3,4,5")).toBe("Weekdays at 8:00 AM");
+    expect(formatCron("0 8 * * 0-6")).toBe("Every day at 8:00 AM");
+  });
+
+  it("describes any day of the month", () => {
+    expect(formatCron("0 9 15 * *")).toBe("Monthly on the 15th at 9:00 AM");
+    expect(formatCron("0 9 2 * *")).toBe("Monthly on the 2nd at 9:00 AM");
+    expect(formatCron("0 9 3 * *")).toBe("Monthly on the 3rd at 9:00 AM");
+    expect(formatCron("0 9 11 * *")).toBe("Monthly on the 11th at 9:00 AM");
+    expect(formatCron("0 9 22 * *")).toBe("Monthly on the 22nd at 9:00 AM");
+    expect(formatCron("30 18 31 * *")).toBe("Monthly on the 31st at 6:30 PM");
+  });
+
+  it("describes a fixed minute every hour", () => {
+    expect(formatCron("15 * * * *")).toBe("Every hour at :15");
+    expect(formatCron("5 * * * *")).toBe("Every hour at :05");
+  });
+
+  it.each([
+    "0 9 * * 1-5/2",
+    "0 9 * * MON",
+    "0 9 * * 5-1",
+    "0 9 * * 8",
+    "0 9 1,15 * *",
+    "0 9 32 * *",
+    "0 9 15 1 *",
+    "60 * * * *",
+  ])("keeps the cron fallback for %s", (cron) => {
+    expect(formatCron(cron)).toBe(`Cron ${cron}`);
   });
 
   it.each(["* * 2", "* * 1", "* * 7", "* * *", "* * 1-5", "1 * *"])(

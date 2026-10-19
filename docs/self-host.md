@@ -234,6 +234,18 @@ current provider, so **Link SSO** becomes available again. Link the new identity
 existing signed-in account; authenticated-session, verified-email and matching-email checks
 still apply. Restoring the old issuer makes its existing links usable again.
 
+Ordinary SSO sign-in and linking may reuse the identity provider's existing session. They
+do not grant fresh authentication proof for account deletion. The account settings' explicit
+reauthentication flow requests `prompt=login` and `max_age=0`, binds the callback to the
+same linked issuer and subject, and requires the initiating session to remain valid. Only
+that callback grants proof to the resulting session, expiring five minutes after provider
+authentication (callback delays do not extend it). Its verified
+ID token must contain an `auth_time` consistent with that request (allowing 60 seconds of
+clock skew) and less than five minutes old. Missing, stale or invalid claims fail closed.
+OAuth callbacks are single-use, including concurrent requests. Password verification and
+emailed deletion codes remain available. Submit deletion codes through the account settings
+or the CSRF-protected `POST /api/auth/delete-user` endpoint; the GET deletion callback is disabled.
+
 SSO signup follows closed registration and the deployment allowlist before creating an account.
 Allowlisted provider emails must be verified; the password signup's first-account exemption
 never upgrades an OIDC email. `OIDC_ALLOW_SIGNUP_BYPASS=true` explicitly admits IdP identities
@@ -251,7 +263,7 @@ on first use, refreshed in the background, and failures back off up to one minut
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
-password may delete after a provider sign-in within five minutes; **Sign in again** starts a fresh
+password may delete after explicit provider reauthentication within five minutes; **Sign in again** starts a fresh
 provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
 deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
@@ -294,6 +306,28 @@ Billing stays off, with no paywall, unless `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_
 `STRIPE_PRICE_ID` are all set (see `.env.example`). Setting only some of them stops the API at
 startup.
 
+### Pi tracing
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` on the worker to enable optional OpenTelemetry traces
+(for example, `http://otel-collector:4318`). The OTLP/HTTP exporter appends `/v1/traces`
+to the base endpoint and honors standard `OTEL_EXPORTER_OTLP_HEADERS` (comma-separated
+`key=value` pairs) and `OTEL_SERVICE_NAME` (default `rakazo-worker`). Compose workers
+read these settings from `.env`. With an empty or unset endpoint, no tracing SDK loads
+or initializes. No collector or hosted service is required to run Rakazo.
+
+Traces contain a `rakazo.agent.run` span with `pi.ai.request` model-call spans and
+`pi.agent.tool` steps, including duration, token usage, cost when known, and success/error
+status. Each span carries `rakazo.bot.id`, `rakazo.run.id`, and `rakazo.routine.id`
+when the run belongs to a routine. Helper model calls inherit the same correlation.
+Pi 0.87.1 exposes built-in telemetry through its newer harness; Rakazo’s legacy Agent
+adapter maps its model and tool lifecycle through the same Pi telemetry contract.
+
+Prompt, response, tool arguments and tool results are excluded by default.
+`OTEL_CAPTURE_CONTENT=true` includes them: enable only with a trusted collector and
+appropriate retention/access controls, since this content can contain secrets or personal
+data. Unknown attributes and exception messages/stacks stay excluded. Export is batched,
+best effort, and flushed when the worker shuts down; collector failures do not fail runs.
+
 ### Logging
 
 Backend services write structured logs to stdout. `LOG_LEVEL` is `debug`, `info`, `warn`, `error`,
@@ -304,6 +338,18 @@ Axiom is optional. Set both `AXIOM_TOKEN` and `AXIOM_DATASET` for ingest to one 
 Services set `service.name` (`rakazo-api`, `rakazo-worker`, `rakazo-sandbox-supervisor`,
 `rakazo-updater`). A partial Axiom config logs a one-time warning and stays off. `AXIOM_EDGE` is a
 regional hostname; `AXIOM_EDGE_URL` must be https and wins when both are set.
+
+Error reporting to Sentry or a Sentry-compatible collector such as GlitchTip is optional:
+
+- `SENTRY_DSN` reports backend `error` logs, with the exception chain, `service`, and request or job
+  ids as tags. Uncaught exceptions are reported before exit.
+- `SENTRY_BROWSER_DSN` reports web app errors. The browser reads it from `/api/monitoring/config` at
+  startup and posts reports to `/api/monitoring/tunnel`; the API forwards only envelopes addressed
+  to that DSN. Use a separate project from `SENTRY_DSN`.
+- `SENTRY_ENVIRONMENT` names the deployment. `SENTRY_RELEASE` defaults to the image's `GIT_SHA`.
+
+Neither SDK sends cookies, headers, request bodies, user identity, console output, or log context.
+Reporting is off without a DSN; an invalid DSN logs a warning and stays off.
 
 Compose passes these into the API, worker, supervisor, and updater. Computer containers and updater
 child commands do not receive them.
@@ -319,8 +365,11 @@ WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
 # E2B, CreateOS and Box still apply their own timeouts.
+COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
+RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
+BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
@@ -358,6 +407,22 @@ accepts images, enable **Supports images** under **Advanced** when connecting so
 screenshot computer tools stay available. Existing connections default to disabled. For centrally
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
+
+### Web search and page reading
+
+Builtin `web_search` and `web_fetch` use keyless HTTP search (DuckDuckGo HTML) and local
+Readability extraction by default. To choose [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp),
+set `WEB_PROVIDER=parallel` in `.env` and restart both the API and worker. The same bot tools
+then return search excerpts and extracted page markdown through HTTPS MCP at
+`https://search.parallel.ai/mcp`. Search uses Fast mode without an account or API key.
+
+This option sends search queries and requested page URLs to Parallel, which retrieves pages
+on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
+`ENCRYPTION_KEY` (shared by the API and worker), so deployments with distinct secrets send
+distinct session IDs. Rotating that secret resets the session IDs; the existing development-only
+encryption-key fallback also applies here. Anonymous access has service limits; rate-limit and provider errors are returned
+to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
+`WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
@@ -858,6 +923,55 @@ service's trust boundary. `SIGNUPS_ENABLED` applies on the API's first start. A 
 `SIGNUP_ALLOWLIST` applies on every API start.
 The optional marketing site in `apps/www` can be hosted separately.
 
+## Image and video generation
+
+Bot media tools are disabled by default. Configure the worker (and API for inline
+execution) with a provider and its generic HTTP connection:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=fal
+MEDIA_GENERATION_BASE_URL=https://queue.fal.run
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
+MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
+```
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, or `fake`
+(for offline testing only). The base URL is optional and defaults to the URL above.
+Only set the image/video model fields for capabilities you want enabled. Compatible
+servers can use the same connection fields; models must support the corresponding
+fal queue API and Flux/Wan input and output shapes. Credentials stay on the server. Set these in
+your deployment secret configuration; never commit actual credentials.
+
+Bots use `generate_image` to attach one PNG or `generate_video` to submit a
+four-second MP4. The video tool returns a job ID and queued/running status; call it
+again with `jobId` to check progress and attach the completed video. Saved jobs
+can be polled after worker restarts by the same owner/bot/thread. The first version
+requires polling through the bot; it does not automatically deliver jobs in the
+background. Use the existing per-bot tool switches and action approval rules to
+control access. Both tools require approval by default. Ticket board runs keep
+these chat-only media tools unavailable so ticket work stays on the board.
+
+Each run allows at most two submissions (including failures). Submissions are
+never retried automatically: a lost response can mean the provider accepted and
+charged for the request. Provider errors omit remote response bodies. Configure
+account budgets and rate limits with your provider; the run cap is not a currency
+budget. Provider 429 responses are returned without automatic retries. Outputs
+must fit both the 10 MiB media ceiling and the configured attachment limit;
+larger outputs are rejected.
+
+Images use existing inline chat rendering. MP4 files can be previewed with native
+video controls on web and Electron and opened/downloaded through the existing
+native file flow on mobile. No new mobile player or settings screen is required.
+
 ## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
+
+## Upload size
+
+`MAX_UPLOAD_SIZE_MB` sets the per-file chat attachment and computer file transfer limit
+in MiB (1 MiB = 1,048,576 bytes). It defaults to `10` and must be a positive integer.
+Set it in `.env` and restart the API, worker, and Docker supervisor (when used). Web, desktop, and mobile use the
+limit advertised by the server. If a reverse proxy limits request bodies, allow
+room for base64 encoding (about 4/3 of the file size) and the JSON envelope.

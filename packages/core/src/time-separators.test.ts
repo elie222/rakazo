@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { formatTimeSeparator, needsTimeSeparator, timeSeparatorIds } from "./time-separators.js";
+import {
+  formatTimeSeparator,
+  needsTimeSeparator,
+  timeSeparatorIds,
+  unreadBoundaryId,
+} from "./time-separators.js";
 
 const labels = { today: "Today", yesterday: "Yesterday" };
 afterEach(() => {
@@ -67,5 +72,29 @@ describe("time separators in the viewer's local calendar", () => {
     expect([...timeSeparatorIds(messages)]).toEqual(["0", "2", "3"]);
     expect(needsTimeSeparator("invalid")).toBe(false);
     expect(formatTimeSeparator("invalid", "en-US", labels)).toBe("");
+  });
+});
+
+describe("unreadBoundaryId", () => {
+  it("marks the replies after the user's last message", () => {
+    const roles = ["user", "bot", "user", "bot", "bot"];
+    const messages = roles.map((role, index) => ({ id: String(index), role }));
+    expect(unreadBoundaryId(messages)).toBe("3");
+  });
+
+  it("marks only the latest message without a user message, and nothing after one", () => {
+    expect(
+      unreadBoundaryId([
+        { id: "a", role: "bot" },
+        { id: "b", role: "bot" },
+      ]),
+    ).toBe("b");
+    expect(
+      unreadBoundaryId([
+        { id: "a", role: "bot" },
+        { id: "b", role: "user" },
+      ]),
+    ).toBeNull();
+    expect(unreadBoundaryId([])).toBeNull();
   });
 });

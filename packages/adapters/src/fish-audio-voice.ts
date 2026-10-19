@@ -31,6 +31,14 @@ const DEFAULT_TTS_MODEL = "s2.1-pro";
 const TTS_MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const UPSTREAM_DETAIL_LIMIT = 500;
 let invalidTtsModelWarned = false;
+/**
+ * Fish's recommended, multilingual ASR model. Without the `model` header the endpoint
+ * serves the older `transcribe-1`, which reads most languages as English lookalikes.
+ */
+const DEFAULT_ASR_MODEL = "transcribe-1-pro";
+/** BCP-47 tag or ISO 639-1 code; Fish wants the lowercase primary subtag. */
+const ASR_LANGUAGE_PATTERN = /^([A-Za-z]{2,3})(?:-[A-Za-z0-9]{2,8})*$/;
+let invalidAsrModelWarned = false;
 
 export class FishAudioVoiceProvider implements VoiceProvider {
   /** Advertise Fish Audio's model catalog, speech synthesis, and transcription support. */
@@ -109,15 +117,20 @@ export class FishAudioVoiceProvider implements VoiceProvider {
       speechUploadName(request.mimeType),
     );
     form.set("ignore_timestamps", "true");
+    // transcribe-1-pro otherwise leaves bracketed audio events ("[risas]") in the text.
+    form.set("tag_audio_events", "false");
+    const language = asrLanguageHint(request.language);
+    if (language) form.set("language", language);
+    const model = resolveFishTranscriptionModel();
     const res = await fetch(`${API}/v1/asr`, {
       method: "POST",
-      headers: fishAudioHeaders(request.apiKey),
+      headers: { ...fishAudioHeaders(request.apiKey), model },
       body: form,
       signal: voiceDeadline(request.signal ?? context.signal, 60_000),
     });
     const body = await readFishResponse(res);
     if (!res.ok) rejectFish(res.status, "transcribing", body, request.apiKey);
-    return { text: String((body as { text?: unknown } | null)?.text ?? "").trim() };
+    return { text: stripFishAsrTags(String((body as { text?: unknown } | null)?.text ?? "")) };
   }
 }
 
@@ -168,6 +181,44 @@ function fishAudioHeaders(apiKey: string): Record<string, string> {
 /** True when `value` can be sent as the Fish `model` header. */
 export function isFishSpeechModelId(value: string): boolean {
   return TTS_MODEL_PATTERN.test(value);
+}
+
+/**
+ * `FISH_ASR_MODEL` when it is a model id, otherwise transcribe-1-pro. A deployment that
+ * pins another speech model keeps it; anything unparseable falls back rather than
+ * sending a header Fish would reject.
+ */
+function resolveFishTranscriptionModel(): string {
+  const configured = process.env.FISH_ASR_MODEL?.trim() ?? "";
+  if (!configured) return DEFAULT_ASR_MODEL;
+  if (isFishSpeechModelId(configured)) return configured;
+  if (!invalidAsrModelWarned) {
+    invalidAsrModelWarned = true;
+    getLogger().warn("Ignoring FISH_ASR_MODEL because it is not a model id", {
+      provider: "fish-audio",
+    });
+  }
+  return DEFAULT_ASR_MODEL;
+}
+
+/**
+ * The lowercase ISO 639-1 code Fish expects in `language`, or undefined when the value is
+ * not a tag we can honor ("es-ES" and "es" both ask for Spanish).
+ */
+export function asrLanguageHint(language: string | undefined): string | undefined {
+  const match = ASR_LANGUAGE_PATTERN.exec(language?.trim() ?? "");
+  return match?.[1] ? match[1].toLowerCase() : undefined;
+}
+
+/**
+ * `transcribe-1-pro` marks speaker turns inline (`<|speaker:0|>`) on every response.
+ * Dictation wants the words only, so drop the control markers.
+ */
+export function stripFishAsrTags(text: string): string {
+  return text
+    .replace(/<\|[^|>]*\|>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /** Connection override, then `FISH_TTS_MODEL`, then s2.1-pro. */

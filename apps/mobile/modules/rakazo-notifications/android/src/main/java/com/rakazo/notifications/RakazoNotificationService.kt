@@ -454,7 +454,7 @@ private fun isWorking(run: RunRecord): Boolean =
   run.status == "queued" || run.status == "leased" || run.status == "running"
 
 private fun avatarStyle(endpoint: String, token: String, spaceId: String): String =
-  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "robot")
+  rpc(endpoint, token, spaceId, "me", JSONObject()).optString("avatarStyle", "organic")
 
 private fun latestReply(endpoint: String, token: String, spaceId: String, run: RunRecord): String? {
   val target = JSONObject().apply {

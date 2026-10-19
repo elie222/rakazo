@@ -16,6 +16,7 @@ import {
   redeemMessagingLinkCode,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import type { MessagingReceipts } from "./messaging-receipts.js";
 import {
   MESSAGE_ROUTING_REARMED_REASON,
   MESSAGE_ROUTING_REASON,
@@ -42,11 +43,7 @@ export interface MessagingInboundDeps {
    */
   openSignup: boolean;
   signupPolicy: SignupPolicyEnv;
-  /**
-   * Best-effort "…" bubbles shown to a 1:1 sender while their run executes.
-   * Cosmetic only — callers must catch failures; groups never get it.
-   */
-  typing?: (threadId: string) => Promise<void>;
+  acknowledge?: MessagingReceipts["acknowledge"];
 }
 
 type IdentityRow = {
@@ -150,13 +147,30 @@ async function handleDirectEvent(
     clientNonce: `messaging:${event.provider}:${event.handle}`,
   });
   if (sent.runId) {
-    // Typing bubbles only make sense once a reply is actually coming. Fire
-    // before the enqueue so they land ahead of a fast reply, and never await:
-    // a stalled vendor typing call must not hold the webhook open. The bubbles
-    // clear on their own after a short display window or when the reply
-    // arrives, so long runs simply outlive them.
-    void deps.typing?.(event.threadId).catch((error) => {
-      getLogger().error("messaging typing indicator error", error);
+    const runId = sent.runId;
+    deps.acknowledge?.(event.threadId, event.handle, async () => {
+      const run = await deps.prisma.run.findUnique({
+        where: { id: runId },
+        select: { status: true, messagingMirroredAt: true },
+      });
+      if (!run) return false;
+      // A failed or cancelled run may never be mirrored, and no reply is coming.
+      if (run.status === "failed" || run.status === "cancelled") return true;
+      if (!run.messagingMirroredAt) return false;
+      // Mirroring only queues the reply in the outbox. It has gone out once
+      // none of this run's queued rows are still waiting to be sent.
+      const replies = await deps.prisma.message.findMany({
+        where: { runId, role: "bot" },
+        select: { id: true },
+      });
+      if (replies.length === 0) return true;
+      const unsent = await deps.prisma.messagingOutbound.count({
+        where: {
+          sourceMessageId: { in: replies.map((reply) => reply.id) },
+          status: { not: "sent" },
+        },
+      });
+      return unsent === 0;
     });
     await deps.jobs.enqueue(runContinueJob(sent.runId)).catch((error) => {
       getLogger().error("messaging inbound run enqueue error", error);

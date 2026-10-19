@@ -240,25 +240,23 @@ export function ModelBackupsSettings({
     <section
       data-testid="model-backups"
       aria-labelledby="model-backups-title"
-      className="mt-8 border-t border-border pt-5"
+      className="mt-6 border-t border-border pt-5"
     >
-      <h3 id="model-backups-title" className="text-[15px] font-medium text-foreground">
+      <h3 id="model-backups-title" className="text-[13.5px] text-muted-foreground">
         <Trans>Backup models</Trans>
       </h3>
       {!currentState || currentState.loading ? (
-        <p className="mt-2 text-[13px] text-muted-foreground" role="status">
+        <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground" role="status">
           <Trans>Loading…</Trans>
         </p>
       ) : (
         <>
           {currentState.draft.length === 0 ? (
-            <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
-              {addableOptions.length === 0 ? (
-                <Trans>Connect a provider to add backups.</Trans>
-              ) : (
+            addableOptions.length === 0 ? null : (
+              <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
                 <Trans>Add connected models to use them as backups.</Trans>
-              )}
-            </p>
+              </p>
+            )
           ) : (
             <ol
               aria-label={t`Backup models order`}
@@ -272,13 +270,13 @@ export function ModelBackupsSettings({
                     className="flex items-center gap-3 px-3 py-2.5"
                     data-testid={`model-backup-${index + 1}`}
                   >
-                    <span className="w-5 shrink-0 text-center text-[12px] tabular-nums text-muted-foreground">
+                    <span className="w-5 shrink-0 text-center text-[13px] leading-[1.5] tabular-nums text-muted-foreground">
                       {index + 1}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] text-foreground">{full}</span>
+                      <span className="block truncate text-[15px] text-foreground">{full}</span>
                       {!available ? (
-                        <span className="block text-[12px] text-muted-foreground">
+                        <span className="block text-[13px] leading-[1.5] text-muted-foreground">
                           <Trans>Not connected</Trans>
                         </span>
                       ) : null}
@@ -325,12 +323,12 @@ export function ModelBackupsSettings({
             </ol>
           )}
           {currentState.draft.length >= MAX_MODEL_BACKUPS ? (
-            <p className="mt-2 text-[12px] text-muted-foreground">
+            <p className="mt-2 text-[13px] leading-[1.5] text-muted-foreground">
               <Trans>Maximum of 10 backup models.</Trans>
             </p>
           ) : null}
           <div className="mt-3 flex flex-wrap items-end gap-2">
-            <div className="min-w-0 flex-1 text-[13px] text-muted-foreground">
+            <div className="min-w-0 flex-1 text-[13.5px] text-muted-foreground">
               <label htmlFor="model-backup-picker">
                 <Trans>Add connected model</Trans>
               </label>

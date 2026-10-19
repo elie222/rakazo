@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AgentRunRequest, AgentRuntimeEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { PiAgentRuntime } from "@rakazo/adapters";
-import { afterEach, describe, expect, it } from "vitest";
+import * as Core from "@rakazo/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ModelEmulatorRequest, startModelEmulator } from "./model-emulator.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -50,6 +51,64 @@ function latestToolResult(request: ModelEmulatorRequest) {
 }
 
 describe("real Pi against an offline model HTTP endpoint", () => {
+  it("retries a dropped stream and an overloaded provider after tool work without replaying the effect", async () => {
+    const delay = vi.spyOn(Core, "abortableDelay").mockResolvedValue(undefined);
+    try {
+      let retryMessages: ModelEmulatorRequest["messages"] | undefined;
+      const assertRetryContext = (request: ModelEmulatorRequest) => {
+        expect(latestToolResult(request)?.tool_call_id).toBe("retry-write");
+        if (retryMessages) expect(request.messages).toEqual(retryMessages);
+        else retryMessages = request.messages;
+      };
+      const server = await startModelEmulator({
+        steps: [
+          {
+            expect() {},
+            response: {
+              type: "tool",
+              id: "retry-write",
+              name: "write_file",
+              arguments: { path: "notes.txt", content: "hello" },
+            },
+          },
+          { expect: assertRetryContext, response: { type: "disconnect" } },
+          {
+            expect: assertRetryContext,
+            response: {
+              type: "error",
+              status: 503,
+              message: "Codex error: Our servers are currently overloaded. Please try again later.",
+            },
+          },
+          { expect: assertRetryContext, response: { type: "text", text: "Saved." } },
+        ],
+      });
+      cleanups.push(() => server.close());
+      const executeTool = vi.fn(async () => ({ ok: true }));
+      const events = await collect(
+        new PiAgentRuntime({
+          modelCallObserver: {
+            beforeCall: async () => "fixture-reservation",
+            afterCall: async () => undefined,
+          },
+        }).run(runRequest(server.model, { executeTool })),
+      ).catch((error) => {
+        server.assertComplete();
+        throw error;
+      });
+      server.assertComplete();
+      expect(server.requests).toHaveLength(4);
+      expect(executeTool).toHaveBeenCalledOnce();
+      expect(events.filter((event) => event.type === "text")).toEqual([
+        { type: "text", text: "Saved." },
+      ]);
+      expect(events.at(-1)).toEqual({ type: "done", text: "Saved." });
+      expect(delay.mock.calls.map(([delayMs]) => delayMs)).toEqual([2_000, 8_000]);
+    } finally {
+      delay.mockRestore();
+    }
+  });
+
   it.each([undefined, "retrieval", "snapshots", "cache-aware"] as const)(
     "bounds actual initial and tool-loop requests with %s context",
     async (contextStrategy) => {

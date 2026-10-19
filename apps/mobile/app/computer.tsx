@@ -1,9 +1,8 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
 import { useLocalSearchParams, useNavigation } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import {
   initialWindowMetrics,
@@ -42,12 +41,15 @@ import { createComputerRefresh } from "../lib/computer-refresh";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { holdFreeRotation } from "../lib/orientation";
+import { stacksAtTextScale } from "../lib/text-scale";
 import { errorText } from "../lib/user-error";
 
 export default function Computer() {
   const { t } = useI18n();
   const tokens = useMobileTokens();
   const navigation = useNavigation();
+  const stacked = stacksAtTextScale(useWindowDimensions().fontScale);
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const name = nameParam || t("Bot");
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
@@ -194,18 +196,8 @@ export default function Computer() {
     }).catch(() => undefined);
   }, [readyBotId, botId, computer?.state, switching]);
 
-  useEffect(() => {
-    // Let the full-screen desktop rotate to landscape; the rest of the app stays portrait.
-    const lock = computerOpen
-      ? ScreenOrientation.OrientationLock.DEFAULT
-      : ScreenOrientation.OrientationLock.PORTRAIT_UP;
-    void ScreenOrientation.lockAsync(lock).catch(() => undefined);
-    return () => {
-      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-        () => undefined,
-      );
-    };
-  }, [computerOpen]);
+  // Let the full-screen desktop rotate to landscape; phone-sized windows elsewhere stay portrait.
+  useEffect(() => (computerOpen ? holdFreeRotation() : undefined), [computerOpen]);
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;
@@ -329,13 +321,18 @@ export default function Computer() {
       <View
         style={{
           marginTop: 16,
-          flexDirection: "row",
-          alignItems: "center",
+          flexDirection: stacked ? "column" : "row",
+          alignItems: stacked ? "flex-start" : "center",
           justifyContent: "space-between",
           gap: 12,
         }}
       >
-        <Text style={{ color: tokens.mutedForeground, flex: 1 }}>
+        <Text
+          style={{
+            color: tokens.mutedForeground,
+            ...(stacked ? { alignSelf: "stretch" } : { flex: 1 }),
+          }}
+        >
           {controlLabel(computer, name, botId)}
         </Text>
         {hasControl ? (
@@ -360,6 +357,8 @@ export default function Computer() {
         />
       ) : null}
       <ComputerModePicker
+        // Restacking the row above leaves the native picker at its old measured height; remount it.
+        key={stacked ? "stacked" : "row"}
         value={computer?.mode}
         disabled={switching}
         onChange={(mode) => void setComputerMode(mode)}

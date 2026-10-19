@@ -22,9 +22,6 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   const composer = page.getByRole("combobox", { name: "Message Chief" });
   await composer.fill("message the bot named Researcher saying peer-exchange-alpha");
   await composer.press("Enter");
-  await expect(page.getByText("messaging that bot now.").first()).toBeVisible({
-    timeout: 60_000,
-  });
 
   await expect
     .poll(
@@ -55,7 +52,7 @@ test("shows peer chips in transcript and opens view-only peer chat", async ({ pa
   await expect(chip).toBeVisible({ timeout: 30_000 });
   await expect(chip.getByText(/Messaged|Message from/)).toBeVisible();
   await expect(chip).toHaveAccessibleName(/Messaged Researcher|Message from Researcher/);
-  await expect(chip.locator(".rakazo-bot-avatar")).toBeVisible();
+  await expect(chip.locator(".rakazo-organic-avatar")).toBeVisible();
   await expect(chip).not.toContainText("{peer}");
   // User bubble still contains the phrase; peer body must not appear outside the chip.
   await expect(chip).not.toContainText("peer-exchange-alpha");

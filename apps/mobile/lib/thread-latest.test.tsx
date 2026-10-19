@@ -55,10 +55,6 @@ describe("mobile jump to latest", () => {
         });
         const scope = {
           pinnedAroundRef,
-          openingUnread: useRef(false),
-          setUnreadOpeningFailed: vi.fn(),
-          visibleReadIds: useRef(new Set<string>()),
-          visibleReadCallIds: useRef(new Set<string>()),
           joinPinnedAfterLayout: useRef<number | null>(0),
           jumpScrollTarget,
           jumpAnchor: useRef(new ThreadJumpAnchor()),

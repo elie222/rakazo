@@ -21,22 +21,6 @@ function message(fields: Partial<ThreadMessage> & { role: ThreadMessage["role"] 
 }
 
 describe("groupVoiceChats", () => {
-  it("exposes unread call turns as individual rows while keeping read calls collapsed", () => {
-    const previous = message({ role: "user", callId: "old-call" });
-    const opening = message({ role: "user", callId: "new-call", runId: "new-run" });
-    const reply = message({ role: "bot", runId: "new-run" });
-    const messages = [previous, opening, reply];
-
-    const items = groupVoiceChats(messages, { unreadAfterSeq: opening.seq });
-    expect(items.map((item) => item.kind)).toEqual(["voiceChat", "message", "message"]);
-    expect(items[1]).toEqual({ kind: "message", message: opening });
-    expect(items[2]).toEqual({ kind: "message", message: reply });
-    expect(
-      groupVoiceChats(messages, { unreadAfterSeq: reply.seq }).map((item) => item.kind),
-    ).toEqual(["voiceChat", "voiceChat"]);
-    expect(groupVoiceChats(messages).map((item) => item.kind)).toEqual(["voiceChat", "voiceChat"]);
-  });
-
   it("keeps two calls in separate groups", () => {
     const items = groupVoiceChats([
       message({ role: "user", callId: "call-1" }),

@@ -10,6 +10,7 @@ import { expect, it, vi } from "vitest";
 import type { MobileBot } from "./api";
 import { botTag, formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
+import { inboxRowActionList } from "./inbox-swipe";
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
@@ -43,6 +44,9 @@ function measure(before: boolean) {
     ConversationRow: () => null,
     BotAvatar: () => null,
     WorkingIndicator: () => null,
+    // Rows in the current space carry the iOS swipe host; it must not defeat the memo.
+    InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
+    inboxRowActionList,
   };
   const compile = (text: string) =>
     ts.transpileModule(text, {
@@ -61,6 +65,8 @@ function measure(before: boolean) {
     useCallback,
     BotRow,
     appearance: "light",
+    botAction: action,
+    SWIPE_ROWS: true,
     day: new Date(2026, 9, 10).getTime(),
     chooseInboxSpace: action,
     collapsedRosterParents: new Set(),
@@ -68,6 +74,7 @@ function measure(before: boolean) {
     me: { spaceId: "space-1" },
     openBot: action,
     openGroup: action,
+    groupAction: action,
     openSearchHit: action,
     organizeBot: action,
     organizeGroup: action,
@@ -185,7 +192,12 @@ it.each(["midnight", "focus", "foreground"])(
       BotAvatar: () => null,
       GroupAvatar: () => null,
       WorkingIndicator: () => null,
+      InboxSwipeRow: ({ children }: { children: ReactElement }) => children,
+      inboxRowActionList,
       appearance: "light",
+      botAction: action,
+      groupAction: action,
+      SWIPE_ROWS: true,
       chooseInboxSpace: action,
       collapsedRosterParents: new Set(),
       confirmDeleteSpace: action,

@@ -1,16 +1,27 @@
 ---
 type Props = {
   src: string;
+  avif?: string;
   alt: string;
   caption: string;
   width?: number;
   height?: number;
+  loading?: "eager" | "lazy";
 };
 
-const { src, alt, caption, width, height } = Astro.props;
+const { src, avif, alt, caption, width, height, loading } = Astro.props;
 ---
 
 <figure class="post-figure">
-  <img src={src} alt={alt} width={width} height={height} />
+  {
+    avif ? (
+      <picture>
+        <source type="image/avif" srcset={avif} />
+        <img src={src} alt={alt} width={width} height={height} loading={loading} decoding="async" />
+      </picture>
+    ) : (
+      <img src={src} alt={alt} width={width} height={height} loading={loading} decoding="async" />
+    )
+  }
   <figcaption>{caption}</figcaption>
 </figure>

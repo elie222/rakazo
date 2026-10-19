@@ -46,7 +46,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 function fixture() {
-  const connect = vi.fn().mockResolvedValue(undefined);
+  // The bot network remembers its members, like Docker, so an idempotent rejoin
+  // only connects peers that are actually missing.
+  const members = new Set<string>();
+  const connect = vi.fn(async (options: { Container: string }) => {
+    members.add(options.Container);
+  });
   const container = {
     inspect: vi.fn().mockResolvedValue({
       Id: "computer",
@@ -57,8 +62,8 @@ function fixture() {
       State: { Running: true },
       NetworkSettings: { Networks: { "bot-network": { IPAddress: "172.28.0.2" } } },
     }),
-    exec: vi.fn(async () => ({
-      start: async () => Readable.from([]),
+    exec: vi.fn(async (options: { Cmd: string[] }) => ({
+      start: async () => Readable.from(options.Cmd[1] === "-lc" ? ["GEOM 1 1\nIMAGE AQID\n"] : []),
       inspect: async () => ({ ExitCode: 0 }),
     })),
   };
@@ -73,10 +78,25 @@ function fixture() {
   );
   mocks.listContainers.mockResolvedValue([{ Id: "web-peer" }]);
   mocks.getNetwork.mockReturnValue({
-    inspect: vi.fn().mockResolvedValue({ Containers: {} }),
+    inspect: vi.fn(async () => ({
+      Containers: Object.fromEntries([...members].map((id) => [id, {}])),
+    })),
     connect,
   });
-  return { connect };
+  return { connect, members };
+}
+
+async function observe() {
+  const { supervisorApp } = await import("./index.js");
+  return supervisorApp.request("/computers/computer/observe", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${resolveSupervisorToken(process.env)}`,
+      "x-rakazo-bot-id": "bot",
+      "x-rakazo-space-id": "space",
+      "x-rakazo-screen-id": "writer",
+    },
+  });
 }
 
 async function openScreen() {
@@ -119,8 +139,34 @@ describe("isolated screen peer gateway priority through the supervisor route", (
     },
   );
 
+  it("rejoins the computer network on use after the supervisor container is recreated", async () => {
+    const { connect, members } = fixture();
+    mocks.version.mockResolvedValue({ ApiVersion: "1.45" });
+    expect((await openScreen()).status).toBe(200);
+    // A recreated supervisor container is a new container: Docker drops it from
+    // every network except the Compose one, and the screen registry is gone.
+    members.clear();
+    vi.resetModules();
+    connect.mockClear();
+    expect((await observe()).status).toBe(200);
+    expect(connect).toHaveBeenCalledWith({ Container: "supervisor-peer" });
+    expect(connect).toHaveBeenCalledWith({ Container: "web-peer" });
+  });
+
+  it("keeps observing when rejoining the computer network fails", async () => {
+    const { connect, members } = fixture();
+    members.add("supervisor-peer");
+    connect.mockRejectedValueOnce(new Error("peer disappeared before connect"));
+
+    const response = await observe();
+
+    expect(connect).toHaveBeenCalledWith({ Container: "web-peer" });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ image: "AQID", width: 1, height: 1 });
+  });
+
   it("keeps opening screens after a failed version lookup and retries discovery later", async () => {
-    const { connect } = fixture();
+    const { connect, members } = fixture();
     mocks.version
       .mockRejectedValueOnce(new Error("version temporarily unavailable"))
       .mockResolvedValue({ ApiVersion: "1.48" });
@@ -128,6 +174,8 @@ describe("isolated screen peer gateway priority through the supervisor route", (
     expect(connect).toHaveBeenCalledWith({ Container: "web-peer" });
     expect(connect).toHaveBeenCalledWith({ Container: "supervisor-peer" });
     connect.mockClear();
+    // Peers left the network, so the next screen has to join them again.
+    members.clear();
     expect((await openScreen()).status).toBe(200);
     expect(mocks.version).toHaveBeenCalledTimes(2);
     expect(connect).toHaveBeenCalledWith({

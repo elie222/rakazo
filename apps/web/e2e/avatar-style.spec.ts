@@ -15,7 +15,8 @@ test("account settings avatar style previews differ for robot and organic", asyn
   const organic = settings.getByTestId("avatar-style-organic");
   await expect(robot).toBeVisible();
   await expect(organic).toBeVisible();
-  await expect(robot).toHaveAttribute("aria-pressed", "true");
+  await expect(organic).toHaveAttribute("aria-pressed", "true");
+  await expect(robot).toHaveAttribute("aria-pressed", "false");
   await expect(robot.locator(".rakazo-bot-avatar")).toBeVisible();
   await expect(organic.locator(".rakazo-organic-avatar")).toBeVisible();
   await expect(robot.locator(".rakazo-organic-avatar")).toHaveCount(0);
@@ -31,5 +32,12 @@ test("account settings avatar style previews differ for robot and organic", asyn
     .evaluate((el) => el.outerHTML);
   expect(robotMarkup).not.toBe(organicMarkup);
 
+  await organic.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "account-avatars-style-previews");
+
+  await robot.click();
+  await expect(robot).toHaveAttribute("aria-pressed", "true");
+  await page.reload();
+  const reopened = await openUserSettings(page);
+  await expect(reopened.getByTestId("avatar-style-robot")).toHaveAttribute("aria-pressed", "true");
 });

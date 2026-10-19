@@ -4,16 +4,18 @@ import type {
   AdapterContext,
   AdapterDescriptor,
   MessagingCapabilities,
+  MessagingInboundAttachment,
   MessagingInboundEvent,
   MessagingInboundMessage,
   MessagingOutboundStatus,
   MessagingPlatformDescriptor,
+  MessagingReceipt,
   MessagingSendRequest,
   MessagingSendResult,
   MessagingSurface,
 } from "@rakazo/adapter-kit";
 import type { Adapter, Message, Thread } from "chat";
-import { Chat } from "chat";
+import { Chat, isLinkNode, text, toPlainText, walkAst } from "chat";
 
 /** Per-webhook drain of Chat SDK waitUntil work + inbound sink failures. */
 const webhookDrain = new AsyncLocalStorage<{
@@ -82,7 +84,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       concurrency: "concurrent",
     });
     const deliver = async (thread: Thread, message: Message) => {
-      const event = this.toInbound(thread, message);
+      const event = this.toInbound(thread.id, thread.isDM, message);
       if (!event) return;
       try {
         await this.sink?.(event);
@@ -135,7 +137,13 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     _context: AdapterContext,
   ): Promise<MessagingSendResult> {
     await this.ensureInitialized();
-    const sent = await this.chat.thread(request.threadId).post(request.body);
+    // Telegram converts Markdown and retries parse errors as plain text. Keep
+    // other adapters' existing payloads (Slack markdown_text has a lower limit).
+    const message =
+      providerOfThreadId(request.threadId) === "telegram"
+        ? { markdown: request.body }
+        : request.body;
+    const sent = await this.chat.thread(request.threadId).post(message);
     const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
     return { handle };
   }
@@ -155,13 +163,39 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return platform.adapter.openDM(address);
   }
 
-  async sendTyping(threadId: string, context: AdapterContext): Promise<void> {
+  async acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void> {
     const platform = this.byProvider.get(providerOfThreadId(threadId));
-    if (!platform?.capabilities.typing) return;
+    const receipt = platform?.capabilities.receipt;
+    if (!platform || !receipt) return;
     await this.ensureInitialized();
+    const sends: Record<MessagingReceipt, () => Promise<void>> = {
+      typing: () => platform.adapter.startTyping(threadId),
+      reaction: () => platform.adapter.addReaction(threadId, handle, "eyes"),
+    };
     // The Chat SDK adapter API takes no abort signal, so the underlying
     // request cannot be cancelled — but the caller's wait is still bounded.
-    await raceWithSignal(platform.adapter.startTyping(threadId), context.signal);
+    await raceWithSignal(sends[receipt](), context.signal);
+  }
+
+  async fetchThreadHistory(
+    threadId: string,
+    options: { before: string; limit: number },
+    context: AdapterContext,
+  ): Promise<MessagingInboundMessage[]> {
+    const platform = this.byProvider.get(providerOfThreadId(threadId));
+    if (!platform) return [];
+    await this.ensureInitialized();
+    const fetched = await raceWithSignal(
+      platform.adapter.fetchMessages(threadId, { limit: options.limit + 1, direction: "backward" }),
+      context.signal,
+    );
+    const end = fetched.messages.findIndex((message) => message.id === options.before);
+    if (end < 0) return [];
+    const isDirect = platform.adapter.isDM?.(threadId) ?? false;
+    return fetched.messages
+      .slice(0, end)
+      .slice(-options.limit)
+      .flatMap((message) => this.toInbound(threadId, isDirect, message) ?? []);
   }
 
   /**
@@ -257,32 +291,84 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     return response;
   }
 
-  private toInbound(thread: Thread, message: Message): MessagingInboundMessage | null {
+  private toInbound(
+    threadId: string,
+    isDirect: boolean,
+    message: Message,
+  ): MessagingInboundMessage | null {
     if (message.author.isMe || message.author.isSystem) return null;
-    const provider = providerOfThreadId(thread.id);
+    const provider = providerOfThreadId(threadId);
     const platform = this.byProvider.get(provider);
     if (!platform) return null;
-    const isDirect = thread.isDM;
     if (!isDirect && !platform.capabilities.groups) return null;
     const fromLabel = message.author.fullName || message.author.userName || null;
     const transport = platform.transport?.(message.raw) ?? null;
+    const attachments = inboundAttachments(message);
     const base: MessagingInboundMessage = {
       type: "message",
       provider,
       ...(transport ? { transport } : {}),
       handle: message.id,
-      threadId: thread.id,
+      threadId,
       isDirect,
       from: message.author.userId,
       fromLabel: fromLabel === message.author.userId ? null : fromLabel,
       channelName: isDirect ? null : (platform.channelName?.(message.raw) ?? null),
       participants: isDirect ? [] : (platform.participants?.(message.raw) ?? []),
-      content: message.text ?? "",
+      content: [
+        plainTextWithLinks(message),
+        ...(attachments.length
+          ? message.attachments
+              .filter((file) => !file.fetchData && file.url)
+              .map((file) => file.url)
+          : []),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       mediaUrl: message.attachments.find((attachment) => attachment.url)?.url ?? null,
+      ...(attachments.length ? { attachments } : {}),
+      ...(!isDirect && message.isMention ? { mentionsBot: true } : {}),
     };
     const enrichment = platform.enrichTeamRoom?.(message.raw, base) ?? {};
     return { ...base, ...enrichment };
   }
+}
+
+function inboundAttachments(message: Message): MessagingInboundAttachment[] {
+  return message.attachments.flatMap((attachment) => {
+    const fetchData = attachment.fetchData;
+    if (!fetchData) return [];
+    return [
+      {
+        name: attachment.name || attachment.type,
+        mimeType: attachment.mimeType ?? "",
+        ...(attachment.size !== undefined ? { size: attachment.size } : {}),
+        fetch: async () => new Uint8Array(await fetchData()),
+      },
+    ];
+  });
+}
+
+/**
+ * The SDK's message.text keeps only a link's label, so a Slack link labelled
+ * `example.com/projects/…` reaches the model without its target.
+ */
+function plainTextWithLinks(message: Message): string {
+  let addedTarget = false;
+  const ast = walkAst(structuredClone(message.formatted), (node) => {
+    if (!isLinkNode(node)) return node;
+    const label = toPlainText({ type: "root", children: node.children }).trim();
+    const bare = node.url.replace(/^(?:https?:\/\/|mailto:)/, "");
+    if (!label) {
+      addedTarget = true;
+      return text(node.url);
+    }
+    if (label === node.url || label === bare || label === bare.replace(/\/$/, ""))
+      return text(label);
+    addedTarget = true;
+    return text(`${label} (${node.url})`);
+  });
+  return addedTarget ? toPlainText(ast) : (message.text ?? "");
 }
 
 export function providerOfThreadId(threadId: string): string {

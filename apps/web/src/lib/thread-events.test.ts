@@ -25,112 +25,6 @@ import {
 } from "./thread-events.js";
 
 describe("thread event reduction", () => {
-  it("ignores events covered by a newer snapshot, including read state and clears", () => {
-    const initial = {
-      ...snapshot([message("latest", [{ kind: "text", text: "Visible" }], 3)]),
-      cursor: 50,
-      readState: { lastReadSeq: 3, lastUnreadSeq: 3, unread: false },
-    };
-    for (const type of [
-      "thread.read.updated",
-      "thread.cleared",
-      "thread.message.created",
-    ] as const) {
-      expect(
-        reduceThreadSnapshot(
-          initial,
-          event({
-            type,
-            seq: 49,
-            payload: {
-              messageId: "stale",
-              messageSeq: 2,
-              role: "bot",
-              blocks: [],
-              readState: { lastReadSeq: 1, lastUnreadSeq: 2, unread: true },
-            },
-          }),
-        ),
-      ).toBe(initial);
-    }
-    expect(
-      reduceThreadSnapshot(
-        initial,
-        event({
-          type: "thread.read.updated",
-          seq: 50,
-          payload: { readState: { lastReadSeq: 1, lastUnreadSeq: 3, unread: true } },
-        }),
-      ),
-    ).toBe(initial);
-  });
-
-  it("uses durable message sequences instead of event cursors for reads", () => {
-    const readState = { lastReadSeq: 2, lastUnreadSeq: 3, unread: true };
-    const next = reduceThreadSnapshot(
-      snapshot([]),
-      event({
-        type: "thread.message.created",
-        seq: 80,
-        payload: {
-          messageId: "persisted",
-          messageSeq: 3,
-          role: "bot",
-          blocks: [{ kind: "text", text: "New reply" }],
-          readState,
-        },
-      }),
-    );
-    expect(next?.messages[0]?.seq).toBe(3);
-    expect(next?.cursor).toBe(80);
-    expect(next?.readState).toEqual(readState);
-    const updated = reduceThreadSnapshot(
-      next,
-      event({
-        type: "thread.message.updated",
-        seq: 95,
-        payload: { messageId: "persisted", role: "bot", blocks: [] },
-      }),
-    );
-    expect(updated?.messages[0]?.seq).toBe(3);
-    const legacy = reduceThreadSnapshot(
-      snapshot([]),
-      event({
-        type: "thread.message.created",
-        seq: 99,
-        payload: { messageId: "legacy", role: "bot", blocks: [] },
-      }),
-    );
-    expect(legacy?.messages[0]?.seq).toBe(-1);
-  });
-
-  it("applies read receipts and clear state without changing durable messages", () => {
-    const initial = snapshot([message("persisted", [{ kind: "text", text: "Reply" }], 3)]);
-    const readState = { lastReadSeq: 3, lastUnreadSeq: 3, unread: false };
-    const receipt = event({ type: "thread.read.updated", seq: 100, payload: { readState } });
-    expect(isThreadSnapshotEvent(receipt)).toBe(true);
-    const next = reduceThreadSnapshot(initial, receipt);
-    expect(next?.readState).toEqual(readState);
-    expect(next?.messages).toBe(initial.messages);
-    expect(next?.cursor).toBe(100);
-    const clearedState = { lastReadSeq: 3, lastUnreadSeq: -1, unread: false };
-    expect(
-      reduceThreadSnapshot(
-        next,
-        event({
-          type: "thread.cleared",
-          seq: 101,
-          payload: { readState: clearedState, historyGeneration: 1 },
-        }),
-      ),
-    ).toMatchObject({
-      messages: [],
-      readState: clearedState,
-      cursor: 101,
-      historyGeneration: 1,
-    });
-  });
-
   it("shows a committed direct send as queued before its snapshot refresh returns", () => {
     const initial = snapshot([message("user-1", [{ kind: "text", text: "Continue" }], 4)]);
 
@@ -294,43 +188,6 @@ describe("thread event reduction", () => {
 
     expect(mergeThreadSnapshot(live, stale)).toBe(live);
     expect(mergeThreadSnapshot(live, stale, true)).toBe(live);
-  });
-
-  it("discards expanded history on a refreshed clear without losing newer messages to its late event", () => {
-    const previous: ThreadSnapshot = {
-      ...snapshot([message("deleted-old", [], 1), message("deleted-recent", [], 150)], null),
-      cursor: 200,
-      historyGeneration: 0,
-      readState: { lastReadSeq: 1, lastUnreadSeq: 150, unread: true },
-    };
-    // More than one page arrived after clearing. A non-null older cursor must not
-    // imply that retained pre-clear pages are still part of this conversation.
-    const fresh: ThreadSnapshot = {
-      ...snapshot(
-        Array.from({ length: 100 }, (_, index) => message(`new-${index + 300}`, [], index + 300)),
-        300,
-      ),
-      cursor: 450,
-      historyGeneration: 1,
-      readState: { lastReadSeq: 299, lastUnreadSeq: 399, unread: true },
-      run: threadRun("new-run"),
-    };
-    const reconciled = reconcileRefreshedThread(previous, fresh, null, true).snapshot;
-    expect(reconciled).toBe(fresh);
-    expect(
-      reduceThreadSnapshot(
-        reconciled,
-        event({
-          type: "thread.cleared",
-          seq: 201,
-          payload: {
-            historyGeneration: 1,
-            readState: { lastReadSeq: 150, lastUnreadSeq: -1, unread: false },
-          },
-        }),
-      ),
-    ).toBe(fresh);
-    expect(mergeThreadSnapshot(fresh, previous, true)).toBe(fresh);
   });
 
   it("accumulates progress deltas and keeps only the active progress message", () => {
@@ -611,7 +468,7 @@ describe("thread event reduction", () => {
   });
 
   it("event-sources the active run on run.started so Stop does not wait on threads.get", () => {
-    const initial = { ...snapshot([]), cursor: 2 };
+    const initial = snapshot([]);
     const started = reduceThreadSnapshot(
       initial,
       event({

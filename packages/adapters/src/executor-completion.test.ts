@@ -7,9 +7,10 @@ import {
   DELEGATED_EMPTY_NOTICE,
   emptyDelegatedToolTurnShouldFail,
   isExactNoResponse,
-  LONG_WORK_PROGRESS_GUIDANCE,
+  longWorkProgressGuidance,
   mayOpenModelStream,
   NO_RESPONSE,
+  REACTION_SILENT_REPLY_GUIDANCE,
   ROUTINE_SILENT_REPLY_GUIDANCE,
   runAllowsSilentEmpty,
   runIdentityInstruction,
@@ -170,6 +171,36 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("routine", text)).toBe(false);
   });
 
+  it("allows reaction silence without a bubble, fallback, or unread", () => {
+    expect(runAllowsSilentEmpty("reaction")).toBe(true);
+    const silent = stripNoResponseReply(NO_RESPONSE, [{ kind: "text", text: NO_RESPONSE }]);
+    const segments = completionMessageSegments(silent.blocks, {
+      allowSilentEmpty: runAllowsSilentEmpty("reaction"),
+    });
+    const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty("reaction"));
+    expect(blocks).toEqual([]);
+    expect(
+      completionMarksUnread("reaction", completionNotificationBody(silent.assembled, blocks)),
+    ).toBe(false);
+    expect(runReplyGuidance("reaction")).toBe(REACTION_SILENT_REPLY_GUIDANCE);
+    expect(runReplyGuidance("reaction")).toContain(`exactly ${NO_RESPONSE}`);
+    expect(runReplyGuidance("reaction")).not.toContain("routine's prompt");
+    expect(runPromotesMidTurnNarration("reaction")).toBe(true);
+  });
+
+  it("publishes a real reaction reply normally", () => {
+    const reply = stripNoResponseReply("I'll correct that.", [
+      { kind: "text", text: "I'll correct that." },
+    ]);
+    const segments = completionMessageSegments(reply.blocks, {
+      allowSilentEmpty: runAllowsSilentEmpty("reaction"),
+    });
+    expect(finalBlocksAfterMidTurnProgress(segments, true)).toEqual(reply.blocks);
+    expect(
+      completionMarksUnread("reaction", completionNotificationBody(reply.assembled, segments)),
+    ).toBe(true);
+  });
+
   it("still invents done. for a user-triggered empty run", () => {
     expect(runAllowsSilentEmpty("user")).toBe(false);
     const segments = completionMessageSegments([], {
@@ -180,16 +211,19 @@ describe("completionMarksUnread", () => {
     expect(completionMarksUnread("user", text)).toBe(true);
   });
 
-  it("drops a tool-only routine final so an empty watch leaves no chat bubble", () => {
-    const steps = [{ kind: "steps" as const, steps: [{ label: "List items", count: 1 }] }];
-    const segments = completionMessageSegments(steps, {
-      allowSilentEmpty: runAllowsSilentEmpty("routine"),
-    });
-    const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty("routine"));
-    expect(segments).toEqual(steps);
-    expect(blocks).toEqual([]);
-    expect(completionMarksUnread("routine", completionNotificationBody("", blocks))).toBe(false);
-  });
+  it.each(["routine", "reaction"])(
+    "drops a tool-only %s final so silence leaves no chat bubble",
+    (trigger) => {
+      const steps = [{ kind: "steps" as const, steps: [{ label: "List items", count: 1 }] }];
+      const segments = completionMessageSegments(steps, {
+        allowSilentEmpty: runAllowsSilentEmpty(trigger),
+      });
+      const blocks = finalBlocksAfterMidTurnProgress(segments, runAllowsSilentEmpty(trigger));
+      expect(segments).toEqual(steps);
+      expect(blocks).toEqual([]);
+      expect(completionMarksUnread(trigger, completionNotificationBody("", blocks))).toBe(false);
+    },
+  );
 });
 
 describe("background ticket runs", () => {
@@ -457,7 +491,59 @@ describe("runReplyGuidance", () => {
     expect(runIdentityInstruction({ ...bot, instructions: "" }, "created")).toContain(
       "Instructions: (none)",
     );
-    expect(runIdentityInstruction(bot, "user")).toBe(bot.instructions);
+    expect(runIdentityInstruction(bot, "user")).toContain(bot.instructions);
+  });
+
+  it("keeps the public description and private instructions distinct on normal runs", () => {
+    const bot = {
+      name: "Ada",
+      title: "Inbox lead",
+      description: "Reads and sorts mail.",
+      instructions: "Never send mail without asking.",
+    };
+    const prompt = runIdentityInstruction(bot, "user");
+    expect(prompt).toContain("Ada: Inbox lead\nReads and sorts mail.");
+    expect(prompt).toContain("Teammates see only the profile above.");
+    expect(prompt.endsWith("Never send mail without asking.")).toBe(true);
+  });
+
+  it("does not repeat text that older bots saved as both fields", () => {
+    const bot = {
+      name: "Ada",
+      title: "Inbox lead",
+      description: "Reads and sorts mail.",
+      instructions: "Reads and sorts mail.",
+    };
+    expect(runIdentityInstruction(bot, "user")).toBe("Reads and sorts mail.");
+    expect(runIdentityInstruction({ ...bot, instructions: "" }, "user")).toBe(
+      "Ada: Inbox lead\nReads and sorts mail.",
+    );
+  });
+
+  it("omits blank profile lines and treats missing fields as empty", () => {
+    expect(
+      runIdentityInstruction(
+        { name: "Ada", title: "", description: "", instructions: "Stay quiet." },
+        "user",
+      ),
+    ).toBe(
+      "Ada\nTeammates see only the profile above. These instructions are private to you:\nStay quiet.",
+    );
+    expect(
+      runIdentityInstruction(
+        { name: "Ada", title: "Inbox lead", description: "", instructions: "" },
+        "user",
+      ),
+    ).toBe("Ada: Inbox lead");
+    expect(
+      runIdentityInstruction(
+        { name: "Ada", title: "", description: "Reads and sorts mail.", instructions: "" },
+        "user",
+      ),
+    ).toBe("Ada\nReads and sorts mail.");
+    expect(runIdentityInstruction({ name: "Ada", title: "Inbox lead" }, "routine")).toBe(
+      "Ada: Inbox lead",
+    );
   });
 
   it("does not send a finish notification for the creation intro", () => {
@@ -478,9 +564,16 @@ describe("runReplyGuidance", () => {
 
   it("keeps progress guidance for user-triggered runs", () => {
     expect(runPromotesMidTurnNarration("user")).toBe(true);
-    expect(runReplyGuidance("user")).toBe(LONG_WORK_PROGRESS_GUIDANCE);
+    expect(runPromotesMidTurnNarration("messaging")).toBe(true);
+    expect(runReplyGuidance("user")).toBe(longWorkProgressGuidance());
     expect(runReplyGuidance("user")).toContain("message_user");
-    expect(runReplyGuidance("messaging")).toBe(LONG_WORK_PROGRESS_GUIDANCE);
+    expect(runReplyGuidance("messaging")).toBe(longWorkProgressGuidance());
+  });
+});
+
+describe("runPromotesMidTurnNarration", () => {
+  it("drops mid-turn narration in bot-to-bot runs", () => {
+    expect(runPromotesMidTurnNarration("bot_message")).toBe(false);
   });
 });
 

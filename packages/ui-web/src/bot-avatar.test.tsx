@@ -17,8 +17,8 @@ describe("BotAvatar", () => {
   it("renders distinct SVG gradient IDs for concurrent working avatars", () => {
     const html = renderToString(
       <div>
-        <BotAvatar color="#8B5CF6" status="running" />
-        <BotAvatar color="#10B981" status="running" />
+        <BotAvatar color="#8B5CF6" status="running" variant="robot" />
+        <BotAvatar color="#10B981" status="running" variant="robot" />
       </div>,
     );
 
@@ -45,7 +45,7 @@ describe("BotAvatar", () => {
   it("fits the robot eyes inside the visor at every rendered size", () => {
     for (const size of [14, 15, 16, 18, 20, 21, 22, 25, 26, 28, 32, 38, 72, 76, 78, 120]) {
       const html = renderToString(
-        <BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" size={size} />,
+        <BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" size={size} variant="robot" />,
       );
       const face = robotFaceFromHtml(html);
       expect(face.eyeW * 2 + face.eyeGap).toBeLessThanOrEqual(face.innerW);
@@ -57,7 +57,9 @@ describe("BotAvatar", () => {
 
   it("keeps the robot face proportions from 28px up", () => {
     const face = robotFaceFromHtml(
-      renderToString(<BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" size={28} />),
+      renderToString(
+        <BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" size={28} variant="robot" />,
+      ),
     );
     expect(face.visorW).toBe(19);
     expect(face.visorH).toBe(12);
@@ -68,7 +70,13 @@ describe("BotAvatar", () => {
 
   it("renders the animated robot face for plain color values", () => {
     const html = renderToString(
-      <BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" size={28} status="running" />,
+      <BotAvatar
+        color={DEFAULT_GROK_BOT_COLOR}
+        identity="maya"
+        size={28}
+        variant="robot"
+        status="running"
+      />,
     );
     expect(html).toContain("rakazo-bot-avatar-visor");
     expect(html).toContain("rakazo-bot-avatar-eyes");
@@ -179,6 +187,7 @@ describe("BotAvatar", () => {
       <BotAvatar
         color={defaultBotAvatarValue(`${DEFAULT_GROK_BOT_COLOR}::shape_4`)}
         identity="maya"
+        variant="robot"
       />,
     );
     const shaped = renderToString(
@@ -217,13 +226,18 @@ describe("BotAvatar", () => {
     expect(organic).not.toContain("rakazo-bot-avatar-eyes");
   });
 
+  it("defaults to organic without a provider", () => {
+    const html = renderToString(<BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" />);
+    expect(html).toContain("rakazo-organic-avatar");
+  });
+
   it("uses the preferred avatar style when variant is omitted", () => {
     const html = renderToString(
-      <AvatarStyleProvider value="organic">
+      <AvatarStyleProvider value="robot">
         <BotAvatar color={DEFAULT_GROK_BOT_COLOR} identity="maya" />
       </AvatarStyleProvider>,
     );
-    expect(html).toContain("rakazo-organic-avatar");
+    expect(html).toContain("rakazo-bot-avatar-visor");
     expect(html).not.toContain("grok-character-eyes");
   });
 

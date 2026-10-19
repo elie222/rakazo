@@ -157,3 +157,31 @@ describe("consent grants", () => {
     );
   });
 });
+
+it("discloses the self-hosted voice origin without its encrypted key", async () => {
+  const { deps, actor } = setup();
+  vi.mocked(deps.prisma.spaceVoicePreference.findFirst).mockResolvedValue({
+    credential: { provider: "openai-compatible", secretId: "voice-secret" },
+    voiceId: "af_heart",
+  } as never);
+  deps.prisma.secret.findFirst = vi
+    .fn()
+    .mockResolvedValue({ id: "voice-secret", ciphertext: "encrypted-fixture" });
+  deps.secrets = {
+    load: vi.fn().mockResolvedValue(
+      JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "http://100.64.0.10:8810/v1",
+        apiKey: "local-test-key",
+        ttsModel: "kokoro",
+        sttModel: "whisper-1",
+      }),
+    ),
+    put: vi.fn(),
+  };
+  const status = await aiConsentStatus(deps, actor, { uses: ["voice"] });
+  expect(status.recipients).toHaveLength(1);
+  expect(JSON.stringify(status)).toContain("http://100.64.0.10:8810");
+  expect(JSON.stringify(status)).not.toContain("local-test-key");
+  expect(JSON.stringify(status)).not.toContain("apiKey");
+});

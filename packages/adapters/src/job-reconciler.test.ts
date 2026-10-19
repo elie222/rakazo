@@ -51,12 +51,15 @@ describe("createJobReconciler", () => {
     const reconcileComputerUpdates = vi.fn(() => {
       throw new Error("queue unavailable");
     });
+    const reconcileRoutineRetryNotices = vi.fn(async () => undefined);
     await createJobReconciler({
       prisma,
       jobs,
+      reconcileRoutineRetryNotices,
       reconcileCloudAgents,
       reconcileComputerUpdates,
     }).reconcileOnce();
+    expect(reconcileRoutineRetryNotices).toHaveBeenCalledOnce();
     expect(reconcileCloudAgents).toHaveBeenCalledOnce();
     expect(reconcileComputerUpdates).toHaveBeenCalledOnce();
     expect(prisma.run.findMany).toHaveBeenCalled();
@@ -134,6 +137,7 @@ describe("createJobReconciler", () => {
       name: "run.continue",
       payload: { runId: "run-1" },
       replaceKey: "run:run-1",
+      keepExisting: true,
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "routine.wakeup",

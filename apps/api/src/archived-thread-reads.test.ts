@@ -50,7 +50,7 @@ function fixture() {
     bot: { findFirst: findBot },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     deploymentSettings: { findUnique: vi.fn(async () => null) },
-    $queryRaw: vi.fn(async () => [{ lastReadSeq: -1, lastUnreadSeq: -1, unread: false }]),
+    $queryRaw: vi.fn(async () => []),
     message: { findMany: findMessages },
     event: { findFirst: vi.fn(async () => null) },
     run: { findFirst: vi.fn(async () => null) },

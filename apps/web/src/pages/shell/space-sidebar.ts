@@ -50,7 +50,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     const visibleGroups = space.groups.filter((group) =>
       `${group.name} ${group.preview ?? ""}`.toLowerCase().includes(needle),
     );
-    const sections = groupBotsForSidebar(
+    const grouped = groupBotsForSidebar(
       [
         ...visibleBots.map((chat) => ({ kind: "bot" as const, chat })),
         ...visibleGroups.map((chat) => ({ kind: "group" as const, chat })),
@@ -62,7 +62,27 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         sectionId: item.chat.sectionId,
       })),
       space.botSections,
-    ).map((group, index) => ({
+    );
+    // Keep destinations visible after their last bot is dragged out. Search
+    // still hides empty lists, and spaces without sections keep their old layout.
+    if (!needle && space.botSections.length > 0 && grouped.length > 0) {
+      for (const section of space.botSections) {
+        const key = `section:${section.id}`;
+        if (!grouped.some((group) => group.key === key)) {
+          grouped.push({ key, title: section.name, bots: [] });
+        }
+      }
+      if (!grouped.some((group) => group.key === "unassigned")) {
+        grouped.push({ key: "unassigned", title: "Unassigned", bots: [] });
+      }
+      const order = [
+        "pinned",
+        ...space.botSections.map((section) => `section:${section.id}`),
+        "unassigned",
+      ];
+      grouped.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+    }
+    const sections = grouped.map((group, index) => ({
       ...group,
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
       key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,

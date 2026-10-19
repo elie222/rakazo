@@ -1,6 +1,7 @@
 import * as adapters from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import * as db from "@rakazo/db";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -9,10 +10,15 @@ import {
   MAX_SPEAK_REQUEST_BYTES,
   MAX_TRANSCRIBE_REQUEST_BYTES,
   mountVoiceHttpRoutes,
+  persistVoiceCredential,
   synthesizeVoice,
+  toVoiceCredential,
   toVoiceStatus,
   updateVoiceSpeechModel,
   type VoiceDeps,
+  voiceChoicesChanged,
+  voiceCredentialPlaintext,
+  voiceCredentialServer,
 } from "./voice.js";
 
 describe("toVoiceStatus", () => {
@@ -480,4 +486,240 @@ describe("synthesizeVoice", () => {
 
     expect(synthesize.mock.calls[0]?.[0]).toMatchObject({ model: undefined });
   });
+});
+
+describe("voiceCredentialPlaintext", () => {
+  it("keeps a hosted provider's key as the secret and requires one", () => {
+    expect(voiceCredentialPlaintext({ provider: "openai", plaintext: "sk-test-key" })).toBe(
+      "sk-test-key",
+    );
+    expect(() => voiceCredentialPlaintext({ provider: "openai", plaintext: "  " })).toThrow(
+      "Enter an API key.",
+    );
+  });
+
+  it("stores a self-hosted server's address and models without a key", () => {
+    const plaintext = voiceCredentialPlaintext({
+      provider: "openai-compatible",
+      plaintext: "",
+      baseUrl: "http://100.64.0.10:8810",
+      ttsModel: "kokoro",
+    });
+    expect(JSON.parse(plaintext)).toEqual({
+      kind: "openai_compatible",
+      baseUrl: "http://100.64.0.10:8810/v1",
+      ttsModel: "kokoro",
+      sttModel: adapters.DEFAULT_COMPATIBLE_STT_MODEL,
+    });
+  });
+
+  it("keeps the stored key when reconnecting to the same server with the key left blank", () => {
+    const previousPlaintext = adapters.serializeOpenAiCompatibleVoiceSecret({
+      baseUrl: "http://100.64.0.10:8810",
+      apiKey: "local-test-key",
+    });
+    const plaintext = voiceCredentialPlaintext({
+      provider: "openai-compatible",
+      plaintext: "",
+      baseUrl: "http://100.64.0.10:8810/v1",
+      previousPlaintext,
+    });
+    expect(JSON.parse(plaintext)).toMatchObject({ apiKey: "local-test-key" });
+  });
+
+  it("rejects a public server address as a bad request", () => {
+    expect(() =>
+      voiceCredentialPlaintext({
+        provider: "openai-compatible",
+        plaintext: "",
+        baseUrl: "https://speech.example.com",
+      }),
+    ).toThrow(/Public model endpoints are blocked/);
+  });
+});
+
+describe("voiceCredentialServer", () => {
+  const plaintext = adapters.serializeOpenAiCompatibleVoiceSecret({
+    baseUrl: "http://100.64.0.10:8810",
+    apiKey: "local-test-key",
+    ttsModel: "kokoro",
+  });
+
+  function deps(
+    load: () => string,
+    findFirst = vi.fn().mockResolvedValue({ id: "s", ciphertext: "c" }),
+  ) {
+    return {
+      prisma: { secret: { findFirst } },
+      secrets: { load: vi.fn(load), put: vi.fn() },
+    } as unknown as VoiceDeps;
+  }
+
+  it("shows the address and models but never the key", async () => {
+    const server = await voiceCredentialServer(
+      deps(() => plaintext),
+      actor,
+      { provider: "openai-compatible", secretId: "secret-1" },
+    );
+    expect(server).toEqual({
+      endpoint: "http://100.64.0.10:8810/v1",
+      ttsModel: "kokoro",
+      sttModel: adapters.DEFAULT_COMPATIBLE_STT_MODEL,
+    });
+    const output = toVoiceCredential({
+      id: "cred-1",
+      provider: "openai-compatible",
+      isDefault: true,
+      voiceId: "af_heart",
+      server,
+    });
+    expect(JSON.stringify(output)).not.toContain("local-test-key");
+    expect(output).not.toHaveProperty("apiKey");
+  });
+
+  it("does not decrypt hosted keys and survives an unreadable or unreachable secret", async () => {
+    const hosted = deps(() => "sk-test-key");
+    expect(
+      await voiceCredentialServer(hosted, actor, { provider: "openai", secretId: "secret-1" }),
+    ).toBeUndefined();
+    expect(hosted.secrets.load).not.toHaveBeenCalled();
+    const row = { provider: "openai-compatible", secretId: "secret-1" };
+    const broken = deps(() => {
+      throw new Error("bad ciphertext");
+    });
+    expect(await voiceCredentialServer(broken, actor, row)).toBeUndefined();
+    const dbDown = deps(() => plaintext, vi.fn().mockRejectedValue(new Error("db down")));
+    expect(await voiceCredentialServer(dbDown, actor, row)).toBeUndefined();
+  });
+});
+
+describe("voiceChoicesChanged", () => {
+  const first = adapters.serializeOpenAiCompatibleVoiceSecret({
+    baseUrl: "http://100.64.0.10:8810",
+  });
+  const sameWithKey = adapters.serializeOpenAiCompatibleVoiceSecret({
+    baseUrl: "http://100.64.0.10:8810/v1",
+    apiKey: "local-test-key",
+  });
+  const otherModel = adapters.serializeOpenAiCompatibleVoiceSecret({
+    baseUrl: "http://100.64.0.10:8810",
+    ttsModel: "kokoro",
+  });
+  const otherServer = adapters.serializeOpenAiCompatibleVoiceSecret({
+    baseUrl: "http://100.64.0.11:8880",
+  });
+
+  it("drops saved voices only when the server or speech model changes", () => {
+    expect(voiceChoicesChanged(undefined, first)).toBe(false);
+    expect(voiceChoicesChanged(first, sameWithKey)).toBe(false);
+    expect(voiceChoicesChanged(first, otherModel)).toBe(true);
+    expect(voiceChoicesChanged(first, otherServer)).toBe(true);
+    expect(voiceChoicesChanged("sk-hosted-key", "sk-other-key")).toBe(false);
+  });
+});
+
+describe("persistVoiceCredential", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    {
+      change: "server",
+      previous: { baseUrl: "http://100.64.0.10:8810" },
+      next: { baseUrl: "http://100.64.0.11:8880" },
+    },
+    {
+      change: "speech model",
+      previous: { baseUrl: "http://100.64.0.10:8810", ttsModel: "old-model" },
+      next: { baseUrl: "http://100.64.0.10:8810", ttsModel: "new-model" },
+    },
+  ])(
+    "re-picks voices for every space when the self-hosted $change changes",
+    async ({ previous: before, next }) => {
+      const previous = adapters.serializeOpenAiCompatibleVoiceSecret(before);
+      vi.spyOn(adapters, "createVoiceProvider").mockReturnValue({
+        verify: vi.fn().mockResolvedValue({ ok: true }),
+        listVoices: vi.fn().mockResolvedValue([
+          { id: "bm_george", label: "George" },
+          { id: "af_sky", label: "Sky" },
+        ]),
+      } as never);
+      vi.spyOn(db, "findVoiceCredential").mockResolvedValue({
+        id: "cred-1",
+        secretId: "old-secret",
+        provider: "openai-compatible",
+      } as never);
+      const select = vi
+        .spyOn(db, "selectSpaceVoicePreference")
+        .mockResolvedValue(undefined as never);
+      vi.spyOn(db, "deleteUnreferencedCredentialSecret").mockResolvedValue(undefined as never);
+      const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      const tx = {
+        userVoiceCredential: {
+          findFirst: vi.fn().mockResolvedValue({ id: "cred-1", secretId: "old-secret" }),
+          update: vi.fn().mockResolvedValue({ id: "cred-1", provider: "openai-compatible" }),
+        },
+        secret: { create: vi.fn().mockResolvedValue({ id: "new-secret" }) },
+        spaceVoicePreference: {
+          findUnique: vi.fn().mockResolvedValue({ voiceId: "af_heart", speechModel: null }),
+          updateMany,
+        },
+      };
+      const deps = {
+        prisma: {
+          secret: { findFirst: vi.fn().mockResolvedValue({ id: "old-secret", ciphertext: "c" }) },
+          $transaction: vi.fn((run: (client: typeof tx) => unknown) => run(tx)),
+        },
+        secrets: {
+          load: vi.fn().mockReturnValue(previous),
+          put: vi.fn().mockResolvedValue({ id: "new-secret", ciphertext: "n" }),
+        },
+      } as unknown as VoiceDeps;
+
+      const saved = await persistVoiceCredential(deps, actor, {
+        provider: "openai-compatible",
+        plaintext: "local-test-key",
+        voiceId: "af_heart",
+        ...next,
+      });
+
+      expect(saved.voiceId).toBe("bm_george");
+      expect(JSON.stringify(saved)).not.toContain("local-test-key");
+      expect(saved).not.toHaveProperty("apiKey");
+      expect(saved).not.toHaveProperty("secretId");
+      expect(select).toHaveBeenCalledWith(tx, actor, "cred-1", "bm_george", null);
+      expect(updateMany).toHaveBeenCalledWith({
+        where: {
+          userId: actor.userId,
+          credentialId: "cred-1",
+          spaceId: { not: actor.spaceId },
+          voiceId: { notIn: ["bm_george", "af_sky"] },
+        },
+        data: { voiceId: "bm_george" },
+      });
+    },
+  );
+});
+
+it.each([
+  "http://169.254.169.254",
+  "http://169.254.1.2",
+  "http://[fd00:ec2::254]",
+  "http://[fe80::1]",
+  "http://metadata.google.internal",
+])("refuses connecting a metadata or link-local speech server: %s", async (baseUrl) => {
+  await expect(
+    persistVoiceCredential(
+      {
+        prisma: { userVoiceCredential: { findFirst: vi.fn().mockResolvedValue(null) } },
+      } as unknown as VoiceDeps,
+      actor,
+      {
+        provider: "openai-compatible",
+        plaintext: "",
+        baseUrl,
+      },
+    ),
+  ).rejects.toThrow(/blocked metadata or link-local/);
 });

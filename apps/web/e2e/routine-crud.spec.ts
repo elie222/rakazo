@@ -401,3 +401,118 @@ test("interval schedule only offers amounts the unit can run", async ({ page }, 
   await expect(amount.locator("option[value='30']")).toHaveCount(1);
   await expect(amount.locator("option[value='45']")).toHaveCount(0);
 });
+
+test("a routine can run when something it watches changes", async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  const stamp = Date.now();
+  await signup(page, `routine-watch-${stamp}@rakazo.test`, "password12", "Routine Watch");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Inbox watch");
+  await page.locator("label:has-text('Instruction') textarea").fill("Summarize what arrived");
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await page.getByRole("menuitem", { name: "When something changes" }).click();
+
+  const card = page.getByTestId("routine-watch-card");
+  await expect(card.getByRole("combobox", { name: "What to watch" })).toHaveValue("files");
+  const interval = card.getByRole("spinbutton", { name: "Check every" });
+  await expect(interval).toHaveAttribute("min", "5");
+  await interval.fill("");
+  await interval.pressSequentially("10");
+  await expect(interval).toHaveValue("10");
+  await card.getByRole("textbox", { name: "Files or folders, one per line" }).fill("inbox/");
+  // A watch replaces schedules, so the schedule menu is unavailable while one exists.
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await expect(page.getByRole("menuitem", { name: "On a schedule" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await captureScreenshot(page, testInfo, "routine-watch-trigger");
+
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({
+    crons: [],
+    watch: { kind: "files", paths: ["inbox/"], everyMinutes: 10, loud: false },
+  });
+  await expect(page.getByRole("button", { name: /Inbox watch/ })).toContainText(
+    "When something changes",
+  );
+  const [routine] = await rpc<Routine[]>(page, "routines/list", { botId });
+  expect(routine?.watch).toMatchObject({ kind: "files", paths: ["inbox/"] });
+});
+
+test("change-trigger screenshot walkthrough", async ({ page }, testInfo) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  const stamp = Date.now();
+  await signup(page, `routine-walkthrough-${stamp}@rakazo.test`, "password12", "Routine Watch");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+
+  await page.getByTitle("Agent computer").click();
+  await expect(page.getByRole("button", { name: "Create Routine" })).toBeVisible();
+  await expect(page.getByText(/Booting up .* computer/)).toBeHidden();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await captureScreenshot(page, testInfo, "routine-watch-01-routines-list");
+  await page.getByRole("button", { name: "Create Routine" }).click();
+  await page.locator("label:has-text('Name') input").fill("Inbox watch");
+  await page.locator("label:has-text('Instruction') textarea").fill("Summarize what arrived");
+  await addScheduleTrigger(page, "Every day");
+  await expect(page.getByLabel("How often")).toHaveValue("Every day");
+  await captureScreenshot(page, testInfo, "routine-watch-02-editor-scheduled");
+
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  const watchOption = page.getByRole("menuitem", { name: "When something changes" });
+  await expect(watchOption).toBeDisabled();
+  await captureScreenshot(page, testInfo, "routine-watch-03-add-trigger-menu");
+  await page.keyboard.press("Escape");
+  await expect(watchOption).toBeHidden();
+  await page.getByRole("button", { name: "Remove schedule", exact: true }).click();
+  await page.getByRole("button", { name: "Add trigger" }).click();
+  await expect(watchOption).toBeVisible();
+  await expect(watchOption).toBeEnabled();
+  await captureScreenshot(page, testInfo, "routine-watch-03-add-trigger-menu-enabled");
+  await watchOption.click();
+
+  const card = page.getByTestId("routine-watch-card");
+  const kind = card.getByRole("combobox", { name: "What to watch" });
+  await expect(kind).toHaveValue("files");
+  await expect(card.getByRole("spinbutton", { name: "Check every" })).toHaveValue("15");
+  await expect(card.getByRole("textbox", { name: "Files or folders, one per line" })).toBeEmpty();
+  await captureScreenshot(page, testInfo, "routine-watch-04-empty-card");
+  // Native select popups are not captured by page screenshots; show each selected kind below.
+  await expect(kind).toHaveJSProperty("tagName", "SELECT");
+  await card
+    .getByRole("textbox", { name: "Files or folders, one per line" })
+    .fill("inbox/\nreports/latest.csv");
+  await captureScreenshot(page, testInfo, "routine-watch-06-files");
+
+  await kind.selectOption("command");
+  await card
+    .getByRole("textbox", { name: "Command", exact: true })
+    .fill("curl -s https://example.com/status.json");
+  await card.getByRole("textbox", { name: "Fields that mark a change" }).fill("status, updatedAt");
+  await captureScreenshot(page, testInfo, "routine-watch-07-command");
+
+  await kind.selectOption("tool");
+  await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("brain_changed");
+  await card.getByRole("textbox", { name: "Tool arguments (JSON)" }).fill('{"path":"reports/"}');
+  await card.getByRole("textbox", { name: "Fields that mark a change" }).fill("id, modifiedTime");
+  await captureScreenshot(page, testInfo, "routine-watch-08-tool");
+
+  await card.getByRole("textbox", { name: "Tool name", exact: true }).fill("");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("alert")).toHaveText("Pick a tool to check");
+  expect(await rpc<Routine[]>(page, "routines/list", { botId })).toEqual([]);
+  await page.getByRole("alert").scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "routine-watch-09-validation");
+
+  await kind.selectOption("files");
+  expect(await saveAndReturn(page, "routines/create")).toMatchObject({
+    crons: [],
+    watch: { kind: "files", paths: ["inbox/", "reports/latest.csv"], everyMinutes: 15 },
+  });
+  await expect(page.getByRole("button", { name: /Inbox watch/ })).toContainText(
+    "When something changes",
+  );
+  await captureScreenshot(page, testInfo, "routine-watch-10-saved-list");
+});

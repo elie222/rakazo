@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import type { ColorValue, StyleProp, ViewStyle } from "react-native";
+import type { ColorValue, StyleProp, ViewProps, ViewStyle } from "react-native";
 import { Platform } from "react-native";
 import type { NativeSymbol } from "../components/native-symbol";
 
@@ -11,9 +11,16 @@ export function iosAtLeast(major: number) {
   return Number.isFinite(parsed) && parsed >= major;
 }
 
+/** Height of an iOS 26 glass bar button; custom header titles match it. */
+export const HEADER_CONTROL_SIZE = 44;
+/** Header titles stop growing at Dynamic Type xxxLarge so they keep that height. */
+export const HEADER_TITLE_MAX_FONT_SCALE = 1.35;
+
 export type ActionProminence = "primary" | "secondary" | "plain" | "quiet" | "destructive";
 
 export type NativeActionButtonProps = {
+  accessibilityActions?: ViewProps["accessibilityActions"];
+  onAccessibilityAction?: ViewProps["onAccessibilityAction"];
   onPress: () => void;
   disabled?: boolean;
   /** Disables the control. Android shows a spinner; iOS keeps the label on a disabled native button. */

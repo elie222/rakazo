@@ -22,7 +22,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 }
 
 export function getCachedAvatarStyle(): AvatarStyle {
-  return memoryStyle ?? "robot";
+  return memoryStyle ?? "organic";
 }
 
 export async function loadAvatarStyle(): Promise<AvatarStyle> {
@@ -70,7 +70,7 @@ export function clearAvatarStyle(): Promise<boolean> {
       return true;
     } catch {
       try {
-        await SecureStore.setItemAsync(AVATAR_STYLE_KEY, "robot");
+        await SecureStore.setItemAsync(AVATAR_STYLE_KEY, "organic");
       } catch {
         if (savedRevision === revision) {
           memoryStyle = rememberedMemory;
@@ -78,7 +78,7 @@ export function clearAvatarStyle(): Promise<boolean> {
         }
         return false;
       }
-      storedStyle = "robot";
+      storedStyle = "organic";
       return true;
     }
   });

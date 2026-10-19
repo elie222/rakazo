@@ -65,3 +65,20 @@ export function timeSeparatorIds<T extends { id: string; createdAt?: string }>(
   }
   return ids;
 }
+
+/**
+ * Where "New messages" goes when a chat opens unread: above the replies after the user's
+ * last message. Unread is one flag per chat, so with no user message in view only the
+ * latest message is marked.
+ */
+export function unreadBoundaryId<T extends { id: string; role: string }>(
+  messages: T[],
+): string | null {
+  let boundary: string | null = null;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]!;
+    if (message.role === "user") return boundary;
+    boundary = message.id;
+  }
+  return messages[messages.length - 1]?.id ?? null;
+}

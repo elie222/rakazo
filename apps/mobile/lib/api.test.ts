@@ -92,6 +92,77 @@ describe("mobile API authentication", () => {
     await restoreSessionToken("");
   });
 
+  describe.each([signIn, signUp])("email auth errors", (authenticate) => {
+    it.each([
+      [429, "", "Too many attempts. Try again in a few minutes."],
+      [
+        500,
+        "<html>Internal Server Error</html>",
+        "The server had a problem. Try again in a moment.",
+      ],
+      [400, "not json", "The server had a problem. Try again in a moment."],
+      [200, "not json", "The server had a problem. Try again in a moment."],
+      [500, "{}", "The server had a problem. Try again in a moment."],
+      [503, "{}", "Could not reach the server"],
+      [502, "<html>Bad gateway</html>", "Could not reach the server"],
+      [504, "{}", "Could not reach the server"],
+      [403, '{"code":"PASSWORD_AUTH_DISABLED"}', "Password sign-in is turned off on this server"],
+      [403, '{"message":"Registration is closed"}', "Registration is closed"],
+      [
+        422,
+        '{"message":"User already exists. Use another email."}',
+        "User already exists. Use another email.",
+      ],
+      [
+        429,
+        '{"message":"Please wait before signing in again"}',
+        "Please wait before signing in again",
+      ],
+      [500, '{"message":"DatabaseException"}', "The server had a problem. Try again in a moment."],
+      [400, "{}", "Could not continue"],
+    ])("maps HTTP %s with body %s", async (status, body, message) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => new Response(body, { status })),
+      );
+      await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
+        message,
+      );
+      expect(SecureStore.setItemAsync).not.toHaveBeenCalled();
+    });
+
+    it("maps network failures", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Network request failed")));
+      await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
+        "Could not reach the server",
+      );
+    });
+
+    it.each(["save", "clear"])("explains device storage failures during %s", async (step) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => jsonResponse({ token: "fake-token" })),
+      );
+      const failure = new Error("SecureStoreException: storage unavailable");
+      if (step === "clear") vi.mocked(SecureStore.deleteItemAsync).mockRejectedValue(failure);
+      vi.mocked(SecureStore.setItemAsync).mockRejectedValue(failure);
+      await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
+        "Could not save your sign-in on this device. Try again.",
+      );
+    });
+
+    it("preserves human storage error messages", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => jsonResponse({ token: "fake-token" })),
+      );
+      vi.mocked(SecureStore.setItemAsync).mockRejectedValue(new Error("Device storage is full"));
+      await expect(authenticate("new@example.test", "password", "New User")).rejects.toThrow(
+        "Device storage is full",
+      );
+    });
+  });
+
   it("persists a successful sign-in token and sends the native origin", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ token: "session-token" }));
     vi.stubGlobal("fetch", fetchMock);
@@ -1070,7 +1141,7 @@ describe("mobile API authentication", () => {
     );
 
     await expect(signIn("ada@example.com", "correct horse")).rejects.toThrow(
-      "Could not clear the previous space",
+      "Could not save your sign-in on this device. Try again.",
     );
     expect(SecureStore.setItemAsync).not.toHaveBeenCalledWith(
       "rakazo.session_token",
@@ -2469,110 +2540,6 @@ describe("discarded mobile thread refresh cursor", () => {
 });
 
 describe("mobile thread event reduction", () => {
-  it("replaces retained history on a newer clear generation and keeps post-clear messages when the old clear arrives", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot([{ ...mobileMessage("old", [{ kind: "text", text: "Deleted" }]), seq: 1 }]),
-      historyGeneration: 0,
-      cursor: 100,
-      olderCursor: 1,
-    };
-    const fresh: MobileSnapshot = {
-      ...initial,
-      historyGeneration: 1,
-      cursor: 102,
-      olderCursor: null,
-      messages: [{ ...mobileMessage("new", [{ kind: "text", text: "After clear" }]), seq: 7 }],
-      readState: { lastReadSeq: 6, lastUnreadSeq: 7, unread: true },
-    };
-    const reconciled = mergeMobileSnapshot(initial, fresh, true);
-    expect(reconciled).toBe(fresh);
-    expect(
-      applyMobileThreadEvent(reconciled, {
-        type: "thread.cleared",
-        seq: 101,
-        payload: {
-          historyGeneration: 1,
-          readState: { lastReadSeq: 6, lastUnreadSeq: 6, unread: false },
-        },
-      }),
-    ).toBe(fresh);
-    const clear = applyMobileThreadEvent(initial, {
-      type: "thread.cleared",
-      seq: 101,
-      payload: {
-        historyGeneration: 1,
-        readState: { lastReadSeq: 6, lastUnreadSeq: 6, unread: false },
-      },
-    });
-    expect(clear?.historyGeneration).toBe(1);
-    expect(clear?.messages).toEqual([]);
-  });
-  it("retains a live read update that arrived while an older snapshot was loading", () => {
-    const current: MobileSnapshot = {
-      ...snapshot(),
-      cursor: 100,
-      readState: { lastReadSeq: 5, lastUnreadSeq: 5, unread: false },
-    };
-    const older: MobileSnapshot = {
-      ...current,
-      cursor: 99,
-      readState: { lastReadSeq: 2, lastUnreadSeq: 4, unread: true },
-    };
-    expect(mergeMobileSnapshot(current, older)).toBe(current);
-  });
-  it("ignores replayed read and message events already covered by a fresh snapshot", () => {
-    const initial: MobileSnapshot = {
-      ...snapshot(),
-      cursor: 100,
-      readState: { lastReadSeq: 5, lastUnreadSeq: 5, unread: false },
-    };
-    for (const type of ["thread.read.updated", "thread.message.created", "thread.cleared"]) {
-      expect(
-        applyMobileThreadEvent(initial, {
-          type,
-          seq: 99,
-          payload: {
-            messageId: "old",
-            messageSeq: 4,
-            role: "bot",
-            blocks: [],
-            readState: { lastReadSeq: 2, lastUnreadSeq: 4, unread: true },
-          },
-        }),
-      ).toBe(initial);
-    }
-  });
-  it("keeps durable message positions separate from replay positions and preserves them on edits", () => {
-    const readState = { lastReadSeq: 2, lastUnreadSeq: 3, unread: true };
-    const created = applyMobileThreadEvent(snapshot(), {
-      type: "thread.message.created",
-      seq: 100,
-      payload: { messageId: "new", messageSeq: 3, role: "bot", blocks: [], readState },
-    });
-    expect(created?.messages.find((message) => message.id === "new")?.seq).toBe(3);
-    expect(created?.cursor).toBe(100);
-    expect(created?.readState).toEqual(readState);
-    const edited = applyMobileThreadEvent(created, {
-      type: "thread.message.updated",
-      seq: 105,
-      payload: { messageId: "new", role: "bot", blocks: [{ kind: "text", text: "Edited" }] },
-    });
-    expect(edited?.messages.find((message) => message.id === "new")?.seq).toBe(3);
-    expect(edited?.readState).toEqual(readState);
-    const read = applyMobileThreadEvent(edited, {
-      type: "thread.read.updated",
-      seq: 106,
-      payload: { readState: { ...readState, lastReadSeq: 3, unread: false } },
-    });
-    expect(read?.readState?.unread).toBe(false);
-    expect(read?.cursor).toBe(106);
-    expect(applyMobileThreadEvent(read, { type: "thread.cleared", seq: 107 })?.readState).toEqual({
-      lastReadSeq: -1,
-      lastUnreadSeq: -1,
-      unread: false,
-    });
-  });
-
   it("appends an emoji reply with its exact target", () => {
     const initial = snapshot([mobileMessage("message-1", [{ kind: "text", text: "Done" }])]);
 

@@ -12,6 +12,49 @@ import {
 } from "./attachments.js";
 
 describe("attachment helpers", () => {
+  it.each([
+    ["mp3", "audio/mpeg"],
+    ["wav", "audio/wav"],
+    ["ogg", "audio/ogg"],
+    ["m4a", "audio/mp4"],
+  ])("infers and round-trips %s audio", (extension, mimeType) => {
+    for (const reported of [undefined, "", mimeType, "application/octet-stream"]) {
+      expect(inferAttachmentMimeType(`song.${extension}`, reported)).toBe(mimeType);
+      expect(inferAttachmentMimeType(`SONG.${extension.toUpperCase()}`, reported)).toBe(mimeType);
+    }
+    expect(attachmentExtensionForMimeType(mimeType)).toBe(`.${extension}`);
+    expect(() => validateAttachmentMimeType(mimeType)).not.toThrow();
+  });
+  it.each([
+    ["audio/mp3", "audio/mpeg"],
+    ["audio/x-wav", "audio/wav"],
+    ["audio/wave", "audio/wav"],
+    ["audio/vnd.wave", "audio/wav"],
+    ["audio/x-m4a", "audio/mp4"],
+  ])("normalizes %s without needing an extension", (alias, expected) => {
+    expect(inferAttachmentMimeType("clip", alias)).toBe(expected);
+  });
+  it("uses M4A's container for an AAC codec report but does not allow raw AAC or FLAC", () => {
+    expect(inferAttachmentMimeType("clip.m4a", "audio/aac")).toBe("audio/mp4");
+    expect(inferAttachmentMimeType("clip.m4a", "audio/x-m4a")).toBe("audio/mp4");
+    expect(inferAttachmentMimeType("clip.aac", "audio/aac")).toBeNull();
+    expect(inferAttachmentMimeType("clip.flac", "audio/flac")).toBeNull();
+    expect(attachmentExtensionForMimeType("audio/flac")).toBe("");
+    for (const reportedType of ["__proto__", "constructor", "toString"]) {
+      expect(inferAttachmentMimeType("clip", reportedType)).toBeNull();
+    }
+  });
+  it("enforces configured limits before and after base64 decoding", () => {
+    const limit = 1024 * 1024;
+    for (const size of [limit, limit + 1, limit + 3]) {
+      const payload = Buffer.alloc(size).toString("base64");
+      if (size === limit) expect(decodeAttachmentBase64(payload, limit).byteLength).toBe(limit);
+      else expect(() => decodeAttachmentBase64(payload, limit)).toThrow("1 MiB limit");
+    }
+    const larger = Buffer.alloc(11 * limit).toString("base64");
+    expect(decodeAttachmentBase64(larger, 12 * limit).byteLength).toBe(11 * limit);
+    expect(() => decodeAttachmentBase64(larger)).toThrow("10 MiB limit");
+  });
   it("accepts zip archives and rejects unsupported mime types and empty payloads", () => {
     expect(() => validateAttachmentMimeType("application/zip")).not.toThrow();
     expect(() => validateAttachmentMimeType("application/octet-stream")).toThrow(
@@ -110,6 +153,10 @@ describe("attachment helpers", () => {
         blocks: [{ kind: "text" as const, text: "routine time" }],
       },
     ];
+    expect(userTurnMessageForRun("messaging", "run-new", messages)).toEqual(messages[1]);
+    expect(userTurnMessageForRun("reaction", "run-new", messages, "message-new")).toEqual(
+      messages[1],
+    );
     expect(userTurnMessageForRun("routine", "run-new", messages)).toBeUndefined();
     expect(userTurnMessageForRun("user", "run-old", messages)).toEqual(messages[0]);
     expect(userTurnMessageForRun("user", "run-new", messages)).toEqual(messages[1]);
@@ -140,5 +187,32 @@ describe("peer message history", () => {
         { kind: "bot_message_sent", toBotId: "b_2", toBotName: "Analyst", text: "chart it" },
       ]),
     ).toBe("[to Analyst] chart it");
+  });
+});
+
+describe("ask history", () => {
+  it("shows an answered ask with the chosen label so a later turn does not ask again", () => {
+    const actions = [
+      { id: "choice-1", label: "Berlin" },
+      { id: "choice-2", label: "Paris" },
+    ];
+    expect(blocksToAgentHistoryText([{ kind: "ask", text: "Which city?", actions }])).toBe(
+      "Which city?",
+    );
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "Which city?", actions, status: "answered", answer: "choice-2" },
+      ]),
+    ).toBe("Which city?\nAnswer: Paris");
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "Which city?", status: "answered", answer: "Lisbon" },
+      ]),
+    ).toBe("Which city?\nAnswer: Lisbon");
+    expect(
+      blocksToAgentHistoryText([
+        { kind: "ask", text: "API key", input: "secret", status: "answered", answer: "" },
+      ]),
+    ).toBe("API key");
   });
 });

@@ -21,6 +21,25 @@ function credential(overrides: Partial<OAuthCredential> = {}): OAuthCredential {
 }
 
 describe("PiRuntimeCredentialStore", () => {
+  it("resolves a saved Azure API key through the renamed provider", async () => {
+    const store = new PiRuntimeCredentialStore("azure-openai-responses", {
+      type: "api_key",
+      key: "test-azure-key",
+    });
+    const models = builtinModels({ credentials: store });
+    const model = models.getModel("azure", "gpt-4o")!;
+    expect(model).toMatchObject({ provider: "azure", id: "gpt-4o" });
+    expect((await models.getAuth(model))?.auth.apiKey).toBe("test-azure-key");
+    expect(await store.list()).toEqual([{ providerId: "azure", type: "api_key" }]);
+    await store.modify("azure", async () => ({ type: "api_key", key: "replacement-key" }));
+    expect(await store.read("azure-openai-responses")).toEqual({
+      type: "api_key",
+      key: "replacement-key",
+    });
+    await store.delete("azure-openai-responses");
+    expect(await store.read("azure")).toBeUndefined();
+  });
+
   it("does not configure openai-codex without a stored OAuth credential", async () => {
     expect(await builtinModels().getAuth("openai-codex")).toBeUndefined();
   });

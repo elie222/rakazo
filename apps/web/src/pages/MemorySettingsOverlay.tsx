@@ -159,11 +159,11 @@ export function MemorySettingsOverlay({
             <DialogTitle className="text-2xl font-medium text-foreground">
               <Trans>Memory</Trans>
             </DialogTitle>
-            <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
-              {registration?.description ?? (
-                <Trans>Manage the Space semantic memory provider.</Trans>
-              )}
-            </DialogDescription>
+            {registration ? (
+              <DialogDescription className="mt-1 text-[13.5px] text-muted-foreground/70">
+                {registration.description}
+              </DialogDescription>
+            ) : null}
           </div>
           <DialogClose
             aria-label={t`Close memory settings`}
@@ -173,11 +173,11 @@ export function MemorySettingsOverlay({
             <XIcon />
           </DialogClose>
         </div>
-      ) : (
+      ) : registration ? (
         <p className="px-6 pt-1 text-[13.5px] text-muted-foreground/70 sm:px-8">
-          {registration?.description ?? <Trans>Manage the Space semantic memory provider.</Trans>}
+          {registration.description}
         </p>
-      )}
+      ) : null}
 
       <div className="rk-scroll min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8">
         {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}

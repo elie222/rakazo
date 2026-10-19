@@ -68,23 +68,14 @@ export async function createThreadMessageInTransaction(
   tx: Prisma.TransactionClient,
   input: CreateThreadMessageInput,
 ) {
-  const markUnread = input.markUnread ?? input.role === "bot";
   const thread = await tx.thread.update({
     where: { id: input.threadId },
     data: {
       nextMessageSeq: { increment: 1 },
-      unread: markUnread ? true : undefined,
+      unread: (input.markUnread ?? input.role === "bot") ? true : undefined,
     },
     select: { nextMessageSeq: true },
   });
-  if (markUnread) {
-    // The sequence allocation holds this row's write lock until commit, so an
-    // acknowledgement cannot race the unread position belonging to this message.
-    await tx.thread.update({
-      where: { id: input.threadId },
-      data: { lastUnreadSeq: thread.nextMessageSeq - 1 },
-    });
-  }
   await assertRunCanWriteHistory(tx, input.runId, { allowCancelled: input.allowCancelledRun });
   return tx.message.create({
     data: {

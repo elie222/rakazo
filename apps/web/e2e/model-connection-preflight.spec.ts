@@ -123,7 +123,7 @@ test("settings preflight distinguishes a stored API key from sign-in", async ({
   await expect(settings.getByRole("button", { name: "Test API key" })).toHaveCount(0);
   await settings.getByLabel(/API key/).fill("sk-anthropic-test");
   await settings.getByRole("button", { name: "Connect API key" }).click();
-  await expect(settings.getByText(/Connected and using/)).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Sign in again" })).toHaveCount(0);
   await expect(settings.getByRole("button", { name: "Sign in with Claude Pro/Max" })).toBeVisible();
   await settings.getByRole("button", { name: "Test sign-in" }).click();

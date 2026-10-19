@@ -7,7 +7,6 @@ export const ProductEventType = z.enum([
   "thread.message.created",
   "thread.cleared",
   "thread.message.updated",
-  "thread.read.updated",
   "thread.message.reaction",
   "thread.progress",
   "thread.artifact",
@@ -19,6 +18,7 @@ export const ProductEventType = z.enum([
   "thread.cloud_agent",
   "thread.call.ended",
   "run.started",
+  "run.steering.claimed",
   "run.checkpointed",
   "run.waiting_input",
   "run.completed",
@@ -53,13 +53,6 @@ export const ProductEventType = z.enum([
   "heartbeat",
 ]);
 export type ProductEventType = z.infer<typeof ProductEventType>;
-
-export const ThreadReadStateSchema = z.object({
-  lastReadSeq: z.number().int().min(-1),
-  lastUnreadSeq: z.number().int().min(-1),
-  unread: z.boolean(),
-});
-export type ThreadReadState = z.infer<typeof ThreadReadStateSchema>;
 
 export const MessageRole = z.enum(["user", "bot", "system"]);
 export const BotMessageIntent = z.enum(["request", "result", "question", "status", "fyi"]);
@@ -110,6 +103,15 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("ask"),
     text: z.string(),
     approvalEffectId: Id.optional(),
+    instructionUpdate: z
+      .object({
+        botId: Id,
+        before: z.string(),
+        after: z.string(),
+        reason: z.string(),
+        undoVersionId: Id.optional(),
+      })
+      .optional(),
     detail: z.string().optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */

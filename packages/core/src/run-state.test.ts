@@ -25,6 +25,7 @@ describe("run state machine", () => {
 
   it("marks ticket runs as background work that stays out of the chat", () => {
     expect(isBackgroundRunTrigger("tickets")).toBe(true);
+    expect(isBackgroundRunTrigger("reaction")).toBe(false);
     expect(isBackgroundRunTrigger("user")).toBe(false);
     expect(isBackgroundRunTrigger("routine")).toBe(false);
     expect(isBackgroundRunTrigger(null)).toBe(false);

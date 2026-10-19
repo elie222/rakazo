@@ -76,22 +76,27 @@ export async function listRemoteMcpTools(options: RemoteMcpOptions): Promise<Con
   });
 }
 
+/** Call through the guarded transport, optionally projecting before the final byte limit. */
 export async function callRemoteMcpTool(
   options: RemoteMcpOptions,
   toolName: string,
   args: Record<string, unknown>,
+  projectResult?: (result: unknown) => unknown,
 ): Promise<unknown> {
   return withRemoteMcpClient(options, async (client, signal) => {
     const result = await client.callTool({ name: toolName, arguments: args }, undefined, {
       signal,
       timeout: MCP_TIMEOUT_MS,
     });
-    return limitRemoteMcpPayload({
+    const envelope = {
       content: result.content,
       structuredContent: result.structuredContent,
       isError: result.isError ?? false,
       _meta: result._meta,
-    });
+    };
+    // Providers may extract a bounded domain result before duplicate MCP text
+    // and structured content consume the budget. The final limit still applies.
+    return limitRemoteMcpPayload(projectResult ? projectResult(envelope) : envelope);
   });
 }
 

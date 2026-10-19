@@ -23,11 +23,6 @@ describe("createThreadMessageInTransaction", () => {
       blocks: [{ kind: "steps", steps: [{ label: "Checked status", count: 1 }] }],
       markUnread: false,
     });
-    expect(silent.thread.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ lastUnreadSeq: expect.any(Number) }),
-      }),
-    );
     expect(silent.thread.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ unread: undefined }) }),
     );
@@ -37,10 +32,6 @@ describe("createThreadMessageInTransaction", () => {
       threadId: "thread-1",
       role: "bot",
       blocks: [{ kind: "text", text: "Daily report ready" }],
-    });
-    expect(visible.thread.update).toHaveBeenCalledWith({
-      where: { id: "thread-1" },
-      data: { lastUnreadSeq: 0 },
     });
     expect(visible.thread.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ unread: true }) }),
@@ -83,7 +74,7 @@ describe("createThreadMessage", () => {
       }),
     ).resolves.toEqual({ id: "message-1" });
     expect(run).toHaveBeenCalledTimes(2);
-    expect(tx.thread.update).toHaveBeenCalledTimes(4);
+    expect(tx.thread.update).toHaveBeenCalledTimes(2);
     expect(tx.message.create).toHaveBeenCalledTimes(2);
   });
 

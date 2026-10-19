@@ -13,7 +13,6 @@ import type {
   ReplyPreview,
   Space,
   SpaceNavigation,
-  ThreadReadState,
 } from "@rakazo/contracts";
 import {
   accountSecuritySchema,
@@ -39,7 +38,6 @@ import {
   runFailureError,
   signupRequiresEmailVerification,
   takeLiveMessage,
-  threadReadStateFromPayload,
   updateCloudAgentMessages,
   upsertMessageById,
 } from "@rakazo/core";
@@ -62,7 +60,12 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
-import { authErrorText, errorText } from "./user-error";
+import {
+  authErrorText,
+  authResponseErrorText,
+  errorText,
+  sessionSaveErrorText,
+} from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -493,7 +496,7 @@ async function authenticateWithEmail(
   action: "sign-in" | "sign-up",
   input: { email: string; password: string; name?: string },
 ) {
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/${action}/email`,
     {
       method: "POST",
@@ -502,8 +505,8 @@ async function authenticateWithEmail(
     },
     {},
   );
-  if (!response.ok) {
-    throw new Error(authErrorText(body, t("Could not continue")));
+  if (!response.ok || invalidJson) {
+    throw new Error(authResponseErrorText(response.status, body, invalidJson));
   }
   const token = tokenFromAuthResponse(response, body);
   if (action === "sign-up" && signupRequiresEmailVerification(body))
@@ -516,8 +519,13 @@ async function authenticateWithEmail(
           : "Sign-up did not return a session",
       ),
     );
-  if (!(await clearSpace())) throw new Error(t("Could not clear the previous space"));
-  await saveSessionToken(token);
+  try {
+    if (!(await clearSpace()))
+      throw new Error(t("Could not save your sign-in on this device. Try again."));
+    await saveSessionToken(token);
+  } catch (error) {
+    throw new Error(sessionSaveErrorText(error));
+  }
   return { verificationRequired: false };
 }
 
@@ -609,7 +617,7 @@ export async function fetchMobileJson<T>(
   input: Parameters<typeof fetch>[0],
   init: RequestInit,
   invalidJsonFallback?: T,
-): Promise<{ response: Response; body: T }> {
+): Promise<{ response: Response; body: T; invalidJson?: boolean }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("Request timed out")), RPC_TIMEOUT_MS);
   try {
@@ -628,7 +636,7 @@ export async function fetchMobileJson<T>(
       return { response, body };
     } catch (error) {
       if (invalidJsonFallback !== undefined && error instanceof SyntaxError) {
-        return { response, body: invalidJsonFallback };
+        return { response, body: invalidJsonFallback, invalidJson: true };
       }
       throw requestError(error, controller.signal);
     }
@@ -936,6 +944,8 @@ export type MobileBot = Pick<
   | "preview"
   | "title"
   | "color"
+  | "instructionHistory"
+  | "selfUpdateInstructions"
   | "notifyOnFinish"
   | "threadId"
   | "pinned"
@@ -950,7 +960,7 @@ export type MobileBot = Pick<
   | "thinkingLevel"
   | "autoSpeak"
 > &
-  Partial<Pick<Bot, "parentBotId" | "spaceId">>;
+  Partial<Pick<Bot, "parentBotId" | "spaceId" | "instructions">>;
 
 export type MobileBotSection = BotSection;
 
@@ -1012,8 +1022,6 @@ export type MobileSnapshot = {
   groupName?: string;
   threadId: string;
   cursor?: number;
-  historyGeneration?: number;
-  readState?: ThreadReadState;
   messages: MobileMessage[];
   olderCursor: number | null;
   run: { id: string; botId?: string; status: string; error?: string | null } | null;
@@ -1064,14 +1072,13 @@ export function mobileThreadRefreshResult(input: {
   return { commit, snapshot: commit ? input.fetched : input.onScreen };
 }
 
-export type MobileMessagePage = ThreadHistory<MobileMessage> & { coveredThroughSeq?: number };
+export type MobileMessagePage = ThreadHistory<MobileMessage>;
 
 export function mergeMobileSnapshot(
   prev: MobileSnapshot | null,
   next: MobileSnapshot,
   preserveLoadedHistory = false,
 ): MobileSnapshot {
-  if (prev?.threadId === next.threadId && (prev.cursor ?? -1) > (next.cursor ?? -1)) return prev;
   return mergeThreadHistory(prev, next, preserveLoadedHistory);
 }
 
@@ -1232,33 +1239,14 @@ export function applyMobileThreadEvent(
   event: ThreadEvent,
 ): MobileSnapshot | null {
   if (!prev || event.type === "heartbeat") return prev;
-  if (event.seq != null && prev.cursor != null && event.seq <= prev.cursor) return prev;
   if (event.type === "thread.cleared") {
     return {
       ...prev,
       cursor: event.seq,
-      historyGeneration:
-        typeof event.payload?.historyGeneration === "number" &&
-        Number.isSafeInteger(event.payload.historyGeneration) &&
-        event.payload.historyGeneration >= 0
-          ? event.payload.historyGeneration
-          : prev.historyGeneration,
       messages: [],
       olderCursor: null,
       run: null,
       activeRuns: [],
-      readState: threadReadStateFromPayload(event.payload) ?? {
-        lastReadSeq: -1,
-        lastUnreadSeq: -1,
-        unread: false,
-      },
-    };
-  }
-  if (event.type === "thread.read.updated") {
-    return {
-      ...prev,
-      cursor: event.seq ?? prev.cursor,
-      readState: threadReadStateFromPayload(event.payload) ?? prev.readState,
     };
   }
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {
@@ -1419,7 +1407,6 @@ export function applyMobileThreadEvent(
     const known = prev.messages.find((message) => message.id === id);
     const next: MobileMessage = {
       id,
-      seq: typeof event.payload?.messageSeq === "number" ? event.payload.messageSeq : known?.seq,
       createdAt: known?.createdAt ?? event.createdAt,
       runId: event.runId ? String(event.runId) : undefined,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",
@@ -1433,7 +1420,6 @@ export function applyMobileThreadEvent(
     return {
       ...prev,
       cursor: event.seq ?? prev.cursor,
-      readState: threadReadStateFromPayload(event.payload) ?? prev.readState,
       messages: upsertMessageById(
         remaining.filter(
           (message) =>

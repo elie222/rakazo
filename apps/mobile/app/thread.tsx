@@ -7,9 +7,13 @@ import type {
   MessageBlock,
   MessageReaction,
   Routine,
-  ThreadReadState,
 } from "@rakazo/contracts";
-import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
+import {
+  attachmentMaxBytes,
+  canReactToThreadMessage,
+  isAttachmentAudioMimeType,
+  MESSAGE_REACTIONS,
+} from "@rakazo/contracts";
 import type { SlashActionId, ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
@@ -26,9 +30,8 @@ import {
   isRunTerminalEvent,
   isSecretAskBlock,
   latestAnswerableAskMessageId,
-  latestDurableMessageSeq,
   leaveThreadWindow,
-  mergeMessagesById,
+  normalizeRunError,
   openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
@@ -37,11 +40,9 @@ import {
   resolveComposerSendPlan,
   resolvePersonaColorDef,
   selectedAskActionLabel,
-  threadHistoryWasCleared,
   threadWindowMessages,
   timeSeparatorIds,
-  unreadBoundary,
-  unreadDividerMessageId,
+  unreadBoundaryId,
   userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
@@ -70,10 +71,8 @@ import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
   TextProps,
-  ViewToken,
 } from "react-native";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   AppState,
@@ -90,11 +89,21 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
-import { useReducedMotion } from "react-native-reanimated";
+import {
+  KeyboardAvoidingView,
+  KeyboardController,
+  useKeyboardHandler,
+} from "react-native-keyboard-controller";
+import Animated, {
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
+import { AudioAttachment } from "../components/audio-attachment";
 import { BotAvatar } from "../components/bot-avatar";
 import { ChoiceCard } from "../components/ChoiceCard";
 import { ComputerCard } from "../components/ComputerCard";
@@ -103,6 +112,7 @@ import { FailedSendBubble } from "../components/failed-send-bubble";
 import { GlassSurface } from "../components/glass-surface";
 import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
+import { InstructionUndo } from "../components/instruction-undo";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
@@ -112,14 +122,17 @@ import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { ReplyDismissButton } from "../components/reply-dismiss-button";
 import { ReplyLine } from "../components/reply-line";
+import { ScrollToBottomButton } from "../components/scroll-to-bottom-button";
 import { SelectTextSheet } from "../components/select-text-sheet";
 import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
-import { TimeSeparator } from "../components/time-separator";
-import { UnreadSeparator } from "../components/unread-separator";
+import { ThreadErrorNotice } from "../components/thread-error-notice";
+import { createThreadHeaderStyles } from "../components/thread-header-styles";
+import { TimeSeparator, UnreadSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
+import { readableGutter } from "../lib/adaptive-layout";
 import type {
   MobileBot,
   MobileGroup,
@@ -152,7 +165,6 @@ import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
 import { findSwitchTarget, ringOnArrival, takeRingOnArrival } from "../lib/bot-switch";
 import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/call-session";
-import { transparentColor } from "../lib/color";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
@@ -175,8 +187,8 @@ import {
   quotableMessageSegments,
   truncateQuoteExcerpt,
 } from "../lib/message-presentation";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
-import { iosAtLeast } from "../lib/native-controls";
+import { useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { HEADER_TITLE_MAX_FONT_SCALE, iosAtLeast } from "../lib/native-controls";
 import {
   threadRouteSpaceOnFocus,
   threadSpaceRequest,
@@ -209,7 +221,6 @@ import {
 import type { SendAttempt } from "../lib/thread-feedback";
 import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
-import { mobileVisibleReadSeq, pinnedVisibleMessageIds } from "../lib/thread-read";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
 import { ThreadScrollBehavior } from "../lib/thread-scroll";
@@ -253,7 +264,8 @@ function formatApprovalAnswer(
 function formatAttachmentSkip(item: { name: string; reason: string }): string {
   const name = item.name === "camera" ? t("Camera") : item.name;
   if (item.reason === "permission denied") return t("{name} (permission denied)", { name });
-  if (item.reason === "over 10 MiB") return t("{name} (over 10 MiB)", { name });
+  if (item.reason.startsWith("over "))
+    return t("{name} (over {limit})", { name, limit: item.reason.slice(5) });
   if (item.reason === "unsupported type") return t("{name} (unsupported type)", { name });
   const maxMatch = /^max (\d+) attachments$/.exec(item.reason);
   if (maxMatch) {
@@ -399,59 +411,6 @@ export default function ThreadRoute() {
   );
 }
 
-function createThreadHeaderStyles() {
-  const tokens = mobileTokens();
-  const transparentBackground = transparentColor(tokens.background);
-  return StyleSheet.create({
-    titleCapsule: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 10,
-      maxWidth: 220,
-      paddingVertical: 4,
-      paddingStart: 6,
-      paddingEnd: 14,
-      borderRadius: 999,
-    },
-    titleCapsuleFill: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
-    },
-    title: {
-      color: tokens.foreground,
-      fontSize: 18,
-      fontWeight: "600",
-    },
-    circleButton: {
-      flex: 1,
-      borderRadius: 999,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    composerFill: {
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: tokens.border,
-      backgroundColor: tokens.card,
-    },
-    headerFade: {
-      position: "absolute",
-      top: 0,
-      left: 0,
-      right: 0,
-      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 58%, ${transparentBackground} 100%)`,
-    },
-    composerFade: {
-      position: "absolute",
-      bottom: "100%",
-      left: -20,
-      right: -20,
-      height: 24,
-      experimental_backgroundImage: `linear-gradient(to top, ${tokens.background} 0%, ${transparentBackground} 100%)`,
-    },
-  });
-}
-
 function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
@@ -464,7 +423,35 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = iosAtLeast(26) ? nativeHeaderHeight : 0;
   const insets = useSafeAreaInsets();
-  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  // An unfolded or tablet window keeps messages and the composer in a centred reading column.
+  const columnInset = readableGutter(windowWidth, Math.max(insets.left, insets.right));
+  const columnWidth = windowWidth - columnInset * 2;
+  // Frame by frame, including a swipe that drags the keyboard down.
+  const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
+  useKeyboardHandler(
+    {
+      onMove: (event) => {
+        "worklet";
+        keyboardProgress.value = event.progress;
+      },
+      onInteractive: (event) => {
+        "worklet";
+        keyboardProgress.value = event.progress;
+      },
+      onEnd: (event) => {
+        "worklet";
+        keyboardProgress.value = event.progress;
+      },
+    },
+    [],
+  );
+  const composerRestingPadding =
+    Platform.OS === "ios" ? insets.bottom : Math.max(insets.bottom + 12, 24);
+  // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
+  // dips into the home indicator and then jumps back up.
+  const composerKeyboardPadding = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(keyboardProgress.value, [0, 1], [composerRestingPadding, 12]),
+  }));
   const {
     botId,
     groupId,
@@ -472,6 +459,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     messageId,
     threadId,
     readOnly: readOnlyParam,
+    unread: unreadParam,
   } = useLocalSearchParams<{
     botId?: string;
     groupId?: string;
@@ -479,6 +467,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     messageId?: string;
     threadId?: string;
     readOnly?: string;
+    unread?: string;
   }>();
   const readOnly = readOnlyParam === "1";
   const [restoring, setRestoring] = useState(false);
@@ -490,7 +479,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
-  const userDragging = useRef(false);
+  const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const nativeMomentumActive = useRef(false);
   const loadingOlderContent = useRef(false);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
@@ -517,20 +507,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   routeName.current = name;
   const mentionBotsRefreshGeneration = useRef(0);
   const mentionBotsAppliedGeneration = useRef(0);
-  const visibleReadIds = useRef(new Set<string>());
-  const visibleReadCallIds = useRef(new Set<string>());
-  const readViewportReady = useRef(false);
-  const pinnedRowLayouts = useRef(new Map<string, { y: number; height: number }>());
-  const readRequest = useRef<{ threadId: string; throughSeq: number } | null>(null);
-  const readVisit = useRef<{
-    threadId: string;
-    boundary: number | null;
-    opened: boolean;
-  } | null>(null);
-  const freshReadSnapshot = useRef(false);
-  const openingUnread = useRef(false);
-  const [unreadOpeningFailed, setUnreadOpeningFailed] = useState(false);
-  const [readVisitVersion, setReadVisitVersion] = useState(0);
+  const readVisibleTarget = useRef<string | null>(null);
   const autoSpoken = useRef<string | null>(null);
   const autoSpokenBotId = useRef<string | null>(null);
   const threadKey = groupId ?? botId;
@@ -542,15 +519,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, []);
   useLayoutEffect(() => {
     scrollBehavior.current.openThread(threadKey ?? "");
-    readVisit.current = null;
-    freshReadSnapshot.current = false;
-    openingUnread.current = false;
-    setUnreadOpeningFailed(false);
-    visibleReadIds.current.clear();
-    visibleReadCallIds.current.clear();
-    readViewportReady.current = false;
-    pinnedRowLayouts.current.clear();
-    readRequest.current = null;
     expandedHistoryThread.current = null;
     pinnedAroundRef.current = null;
     jumpScrollTarget.current = null;
@@ -558,6 +526,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     joinPinnedAfterLayout.current = null;
     loadingOlderContent.current = false;
     publishThreadScrollState(scrollBehavior.current.state());
+    return () => {
+      clearTimeout(scrollIdleTimer.current);
+      nativeMomentumActive.current = false;
+    };
   }, [threadKey, publishThreadScrollState]);
   const reducedMotion = useReducedMotion();
   const artifactTarget: MobileArtifactTarget | undefined = groupId
@@ -579,42 +551,30 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const streamResponsesRef = useRef(streamResponses);
   streamResponsesRef.current = streamResponses;
 
-  function commitSnap(next: MobileSnapshot | null, cleared = false) {
-    if (cleared || threadHistoryWasCleared(snapRef.current, next)) {
-      invalidateHistoryLoads();
-      expandedHistoryThread.current = null;
-      pinnedAroundRef.current = null;
-      jumpScrollTarget.current = null;
-      jumpAnchor.current.release();
-      joinPinnedAfterLayout.current = null;
-      readVisit.current = null;
-      visibleReadIds.current.clear();
-      visibleReadCallIds.current.clear();
-      pinnedRowLayouts.current.clear();
-      readRequest.current = null;
-      openingUnread.current = false;
-      setUnreadOpeningFailed(false);
-      scrollBehavior.current.jumpToLatest();
-      setThreadScrollState(scrollBehavior.current.state());
-    }
+  function commitSnap(next: MobileSnapshot | null) {
     snapRef.current = next;
     const visible = withLiveStreamingProgress(next, streamResponsesRef.current);
     setSnap((previous) => reconcileVisibleThreadSnapshot(previous, visible));
   }
 
-  function invalidateHistoryLoads() {
-    historyEpoch.current += 1;
-    loadingOlderContent.current = false;
-    loadingNewerContent.current = false;
-    newerLoadFailed.current = false;
-    setLoadingOlder(false);
-    setLoadingNewer(false);
-  }
-
   useEffect(() => {
     commitSnap(snapRef.current);
   }, [streamResponses]);
+  const activeThreadId = useRef<string | undefined>(undefined);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
+  const [uploadConfig, setUploadConfig] = useState<{ maxUploadSizeBytes?: number }>();
+  useEffect(() => {
+    let cancelled = false;
+    void rpc<{ maxUploadSizeBytes?: number }>("me")
+      .then((me) => {
+        if (!cancelled) setUploadConfig(me);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
   // The call outlives renders, so its switch check reads the newest bot list from here.
   const mentionBotsRef = useRef<MobileBot[]>([]);
@@ -700,6 +660,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const displayName = currentBot?.name ?? name;
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
+  activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
   const workingGroupBots = useMemo(() => {
@@ -884,11 +845,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: displayName || t("Thread"),
-      // Messages scroll under the bar. The list is inverted, so iOS would draw the header's scroll
-      // edge effect at its flipped top, above the composer.
+      // Inversion swaps the visual edges; disable both native fades on iOS 26.
       headerTransparent: iosAtLeast(26),
       ...(iosAtLeast(26) ? { headerStyle: { backgroundColor: "transparent" } } : {}),
-      scrollEdgeEffects: { top: "hidden" },
+      scrollEdgeEffects: { top: "hidden", bottom: "hidden" },
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
@@ -909,27 +869,44 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 muted={currentBot.notifyOnFinish === false}
               />
             ) : null}
-            <Text numberOfLines={1} style={styles.title}>
+            <Text
+              maxFontSizeMultiplier={HEADER_TITLE_MAX_FONT_SCALE}
+              numberOfLines={1}
+              style={styles.title}
+            >
               {displayName || t("Thread")}
             </Text>
           </GlassSurface>
         </Pressable>
       ),
-      ...(iosAtLeast(26)
+      ...(Platform.OS === "ios" && !readOnly && (!inGroup || iosAtLeast(26))
         ? {
             unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                accessibilityLabel: inGroup ? t("Group settings") : t("Bot actions"),
-                icon: { type: "sfSymbol" as const, name: inGroup ? "gearshape" : "ellipsis" },
-                onPress: inGroup
-                  ? () =>
+              inGroup
+                ? {
+                    type: "button" as const,
+                    accessibilityLabel: t("Group settings"),
+                    icon: { type: "sfSymbol" as const, name: "gearshape" },
+                    onPress: () =>
                       router.push({
                         pathname: "/group-settings",
                         params: { groupId: groupId ?? "" },
-                      })
-                  : showBotActions,
-              },
+                      }),
+                  }
+                : {
+                    type: "menu" as const,
+                    accessibilityLabel: t("Bot actions"),
+                    icon: { type: "sfSymbol" as const, name: "ellipsis" },
+                    disabled: !botId,
+                    menu: {
+                      items: botActions.map((action) => ({
+                        type: "action" as const,
+                        label: action.text,
+                        destructive: action.destructive,
+                        onPress: action.onPress,
+                      })),
+                    },
+                  },
             ],
           }
         : {}),
@@ -1009,37 +986,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function clearConversation() {
     if (!botId) return;
-    const epoch = historyEpoch.current;
-    const threadId = snapRef.current?.threadId;
-    const sessionGeneration = currentSessionGeneration();
-    const spaceId = selectedSpaceId();
     void rpc("threads/clear", { botId })
       .then(() => {
-        if (
-          !isCurrentTarget(botId, groupId) ||
-          sessionGeneration !== currentSessionGeneration() ||
-          spaceId !== selectedSpaceId() ||
-          (threadId != null && snapRef.current?.threadId !== threadId)
-        )
-          return;
-        // An observed clear has already reset history and may include newer replies.
-        // Otherwise reset immediately; the authoritative refresh supplies read state.
-        if (epoch === historyEpoch.current) {
-          commitSnap(
-            snapRef.current
-              ? {
-                  ...snapRef.current,
-                  messages: [],
-                  olderCursor: null,
-                  run: null,
-                  activeRuns: [],
-                  readState: undefined,
-                }
-              : snapRef.current,
-            true,
-          );
-        }
-        void refresh().catch(() => undefined);
+        expandedHistoryThread.current = null;
+        pinnedAroundRef.current = null;
+        historyEpoch.current += 1;
+        commitSnap(
+          snapRef.current
+            ? { ...snapRef.current, messages: [], olderCursor: null, run: null }
+            : snapRef.current,
+        );
       })
       .catch((err: unknown) =>
         Alert.alert(t("Could not clear conversation"), errorText(err, t("Try again."))),
@@ -1096,21 +1052,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function showBotActions() {
     if (!botId) return;
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: name || t("Bot"),
-          userInterfaceStyle: colorScheme,
-          options: [...botActions.map((action) => action.text), t("Cancel")],
-          cancelButtonIndex: botActions.length,
-          destructiveButtonIndex: botActions.flatMap((action, index) =>
-            action.destructive ? [index] : [],
-          ),
-        },
-        (index) => botActions[index]?.onPress(),
-      );
-      return;
-    }
     setBotActionsOpen(true);
   }
 
@@ -1180,152 +1121,63 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     if (result.commit) {
       snapshotOrigin.current = scope;
       pendingSave.current = null;
-      const committed = mergeMobileSnapshot(
-        snapRef.current,
-        next,
-        expandedHistoryThread.current === next.threadId,
+      writeSavedThread(scope, savedChatTarget(next), next);
+      commitSnap(
+        mergeMobileSnapshot(snapRef.current, next, expandedHistoryThread.current === next.threadId),
       );
-      writeSavedThread(scope, savedChatTarget(committed), committed);
-      commitSnap(committed);
       setShowingSaved(false);
-      freshReadSnapshot.current = true;
     }
     if (isCurrentTarget(targetBotId, targetGroupId)) {
       feedback.refreshed(targetGroupId ?? targetBotId);
     }
-    return (result.commit ? snapRef.current : result.snapshot) ?? undefined;
+    return result.snapshot ?? undefined;
   }
 
-  async function applyMessageJump(target: {
-    botId?: string;
-    groupId?: string;
-    messageId?: string;
-    seq?: number;
-  }) {
+  async function applyMessageJump(target: { botId?: string; groupId?: string; messageId: string }) {
     const threadTarget = target.groupId ? { groupId: target.groupId } : { botId: target.botId! };
-    const initialSnapshot = snapRef.current;
-    let epoch = historyEpoch.current;
+    const epoch = historyEpoch.current;
     jumpGeneration.current += 1;
-    visibleReadIds.current.clear();
-    visibleReadCallIds.current.clear();
-    pinnedRowLayouts.current.clear();
     const jumpId = jumpGeneration.current;
     const scope = await liveSavedChatsScope();
     if (!scope || !isIntegrationsScopeCurrent(scope)) return;
-    const snap = await rpc<MobileSnapshot>("threads/get", threadTarget);
+    const [snap, page] = await Promise.all([
+      rpc<MobileSnapshot>("threads/get", threadTarget),
+      rpc<MobileMessagePage>("threads/messages", {
+        ...threadTarget,
+        around: { messageId: target.messageId },
+      }),
+    ]);
     // The epoch check drops a jump that raced a conversation clear (or a bot switch); the
     // generation check drops an older same-thread jump that finished after a newer one.
-    const isCurrentJump = () =>
-      epoch === historyEpoch.current &&
-      jumpId === jumpGeneration.current &&
-      isIntegrationsScopeCurrent(scope) &&
-      (!target.groupId || activeGroupId.current === target.groupId) &&
-      (!target.botId || activeBotId.current === target.botId);
-    if (!isCurrentJump()) return;
-    const current = snapRef.current;
-    if (threadHistoryWasCleared(snap, current)) return;
     if (
-      threadHistoryWasCleared(
-        initialSnapshot?.threadId === snap.threadId ? initialSnapshot : { threadId: snap.threadId },
-        snap,
-      ) ||
-      threadHistoryWasCleared(current, snap)
-    ) {
-      // Establish the new generation before requesting any around-page. An explicit
-      // search can continue; an unread visit must choose its boundary from this snapshot.
-      const latest =
-        current?.threadId === snap.threadId && (current.cursor ?? -1) > (snap.cursor ?? -1)
-          ? current
-          : snap;
-      snapshotOrigin.current = scope;
-      freshReadSnapshot.current = true;
-      commitSnap(latest);
-      setShowingSaved(false);
-      if (!target.messageId) return;
-      epoch = historyEpoch.current;
-      jumpAnchor.current.begin(target.messageId);
-    }
-    const firstPage = await rpc<MobileMessagePage>("threads/messages", {
-      ...threadTarget,
-      around: target.messageId ? { messageId: target.messageId } : { seq: target.seq },
-    });
-    if (!isCurrentJump()) return;
-    let page = firstPage;
-    const firstRenderedUnread = (messages = page.messages) =>
-      projectMessageReactions(
-        userVisibleMessages(messages, { includePeerReceipts: true }).filter((message) =>
-          hasVisibleMessagePresentation(message.blocks),
-        ),
-      ).visibleMessages.find((message) => message.seq != null && message.seq >= (target.seq ?? 0))
-        ?.id;
-    let targetMessageId = target.messageId ?? firstRenderedUnread();
-    if (!target.messageId) {
-      const scanThrough = Math.max(
-        target.seq ?? 0,
-        snap.readState?.lastUnreadSeq ?? -1,
-        latestDurableMessageSeq(snap.messages) ?? -1,
-      );
-      let covered = page.coveredThroughSeq ?? latestDurableMessageSeq(page.messages);
-      // An around-page can contain only filtered activity. Scan forward from its raw
-      // coverage, retaining the original older cursor so the divider cannot skip a gap.
-      while (!targetMessageId && covered != null && covered < scanThrough) {
-        const nextPage = await rpc<MobileMessagePage>("threads/messages", {
-          ...threadTarget,
-          around: { seq: covered + 1 },
-        });
-        if (!isCurrentJump()) return;
-        const nextCovered =
-          nextPage.coveredThroughSeq ?? latestDurableMessageSeq(nextPage.messages);
-        if (nextPage.threadId !== page.threadId || nextCovered == null || nextCovered <= covered) {
-          throw new Error(t("Could not load earlier messages"));
-        }
-        page = {
-          ...page,
-          messages: mergeMessagesById(page.messages, nextPage.messages),
-          coveredThroughSeq: nextCovered,
-        };
-        covered = nextCovered;
-        targetMessageId = firstRenderedUnread();
-      }
-      // A fully covered window may contain only hidden activity. It needs no anchor,
-      // but missing coverage or a visible unread tail must never silently skip a gap.
-      if (
-        !targetMessageId &&
-        (covered == null || covered < scanThrough || firstRenderedUnread(snap.messages))
-      ) {
-        throw new Error(t("Could not load earlier messages"));
-      }
-    }
-    const targetInPage =
-      targetMessageId != null && page.messages.some((message) => message.id === targetMessageId);
-    const onScreen = snapRef.current;
-    const latest =
-      onScreen?.threadId === snap.threadId && (onScreen.cursor ?? -1) > (snap.cursor ?? -1)
-        ? onScreen
-        : snap;
-    const opened = targetInPage ? openThreadWindow(latest, page) : null;
+      epoch !== historyEpoch.current ||
+      jumpId !== jumpGeneration.current ||
+      !isIntegrationsScopeCurrent(scope)
+    )
+      return;
+    if (target.groupId && activeGroupId.current !== target.groupId) return;
+    if (target.botId && activeBotId.current !== target.botId) return;
+    const targetInPage = page.messages.some((message) => message.id === target.messageId);
+    const opened = targetInPage ? openThreadWindow(snap, page) : null;
     expandedHistoryThread.current = targetInPage ? page.threadId : null;
     pinnedAroundRef.current = opened
       ? {
           ...threadTarget,
-          messageId: targetMessageId!,
+          messageId: target.messageId,
           threadId: page.threadId,
           newerCursor: opened.newerCursor,
-          coveredThroughSeq: page.coveredThroughSeq,
         }
       : null;
-    jumpAnchor.current.begin(targetInPage ? targetMessageId! : null);
-    jumpScrollTarget.current = targetInPage ? targetMessageId! : null;
+    jumpAnchor.current.begin(targetInPage ? target.messageId : null);
+    jumpScrollTarget.current = targetInPage ? target.messageId : null;
     newerLoadFailed.current = false;
     joinPinnedAfterLayout.current = null;
     pinnedScrollMetrics.current = { offset: 0, viewport: 0, content: 0 };
     // Publish the jump refs even when the opened snapshot is already visible.
     setThreadScrollState(scrollBehavior.current.state());
     snapshotOrigin.current = scope;
-    freshReadSnapshot.current = true;
-    commitSnap(opened?.snapshot ?? latest);
+    commitSnap(opened?.snapshot ?? snap);
     setShowingSaved(false);
-    return true;
   }
 
   async function loadNewerMessages() {
@@ -1391,19 +1243,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       newerLoadFailed.current = true;
       setError(errorText(err, t("Could not open message")));
     } finally {
-      if (epoch === historyEpoch.current) {
-        loadingNewerContent.current = false;
-        setLoadingNewer(false);
-        if (visibleUnchanged) loadNewerNearEnd();
-      }
+      loadingNewerContent.current = false;
+      setLoadingNewer(false);
+      if (visibleUnchanged) loadNewerNearEnd();
     }
   }
 
   function showLatest() {
-    openingUnread.current = false;
-    setUnreadOpeningFailed(false);
-    visibleReadIds.current.clear();
-    visibleReadCallIds.current.clear();
     const pinned = pinnedAroundRef.current;
     pinnedAroundRef.current = null;
     joinPinnedAfterLayout.current = null;
@@ -1421,20 +1267,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     );
   }
 
-  function jumpToLatest() {
-    openingUnread.current = false;
-    setUnreadOpeningFailed(false);
-    if (pinnedAroundRef.current || jumpScrollTarget.current) {
-      showLatest();
-      return;
-    }
-    performScroll(scrollBehavior.current.jumpToLatest());
-    publishThreadScrollState(scrollBehavior.current.state());
-    // The list may already be at the tail after an unread-position request failed.
-    // In that case no new viewability callback is needed for this explicit choice.
-    markVisibleRef.current();
-  }
-
   async function loadOlderMessages() {
     if ((!botId && !groupId) || snap?.olderCursor == null || loadingOlder) return;
     loadingOlderContent.current = true;
@@ -1447,141 +1279,38 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         before: snap.olderCursor,
         includePeerReceipts: true,
       });
-      if (epoch !== historyEpoch.current) return;
-      if (pinnedAroundRef.current !== pinned) {
+      if (epoch !== historyEpoch.current || pinnedAroundRef.current !== pinned) {
         loadingOlderContent.current = false;
         return;
       }
       expandedHistoryThread.current = page.threadId;
       commitSnap(prependMobileMessagePage(snapRef.current, page));
     } catch (err) {
-      if (epoch !== historyEpoch.current) return;
       loadingOlderContent.current = false;
       setError(errorText(err, t("Could not load earlier messages")));
     } finally {
-      if (epoch === historyEpoch.current) setLoadingOlder(false);
+      setLoadingOlder(false);
     }
   }
 
   const markReadIfVisible = useCallback(() => {
-    const snapshot = snapRef.current;
-    const target = groupId ? { groupId } : botId ? { botId } : null;
-    if (!snapshot || !target || readRequest.current) return;
-    const throughSeq = mobileVisibleReadSeq({
-      snapshot,
-      visibleIds: visibleReadIds.current,
-      visibleCallMessageIds: visibleReadCallIds.current,
-      emptyVisible: readViewportReady.current && !pinnedAroundRef.current,
-      active: AppState.currentState === "active",
-      focused: navigation.isFocused(),
-      ready:
-        freshReadSnapshot.current &&
-        !openingUnread.current &&
-        readVisit.current?.threadId === snapshot.threadId &&
-        readVisit.current.opened &&
-        (!jumpAnchor.current.holds() || jumpAnchor.current.align(headerHeight + 24) != null),
-      readOnly,
-    });
-    if (throughSeq == null) return;
-    const request = { threadId: snapshot.threadId, throughSeq };
-    readRequest.current = request;
-    const epoch = historyEpoch.current;
-    const cursor = snapshot.cursor;
-    void rpc<{ ok: true; readState?: ThreadReadState }>("threads/markRead", {
-      ...target,
-      throughSeq,
-    })
-      .then((result) => {
-        if (epoch !== historyEpoch.current || snapRef.current?.threadId !== request.threadId)
-          return;
-        // A later event is authoritative; a concurrent arrival must keep its unread flag.
-        if (result.readState && snapRef.current.cursor === cursor) {
-          commitSnap({ ...snapRef.current, readState: result.readState });
-        }
-        if (result.readState && !result.readState.unread && !snapRef.current.readState?.unread) {
-          void dismissThreadNotifications({ threadId: request.threadId }).catch(() => undefined);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (readRequest.current !== request) return;
-        readRequest.current = null;
-        const newer = mobileVisibleReadSeq({
-          snapshot: snapRef.current,
-          visibleIds: visibleReadIds.current,
-          visibleCallMessageIds: visibleReadCallIds.current,
-          active: AppState.currentState === "active",
-          focused: navigation.isFocused(),
-          ready: freshReadSnapshot.current && !openingUnread.current,
-          readOnly,
-        });
-        if (newer != null && newer > throughSeq) markVisibleRef.current();
+    if (readOnly || AppState.currentState !== "active" || !navigation.isFocused()) return;
+    const target = groupId ?? botId;
+    if (!target || readVisibleTarget.current === target) return;
+    readVisibleTarget.current = target;
+    if (activeThreadId.current) {
+      void dismissThreadNotifications({ threadId: activeThreadId.current }).catch(() => undefined);
+    }
+    if (groupId) {
+      void rpc("threads/markRead", { groupId }).catch(() => {
+        if (readVisibleTarget.current === target) readVisibleTarget.current = null;
       });
-  }, [botId, groupId, navigation, readOnly, headerHeight]);
-  const markVisibleRef = useRef(markReadIfVisible);
-  markVisibleRef.current = markReadIfVisible;
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<ViewToken<ThreadItem<MobileMessage>>> }) => {
-      visibleReadIds.current = new Set(
-        viewableItems.flatMap(({ item }) => (item.kind === "voiceChat" ? [] : [item.message.id])),
-      );
-      visibleReadCallIds.current = new Set(
-        viewableItems.flatMap(({ item }) =>
-          item.kind === "voiceChat" ? item.messages.map((message) => message.id) : [],
-        ),
-      );
-      markVisibleRef.current();
-    },
-  ).current;
-  const viewabilityConfig = useRef({
-    viewAreaCoveragePercentThreshold: 50,
-    minimumViewTime: 250,
-  }).current;
-
-  // Keep the boundary for this visit after acknowledgements and other-device read events.
-  if (
-    snap?.readState &&
-    !showingSaved &&
-    freshReadSnapshot.current &&
-    AppState.currentState === "active" &&
-    navigation.isFocused()
-  ) {
-    if (readVisit.current?.threadId !== snap.threadId) {
-      readVisit.current = {
-        threadId: snap.threadId,
-        boundary: unreadBoundary(snap.readState),
-        opened: false,
-      };
-    } else if (readVisit.current.boundary == null) {
-      readVisit.current.boundary = unreadBoundary(snap.readState);
+      return;
     }
-  }
-  useEffect(() => {
-    const visit = readVisit.current;
-    if (!visit || showingSaved || !freshReadSnapshot.current || !navigation.isFocused()) return;
-    if (!visit.opened) {
-      visit.opened = true;
-      if (visit.boundary != null && !messageId && !readOnly) {
-        openingUnread.current = true;
-        setUnreadOpeningFailed(false);
-        void applyMessageJump({ botId, groupId, seq: visit.boundary + 1 })
-          .then((opened) => {
-            if (!opened || readVisit.current !== visit) return;
-            openingUnread.current = false;
-            markVisibleRef.current();
-          })
-          .catch((err: unknown) => {
-            if (readVisit.current !== visit) return;
-            // Keep the tail unread until an explicit drag or Jump to latest. The next
-            // visit retries the saved boundary, even when this page cannot scroll.
-            setUnreadOpeningFailed(true);
-            setError(errorText(err, t("Could not load earlier messages")));
-          });
-        return;
-      }
-    }
-    markReadIfVisible();
-  }, [snap, showingSaved, readVisitVersion, markReadIfVisible]);
+    void rpc("threads/markRead", { botId: botId! }).catch(() => {
+      if (readVisibleTarget.current === target) readVisibleTarget.current = null;
+    });
+  }, [botId, groupId, navigation, readOnly]);
 
   useEffect(() => {
     if (!notificationThreadId || AppState.currentState !== "active" || !navigation.isFocused())
@@ -1612,18 +1341,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         cancelFocusPrompt();
       }
       void refreshMentionBots();
-      if (!freshReadSnapshot.current) {
-        void refresh()
-          .then(() => setReadVisitVersion((version) => version + 1))
-          .catch(() => undefined);
-      }
+      markReadIfVisible();
       if (!readOnly) speakFinishedReplyRef.current();
-      return () => {
-        readVisit.current = null;
-        freshReadSnapshot.current = false;
-        openingUnread.current = false;
-        setUnreadOpeningFailed(false);
-      };
     }, [botId, readOnly, markReadIfVisible, refreshMentionBots]),
   );
 
@@ -1651,15 +1370,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           botId,
           threadId: notificationThreadId,
         }).catch(() => undefined);
-        void refresh()
-          .then(() => setReadVisitVersion((version) => version + 1))
-          .catch(() => undefined);
+        markReadIfVisible();
         return;
       }
-      readVisit.current = null;
-      freshReadSnapshot.current = false;
-      openingUnread.current = false;
-      setUnreadOpeningFailed(false);
       void setOpenNotificationThread(null).catch(() => undefined);
     });
     return () => appState.remove();
@@ -1668,7 +1381,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   useEffect(() => {
     if (!botId && !groupId) return;
     // Invalidate pending history loads while retaining pages already loaded for this chat.
-    invalidateHistoryLoads();
+    historyEpoch.current += 1;
     const abort = new AbortController();
     const subscriptionGeneration = ++liveSubscriptionGeneration.current;
     const sessionGeneration = currentSessionGeneration();
@@ -1700,7 +1413,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
               if (sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
-              if (event.seq != null && event.seq <= (snapRef.current?.cursor ?? -1)) return;
               if (
                 event.type === "thread.progress" ||
                 event.type === "agent.tool.called" ||
@@ -1711,18 +1423,25 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "thread.subagent" ||
                 event.type === "thread.cloud_agent" ||
                 event.type === "thread.cleared" ||
-                event.type === "thread.read.updated" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
                 isRunTerminalEvent(event)
               ) {
-                commitSnap(
-                  applyMobileThreadEvent(snapRef.current, event),
-                  event.type === "thread.cleared",
-                );
+                if (event.type === "thread.cleared") {
+                  expandedHistoryThread.current = null;
+                  pinnedAroundRef.current = null;
+                  jumpScrollTarget.current = null;
+                  jumpAnchor.current.release();
+                  historyEpoch.current += 1;
+                }
+                commitSnap(applyMobileThreadEvent(snapRef.current, event));
               }
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
+              }
+              if (event.type === "thread.message.created" && event.payload?.role === "bot") {
+                readVisibleTarget.current = null;
+                markReadIfVisible();
               }
               if (isRunTerminalEvent(event)) {
                 void refreshMentionBots();
@@ -2167,14 +1886,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   async function addAttachments(
-    picker: (existingCount: number) => Promise<{
+    picker: (
+      existingCount: number,
+      maxBytes: number,
+    ) => Promise<{
       attachments: PickedAttachment[];
       skipped: Array<{ name: string; reason: string }>;
     }>,
   ) {
     const targetKey = groupId ?? botId;
     if (!targetKey) return;
-    const result = await picker(activePendingAttachments.length);
+    const result = await picker(activePendingAttachments.length, attachmentMaxBytes(uploadConfig));
     if ((groupId ?? botId) !== targetKey) return;
     if (result.attachments.length) {
       setPendingAttachments((current) => [
@@ -2197,6 +1919,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
+  // Fixed for the visit, so replies that arrive while reading do not move it.
+  const unreadFrom = useRef<{ key?: string; id?: string | null }>({});
+  if (unreadFrom.current.key !== threadKey) unreadFrom.current = { key: threadKey };
+  if (unreadFrom.current.id === undefined && visibleMessages.length > 0) {
+    unreadFrom.current.id = unreadParam === "1" ? unreadBoundaryId(visibleMessages) : null;
+  }
+  const unreadFromId = unreadFrom.current.id ?? null;
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
@@ -2205,18 +1934,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     },
     [],
   );
-  const visitBoundary =
-    readVisit.current?.threadId === snap?.threadId ? (readVisit.current?.boundary ?? null) : null;
-  const unreadDividerId = unreadDividerMessageId(
-    visibleMessages,
-    visitBoundary,
-    snap?.olderCursor ?? null,
-  );
   // Group calls in reading order, then reverse for the inverted list.
-  const liveItems = useMemo(
-    () => groupVoiceChats(visibleMessages, { unreadAfterSeq: visitBoundary }).reverse(),
-    [visibleMessages, visitBoundary],
-  );
+  const liveItems = useMemo(() => groupVoiceChats(visibleMessages).reverse(), [visibleMessages]);
   const messagesById = useMemo(
     () => new Map((snap?.messages ?? []).map((message) => [message.id, message])),
     [snap?.messages],
@@ -2232,6 +1951,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function performScroll(action: ThreadScrollAction) {
     if (!action || showPinnedPage) return;
+    scrollBehavior.current.onProgrammaticScroll();
     scroll.current?.scrollToOffset({
       offset: 0,
       animated: action === "smooth" && !reducedMotion,
@@ -2248,20 +1968,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     return viewport > 0 && content - viewport - offset <= 80;
   }
 
-  function markPinnedMessagesRead() {
-    visibleReadCallIds.current.clear();
-    visibleReadIds.current = pinnedVisibleMessageIds(
-      pinnedRowLayouts.current,
-      pinnedScrollMetrics.current,
-      headerHeight,
-    );
-    markReadIfVisible();
-  }
-
   function scrollPinnedTo(offset: number) {
     pinnedScroll.current?.scrollTo({ y: offset, animated: false });
     pinnedScrollMetrics.current.offset = offset;
-    requestAnimationFrame(markPinnedMessagesRead);
   }
 
   function loadNewerNearEnd() {
@@ -2298,11 +2007,26 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     }
   }
 
+  function scheduleScrollIdle() {
+    clearTimeout(scrollIdleTimer.current);
+    // Every scroll event renews the fallback. Native momentum gets a longer
+    // grace period, but a missing momentum-end must still recover after silence.
+    scrollIdleTimer.current = setTimeout(
+      () => {
+        nativeMomentumActive.current = false;
+        performScroll(scrollBehavior.current.onUserMomentumEnd());
+        publishThreadScrollState(scrollBehavior.current.state());
+      },
+      nativeMomentumActive.current ? 1000 : 200,
+    );
+  }
+
   function updateUserScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     // Inverted FlatList: contentOffset.y is distance from the latest messages.
-    publishThreadScrollState(
-      scrollBehavior.current.onUserScroll(Math.max(0, event.nativeEvent.contentOffset.y)),
-    );
+    scheduleScrollIdle();
+    const previous = scrollBehavior.current.state();
+    const next = scrollBehavior.current.onUserScroll(event.nativeEvent.contentOffset.y);
+    if (reconcileThreadScrollState(previous, next) !== previous) publishThreadScrollState(next);
   }
 
   async function reactToMessage(message: MobileMessage, reaction: MessageReaction) {
@@ -2311,12 +2035,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     const targetGroupId = groupId;
     if (!targetBotId && !targetGroupId) return;
     try {
-      await rpc("threads/react", {
+      const result = await rpc<{ ok: true; runIds?: string[] }>("threads/react", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         messageId: message.id,
         reaction,
         clientNonce: newClientNonce(),
       });
+      if (result.runIds?.length && isCurrentTarget(targetBotId, targetGroupId)) {
+        // The reaction is saved; a failed refresh is caught up by live events.
+        await refresh().catch(() => {});
+      }
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return;
       Alert.alert(t("Could not update reaction"), errorText(err, t("Try again.")));
@@ -2356,9 +2084,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         return next;
       });
     },
-    layout: (messageId, y, index, height) => {
-      pinnedRowLayouts.current.set(messageId, { y, height });
-      markPinnedMessagesRead();
+    layout: (messageId, y, index) => {
       const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, headerHeight + 24);
       if (offset == null) return;
       scrollPinnedTo(offset);
@@ -2390,7 +2116,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
-      layout: (id, y, index, height) => rowActionsRef.current.layout(id, y, index, height),
+      layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
     }),
     [],
   );
@@ -2437,7 +2163,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           canAnswer={!readOnly && message.id === answerableAskMessageId}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
-          unreadSeparator={unreadDividerId === message.id}
+          unreadSeparator={message.id === unreadFromId}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
@@ -2445,7 +2171,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           activityColor={activityBot?.color}
           activityStatus={activityStatus}
           inGroup={inGroup}
-          windowWidth={windowWidth}
+          columnWidth={columnWidth}
           enableJump={options?.enableJump ?? false}
           index={options?.index ?? 0}
         />
@@ -2470,8 +2196,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       answerableAskMessageId,
       highlightedMessageId,
       separatorIds,
-      unreadDividerId,
-      windowWidth,
+      unreadFromId,
+      columnWidth,
       t,
       locale,
     ],
@@ -2480,18 +2206,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     ({ item }: ListRenderItemInfo<ThreadItem<MobileMessage>>) =>
       item.kind === "voiceChat" ? (
         <View style={messageListStyles.row}>
-          {item.messages.some((message) => message.id === unreadDividerId) ? (
-            <UnreadSeparator />
-          ) : null}
           {item.messages[0] && separatorIds.has(item.messages[0].id) ? (
             <TimeSeparator createdAt={item.messages[0].createdAt} />
+          ) : null}
+          {item.messages.some((message) => message.id === unreadFromId) ? (
+            <UnreadSeparator />
           ) : null}
           <VoiceChatCard group={item} />
         </View>
       ) : (
         renderMessageRow(item.message)
       ),
-    [renderMessageRow, separatorIds, unreadDividerId],
+    [renderMessageRow, separatorIds, unreadFromId],
   );
   const listContentStyle = useMemo(
     () => ({
@@ -2585,18 +2311,25 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       behavior="height"
       // Android lays out the screen below the opaque native navigation header.
       keyboardVerticalOffset={Platform.OS === "android" ? nativeHeaderHeight : 0}
-      style={{ flex: 1, backgroundColor: tokens.background, paddingHorizontal: 20 }}
+      style={{
+        flex: 1,
+        backgroundColor: tokens.background,
+        paddingHorizontal: 20 + columnInset,
+      }}
     >
-      {error ? (
-        <Text style={{ color: tokens.mutedForeground, marginTop: headerHeight + 28 }}>
-          {showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
-        </Text>
-      ) : null}
-      {runError ? (
-        <Text style={{ color: tokens.destructive, marginTop: error ? 12 : headerHeight + 28 }}>
-          {runError}
-        </Text>
-      ) : null}
+      <ThreadErrorNotice
+        top={headerHeight + 8}
+        inset={20 + columnInset}
+        error={
+          error
+            ? showingSaved
+              ? t("Couldn't refresh — showing the last loaded messages.")
+              : error
+            : null
+        }
+        summary={runError ? normalizeRunError(runError, t, locale).summary : null}
+        onDetails={() => setSelectableText(runError)}
+      />
       {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
       <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
         {showPinnedPage ? (
@@ -2605,11 +2338,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             ref={pinnedScroll}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingTop: headerHeight + 8, paddingBottom: 16 }}
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             onLayout={(event) => {
               pinnedScrollMetrics.current.viewport = event.nativeEvent.layout.height;
-              markPinnedMessagesRead();
               loadNewerNearEnd();
             }}
             onContentSizeChange={(_, height) => {
@@ -2628,7 +2361,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                   return;
                 }
               }
-              markPinnedMessagesRead();
               loadNewerNearEnd();
             }}
             onScroll={(event) => {
@@ -2638,7 +2370,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 viewport: layoutMeasurement.height,
                 content: contentSize.height,
               };
-              markPinnedMessagesRead();
               loadNewerNearEnd();
             }}
             onScrollBeginDrag={() => {
@@ -2666,36 +2397,48 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             key={threadKey}
             ref={scroll}
             data={liveItems}
-            onViewableItemsChanged={onViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
             inverted
             keyExtractor={threadItemKey}
             // This callback tracks every row input, including reply, reaction and highlight state.
             extraData={renderMessageRow}
             style={messageListStyles.list}
+            // Swiping down hides the keyboard; on iOS it follows the finger.
+            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
             // Inverted, so the bottom padding is the visual top, clear of the transparent header.
             contentContainerStyle={listContentStyle}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
             onScrollBeginDrag={() => {
-              openingUnread.current = false;
-              setUnreadOpeningFailed(false);
-              userDragging.current = true;
+              clearTimeout(scrollIdleTimer.current);
+              nativeMomentumActive.current = false;
+              scrollBehavior.current.onUserDragStart();
             }}
             onScroll={(event) => {
-              if (userDragging.current) updateUserScroll(event);
+              if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
             }}
+            // Keep tracking after release: a fling can cross the threshold mid-momentum.
             onScrollEndDrag={(event) => {
               updateUserScroll(event);
-              userDragging.current = false;
+              scrollBehavior.current.onUserDragEnd();
+              scheduleScrollIdle();
             }}
-            onMomentumScrollEnd={updateUserScroll}
+            onMomentumScrollBegin={() => {
+              nativeMomentumActive.current = true;
+              scheduleScrollIdle();
+            }}
+            onMomentumScrollEnd={(event) => {
+              nativeMomentumActive.current = false;
+              if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
+              clearTimeout(scrollIdleTimer.current);
+              performScroll(scrollBehavior.current.onUserMomentumEnd());
+              publishThreadScrollState(scrollBehavior.current.state());
+            }}
             onLayout={(event) => {
-              readViewportReady.current = event.nativeEvent.layout.height > 0;
-              performScroll(scrollBehavior.current.onLayout());
-              markReadIfVisible();
+              performScroll(scrollBehavior.current.onLayout(event.nativeEvent.layout.height));
+              publishThreadScrollState(scrollBehavior.current.state());
             }}
-            onContentSizeChange={() => {
+            onContentSizeChange={(_, height) => {
+              publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
               if (loadingOlderContent.current) {
                 loadingOlderContent.current = false;
                 return;
@@ -2721,67 +2464,43 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             renderItem={renderItem}
           />
         )}
-        {showPinnedPage || threadScrollState.detached || unreadOpeningFailed ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
-            }
-            onPress={jumpToLatest}
-            style={{
-              position: "absolute",
-              left: "50%",
-              marginLeft: -21,
-              bottom: 12,
-              width: 42,
-              height: 42,
-            }}
-          >
-            <GlassSurface
-              shape="circle"
-              style={styles.circleButton}
-              fallbackStyle={{
-                borderWidth: 1,
-                borderColor: native.fillPressed,
-                backgroundColor: native.fill,
+        {showPinnedPage || threadScrollState.detached ? (
+          <View style={{ position: "absolute", end: 0, bottom: 12 }}>
+            <ScrollToBottomButton
+              accessibilityLabel={
+                threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
+              }
+              onPress={() => {
+                if (showPinnedPage) {
+                  showLatest();
+                  return;
+                }
+                performScroll(scrollBehavior.current.jumpToLatest());
+                publishThreadScrollState(scrollBehavior.current.state());
               }}
-            >
-              <NativeSymbol
-                ios="arrow.down"
-                android="arrow-down"
-                size={18}
-                color={tokens.foreground}
+            />
+            {threadScrollState.unread ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  end: 3,
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: tokens.primary,
+                }}
               />
-              {threadScrollState.unread ? (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    right: 3,
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: tokens.primary,
-                  }}
-                />
-              ) : null}
-            </GlassSurface>
-          </Pressable>
+            ) : null}
+          </View>
         ) : null}
       </View>
-      {/* Fades messages out under the transparent header; the alpha stop keeps the page hue. */}
-      {iosAtLeast(26) ? (
-        <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight + 24 }]} />
-      ) : null}
       {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
-      <View
-        style={{
-          display: readOnly ? "none" : "flex",
-          flexShrink: 1,
-          paddingBottom: keyboardVisible ? 12 : Math.max(insets.bottom + 12, 24),
-        }}
+      <Animated.View
+        style={[{ display: readOnly ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
       >
-        {/* Fades messages out above the composer, like the header fade. */}
+        {/* Fades messages out immediately above the composer. */}
         <View pointerEvents="none" style={styles.composerFade} />
         {replyTarget ? (
           <GlassSurface
@@ -2909,7 +2628,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           startVoiceCall={startVoiceCall}
           onSlashAction={runSlashAction}
         />
-      </View>
+      </Animated.View>
       <Modal
         visible={botActionsOpen}
         transparent
@@ -3139,7 +2858,7 @@ type MessageRowActions = {
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
-  layout: (messageId: string, y: number, index: number, height: number) => void;
+  layout: (messageId: string, y: number, index: number) => void;
 };
 
 type MessageRowProps = {
@@ -3164,7 +2883,7 @@ type MessageRowProps = {
   activityColor?: string;
   activityStatus?: MobileBot["status"];
   inGroup: boolean;
-  windowWidth: number;
+  columnWidth: number;
   enableJump: boolean;
   index: number;
 };
@@ -3191,7 +2910,7 @@ const MessageRow = memo(function MessageRow({
   activityColor,
   activityStatus,
   inGroup,
-  windowWidth,
+  columnWidth,
   enableJump,
   index,
 }: MessageRowProps) {
@@ -3210,12 +2929,7 @@ const MessageRow = memo(function MessageRow({
     () =>
       enableJump
         ? (event: LayoutChangeEvent) =>
-            actions.layout(
-              message.id,
-              event.nativeEvent.layout.y,
-              index,
-              event.nativeEvent.layout.height,
-            )
+            actions.layout(message.id, event.nativeEvent.layout.y, index)
         : undefined,
     [actions, message.id, enableJump, index],
   );
@@ -3334,8 +3048,8 @@ const MessageRow = memo(function MessageRow({
         width: "100%",
       }}
     >
-      {unreadSeparator ? <UnreadSeparator /> : null}
       {separator ? <TimeSeparator createdAt={message.createdAt} /> : null}
+      {unreadSeparator ? <UnreadSeparator /> : null}
       <View
         style={{
           width: "100%",
@@ -3382,10 +3096,10 @@ const MessageRow = memo(function MessageRow({
             actions={menu}
             maxWidth={
               isCenteredAgentEvent(message.blocks)
-                ? windowWidth - 40
+                ? columnWidth - 40
                 : activityBotId
-                  ? windowWidth - 40 - (inGroup ? 28 : 36)
-                  : (windowWidth - 40) * 0.9
+                  ? columnWidth - 40 - (inGroup ? 28 : 36)
+                  : (columnWidth - 40) * 0.9
             }
             colorScheme={colorScheme}
             onAction={onMenuAction}
@@ -3492,6 +3206,19 @@ const MessageBubble = memo(function MessageBubble({
     (block): block is Extract<MessageBlock, { kind: "mcp_approval" }> =>
       block.kind === "mcp_approval",
   );
+  const undoBlock = message.blocks.find(
+    (block): block is Extract<MessageBlock, { kind: "ask" }> =>
+      block.kind === "ask" && Boolean(block.instructionUpdate?.undoVersionId),
+  );
+  if (undoBlock?.instructionUpdate?.undoVersionId) {
+    return (
+      <InstructionUndo
+        botId={undoBlock.instructionUpdate.botId}
+        versionId={undoBlock.instructionUpdate.undoVersionId}
+        instructions={undoBlock.instructionUpdate.after}
+      />
+    );
+  }
   const ask = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "ask" }> =>
       block.kind === "ask" && !isApprovalAskBlock(block) && !block.actions?.length,
@@ -3816,58 +3543,71 @@ const MessageBubble = memo(function MessageBubble({
             paddingVertical: 14,
           }}
         >
-          {askBlock.text ? (
-            <Text
-              {...actionProps}
-              style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
-            >
-              {askBlock.text}
-            </Text>
-          ) : null}
-          {askBlock.detail ? (
-            <Text
-              {...(askBlock.text ? {} : actionProps)}
-              style={{
-                color: tokens.mutedForeground,
-                marginTop: askBlock.text ? 8 : 0,
-                fontSize: 12.5,
-                fontFamily: "Menlo",
-                lineHeight: 20,
-              }}
-            >
-              {askBlock.detail}
-            </Text>
-          ) : null}
-          {askBlock.status === "answered" ? (
-            <Text
-              {...actionProps}
-              style={{
-                color: tokens.success,
-                marginTop: 12,
-                fontSize: 13.5,
-                fontWeight: "600",
-              }}
-            >
-              {formatApprovalAnswer(
-                askBlock.answer,
-                askBlock.actions,
-                isApprovalAskBlock(askBlock),
-              )}
-            </Text>
-          ) : canAnswer && onAnswer ? (
-            <AskActions
-              actions={askBlock.actions}
-              accessibilityActions={actionProps.accessibilityActions}
-              onAccessibilityAction={actionProps.onAccessibilityAction}
-              onAnswer={(answer) => onAnswer(message, answer)}
+          {askBlock.instructionUpdate?.undoVersionId ? (
+            <InstructionUndo
+              botId={askBlock.instructionUpdate.botId}
+              versionId={askBlock.instructionUpdate.undoVersionId}
+              instructions={askBlock.instructionUpdate.after}
             />
           ) : (
-            <Text
-              {...actionProps}
-              style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
-            >
-              {t("No longer active")}
-            </Text>
+            <>
+              {askBlock.text ? (
+                <Text
+                  {...actionProps}
+                  style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
+                >
+                  {askBlock.instructionUpdate ? t("Update instructions?") : askBlock.text}
+                </Text>
+              ) : null}
+              {askBlock.detail ? (
+                <Text
+                  {...(askBlock.text ? {} : actionProps)}
+                  style={{
+                    color: tokens.mutedForeground,
+                    marginTop: askBlock.text ? 8 : 0,
+                    fontSize: 12.5,
+                    fontFamily: "Menlo",
+                    lineHeight: 20,
+                  }}
+                >
+                  {askBlock.detail}
+                </Text>
+              ) : null}
+              {askBlock.status === "answered" ? (
+                <Text
+                  {...actionProps}
+                  style={{
+                    color: tokens.success,
+                    marginTop: 12,
+                    fontSize: 13.5,
+                    fontWeight: "600",
+                  }}
+                >
+                  {askBlock.instructionUpdate
+                    ? t(askBlock.answer === "deny" ? "Dismissed" : "Allowed once")
+                    : formatApprovalAnswer(
+                        askBlock.answer,
+                        askBlock.actions,
+                        isApprovalAskBlock(askBlock),
+                      )}
+                </Text>
+              ) : canAnswer && onAnswer ? (
+                <AskActions
+                  actions={askBlock.actions}
+                  instructions={askBlock.instructionUpdate?.after}
+                  accessibilityActions={actionProps.accessibilityActions}
+                  onAccessibilityAction={actionProps.onAccessibilityAction}
+                  onAnswer={(answer) => onAnswer(message, answer)}
+                />
+              ) : (
+                <Text
+                  {...actionProps}
+                  style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
+                >
+                  {t("No longer active")}
+                </Text>
+              )}
+            </>
           )}
         </View>
         {appConnectBlocks.map((block, index) => (
@@ -3991,6 +3731,15 @@ const MessageBubble = memo(function MessageBubble({
                 </Text>
               </Pressable>
             )
+          ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
+            <AudioAttachment
+              pressableProps={actionProps}
+              key={`${attachment.artifactId}-${index}`}
+              target={artifactTarget}
+              artifactId={attachment.artifactId}
+              name={attachment.name ?? t("File")}
+              mimeType={attachment.mimeType!}
+            />
           ) : (
             <Pressable
               {...actionProps}

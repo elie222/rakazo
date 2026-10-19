@@ -395,3 +395,54 @@ describe("selectSpaceModelPreference", () => {
     },
   );
 });
+
+it.each([
+  ["azure", "azure-openai-responses"],
+  ["azure-openai-responses", "azure"],
+])("resolves %s through a saved %s credential and preference", async (provider, storedProvider) => {
+  const credential = {
+    id: "credential-azure",
+    provider: storedProvider,
+    userId: "user",
+    label: "Azure",
+    secretId: "secret-azure",
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+  };
+  const preference = {
+    id: "pref-azure",
+    modelId: "gpt-4o",
+    thinkingLevel: null,
+    isDefault: true,
+    updatedAt: new Date(0),
+    credential,
+  };
+  const findPreferences = vi.fn().mockResolvedValue([preference]);
+  const findCredentials = vi.fn().mockResolvedValue([credential]);
+  const prisma = {
+    spaceModelPreference: { findMany: findPreferences },
+    userModelCredential: { findMany: findCredentials },
+  } as unknown as PrismaClient;
+  expect(
+    await findModelCredential(prisma, { userId: "user", spaceId: "space" }, provider, "gpt-4o"),
+  ).toMatchObject({ id: credential.id, defaultModel: "gpt-4o" });
+  expect(findCredentials).toHaveBeenCalledWith({
+    where: { userId: "user", provider: { in: ["azure", "azure-openai-responses"] } },
+  });
+  expect(
+    chooseModelCredential({
+      provider,
+      modelId: "gpt-4o",
+      preferences: [],
+      credentials: [credential],
+    }),
+  ).toEqual({ source: "credential", credential });
+  expect(
+    defaultModelCredentialCandidates({
+      provider,
+      modelId: "gpt-4o",
+      preferences: [preference],
+      credentials: [credential],
+    }),
+  ).toEqual([credential]);
+});

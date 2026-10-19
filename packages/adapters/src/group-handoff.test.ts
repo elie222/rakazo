@@ -40,8 +40,8 @@ function harness(
       create: messageCreate,
     },
     thread: {
-      update: vi.fn(async (args: { select?: { nextMessageSeq?: boolean } }) =>
-        args.select?.nextMessageSeq ? { nextMessageSeq: 2 } : { nextEventSeq: 2 },
+      update: vi.fn(async (args: { select: { nextMessageSeq?: boolean } }) =>
+        args.select.nextMessageSeq ? { nextMessageSeq: 2 } : { nextEventSeq: 2 },
       ),
     },
     task: { create: vi.fn(async () => ({ id: "task-b" })) },

@@ -10,6 +10,8 @@ const WEEKDAY_NAMES = [
   "Friday",
   "Saturday",
 ] as const;
+// Monday first, so Friday to Sunday reads as one run.
+const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 export const ONCE_ROUTINE_CRON = "@once";
 
@@ -186,14 +188,65 @@ export function formatSchedule(preset: CronPreset): string {
 
 export function formatCron(cron: string): string {
   if (isOneShotRoutineCron(cron)) return "One-time";
-  // The editor presets only represent Monday; cron also aliases Sunday as 7.
-  const weekly = /^(\d+)\s+(\d+)\s+\*\s+\*\s+([0-7])$/.exec(cron.trim());
-  if (weekly && isCronClock(weekly[1] ?? "", weekly[2] ?? "")) {
-    const time = formatClock(Number(weekly[2]), Number(weekly[1]));
-    const weekday = Number(weekly[3]) % 7;
-    return `Every ${WEEKDAY_NAMES[weekday]} at ${time}`;
+  return describeCronFields(cron) ?? formatSchedule(presetFromCron(cron));
+}
+
+// Shapes the editor presets can't represent (they open as "Advanced"), so
+// lists and pickers still read as a sentence. Anything else returns null and
+// keeps the "Cron …" fallback.
+function describeCronFields(cron: string): string | null {
+  const [minute = "", hour = "", day = "", month = "", dow = "", ...rest] = cron
+    .trim()
+    .split(/\s+/);
+  if (rest.length > 0 || month !== "*") return null;
+  if (hour === "*" && day === "*" && dow === "*" && isInt(minute)) {
+    const m = Number(minute);
+    return m >= 1 && m <= 59 ? `Every hour at :${String(m).padStart(2, "0")}` : null;
   }
-  return formatSchedule(presetFromCron(cron));
+  if (!isCronClock(minute, hour)) return null;
+  const time = formatClock(Number(hour), Number(minute));
+  if (day === "*" && dow !== "*") {
+    const days = cronWeekdays(dow);
+    return days ? `${describeWeekdays(days)} at ${time}` : null;
+  }
+  if (dow === "*" && isInt(day) && Number(day) >= 1 && Number(day) <= 31) {
+    return `Monthly on the ${ordinal(Number(day))} at ${time}`;
+  }
+  return null;
+}
+
+// The day-of-week field as a set of days (0 = Sunday) from single days, lists
+// and ranges. Cron also aliases Sunday as 7. Steps and names return null.
+function cronWeekdays(field: string): Set<number> | null {
+  const days = new Set<number>();
+  for (const part of field.split(",")) {
+    const match = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!match) return null;
+    const from = Number(match[1]);
+    const to = match[2] === undefined ? from : Number(match[2]);
+    if (from > to || to > 7) return null;
+    for (let d = from; d <= to; d++) days.add(d % 7);
+  }
+  return days;
+}
+
+function describeWeekdays(days: Set<number>): string {
+  if (days.size === 7) return "Every day";
+  if (days.size === 5 && !days.has(0) && !days.has(6)) return "Weekdays";
+  if (days.size === 2 && days.has(0) && days.has(6)) return "Weekends";
+  const ordered = WEEK_ORDER.filter((d) => days.has(d));
+  const names = ordered.map((d) => WEEKDAY_NAMES[d]);
+  const span = WEEK_ORDER.indexOf(ordered.at(-1) ?? 0) - WEEK_ORDER.indexOf(ordered[0] ?? 0);
+  if (names.length >= 3 && span === names.length - 1) {
+    return `${names[0]} to ${names.at(-1)}`;
+  }
+  if (names.length === 1) return `Every ${names[0]}`;
+  return `Every ${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+function ordinal(n: number): string {
+  if (n >= 11 && n <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
 }
 
 export function resolveRoutineNextRunAt(

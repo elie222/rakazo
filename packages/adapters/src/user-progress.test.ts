@@ -1,13 +1,20 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { builtinAgentTools } from "./builtin-tools.js";
+import { longWorkProgressGuidance } from "./executor.js";
 import {
+  assistantTurnSeparator,
   botMessageOutcomeFromMidTurn,
   clampUserProgressMessage,
   extractNarrationText,
   finalBlocksAfterMidTurnProgress,
   isProgressMessageTruncated,
   isUserProgressClientNonce,
+  MID_TURN_PROGRESS_MAX_PER_RUN,
+  MID_TURN_PROGRESS_MIN_TURN_AGE_MS,
+  messageUserMaxLength,
+  midTurnProgressBudgetAllows,
   USER_PROGRESS_MESSAGE_MAX_LENGTH,
   userProgressClientNonce,
 } from "./user-progress.js";
@@ -23,6 +30,49 @@ describe("clampUserProgressMessage", () => {
     expect(clamped).toHaveLength(USER_PROGRESS_MESSAGE_MAX_LENGTH);
     expect(clamped.endsWith("…")).toBe(true);
   });
+
+  it("clamps to a caller-supplied cap", () => {
+    const clamped = clampUserProgressMessage("x".repeat(4_100), 4_000);
+    expect(clamped).toHaveLength(4_000);
+    expect(clamped.endsWith("…")).toBe(true);
+    expect(clampUserProgressMessage("x".repeat(4_000), 4_000)).toHaveLength(4_000);
+  });
+});
+
+describe("messageUserMaxLength", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  const messageUserTool = () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "message_user");
+    if (!tool) throw new Error("missing message_user");
+    return tool as typeof tool & {
+      inputSchema: { properties: { message: { maxLength: number } } };
+    };
+  };
+
+  it("defaults to 500 characters everywhere the model sees the cap", () => {
+    vi.stubEnv("RAKAZO_MESSAGE_USER_MAX_CHARS", undefined);
+    expect(messageUserMaxLength()).toBe(USER_PROGRESS_MESSAGE_MAX_LENGTH);
+    expect(messageUserTool().inputSchema.properties.message.maxLength).toBe(500);
+    expect(messageUserTool().description).toContain("cut off silently at 500 characters");
+    expect(longWorkProgressGuidance()).toContain("message_user is capped at 500 characters");
+  });
+
+  it("applies RAKAZO_MESSAGE_USER_MAX_CHARS to the schema, description, and guidance", () => {
+    vi.stubEnv("RAKAZO_MESSAGE_USER_MAX_CHARS", " 4000 ");
+    expect(messageUserMaxLength()).toBe(4_000);
+    expect(messageUserTool().inputSchema.properties.message.maxLength).toBe(4_000);
+    expect(messageUserTool().description).toContain("cut off silently at 4000 characters");
+    expect(longWorkProgressGuidance()).toContain("message_user is capped at 4000 characters");
+  });
+
+  it.each(["", " ", "0", "-5", "12.5", "NaN", "Infinity", "lots", "4000chars", "1e3", "0x10"])(
+    "falls back to 500 for RAKAZO_MESSAGE_USER_MAX_CHARS=%j",
+    (value) => {
+      vi.stubEnv("RAKAZO_MESSAGE_USER_MAX_CHARS", value);
+      expect(messageUserMaxLength()).toBe(USER_PROGRESS_MESSAGE_MAX_LENGTH);
+    },
+  );
 });
 
 describe("isProgressMessageTruncated", () => {
@@ -35,6 +85,29 @@ describe("isProgressMessageTruncated", () => {
     const long = "x".repeat(USER_PROGRESS_MESSAGE_MAX_LENGTH + 1);
     expect(isProgressMessageTruncated(long)).toBe(true);
     expect(clampUserProgressMessage(long).endsWith("…")).toBe(true);
+  });
+
+  it("measures against a caller-supplied cap", () => {
+    expect(isProgressMessageTruncated("x".repeat(4_000), 4_000)).toBe(false);
+    expect(isProgressMessageTruncated("x".repeat(4_001), 4_000)).toBe(true);
+  });
+});
+
+describe("midTurnProgressBudgetAllows", () => {
+  it("stays silent while a turn is still fresh", () => {
+    expect(midTurnProgressBudgetAllows(0, MID_TURN_PROGRESS_MIN_TURN_AGE_MS - 1)).toBe(false);
+  });
+
+  it("allows a few beats once a turn is long", () => {
+    const age = MID_TURN_PROGRESS_MIN_TURN_AGE_MS;
+    expect(midTurnProgressBudgetAllows(0, age)).toBe(true);
+    expect(midTurnProgressBudgetAllows(MID_TURN_PROGRESS_MAX_PER_RUN - 1, age)).toBe(true);
+  });
+
+  it("stops posting once the per-run cap is reached", () => {
+    const age = MID_TURN_PROGRESS_MIN_TURN_AGE_MS * 10;
+    expect(midTurnProgressBudgetAllows(MID_TURN_PROGRESS_MAX_PER_RUN, age)).toBe(false);
+    expect(midTurnProgressBudgetAllows(MID_TURN_PROGRESS_MAX_PER_RUN + 1, age)).toBe(false);
   });
 });
 
@@ -100,5 +173,21 @@ describe("userProgressClientNonce", () => {
     expect(userProgressClientNonce("run-1", 0)).not.toBe(nonce);
     expect(isUserProgressClientNonce(null)).toBe(false);
     expect(isUserProgressClientNonce("other")).toBe(false);
+  });
+});
+
+describe("assistantTurnSeparator", () => {
+  it("adds a paragraph break between turns that would run together", () => {
+    expect(
+      assistantTurnSeparator("posted at https://example.com/drafts/42", "Nothing changed."),
+    ).toBe("\n\n");
+    expect(assistantTurnSeparator("Nothing changed.", "NO_RESPONSE")).toBe("\n\n");
+  });
+
+  it("adds nothing when there is no earlier text or a side has whitespace", () => {
+    expect(assistantTurnSeparator("", "Hello.")).toBe("");
+    expect(assistantTurnSeparator("Done.", "")).toBe("");
+    expect(assistantTurnSeparator("Done.\n", "Next.")).toBe("");
+    expect(assistantTurnSeparator("Done.", " Next.")).toBe("");
   });
 });

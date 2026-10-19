@@ -5,6 +5,7 @@ import {
   teamChatSenderCanWakeMessageRoutines,
   wakeMessageRoutines,
 } from "./messaging-inbound.js";
+import type { MessagingReceipts } from "./messaging-receipts.js";
 import { inboundDeliveryClientNonce, messagingWakeIdempotencyKey } from "./webhook-inbound.js";
 
 const signupPolicy = { signupsEnabled: undefined, signupAllowlist: undefined };
@@ -42,7 +43,11 @@ function createDeps(
   );
   const notify = vi.fn(async () => undefined);
   const enqueue = vi.fn(async () => undefined);
-  const typing = vi.fn(async (_threadId: string) => undefined);
+  const acknowledge = vi.fn<MessagingReceipts["acknowledge"]>();
+  const runs = new Map<string, { status: string; messagingMirroredAt: Date | null }>([
+    ["run-1", { status: "running", messagingMirroredAt: null }],
+  ]);
+  const botReplies: Array<{ id: string; runId: string }> = [];
   const provision = vi.fn(async (request: { provider: string; address: string }) => ({
     provider: request.provider,
     address: request.address,
@@ -118,6 +123,14 @@ function createDeps(
     },
     messagingLinkCode,
     bot: { findUnique: vi.fn(async () => ({ name: "Chief" })) },
+    run: {
+      findUnique: vi.fn(async ({ where }: { where: { id: string } }) => runs.get(where.id) ?? null),
+    },
+    message: {
+      findMany: vi.fn(async ({ where }: { where: { runId: string } }) =>
+        botReplies.filter((reply) => reply.runId === where.runId).map(({ id }) => ({ id })),
+      ),
+    },
     routine: { findMany: vi.fn(async () => overrides.routines ?? []) },
     thread: { findFirst: vi.fn(async () => ({ id: "thread-1" })) },
     messagingChannel: {
@@ -197,6 +210,18 @@ function createDeps(
       ),
     },
     messagingOutbound: {
+      count: vi.fn(
+        async ({
+          where,
+        }: {
+          where: { sourceMessageId: { in: string[] }; status: { not: string } };
+        }) =>
+          outboundRows.filter(
+            (row) =>
+              where.sourceMessageId.in.includes(row.sourceMessageId as string) &&
+              (row.status ?? "pending") !== where.status.not,
+          ).length,
+      ),
       createMany: vi.fn(async ({ data }: { data: Array<Record<string, unknown>> }) => {
         let count = 0;
         for (const item of data) {
@@ -246,7 +271,9 @@ function createDeps(
     provision,
     openSignup: true,
     signupPolicy,
-    typing,
+    acknowledge,
+    runs,
+    botReplies,
     sendUserMessage,
     notify,
     enqueue,
@@ -258,7 +285,9 @@ function createDeps(
     sendUserMessage: ReturnType<typeof vi.fn>;
     notify: ReturnType<typeof vi.fn>;
     enqueue: ReturnType<typeof vi.fn>;
-    typing: ReturnType<typeof vi.fn>;
+    acknowledge: typeof acknowledge;
+    runs: typeof runs;
+    botReplies: typeof botReplies;
     provision: ReturnType<typeof vi.fn>;
     outboundRows: Array<Record<string, unknown>>;
     members: Array<Record<string, unknown>>;
@@ -576,13 +605,59 @@ describe("createMessagingInboundHandler DM routing", () => {
   });
 });
 
-describe("typing indicators", () => {
-  it("shows typing bubbles in the sender's thread once their DM run is enqueued", async () => {
+describe("inbound receipt", () => {
+  it("acknowledges the DM in the sender's thread once their run is enqueued", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
     await handle(dmEvent);
 
-    expect(deps.typing).toHaveBeenCalledWith("sendblue:dm-1");
+    expect(deps.acknowledge.mock.calls).toEqual([
+      ["sendblue:dm-1", "handle-1", expect.any(Function)],
+    ]);
+  });
+
+  it("reports the DM handled once its own run's reply is mirrored out", async () => {
+    const deps = createDeps({ sendResult: { messageId: "msg-2", runId: "run-2", seq: 3 } });
+    deps.runs.set("run-2", { status: "running", messagingMirroredAt: null });
+    const handle = createMessagingInboundHandler(deps);
+    await handle(dmEvent);
+    const handled = deps.acknowledge.mock.calls[0]![2];
+
+    deps.runs.get("run-1")!.messagingMirroredAt = new Date("2026-01-01T00:00:00Z");
+    await expect(handled()).resolves.toBe(false);
+    deps.runs.get("run-2")!.messagingMirroredAt = new Date("2026-01-01T00:00:00Z");
+    await expect(handled()).resolves.toBe(true);
+  });
+
+  it("waits for the mirrored reply to actually go out", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle(dmEvent);
+    const handled = deps.acknowledge.mock.calls[0]![2];
+
+    deps.botReplies.push({ id: "reply-1", runId: "run-1" });
+    deps.outboundRows.push({
+      idempotencyKey: "msg:reply-1",
+      sourceMessageId: "reply-1",
+      status: "pending",
+    });
+    deps.runs.get("run-1")!.messagingMirroredAt = new Date("2026-01-01T00:00:00Z");
+    await expect(handled()).resolves.toBe(false);
+
+    deps.outboundRows[0]!.status = "sent";
+    await expect(handled()).resolves.toBe(true);
+  });
+
+  it("treats a failed or cancelled run as handled even before mirroring", async () => {
+    const deps = createDeps();
+    const handle = createMessagingInboundHandler(deps);
+    await handle(dmEvent);
+    const handled = deps.acknowledge.mock.calls[0]![2];
+
+    deps.runs.get("run-1")!.status = "failed";
+    await expect(handled()).resolves.toBe(true);
+    deps.runs.get("run-1")!.status = "cancelled";
+    await expect(handled()).resolves.toBe(true);
   });
 
   it("stays silent when the message produced no run", async () => {
@@ -590,7 +665,7 @@ describe("typing indicators", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle(dmEvent);
 
-    expect(deps.typing).not.toHaveBeenCalled();
+    expect(deps.acknowledge).not.toHaveBeenCalled();
   });
 
   it("stays silent for owner commands, which get a text confirmation instead", async () => {
@@ -600,39 +675,25 @@ describe("typing indicators", () => {
     const handle = createMessagingInboundHandler(deps);
     await handle({ ...dmEvent, content: "YES" });
 
-    expect(deps.typing).not.toHaveBeenCalled();
+    expect(deps.acknowledge).not.toHaveBeenCalled();
   });
 
-  it("never shows typing in groups", async () => {
+  it("never acknowledges in groups", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
     await handle(groupEvent);
 
-    expect(deps.typing).not.toHaveBeenCalled();
+    expect(deps.acknowledge).not.toHaveBeenCalled();
   });
 
-  it("starts typing before enqueueing the run, so the bubbles beat the reply", async () => {
+  it("acknowledges before enqueueing the run, so the receipt beats the reply", async () => {
     const deps = createDeps();
     const handle = createMessagingInboundHandler(deps);
     await handle(dmEvent);
 
-    expect(deps.typing.mock.invocationCallOrder[0]!).toBeLessThan(
+    expect(deps.acknowledge.mock.invocationCallOrder[0]!).toBeLessThan(
       deps.enqueue.mock.invocationCallOrder[0]!,
     );
-  });
-
-  it("still delivers the run when the typing call fails", async () => {
-    const deps = createDeps();
-    deps.typing.mockRejectedValue(new Error("messaging provider down"));
-    const handle = createMessagingInboundHandler(deps);
-    await handle(dmEvent);
-    // The rejection is caught inside the handler; give the fire-and-forget
-    // promise a tick to settle so a bad catch surfaces here, not as an
-    // unhandled rejection after the test.
-    await new Promise((resolve) => setImmediate(resolve));
-
-    expect(deps.enqueue).toHaveBeenCalled();
-    expect(deps.sendUserMessage).toHaveBeenCalled();
   });
 });
 

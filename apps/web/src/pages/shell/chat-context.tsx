@@ -69,6 +69,20 @@ export function TimeSeparator({ createdAt, locale }: { createdAt: string; locale
   );
 }
 
+export function UnreadSeparator() {
+  const { t } = useLingui();
+  return (
+    <h3
+      data-testid="unread-separator"
+      className="my-3 flex select-none items-center gap-3 text-xs font-normal text-muted-foreground"
+    >
+      <span className="h-px flex-1 bg-border" />
+      {t`New messages`}
+      <span className="h-px flex-1 bg-border" />
+    </h3>
+  );
+}
+
 export function ComposerReplyPreview({
   author,
   text,

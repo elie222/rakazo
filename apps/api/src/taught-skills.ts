@@ -40,11 +40,12 @@ import {
   type TeachRecordingEvent,
   teachRecordingTtlMs,
 } from "@rakazo/core";
-import type { createRepos, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
+  type createRepos,
   expireComputerExecutionLeases,
   IsolationError,
-  updateThreadMessageWithEvent,
+  type PrismaClient,
+  type ThreadEvents,
 } from "@rakazo/db";
 
 type TaughtSkillRow = {
@@ -273,14 +274,17 @@ async function updateSkillDraftMessage(
       playbook,
       status: input.status ?? existing.status,
     };
-    const event = await updateThreadMessageWithEvent(deps.prisma, {
+    await deps.prisma.message.update({
+      where: { id: message.id },
+      data: { blocks: nextBlocks as never },
+    });
+    await deps.events.append({
       spaceId: actor.spaceId,
       threadId: bot.thread.id,
       botId: bot.id,
       type: "thread.message.updated",
       payload: { messageId: message.id, role: "bot", blocks: nextBlocks },
     });
-    if (event) await deps.events.notify(event.threadId, event.seq);
     return;
   }
 }

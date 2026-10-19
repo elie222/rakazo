@@ -1,7 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import { credentialIssue, signupRequiresEmailVerification } from "@rakazo/core";
 import { Button, Input, Label } from "@rakazo/ui-web";
-import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { authClient } from "../lib/auth";
@@ -23,7 +22,6 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(() => {
     const code = searchParams.get("error");
     if (!code) return null;
@@ -230,31 +228,18 @@ export function AuthPage({ mode }: { mode: AuthMode }) {
                   <Label htmlFor={passwordFieldId} className="text-muted-foreground">
                     <Trans>Password</Trans>
                   </Label>
-                  <div className="relative">
-                    <Input
-                      id={passwordFieldId}
-                      name="password"
-                      autoComplete={mode === "in" ? "current-password" : "new-password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder={t`Password`}
-                      type={showPassword ? "text" : "password"}
-                      required
-                      minLength={8}
-                      className={`${fieldClass} pr-12`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setShowPassword((shown) => !shown)}
-                      aria-label={showPassword ? t`Hide password` : t`Show password`}
-                      aria-pressed={showPassword}
-                      className="absolute inset-y-0 right-2 my-auto text-muted-foreground"
-                    >
-                      {showPassword ? <EyeOff /> : <Eye />}
-                    </Button>
-                  </div>
+                  <Input
+                    id={passwordFieldId}
+                    name="password"
+                    autoComplete={mode === "in" ? "current-password" : "new-password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t`Password`}
+                    type="password"
+                    required
+                    minLength={8}
+                    className={fieldClass}
+                  />
                   {mode === "in" && reset?.passwordReset ? (
                     <div className="mt-2 text-right text-sm">
                       <Link to="/forgot-password" className="font-medium text-foreground">

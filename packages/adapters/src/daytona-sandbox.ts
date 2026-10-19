@@ -38,6 +38,10 @@ const DAYTONA_SCREEN_TTL_SECONDS = 3_600;
 export type DaytonaSandboxSdk = Pick<Daytona, "create" | "get">;
 
 export class DaytonaSandboxProvider implements SandboxProvider {
+  billsWhileRunning(): boolean {
+    return true;
+  }
+
   private readonly client: DaytonaSandboxSdk;
   private readonly boxes = new Map<string, Sandbox>();
   private readonly connections = new Map<string, Promise<Sandbox>>();

@@ -1,11 +1,9 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { speechFromBlocks } from "./speech-text.js";
-import { durableMessageSeq } from "./thread-read.js";
 
 /** The fields grouping reads; web `ThreadMessage` and mobile `MobileMessage` both satisfy it. */
 export type VoiceChatMessage = {
   id: string;
-  seq?: number;
   role: string;
   runId?: string;
   callId?: string;
@@ -39,10 +37,7 @@ const SUMMARY_MAX = 120;
  * even when it reuses the run of a call turn. The bot's `voice_call` marker
  * closes the group, so the work it does after hanging up renders as chat.
  */
-export function groupVoiceChats<T extends VoiceChatMessage>(
-  messages: T[],
-  options: { unreadAfterSeq?: number | null } = {},
-): ThreadItem<T>[] {
+export function groupVoiceChats<T extends VoiceChatMessage>(messages: T[]): ThreadItem<T>[] {
   const items: ThreadItem<T>[] = [];
   let open: VoiceChatGroup<T> | undefined;
   let openRunIds = new Set<string>();
@@ -79,19 +74,7 @@ export function groupVoiceChats<T extends VoiceChatMessage>(
     }
     items.push({ kind: "message", message });
   }
-  const boundary = options.unreadAfterSeq;
-  if (boundary == null) return items;
-  // Unseen turns need real rows: the divider can fall inside a call, and a
-  // collapsed summary must not acknowledge transcript text that was never shown.
-  return items.flatMap((item): ThreadItem<T>[] =>
-    item.kind === "voiceChat" &&
-    item.messages.some((message) => {
-      const seq = durableMessageSeq(message);
-      return seq !== undefined && seq > boundary;
-    })
-      ? item.messages.map((message) => ({ kind: "message", message }))
-      : [item],
-  );
+  return items;
 }
 
 /** Newest bot turn still inside this call's open card. Typed turns and wrap-up sit outside. */

@@ -26,6 +26,7 @@ const tableEvents = vi.hoisted(() => ({
   onScroll: undefined as
     | ((event: { nativeEvent: { contentOffset: { x: number } } }) => void)
     | undefined,
+  onStartShouldSetResponder: undefined as (() => boolean) | undefined,
 }));
 
 // react-native ships uncompiled Flow source that node cannot load, so tests mock
@@ -42,7 +43,7 @@ vi.mock("react-native", async () => {
 
   const kebab = (name: string) => name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
-  const mockComponent = (tag: string, dataKeys: string[] = []) =>
+  const mockComponent = (tag: string, dataKeys: string[] = [], booleanKeys: string[] = []) =>
     function MockNativeComponent(props: Record<string, unknown>) {
       const {
         children,
@@ -60,8 +61,16 @@ vi.mock("react-native", async () => {
           data[`data-${kebab(key)}`] = value === true ? "true" : value;
         }
       }
+      for (const key of booleanKeys) {
+        if (typeof rest[key] === "boolean") data[`data-${kebab(key)}`] = String(rest[key]);
+      }
       if (tag === "rn-view" && typeof rest.onLayout === "function") {
         tableEvents.onLayout = rest.onLayout as typeof tableEvents.onLayout;
+      }
+      if (tag === "rn-view" && typeof rest.onStartShouldSetResponder === "function") {
+        tableEvents.onStartShouldSetResponder =
+          rest.onStartShouldSetResponder as typeof tableEvents.onStartShouldSetResponder;
+        delete rest.onStartShouldSetResponder;
       }
       if (tag === "rn-image" && typeof rest.onLoad === "function") {
         imageLoads.push(rest.onLoad as (typeof imageLoads)[number]);
@@ -119,7 +128,11 @@ vi.mock("react-native", async () => {
       "writingDirection",
       "width",
     ]),
-    ScrollView: mockComponent("rn-scroll-view", ["horizontal", "borderColor", "borderWidth"]),
+    ScrollView: mockComponent(
+      "rn-scroll-view",
+      ["horizontal", "borderColor", "borderWidth"],
+      ["scrollEnabled", "showsHorizontalScrollIndicator", "showsVerticalScrollIndicator"],
+    ),
     Pressable: mockComponent("rn-pressable", [
       "accessibilityRole",
       "borderBottomWidth",
@@ -157,7 +170,7 @@ vi.mock("react-native", async () => {
 import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { Pressable } from "react-native";
+import { Platform, Pressable } from "react-native";
 import type { LinkFavicons } from "./markdown.native";
 import {
   ChatMarkdown,
@@ -278,6 +291,65 @@ describe("native markdown tables", () => {
       tableEvents.onScroll?.({ nativeEvent: { contentOffset: { x: notesStart } } });
     });
     expect(notesHeights()).toEqual([null, null]);
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it.each([
+    ["ios", SIX_COLUMN_TABLE, 200, true],
+    ["ios", THREE_COLUMN_TABLE, 1000, false],
+    ["android", SIX_COLUMN_TABLE, 200, false],
+  ])(
+    "on %s, keeps the touch inside a table only when it is wider than the bubble",
+    async (os, table, width, claims) => {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      const platform = Platform as { OS: string };
+      const previousOS = platform.OS;
+      platform.OS = os;
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      const root = createRoot(container);
+      try {
+        await act(async () => {
+          root.render(<ChatMarkdown>{table}</ChatMarkdown>);
+        });
+        await act(async () => {
+          tableEvents.onLayout?.({ nativeEvent: { layout: { width, height: 40 } } });
+        });
+
+        expect(tableEvents.onStartShouldSetResponder?.()).toBe(claims);
+      } finally {
+        platform.OS = previousOS;
+        await act(async () => {
+          root.unmount();
+        });
+        container.remove();
+      }
+    },
+  );
+
+  it.each([
+    ["fits", THREE_COLUMN_TABLE, 1000, "false"],
+    ["is wider than the bubble", SIX_COLUMN_TABLE, 200, "true"],
+  ])("exposes scrolling only when the table %s", async (_case, table, width, scrolls) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{table}</ChatMarkdown>);
+    });
+    await act(async () => {
+      tableEvents.onLayout?.({ nativeEvent: { layout: { width, height: 40 } } });
+    });
+
+    const scrollView = container.querySelector("rn-scroll-view");
+    expect(scrollView?.getAttribute("data-scroll-enabled")).toBe(scrolls);
+    expect(scrollView?.getAttribute("data-shows-horizontal-scroll-indicator")).toBe(scrolls);
+    expect(scrollView?.getAttribute("data-shows-vertical-scroll-indicator")).toBe("false");
 
     await act(async () => {
       root.unmount();

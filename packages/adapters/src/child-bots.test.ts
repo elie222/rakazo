@@ -157,6 +157,8 @@ describe("spawned bot creation", () => {
         runId: "run-1",
         spawnKey: "tool-call-2",
         name: "Painter",
+        description: " Paints murals. ",
+        instructions: " Ask before using the shared screen. ",
         computerMode: "dedicated",
       },
     );
@@ -165,6 +167,8 @@ describe("spawned bot creation", () => {
       expect.objectContaining({ userId: "user-1", spaceId: "workspace-1" }),
       expect.objectContaining({
         name: "Painter",
+        description: "Paints murals.",
+        instructions: "Ask before using the shared screen.",
         computerMode: "dedicated",
         parentBotId: "parent-1",
       }),

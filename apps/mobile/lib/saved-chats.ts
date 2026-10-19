@@ -32,7 +32,8 @@ export type SavedInbox = {
 export const SAVED_CHAT_MESSAGES = 100;
 export const SAVED_CHATS = 40;
 export const SAVED_INBOXES = 10;
-const ROOT = "saved-chats-v1";
+const LEGACY_ROOT = "saved-chats-v1";
+const ROOT = "saved-chats-v2";
 export const SAVED_CHAT_MAX_BYTES = 1024 * 1024;
 export const SAVED_CHATS_MAX_BYTES = 20 * 1024 * 1024;
 const SAVED_INBOX_ROWS = 200;
@@ -42,6 +43,7 @@ export function savedChatTarget(target: { botId?: string; groupId?: string }): s
 }
 
 function spaceFile(scope: SavedChatsScope, name: string): File {
+  clearLegacySavedChats();
   const root = new Directory(
     Paths.cache,
     ROOT,
@@ -164,6 +166,7 @@ export function writeSavedInbox(
 }
 
 export async function savedChatsScope(): Promise<SavedChatsScope | null> {
+  clearLegacySavedChats();
   const generation = currentSessionGeneration();
   const apiBase = currentApiBase();
   const selectionId = selectedSpaceId();
@@ -219,7 +222,16 @@ export function savedThreadSnapshot(snapshot: MobileSnapshot): MobileSnapshot {
   const { cursor: _cursor, activeRuns: _activeRuns, computer: _computer, ...rest } = snapshot;
   return {
     ...rest,
-    messages: snapshot.messages.slice(-SAVED_CHAT_MESSAGES),
+    messages: snapshot.messages.slice(-SAVED_CHAT_MESSAGES).map((message) => ({
+      ...message,
+      blocks: message.blocks.map((block) => {
+        if (block.kind !== "ask" || block.input !== "secret") return block;
+        // Offline cards cannot submit credentials. Keep their visible prompt and status,
+        // but never persist hidden credential configuration or protected answers.
+        const { credential: _credential, answer: _answer, detail: _detail, ...saved } = block;
+        return saved;
+      }),
+    })),
     olderCursor: null,
     run: null,
   };
@@ -302,8 +314,16 @@ export function writeSavedThread(
 }
 
 export function clearSavedChats(): void {
+  clearLegacySavedChats();
   try {
     const root = new Directory(Paths.cache, ROOT);
+    if (root.exists) root.delete();
+  } catch {}
+}
+
+function clearLegacySavedChats(): void {
+  try {
+    const root = new Directory(Paths.cache, LEGACY_ROOT);
     if (root.exists) root.delete();
   } catch {}
 }

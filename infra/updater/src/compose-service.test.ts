@@ -39,6 +39,22 @@ describe("the production computer provider", () => {
 /** The Compose interpolation this file is expected to carry, as Compose spells it. */
 const interpolated = (name: string, fallback = "") => `\${${name}:-${fallback}}`;
 
+describe("worker error reporting configuration", () => {
+  it.each([
+    "docker-compose.yml",
+    "docker-compose.prod.yml",
+    "docker-compose.images.yml",
+    "docker-compose.prod.docker.yml",
+  ])("passes optional settings through %s", (file) => {
+    const { services } = parse(
+      readFileSync(path.resolve(import.meta.dirname, "../../compose", file), "utf8"),
+    ) as { services: Record<string, ComposeService> };
+    for (const key of ["SENTRY_DSN", "SENTRY_ENVIRONMENT", "SENTRY_RELEASE"]) {
+      expect(services.worker?.environment?.[key]).toBe(interpolated(key));
+    }
+  });
+});
+
 describe("the updater compose service", () => {
   it("exists and runs the updater image", () => {
     expect(updater).toBeDefined();
@@ -147,5 +163,7 @@ describe("the updater compose service", () => {
     expect(updater.environment?.AXIOM_DATASET).toBe("${AXIOM_DATASET:-}");
     // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
     expect(updater.environment?.AXIOM_EDGE_URL).toBe("${AXIOM_EDGE_URL:-}");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: this is the literal Compose expression
+    expect(updater.environment?.SENTRY_DSN).toBe("${SENTRY_DSN:-}");
   });
 });
