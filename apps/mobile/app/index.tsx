@@ -26,6 +26,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { KeyboardController } from "react-native-keyboard-controller";
@@ -43,6 +44,7 @@ import {
   formatActivityRelativeTime,
 } from "../lib/activity";
 import { loadActivityMode, saveActivityMode } from "../lib/activity-mode";
+import { readableGutter } from "../lib/adaptive-layout";
 import type {
   MobileBot,
   MobileBotSection,
@@ -442,6 +444,11 @@ function Home() {
       : groups.find((group) => group.id === organizeTarget.id)
     : null;
   const insets = useSafeAreaInsets();
+  // An unfolded or tablet window keeps the inbox in a centred column.
+  const columnInset = readableGutter(
+    useWindowDimensions().width,
+    Math.max(insets.left, insets.right),
+  );
   // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
   const nativeHeader = iosAtLeast(26);
   const navigation = useNavigation();
@@ -578,6 +585,19 @@ function Home() {
     },
     [createQuickBot, router],
   );
+
+  const openCreateChooser = useCallback(() => {
+    Alert.alert(
+      t("Create"),
+      undefined,
+      [
+        { text: t("New bot"), onPress: () => runCreateAction("bot") },
+        { text: t("New group"), onPress: () => runCreateAction("group") },
+        { text: t("New space"), onPress: () => runCreateAction("space") },
+      ],
+      { cancelable: true },
+    );
+  }, [runCreateAction, t]);
 
   useLayoutEffect(() => {
     if (!nativeHeader) return;
@@ -900,7 +920,15 @@ function Home() {
   return (
     <View style={styles.screen}>
       {nativeHeader ? null : (
-        <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 8 }]}>
+        <View
+          style={[
+            styles.header,
+            {
+              paddingTop: Math.max(insets.top, 20) + 8,
+              paddingHorizontal: 16 + columnInset,
+            },
+          ]}
+        >
           <View style={styles.circleButton}>
             <HeaderButton accessibilityLabel={t("Account")} onPress={() => router.push("/account")}>
               <Text style={styles.profileInitials}>{initials}</Text>
@@ -938,28 +966,36 @@ function Home() {
             >
               <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
             </HeaderButton>
-            <MenuView
-              actions={[
-                { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
-                { id: "group", title: t("New group"), image: "person.2" },
-                { id: "space", title: t("New space"), image: "square.grid.2x2" },
-              ]}
-              colorScheme={appearance}
-              onPressAction={({ nativeEvent }) => {
-                const action = nativeEvent.event;
-                if (action === "bot" || action === "group" || action === "space") {
-                  runCreateAction(action);
-                }
-              }}
-            >
-              <View
-                accessibilityLabel={t("Create")}
-                accessibilityRole="button"
-                style={styles.headerButton}
-              >
+            {Platform.OS === "android" ? (
+              // A plain button: the native Android menu trigger collapses to zero width when the
+              // installed app binary is older than the JS update, which hid the only way to create.
+              <HeaderButton accessibilityLabel={t("Create")} onPress={openCreateChooser}>
                 <NativeSymbol ios="plus" android="add" size={18} />
-              </View>
-            </MenuView>
+              </HeaderButton>
+            ) : (
+              <MenuView
+                actions={[
+                  { id: "bot", title: t("New bot"), image: "person.crop.circle.badge.plus" },
+                  { id: "group", title: t("New group"), image: "person.2" },
+                  { id: "space", title: t("New space"), image: "square.grid.2x2" },
+                ]}
+                colorScheme={appearance}
+                onPressAction={({ nativeEvent }) => {
+                  const action = nativeEvent.event;
+                  if (action === "bot" || action === "group" || action === "space") {
+                    runCreateAction(action);
+                  }
+                }}
+              >
+                <View
+                  accessibilityLabel={t("Create")}
+                  accessibilityRole="button"
+                  style={styles.headerButton}
+                >
+                  <NativeSymbol ios="plus" android="add" size={18} />
+                </View>
+              </MenuView>
+            )}
           </View>
         </View>
       )}
@@ -978,6 +1014,7 @@ function Home() {
         indicatorStyle={appearance === "dark" ? "white" : "black"}
         contentContainerStyle={[
           styles.list,
+          { paddingHorizontal: columnInset },
           // iOS moves the active search bar to the bottom and removes the navigation inset.
           nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
         ]}

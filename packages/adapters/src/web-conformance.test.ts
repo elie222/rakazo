@@ -2,6 +2,8 @@ import type { AdapterContext, WebProvider } from "@rakazo/adapter-kit";
 import { describe, expect, it } from "vitest";
 import { FakeWebProvider } from "./fake-web.js";
 import { KeylessHttpWebProvider, parseDuckDuckGoResults } from "./keyless-http-web.js";
+import { ParallelWebProvider } from "./parallel-web.js";
+import { parallelMcpFixture } from "./parallel-web.test-support.js";
 
 const ctx: AdapterContext = {
   operationId: "1",
@@ -34,6 +36,9 @@ async function assertWebConformance(provider: WebProvider) {
 }
 
 describe("web provider conformance", () => {
+  it("holds for Parallel through the real MCP transport (offline)", async () => {
+    await assertWebConformance(new ParallelWebProvider(parallelMcpFixture().network));
+  });
   it("holds for fake (offline)", async () => {
     const fake = new FakeWebProvider();
     fake.searchHits = [{ title: "Hit", url: "https://example.test/page", snippet: "…" }];

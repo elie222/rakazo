@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { instructionUpdateDiff, redactSecrets } from "@rakazo/core";
 
 const MAX_APPROVAL_SUMMARY_LENGTH = 500;
 const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
@@ -11,6 +11,28 @@ export function buildApprovalAskBlock(
   secrets: string[],
   options?: { reviewReason?: string },
 ): MessageBlock {
+  if (toolName === "propose_instructions_update") {
+    const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
+    const after = redactSecrets(String(args.instructions ?? ""), secrets);
+    const reason = redactSecrets(String(args.reason), secrets);
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: "Update instructions?",
+      detail: instructionUpdateDiff(before, after, reason),
+      instructionUpdate: {
+        botId: String(args.botId ?? ""),
+        before,
+        after,
+        reason,
+      },
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Apply" },
+        { id: "deny", label: "Dismiss" },
+      ],
+    };
+  }
   const summary = describeApprovalAction(toolName, args);
   const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;

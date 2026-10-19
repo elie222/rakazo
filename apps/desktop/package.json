@@ -2,6 +2,9 @@
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
   "version": "0.2.0",
+  "author": {
+    "name": "Rakazo"
+  },
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/main.js",
@@ -22,10 +25,10 @@
   "devDependencies": {
     "@playwright/test": "1.64.1",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "44.8.0",
+    "electron": "44.9.0",
     "electron-builder": "26.15.3",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "build": {
     "appId": "dev.rakazo.desktop",
@@ -52,6 +55,7 @@
       }
     ],
     "extraMetadata": {
+      "name": "rakazo",
       "main": "dist/main.js"
     },
     "mac": {

@@ -71,3 +71,45 @@ describe("buildApprovalAskBlock", () => {
     expect(block.detail).toContain("stay separate from other spaces");
   });
 });
+
+it("shows the full instruction replacement as a diff with Apply and Dismiss", () => {
+  const block = buildApprovalAskBlock(
+    "effect-1",
+    "propose_instructions_update",
+    {
+      botId: "bot-1",
+      previousInstructions: "Draft only",
+      instructions: "Draft only\nAsk before sending",
+      reason: "Learned preference",
+    },
+    [],
+  );
+  expect(block).toMatchObject({
+    kind: "ask",
+    detail: "Learned preference\n\n- Draft only\n+ Draft only\n+ Ask before sending",
+    instructionUpdate: {
+      botId: "bot-1",
+      before: "Draft only",
+      after: "Draft only\nAsk before sending",
+    },
+    actions: [
+      { id: "allow", label: "Apply" },
+      { id: "deny", label: "Dismiss" },
+    ],
+  });
+});
+
+it("redacts known secrets in instruction approval details and editable metadata", () => {
+  const block = buildApprovalAskBlock(
+    "effect-1",
+    "propose_instructions_update",
+    {
+      botId: "bot-1",
+      previousInstructions: "old fake-token",
+      instructions: "new fake-token",
+      reason: "reason fake-token",
+    },
+    ["fake-token"],
+  );
+  expect(JSON.stringify(block)).not.toContain("fake-token");
+});

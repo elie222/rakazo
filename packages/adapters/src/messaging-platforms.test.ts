@@ -156,16 +156,16 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
-  it("declares group and typing support only for sendblue", () => {
+  it("declares group support and the receipt for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
-    expect(capabilities.sendblue).toEqual({ direct: true, groups: true, typing: true });
-    expect(capabilities.slack).toEqual({ direct: true, groups: true, typing: false });
-    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, typing: false });
-    expect(capabilities.telegram).toEqual({ direct: true, groups: false, typing: false });
-    expect(capabilities.lark).toEqual({ direct: true, groups: false, typing: false });
+    expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
+    expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
+    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.telegram).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
   });
 });
 
@@ -319,20 +319,15 @@ describe("enrichSlackTeamRoom", () => {
     expect(enrichment.kind).toBe("ambient");
   });
 
-  it("marks message events that mention the authorized bot as mention", () => {
-    const enrichment = enrichSlackTeamRoom(
-      {
-        team_id: "T1",
-        authorizations: [{ user_id: "U_BOT", is_bot: true }],
-        event: {
-          type: "message",
-          channel: "C1",
-          text: "hey <@U_BOT> ship Friday?",
-          user: "U_OTHER",
-        },
-      },
-      base,
-    );
-    expect(enrichment.kind).toBe("mention");
+  it("marks a plain message event as mention when the platform reports a bot mention", () => {
+    const raw = {
+      type: "message",
+      channel: "C1",
+      text: "<@U_BOT> respond back please?",
+      user: "U_OTHER",
+      team: "T1",
+    };
+    expect(enrichSlackTeamRoom(raw, { ...base, mentionsBot: true }).kind).toBe("mention");
+    expect(enrichSlackTeamRoom(raw, base).kind).toBe("ambient");
   });
 });

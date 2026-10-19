@@ -1,4 +1,40 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Too many attempts. Try again in a few minutes.":
+    "Слишком много попыток. Попробуйте снова через несколько минут.",
+  "The server had a problem. Try again in a moment.":
+    "На сервере возникла проблема. Попробуйте снова чуть позже.",
+  "Password sign-in is turned off on this server": "Вход по паролю на этом сервере отключён",
+  "Could not save your sign-in on this device. Try again.":
+    "Не удалось сохранить вход на этом устройстве. Попробуйте снова.",
+  "Your OpenRouter": "Ваш OpenRouter",
+  "Your OpenAI": "Ваш OpenAI",
+  "Your Anthropic": "Ваш Anthropic",
+  "Your model provider": "Ваш поставщик моделей",
+  "The model provider returned an error.": "Поставщик моделей вернул ошибку.",
+  "{provider} is rate limiting requests. Try again shortly.":
+    "{provider} ограничивает частоту запросов. Повторите попытку чуть позже.",
+  "{summary} Resets {date}.": "{summary} Сброс: {date}.",
+  "{provider} rejected the API key. Check your connection settings.":
+    "{provider} отклонил API-ключ. Проверьте настройки подключения.",
+  "{provider} could not find the requested model.": "{provider} не смог найти запрошенную модель.",
+  "{provider} took too long to respond. Try again.":
+    "{provider} не ответил вовремя. Повторите попытку.",
+  "{provider} key hit its limit.": "{provider}: достигнут лимит ключа.",
+  "{provider} key hit its daily limit.": "{provider}: достигнут дневной лимит ключа.",
+  "{provider} key hit its weekly limit.": "{provider}: достигнут недельный лимит ключа.",
+  "{provider} key hit its monthly limit.": "{provider}: достигнут месячный лимит ключа.",
+  "{provider} reached its credit limit.": "{provider}: достигнут кредитный лимит.",
+  "{provider} reached its daily credit limit.": "{provider}: достигнут дневной кредитный лимит.",
+  "{provider} reached its weekly credit limit.": "{provider}: достигнут недельный кредитный лимит.",
+  "{provider} reached its monthly credit limit.": "{provider}: достигнут месячный кредитный лимит.",
+  "{provider} reached its spending limit.": "{provider}: достигнут лимит расходов.",
+  "{provider} reached its daily spending limit.": "{provider}: достигнут дневной лимит расходов.",
+  "{provider} reached its weekly spending limit.":
+    "{provider}: достигнут недельный лимит расходов.",
+  "{provider} reached its monthly spending limit.":
+    "{provider}: достигнут месячный лимит расходов.",
+  Details: "Подробности",
+
   "Couldn't refresh — showing the last loaded messages.":
     "Не удалось обновить — показаны последние загруженные сообщения.",
   "Try Again": "Повторить",
@@ -118,7 +154,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Add thumbs-up": "Поставить отметку «Нравится»",
   "Add Treg": "Добавить Treg",
   "Agent messages": "Сообщения агента",
-  "Alerts from routines": "Уведомления от задач",
   "Allowed once": "Разрешено один раз",
   "Allow once": "Разрешить один раз",
   "Already have an account?": "У вас уже есть аккаунт?",
@@ -343,6 +378,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Git event": "Git-событие",
   "Slack message": "Сообщение Slack",
   "Message event": "Событие сообщения",
+  "When something changes": "Когда что-то меняется",
   "Teams not enabled": "Teams не настроен",
   "Slack not enabled": "Slack не включен",
   "Teams message": "Сообщение Teams",
@@ -382,7 +418,6 @@ export const RU_MESSAGES: Record<string, string> = {
     "Нажмите и удерживайте, чтобы закрепить или переместить в раздел",
   "Long press to pin, move, or silence notifications":
     "Длительное нажатие, чтобы закрепить, переместить или отключить уведомления",
-  "Enter your Rakazo server address.": "Введите адрес вашего сервера Rakazo.",
   "Show less": "Свернуть",
   Members: "Участники",
   "Members ({min}–{max})": "Участники ({min}–{max})",
@@ -528,6 +563,8 @@ export const RU_MESSAGES: Record<string, string> = {
   Speak: "Озвучить",
   "Speak only": "Только озвучить",
   "Speech model": "Речевая модель",
+  "Transcription model": "Модель транскрипции",
+  Reconnect: "Переподключить",
   Starting: "Запуск",
   "Starting…": "Запуск…",
   Stop: "Остановить",
@@ -566,7 +603,6 @@ export const RU_MESSAGES: Record<string, string> = {
   "Waiting for this bot’s response.": "Ожидание ответа этого бота.",
   "Waiting…": "Ожидание…",
   "What this bot is for": "Для чего нужен этот бот",
-  "While agents are working": "Пока агенты работают",
   Working: "Выполняется",
   "Working…": "Выполняется…",
   "Work stopped, but the thread could not refresh: {detail}":
@@ -666,7 +702,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Settings: Usage": "Настройки: Использование",
   "Skipped {items}": "Пропущен {items}",
   "{name} (max {count} attachments)": "{name} (не более {count} вложений)",
-  "{name} (over 10 MiB)": "{name} (более 10 МБ)",
+  "{name} (over {limit})": "{name} (более {limit})",
   "{name} (permission denied)": "{name} (в разрешении отказано)",
   "{name} (unsupported type)": "{name} (неподдерживаемый тип)",
   "Saved {name} locally": "{name} сохранен локально.",
@@ -795,4 +831,16 @@ export const RU_MESSAGES: Record<string, string> = {
   "Sign in to your existing account to link SSO":
     "Войдите в существующий аккаунт, чтобы привязать SSO",
   "SSO is temporarily unavailable. Try again.": "SSO временно недоступен. Попробуйте снова.",
+  Applied: "Применено",
+  Apply: "Применить",
+  Dismissed: "Отклонено",
+  Edit: "Изменить",
+  "Instruction history": "История инструкций",
+  Instructions: "Инструкции",
+  "Instructions updated": "Инструкции обновлены",
+  "Let this bot update its own instructions": "Разрешить этому боту обновлять свои инструкции",
+  Restored: "Восстановлено",
+  Undo: "Отменить",
+  "Update instructions?": "Обновить инструкции?",
+  "Could not restore instructions": "Не удалось восстановить инструкции",
 };

@@ -7,6 +7,20 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("defaults uploads to 10 MiB and parses a configured limit", () => {
+    expect(loadEnv(base).maxUploadSizeBytes).toBe(10 * 1024 * 1024);
+    expect(loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: "" }).maxUploadSizeBytes).toBe(10 * 1024 * 1024);
+    expect(loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: " 25 " }).maxUploadSizeBytes).toBe(
+      25 * 1024 * 1024,
+    );
+  });
+
+  it.each(["0", "-1", "1.5", "NaN", "Infinity", "1e3", "0x10", "9007199254740991"])(
+    "rejects invalid upload limit %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
+    },
+  );
   it("keeps the ticket board off unless explicitly enabled", () => {
     expect(loadEnv(base).ticketBoardEnabled).toBe(false);
     for (const value of ["false", "1", ""])

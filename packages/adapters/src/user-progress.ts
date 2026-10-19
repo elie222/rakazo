@@ -1,7 +1,10 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { isToolActivityBlock } from "@rakazo/core";
 
-/** Keep mid-turn progress beats short; prefer a few high-signal updates. */
+/**
+ * Keep mid-turn progress beats short; prefer a few high-signal updates. Mid-turn
+ * narration always uses this cap; message_user uses messageUserMaxLength().
+ */
 export const USER_PROGRESS_MESSAGE_MAX_LENGTH = 500;
 
 /** Durable interim chat messages wait until a turn is genuinely long. */
@@ -21,11 +24,25 @@ export function midTurnProgressBudgetAllows(publishedCount: number, turnAgeMs: n
   );
 }
 
-export function clampUserProgressMessage(text: string): string {
+/**
+ * The message_user cap: `RAKAZO_MESSAGE_USER_MAX_CHARS` when it is a positive integer,
+ * else USER_PROGRESS_MESSAGE_MAX_LENGTH.
+ */
+export function messageUserMaxLength(): number {
+  const value = process.env.RAKAZO_MESSAGE_USER_MAX_CHARS?.trim();
+  if (!value || !/^\d+$/.test(value)) return USER_PROGRESS_MESSAGE_MAX_LENGTH;
+  const raw = Number(value);
+  return Number.isSafeInteger(raw) && raw >= 1 ? raw : USER_PROGRESS_MESSAGE_MAX_LENGTH;
+}
+
+export function clampUserProgressMessage(
+  text: string,
+  maxLength = USER_PROGRESS_MESSAGE_MAX_LENGTH,
+): string {
   const trimmed = text.trim();
   if (!trimmed) return "";
-  if (trimmed.length <= USER_PROGRESS_MESSAGE_MAX_LENGTH) return trimmed;
-  return `${trimmed.slice(0, USER_PROGRESS_MESSAGE_MAX_LENGTH - 1).trimEnd()}…`;
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 /**
@@ -34,8 +51,22 @@ export function clampUserProgressMessage(text: string): string {
  * surface this back to the model (it gets no other signal that its message
  * was mangled) rather than reporting a silent success.
  */
-export function isProgressMessageTruncated(text: string): boolean {
-  return text.trim().length > USER_PROGRESS_MESSAGE_MAX_LENGTH;
+export function isProgressMessageTruncated(
+  text: string,
+  maxLength = USER_PROGRESS_MESSAGE_MAX_LENGTH,
+): boolean {
+  return text.trim().length > maxLength;
+}
+
+/**
+ * Text to put between the text of two assistant turns that end up in one reply,
+ * so they do not run together ("…/drafts/42Nothing has changed…").
+ * Empty when there is no earlier text or either side already has whitespace.
+ */
+export function assistantTurnSeparator(previous: string, next: string): string {
+  if (!previous || !next) return "";
+  if (/\s$/.test(previous) || /^\s/.test(next)) return "";
+  return "\n\n";
 }
 
 /**

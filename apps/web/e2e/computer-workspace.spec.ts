@@ -23,7 +23,10 @@ async function openComputer(page: Page) {
       body: JSON.stringify({ json: { url: screenUrl } }),
     }),
   );
-  await page.getByTitle("Agent computer").click();
+  const toggle = page.getByRole("button", { name: "Agent computer" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
   const preview = page.getByTestId("computer-preview");
   await preview.hover();
   await preview.getByTestId("computer-preview-open").click();

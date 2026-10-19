@@ -106,8 +106,11 @@ export function isComputerControlUnavailable(error: unknown) {
   if (error.name === "TimeoutError" || error.name === "AbortError") return false;
   const text = errorText(error);
   // Only pre-connect failures prove no actions ran. Mid-flight resets/hang-ups can
-  // happen after the service already applied steps.
+  // happen after the service already applied steps. undici's connect timeout
+  // ("Connect Timeout Error", UND_ERR_CONNECT_TIMEOUT) fires before the socket
+  // opens, e.g. when the supervisor is no longer on the computer's network.
   return (
+    text.includes("connect timeout") ||
     text.includes("econnrefused") ||
     text.includes("enotfound") ||
     text.includes("ehostunreach") ||

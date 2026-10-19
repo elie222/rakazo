@@ -28,11 +28,18 @@ import type {
   ConnectorTool,
   ModelCallObserver,
 } from "@rakazo/adapter-kit";
-import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
-import { usableModelId } from "@rakazo/contracts";
-import { abortableDelay } from "@rakazo/core";
+import {
+  DEFAULT_CONTEXT_STRATEGY,
+  isProviderTimeout,
+  isRetryableProviderUnavailable,
+  isTransientModelError,
+  TransientModelError,
+} from "@rakazo/adapter-kit";
+import { canonicalPiProviderId, usableModelId } from "@rakazo/contracts";
+import { abortableDelay, MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { isToolPauseResult } from "./approval-effect.js";
+import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
@@ -45,9 +52,9 @@ import {
   openAiToolParametersNeedNormalization,
 } from "./openai-tool-parameters.js";
 import { PiRuntimeCredentialStore, toOAuthCredential } from "./pi-credentials.js";
-import { supplementPiModels } from "./pi-current-models.js";
 import { estimatePiImageTokens } from "./pi-image-context.js";
 import { registerLocalProvider } from "./pi-local-provider.js";
+import { applyPiModelCompatibility } from "./pi-model-compat.js";
 import { codexComputeResidency } from "./pi-oauth.js";
 import {
   OPENAI_COMPATIBLE_PROVIDER_ID,
@@ -65,9 +72,11 @@ import {
 } from "./pi-runtime-limits.js";
 import type { PiSessionHandle, PiSessionRecorder } from "./pi-session.js";
 import { PiJsonlSessionRecorder } from "./pi-session.js";
+import { recordPiTelemetryContent, withPiTelemetry, withPiTelemetrySpan } from "./pi-telemetry.js";
 import { observedPiStream } from "./pi-usage.js";
 import type { RuntimeContextDecision } from "./runtime-context.js";
 import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-context.js";
+import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
 import { textContentArg } from "./tool-text.js";
@@ -87,7 +96,7 @@ const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
 let catalogModelsCache: Models | undefined;
 function catalogModels(): Models {
   catalogModelsCache ??= registerOpenAiCompatibleCatalog(
-    registerLocalProvider(supplementPiModels(builtinModels())),
+    registerLocalProvider(applyPiModelCompatibility(builtinModels())),
   );
   return catalogModelsCache;
 }
@@ -97,15 +106,20 @@ const MODEL_PROVIDER_RETRY_DELAYS_MS = [2_000, 8_000, 20_000] as const;
 // instead of taking another assistant turn. A bounded internal follow-up keeps
 // that provider quirk from making a long task look complete after one step.
 const MAX_SILENT_TOOL_CONTINUATIONS = 3;
-const SILENT_TOOL_CONTINUATION_PROMPT =
-  "Continue the original task from the latest tool result. Do not stop after a tool call; use any remaining tools needed, then give the user the final answer.";
-const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT =
-  "Continue the original task from the latest tool result. If you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply. Otherwise use any remaining tools needed, then give the user the final answer.";
+// Sent in the user's role, so marked as automated: models took the old wording for the
+// user telling them never to stop, and kept going instead of asking.
+export const SILENT_TOOL_CONTINUATION_PROMPT = automated(
+  "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing; otherwise use any remaining tools needed, then give the user the final answer.",
+);
+export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
+  "Your last turn ended right after a tool result, without a reply. Continue the original task from the latest tool result. If you need information or a decision from the user, ask them instead of guessing, even if you were told to stay silent. Otherwise, if you were instructed to stay silent when there is nothing to report, follow that instruction for the entire final assistant reply; if not, use any remaining tools needed, then give the user the final answer.",
+);
+
 // Shown as a failed-run error, not an assistant message. Asking the user to
 // continue stores that sentence as the reply, and the next "continue" runs
 // tools and misses a final answer again.
-export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
-  "The tools finished, but the model did not write a final answer. Rephrase the request and try again.";
+export { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
+
 const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
 // Reasoning-capable models must not start at "off": for OpenRouter, pi-ai maps
 // that to reasoning.effort "none", which 400s on endpoints that mandate
@@ -216,7 +230,7 @@ export class PiAgentRuntime implements AgentRuntime {
       : controller.signal;
     const queue = createQueue();
 
-    const work = (async () => {
+    const work = withPiTelemetry(request, async (span) => {
       let trackedBudget: ToolCallBudget | undefined;
       let resumeHost: ToolHost | undefined;
       try {
@@ -393,7 +407,8 @@ export class PiAgentRuntime implements AgentRuntime {
         agent = new Agent({
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
-          streamFn: (_m, ctx, options) => fallbackAwareModelStream(fallbackState, ctx, options),
+          streamFn: (_m, ctx, options) =>
+            fallbackAwareModelStream(fallbackState, ctx, withAutomatedLabels(options)),
           getApiKey: hasBackups
             ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
             : async () => apiKey,
@@ -588,7 +603,10 @@ export class PiAgentRuntime implements AgentRuntime {
           !budgetExceeded && terminalMessage ? providerFailureText(terminalMessage) : undefined;
         const error = agent.state.errorMessage || providerFailure;
         if (error && !budgetExceeded) {
-          throw new Error(sanitizeProviderError(activeStreamTarget.model.provider, error));
+          const message = sanitizeProviderError(activeStreamTarget.model.provider, error);
+          throw isTransientModelError(error)
+            ? new TransientModelError(message)
+            : new Error(message);
         }
         if (!budgetExceeded && terminalMessage && !messageHasToolCall(terminalMessage)) {
           const terminalText = assistantText(terminalMessage);
@@ -638,8 +656,13 @@ export class PiAgentRuntime implements AgentRuntime {
         }
         queue.push(streamed.trim() ? { type: "done", text: streamed } : { type: "done" });
       } catch (error) {
+        span?.setStatus({ status: "error" });
         const message = sanitizeError(error instanceof Error ? error.message : String(error));
-        queue.fail(new Error(message));
+        queue.fail(
+          error instanceof TransientModelError
+            ? new TransientModelError(message)
+            : new Error(message),
+        );
       } finally {
         queue.close();
         if (trackedBudget) {
@@ -648,7 +671,7 @@ export class PiAgentRuntime implements AgentRuntime {
           releaseToolCallBudget(request.runId, keepForResume);
         }
       }
-    })();
+    });
     const active = { controller, work };
     running.set(request.runId, active);
 
@@ -703,7 +726,9 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
   /** Live credential store; OAuth refreshes swap the credential mid-run. */
   credentials: PiRuntimeCredentialStore | undefined;
 } {
-  const provider = modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider;
+  const provider = canonicalPiProviderId(
+    modelConfig.provider === "scripted" ? "openrouter" : modelConfig.provider,
+  );
   const envDefaultModel = process.env.PI_DEFAULT_MODEL?.trim();
   const envDefaultProvider = process.env.PI_DEFAULT_PROVIDER?.trim() || "openrouter";
   const requestedId =
@@ -767,7 +792,7 @@ export function modelsForRequest(
   const store = credentials ?? credentialStoreForRequest(request, provider);
   if (store) {
     return registerOpenAiCompatibleCatalog(
-      registerLocalProvider(supplementPiModels(builtinModels({ credentials: store }))),
+      registerLocalProvider(applyPiModelCompatibility(builtinModels({ credentials: store }))),
     );
   }
   if (
@@ -776,7 +801,7 @@ export function modelsForRequest(
     request.model.id.trim()
   ) {
     const models = registerOpenAiCompatibleCatalog(
-      registerLocalProvider(supplementPiModels(builtinModels())),
+      registerLocalProvider(applyPiModelCompatibility(builtinModels())),
     );
     return registerOpenAiCompatibleRuntime(models, {
       modelId: request.model.id,
@@ -1035,6 +1060,11 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     name: exposedName,
     label: tool.name,
     description: tool.description,
+    // Pi runs a turn's tool calls concurrently by default, so a batch that
+    // creates a routine and lists routines can read the list before the row
+    // exists. Pi runs the whole batch in order when any call in it is
+    // sequential, which is what the schedule tools need.
+    ...(SCHEDULE_TOOL_NAMES.has(tool.name) ? { executionMode: "sequential" as const } : {}),
     parameters: parametersFor(tool),
     prepareArguments: (args: unknown) => {
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -1109,6 +1139,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
         return {
           name: String(raw.name ?? ""),
           title: raw.title ? String(raw.title) : "",
+          description: raw.description ? String(raw.description) : "",
           instructions: raw.instructions ? String(raw.instructions) : "",
           prompt: raw.prompt ? String(raw.prompt) : "",
           computer_mode: raw.computer_mode ? String(raw.computer_mode) : "",
@@ -1139,158 +1170,181 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
       }
       return raw as never;
     },
-    execute: async (toolCallId, params): Promise<AgentToolResult<unknown>> => {
-      host.signal.throwIfAborted();
-      const args = (params ?? {}) as Record<string, unknown>;
-      const rawCallId =
-        toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
-      // Backend idempotency includes the agent namespace; Pi wire IDs remain untouched.
-      const executionId = JSON.stringify(["pi-tool", host.agentNamespace ?? "main", rawCallId]);
-      if (!beginToolCall(host)) {
-        return {
-          content: [{ type: "text", text: "Skipped: tool-call limit reached." }],
-          details: { skipped: true },
-        };
-      }
-      host.queue.push({ type: "tool", name: tool.name, args, executionId });
-      const startedAt = Date.now();
-      let result: unknown;
-      let failure: unknown;
-      try {
-        result = await (async () => {
-          if (tool.name === "request_takeover") {
-            host.pausePending = true;
-            host.queue.push({
-              type: "takeover",
-              reason: String(args.reason ?? "I need you on the screen."),
-            });
+    execute: async (toolCallId, params): Promise<AgentToolResult<unknown>> =>
+      withPiTelemetrySpan(
+        "pi.agent.tool",
+        {
+          "pi.agent.tool.name": tool.name,
+        },
+        async (span) => {
+          host.signal.throwIfAborted();
+          const args = (params ?? {}) as Record<string, unknown>;
+          recordPiTelemetryContent(span, "pi.agent.tool.arguments", args);
+          const rawCallId =
+            toolCallId || `${host.request.runId}:${tool.name}:${host.toolCallSeq.value++}`;
+          // Backend idempotency includes the agent namespace; Pi wire IDs remain untouched.
+          const executionId = JSON.stringify(["pi-tool", host.agentNamespace ?? "main", rawCallId]);
+          if (!beginToolCall(host)) {
             return {
-              content: [{ type: "text", text: "Takeover requested." }],
-              details: args,
-              terminate: true,
+              content: [{ type: "text", text: "Skipped: tool-call limit reached." }],
+              details: { skipped: true },
             };
           }
-          if (tool.name === "ask_user") {
-            const options = Array.isArray(args.options)
-              ? args.options.map((option) => String(option).trim())
-              : [];
-            if (
-              options.length < 2 ||
-              options.length > 4 ||
-              options.some((option) => option.length === 0 || option.length > 80) ||
-              new Set(options).size !== options.length
-            ) {
-              throw new Error("ask_user requires two to four unique, non-empty options");
-            }
-            host.pausePending = true;
-            host.queue.push({
-              type: "ask",
-              text: String(args.question ?? "What should I use?"),
-              actions: options.map((label, index) => ({
-                id: `choice-${index + 1}`,
-                label,
-              })),
-            });
-            return {
-              content: [{ type: "text", text: "Waiting for the user's choice." }],
-              details: args,
-              terminate: true,
-            };
-          }
-          if (tool.name === "request_secret") {
-            if (host.request.executeTool) {
-              const result = await host.request.executeTool(tool.name, args, executionId);
-              if (isAgentToolExecutionResult(result)) {
-                if (isToolPauseResult(result)) host.pausePending = true;
-                return result;
+          host.queue.push({ type: "tool", name: tool.name, args, executionId });
+          const startedAt = Date.now();
+          let result: unknown;
+          let failure: unknown;
+          try {
+            result = await (async () => {
+              if (tool.name === "request_takeover") {
+                host.pausePending = true;
+                host.queue.push({
+                  type: "takeover",
+                  reason: String(args.reason ?? "I need you on the screen."),
+                });
+                return {
+                  content: [{ type: "text", text: "Takeover requested." }],
+                  details: args,
+                  terminate: true,
+                };
+              }
+              if (tool.name === "ask_user") {
+                const options = Array.isArray(args.options)
+                  ? args.options.map((option) => String(option).trim())
+                  : [];
+                if (
+                  options.length < 2 ||
+                  options.length > 4 ||
+                  options.some((option) => option.length === 0 || option.length > 80) ||
+                  new Set(options).size !== options.length
+                ) {
+                  throw new Error("ask_user requires two to four unique, non-empty options");
+                }
+                host.pausePending = true;
+                host.queue.push({
+                  type: "ask",
+                  text: String(args.question ?? "What should I use?"),
+                  actions: options.map((label, index) => ({
+                    id: `choice-${index + 1}`,
+                    label,
+                  })),
+                });
+                return {
+                  content: [{ type: "text", text: "Waiting for the user's choice." }],
+                  details: args,
+                  terminate: true,
+                };
+              }
+              if (tool.name === "request_secret") {
+                if (host.request.executeTool) {
+                  const result = await host.request.executeTool(tool.name, args, executionId);
+                  if (isAgentToolExecutionResult(result)) {
+                    if (isToolPauseResult(result)) host.pausePending = true;
+                    return result;
+                  }
+                  return {
+                    content: [
+                      {
+                        type: "text",
+                        text: serializeToolResult(
+                          result,
+                          host.request.contextStrategy,
+                          tool.name,
+                          args,
+                        ),
+                      },
+                    ],
+                    details: result,
+                  };
+                }
+                host.pausePending = true;
+                return {
+                  content: [{ type: "text", text: "Protected input requested." }],
+                  details: args,
+                  terminate: true,
+                };
+              }
+              if (tool.name === "run_subagent") {
+                const result = await executeSubagent(host, executionId, args);
+                return {
+                  content: [{ type: "text", text: result }],
+                  details: { result },
+                };
+              }
+              if (host.request.executeTool) {
+                const result = await host.request.executeTool(
+                  tool.name,
+                  args,
+                  executionId,
+                  tool.route,
+                  {
+                    onShellStillRunning: (completion) => {
+                      host.pendingShells.push(completion);
+                    },
+                  },
+                );
+                if (isAgentToolExecutionResult(result)) {
+                  if (isToolPauseResult(result)) host.pausePending = true;
+                  return boundAgentToolResult(result);
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: serializeToolResult(
+                        result,
+                        host.request.contextStrategy,
+                        tool.name,
+                        args,
+                      ),
+                    },
+                  ],
+                  details: result,
+                };
               }
               return {
                 content: [
                   {
                     type: "text",
-                    text: serializeToolResult(
-                      result,
-                      host.request.contextStrategy,
-                      tool.name,
-                      args,
-                    ),
+                    text: `${tool.name} is unavailable without an executor.`,
                   },
                 ],
-                details: result,
+                details: { error: "no executor" },
               };
-            }
-            host.pausePending = true;
-            return {
-              content: [{ type: "text", text: "Protected input requested." }],
-              details: args,
-              terminate: true,
-            };
-          }
-          if (tool.name === "run_subagent") {
-            const result = await executeSubagent(host, executionId, args);
-            return {
-              content: [{ type: "text", text: result }],
-              details: { result },
-            };
-          }
-          if (host.request.executeTool) {
-            const result = await host.request.executeTool(
-              tool.name,
-              args,
+            })();
+            if (VERBATIM_TOOL_RESULTS.has(tool.name)) return result as AgentToolResult<unknown>;
+            return boundAgentToolResult(result as AgentToolResult<unknown>);
+          } catch (error) {
+            failure = error;
+            throw error;
+          } finally {
+            const details = (
+              result as AgentToolResult<{ error?: unknown; isError?: unknown }> | undefined
+            )?.details;
+            const failed =
+              failure !== undefined || details?.error != null || details?.isError === true;
+            span?.setAttributes({ "pi.agent.tool.success": !failed });
+            recordPiTelemetryContent(span, "pi.agent.tool.result", result);
+            if (failed) span?.setStatus({ status: "error" });
+            endToolCall(host);
+            const completion: AgentToolCompletion = {
+              name: tool.name,
               executionId,
-              tool.route,
-              {
-                onShellStillRunning: (completion) => {
-                  host.pendingShells.push(completion);
-                },
-              },
-            );
-            if (isAgentToolExecutionResult(result)) {
-              if (isToolPauseResult(result)) host.pausePending = true;
-              return boundAgentToolResult(result);
-            }
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: serializeToolResult(result, host.request.contextStrategy, tool.name, args),
-                },
-              ],
-              details: result,
+              durationMs: Math.max(0, Date.now() - startedAt),
+              ...(result === undefined ? {} : { result }),
+              ...(failure === undefined ? {} : { error: failure }),
+              ...(host.pausePending ? { paused: true } : {}),
             };
+            try {
+              void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(
+                () => undefined,
+              );
+            } catch {
+              // Audit hooks are best effort and must never change tool behavior.
+            }
           }
-          return {
-            content: [
-              {
-                type: "text",
-                text: `${tool.name} is unavailable without an executor.`,
-              },
-            ],
-            details: { error: "no executor" },
-          };
-        })();
-        if (VERBATIM_TOOL_RESULTS.has(tool.name)) return result as AgentToolResult<unknown>;
-        return boundAgentToolResult(result as AgentToolResult<unknown>);
-      } catch (error) {
-        failure = error;
-        throw error;
-      } finally {
-        endToolCall(host);
-        const completion: AgentToolCompletion = {
-          name: tool.name,
-          executionId,
-          durationMs: Math.max(0, Date.now() - startedAt),
-          ...(result === undefined ? {} : { result }),
-          ...(failure === undefined ? {} : { error: failure }),
-          ...(host.pausePending ? { paused: true } : {}),
-        };
-        try {
-          void Promise.resolve(host.request.onToolCompleted?.(completion)).catch(() => undefined);
-        } catch {
-          // Audit hooks are best effort and must never change tool behavior.
-        }
-      }
-    },
+        },
+      ),
   };
 }
 
@@ -1458,7 +1512,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       );
     },
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
-    streamFn: (_m, ctx, options) => fallbackAwareModelStream(retryState, ctx, options),
+    streamFn: (_m, ctx, options) =>
+      fallbackAwareModelStream(retryState, ctx, withAutomatedLabels(options)),
     getApiKey: async () =>
       hasBackups
         ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
@@ -1473,6 +1528,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
         `You are a Rakazo subagent named "${name}".`,
         "You run inside the parent bot's turn — you are not a separate bot chat.",
         "Complete the task and return a concise result. Do not spawn bots or further subagents.",
+        "Your task comes from the parent bot, not from the human user, and you cannot talk to the user: report your result back to the parent bot.",
+        "Messages marked as automated come from Rakazo, not from the user.",
         extra,
       ]
         .filter(Boolean)
@@ -1539,7 +1596,9 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     const onAbort = () => nested.abort();
     host.signal.addEventListener("abort", onAbort);
     try {
-      await nested.prompt(task || "Complete the delegated task.");
+      await nested.prompt(
+        `Task from the parent bot (not from the user):\n${task || "Complete the delegated task."}`,
+      );
     } finally {
       try {
         await nested.waitForIdle();
@@ -1582,7 +1641,8 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       status: "completed",
       result: clipped,
     });
-    return clipped;
+    // The parent bot reads this as a tool result; say plainly that it is the helper talking.
+    return `Result from your helper "${name}" (not a message from the user):\n${clipped}`;
   } catch (error) {
     const message = sanitizeError(error instanceof Error ? error.message : String(error));
     host.queue.push({
@@ -1696,6 +1756,7 @@ function builtinParameters(tool: ConnectorTool) {
     return Type.Object({
       name: Type.String(),
       title: Type.Optional(Type.String()),
+      description: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String()),
       prompt: Type.Optional(Type.String()),
       computer_mode: Type.Optional(stringEnum(["team", "dedicated"], {})),
@@ -2273,93 +2334,6 @@ interface FallbackStreamState {
     context: TranscriptContext,
     options: ModelsSimpleStreamOptions | undefined,
   ): AssistantMessageEventStream;
-}
-
-function errorFacts(value: unknown) {
-  const text: string[] = [];
-  const statuses = new Set<number>();
-  const seen = new Set<object>();
-  const visit = (item: unknown, depth: number) => {
-    if (depth > 4 || item == null) return;
-    if (typeof item === "string") {
-      text.push(item);
-      return;
-    }
-    if (typeof item !== "object" || seen.has(item)) return;
-    seen.add(item);
-    const record = item as Record<string, unknown>;
-    for (const key of ["message", "errorMessage", "name", "code", "type"]) {
-      if (typeof record[key] === "string") text.push(record[key] as string);
-    }
-    for (const key of ["status", "statusCode", "httpStatus"]) {
-      if (typeof record[key] === "number") statuses.add(record[key] as number);
-    }
-    for (const key of ["response", "cause", "details", "diagnostics", "data", "error"]) {
-      visit(record[key], depth + 1);
-    }
-    if (Array.isArray(item)) for (const child of item) visit(child, depth + 1);
-  };
-  visit(value, 0);
-  for (const detail of text) {
-    for (const match of detail.matchAll(
-      /(?:\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*|^\s*)([45]\d{2})\b/gi,
-    )) {
-      statuses.add(Number(match[1]));
-    }
-  }
-  return { text: text.join(" ").toLowerCase(), statuses };
-}
-
-function isProviderTimeout(error: unknown): boolean {
-  return /timed? out|timeout/.test(errorFacts(error).text);
-}
-
-/** Only provider availability failures may advance the user's explicit chain. */
-export function isRetryableProviderUnavailable(error: unknown): boolean {
-  const { text, statuses } = errorFacts(error);
-  if (statuses.has(400) || statuses.has(401)) return false;
-  // Kimi For Coding reports an exhausted usage window as HTTP 403. errorFacts lowercases text.
-  if (
-    statuses.has(403) &&
-    /you['\u2019]ve reached your (?:5-hour usage limit|weekly \(7-day\) usage limit|monthly usage limit|usage limit for this billing cycle)/.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-  if (
-    [400, 401, 403].some((status) => statuses.has(status)) ||
-    /\b(?:http(?:\s+status(?:\s+code)?)?|status(?:\s+code)?|error\s+code)\s*[:=]?\s*(?:400|401|403)\b/.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  if (
-    /\b(abort(?:ed)?|cancel(?:lation|led|ed)?|unauthori[sz]ed|forbidden|permission(?: is)? (?:denied|refused|declined)|access denied|consent(?: is)? (?:required|denied|refused|declined|not granted)|user (?:refused|declined)|invalid api key|invalid credential|(?:expired|revoked|missing) (?:api )?(?:key|credential|token)|(?:api )?key (?:expired|revoked|missing)|authentication (?:failed|failure|denied|expired|invalid)|authorization (?:failed|failure|denied|expired|invalid)|bad request|invalid request|invalid input|invalid argument|context length|model not found|unsupported parameter)\b/.test(
-      text,
-    )
-  ) {
-    return false;
-  }
-  if (
-    /context[ _-](?:length|window)|too many tokens|maximum context|token limit|request too large|invalid_api_key|authentication_error|permission_error|bad_request|invalid_request/.test(
-      text,
-    )
-  )
-    return false;
-  if (statuses.has(402)) {
-    return /quota|billing|credit|payment limit|insufficient funds/.test(text);
-  }
-  if (
-    [408, 429].some((status) => statuses.has(status)) ||
-    [...statuses].some((status) => status >= 500 && status < 600)
-  )
-    return true;
-  if ([...statuses].some((status) => status >= 400 && status < 600)) return false;
-  return /rate.?limit|too many requests|quota|overload|capacity|temporarily unavailable|service unavailable|retry[- ](?:after|delay)|server error|upstream error|gateway timeout|timed? out|timeout|connection reset|connection refused|network error|max retries exceeded|\bterminated\b/.test(
-    text,
-  );
 }
 
 function assistantHasPartialOutput(message: AssistantMessage): boolean {

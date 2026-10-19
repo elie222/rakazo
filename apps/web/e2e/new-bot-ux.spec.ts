@@ -111,6 +111,63 @@ test("picker rows explain groups and spaces", async ({ page }, testInfo) => {
   await expect(dialog).toBeHidden();
 });
 
+test("a stale sidebar refresh cannot leave a newly created bot", async ({ page }, testInfo) => {
+  await signup(page, `stale-create-${Date.now()}@rakazo.test`, "password12", "Stale Create");
+  await completeOnboarding(page);
+  await expect(page.getByPlaceholder("Message Chief")).toBeVisible();
+
+  let markReady!: () => void;
+  let releaseList!: () => void;
+  let releaseStart!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const listGate = new Promise<void>((resolve) => {
+    releaseList = resolve;
+  });
+  const startGate = new Promise<void>((resolve) => {
+    releaseStart = resolve;
+  });
+  await page.route(
+    "**/rpc/spaces/list",
+    async (route) => {
+      const response = await route.fetch();
+      markReady();
+      await listGate;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
+  // Keep the post-create refresh from masking the stale response.
+  await page.route("**/rpc/onboarding/start", async (route) => {
+    await startGate;
+    await route.continue();
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await ready;
+  try {
+    await createBotFromPicker(page, { name: "Later Bot" });
+    const composer = page.getByRole("combobox", { name: "Message Later Bot", exact: true });
+    await expect(composer).toBeEditable();
+    const createdPath = new URL(page.url()).pathname;
+    const delivered = page.waitForResponse("**/rpc/spaces/list");
+    releaseList();
+    await (await delivered).finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+    await expect(composer).toBeEditable();
+    expect(new URL(page.url()).pathname).toBe(createdPath);
+    await captureScreenshot(page, testInfo, "new-bot-stale-refresh");
+  } finally {
+    releaseList();
+    releaseStart();
+  }
+});
+
 test("later bot waits before showing the focus card; sending cancels it", async ({ page }) => {
   const stamp = Date.now();
   await signup(page, `focus-delay-${stamp}@rakazo.test`, "password12", "Focus Delay");
@@ -151,6 +208,54 @@ test("later bot waits before showing the focus card; sending cancels it", async 
   ).toBeVisible();
   await page.clock.fastForward(12_000);
   await expect(page.getByText("What do you want me on first?", { exact: true })).toHaveCount(0);
+});
+
+test("a roster refresh started before creation keeps the new bot selected", async ({ page }) => {
+  await signup(page, `create-refresh-${Date.now()}@rakazo.test`, "password12", "Create Refresh");
+  await completeOnboarding(page);
+
+  let releaseRoster!: () => void;
+  let rosterReady!: () => void;
+  const rosterGate = new Promise<void>((resolve) => {
+    releaseRoster = resolve;
+  });
+  const staleRosterReady = new Promise<void>((resolve) => {
+    rosterReady = resolve;
+  });
+  await page.route(
+    "**/rpc/spaces/list",
+    async (route) => {
+      const response = await route.fetch();
+      rosterReady();
+      await rosterGate;
+      await route.fulfill({ response });
+    },
+    { times: 1 },
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await staleRosterReady;
+
+  let releaseStart!: () => void;
+  const startGate = new Promise<void>((resolve) => {
+    releaseStart = resolve;
+  });
+  await page.route("**/rpc/onboarding/start", async (route) => {
+    await startGate;
+    await route.continue();
+  });
+  await createBotFromPicker(page, { name: "Later Bot" });
+  const newBotUrl = page.url();
+  const staleDelivered = page.waitForResponse("**/rpc/spaces/list");
+  releaseRoster();
+  await staleDelivered;
+  // The create flow's final refresh follows the stale response, without masking a redirect.
+  const freshRoster = page.waitForResponse("**/rpc/spaces/list");
+  releaseStart();
+  await freshRoster;
+  await expect(page).toHaveURL(newBotUrl);
+  await expect(
+    page.getByRole("combobox", { name: "Message Later Bot", exact: true }),
+  ).toBeEditable();
 });
 
 test("plus picker can create a Private computer bot", async ({ page }, testInfo) => {

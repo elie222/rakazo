@@ -59,6 +59,10 @@ test("account settings appearance control switches to light mode", async ({ page
   await expect(picker).toBeVisible();
   await captureScreenshot(page, testInfo, "ui-appearance-control");
 
+  await settings.getByTestId("ui-appearance-dark").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await captureScreenshot(page, testInfo, "ui-appearance-dark-settings");
+
   await settings.getByTestId("ui-appearance-light").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect(settings.getByTestId("ui-appearance-light")).toHaveAttribute("aria-pressed", "true");

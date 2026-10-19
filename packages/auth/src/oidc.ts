@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import type { BetterAuthPlugin } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, getOAuthState } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins";
+
+const OIDC_FRESH_AGE = 5 * 60;
+const OIDC_CLOCK_SKEW = 60;
 
 export interface OidcConfig {
   issuer: string;
@@ -30,9 +33,6 @@ export function oidcDiscovery(config: OidcConfig) {
           return oidcAccountSubject(config.issuer, profile.sub);
         },
         requireIdTokenVerification: true,
-        // Every round-trip can serve as fresh authentication for account deletion.
-        prompt: "login",
-        authorizationUrlParams: { max_age: "0" },
         mapProfileToUser: (profile) => ({ emailVerified: profile.email_verified === true }),
       },
     ],
@@ -112,11 +112,84 @@ export function oidcDiscovery(config: OidcConfig) {
         name: config.name,
         issuer: config.issuer,
         requiresIdTokenNonce: true,
-        createAuthorizationURL: async (data) => (await getProvider()).createAuthorizationURL(data),
-        validateAuthorizationCode: async (data) =>
-          (await getProvider()).validateAuthorizationCode(data),
-        getUserInfo: async (tokens) =>
-          tokens.idToken ? (await getProvider()).getUserInfo(tokens) : null,
+        createAuthorizationURL: async (data) => {
+          const url = await (await getProvider()).createAuthorizationURL(data);
+          // Only authenticated, server-bound reauthentication needs an interactive
+          // provider login. Apply these last so client parameters cannot weaken it.
+          const expectedUser = (await getOAuthState())?.serverContext?.reauthUserId;
+          if (typeof expectedUser === "string") {
+            url.searchParams.set("prompt", "login");
+            url.searchParams.set("max_age", "0");
+          }
+          // Better Auth's state read/delete is not atomic. Consume a separate
+          // server-side marker before code exchange, including concurrent callbacks.
+          await ctx.internalAdapter.createVerificationValue({
+            identifier: `oidc-callback-${data.state}`,
+            value: data.idTokenNonce!,
+            expiresAt: new Date(Date.now() + 10 * 60_000),
+          });
+          return url;
+        },
+        validateAuthorizationCode: async (data) => {
+          const state = await getOAuthState();
+          const marker = await ctx.internalAdapter.consumeVerificationValue(
+            `oidc-callback-${state?.oauthState}`,
+          );
+          if (!marker || marker.value !== state?.idTokenNonce) return null;
+          return (await getProvider()).validateAuthorizationCode(data);
+        },
+        getUserInfo: async (tokens) => {
+          if (!tokens.idToken) return null;
+          let claims: Record<string, unknown>;
+          try {
+            claims = JSON.parse(
+              Buffer.from(tokens.idToken.split(".")[1] ?? "", "base64url").toString(),
+            );
+          } catch {
+            return null;
+          }
+          // Reject malformed identity claims before the library can fall back to
+          // userinfo. None of these claims are trusted until verification below.
+          if (claims?.iss !== config.issuer || typeof claims.sub !== "string" || !claims.sub.trim())
+            return null;
+          // The provider verifies the signature, issuer, audience and nonce first.
+          const info = await (await getProvider()).getUserInfo(tokens);
+          if (!info?.data || !("sub" in info.data) || info.data.sub !== claims.sub) return null;
+          const context = (await getOAuthState())?.serverContext;
+          if (typeof context?.reauthUserId === "string") {
+            const startedAt = context.reauthStartedAt;
+            const { auth_time: authTime } = claims;
+            const now = Math.floor(Date.now() / 1_000);
+            const accountId = oidcAccountSubject(config.issuer, claims.sub);
+            const account = await ctx.internalAdapter.findAccountByKey({
+              providerId: "oidc",
+              accountId,
+            });
+            const session =
+              typeof context.reauthSessionToken === "string"
+                ? await ctx.internalAdapter.findSession(context.reauthSessionToken)
+                : null;
+            if (
+              !Array.isArray(context.reauthAccountIds) ||
+              !context.reauthAccountIds.includes(accountId) ||
+              account?.userId !== context.reauthUserId ||
+              session?.user.id !== context.reauthUserId ||
+              session.session.expiresAt.getTime() <= Date.now() ||
+              typeof startedAt !== "number" ||
+              !Number.isSafeInteger(startedAt) ||
+              typeof authTime !== "number" ||
+              !Number.isFinite(authTime) ||
+              authTime < startedAt - OIDC_CLOCK_SKEW ||
+              authTime > now + OIDC_CLOCK_SKEW ||
+              authTime <= now - OIDC_FRESH_AGE
+            )
+              return null;
+            // Request-local parsed state: never persist callback-derived fields in
+            // the reusable OAuth record. Skew must not extend the proof lifetime.
+            context.reauthExpiresAt = (Math.min(authTime, now) + OIDC_FRESH_AGE) * 1_000;
+          }
+          return info;
+        },
         accountSubject: async (data) => {
           const resolved = await getProvider();
           if (!resolved.accountSubject) throw unavailable();

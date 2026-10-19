@@ -41,6 +41,35 @@ describe("auth policy", () => {
     }
   });
 
+  it.each(["sign-in/email", "sign-up/email"])("logs internal failures from %s", async (path) => {
+    const error = new Error("database unavailable");
+    const log = vi.fn();
+    const auth = createAuth(
+      { deploymentSettings: { findUnique: vi.fn().mockRejectedValue(error) } } as never,
+      {
+        secret: "offline-auth-secret-at-least-32-characters",
+        baseURL: "https://api.example.test",
+        webOrigin: "https://app.example.test",
+        signupsEnabled: "true",
+        signupAllowlist: "",
+        logger: { level: "error", log },
+      },
+    );
+    const response = await auth.handler(
+      new Request(`https://api.example.test/api/auth/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example.test" },
+        body: JSON.stringify({
+          email: "test@example.test",
+          password: "test-password-123",
+          name: "Test",
+        }),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(log).toHaveBeenCalledWith("error", expect.any(String), error);
+  });
+
   it("disables organization deletion inside Better Auth as well", async () => {
     const auth = createAuth({} as never, {
       secret: "test-secret-that-is-long-enough-for-better-auth",

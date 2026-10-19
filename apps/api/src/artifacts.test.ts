@@ -2,7 +2,13 @@ import type { ArtifactStore } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { ArtifactListCursorError, deleteArtifactFamily, listSpaceArtifacts } from "./artifacts.js";
+import {
+  ArtifactListCursorError,
+  createOwnedArtifact,
+  deleteArtifactFamily,
+  listSpaceArtifacts,
+  storeInboundAttachment,
+} from "./artifacts.js";
 
 const actor: Actor = {
   userId: "user-1",
@@ -373,5 +379,143 @@ describe("deleteArtifactFamily", () => {
       ),
     ).resolves.toEqual({ ok: true });
     expect(client.calls).toEqual(["remove:blob-root", "delete:root"]);
+  });
+});
+
+describe("configured artifact upload limit", () => {
+  it.each([
+    ["song.mp3", "audio/mp3", "audio/mpeg"],
+    ["song.wav", "audio/x-wav", "audio/wav"],
+    ["song.ogg", "", "audio/ogg"],
+    ["song.m4a", "audio/x-m4a", "audio/mp4"],
+    ["song.m4a", "audio/aac", "audio/mp4"],
+  ])("normalizes %s uploads before validation/storage", async (name, mimeType, expected) => {
+    const reachedStorage = new Error("reached storage");
+    const put = vi.fn().mockRejectedValue(reachedStorage);
+    const deps = { prisma: {} as PrismaClient, artifacts: { put } as unknown as ArtifactStore };
+    await expect(
+      createOwnedArtifact(deps, actor, {
+        botId: "bot-1",
+        name,
+        mimeType,
+        contentBase64: "YXVkaW8=",
+      }),
+    ).rejects.toBe(reachedStorage);
+    expect(put).toHaveBeenCalledWith(
+      expect.objectContaining({ mimeType: expected }),
+      expect.anything(),
+    );
+    put.mockClear();
+    await expect(
+      createOwnedArtifact(deps, actor, {
+        botId: "bot-1",
+        name: "song.flac",
+        mimeType: "audio/flac",
+        contentBase64: "YXVkaW8=",
+      }),
+    ).rejects.toThrow("Unsupported attachment type");
+    expect(put).not.toHaveBeenCalled();
+  });
+  it("rejects oversized attachments before storage and accepts uploads above the old cap", async () => {
+    const stored = new Error("reached storage");
+    const put = vi.fn().mockRejectedValue(stored);
+    const deps = {
+      prisma: {} as PrismaClient,
+      artifacts: { put } as unknown as ArtifactStore,
+      maxUploadSizeBytes: 12 * 1024 * 1024,
+    };
+    const upload = (size: number) =>
+      createOwnedArtifact(deps, actor, {
+        botId: "bot-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        contentBase64: Buffer.alloc(size).toString("base64"),
+      });
+    await expect(upload(deps.maxUploadSizeBytes + 1)).rejects.toThrow("12 MiB limit");
+    expect(put).not.toHaveBeenCalled();
+    await expect(upload(deps.maxUploadSizeBytes)).rejects.toBe(stored);
+    expect(put).toHaveBeenCalledOnce();
+  });
+});
+
+describe("storeInboundAttachment", () => {
+  const reachedStorage = new Error("reached storage");
+  function setup(existing: unknown = null) {
+    const put = vi.fn().mockRejectedValue(reachedStorage);
+    const findFirst = vi.fn(async () => existing);
+    const deps = {
+      prisma: { artifact: { findFirst } } as unknown as PrismaClient,
+      artifacts: { put } as unknown as ArtifactStore,
+      maxUploadSizeBytes: 8,
+    };
+    const store = (attachment: Parameters<typeof storeInboundAttachment>[2]["attachment"]) =>
+      storeInboundAttachment(deps, actor, { botId: "bot-1", attachment, clientNonce: "nonce-1" });
+    return { put, store };
+  }
+
+  it("bounds a stalled download and does not store its late result", async () => {
+    vi.useFakeTimers();
+    try {
+      const { put, store } = setup();
+      let finish!: (bytes: Uint8Array) => void;
+      const download = new Promise<Uint8Array>((resolve) => {
+        finish = resolve;
+      });
+      const result = store({ name: "a.png", mimeType: "image/png", fetch: () => download });
+      const rejected = expect(result).rejects.toThrow("Attachment download timed out");
+      await vi.advanceTimersByTimeAsync(2_000);
+      await rejected;
+      finish(new Uint8Array(3));
+      await Promise.resolve();
+      expect(put).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("skips the download when the platform reports an oversize file", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(4));
+    await expect(store({ name: "a.png", mimeType: "image/png", size: 9, fetch })).rejects.toThrow(
+      "limit",
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported types and oversize downloads before storage", async () => {
+    const { put, store } = setup();
+    const fetch = vi.fn(async () => new Uint8Array(9));
+    await expect(
+      store({ name: "a.exe", mimeType: "application/x-msdownload", fetch }),
+    ).rejects.toThrow("Unsupported");
+    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).rejects.toThrow("limit");
+    expect(put).not.toHaveBeenCalled();
+    fetch.mockResolvedValueOnce(new Uint8Array(8));
+    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).rejects.toBe(
+      reachedStorage,
+    );
+  });
+
+  it("reuses the artifact an earlier delivery of the same file stored", async () => {
+    const { put, store } = setup({
+      id: "artifact-1",
+      botId: "bot-1",
+      groupId: null,
+      runId: null,
+      name: "a.png",
+      description: null,
+      mimeType: "image/png",
+      size: 3,
+      version: 1,
+      createdAt: new Date("2026-10-01T00:00:00.000Z"),
+    });
+    const fetch = vi.fn(async () => new Uint8Array(3));
+    await expect(store({ name: "a.png", mimeType: "image/png", fetch })).resolves.toMatchObject({
+      id: "artifact-1",
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(put).not.toHaveBeenCalled();
   });
 });
