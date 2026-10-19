@@ -10,6 +10,7 @@ export const UI_LOCALES = [
   "ru",
   "fr",
   "he",
+  "nl",
 ] as const;
 
 export type UiLocale = (typeof UI_LOCALES)[number];
@@ -28,6 +29,7 @@ export const UI_LOCALE_LABELS: Record<UiLocale, string> = {
   ru: "Русский",
   fr: "Français",
   he: "עברית",
+  nl: "Nederlands",
 };
 
 /** Return whether a value is one of the supported web UI locales. */
@@ -43,7 +45,8 @@ export function isUiLocale(value: string | null | undefined): value is UiLocale 
     value === "es" ||
     value === "ru" ||
     value === "fr" ||
-    value === "he"
+    value === "he" ||
+    value === "nl"
   );
 }
 

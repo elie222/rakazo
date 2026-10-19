@@ -1652,6 +1652,7 @@ describe("transcriptionLanguage", () => {
   it("maps an app locale to a tag the recognizer accepts", () => {
     expect(speechLocaleTag("es")).toBe("es-ES");
     expect(speechLocaleTag("pt-BR")).toBe("pt-BR");
+    expect(speechLocaleTag("nl")).toBe("nl-NL");
   });
 
   it("hints the provider with the language the caller picked", () => {

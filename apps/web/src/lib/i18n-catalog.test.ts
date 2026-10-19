@@ -14,7 +14,7 @@ import { UI_LOCALES } from "./ui-locale";
 
 describe("lingui catalogs", () => {
   it("translates sign-out failures in every supported language", () => {
-    for (const locale of ["de", "es", "fr", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -44,7 +44,7 @@ describe("lingui catalogs", () => {
       "{provider} took too long to respond. Try again.",
       "Details",
     ];
-    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -55,8 +55,8 @@ describe("lingui catalogs", () => {
           .find((block) => block.includes(`msgid ${JSON.stringify(message)}\n`));
         const translated = entry?.split("msgstr ")[1];
         expect(translated, `${locale}: ${message}`).toBeTruthy();
-        // "Details" is also the German label.
-        if (locale !== "de" || message !== "Details") {
+        // "Details" is also the German and Dutch label.
+        if ((locale !== "de" && locale !== "nl") || message !== "Details") {
           expect(translated, `${locale}: ${message}`).not.toBe(JSON.stringify(message));
         }
         for (const placeholder of message.match(/\{\w+\}/g) ?? []) {
@@ -345,6 +345,23 @@ describe("lingui catalogs", () => {
     expect(catalog).toContain('msgstr "{toolCount, plural, one {# כלי} other {# כלים}}"');
   });
 
+  it("ships the Dutch runtime catalog with translated chrome and Dutch plurals", () => {
+    const catalog = readFileSync(
+      fileURLToPath(new URL("../locales/nl/messages.po", import.meta.url)),
+      "utf8",
+    );
+
+    expect(catalog).toContain('msgid "Settings"\nmsgstr "Instellingen"');
+    expect(catalog).toContain('msgid "Language"\nmsgstr "Taal"');
+    expect(catalog).toContain('msgid "Cancel"\nmsgstr "Annuleren"');
+    expect(catalog).toContain(
+      'msgid "{0} runs · {1} tokens"\nmsgstr "{0} uitvoeringen · {1} tokens"',
+    );
+    expect(catalog).toContain(
+      'msgid "Configure a plugin catalog on the server to connect apps."\nmsgstr "Configureer een plugincatalogus op de server om apps te koppelen."',
+    );
+  });
+
   it("translates command credential controls in every locale", () => {
     const messages = [
       "Command variable",
@@ -352,7 +369,20 @@ describe("lingui catalogs", () => {
       "{commandVariable} is reserved and cannot be used as a command variable. Choose another name.",
       "Values are encrypted and never shown again.",
     ];
-    for (const locale of ["en", "de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"]) {
+    for (const locale of [
+      "en",
+      "de",
+      "es",
+      "fr",
+      "he",
+      "hi",
+      "ko",
+      "nl",
+      "pt-BR",
+      "ru",
+      "tr",
+      "zh-CN",
+    ]) {
       const catalog = readFileSync(
         fileURLToPath(new URL(`../locales/${locale}/messages.po`, import.meta.url)),
         "utf8",
@@ -370,7 +400,7 @@ describe("lingui catalogs", () => {
   });
 
   it("translates model connection preflight feedback in every non-English catalog", () => {
-    const locales = ["de", "es", "fr", "he", "hi", "ko", "pt-BR", "ru", "tr", "zh-CN"];
+    const locales = ["de", "es", "fr", "he", "hi", "ko", "nl", "pt-BR", "ru", "tr", "zh-CN"];
     const messages = [
       "A subscription credential is stored securely.",
       'Model "{modelId}" was not listed.',
@@ -443,6 +473,7 @@ describe("lingui catalogs", () => {
       he: "עדיין אין פעילות של בוטים.",
       hi: "अभी तक कोई बॉट गतिविधि नहीं।",
       ko: "아직 봇 활동이 없습니다.",
+      nl: "Nog geen botactiviteit.",
       "pt-BR": "Ainda não há atividade do bot.",
       ru: "Активности бота пока нет.",
       tr: "Henüz bot etkinliği yok.",

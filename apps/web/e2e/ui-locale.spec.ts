@@ -156,3 +156,32 @@ test("account settings language picker includes Hebrew and mirrors the UI right-
   await expect(page.locator("html")).toHaveAttribute("lang", "he");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
 });
+
+test("account settings language picker includes Dutch and persists it", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `ui-locale-nl-${stamp}@rakazo.test`, "password12", "Locale QA");
+  await completeOnboarding(page, testInfo);
+
+  await page.getByTestId("user-menu-trigger").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+
+  const picker = settings.getByTestId("ui-locale-select");
+  await picker.click();
+  await expect(settings.getByRole("option", { name: "Nederlands", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "ui-locale-picker-nl");
+
+  await settings.getByRole("option", { name: "Nederlands", exact: true }).click();
+  await expect(settings.getByRole("heading", { name: "Algemeen", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Account", exact: true })).toBeVisible();
+  await expect(settings.getByRole("heading", { name: "Taal", exact: true })).toBeVisible();
+  await expect(picker).toHaveText("Nederlands");
+  await expect(page.locator("html")).toHaveAttribute("lang", "nl");
+  await expect(page.locator("html")).toHaveAttribute("dir", "ltr");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "nl");
+  await captureScreenshot(page, testInfo, "ui-locale-settings-nl");
+});

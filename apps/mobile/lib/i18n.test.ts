@@ -67,6 +67,15 @@ describe("mobile i18n", () => {
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Удалить Scout?");
 
+    resetI18nForTests("nl");
+    expect(t("Account")).toBe("Account");
+    expect(t("Sign in to Rakazo")).toBe("Aanmelden bij Rakazo");
+    expect(t("New bot")).toBe("Nieuwe bot");
+    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 uitvoeringen · 12 tokens",
+    );
+    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout verwijderen?");
+
     resetI18nForTests("de");
     expect(t("Account")).toBe("Konto");
     expect(t("Sign in to Rakazo")).toBe("Bei Rakazo anmelden");
@@ -81,7 +90,8 @@ describe("mobile i18n", () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES]) {
+    const { NL_MESSAGES } = await import("./locales/nl");
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
       const empty = Object.entries(messages).filter(([, value]) => !value.trim());
       const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
         const tokens = (message: string) =>
@@ -97,6 +107,7 @@ describe("mobile i18n", () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
+    const { NL_MESSAGES } = await import("./locales/nl");
     const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS, RUN_ERROR_LIMIT_MESSAGES } = await import(
       "@rakazo/core"
     );
@@ -139,7 +150,7 @@ describe("mobile i18n", () => {
         ids.add(JSON.parse(`"${match[1]}"`) as string);
       }
     }
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES]) {
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
     }
@@ -147,6 +158,7 @@ describe("mobile i18n", () => {
 
   it.each([
     ["de", "Dein Modellanbieter hat zu lange zum Antworten gebraucht. Versuche es erneut."],
+    ["nl", "Jouw modelaanbieder deed er te lang over om te antwoorden. Probeer het opnieuw."],
     ["ru", "Ваш поставщик моделей не ответил вовремя. Повторите попытку."],
     ["zh-CN", "你的模型提供商响应超时。请重试。"],
   ] as const)("renders provider errors in %s", async (locale, expected) => {

@@ -33,6 +33,11 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("he-IL")).toBe("he");
     expect(normalizeUiLocale("HE")).toBe("he");
     expect(normalizeUiLocale("he_IL")).toBe("he");
+    expect(normalizeUiLocale("nl")).toBe("nl");
+    expect(normalizeUiLocale("nl-NL")).toBe("nl");
+    expect(normalizeUiLocale("nl-BE")).toBe("nl");
+    expect(normalizeUiLocale("NL")).toBe("nl");
+    expect(normalizeUiLocale("nl_nl")).toBe("nl");
     expect(normalizeUiLocale("iw")).toBe("he");
     expect(normalizeUiLocale("iw-IL")).toBe("he");
     expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");
@@ -120,6 +125,13 @@ describe("resolveUiLocale", () => {
         navigatorLanguage: "fr-FR",
       }),
     ).toBe("fr");
+    expect(
+      resolveUiLocale({
+        stored: null,
+        envDefault: null,
+        navigatorLanguage: "nl-NL",
+      }),
+    ).toBe("nl");
     expect(
       resolveUiLocale({
         stored: null,

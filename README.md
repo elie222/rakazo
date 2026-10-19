@@ -227,10 +227,11 @@ Mobile build and release instructions live in [docs/mobile-release.md](./docs/mo
 ## UI language
 
 The web (and Electron-hosted) UI supports English, Deutsch, 한국어, Türkçe, हिन्दी,
-Português (Brasil), 简体中文, Español, and Русский under **Settings → Language**. The Expo
-app ships English, 简体中文, Русский, and Deutsch catalogs, and **Account → Language**
-lists all four. A device language or `EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects
-the starting catalog before a saved choice. The marketing
+Português (Brasil), 简体中文, Español, Русский, Français, עברית, and Nederlands under
+**Settings → Language**. The Expo app ships English, 简体中文, Русский, Deutsch, and
+Nederlands catalogs, and **Account → Language** lists all five. A device language or
+`EXPO_PUBLIC_DEFAULT_UI_LOCALE` still selects the starting catalog before a saved choice.
+The marketing
 homepage (`apps/www`) is available in en/de/ko/zh via footer language links (`/`, `/de/`,
 `/ko/`, `/zh/`); other marketing pages stay English. The Russian marketing homepage and
 native Electron setup/menu remain separate follow-up work.

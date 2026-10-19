@@ -10,14 +10,15 @@ import {
 
 describe("UI_LOCALES", () => {
   it("offers every locale with a mobile catalog", () => {
-    expect([...UI_LOCALES]).toEqual(["en", "zh-CN", "ru", "de"]);
-    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["de", "en", "ru", "zh-CN"]);
+    expect([...UI_LOCALES]).toEqual(["en", "zh-CN", "ru", "de", "nl"]);
+    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["de", "en", "nl", "ru", "zh-CN"]);
     expect(isUiLocale("ko")).toBe(false);
     expect(isUiLocale("tr")).toBe(false);
     expect(isUiLocale("hi")).toBe(false);
     expect(isUiLocale("pt-BR")).toBe(false);
     expect(isUiLocale("ru")).toBe(true);
     expect(isUiLocale("de")).toBe(true);
+    expect(isUiLocale("nl")).toBe(true);
   });
 });
 
@@ -34,6 +35,9 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("de-DE")).toBe("de");
     expect(normalizeUiLocale("de-CH")).toBe("de");
     expect(normalizeUiLocale("de_AT")).toBe("de");
+    expect(normalizeUiLocale("nl")).toBe("nl");
+    expect(normalizeUiLocale("nl-NL")).toBe("nl");
+    expect(normalizeUiLocale("nl-BE")).toBe("nl");
   });
 
   it("does not fold Traditional Chinese into Simplified", () => {
