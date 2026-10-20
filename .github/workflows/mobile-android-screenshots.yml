@@ -2,6 +2,11 @@ name: mobile Android screenshots
 
 on:
   workflow_dispatch:
+    inputs:
+      keyboard_only:
+        description: Run keyboard lifecycle regression only
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,6 +36,7 @@ jobs:
           --health-retries 20
     env:
       CI: "1"
+      MOBILE_KEYBOARD_ONLY: ${{ inputs.keyboard_only }}
       DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       EXPO_PUBLIC_API_URL: http://10.0.2.2:3110
 
@@ -125,17 +131,18 @@ jobs:
       - name: Capture screenshots
         uses: reactivecircus/android-emulator-runner@c9c93e6ba9c4194322e114c40970d5983d9a07cc # v2.38.0
         with:
-          api-level: 34
+          api-level: ${{ inputs.keyboard_only == true && 36 || 34 }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
           cores: 2
           ram-size: 4096M
-          disable-animations: true
+          disable-animations: ${{ inputs.keyboard_only != true }}
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: bash .github/scripts/capture-mobile-android-screenshots.sh
 
       - name: Publish screenshot gallery
+        if: inputs.keyboard_only != true
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}

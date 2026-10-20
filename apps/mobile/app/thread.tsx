@@ -173,6 +173,7 @@ import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt"
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
+import { useKeyboardLayout } from "../lib/keyboard-layout";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
@@ -415,6 +416,7 @@ export default function ThreadRoute() {
 }
 
 function Thread({ sessionEpoch }: { sessionEpoch: number }) {
+  const keyboardLayout = useKeyboardLayout();
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const styles = useThemedStyles(createThreadHeaderStyles);
@@ -2404,8 +2406,9 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   return (
     <KeyboardAvoidingView
       behavior="height"
-      // Measure the screen position, including native headers and system insets.
-      automaticOffset
+      ref={keyboardLayout.container}
+      onLayout={keyboardLayout.onLayout}
+      keyboardVerticalOffset={keyboardLayout.offset}
       style={{
         flex: 1,
         backgroundColor: tokens.background,
@@ -2703,6 +2706,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           </View>
         ) : null}
         <ThreadComposer
+          onFocus={keyboardLayout.onFocus}
           key={threadKey}
           ref={composerRef}
           agentSkills={agentSkills}
