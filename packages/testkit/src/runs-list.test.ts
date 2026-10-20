@@ -180,6 +180,7 @@ describeRunsList("runs.list activity tracker", () => {
     });
     const groupRun = active.runs.find((run) => run.groupId === group.id);
     expect(groupRun).toBeTruthy();
+    expect(groupRun?.agentMessage).toBeNull();
     expect(groupRun?.groupName).toBe("Ops");
     expect(groupRun?.botId).toBe(botA.id);
   });

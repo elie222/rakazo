@@ -140,6 +140,14 @@ msgstr "{hours}u geleden"
 msgid "{minutes}m ago"
 msgstr "{minutes}m geleden"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} vraagt"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} vraagt: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonnementsaanme
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Een integratietool"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Een andere agent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr "Berichtgebeurtenis"
 msgid "Message from {peer}"
 msgstr "Bericht van {peer}"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Bericht van een andere agent"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "Bericht…"
@@ -4964,6 +4980,14 @@ msgstr "Bijwerken mislukt"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Update voltooid met fouten"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "Update van {name}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "Update van {name}: {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

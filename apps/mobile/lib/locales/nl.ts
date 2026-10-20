@@ -1,4 +1,10 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Message from another agent": "Bericht van een andere agent",
+  "Another agent": "Een andere agent",
+  "Update from {name}: {text}": "Update van {name}: {text}",
+  "Update from {name}": "Update van {name}",
+  "{name} asked: {text}": "{name} vraagt: {text}",
+  "{name} asked": "{name} vraagt",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "Laat deze bot de bots organiseren, afstemmen en plannen die hij zelf maakt. Jij keurt elke wijziging goed.",
   "Too many attempts. Try again in a few minutes.":

@@ -140,6 +140,14 @@ msgstr "{hours} 小时前"
 msgid "{minutes}m ago"
 msgstr "{minutes} 分钟前"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} 问"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} 问：{text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "集成工具"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "其他 Agent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr ""
 msgid "Message from {peer}"
 msgstr "来自 {peer} 的消息"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "来自其他 Agent 的消息"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "消息…"
@@ -4964,6 +4980,14 @@ msgstr "更新失败"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "更新完成但有错误"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "来自 {name} 的更新"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "来自 {name} 的更新：{text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

@@ -1,4 +1,10 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Message from another agent": "Сообщение от другого агента",
+  "Another agent": "Другой агент",
+  "Update from {name}: {text}": "Обновление от {name}: {text}",
+  "Update from {name}": "Обновление от {name}",
+  "{name} asked: {text}": "{name} спрашивает: {text}",
+  "{name} asked": "{name} спрашивает",
   Close: "Закрыть",
   Link: "Ссылка",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":

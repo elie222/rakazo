@@ -140,6 +140,14 @@ msgstr "{hours}h ago"
 msgid "{minutes}m ago"
 msgstr "{minutes}m ago"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} asked"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} asked: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "An API key is stored for this provider, not a subscription sign-in."
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "An integration tool"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Another agent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr "Message event"
 msgid "Message from {peer}"
 msgstr "Message from {peer}"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Message from another agent"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "Message…"
@@ -4964,6 +4980,14 @@ msgstr "Update failed"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Update finished with errors"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "Update from {name}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "Update from {name}: {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

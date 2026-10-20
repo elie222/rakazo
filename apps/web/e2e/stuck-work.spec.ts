@@ -98,6 +98,7 @@ test("aged queued work is marked and an expired wait leaves a status line", asyn
               status: "queued",
               trigger: "user",
               notificationsEnabled: true,
+              agentMessage: null,
               promptSnippet: "finish the report",
               updatedAt: agedAt,
             },

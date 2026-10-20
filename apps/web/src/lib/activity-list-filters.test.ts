@@ -1,12 +1,18 @@
+import { t } from "@lingui/core/macro";
 import type { RunActivityRow } from "@rakazo/contracts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   activityFiltersActive,
+  activityPreview,
   clearActivityFilterField,
   emptyActivityFilters,
   filterActivityRuns,
   runMatchesActivityFilters,
 } from "./activity-list-filters";
+
+vi.mock("@lingui/core/macro", () => ({
+  t: vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => String.raw(strings, ...values)),
+}));
 
 function row(overrides: Partial<RunActivityRow> = {}): RunActivityRow {
   return {
@@ -19,6 +25,7 @@ function row(overrides: Partial<RunActivityRow> = {}): RunActivityRow {
     status: "completed",
     trigger: "user",
     notificationsEnabled: false,
+    agentMessage: null,
     promptSnippet: "summarize inbox",
     updatedAt: "2026-09-20T12:00:00.000Z",
     ...overrides,
@@ -26,8 +33,57 @@ function row(overrides: Partial<RunActivityRow> = {}): RunActivityRow {
 }
 
 describe("filterActivityRuns", () => {
+  it("composes agent message labels through the translator and searches the visible preview", () => {
+    const run = row({
+      trigger: "bot_message",
+      agentMessage: { fromBotName: "Maya", kind: "update" },
+      promptSnippet: "Ready",
+    });
+    vi.mocked(t).mockClear();
+    expect(activityPreview(run)).toBe("Update from Maya: Ready");
+    expect(
+      runMatchesActivityFilters(run, {
+        ...emptyActivityFilters(),
+        query: "Update from Maya: Ready",
+      }),
+    ).toBe(true);
+    expect(activityPreview({ ...run, promptSnippet: "" })).toBe("Update from Maya");
+    expect(activityPreview({ ...run, agentMessage: { fromBotName: " ", kind: "request" } })).toBe(
+      "Another agent asked: Ready",
+    );
+    expect(activityPreview({ ...run, agentMessage: null, promptSnippet: "" })).toBe(
+      "Message from another agent",
+    );
+  });
+  it("searches the translated preview rather than a server label", () => {
+    const run = row({
+      trigger: "bot_message",
+      agentMessage: { fromBotName: "Maya", kind: "request" },
+      promptSnippet: "Ready",
+    });
+    vi.mocked(
+      t as (strings: TemplateStringsArray, ...values: unknown[]) => string,
+    ).mockImplementationOnce((strings, ...values) =>
+      String.raw(strings, ...values).replace(" asked:", " fragt:"),
+    );
+    expect(runMatchesActivityFilters(run, { ...emptyActivityFilters(), query: "Maya fragt" })).toBe(
+      true,
+    );
+  });
+
+  it("preserves composed snippets from older servers without agentMessage", () => {
+    const run = row({ trigger: "bot_message", promptSnippet: "Maya asked: Ready" });
+    Reflect.deleteProperty(run, "agentMessage");
+    expect(activityPreview(run)).toBe("Maya asked: Ready");
+  });
+
   it("matches the displayed group title and either name", () => {
-    const run = row({ botName: "Chief", groupName: "Ops", promptSnippet: "standby" });
+    const run = row({
+      botName: "Chief",
+      groupName: "Ops",
+      agentMessage: null,
+      promptSnippet: "standby",
+    });
     const filters = (query: string) => ({ ...emptyActivityFilters(), query });
     expect(runMatchesActivityFilters(run, filters("Chief · Ops"))).toBe(true);
     expect(runMatchesActivityFilters(run, filters("Chief Ops"))).toBe(true);
@@ -37,7 +93,7 @@ describe("filterActivityRuns", () => {
   });
 
   it("matches bot name and prompt in search", () => {
-    const runs = [row(), row({ botName: "Scout", promptSnippet: "other" })];
+    const runs = [row(), row({ botName: "Scout", agentMessage: null, promptSnippet: "other" })];
     const filtered = filterActivityRuns(runs, {
       ...emptyActivityFilters(),
       query: "inbox",

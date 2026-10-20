@@ -140,6 +140,14 @@ msgstr "{hours}시간 전"
 msgid "{minutes}m ago"
 msgstr "{minutes}분 전"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name}의 질문"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name}의 질문: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되�
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "연동 도구"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "다른 Agent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr ""
 msgid "Message from {peer}"
 msgstr "{peer}의 메시지"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "다른 Agent의 메시지"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "메시지를 입력하세요"
@@ -4964,6 +4980,14 @@ msgstr "업데이트 실패"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "오류와 함께 업데이트가 완료되었습니다"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "{name}의 업데이트"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "{name}의 업데이트: {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

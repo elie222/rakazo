@@ -140,6 +140,14 @@ msgstr "hace {hours} h"
 msgid "{minutes}m ago"
 msgstr "hace {minutes} min"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} pregunta"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} pregunta: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "Hay una clave de API guardada para este proveedor, no un inicio de sesi�
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Una herramienta de integración"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Otro agente"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr ""
 msgid "Message from {peer}"
 msgstr "Mensaje de {peer}"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Mensaje de otro agente"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "Mensaje…"
@@ -4964,6 +4980,14 @@ msgstr "Falló la actualización"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "La actualización terminó con errores"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "Actualización de {name}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "Actualización de {name}: {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

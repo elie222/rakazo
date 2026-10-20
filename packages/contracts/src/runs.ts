@@ -52,6 +52,9 @@ export const RunActivityRowSchema = z.object({
   trigger: RunTriggerSchema,
   notificationsEnabled: z.boolean(),
   promptSnippet: z.string(),
+  agentMessage: z
+    .object({ fromBotName: z.string(), kind: z.enum(["update", "request"]) })
+    .nullable(),
   updatedAt: z.string(),
 });
 export type RunActivityRow = z.infer<typeof RunActivityRowSchema>;

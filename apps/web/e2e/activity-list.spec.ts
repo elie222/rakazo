@@ -153,8 +153,18 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
     status: "running",
     trigger: "user",
     notificationsEnabled: false,
+    agentMessage: null,
     promptSnippet: "filter me",
     updatedAt: new Date().toISOString(),
+  };
+
+  const agentRun = {
+    ...run,
+    runId: "run-agent",
+    botId: "bot-agent",
+    botName: "Helper",
+    trigger: "bot_message",
+    agentMessage: { fromBotName: "Scout", kind: "update" },
   };
 
   await page.route("**/rpc/runs/list", async (route) => {
@@ -173,7 +183,7 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
       return;
     }
     const body = route.request().postDataJSON() as { json?: { filter?: string } } | null;
-    const runs = phase === "ok" && body?.json?.filter === "active" ? [run] : [];
+    const runs = phase === "ok" && body?.json?.filter === "active" ? [run, agentRun] : [];
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ json: { runs } }),
@@ -187,9 +197,13 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
   await expect(activityToggle).toHaveAttribute("aria-pressed", "true");
   await expect(activityRow(page, "Chief")).toBeVisible({ timeout: 20_000 });
 
+  await expect(activityRow(page, "Chief")).toContainText("filter me");
+  await expect(activityRow(page, "Helper")).toContainText("Update from Scout: filter me");
   const activitySearch = page.getByTestId("activity-search");
+  await activitySearch.fill("Update from Scout");
+  await expect(activityRow(page, "Helper")).toBeVisible();
+  await expect(activityRow(page, "Chief")).toHaveCount(0);
   await activitySearch.fill("Chief");
-  await expect(activityRow(page, "Chief")).toBeVisible();
 
   phase = "empty";
   await expect(activityRow(page, "Chief")).toHaveCount(0, { timeout: 25_000 });

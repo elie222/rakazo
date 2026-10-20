@@ -7,6 +7,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ActivityListFilters } from "../lib/activity-list-filters";
 import {
   activityFiltersActive,
+  activityPreview,
   clearActivityFilterField,
   emptyActivityFilters,
   filterActivityRuns,
@@ -85,11 +86,11 @@ export function ActivityList({ onOpenRun }: ActivityListProps) {
 
   const filteredActive = useMemo(
     () => filterActivityRuns(activeRuns, filters),
-    [activeRuns, filters],
+    [activeRuns, filters, t],
   );
   const filteredRecent = useMemo(
     () => filterActivityRuns(recentRuns, filters),
-    [recentRuns, filters],
+    [recentRuns, filters, t],
   );
 
   const filtersOn = activityFiltersActive(filters);
@@ -359,6 +360,7 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
   const label = statusLabel(run.status);
   const activityLabel = t`${title}, ${label}`;
   const tone = statusTone(run.status, run.updatedAt);
+  const preview = activityPreview(run);
   return (
     <button
       type="button"
@@ -378,9 +380,9 @@ function ActivityRow({ run, onOpen }: { run: RunActivityRow; onOpen: () => void 
           </span>
         </div>
         <div className="mt-0.5 flex items-baseline gap-2">
-          {run.promptSnippet ? (
+          {preview ? (
             <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
-              {run.promptSnippet}
+              {preview}
             </span>
           ) : null}
           <span className={`ms-auto shrink-0 text-xs ${tone}`}>{label}</span>

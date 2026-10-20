@@ -140,6 +140,14 @@ msgstr "il y a {hours} h"
 msgid "{minutes}m ago"
 msgstr "il y a {minutes} min"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} demande"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} demande : {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "Une clé API est enregistrée pour ce fournisseur, et non une connexion 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Un outil d’intégration"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Un autre agent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr "Événement de message"
 msgid "Message from {peer}"
 msgstr "Message de {peer}"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Message d’un autre agent"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "Message…"
@@ -4964,6 +4980,14 @@ msgstr "Échec de la mise à jour"
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr "Mise à jour terminée avec des erreurs"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "Mise à jour de {name}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "Mise à jour de {name} : {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

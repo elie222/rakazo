@@ -1,3 +1,4 @@
+import { t } from "@lingui/core/macro";
 import type { RunActivityRow, RunStatus } from "@rakazo/contracts";
 
 export type ActivityStatusFilter = RunStatus | "all";
@@ -28,6 +29,17 @@ export function activityFiltersActive(filters: ActivityListFilters): boolean {
   );
 }
 
+export function activityPreview(run: RunActivityRow): string {
+  if (run.trigger !== "bot_message") return run.promptSnippet;
+  if (!run.agentMessage) return run.promptSnippet || t`Message from another agent`;
+  const name = run.agentMessage.fromBotName.trim() || t`Another agent`;
+  const text = run.promptSnippet;
+  if (run.agentMessage.kind === "update") {
+    return text ? t`Update from ${name}: ${text}` : t`Update from ${name}`;
+  }
+  return text ? t`${name} asked: ${text}` : t`${name} asked`;
+}
+
 export function activitySearchHaystack(run: RunActivityRow): string {
   const parts = [run.botName];
   if (run.groupName) {
@@ -37,7 +49,7 @@ export function activitySearchHaystack(run: RunActivityRow): string {
       `${run.botName} · ${run.groupName}`,
     );
   }
-  parts.push(run.promptSnippet);
+  parts.push(activityPreview(run));
   return parts.join(" ").toLowerCase();
 }
 

@@ -49,3 +49,16 @@ export function activityStatusLabel(status: RunActivityRow["status"]): string {
       return status;
   }
 }
+
+export function activityPreview(run: RunActivityRow): string {
+  if (run.trigger !== "bot_message") return run.promptSnippet;
+  if (!run.agentMessage) return run.promptSnippet || t("Message from another agent");
+  const name = run.agentMessage.fromBotName.trim() || t("Another agent");
+  const text = run.promptSnippet;
+  if (run.agentMessage.kind === "update") {
+    return text
+      ? t("Update from {name}: {text}", { name, text })
+      : t("Update from {name}", { name });
+  }
+  return text ? t("{name} asked: {text}", { name, text }) : t("{name} asked", { name });
+}

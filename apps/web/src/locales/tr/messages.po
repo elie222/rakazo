@@ -140,6 +140,14 @@ msgstr "{hours} sa önce"
 msgid "{minutes}m ago"
 msgstr "{minutes} dk önce"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} soruyor"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} soruyor: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "Bu sağlayıcı için abonelik girişi değil, bir API anahtarı saklan�
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Bir entegrasyon aracı"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Başka bir Agent"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr ""
 msgid "Message from {peer}"
 msgstr "{peer} botundan mesaj"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Başka bir Agent'tan mesaj"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "Mesaj…"
@@ -4964,6 +4980,14 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr ""
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "{name} tarafından güncelleme"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "{name} tarafından güncelleme: {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"

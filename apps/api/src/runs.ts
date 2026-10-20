@@ -12,20 +12,25 @@ function promptSnippet(prompt: string, max = 120): string {
   return `${oneLine.slice(0, max - 1)}…`;
 }
 
-export function activityPromptSnippet(
+export function activityPreview(
   input: { trigger: string; prompt: string; sourceBlocks?: unknown },
   max = 120,
-): string {
-  if (input.trigger !== "bot_message") return promptSnippet(input.prompt, max);
+): Pick<RunActivityRow, "promptSnippet" | "agentMessage"> {
+  if (input.trigger !== "bot_message")
+    return { promptSnippet: promptSnippet(input.prompt, max), agentMessage: null };
   const parsed = MessageBlock.array().safeParse(input.sourceBlocks);
   const message = parsed.success ? botMessageContext(parsed.data) : undefined;
-  if (!message) return "Message from another agent";
-  const name = message.fromBotName.trim() || "Another agent";
-  const label =
-    message.intent === "result" || message.intent === "status" || message.intent === "fyi"
-      ? `Update from ${name}`
-      : `${name} asked`;
-  return promptSnippet(message.text.trim() ? `${label}: ${message.text}` : label, max);
+  if (!message) return { promptSnippet: "", agentMessage: null };
+  return {
+    promptSnippet: promptSnippet(message.text, max),
+    agentMessage: {
+      fromBotName: message.fromBotName.trim(),
+      kind:
+        message.intent === "result" || message.intent === "status" || message.intent === "fyi"
+          ? "update"
+          : "request",
+    },
+  };
 }
 
 export function activityNotificationsEnabled(
@@ -79,7 +84,7 @@ export async function listSpaceRuns(
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
     notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
-    promptSnippet: activityPromptSnippet({
+    ...activityPreview({
       trigger: row.trigger,
       prompt: row.task.prompt,
       sourceBlocks: row.sourceMessage?.blocks,

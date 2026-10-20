@@ -140,6 +140,14 @@ msgstr "{hours} घंटे पहले"
 msgid "{minutes}m ago"
 msgstr "{minutes} मिनट पहले"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} का अनुरोध"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} का अनुरोध: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -578,6 +586,10 @@ msgstr "इस प्रोवाइडर के लिए API कुंजी 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "एक इंटीग्रेशन टूल"
+
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "दूसरा एजेंट"
 
 #: src/components/AskCard.tsx
 msgid "Answer"
@@ -3038,6 +3050,10 @@ msgstr ""
 msgid "Message from {peer}"
 msgstr "{peer} का संदेश"
 
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "दूसरे एजेंट का संदेश"
+
 #: src/pages/Shell.tsx
 msgid "Message…"
 msgstr "संदेश…"
@@ -4964,6 +4980,14 @@ msgstr ""
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Update finished with errors"
 msgstr ""
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "{name} से अपडेट"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "{name} से अपडेट: {text}"
 
 #: src/components/AskCard.tsx
 msgid "Update instructions?"
