@@ -24,6 +24,24 @@ describe("truncateUtf8", () => {
     expect(truncateUtf8("aé中😀", maxBytes)).toBe(expected);
   });
 
+  it.each([
+    [3, ""],
+    [4, "😀"],
+    [6, "😀"],
+    [7, "中😀"],
+    [9, "é中😀"],
+    [10, "aé中😀"],
+  ])("keeps whole trailing code points within %i bytes", (maxBytes, expected) => {
+    expect(truncateUtf8("aé中😀", maxBytes, "end")).toBe(expected);
+  });
+
+  it("keeps lone trailing surrogates without splitting valid pairs", () => {
+    expect(truncateUtf8("a\ud800", 3, "end")).toBe("\ud800");
+    expect(truncateUtf8("a\udc00", 3, "end")).toBe("\udc00");
+    expect(truncateUtf8("😀", 3, "end")).toBe("");
+    expect(truncateUtf8("text", 0, "end")).toBe("");
+  });
+
   it("returns an empty string for nonpositive budgets", () => {
     expect(truncateUtf8("text", 0)).toBe("");
     expect(truncateUtf8("text", -1)).toBe("");

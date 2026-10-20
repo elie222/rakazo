@@ -46,7 +46,11 @@ export async function loadAgentMemoryContext(
     sections.push(heading);
     remainingBytes -= headingBytes;
 
-    const content = truncateUtf8(document.content, remainingBytes);
+    const content = truncateUtf8(
+      document.content,
+      remainingBytes,
+      document.scope === "bot" ? "end" : "start",
+    );
     sections.push(content);
     remainingBytes -= byteLength(content);
     if (content !== document.content) break;

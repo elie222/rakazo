@@ -3,7 +3,7 @@
 Rakazo keeps the agent runtime and the computer runtime separate:
 
 ```text
-chat/API -> one Pi agent session -> Rakazo computer tools -> SandboxProvider -> E2B / Daytona / Box
+chat/API -> one Pi agent session -> Rakazo computer tools -> SandboxProvider -> E2B / Daytona / Boat
                                                    |-> Docker
                                                    |-> desktop/fake
 
@@ -18,7 +18,7 @@ Each workspace gets one Team Computer by default. Bots share its files and insta
 
 Each active Team bot gets its own X display and Chrome process, with a persistent Chrome profile keyed to the bot's identity. Logins, cookies, and browser history are independent. Profiles are never cloned from another bot, merged, or deleted when a desktop is released. Both bots keep their changes; reopening a bot uses its existing profile even when its display slot changes. Team runs use fenced per-bot database leases: different bots can operate concurrently, and one bot has only one computer driver at a time.
 
-Docker, E2B, Daytona, and Box use the same Linux desktop lifecycle commands. Remote adapters share allocation, observation, actions, and control handling; provider code supplies command execution, persistent workspace paths, and screen URLs. Box exposes the shared runtime through protected `host <port> --private` routes instead of its default desktop API. View and control use separate revocable websocket capabilities; teardown disconnects clients before a display slot is reused. A failed teardown keeps the slot reserved for retry.
+Docker, E2B, Daytona, and Boat use the same Linux desktop lifecycle commands. Remote adapters share allocation, observation, actions, and control handling; provider code supplies command execution, persistent workspace paths, and screen URLs. Boat exposes the shared runtime through protected ports from its `hostPort` API instead of its default desktop API. View and control use separate revocable websocket capabilities; teardown disconnects clients before a display slot is reused. A failed teardown keeps the slot reserved for retry.
 
 Desktop stacks start lazily when a bot uses graphical tools. There is no configured desktop cap by default; a computer can host 100 or more bot profiles, and simultaneous desktops are bounded by its RAM, CPU, process capacity, and available local debugger ports. Docker operators can set a positive `SANDBOX_TEAM_SCREEN_LIMIT` to cap active desktops (`0` leaves it unset). Requests beyond an explicit limit return `MULTI_SCREEN_UNAVAILABLE`; shell and file tools remain available. All desktops share one token-protected screen gateway, so adding desktops does not require publishing more ports. Each view/control capability targets a unique local Unix socket; recycling a display cannot redirect an old connection to its next bot. Inactive bots do not each run Chrome. Closing a viewer leaves the desktop intact. For Docker-managed computers, successful run completion revokes the run's control but retains that bot's screen and browser for the next run, keeping the existing view open. If a configured Team screen limit is reached, the oldest idle, uncontrolled screen may be torn down for a new bot. Failed or canceled runs and explicit computer deletion still tear down their screens. Other provider release behavior is unchanged. Whole-computer idle shutdown stops remaining processes while preserving the workspace. There is no separate inactivity timer per desktop. Persistent profiles consume disk but do not require a running Chrome process.
 
@@ -52,9 +52,9 @@ The web and desktop computer view opens a terminal and a file browser from a doc
 - Without control (for example after it was released or expired), an "Open shell" button takes control again and switches to the shell.
 - A user holding control also gets a Shell tab with an interactive shell. It starts on first use, stays connected across tab switches, and reconnects to a fresh shell if the connection drops. `computer.terminalUrl` starts a small PTY server in the computer beside the screen gateway.
   - It is bound to the display's control token and reached through the same sealed capability and gateway as the control screen. Later sessions under the same lease (another tab, a reopened window) join that server with their own shell, so open shells keep running.
-  - It runs as the computer's workspace user (never root), with the same environment as the bot's `shell` tool. Docker execs inherit the container's non-root user; E2B, Daytona, and Box use the same command runner as `shell`. When the computer runs as a host uid without a passwd entry (Docker on macOS), the terminal names it `rakazo` through nss_wrapper for its own session, so prompts and `whoami` work; `/etc/passwd` stays unchanged.
+  - It runs as the computer's workspace user (never root), with the same environment as the bot's `shell` tool. Docker execs inherit the container's non-root user; E2B, Daytona, and Boat use the same command runner as `shell`. When the computer runs as a host uid without a passwd entry (Docker on macOS), the terminal names it `rakazo` through nss_wrapper for its own session, so prompts and `whoami` work; `/etc/passwd` stays unchanged.
   - Releasing control, expiry, or screen teardown stops it, disconnects every shell, and removes its session files.
-- Providers opt in through `SandboxProvider.connectTerminal`. Docker, E2B, Daytona, and Box support it. Host (`desktop`) computers never expose a browser shell; other computers without it show only Activity.
+- Providers opt in through `SandboxProvider.connectTerminal`. Docker, E2B, Daytona, and Boat support it. Host (`desktop`) computers never expose a browser shell; other computers without it show only Activity.
 - The fake provider serves an emulated shell from a loopback websocket gateway that speaks the same frame protocol. Tests can then drive the browser terminal through the sealed capability and web proxy without exposing a host shell.
 
 **Files**
@@ -77,11 +77,11 @@ The E2B adapter uses `@e2b/desktop` for machine lifecycle, shell commands, files
 
 The database stores the provider kind and opaque `providerRef`. That reference is an acceleration path, not durable data. It is passed back only to the same provider kind. A missing machine or a provider-kind change creates a replacement and restores its workspace through the provider-neutral contract.
 
-## Box backend
+## Boat backend
 
-The Box adapter uses ASCII's official TypeScript SDK for lifecycle, command, and file operations. It creates and resumes boxes with `noEnv: true`, as required when a third party supplies the API key, and keeps a two-hour TTL refreshed while the computer is active. The shared runtime creates each bot's display and noVNC transports, exposed through protected Box port hosting. Rakazo's encrypted screen capability proxy binds the view/control policy and keeps the provider credentials out of browser-visible URLs. Observations and actions target the assigned bot display.
+The Boat adapter uses Boat's official TypeScript SDK for lifecycle, command, and file operations. It creates and resumes sandboxes with `noEnv: true`, as required when a third party supplies the API key, and keeps a two-hour TTL refreshed while the computer is active. The shared runtime creates each bot's display and noVNC transports, exposed through protected Boat port hosting. Rakazo's encrypted screen capability proxy binds the view/control policy and keeps the provider credentials out of browser-visible URLs. Observations and actions target the assigned bot display.
 
-Box stop archives the machine and resume reconnects the same opaque box id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. The Box emulator uses the same multi-screen contract as the other managed-provider emulators.
+Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. The Boat emulator uses the same multi-screen contract as the other managed-provider emulators.
 
 ## Persistence
 

@@ -151,7 +151,7 @@ const DEDICATED_CARDS: readonly RoundupCard[] = [
     href: SELF_HOST_GUIDE_PATH,
     heading: "Open source AI agent you run yourself",
     paragraphs: [
-      "Rakazo is an open source AI agent for persistent teammates. It is in beta. The clients are the web app, the Electron desktop app, and the Expo mobile app. You bring a model key, including a local server, and each bot can use a different model. The default computer is local Docker. Optional computers include E2B, Daytona, CreateOS, Box, and a trusted local computer. Like Grok Bot, Rakazo is just chat once it is running: a new bot interviews you, and you manage schedules, memory, and approvals from that chat. Routines are readable Markdown. There is no seat fee. Hosted Rakazo Cloud is not generally available.",
+      "Rakazo is an open source AI agent for persistent teammates. It is in beta. The clients are the web app, the Electron desktop app, and the Expo mobile app. You bring a model key, including a local server, and each bot can use a different model. The default computer is local Docker. Optional computers include E2B, Daytona, CreateOS, Boat, and a trusted local computer. Like Grok Bot, Rakazo is just chat once it is running: a new bot interviews you, and you manage schedules, memory, and approvals from that chat. Routines are readable Markdown. There is no seat fee. Hosted Rakazo Cloud is not generally available.",
     ],
   },
   {

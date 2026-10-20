@@ -1,5 +1,7 @@
 import type { TelegramBotCredentials } from "@rakazo/adapters";
 import {
+  boatApiKeyFromEnv,
+  boatApiUrlFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
@@ -59,8 +61,8 @@ export interface AppEnv {
   daytonaApiKey: string | undefined;
   daytonaApiUrl: string | undefined;
   daytonaTarget: string | undefined;
-  boxApiKey: string | undefined;
-  boxApiUrl: string | undefined;
+  boatApiKey: string | undefined;
+  boatApiUrl: string | undefined;
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
@@ -205,8 +207,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
     daytonaTarget: source.DAYTONA_TARGET,
-    boxApiKey: source.BOX_API_KEY,
-    boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
+    boatApiKey: boatApiKeyFromEnv(source),
+    boatApiUrl: boatApiUrlFromEnv(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),

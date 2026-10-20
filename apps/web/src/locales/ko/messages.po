@@ -1247,8 +1247,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env."
-msgstr "컴퓨터가 꺼져 있습니다. SANDBOX_PROVIDER=docker와 SANDBOX_SUPERVISOR_TOKEN을 설정하거나, SANDBOX_PROVIDER를 e2b, daytona, box 중 하나로 두고 해당 API 키를 넣으세요. .env 변경 후 스택을 다시 만드세요."
+msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env."
+msgstr "컴퓨터가 꺼져 있습니다. SANDBOX_PROVIDER=docker와 SANDBOX_SUPERVISOR_TOKEN을 설정하거나, SANDBOX_PROVIDER를 e2b, daytona, boat 중 하나로 두고 해당 API 키를 넣으세요. .env 변경 후 스택을 다시 만드세요."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -2091,6 +2091,7 @@ msgstr ""
 msgid "Desktop update"
 msgstr ""
 
+#: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
 msgid "Details"
 msgstr "세부 정보"

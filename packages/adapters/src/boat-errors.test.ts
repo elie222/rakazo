@@ -1,18 +1,18 @@
-import { ResponseError } from "@asciidev/box-sdk";
+import { ResponseError } from "@boatdev/sdk";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boxResponseError, wrapBoxCall } from "./box-errors.js";
-import { BoxSandboxProvider, isUnrecoverableBoxError } from "./box-sandbox.js";
+import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("Box API errors", () => {
+describe("Boat API errors", () => {
   it("reports the upstream failure through the real SDK-backed file operation", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
         Response.json(
           {
-            code: "box_direct_failed",
+            code: "sandbox_direct_failed",
             message: "File is too large for read_file. Use artifact download instead.",
             requestId: "req_example",
           },
@@ -20,10 +20,10 @@ describe("Box API errors", () => {
         ),
       ),
     );
-    const provider = new BoxSandboxProvider({ apiKey: "fake-box-key" });
+    const provider = new BoatSandboxProvider({ apiKey: "fake-boat-key" });
     await expect(
       provider.readFile(
-        { id: "box-test", providerRef: "box-test", botId: "bot-test", kind: "box" },
+        { id: "boat-test", providerRef: "boat-test", botId: "bot-test", kind: "boat" },
         "data.bin",
         {
           operationId: "test",
@@ -34,42 +34,42 @@ describe("Box API errors", () => {
         },
       ),
     ).rejects.toThrow(
-      "Box API request failed (HTTP 400, box_direct_failed): File is too large for read_file. Use artifact download instead. (request req_example)",
+      "Boat API request failed (HTTP 400, sandbox_direct_failed): File is too large for read_file. Use artifact download instead. (request req_example)",
     );
   });
 
   it("preserves 404 recovery and does not retry failed commands", async () => {
     const call = vi.fn(async () => {
-      throw new ResponseError(Response.json({ message: "Box not found" }, { status: 404 }));
+      throw new ResponseError(Response.json({ message: "Boat not found" }, { status: 404 }));
     });
-    const error = await wrapBoxCall(call, "fake-key")().catch((failure: unknown) => failure);
+    const error = await wrapBoatCall(call, "fake-key")().catch((failure: unknown) => failure);
     expect(error).toBeInstanceOf(ResponseError);
-    expect(isUnrecoverableBoxError(error)).toBe(true);
+    expect(isUnrecoverableBoatError(error)).toBe(true);
     expect(call).toHaveBeenCalledTimes(1);
   });
 
   it("does not replace cancellation and network errors", async () => {
     const cancelled = new DOMException("Cancelled", "AbortError");
-    const call = wrapBoxCall(async () => {
+    const call = wrapBoatCall(async () => {
       throw cancelled;
     }, "fake-key");
     await expect(call()).rejects.toBe(cancelled);
   });
 
   it("redacts credentials and signed URLs while retaining the useful diagnosis", async () => {
-    const error = await boxResponseError(
+    const error = await boatResponseError(
       Response.json(
         {
           code: "unauthorized",
           message:
-            "Rejected fake-box-key; Bearer other-credential; see https://box.example/desktop?token=private-value",
+            "Rejected fake-boat-key; Bearer other-credential; see https://boat.example/desktop?token=private-value",
         },
         { status: 401 },
       ),
-      "fake-box-key",
+      "fake-boat-key",
     );
     expect(error.message).toContain("HTTP 401, unauthorized");
-    for (const secret of ["fake-box-key", "other-credential", "private-value"]) {
+    for (const secret of ["fake-boat-key", "other-credential", "private-value"]) {
       expect(error.message).not.toContain(secret);
     }
   });
@@ -77,13 +77,13 @@ describe("Box API errors", () => {
   it.each(["upstream HTML", "null", "[]", '{"message":42}'])(
     "uses an HTTP fallback for malformed or unstructured errors: %s",
     async (body) => {
-      const error = await boxResponseError(new Response(body, { status: 502 }), "fake-key");
-      expect(error.message).toBe("Box API request failed (HTTP 502)");
+      const error = await boatResponseError(new Response(body, { status: 502 }), "fake-key");
+      expect(error.message).toBe("Boat API request failed (HTTP 502)");
     },
   );
 
   it("caps upstream detail and stops reading oversized error bodies", async () => {
-    const error = await boxResponseError(
+    const error = await boatResponseError(
       Response.json({ message: "x".repeat(1_000) }, { status: 400 }),
       "fake-key",
     );
@@ -99,8 +99,8 @@ describe("Box API errors", () => {
       }),
       { status: 503 },
     );
-    expect((await boxResponseError(response, "fake-key")).message).toBe(
-      "Box API request failed (HTTP 503)",
+    expect((await boatResponseError(response, "fake-key")).message).toBe(
+      "Boat API request failed (HTTP 503)",
     );
     expect(cancel).toHaveBeenCalledOnce();
   });
@@ -116,11 +116,11 @@ describe("Box API errors", () => {
       { status: 504 },
     );
 
-    const pending = boxResponseError(response, "fake-key", controller.signal);
+    const pending = boatResponseError(response, "fake-key", controller.signal);
     controller.abort(new DOMException("Timed out", "TimeoutError"));
 
     await expect(pending).resolves.toMatchObject({
-      message: "Box API request failed (HTTP 504)",
+      message: "Boat API request failed (HTTP 504)",
     });
     expect(cancel).toHaveBeenCalledOnce();
   });

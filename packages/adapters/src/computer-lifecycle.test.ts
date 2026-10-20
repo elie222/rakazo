@@ -800,7 +800,7 @@ describe("computer provisioning", () => {
         id: "computer-1",
         homeKey: "bot-1",
         providerRef: "provider-1",
-        kind: "box",
+        kind: "boat",
         scope: "dedicated",
         state: "running",
         controlLeaseId: null,
@@ -862,14 +862,14 @@ describe("computer provisioning", () => {
             id: "computer-1",
             state: "booting",
             providerRef: "provider-1",
-            kind: "box",
+            kind: "boat",
             updatedAt: expect.any(Date),
           },
           data: { state: "running" },
         });
         expect(original).toMatchObject({
           state: "running",
-          kind: "box",
+          kind: "boat",
           providerRef: "provider-1",
         });
       } finally {
@@ -885,7 +885,7 @@ describe("computer provisioning", () => {
       id: "computer-1",
       homeKey: "bot-1",
       providerRef: "provider-1",
-      kind: "box",
+      kind: "boat",
       scope: "dedicated",
       state: "running",
       controlLeaseId: null,
@@ -940,9 +940,9 @@ describe("computer provisioning", () => {
 
   it.each([
     { kind: "e2b" as const, providerRef: "provider-2", fresh: true },
-    { kind: "box" as const, providerRef: "provider-2", fresh: false },
+    { kind: "boat" as const, providerRef: "provider-2", fresh: false },
     { kind: "e2b" as const, providerRef: "provider-1", fresh: false },
-    { kind: "box" as const, providerRef: "provider-1", fresh: true },
+    { kind: "boat" as const, providerRef: "provider-1", fresh: true },
   ])(
     "restores saved files before reconnecting to $kind/$providerRef (fresh=$fresh)",
     async (next) => {
@@ -964,7 +964,7 @@ describe("computer provisioning", () => {
             id: "computer-1",
             homeKey: "bot-1",
             providerRef: "provider-1",
-            kind: "box",
+            kind: "boat",
             scope: "dedicated",
             state: "running",
             controlLeaseId: null,
@@ -1004,7 +1004,7 @@ describe("computer provisioning", () => {
             id: "computer-1",
             state: "booting",
             providerRef: "provider-1",
-            kind: "box",
+            kind: "boat",
             updatedAt: expect.any(Date),
             bots: { some: { id: "bot-1", archivedAt: null } },
           },

@@ -9,7 +9,7 @@ import { computerTestSandbox } from "../computer-test-config.js";
 import { runProcess } from "./process.js";
 
 async function main() {
-  const { values } = parseArgs({ options: { sandbox: { type: "string", default: "box" } } });
+  const { values } = parseArgs({ options: { sandbox: { type: "string", default: "boat" } } });
   const sandbox = computerTestSandbox(values.sandbox);
   loadRootEnv();
   for (const key of [sandbox.apiKeyEnv, "OPENROUTER_API_KEY", "COMPUTER_E2E_MODEL"]) {

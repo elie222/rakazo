@@ -121,17 +121,17 @@ describe("loadEnv", () => {
     });
   });
 
-  it("loads provider-specific Box configuration", () => {
+  it("loads provider-specific Boat configuration", () => {
     const env = loadEnv({
       ...base,
-      SANDBOX_PROVIDER: "box",
-      BOX_API_KEY: "test-box-key",
-      BOX_API_URL: "https://box.test/api/v1",
+      SANDBOX_PROVIDER: "boat",
+      BOAT_API_KEY: "test-boat-key",
+      BOAT_API_URL: "https://boat.test/api/v1",
     });
     expect(env).toMatchObject({
-      sandboxProvider: "box",
-      boxApiKey: "test-box-key",
-      boxApiUrl: "https://box.test/api/v1",
+      sandboxProvider: "boat",
+      boatApiKey: "test-boat-key",
+      boatApiUrl: "https://boat.test/api/v1",
     });
   });
 

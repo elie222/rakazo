@@ -102,7 +102,7 @@ Rakazo is Apache-2.0. You run the published Docker images, or a source checkout,
 
 The published-image installer is one script in an empty directory. It writes `.env` with random secrets, pulls the images, and starts the API, the worker, Postgres, and a Docker computer. You open the app, create an account, and connect a model. The first registered user is the deployment owner. From there the product is chat. A new bot interviews you. Routines are Markdown. A bot can pause for approval, and actions land in an audit log you keep.
 
-Models include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, and a local server such as Ollama, LM Studio, llama.cpp, or MLX. Each bot can use a different model. The default computer is local Docker. E2B, Daytona, CreateOS, and Box are optional. An explicit desktop provider can run on the host, and it is not the default.
+Models include OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, and a local server such as Ollama, LM Studio, llama.cpp, or MLX. Each bot can use a different model. The default computer is local Docker. E2B, Daytona, CreateOS, and Boat are optional. An explicit desktop provider can run on the host, and it is not the default.
 
 Optional connectors exist for Slack, WhatsApp, Telegram, iMessage via Sendblue, and Feishu/Lark. They are not how you talk to the bot. The web, Electron, and Expo apps are.
 

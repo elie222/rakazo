@@ -156,13 +156,26 @@ export function createRuntimeContextPolicy(
   }
   return {
     prepareContext(ctx: Context, model: Model<Api>): Context {
-      const strategy = request.contextStrategy ?? DEFAULT_CONTEXT_STRATEGY;
       const standaloneHistoryFallback =
         request.contextStrategy === undefined &&
         (!request.executeTool ||
           !["read_history", "search_history"].every((name) =>
             request.tools.some((tool) => tool.name === name),
           ));
+      // An explicitly declared cache window opts this connection into prefix reuse.
+      // Without history retrieval, preserve fitting originals instead of replacing
+      // them with cold snapshots the caller cannot follow back to the source.
+      // Unknown/disabled caches retain the default; explicit overrides still win.
+      const retention = request.model.cacheCapabilities?.retentionMs;
+      const strategy =
+        request.contextStrategy ??
+        (!standaloneHistoryFallback &&
+        request.model.cacheCapabilities?.retentionMode !== "none" &&
+        typeof retention === "number" &&
+        Number.isFinite(retention) &&
+        retention > 0
+          ? "cache-aware"
+          : DEFAULT_CONTEXT_STRATEGY);
       metadataPresent = ctx.messages.some((message) =>
         Boolean((message as Message & OriginalMetadata).rakazoHistory),
       );

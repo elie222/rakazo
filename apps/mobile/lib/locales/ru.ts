@@ -280,6 +280,8 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not load model settings": "Не удалось загрузить настройки модели.",
   "Could not load routine": "Не удалось загрузить программу",
   "Could not load routines": "Не удалось загрузить задачи",
+  "Get notified when this Bot finishes or needs input":
+    "Получать уведомления, когда этот бот завершает работу или ждёт ввода",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "Не удалось загрузить рабочий стол. Это устройство не может получить доступ к URL-адресу экрана.",
   "Could not load this file.": "Не удалось загрузить этот файл.",

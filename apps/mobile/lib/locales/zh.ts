@@ -258,6 +258,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not load model settings": "无法加载模型设置",
   "Could not load routine": "无法加载例行任务",
   "Could not load routines": "无法加载例行任务",
+  "Get notified when this Bot finishes or needs input": "在此机器人完成或需要输入时收到通知",
   "Could not load the desktop. This device cannot reach the screen URL.":
     "无法加载桌面。此设备无法访问屏幕地址。",
   "Could not load this file.": "无法加载此文件。",

@@ -766,6 +766,7 @@ app.get("/computers/:id/screen", async (c) => {
       c.req.header("x-rakazo-space-id"),
       c.req.header("x-rakazo-screen-id"),
       c.req.header("x-rakazo-screen-lease-id"),
+      false,
     );
     const screenUrl = await publishedScreenUrl(container, info, layout.viewPort);
     return c.redirect(screenUrlWithToken(screenUrl, viewToken));
@@ -796,7 +797,14 @@ app.post("/computers/:id/screen-mode", async (c) => {
     const screenLeaseId = c.req.header("x-rakazo-screen-lease-id");
     const { container, info } = await managedContainer(id, botId, spaceId);
     const { layout, viewToken } = await withComputerScreenLock(id, async () => {
-      const screen = await ensureManagedScreen(id, container, botId, screenId, screenLeaseId);
+      const screen = await ensureManagedScreen(
+        id,
+        container,
+        botId,
+        screenId,
+        screenLeaseId,
+        !body.interactive && body.revokeControl === false,
+      );
       if (body.interactive || body.revokeControl !== false) {
         const changed = await setInteractiveScreen(
           container,
@@ -806,8 +814,13 @@ app.post("/computers/:id/screen-mode", async (c) => {
         );
         const slot = computerScreens.get(id)?.get(screen.screenKey);
         if (slot && changed) {
-          if (body.interactive) slot.controlled = true;
-          else delete slot.controlled;
+          if (body.interactive) {
+            slot.controlled = true;
+            slot.controlToken = body.controlToken;
+          } else {
+            delete slot.controlled;
+            delete slot.controlToken;
+          }
         }
       }
       return screen;
@@ -850,6 +863,7 @@ app.post("/computers/:id/terminal", async (c) => {
         botId,
         c.req.header("x-rakazo-screen-id"),
         c.req.header("x-rakazo-screen-lease-id"),
+        false,
       );
       const result = await runContainerCommand(
         container,
@@ -974,8 +988,12 @@ app.delete("/computers/:id/screen", async (c) => {
           screenId,
         });
         if (assigned && index !== undefined) {
-          await teardownReleasedScreen(assigned, screenId, index, () =>
-            runContainerCommand(container, ["bash", "-c", stop]),
+          await teardownReleasedScreen(
+            assigned,
+            screenId,
+            index,
+            () => runContainerCommand(container, ["bash", "-c", stop]),
+            { retainBrowser: !cancelRunWork },
           );
         } else if (stop) {
           const result = await runContainerCommand(container, ["bash", "-c", stop]);
@@ -984,6 +1002,7 @@ app.delete("/computers/:id/screen", async (c) => {
           }
         }
       }
+      // Ordinary release retains the browser's slot; cancellation can empty the registry.
       // Keep an emptied registry. A missing one means the supervisor lost track of the
       // container, and the next screen request then resets every desktop process in it.
     });
@@ -1232,10 +1251,11 @@ async function managedScreen(
   spaceId: string | undefined,
   screenId: string | undefined,
   screenLeaseId: string | undefined,
+  restoreControl = true,
 ) {
   const { container } = await managedContainer(id, botId, spaceId);
   return withComputerScreenLock(id, () =>
-    ensureManagedScreen(id, container, botId, screenId, screenLeaseId),
+    ensureManagedScreen(id, container, botId, screenId, screenLeaseId, restoreControl),
   );
 }
 
@@ -1245,10 +1265,18 @@ async function ensureManagedScreen(
   botId: string | undefined,
   screenId: string | undefined,
   screenLeaseId: string | undefined,
+  restoreControl = true,
 ) {
   // Docker can restart independently of the supervisor's screen lock.
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const screen = await ensureManagedScreenAttempt(id, container, botId, screenId, screenLeaseId);
+    const screen = await ensureManagedScreenAttempt(
+      id,
+      container,
+      botId,
+      screenId,
+      screenLeaseId,
+      restoreControl,
+    );
     const info = await container.inspect();
     if (info.State?.StartedAt === screen.info.State?.StartedAt) {
       // Confirm the pending boot marker only after setup completes against the same boot.
@@ -1271,6 +1299,7 @@ async function ensureManagedScreenAttempt(
   botId: string | undefined,
   screenId: string | undefined,
   screenLeaseId: string | undefined,
+  restoreControl = true,
 ) {
   // Callers hold the screen lock: an inspection before waiting can describe an older boot.
   const info = await container.inspect();
@@ -1338,6 +1367,10 @@ async function ensureManagedScreenAttempt(
     if (assigned.size === 0) clearComputerScreenRegistry(computerScreens, computerScreenBoots, id);
     const detail = [ensured.stderr, browserLog.stdout].filter(Boolean).join("\n").trim();
     throw new Error(detail || `computer screen ${layout.display} failed to start`);
+  }
+  // Ensuring the view must also recover an active human lease after its VNC process dies.
+  if (restoreControl && slot.controlToken) {
+    await setInteractiveScreen(container, true, slot.controlToken, layout);
   }
   return {
     container,

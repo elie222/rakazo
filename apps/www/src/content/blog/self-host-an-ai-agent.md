@@ -69,12 +69,12 @@ This page follows the [self-hosting guide](https://github.com/elie222/rakazo/blo
 
 ## What you are running
 
-A signed-in Rakazo deployment is not a static site. The guide describes a long-running API, a Graphile Worker, Postgres, and a computer provider. The computer defaults to Docker. E2B, Daytona, CreateOS, and Box are optional remote computers, each with its own API key. The web app, the Electron desktop app, and the Expo mobile app are clients of that API.
+A signed-in Rakazo deployment is not a static site. The guide describes a long-running API, a Graphile Worker, Postgres, and a computer provider. The computer defaults to Docker. E2B, Daytona, CreateOS, and Boat are optional remote computers, each with its own API key. The web app, the Electron desktop app, and the Expo mobile app are clients of that API.
 
 Postgres, bot files, browser profiles, and the audit log stay on the machine you operate. Content you send to a model provider is processed by that provider under its terms. You choose the provider and the keys. There is no seat fee for the open source software. You pay the model provider and any remote computer you turn on.
 
 <figure class="post-figure">
-  <img src="/graphics/architecture.svg" width="1200" height="720" alt="Diagram of a Rakazo deployment. Web, desktop, and mobile clients talk to an API. A worker and Postgres sit beside it. The computer defaults to Docker, with E2B, Daytona, CreateOS, or Box optional. Model prompts go to the provider you configure." />
+  <img src="/graphics/architecture.svg" width="1200" height="720" alt="Diagram of a Rakazo deployment. Web, desktop, and mobile clients talk to an API. A worker and Postgres sit beside it. The computer defaults to Docker, with E2B, Daytona, CreateOS, or Boat optional. Model prompts go to the provider you configure." />
   <figcaption>A Rakazo deployment. Postgres, bot files, and the audit log stay on the machine you run. Prompts still go to the model provider you choose.</figcaption>
 </figure>
 
@@ -156,7 +156,7 @@ Optional connectors can attach Slack, WhatsApp, Telegram, iMessage via Sendblue,
 
 Use the same installer on a VPS when bots should keep running after you close a laptop. Images Compose binds the web app to loopback `127.0.0.1:5173`. Terminate TLS on the host and proxy there. Do not publish port 3100. The web server proxies `/api`.
 
-Set `RAKAZO_HOST` to the hostname. Set `BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same `https://` origin. For a remote computer instead of local Docker, set `SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `box` and add that provider's key.
+Set `RAKAZO_HOST` to the hostname. Set `BETTER_AUTH_URL`, `WEB_ORIGIN`, and `API_URL` to that same `https://` origin. For a remote computer instead of local Docker, set `SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `boat` and add that provider's key.
 
 A minimal Caddy site is a reverse proxy to `127.0.0.1:5173`. Replace the example host with yours. Desktop clients should use **Existing instance** with the `https://` address. HTTP is accepted only for loopback and private LAN addresses. **This computer** in the desktop app installs the published images with Docker Compose on that machine, on port 45173 by default so it can sit next to a dev server.
 

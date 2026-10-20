@@ -39,7 +39,7 @@ describe("sandboxEnvGuidanceText", () => {
     ]);
     expect(text).toContain("# SANDBOX_PROVIDER=e2b");
     expect(text).toContain("# SANDBOX_PROVIDER=daytona");
-    expect(text).toContain("# SANDBOX_PROVIDER=box");
+    expect(text).toContain("# SANDBOX_PROVIDER=boat");
   });
 });
 

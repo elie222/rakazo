@@ -45,6 +45,7 @@ describe.each([undefined, profile])(
   (browserProfile) => {
     it.each([
       { kind: "open" as const, path: "https://example.com" },
+      { kind: "open" as const, path: "screenshots/image #1.png" },
       { kind: "launch" as const, application: "chromium", uri: "https://example.com" },
       { kind: "launch" as const, application: "chromium" },
       { kind: "launch" as const, application: "xterm" },

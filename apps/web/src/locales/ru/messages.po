@@ -1247,8 +1247,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env."
-msgstr "Компьютеры выключены. Установите SANDBOX_PROVIDER=docker с помощью SANDBOX_SUPERVISOR_TOKEN или установите для SANDBOX_PROVIDER значение e2b, Daytona или Box с его ключом API. Воссоздайте стек после изменения .env."
+msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env."
+msgstr "Компьютеры выключены. Установите SANDBOX_PROVIDER=docker с помощью SANDBOX_SUPERVISOR_TOKEN или установите для SANDBOX_PROVIDER значение e2b, Daytona или boat с его ключом API. Воссоздайте стек после изменения .env."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -2091,6 +2091,7 @@ msgstr "Настольное приложение"
 msgid "Desktop update"
 msgstr "Обновление настольного приложения"
 
+#: src/pages/RoutineRunHistory.tsx
 #: src/pages/Shell.tsx
 msgid "Details"
 msgstr "Подробности"

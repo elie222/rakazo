@@ -196,7 +196,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Computer",
         rakazo:
-          "Sandboxed browser, terminal, files, and a graphical desktop, on a shared team computer or an isolated private computer. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Box, or a trusted local computer.",
+          "Sandboxed browser, terminal, files, and a graphical desktop, on a shared team computer or an isolated private computer. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Boat, or a trusted local computer.",
         other:
           "A browser on Muse Secure VM. Meta says Muse can open that browser, fill out forms, and take on tasks such as email and booking travel. The Connect recap says Muse for Mac can drive apps on that Mac with your permission.",
       },
@@ -373,7 +373,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Computer",
         rakazo:
-          "Sandboxed browser, terminal, files, and a graphical desktop, on a shared team computer or an isolated private computer. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Box, or a trusted local computer.",
+          "Sandboxed browser, terminal, files, and a graphical desktop, on a shared team computer or an isolated private computer. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Boat, or a trusted local computer.",
         other:
           "The homepage says Instinct can use a phone and a computer the way a person does. The privacy policy's examples include booking a ride, signing into an account with credentials you provide, and booking a medical appointment.",
       },
@@ -497,7 +497,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Computer",
         rakazo:
-          "Sandboxed browser, terminal, files, and a graphical desktop. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Box, or a trusted local computer.",
+          "Sandboxed browser, terminal, files, and a graphical desktop. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Boat, or a trusted local computer.",
         other:
           "The README lists seven terminal backends: local, Docker, SSH, Singularity, Modal, Daytona, and Vercel Sandbox. The quickstart shows `hermes config set terminal.backend` for Docker or SSH. The security guide says dangerous-command checks are skipped inside Docker, Singularity, Modal, Daytona, and Vercel Sandbox, because the container is the boundary.",
       },
@@ -606,7 +606,7 @@ export const ALTERNATIVES: readonly Alternative[] = [
       {
         topic: "Computer",
         rakazo:
-          "Sandboxed browser, terminal, files, and a graphical desktop. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Box, or a trusted local computer.",
+          "Sandboxed browser, terminal, files, and a graphical desktop. Docker is the default local computer, with optional E2B, Daytona, CreateOS, Boat, or a trusted local computer.",
         other:
           "Handoff, introduced August 5, 2026, is a virtual computer with a browser, files, and a terminal. The October 6 launch article says it can run up to 6 browsers at once and log in on your behalf. Hark operates that computer.",
       },

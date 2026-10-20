@@ -1,12 +1,12 @@
-import { ResponseError } from "@asciidev/box-sdk";
+import { ResponseError } from "@boatdev/sdk";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
-const MAX_BOX_ERROR_RESPONSE_BYTES = 16 * 1024;
-const BOX_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
+const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
+const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
 
 /** Keep HTTP failures actionable without changing the SDK's status-based recovery contract. */
-export function wrapBoxCall<Args extends unknown[], Result>(
+export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
   apiKey: string,
 ): (...args: Args) => Promise<Result> {
@@ -14,13 +14,13 @@ export function wrapBoxCall<Args extends unknown[], Result>(
     try {
       return await call(...args);
     } catch (error) {
-      if (error instanceof ResponseError) throw await boxResponseError(error.response, apiKey);
+      if (error instanceof ResponseError) throw await boatResponseError(error.response, apiKey);
       throw error;
     }
   };
 }
 
-export async function boxResponseError(
+export async function boatResponseError(
   response: Response,
   apiKey: string,
   signal?: AbortSignal,
@@ -28,7 +28,7 @@ export async function boxResponseError(
   const body = await readErrorBody(response, signal);
   const code = safeIdentifier(body?.code);
   const requestId = safeIdentifier(body?.requestId);
-  const prefix = `Box API request failed (HTTP ${response.status}${code ? `, ${code}` : ""})`;
+  const prefix = `Boat API request failed (HTTP ${response.status}${code ? `, ${code}` : ""})`;
   const detail =
     typeof body?.message === "string"
       ? redactSecrets(body.message, [apiKey])
@@ -56,10 +56,10 @@ async function readErrorBody(
   signal?: AbortSignal,
 ): Promise<Record<string, unknown> | undefined> {
   const readSignal = signal
-    ? AbortSignal.any([signal, AbortSignal.timeout(BOX_ERROR_RESPONSE_TIMEOUT_MS)])
-    : AbortSignal.timeout(BOX_ERROR_RESPONSE_TIMEOUT_MS);
+    ? AbortSignal.any([signal, AbortSignal.timeout(BOAT_ERROR_RESPONSE_TIMEOUT_MS)])
+    : AbortSignal.timeout(BOAT_ERROR_RESPONSE_TIMEOUT_MS);
   try {
-    const bytes = await readBodyCapped(response, MAX_BOX_ERROR_RESPONSE_BYTES, readSignal);
+    const bytes = await readBodyCapped(response, MAX_BOAT_ERROR_RESPONSE_BYTES, readSignal);
     const body: unknown = JSON.parse(new TextDecoder().decode(bytes));
     return body !== null && typeof body === "object" && !Array.isArray(body)
       ? (body as Record<string, unknown>)

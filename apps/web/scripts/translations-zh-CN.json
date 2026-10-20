@@ -581,7 +581,7 @@
   "Check your email": "请查看邮箱",
   "Choose a new password": "设置新密码",
   "Computers": "电脑",
-  "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env.": "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SUPERVISOR_TOKEN，或将 SANDBOX_PROVIDER 设为 e2b、daytona 或 box 并提供对应 API 密钥。更改 .env 后请重建环境。",
+  "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env.": "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SUPERVISOR_TOKEN，或将 SANDBOX_PROVIDER 设为 e2b、daytona 或 boat 并提供对应 API 密钥。更改 .env 后请重建环境。",
   "Confirm password": "确认密码",
   "Copy": "复制",
   "Could not change password": "无法修改密码",

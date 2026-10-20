@@ -559,9 +559,9 @@ importers:
 
   packages/adapters:
     dependencies:
-      '@asciidev/box-sdk':
-        specifier: 0.0.37
-        version: 0.0.37
+      '@boatdev/sdk':
+        specifier: 1.10.0
+        version: 1.10.0
       '@chat-adapter/slack':
         specifier: 4.42.0
         version: 4.42.0(zod@4.6.7)
@@ -1038,9 +1038,6 @@ packages:
   '@asamuzakjp/dom-selector@10.0.3':
     resolution: {integrity: sha512-3+777rEPsOOjoy5/sRmIzHnoRDaLpm3XWY2dmWn/N7f/XwDG0bcpnFaKL3X9FYJUbNwLmpcJC1bUYexJRxsFlw==}
     engines: {node: ^22.22.2 || ^24.15.0 || >=26.0.0}
-
-  '@asciidev/box-sdk@0.0.37':
-    resolution: {integrity: sha512-fZhs5ygWO3uZ3clx/dPVSRPMadCbNleyeeB2tf+hcqgOKpqWNfjOk/a8M/QffpZfQE8n5LJUtQlqnL7ysBi/Qw==}
 
   '@astrojs/check@0.9.10':
     resolution: {integrity: sha512-zgx/UQMozdjOa3bOxjgeCFdtpE3c9rRX6xHwa+2QXvy8z8Akifu2AtubHyv/zzC2znO8dl8fFWL4K+Ba9kS8HQ==}
@@ -1829,6 +1826,9 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@boatdev/sdk@1.10.0':
+    resolution: {integrity: sha512-e4z4eXwflU8YMEqgjxa8fjnzvOqW2yxhuul29ubTbIWBmbRDQBw2IvpMwwBhWnpg+3xX8zEg9ZUNXVQYu/p+dA==}
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
@@ -10599,8 +10599,6 @@ snapshots:
       is-potential-custom-element-name: 1.0.1
       lru-cache: 11.5.3
 
-  '@asciidev/box-sdk@0.0.37': {}
-
   '@astrojs/check@0.9.10(prettier@3.9.6)(typescript@6.0.3)':
     dependencies:
       '@astrojs/language-server': 2.16.14(prettier@3.9.6)(typescript@6.0.3)
@@ -11604,6 +11602,8 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.15':
     optional: true
+
+  '@boatdev/sdk@1.10.0': {}
 
   '@braintree/sanitize-url@7.1.2': {}
 

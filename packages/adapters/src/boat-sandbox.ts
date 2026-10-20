@@ -1,14 +1,8 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import {
-  type Box,
-  BoxApi,
-  type Command200Response,
-  type CommandResponse,
-  Configuration,
-  ResponseError,
-} from "@asciidev/box-sdk";
+import type { Sandbox as BoatMachine, Command200Response, CommandResponse } from "@boatdev/sdk";
+import { BoatApi, Configuration, ResponseError } from "@boatdev/sdk";
 import type {
   AdapterContext,
   CommandRequest,
@@ -26,7 +20,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { boxResponseError, wrapBoxCall } from "./box-errors.js";
+import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
@@ -36,49 +30,50 @@ import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 import { withAbort } from "./web-ssrf.js";
 
-const BOX_API_BASE = "https://ascii.dev/api/box/v1";
-const BOX_WORKSPACE = "/home/user/rakazo-home";
-const BOX_BROWSER_PROFILES = `${BOX_WORKSPACE}/.browser-profiles`;
-const BOX_READY_TIMEOUT_MS = 5 * 60_000;
-const BOX_API_COMMAND_TIMEOUT_SECONDS = 600;
-const BOX_TTL_SECONDS = 2 * 60 * 60;
-const BOX_DELETE_TIMEOUT_MS = 60_000;
-const BOX_EXPORT_CONCURRENCY = 16;
+const BOAT_API_BASE = "https://boat.dev/api/v1";
+const BOAT_WORKSPACE = "/home/user/rakazo-home";
+const BOAT_BROWSER_PROFILES = `${BOAT_WORKSPACE}/.browser-profiles`;
+const BOAT_READY_TIMEOUT_MS = 5 * 60_000;
+const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
+const BOAT_TTL_SECONDS = 2 * 60 * 60;
+const BOAT_DELETE_TIMEOUT_MS = 60_000;
+const BOAT_EXPORT_CONCURRENCY = 16;
 
-export type BoxSandboxSdk = Pick<
-  BoxApi,
+export type BoatSandboxSdk = Pick<
+  BoatApi,
   | "artifactRaw"
   | "command"
   | "commandStatus"
   | "create"
   | "desktop"
   | "get"
+  | "hostPort"
   | "resume"
   | "stop"
   | "update"
   | "writeFile"
 > & {
-  deleteBox(boxId: string): Promise<void>;
+  deleteSandbox(sandboxId: string): Promise<void>;
 };
 
-interface BoxCommandResult {
+interface BoatCommandResult {
   stdout: string;
   stderr: string;
   exitCode: number;
   timedOut: boolean;
 }
 
-export class BoxSandboxProvider implements SandboxProvider {
+export class BoatSandboxProvider implements SandboxProvider {
   billsWhileRunning(): boolean {
     return true;
   }
 
-  private readonly client: BoxSandboxSdk;
+  private readonly client: BoatSandboxSdk;
   private readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",
-      workspaceDir: BOX_WORKSPACE,
-      browserProfilesDir: BOX_BROWSER_PROFILES,
+      workspaceDir: BOAT_WORKSPACE,
+      browserProfilesDir: BOAT_BROWSER_PROFILES,
       displayStart: 20,
       portStart: 6100,
     }),
@@ -97,20 +92,18 @@ export class BoxSandboxProvider implements SandboxProvider {
       };
     },
     screenUrl: async (computer, port, context) => {
-      const result = await this.runCommand(
-        this.id(computer),
-        `host ${port} --private`,
-        undefined,
-        60_000,
-        context.signal,
+      const hosted = await this.client.hostPort(
+        { sandboxId: this.id(computer), hostPortRequest: { port, _public: false } },
+        { signal: context.signal },
       );
-      if (result.exitCode !== 0 || result.timedOut)
-        throw new Error("could not expose protected desktop port");
-      const match = result.stdout.match(/https:\/\/[^\s]+/);
-      if (!match) throw new Error("Box did not return a desktop URL");
-      const url = new URL(match[0]);
-      if (!url.hostname.endsWith(".on.ascii.dev") || !url.searchParams.get("_token"))
-        throw new Error("Box desktop URL is not protected");
+      if (!hosted.url) throw new Error("Boat did not return a desktop URL");
+      const url = new URL(hosted.url);
+      if (
+        url.protocol !== "https:" ||
+        !url.hostname.endsWith(".on.boat.dev") ||
+        !url.searchParams.get("_token")
+      )
+        throw new Error("Boat desktop URL is not protected");
       url.pathname = "/vnc.html";
       return url.toString();
     },
@@ -121,14 +114,14 @@ export class BoxSandboxProvider implements SandboxProvider {
 
   constructor(
     config: { apiKey: string; apiUrl?: string },
-    client: BoxSandboxSdk = createBoxSdk(config),
+    client: BoatSandboxSdk = createBoatSdk(config),
   ) {
     this.client = client;
   }
 
   describe() {
     return {
-      id: "box",
+      id: "boat",
       contractVersion: "1",
       adapterVersion: "0.1.0",
       capabilities: {
@@ -151,7 +144,7 @@ export class BoxSandboxProvider implements SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
-    const reconnecting = request.providerRef && request.providerKind === "box";
+    const reconnecting = request.providerRef && request.providerKind === "boat";
     const key = reconnecting ? request.providerRef! : `new:${request.botId}`;
     const pending = this.pendingProvisions.get(key);
     if (pending) return pending;
@@ -171,32 +164,32 @@ export class BoxSandboxProvider implements SandboxProvider {
     },
     context: AdapterContext,
   ): Promise<ComputerRef> {
-    if (request.providerRef && request.providerKind === "box") {
+    if (request.providerRef && request.providerKind === "boat") {
       try {
         const existing = await this.client.get(
-          { boxId: request.providerRef },
+          { sandboxId: request.providerRef },
           { signal: context.signal },
         );
-        if (existing.box.state === "archived") {
+        if (existing.sandbox.state === "archived") {
           await this.client.resume(
             {
-              boxId: request.providerRef,
-              resumeRequest: { noEnv: true, ttlSeconds: BOX_TTL_SECONDS },
+              sandboxId: request.providerRef,
+              resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS },
             },
             { signal: context.signal },
           );
         }
         return this.ref(request.providerRef, request.botId, false);
       } catch (error) {
-        if (!isUnrecoverableBoxError(error)) throw error;
+        if (!isUnrecoverableBoatError(error)) throw error;
         this.forget(request.providerRef);
       }
     }
 
     const created = await this.client.create(
       {
-        createBoxRequest: {
-          ttlSeconds: BOX_TTL_SECONDS,
+        createSandboxRequest: {
+          ttlSeconds: BOAT_TTL_SECONDS,
           noEnv: true,
           env: {
             RAKAZO_BOT_ID: request.botId,
@@ -206,7 +199,7 @@ export class BoxSandboxProvider implements SandboxProvider {
       },
       { signal: context.signal },
     );
-    return this.ref(created.box.id, request.botId, true);
+    return this.ref(created.sandbox.id, request.botId, true);
   }
 
   async prepare(computer: ComputerRef, context: AdapterContext): Promise<void> {
@@ -219,13 +212,13 @@ export class BoxSandboxProvider implements SandboxProvider {
       await this.ensureRunnable(id, context);
       const result = await this.runCommand(
         id,
-        configureBoxWorkspaceCommand(),
+        configureBoatWorkspaceCommand(),
         undefined,
         60_000,
         context.signal,
       );
       if (result.exitCode !== 0) {
-        throw new Error(result.stderr || result.stdout || "could not prepare Box workspace");
+        throw new Error(result.stderr || result.stdout || "could not prepare Boat workspace");
       }
       const runtime = await this.runCommand(
         id,
@@ -237,7 +230,7 @@ export class BoxSandboxProvider implements SandboxProvider {
       if (runtime.exitCode !== 0 || runtime.timedOut)
         throw new Error("could not prepare computer desktop tools");
       if (this.preparations.get(id) !== preparation) {
-        throw new Error("Box workspace preparation was invalidated during teardown");
+        throw new Error("Boat workspace preparation was invalidated during teardown");
       }
       this.prepared.add(id);
     })().finally(() => {
@@ -270,7 +263,7 @@ export class BoxSandboxProvider implements SandboxProvider {
       const result = await this.runCommand(
         this.id(computer),
         command,
-        boxCwd(request.cwd),
+        boatCwd(request.cwd),
         timeoutMs,
         context.signal,
       );
@@ -338,15 +331,15 @@ export class BoxSandboxProvider implements SandboxProvider {
     const relative = normalizeWorkspacePath(directory);
     const result = await this.runCommand(
       this.id(computer),
-      listBoxFilesCommand(workspacePath(BOX_WORKSPACE, relative)),
+      listBoatFilesCommand(workspacePath(BOAT_WORKSPACE, relative)),
       undefined,
       60_000,
       context.signal,
     );
     if (result.exitCode !== 0) {
-      throw new Error(result.stderr || result.stdout || "could not list Box workspace");
+      throw new Error(result.stderr || result.stdout || "could not list Boat workspace");
     }
-    return parseBoxFileEntries(result.stdout);
+    return parseBoatFileEntries(result.stdout);
   }
 
   async readFile(
@@ -357,7 +350,7 @@ export class BoxSandboxProvider implements SandboxProvider {
   ): Promise<Uint8Array> {
     return this.readRemoteFile(
       this.id(computer),
-      workspacePath(BOX_WORKSPACE, filePath),
+      workspacePath(BOAT_WORKSPACE, filePath),
       context.signal,
       options?.maxBytes,
     );
@@ -374,9 +367,9 @@ export class BoxSandboxProvider implements SandboxProvider {
     const id = this.id(computer);
     await this.desktops.stopBrowsers(computer, context);
     const entries = await this.listWorkspaceFiles(id, context);
-    for (let index = 0; index < entries.length; index += BOX_EXPORT_CONCURRENCY) {
+    for (let index = 0; index < entries.length; index += BOAT_EXPORT_CONCURRENCY) {
       const files = await Promise.all(
-        entries.slice(index, index + BOX_EXPORT_CONCURRENCY).map(async (entry) => ({
+        entries.slice(index, index + BOAT_EXPORT_CONCURRENCY).map(async (entry) => ({
           path: entry.path,
           content: await this.readFile(computer, entry.path, context),
           executable: entry.executable,
@@ -423,8 +416,8 @@ export class BoxSandboxProvider implements SandboxProvider {
 
   async keepAlive(computer: ComputerRef): Promise<void> {
     await this.client.update({
-      boxId: this.id(computer),
-      updateBoxRequest: { ttlSeconds: BOX_TTL_SECONDS },
+      sandboxId: this.id(computer),
+      updateSandboxRequest: { ttlSeconds: BOAT_TTL_SECONDS },
     });
   }
 
@@ -435,13 +428,13 @@ export class BoxSandboxProvider implements SandboxProvider {
   async stop(computer: ComputerRef, context: AdapterContext): Promise<void> {
     const id = this.id(computer);
     try {
-      const current = await this.client.get({ boxId: id }, { signal: context.signal });
-      if (current.box.state !== "archived" && current.box.state !== "archiving") {
-        await this.client.stop({ boxId: id }, { signal: context.signal });
+      const current = await this.client.get({ sandboxId: id }, { signal: context.signal });
+      if (current.sandbox.state !== "archived" && current.sandbox.state !== "archiving") {
+        await this.client.stop({ sandboxId: id }, { signal: context.signal });
       }
       await this.waitForState(id, new Set(["archived"]), context);
     } catch (error) {
-      if (!isUnrecoverableBoxError(error)) throw error;
+      if (!isUnrecoverableBoatError(error)) throw error;
     } finally {
       this.forget(id);
     }
@@ -450,51 +443,52 @@ export class BoxSandboxProvider implements SandboxProvider {
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const id = this.id(computer);
     try {
-      await this.client.deleteBox(id);
+      await this.client.deleteSandbox(id);
     } catch (error) {
-      if (!isUnrecoverableBoxError(error)) throw error;
+      if (!isUnrecoverableBoatError(error)) throw error;
     } finally {
       this.forget(id);
     }
   }
 
-  private async ensureRunnable(id: string, context: AdapterContext): Promise<Box> {
-    const deadline = Date.now() + BOX_READY_TIMEOUT_MS;
+  private async ensureRunnable(id: string, context: AdapterContext): Promise<BoatMachine> {
+    const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let resumed = false;
     while (true) {
       if (context.signal.aborted) {
-        throw context.signal.reason ?? new Error("Box preparation aborted");
+        throw context.signal.reason ?? new Error("Boat preparation aborted");
       }
-      const response = await this.client.get({ boxId: id }, { signal: context.signal });
-      const box = response.box;
-      if (box.state === "ready" || box.state === "idle" || box.state === "running") return box;
-      if (box.state === "archived" && !resumed) {
+      const response = await this.client.get({ sandboxId: id }, { signal: context.signal });
+      const sandbox = response.sandbox;
+      if (sandbox.state === "ready" || sandbox.state === "idle" || sandbox.state === "running")
+        return sandbox;
+      if (sandbox.state === "archived" && !resumed) {
         await this.client.resume(
-          { boxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOX_TTL_SECONDS } },
+          { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
           { signal: context.signal },
         );
         resumed = true;
-      } else if (box.state === "error") {
-        throw new Error(`Box ${id} entered the error state`);
+      } else if (sandbox.state === "error") {
+        throw new Error(`Boat ${id} entered the error state`);
       }
-      if (Date.now() >= deadline) throw new Error(`Box ${id} did not become ready`);
+      if (Date.now() >= deadline) throw new Error(`Boat ${id} did not become ready`);
       await delay(1_000, undefined, { signal: context.signal });
     }
   }
 
   private async waitForState(
     id: string,
-    states: Set<Box["state"]>,
+    states: Set<BoatMachine["state"]>,
     context: AdapterContext,
-  ): Promise<Box> {
-    const deadline = Date.now() + BOX_READY_TIMEOUT_MS;
+  ): Promise<BoatMachine> {
+    const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     while (true) {
-      if (context.signal.aborted) throw context.signal.reason ?? new Error("Box wait aborted");
-      const response = await this.client.get({ boxId: id }, { signal: context.signal });
-      if (states.has(response.box.state)) return response.box;
-      if (response.box.state === "error") throw new Error(`Box ${id} entered the error state`);
+      if (context.signal.aborted) throw context.signal.reason ?? new Error("Boat wait aborted");
+      const response = await this.client.get({ sandboxId: id }, { signal: context.signal });
+      if (states.has(response.sandbox.state)) return response.sandbox;
+      if (response.sandbox.state === "error") throw new Error(`Boat ${id} entered the error state`);
       if (Date.now() >= deadline)
-        throw new Error(`Box ${id} did not reach ${[...states].join("/")}`);
+        throw new Error(`Boat ${id} did not reach ${[...states].join("/")}`);
       await delay(1_000, undefined, { signal: context.signal });
     }
   }
@@ -509,9 +503,9 @@ export class BoxSandboxProvider implements SandboxProvider {
       files.map((file) =>
         this.client.writeFile(
           {
-            boxId: id,
+            sandboxId: id,
             fileWriteRequest: {
-              path: workspacePath(BOX_WORKSPACE, file.path),
+              path: workspacePath(BOAT_WORKSPACE, file.path),
               content: Buffer.from(file.content).toString("base64"),
               encoding: "base64",
             },
@@ -522,7 +516,7 @@ export class BoxSandboxProvider implements SandboxProvider {
     );
     const executable = files.map(
       (file) =>
-        `${file.executable ? "700" : "600"} ${shellQuote(workspacePath(BOX_WORKSPACE, file.path))}`,
+        `${file.executable ? "700" : "600"} ${shellQuote(workspacePath(BOAT_WORKSPACE, file.path))}`,
     );
     const result = await this.runCommand(
       id,
@@ -532,7 +526,7 @@ export class BoxSandboxProvider implements SandboxProvider {
       context.signal,
     );
     if (result.exitCode !== 0) {
-      throw new Error(result.stderr || result.stdout || "could not set Box file permissions");
+      throw new Error(result.stderr || result.stdout || "could not set Boat file permissions");
     }
   }
 
@@ -542,15 +536,15 @@ export class BoxSandboxProvider implements SandboxProvider {
   ): Promise<ComputerFileEntry[]> {
     const result = await this.runCommand(
       id,
-      listBoxWorkspaceFilesCommand(),
+      listBoatWorkspaceFilesCommand(),
       undefined,
       60_000,
       context.signal,
     );
     if (result.exitCode !== 0) {
-      throw new Error(result.stderr || result.stdout || "could not enumerate Box workspace");
+      throw new Error(result.stderr || result.stdout || "could not enumerate Boat workspace");
     }
-    return parseBoxFileEntries(result.stdout).filter(
+    return parseBoatFileEntries(result.stdout).filter(
       (entry) => entry.kind === "file" && !shouldSkipPortableWorkspaceFile(entry.path),
     );
   }
@@ -563,7 +557,7 @@ export class BoxSandboxProvider implements SandboxProvider {
   ): Promise<Uint8Array> {
     // The JSON/base64 file endpoint rejects files over 5 MiB, including browser profiles.
     const { raw: response } = await this.client.artifactRaw(
-      { boxId: id, path: filePath },
+      { sandboxId: id, path: filePath },
       signal ? { signal } : undefined,
     );
     const reader = response.body?.getReader();
@@ -604,21 +598,21 @@ export class BoxSandboxProvider implements SandboxProvider {
     cwd: string | undefined,
     timeoutMs: number,
     signal?: AbortSignal,
-  ): Promise<BoxCommandResult> {
+  ): Promise<BoatCommandResult> {
     const marker = `/tmp/rakazo-command-${randomUUID()}.completed-124`;
     const wrapped = timeoutCommand(command, timeoutMs, marker);
     const timeoutSeconds = Math.ceil(timeoutMs / 1_000);
-    const detached = timeoutSeconds + 5 > BOX_API_COMMAND_TIMEOUT_SECONDS;
+    const detached = timeoutSeconds + 5 > BOAT_API_COMMAND_TIMEOUT_SECONDS;
     try {
       const response = await this.client.command(
         {
-          boxId: id,
+          sandboxId: id,
           commandRequest: {
             command: wrapped,
             cwd,
             ...(detached
               ? { detached: true }
-              : { timeoutSeconds: Math.min(timeoutSeconds + 5, BOX_API_COMMAND_TIMEOUT_SECONDS) }),
+              : { timeoutSeconds: Math.min(timeoutSeconds + 5, BOAT_API_COMMAND_TIMEOUT_SECONDS) }),
           },
         },
         signal ? { signal } : undefined,
@@ -646,12 +640,12 @@ export class BoxSandboxProvider implements SandboxProvider {
     processId: number,
     timeoutMs: number,
     signal?: AbortSignal,
-  ): Promise<BoxCommandResult> {
+  ): Promise<BoatCommandResult> {
     const deadline = Date.now() + timeoutMs;
     while (true) {
       if (signal?.aborted) throw signal.reason ?? new Error("command aborted");
       const status = await this.client.commandStatus(
-        { boxId: id, processId, tailBytes: 1_000_000 },
+        { sandboxId: id, processId, tailBytes: 1_000_000 },
         signal ? { signal } : undefined,
       );
       if (!status.running) {
@@ -686,7 +680,7 @@ export class BoxSandboxProvider implements SandboxProvider {
 
   private async rawCommand(id: string, command: string, timeoutSeconds: number) {
     const response = await this.client.command({
-      boxId: id,
+      sandboxId: id,
       commandRequest: { command, timeoutSeconds },
     });
     if (!isFinishedCommand(response)) {
@@ -696,7 +690,7 @@ export class BoxSandboxProvider implements SandboxProvider {
   }
 
   private ref(id: string, botId: string, fresh: boolean): ComputerRef {
-    return { id, botId, kind: "box", providerRef: id, fresh };
+    return { id, botId, kind: "boat", providerRef: id, fresh };
   }
 
   private id(computer: ComputerRef): string {
@@ -710,61 +704,64 @@ export class BoxSandboxProvider implements SandboxProvider {
   }
 }
 
-export function isUnrecoverableBoxError(error: unknown): boolean {
+export function isUnrecoverableBoatError(error: unknown): boolean {
   if (error instanceof ResponseError) return error.response.status === 404;
   if (!error || typeof error !== "object") return false;
   const value = error as { status?: unknown; statusCode?: unknown; code?: unknown };
   return value.status === 404 || value.statusCode === 404 || value.code === 404;
 }
 
-function createBoxSdk(config: { apiKey: string; apiUrl?: string }): BoxSandboxSdk {
-  const apiUrl = (config.apiUrl ?? BOX_API_BASE).replace(/\/$/, "");
-  const api = new BoxApi(
+function createBoatSdk(config: { apiKey: string; apiUrl?: string }): BoatSandboxSdk {
+  const apiUrl = (config.apiUrl ?? BOAT_API_BASE).replace(/\/$/, "");
+  const api = new BoatApi(
     new Configuration({
       basePath: apiUrl,
       accessToken: config.apiKey,
+      // The SDK defaults to its own HTTP/2 client; keep requests on the runtime fetch.
+      fetchApi: (input, init) => fetch(input, init),
     }),
   );
   return {
-    artifactRaw: wrapBoxCall(api.artifactRaw.bind(api), config.apiKey),
-    command: wrapBoxCall(api.command.bind(api), config.apiKey),
-    commandStatus: wrapBoxCall(api.commandStatus.bind(api), config.apiKey),
-    create: wrapBoxCall(api.create.bind(api), config.apiKey),
-    desktop: wrapBoxCall(api.desktop.bind(api), config.apiKey),
-    get: wrapBoxCall(api.get.bind(api), config.apiKey),
-    resume: wrapBoxCall(api.resume.bind(api), config.apiKey),
-    stop: wrapBoxCall(api.stop.bind(api), config.apiKey),
-    update: wrapBoxCall(api.update.bind(api), config.apiKey),
-    writeFile: wrapBoxCall(api.writeFile.bind(api), config.apiKey),
-    deleteBox: async (boxId: string) => {
-      const url = `${apiUrl}/boxes/${encodeURIComponent(boxId)}`;
+    artifactRaw: wrapBoatCall(api.artifactRaw.bind(api), config.apiKey),
+    command: wrapBoatCall(api.command.bind(api), config.apiKey),
+    commandStatus: wrapBoatCall(api.commandStatus.bind(api), config.apiKey),
+    create: wrapBoatCall(api.create.bind(api), config.apiKey),
+    desktop: wrapBoatCall(api.desktop.bind(api), config.apiKey),
+    get: wrapBoatCall(api.get.bind(api), config.apiKey),
+    hostPort: wrapBoatCall(api.hostPort.bind(api), config.apiKey),
+    resume: wrapBoatCall(api.resume.bind(api), config.apiKey),
+    stop: wrapBoatCall(api.stop.bind(api), config.apiKey),
+    update: wrapBoatCall(api.update.bind(api), config.apiKey),
+    writeFile: wrapBoatCall(api.writeFile.bind(api), config.apiKey),
+    deleteSandbox: async (sandboxId: string) => {
+      const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
-      const signal = AbortSignal.timeout(BOX_DELETE_TIMEOUT_MS);
+      const signal = AbortSignal.timeout(BOAT_DELETE_TIMEOUT_MS);
       try {
         const response = await fetch(url, {
           method: "DELETE",
           headers: {
             ...headers,
-            "X-Ascii-Confirm-Delete": boxId,
+            "X-Ascii-Confirm-Delete": sandboxId,
           },
           signal,
         });
         if (response.status === 404) return;
         if (!response.ok) {
-          throw await boxResponseError(response, config.apiKey, signal);
+          throw await boatResponseError(response, config.apiKey, signal);
         }
         while (!signal.aborted) {
           const status = await fetch(url, { headers, signal });
           if (status.status === 404) return;
           if (!status.ok) {
-            throw await boxResponseError(status, config.apiKey, signal);
+            throw await boatResponseError(status, config.apiKey, signal);
           }
           await withAbort(delay(500), signal);
         }
       } catch (error) {
         if (!signal.aborted || error !== signal.reason) throw error;
       }
-      throw new Error(`Box ${boxId} was not deleted within 60 seconds`);
+      throw new Error(`Boat ${sandboxId} was not deleted within 60 seconds`);
     },
   };
 }
@@ -793,7 +790,7 @@ function isFinishedCommand(response: Command200Response): response is CommandRes
   return response.type === "command.finished";
 }
 
-function commandResponse(response: CommandResponse): BoxCommandResult {
+function commandResponse(response: CommandResponse): BoatCommandResult {
   return {
     stdout: response.stdout,
     stderr: response.stderr,
@@ -802,30 +799,30 @@ function commandResponse(response: CommandResponse): BoxCommandResult {
   };
 }
 
-function boxCwd(cwd: string | undefined): string {
+function boatCwd(cwd: string | undefined): string {
   if (
     !cwd ||
     cwd === "." ||
     cwd === "/" ||
     cwd === "/home/rakazo" ||
     cwd === "/home/user" ||
-    cwd === BOX_WORKSPACE
+    cwd === BOAT_WORKSPACE
   ) {
     return "rakazo-home";
   }
-  const relative = cwd.startsWith(`${BOX_WORKSPACE}/`)
-    ? cwd.slice(BOX_WORKSPACE.length + 1)
+  const relative = cwd.startsWith(`${BOAT_WORKSPACE}/`)
+    ? cwd.slice(BOAT_WORKSPACE.length + 1)
     : cwd.startsWith("/home/rakazo/")
       ? cwd.slice("/home/rakazo/".length)
       : cwd;
   return path.posix.join("rakazo-home", normalizeWorkspacePath(relative));
 }
 
-function configureBoxWorkspaceCommand(): string {
-  return `mkdir -p ${shellQuote(BOX_BROWSER_PROFILES)}`;
+function configureBoatWorkspaceCommand(): string {
+  return `mkdir -p ${shellQuote(BOAT_BROWSER_PROFILES)}`;
 }
 
-function listBoxFilesCommand(directory: string): string {
+function listBoatFilesCommand(directory: string): string {
   return [
     "set -o pipefail",
     `directory=${shellQuote(directory)}`,
@@ -840,10 +837,10 @@ function listBoxFilesCommand(directory: string): string {
   ].join("\n");
 }
 
-function listBoxWorkspaceFilesCommand(): string {
+function listBoatWorkspaceFilesCommand(): string {
   return [
     "set -o pipefail",
-    `find ${shellQuote(BOX_WORKSPACE)} -type f -print0 | sort -z | while IFS= read -r -d "" entry; do`,
+    `find ${shellQuote(BOAT_WORKSPACE)} -type f -print0 | sort -z | while IFS= read -r -d "" entry; do`,
     '  encoded=$(printf %s "$entry" | base64 -w0)',
     '  size=$(stat -c %s "$entry")',
     '  if [ -x "$entry" ]; then executable=1; else executable=0; fi',
@@ -852,7 +849,7 @@ function listBoxWorkspaceFilesCommand(): string {
   ].join("\n");
 }
 
-function parseBoxFileEntries(output: string): ComputerFileEntry[] {
+function parseBoatFileEntries(output: string): ComputerFileEntry[] {
   return output
     .split("\n")
     .filter(Boolean)
@@ -860,8 +857,8 @@ function parseBoxFileEntries(output: string): ComputerFileEntry[] {
       const [encoded, kind, size, executable] = line.split("\t");
       if (!encoded || (kind !== "file" && kind !== "dir")) return [];
       const absolute = Buffer.from(encoded, "base64").toString("utf8");
-      if (!absolute.startsWith(`${BOX_WORKSPACE}/`)) return [];
-      const child = normalizeWorkspacePath(absolute.slice(BOX_WORKSPACE.length + 1));
+      if (!absolute.startsWith(`${BOAT_WORKSPACE}/`)) return [];
+      const child = normalizeWorkspacePath(absolute.slice(BOAT_WORKSPACE.length + 1));
       return [
         {
           path: child,

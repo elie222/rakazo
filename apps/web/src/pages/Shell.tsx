@@ -231,6 +231,7 @@ import {
   usePendingAttachmentPreviewCleanup,
 } from "../lib/pending-attachments";
 import { markAfterPaint, markOnce } from "../lib/performance";
+import { usePreloadRecoveryState } from "../lib/preload-recovery";
 import { quoteDraftForSelection } from "../lib/quote-selection";
 import { getResponseStreamingEnabled, subscribeResponseStreaming } from "../lib/response-streaming";
 import type { Panel, RightPanelState } from "../lib/right-panel-state";
@@ -561,10 +562,10 @@ function SpaceShell() {
       currentSearch.setSearchParams(params, { replace: true });
     }
   }, []);
-  const [peerConversation, setPeerConversation] = useState<{
+  const [peerConversation, setPeerConversation] = usePreloadRecoveryState<{
     peerBotId: string;
     peerBotName: string;
-  } | null>(null);
+  } | null>("peerConversation", null);
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [routinesBotId, setRoutinesBotId] = useState<string | null>(null);
   const [taughtSkills, setTaughtSkills] = useState<TaughtSkill[]>([]);
@@ -634,11 +635,17 @@ function SpaceShell() {
   function updateSnapshot(update: (prev: ThreadSnapshot | null) => ThreadSnapshot | null) {
     commitSnapshot(update(snapshotRef.current));
   }
-  const [pluginsOpen, setPluginsOpen] = useState(false);
-  const [mcpOpen, setMcpOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
-  const [messagingSettingsOpen, setMessagingSettingsOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = usePreloadRecoveryState("integrations", false);
+  const [mcpOpen, setMcpOpen] = usePreloadRecoveryState("mcp", false);
+  const [settingsOpen, setSettingsOpen] = usePreloadRecoveryState("settings", false);
+  const [settingsSection, setSettingsSection] = usePreloadRecoveryState<SettingsSection>(
+    "settingsSection",
+    "general",
+  );
+  const [messagingSettingsOpen, setMessagingSettingsOpen] = usePreloadRecoveryState(
+    "messaging",
+    false,
+  );
   const [messagingSurfaceEnabled, setMessagingSurfaceEnabled] = useState(false);
   const [messagingProviders, setMessagingProviders] = useState<string[]>([]);
   const [memoryProviderConfig, setMemoryProviderConfig] = useState<
@@ -763,11 +770,14 @@ function SpaceShell() {
   }, [bootstrapMe?.phoneCallsEnabled]);
   const currentSpaceId = selectedSpaceId() ?? bootstrapMe?.spaceId ?? null;
   // null: settings follow the space the app is showing.
-  const [settingsSpaceId, setSettingsSpaceId] = useState<string | null>(null);
+  const [settingsSpaceId, setSettingsSpaceId] = usePreloadRecoveryState<string | null>(
+    "settingsSpaceId",
+    null,
+  );
   const settingsSpace =
     spaces.find((space) => space.id === (settingsSpaceId ?? currentSpaceId)) ?? null;
   // Never fall back to another space's settings when the edited space goes away.
-  const settingsSpaceGone = settingsSpaceId !== null && !settingsSpace;
+  const settingsSpaceGone = initialBotsLoaded && settingsSpaceId !== null && !settingsSpace;
   useEffect(() => {
     if (!settingsSpaceGone) return;
     setSettingsOpen(false);
@@ -4969,7 +4979,7 @@ function SpaceShell() {
       </Suspense>
 
       <Suspense fallback={null}>
-        {settingsOpen && !settingsSpaceGone ? (
+        {settingsOpen && (settingsSpaceId === null || settingsSpace) ? (
           <SettingsOverlay
             space={settingsSpace}
             spaces={spaces}

@@ -24,6 +24,48 @@ describe("Docker sandbox", () => {
     vi.unstubAllGlobals();
   });
 
+  it("rejects a failed interactive screen instead of returning a viewer fallback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.endsWith("/screen-mode")
+          ? Response.json({ error: "control screen failed to start" }, { status: 400 })
+          : Response.json({ running: true }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    await expect(
+      provider.connectScreen(
+        { id: "computer", botId: "bot", kind: "docker", providerRef: "computer" },
+        { view: "stream", interactive: true, controlToken: "human-control" },
+        context,
+      ),
+    ).rejects.toThrow("control screen failed to start");
+  });
+
+  it("requires a control token and an explicit route for an interactive screen", async () => {
+    const fetchMock = vi.fn(async () => Response.json({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+    const computer = {
+      id: "computer",
+      botId: "bot",
+      kind: "docker" as const,
+      providerRef: "computer",
+    };
+    await expect(
+      provider.connectScreen(computer, { view: "stream", interactive: true }, context),
+    ).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(
+      provider.connectScreen(
+        computer,
+        { view: "stream", interactive: true, controlToken: "human-control" },
+        context,
+      ),
+    ).rejects.toThrow();
+  });
+
   it("sends the bounded timeout to the supervisor and preserves its honest result", async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
       Response.json({

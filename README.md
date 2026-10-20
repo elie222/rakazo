@@ -44,7 +44,7 @@ gateway is a separate process.
 - Bots that can delegate to peer bots or short-lived subagents
 - Bring-your-own model credentials through Pi
 - App integrations through Composio or Pipedream Connect, plus user-installed Treg, remote MCP, and OpenAPI tool sources
-- Docker, E2B, Daytona, CreateOS, Box, and trusted local-computer support
+- Docker, E2B, Daytona, CreateOS, Boat, and trusted local-computer support
 
 ## Demo
 
@@ -60,7 +60,7 @@ https://github.com/user-attachments/assets/dccdeddb-2134-4a56-8eed-b2e591736b1c
 - Better Auth
 - Graphile Worker
 - Pi
-- Docker, E2B, Daytona, CreateOS, and Box
+- Docker, E2B, Daytona, CreateOS, and Boat
 - Composio, Pipedream Connect, MCP, and OpenAPI integrations
 
 ## Deploy on Railway
@@ -85,7 +85,7 @@ The installer downloads the Compose files, creates `.env` with random secrets, a
 It preserves an existing `.env` when rerun.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
-Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, `createos`, `box`, or `railway`
+Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, `createos`, `boat`, or `railway`
 with the matching API key.
 
 Default image tag is `edge` (main builds, `linux/amd64` + `linux/arm64`). Details and tags:
@@ -105,7 +105,7 @@ the desktop app, the mobile app, or a browser.
 
 ```bash
 bash install-images.sh --prepare-only
-# edit .env: SANDBOX_PROVIDER=box (or e2b / daytona / createos) with its API key, RAKAZO_HOST=your.domain
+# edit .env: SANDBOX_PROVIDER=boat (or e2b / daytona / createos) with its API key, RAKAZO_HOST=your.domain
 bash install-images.sh
 ```
 

@@ -338,6 +338,8 @@ export const DE_MESSAGES: Record<string, string> = {
   Profile: "Profil",
   Routines: "Routinen",
   "Could not load routines": "Routinen konnten nicht geladen werden",
+  "Get notified when this Bot finishes or needs input":
+    "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht",
   // app/computer.tsx
   "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",

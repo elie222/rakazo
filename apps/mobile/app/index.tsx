@@ -100,7 +100,7 @@ import {
   inboxRowActionList,
   unreadOverrideKey,
 } from "../lib/inbox-swipe";
-import { dismissThreadNotifications, resumeLiveNotifications } from "../lib/live-notifications";
+import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
 import { previewSnippet } from "../lib/preview";
@@ -915,14 +915,15 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     ) => {
       await chatRpc(chat.spaceId, `${kind}s/update`, { ...chatTarget(kind, chat.id), ...update });
       if (kind === "bot" && update.notifyOnFinish !== undefined) {
-        await resumeLiveNotifications(
+        await afterChatNotifyChange(
           currentApiBase(),
           await loadSessionToken(),
           selectedSpaceId() ?? "",
-        ).catch(() => undefined);
-        if (!update.notifyOnFinish && "threadId" in chat) {
-          await dismissThreadNotifications({ threadId: chat.threadId }).catch(() => undefined);
-        }
+          {
+            threadId: "threadId" in chat ? chat.threadId : undefined,
+            notify: update.notifyOnFinish,
+          },
+        );
       }
       await loadBots();
     },

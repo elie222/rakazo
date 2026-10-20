@@ -26,9 +26,9 @@ export function sandboxEnvGuidanceLines(): string[] {
     "# SANDBOX_PROVIDER=daytona",
     "# DAYTONA_API_KEY=<your-key>",
     "",
-    "# Hosted sandbox: Box",
-    "# SANDBOX_PROVIDER=box",
-    "# BOX_API_KEY=<your-key>",
+    "# Hosted sandbox: Boat",
+    "# SANDBOX_PROVIDER=boat",
+    "# BOAT_API_KEY=<your-key>",
     "",
     "# Recreate the stack after changing .env",
   ];
@@ -43,7 +43,7 @@ export type SandboxProviderKind = "none" | "docker" | "hosted" | "other";
 export function classifySandboxProvider(provider: string | null | undefined): SandboxProviderKind {
   if (provider == null || provider === "" || computersAreUnavailable(provider)) return "none";
   if (provider === "docker" || provider === "desktop") return "docker";
-  if (provider === "e2b" || provider === "daytona" || provider === "box") return "hosted";
+  if (provider === "e2b" || provider === "daytona" || provider === "boat") return "hosted";
   return "other";
 }
 
@@ -52,7 +52,7 @@ export function sandboxProviderLabel(provider: string): string {
   if (provider === "desktop") return "Desktop";
   if (provider === "e2b") return "E2B";
   if (provider === "daytona") return "Daytona";
-  if (provider === "box") return "Box";
+  if (provider === "boat") return "Boat";
   if (provider === "fake") return "Fake";
   return provider;
 }

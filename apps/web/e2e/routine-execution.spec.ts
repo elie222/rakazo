@@ -202,6 +202,7 @@ test("routine history expands from the latest run and pages older executions", a
     botId,
     groupId: null,
     status,
+    error: status === "failed" ? "504: request timed out" : null,
     messageId: null,
     createdAt: `2026-01-02T${hour}:00:00Z`,
     startedAt: `2026-01-02T${hour}:00:00Z`,
@@ -230,6 +231,15 @@ test("routine history expands from the latest run and pages older executions", a
   await history.getByRole("button", { name: "Load older runs" }).click();
   await expect(history.getByTestId("routine-run-row")).toHaveCount(3);
   await expect(history.getByText("Failed", { exact: true })).toBeVisible();
+  await expect(
+    history.getByText("Your model provider took too long to respond. Try again.", { exact: true }),
+  ).toBeVisible();
+  const diagnostic = history.getByText("504: request timed out", { exact: true });
+  await expect(diagnostic).toBeHidden();
+  await history.getByText("Details", { exact: true }).click();
+  await expect(diagnostic).toBeVisible();
+  await history.getByText("Details", { exact: true }).click();
+  await expect(diagnostic).toBeHidden();
   await expect(history.getByText("Cancelled", { exact: true })).toBeVisible();
   await expect(history.getByRole("button", { name: "Load older runs" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "routine-history-expanded");

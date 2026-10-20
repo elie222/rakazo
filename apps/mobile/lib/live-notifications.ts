@@ -163,6 +163,20 @@ export async function dismissThreadNotifications(target: {
   );
 }
 
+/** Brings this device in line after a chat's notifications were turned on or off. */
+export async function afterChatNotifyChange(
+  endpoint: string,
+  token: string,
+  spaceId: string,
+  change: { threadId?: string; notify: boolean },
+): Promise<void> {
+  // Android's live status re-reads which chats notify.
+  await resumeLiveNotifications(endpoint, token, spaceId).catch(() => undefined);
+  if (!change.notify && change.threadId) {
+    await dismissThreadNotifications({ threadId: change.threadId }).catch(() => undefined);
+  }
+}
+
 export async function openLiveNotificationSettings(): Promise<void> {
   await nativeNotifications?.openSettings();
 }

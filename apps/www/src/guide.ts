@@ -202,7 +202,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     aspect: "Computers and tools",
     rakazo:
-      "Browser, terminal, files, and a graphical desktop. The default computer is local Docker. Optional remote computers are E2B, Daytona, CreateOS, and Box. An explicit desktop provider can run on the host; it is not the default.",
+      "Browser, terminal, files, and a graphical desktop. The default computer is local Docker. Optional remote computers are E2B, Daytona, CreateOS, and Boat. An explicit desktop provider can run on the host; it is not the default.",
     openclaw:
       "Tools include browser automation and exec. Sandboxing is off by default. When enabled, documented backends include Docker, Podman, SSH, OpenShell, and Crabbox. The Gateway process stays on the host.",
   },
@@ -278,7 +278,7 @@ Connect OpenAI, Anthropic, Google, OpenRouter, or Vercel AI Gateway. You can als
 
 ### Cost control
 
-There is no seat fee for the open source software. You pay the model provider you connect and any remote computer provider you choose. Local Docker computers are the default, so a single machine does not need an E2B, Daytona, CreateOS, or Box account.
+There is no seat fee for the open source software. You pay the model provider you connect and any remote computer provider you choose. Local Docker computers are the default, so a single machine does not need an E2B, Daytona, CreateOS, or Boat account.
 
 ## Requirements
 
@@ -306,7 +306,7 @@ Use the same installer on a VPS when bots should stay running. Images Compose bi
 ${PUBLISHED_IMAGES_SERVER}
 \`\`\`
 
-Before the second command, set \`RAKAZO_HOST\` to the hostname and set \`BETTER_AUTH_URL\`, \`WEB_ORIGIN\`, and \`API_URL\` to that same \`https://\` origin. For a remote computer instead of local Docker, set \`SANDBOX_PROVIDER\` to \`e2b\`, \`daytona\`, \`createos\`, or \`box\` and add that provider's API key.
+Before the second command, set \`RAKAZO_HOST\` to the hostname and set \`BETTER_AUTH_URL\`, \`WEB_ORIGIN\`, and \`API_URL\` to that same \`https://\` origin. For a remote computer instead of local Docker, set \`SANDBOX_PROVIDER\` to \`e2b\`, \`daytona\`, \`createos\`, or \`boat\` and add that provider's API key.
 
 \`\`\`Caddyfile
 ${CADDY_SNIPPET}

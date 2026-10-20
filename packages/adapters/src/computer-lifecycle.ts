@@ -723,7 +723,7 @@ export function computerSupportsUpdate(kind: string): boolean {
 /** Kinds whose provider opens a user terminal through the shared Linux screen gateway. */
 export function computerSupportsTerminal(kind: string): boolean {
   return (
-    kind === "docker" || kind === "e2b" || kind === "daytona" || kind === "box" || kind === "fake"
+    kind === "docker" || kind === "e2b" || kind === "daytona" || kind === "boat" || kind === "fake"
   );
 }
 

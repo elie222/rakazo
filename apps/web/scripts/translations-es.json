@@ -163,7 +163,7 @@
   "Computer is asleep. Open it to wake.": "La computadora está en reposo. Ábrela para despertarla.",
   "Computer is stopped": "La computadora está detenida",
   "Computers": "Computadoras",
-  "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env.": "Las computadoras están apagadas. Configura SANDBOX_PROVIDER=docker con SANDBOX_SUPERVISOR_TOKEN, o establece SANDBOX_PROVIDER en e2b, daytona o box con su clave de API. Recrea el stack después de cambiar .env.",
+  "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env.": "Las computadoras están apagadas. Configura SANDBOX_PROVIDER=docker con SANDBOX_SUPERVISOR_TOKEN, o establece SANDBOX_PROVIDER en e2b, daytona o boat con su clave de API. Recrea el stack después de cambiar .env.",
   "Configured by deployment": "Configurado por el despliegue",
   "Configured servers": "Servidores configurados",
   "Confirm delete": "Confirmar eliminación",

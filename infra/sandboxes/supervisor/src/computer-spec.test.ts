@@ -408,6 +408,52 @@ describe("graphical computer spec", () => {
   );
 
   it.skipIf(process.platform === "win32")(
+    "removes only libnss_wrapper from the Chromium preload environment",
+    () => {
+      const root = path.resolve(import.meta.dirname, "../../computer");
+      const temp = mkdtempSync(path.join(tmpdir(), "rakazo-browser-preload-"));
+      try {
+        const chromium = path.join(temp, "chromium");
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: shell parameter expansion
+        writeFileSync(chromium, '#!/bin/sh\nprintf "%s" "${LD_PRELOAD-unset}"\n');
+        chmodSync(chromium, 0o755);
+        for (const [preload, expected] of [
+          ["/usr/local/lib/libnss_wrapper.so", "unset"],
+          [
+            "/tmp/first.so:/usr/local/lib/libnss_wrapper.so:/tmp/last.so",
+            "/tmp/first.so:/tmp/last.so",
+          ],
+          [":libnss_wrapper.so::", "unset"],
+          ["/usr/local/lib/libnss_wrapper.so /tmp/other.so", "/tmp/other.so"],
+          [" /tmp/first.so:libnss_wrapper.so /tmp/last.so ", "/tmp/first.so:/tmp/last.so"],
+          ["/tmp/other.so", "/tmp/other.so"],
+          ["", ""],
+        ]) {
+          const result = spawnSync(
+            "sh",
+            [path.join(root, "rakazo-browser"), "https://example.test"],
+            {
+              env: {
+                ...process.env,
+                HOME: temp,
+                RAKAZO_BROWSER_PROFILE: path.join(temp, "profile"),
+                PATH: `${temp}${path.delimiter}${process.env.PATH ?? ""}`,
+                LD_PRELOAD: preload,
+              },
+              encoding: "utf8",
+              timeout: 5_000,
+            },
+          );
+          expect(result.status, result.stderr).toBe(0);
+          expect(result.stdout).toBe(expected);
+        }
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
     "selects a display-specific browser profile and preserves explicit profiles",
     () => {
       const root = path.resolve(import.meta.dirname, "../../computer");
@@ -1809,6 +1855,49 @@ describe("computer home storage", () => {
     for (const version of ["1.45", "1.46", "2.0"])
       expect(() => assertVolumeSubpathSupport(version)).not.toThrow();
   });
+
+  it("supervises computer control with a bounded restart delay", () => {
+    const start = readFileSync(
+      path.resolve(import.meta.dirname, "../../computer/start.sh"),
+      "utf8",
+    );
+    expect(start).toMatch(
+      /while true; do\s+\/usr\/local\/bin\/rakazo-computer-control\s+sleep 1\s+done >\/tmp\/rakazo\/control\.log 2>&1 &/,
+    );
+    // PID 1 terminates both the background loop and its current child on stop.
+    expect(start).toContain("kill -TERM -- -1");
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "restarts computer control after an abnormal exit",
+    () => {
+      const start = readFileSync(
+        path.resolve(import.meta.dirname, "../../computer/start.sh"),
+        "utf8",
+      );
+      const loop = start.match(
+        /while true; do[\s\S]*?done >\/tmp\/rakazo\/control\.log 2>&1 &/,
+      )?.[0];
+      expect(loop).toBeDefined();
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          [
+            "attempts=0",
+            "control() { echo control; return 137; }",
+            'sleep() { echo "delay $1"; attempts=$((attempts + 1)); if [ "$attempts" -eq 2 ]; then exit 0; fi; }',
+            loop
+              ?.replace("/usr/local/bin/rakazo-computer-control", "control")
+              .replace(" >/tmp/rakazo/control.log 2>&1 &", ""),
+          ].join("\n"),
+        ],
+        { encoding: "utf8", timeout: 5_000 },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toBe("control\ndelay 1\ncontrol\ndelay 1\n");
+    },
+  );
 
   it("stops promptly when Docker sends SIGTERM to the start script", () => {
     const root = path.resolve(import.meta.dirname, "../../computer");

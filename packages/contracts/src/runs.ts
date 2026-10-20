@@ -25,6 +25,7 @@ export const RoutineRunSchema = z.object({
   botId: Id,
   groupId: Id.nullable(),
   status: RunStatus,
+  error: z.string().nullable(),
   createdAt: IsoDate,
   startedAt: IsoDate.nullable(),
   completedAt: IsoDate.nullable(),

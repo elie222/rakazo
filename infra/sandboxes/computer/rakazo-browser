@@ -393,6 +393,25 @@ if [ -d "$ACTUAL_PROFILE" ]; then
   fi
 fi
 
+# Chromium's singleton hand-off hangs with the image's NSS wrapper loaded.
+# Match the per-screen launcher: preserve other space- or colon-separated preload entries.
+if [ -n "${LD_PRELOAD:-}" ]; then
+  _kept=""
+  _rest="$LD_PRELOAD"
+  while [ -n "$_rest" ]; do
+    case "$_rest" in
+      *[:\ ]*) _entry="${_rest%%[: ]*}"; _rest="${_rest#*[: ]}" ;;
+      *) _entry="$_rest"; _rest="" ;;
+    esac
+    case "$_entry" in
+      *libnss_wrapper.so|"") ;;
+      *) _kept="${_kept:+$_kept:}$_entry" ;;
+    esac
+  done
+  if [ -n "$_kept" ]; then export LD_PRELOAD="$_kept"; else unset LD_PRELOAD; fi
+  unset _kept _rest _entry
+fi
+
 # This container has no GPU. --disable-gpu keeps Chromium from probing one.
 # WebGL still needs SwiftShader: --disable-software-rasterizer blocks it, and
 # current Chromium allows that fallback only with --enable-unsafe-swiftshader.

@@ -14,7 +14,7 @@ model can demonstrate that it chooses a useful action for a natural request.
 | Computer replay | Pi, browser tool handlers, page state | Model endpoint, browser and sandbox | `pnpm test` |
 | Docker computer replay | Pi, supervisor, Chromium, page helper, downloads and files | Model endpoint, local fixture website | `pnpm test:computer-replay` |
 | Agent quality | Product API, Postgres, executor, Pi, real model | Sandbox and connected services | `pnpm test:evals --live ...` |
-| Vision acceptance | Product API, Pi, real vision model, Box or E2B desktop | Fixture website | `pnpm test:computer` |
+| Vision acceptance | Product API, Pi, real vision model, Boat or E2B desktop | Fixture website | `pnpm test:computer` |
 
 Default and PR tests never require paid inference. Nightly runs only the web
 tests with emulated providers. Docker topology and browser replay have a manual
@@ -88,14 +88,14 @@ immediate offline replay produce the exact CSV and exactly one export. Failed
 attempts print only the sanitized decisions and do not publish a fixture.
 
 This records semantic browser actions, not coordinate or vision decisions.
-Box currently lacks the page-browser capability used here, so this capture uses
-local Docker. Box remains the default for the separate screenshot/coordinate
+Boat currently lacks the page-browser capability used here, so this capture uses
+local Docker. Boat remains the default for the separate screenshot/coordinate
 acceptance journey. One successful captured run demonstrates replay coverage;
 it does not measure the live model's reliability.
 
 ## Live computer acceptance
 
-Run a vision-capable model through OpenRouter against a real Box desktop:
+Run a vision-capable model through OpenRouter against a real Boat desktop:
 
 ```bash
 COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer
@@ -103,18 +103,17 @@ COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer
 COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer --sandbox e2b
 ```
 
-Box is the default regardless of the application's sandbox setting. This opt-in
+Boat is the default regardless of the application's sandbox setting. This opt-in
 test requires `OPENROUTER_API_KEY` and the selected sandbox's credential
-(`BOX_API_KEY` or `E2B_API_KEY`) and incurs inference and sandbox usage.
+(`BOAT_API_KEY` or `E2B_API_KEY`) and incurs inference and sandbox usage.
 It checks visual observation, a real browser click,
 terminal access and exact file contents. It then destroys the sandbox outside
 the app and calls `computer/recover`, requiring a new sandbox with the saved
 file restored. `computer/boot` returns the stored running state and does not
 request recovery from an externally deleted sandbox.
 
-Both providers run the same assertions. This journey does not cover PTY sessions
-or multiple screens, which Box does not support. Provider conformance tests
-remain separate. Live runs retain error logs to diagnose provider failures.
+Both providers run the same assertions. This journey does not cover multiple screens, or PTY sessions, which Boat does
+not support. Provider conformance tests remain separate. Live runs retain error logs to diagnose provider failures.
 
 ## Real-model quality
 
