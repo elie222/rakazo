@@ -1,4 +1,5 @@
 import type { ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
@@ -28,7 +29,12 @@ type ExecuteTool = (
 /** A routine run whose model makes the given tool calls, then answers. */
 async function runRoutine(
   toolCalls: Array<{ name: string; args: Record<string, unknown> }>,
-  options: { takeover?: boolean; native?: boolean; nativeUnavailable?: boolean } = {},
+  options: {
+    takeover?: boolean;
+    native?: boolean;
+    nativeUnavailable?: boolean;
+    toolFailure?: "abort" | "recover";
+  } = {},
 ) {
   const run = {
     id: "run-1",
@@ -46,7 +52,12 @@ async function runRoutine(
   const toolResults: unknown[] = [];
   const runtimeRun = vi.fn(async function* (request: { executeTool?: ExecuteTool }) {
     for (const [index, call] of toolCalls.entries()) {
-      toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
+      try {
+        toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
+      } catch (error) {
+        if (!options.toolFailure) throw error;
+      }
+      if (options.toolFailure === "abort") throw new DOMException("Aborted", "AbortError");
     }
     if (options.takeover) {
       yield { type: "takeover" as const, reason: "Sign in to the inbox." };
@@ -171,7 +182,7 @@ async function runRoutine(
   const sleepJobs = enqueue.mock.calls
     .map((call) => (call as unknown[])[0] as { name: string })
     .filter((job) => job.name === "computer.sleep");
-  return { finalizeRun, sandbox, sleepJobs, toolResults };
+  return { finalizeRun, sandbox, sleepJobs, toolResults, enqueue };
 }
 
 beforeEach(() => {
@@ -241,6 +252,25 @@ describe("run computer provisioning", () => {
     );
     expect(provisionComputer).toHaveBeenCalledOnce();
   });
+
+  it.each([undefined, "abort", "recover"] as const)(
+    "finishes rate-limited runs without retrying when the model handles tool failure as %s",
+    async (toolFailure) => {
+      const error = new SandboxRateLimitError({ cause: new Error("Provider account limit") });
+      provisionComputer.mockRejectedValue(error);
+
+      const { finalizeRun, enqueue } = await runRoutine(
+        [{ name: "list_files", args: { path: "" } }],
+        { toolFailure },
+      );
+
+      expect(provisionComputer).toHaveBeenCalledOnce();
+      expect(finalizeRun).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ outcome: "failed", error: error.message }),
+      );
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
 });
 
 /** Models the run reads but these tests do not care about behave as empty tables. */

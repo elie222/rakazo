@@ -36,6 +36,7 @@ import {
   routineRetryJob,
   routineWakeupJob,
   runContinueJob,
+  SandboxRateLimitError,
   TransientModelError,
 } from "@rakazo/adapter-kit";
 import type { ComputerCommand, MessageBlock, RunStatus } from "@rakazo/contracts";
@@ -7998,9 +7999,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           } catch (error) {
             getLogger().error("history.compact enqueue failed", error);
           }
-        } catch (error) {
-          // A computer that could not start fails setup, as it did when every run started it.
-          runComputer.throwIfFailed();
+        } catch (caughtError) {
+          let error = caughtError;
+          // A refused account limit needs user/operator action, not setup-job retries.
+          // Keep the provisioning error even if aborting the model masked it.
+          try {
+            runComputer.throwIfFailed();
+          } catch (computerError) {
+            if (!(computerError instanceof SandboxRateLimitError)) throw computerError;
+            error = computerError;
+          }
           if (!terminalCheckpointComplete) {
             await workspaceCheckpoint.flush().catch(() => undefined);
           }
