@@ -733,7 +733,17 @@ function installApplicationMenu() {
             ],
           },
           { role: "editMenu" },
-          { role: "windowMenu" },
+          {
+            label: "Window",
+            role: "window",
+            submenu: [
+              { role: "minimize" },
+              { role: "zoom" },
+              { role: "close" },
+              { type: "separator" },
+              { role: "front" },
+            ],
+          },
         ]
       : [
           {
