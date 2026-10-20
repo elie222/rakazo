@@ -349,7 +349,9 @@ export async function runAutoReviewJudge(input: {
         input.signal.reason.name === "TimeoutError");
     const secrets = input.apiKey ? [input.apiKey] : [];
     const detail = timedOut
-      ? `timed out (deadline ${timeoutMs}ms)`
+      ? timeoutSignal.aborted
+        ? `timed out after ${timeoutMs}ms`
+        : "timed out (parent deadline)"
       : `failed: ${truncate(
           redactSecrets(
             error instanceof Error ? `${error.name}: ${error.message}` : String(error),

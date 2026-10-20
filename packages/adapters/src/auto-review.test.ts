@@ -370,7 +370,7 @@ describe("runAutoReviewJudge timeout", () => {
         }),
       ).resolves.toMatchObject({ decision: "error", reason: "Checker timed out." });
       expect(warn).toHaveBeenCalledExactlyOnceWith(
-        `[auto-review] checker openrouter/x timed out (deadline ${deadline === "local" ? 50 : 5_000}ms)`,
+        `[auto-review] checker openrouter/x ${deadline === "local" ? "timed out after 50ms" : "timed out (parent deadline)"}`,
       );
     },
   );
