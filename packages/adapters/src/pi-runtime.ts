@@ -2513,6 +2513,7 @@ function fallbackSupportsContext(
     candidate.config.maxTokens,
     options?.maxTokens,
     candidate.model.reasoning,
+    candidate.model.contextWindow,
   );
   // Token counts are estimates and can differ by provider/tokenizer. Reserve a
   // small input-relative margin, not a fixed 4096 tokens that would exclude
@@ -3070,7 +3071,8 @@ function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean 
 }
 
 export function reliableStreamOptions(
-  model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning">,
+  model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning"> &
+    Partial<Pick<Model<Api>, "contextWindow">>,
   options?: ModelsSimpleStreamOptions,
   configuredMaxTokens?: number,
   accessToken?: string | (() => string | undefined),
@@ -3086,6 +3088,7 @@ export function reliableStreamOptions(
       configuredMaxTokens,
       options?.maxTokens,
       model.reasoning,
+      model.contextWindow,
     ),
   };
 

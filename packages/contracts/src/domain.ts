@@ -1015,8 +1015,8 @@ export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 /** Largest completion-token limit exposed by model settings. */
 export const MAX_MODEL_MAX_TOKENS = 131_072;
 
-/** Default context window for an OpenAI-compatible connection. */
-export const DEFAULT_MODEL_CONTEXT_WINDOW = 32_768;
+/** Fallback context window for OpenAI-compatible connections that do not report a size (e.g. Ollama, LM Studio, vLLM). */
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 262_144;
 
 /** Largest context window exposed by model settings. */
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;

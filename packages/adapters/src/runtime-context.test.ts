@@ -1,7 +1,8 @@
 import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AgentRunRequest } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { getLogger } from "@rakazo/logging";
+import { describe, expect, it, vi } from "vitest";
 import { ContextBudgetError, ContextCacheTracker } from "./context-selection.js";
 import { createRuntimeContextPolicy } from "./runtime-context.js";
 
@@ -49,6 +50,38 @@ function enableHistoryRetrieval(request: AgentRunRequest) {
   request.executeTool = async () => ({});
 }
 describe("runtime context policy", () => {
+  it("preserves fitting history with oversized output and warns once per policy", () => {
+    const { request, context } = fixture(30);
+    request.model.contextWindow = 32_768;
+    request.model.maxTokens = 32_768;
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      const policy = createRuntimeContextPolicy(request);
+      const selectedModel = { ...model, contextWindow: 32_768, maxTokens: 32_768 };
+      expect(policy.prepareContext(context, selectedModel).messages).toEqual(context.messages);
+      expect(policy.getDecision()!.droppedMessages).toBe(0);
+      expect(policy.getDecision()!.estimatedInputTokens).toBeLessThan(24_576);
+      policy.prepareContext(context, selectedModel);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "Model output limit clamped to preserve context room",
+        { configuredMaxTokens: 32_768, effectiveMaxTokens: 8192, contextWindow: 32_768 },
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not warn for an output limit within a quarter of the window", () => {
+    const { request, context } = fixture();
+    const warn = vi.spyOn(getLogger(), "warn").mockImplementation(() => {});
+    try {
+      createRuntimeContextPolicy(request).prepareContext(context, model);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("preserves a selected prefix across turns with a declared cache window", () => {
     const { request, context } = fixture(30);
     request.threadId = "declared-cache-thread";

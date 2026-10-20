@@ -426,6 +426,16 @@ describe("openai-compatible provider", () => {
     expect(provider.getModels()[0]?.id).toBe(OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
   });
 
+  it("defaults an unreported compatible context window to 256k", () => {
+    const models = registerOpenAiCompatibleRuntime(builtinModels(), {
+      modelId: "synthetic-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+    });
+    expect(models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "synthetic-model")?.contextWindow).toBe(
+      262_144,
+    );
+  });
+
   it("registers runtime models at the stored base URL", () => {
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {
       modelId: "rapid-mlx",
