@@ -5,6 +5,7 @@ import {
   MermaidDiagramContext,
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
+import { analyticsScreen } from "@rakazo/core";
 import {
   DarkTheme,
   Stack,
@@ -34,6 +35,7 @@ import {
   currentApiBase,
   loadApiBase,
   loadSessionToken,
+  rpc,
   selectedSpaceId,
   subscribeApiBase,
   subscribeSessionRejected,
@@ -220,6 +222,24 @@ export default function Layout() {
   const chatAnimation = useSplitView().split ? "none" : undefined;
   const [ready, setReady] = useState(false);
   useNotificationResponses(ready);
+  const screen = analyticsScreen(usePathname());
+  useEffect(() => {
+    if (!ready || !screen || (Platform.OS !== "ios" && Platform.OS !== "android")) return;
+    let active = true;
+    void loadSessionToken()
+      .then((token) => {
+        if (active && token)
+          return rpc(
+            "analytics/screen",
+            { screen, surface: Platform.OS },
+            { skipSpaceAuthRecovery: true },
+          );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [ready, screen]);
   const [appearanceReady, setAppearanceReady] = useState(false);
   const resolved = useResolvedAppearance();
   const loadRemoteImages = useSyncExternalStore(

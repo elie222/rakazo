@@ -1457,7 +1457,16 @@ export const BillingStatusSchema = z.object({
   canManage: z.boolean(),
   trialAvailable: z.boolean(),
   trialDays: z.number().int().nonnegative(),
-  state: z.enum(["none", "trialing", "active", "past_due", "incomplete", "canceled"]),
+  state: z.enum([
+    "none",
+    "trialing",
+    "active",
+    "past_due",
+    "incomplete",
+    "unpaid",
+    "paused",
+    "canceled",
+  ]),
   price: z
     .object({
       amount: z.number().int().nonnegative(),

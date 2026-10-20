@@ -3,6 +3,9 @@ import { stuckWorkStatusMessages } from "./stuck-work.js";
 export const MISSING_TOOL_FINAL_RESPONSE_ERROR =
   "The tools finished, but the model did not write a final answer. Rephrase the request and try again.";
 
+/** The API rejects a send with this message until the user can reach a model. */
+export const MODEL_REQUIRED_SEND_ERROR = "Connect a model to start a run.";
+
 const APP_RUN_ERRORS = new Set([MISSING_TOOL_FINAL_RESPONSE_ERROR, ...stuckWorkStatusMessages()]);
 
 export const RUN_ERROR_LIMIT_MESSAGES = {

@@ -1,5 +1,9 @@
 import { expo } from "@better-auth/expo";
-import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
+import type {
+  ProductAnalytics,
+  TransactionalEmail,
+  TransactionalEmailProvider,
+} from "@rakazo/adapter-kit";
 import {
   allowlistedSignupAdmission,
   displayName,
@@ -28,6 +32,7 @@ import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
 export type { OidcConfig } from "./oidc.js";
 
 export interface AuthEnv {
+  analytics?: ProductAnalytics;
   passwordAuth?: boolean;
   oidc?: OidcConfig;
   secret: string;
@@ -541,6 +546,11 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             }
           },
           after: async (session, ctx) => {
+            env.analytics?.capture(
+              session.userId,
+              { name: "signed_in" },
+              { id: session.id, at: session.createdAt },
+            );
             const context =
               ctx && isOidcCallback(ctx) ? (await getOAuthState())?.serverContext : undefined;
             // Set only after ID-token verification and exact linked-account binding.
@@ -568,6 +578,13 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       },
       user: {
         create: {
+          after: async (user) => {
+            env.analytics?.capture(
+              user.id,
+              { name: "account_created" },
+              { id: user.id, at: user.createdAt },
+            );
+          },
           before: async (user) => {
             if (isMessagingEmail(user.email)) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });

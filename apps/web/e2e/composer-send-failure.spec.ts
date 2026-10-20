@@ -49,6 +49,37 @@ test("a failed send keeps the message and its attachment in the composer", async
   await expect(page.getByTestId("composer-error")).toBeHidden();
 });
 
+test("the missing-model send error opens model settings", async ({ page }, testInfo) => {
+  const composer = await openComposer(page, "send-needs-model");
+  await page.route("**/rpc/threads/send", (route) =>
+    route.fulfill({
+      status: 400,
+      json: {
+        json: {
+          defined: false,
+          code: "BAD_REQUEST",
+          status: 400,
+          message: "Connect a model to start a run.",
+        },
+      },
+    }),
+  );
+  await composer.fill("what can you do?");
+  await composer.press("Enter");
+
+  const link = page.getByRole("button", { name: "Connect a model to start a run.", exact: true });
+  await expect(link).toBeVisible();
+  await captureScreenshot(page, testInfo, "composer-send-needs-model");
+
+  await link.click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toBeVisible();
+  await expect(settings.getByTestId("settings-nav-models")).toHaveAttribute("aria-current", "page");
+  await page.keyboard.press("Escape");
+  await expect(settings).toBeHidden();
+  await expect(composer).toHaveValue("what can you do?");
+});
+
 test("a failed send leaves a newer draft alone", async ({ page }) => {
   const composer = await openComposer(page, "send-failure-newer");
   let failSend = () => {};

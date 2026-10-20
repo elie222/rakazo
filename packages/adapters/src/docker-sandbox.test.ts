@@ -6,7 +6,7 @@ import {
   MAX_SANDBOX_SUCCESS_RESPONSE_BYTES,
   SCREEN_RELEASE_TIMEOUT_MS,
 } from "./docker-sandbox.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 const context = {
   operationId: "docker-test",
@@ -590,6 +590,29 @@ describe("Docker sandbox stopped containers", () => {
     );
 
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(isSandboxGoneError(error)).toBe(true);
+  });
+
+  it("reports a deleted container gone when running a command", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          stdout: "",
+          stderr: "(HTTP code 404) no such container - No such container: computer",
+          code: 1,
+        }),
+      ),
+    );
+    const provider = new DockerSandboxProvider("http://supervisor.test", "test-token");
+
+    const error = await (async () => {
+      for await (const _event of provider.execute(computer, { argv: ["true"] }, context));
+    })().then(
+      () => null,
+      (error: unknown) => error,
+    );
+
     expect(isSandboxGoneError(error)).toBe(true);
   });
 

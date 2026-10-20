@@ -10,6 +10,8 @@ import { botMessageHopExhausted, nextBotMessageHop } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { appendEventInTransaction, createThreadMessageInTransaction } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
+import { MessagingSendError } from "./chat-sdk-surface.js";
+import { splitOutboundBody } from "./messaging-platforms.js";
 
 /**
  * Margin under vendor consecutive-outbound caps (sendblue enforces one hard):
@@ -102,15 +104,22 @@ async function mirrorRun(deps: MessagingDeliveryDeps, runId: string): Promise<vo
     where: { runId: run.id, role: "bot" },
     orderBy: { seq: "asc" },
   });
+  // One row per platform-sized part, so a retry re-sends only the parts that
+  // failed. Explicit createdAt keeps the parts in order for the drain.
+  const createdAt = Date.now();
   const rows = messages
-    .map((message) => ({
-      idempotencyKey: `msg:${message.id}`,
-      kind: "dm",
-      identityId: identity.id,
-      body: extractText(message.blocks),
-      sourceMessageId: message.id,
-    }))
-    .filter((row) => row.body);
+    .flatMap((message) => {
+      const body = extractText(message.blocks);
+      if (!body) return [];
+      return splitOutboundBody(identity.provider, body).map((part, index) => ({
+        idempotencyKey: index === 0 ? `msg:${message.id}` : `msg:${message.id}:${index + 1}`,
+        kind: "dm",
+        identityId: identity.id,
+        body: part,
+        sourceMessageId: message.id,
+      }));
+    })
+    .map((row, index) => ({ ...row, createdAt: new Date(createdAt + index) }));
   if (rows.length === 0) return;
   // Atomic dedupe: a concurrent messaging.deliver for the same run loses on
   // the idempotencyKey unique key instead of throwing P2002.
@@ -327,15 +336,27 @@ async function sendConnectInvite(
 }
 
 async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Promise<void> {
-  const now = new Date();
+  const now = Date.now();
   const pending = await deps.prisma.messagingOutbound.findMany({
-    where: {
-      status: "pending",
-      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-    },
+    where: { status: "pending" },
     orderBy: { createdAt: "asc" },
   });
+  // Keep each conversation in order: a row waiting out a backoff, held at
+  // the cap, or failing now holds back the later rows to the same place.
+  const held = new Set<string>();
   for (const row of pending) {
+    const destination = row.identityId ?? row.threadId ?? row.id;
+    if (held.has(destination)) continue;
+    if (row.nextAttemptAt && row.nextAttemptAt.getTime() > now) {
+      held.add(destination);
+      continue;
+    }
+    // A later part of a split reply waits until the earlier parts are out;
+    // another drain may hold one of them in flight.
+    if (await hasUndeliveredEarlierPart(deps, row, now)) {
+      held.add(destination);
+      continue;
+    }
     // Claim before sending: concurrent drains (job keys are per runId) and
     // crash retries must never deliver the same message twice.
     const claim = await deps.prisma.messagingOutbound.updateMany({
@@ -383,6 +404,7 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
           where: { id: row.id },
           data: { status: "pending" },
         });
+        held.add(destination);
         continue;
       }
       const threadId = await resolveDirectThread(deps, identity, context);
@@ -412,14 +434,16 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
         where: { id: identity.id },
         data: { outboundSinceInbound: { increment: 1 } },
       });
-    } catch {
+    } catch (error) {
       // Transient provider errors go back to pending with a backed-off
-      // retry; only an exhausted budget is terminal.
+      // retry (no sooner than the provider's retry-after); a permanent error
+      // or an exhausted budget is terminal.
+      held.add(destination);
+      const failure = error instanceof MessagingSendError ? error : null;
       const attempts = (row.attempts ?? 0) + 1;
-      const exhausted = attempts >= MESSAGING_OUTBOUND_MAX_ATTEMPTS;
-      const retryAt = exhausted
-        ? null
-        : new Date(Date.now() + messagingOutboundRetryDelayMs(attempts));
+      const exhausted = failure?.permanent || attempts >= MESSAGING_OUTBOUND_MAX_ATTEMPTS;
+      const delayMs = Math.max(messagingOutboundRetryDelayMs(attempts), failure?.retryAfterMs ?? 0);
+      const retryAt = exhausted ? null : new Date(Date.now() + delayMs);
       await deps.prisma.messagingOutbound.updateMany({
         where: { id: row.id },
         data: {
@@ -438,6 +462,33 @@ async function drain(deps: MessagingDeliveryDeps, context: AdapterContext): Prom
       }
     }
   }
+}
+
+/** A claimed part still without a handle after this long is treated as abandoned. */
+const MESSAGING_PART_IN_FLIGHT_MS = 2 * 60_000;
+
+async function hasUndeliveredEarlierPart(
+  deps: MessagingDeliveryDeps,
+  row: { idempotencyKey: string; sourceMessageId: string | null; createdAt: Date },
+  now: number,
+): Promise<boolean> {
+  if (!row.sourceMessageId || row.idempotencyKey === `msg:${row.sourceMessageId}`) return false;
+  const earlier = await deps.prisma.messagingOutbound.findFirst({
+    where: {
+      sourceMessageId: row.sourceMessageId,
+      createdAt: { lt: row.createdAt },
+      OR: [
+        { status: "pending" },
+        {
+          status: "sent",
+          providerHandle: null,
+          updatedAt: { gt: new Date(now - MESSAGING_PART_IN_FLIGHT_MS) },
+        },
+      ],
+    },
+    select: { id: true },
+  });
+  return earlier !== null;
 }
 
 /**
@@ -473,12 +524,11 @@ export async function applyMessagingOutboundStatus(
   prisma: PrismaClient,
   event: MessagingOutboundStatus,
 ): Promise<void> {
-  const status =
-    event.status === "ERROR" || event.status === "DECLINED"
-      ? "failed"
-      : event.status === "SENT" || event.status === "DELIVERED"
-        ? "sent"
-        : null;
+  const status = ["ERROR", "DECLINED", "FAILED"].includes(event.status)
+    ? "failed"
+    : ["SENT", "DELIVERED", "READ"].includes(event.status)
+      ? "sent"
+      : null;
   if (!status) return;
   await prisma.messagingOutbound.updateMany({
     where: { providerHandle: event.handle },

@@ -2,6 +2,9 @@ import type { DesktopDownloads } from "../src/github.js";
 import { fetchDesktopDownloads } from "../src/github.js";
 import { LATEST_RELEASE_URL } from "../src/site.js";
 
+// Edge functions are bundled, which resolves the extensionless source imports.
+export const config = { runtime: "edge" };
+
 /** Redirects to the newest installer so a desktop release needs no site rebuild. */
 export async function fetchDownload(
   request: Request,
@@ -22,4 +25,6 @@ export async function fetchDownload(
   });
 }
 
-export default { fetch: (request: Request) => fetchDownload(request) };
+export function GET(request: Request): Promise<Response> {
+  return fetchDownload(request);
+}

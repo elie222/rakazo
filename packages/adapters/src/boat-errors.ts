@@ -6,6 +6,17 @@ import { readBodyCapped } from "./web-ssrf.js";
 const MAX_BOAT_ERROR_RESPONSE_BYTES = 16 * 1024;
 const BOAT_ERROR_RESPONSE_TIMEOUT_MS = 2_000;
 
+/** An SDK `ResponseError` that keeps Boat's machine-readable error code. */
+export class BoatApiError extends ResponseError {
+  constructor(
+    response: Response,
+    message: string,
+    readonly code: string | undefined,
+  ) {
+    super(response, message);
+  }
+}
+
 /** Keep HTTP failures actionable without changing the SDK's status-based recovery contract. */
 export function wrapBoatCall<Args extends unknown[], Result>(
   call: (...args: Args) => Promise<Result>,
@@ -27,7 +38,7 @@ export async function boatResponseError(
   response: Response,
   apiKey: string,
   signal?: AbortSignal,
-): Promise<ResponseError> {
+): Promise<BoatApiError> {
   const body = await readErrorBody(response, signal);
   const code = safeIdentifier(body?.code);
   const requestId = safeIdentifier(body?.requestId);
@@ -41,12 +52,13 @@ export async function boatResponseError(
           .trim()
           .slice(0, 512)
       : "";
-  return new ResponseError(
+  return new BoatApiError(
     response,
     redactSecrets(
       `${prefix}${detail ? `: ${detail}` : ""}${requestId ? ` (request ${requestId})` : ""}`,
       [apiKey],
     ),
+    code,
   );
 }
 

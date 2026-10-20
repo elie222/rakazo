@@ -1,11 +1,12 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
-import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
+import { createWhatsAppAdapter, splitMessage, WhatsAppApiError } from "@chat-adapter/whatsapp";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
 import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
 import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
+import type { ClientOptions as SendblueClientOptions } from "sendblue";
 import type { MessagingPlatform } from "./chat-sdk-surface.js";
 import { isVitestRuntime } from "./test-runtime.js";
 
@@ -14,6 +15,8 @@ import { isVitestRuntime } from "./test-runtime.js";
  * roots. A platform mounts when its full credential set is present.
  */
 export interface MessagingEnvironmentValues {
+  /** Public API origin; vendors that push delivery status call back here. */
+  apiUrl?: string | undefined;
   sendblueApiKeyId?: string | undefined;
   sendblueApiSecret?: string | undefined;
   sendblueSigningSecret?: string | undefined;
@@ -42,6 +45,7 @@ export function messagingEnvFromProcess(
   // so a credential with stray whitespace behaves identically in both roles.
   const clean = (value: string | undefined) => value?.trim() || undefined;
   return {
+    apiUrl: clean(env.API_URL),
     sendblueApiKeyId: clean(env.SENDBLUE_API_KEY_ID),
     sendblueApiSecret: clean(env.SENDBLUE_API_SECRET),
     sendblueSigningSecret: clean(env.SENDBLUE_SIGNING_SECRET),
@@ -118,7 +122,11 @@ export function telegramBotsFromEnv(
  */
 export function messagingPlatformsFromEnv(
   env: MessagingEnvironmentValues,
-  options: { pollInboundMessages?: boolean } = {},
+  options: {
+    pollInboundMessages?: boolean;
+    /** Test seam: point the Sendblue SDK at an emulator. */
+    sendblueTransport?: Pick<SendblueClientOptions, "baseURL" | "fetch">;
+  } = {},
 ): MessagingPlatform[] {
   const platforms: MessagingPlatform[] = [];
 
@@ -135,20 +143,31 @@ export function messagingPlatformsFromEnv(
       defaultFromNumber: lineNumber,
       webhookSecret: env.sendblueSigningSecret,
       allowedServices: ["iMessage", "SMS", "RCS"],
+      // Delivery-status callbacks need a public HTTPS origin; local setups skip them.
+      ...(env.apiUrl?.startsWith("https://")
+        ? { statusCallbackUrl: new URL("/api/v1/messaging/webhook/sendblue", env.apiUrl).href }
+        : {}),
     });
     // chat@4.39 derives thread.isDM solely from the optional Adapter.isDM
     // hook, and chat-adapter-sendblue@0.2.0 omits it — without this every
     // 1:1 message would route as a group. Derive it from the thread id.
+    // The SDK's own retries (twice, no idempotency key) would duplicate
+    // texts and stall the outbox drain; the outbox owns retries instead.
     Object.assign(adapter, {
       isDM: (threadId: string) => !adapter.decodeThreadId(threadId).groupId,
-    } satisfies Pick<Adapter, "isDM">);
+      sdk: adapter.getSdk().withOptions({
+        maxRetries: 0,
+        timeout: MESSAGING_SEND_TIMEOUT_MS,
+        ...options.sendblueTransport,
+      }),
+    });
     platforms.push({
       provider: "sendblue",
       capabilities: { direct: true, groups: true, receipt: "typing" },
       adapter,
       directThreadId: (address) =>
         adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
-      peekStatus: (payload) => parseSendblueStatus(payload),
+      peekStatuses: parseSendblueStatuses,
       participants: (raw) => sendblueParticipants(raw, lineNumber),
       channelName: (raw) => sendblueGroupName(raw),
       transport: (raw) => sendblueTransport(raw),
@@ -159,6 +178,14 @@ export function messagingPlatformsFromEnv(
     const adapter = createSlackAdapter({
       botToken: env.slackBotToken,
       signingSecret: env.slackSigningSecret,
+      // WebClient defaults to ten retries over ~30 minutes with no timeout,
+      // sleeping through rate limits; that duplicates posts and stalls the
+      // outbox. Fail fast and let the outbox back off (honouring retryAfter).
+      webClientOptions: {
+        retryConfig: { retries: 0 },
+        rejectRateLimitedCalls: true,
+        timeout: MESSAGING_SEND_TIMEOUT_MS,
+      },
     });
     // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
     const addReaction = adapter.addReaction.bind(adapter);
@@ -173,6 +200,8 @@ export function messagingPlatformsFromEnv(
       capabilities: { direct: true, groups: true, receipt: "reaction" },
       adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
+      redeliveryKeys: slackRedeliveryKeys,
+      isPermanentSendError: (error) => SLACK_PERMANENT_ERRORS.has(slackPlatformError(error) ?? ""),
     });
   }
 
@@ -191,6 +220,9 @@ export function messagingPlatformsFromEnv(
         appSecret: env.whatsappAppSecret,
         verifyToken: env.whatsappVerifyToken,
       }),
+      peekStatuses: parseWhatsAppStatuses,
+      isPermanentSendError: (error) =>
+        error instanceof WhatsAppApiError && error.errorCode === WHATSAPP_REENGAGEMENT_REQUIRED,
     });
   }
 
@@ -218,6 +250,7 @@ export function messagingPlatformsFromEnv(
         secretToken: env.telegramWebhookSecret,
         mode: options.pollInboundMessages ? "auto" : "webhook",
       }),
+      isPermanentSendError: isTelegramBlocked,
     });
   }
 
@@ -241,6 +274,7 @@ export function messagingPlatformsFromEnv(
         secretToken: bot.webhookSecret,
         mode: options.pollInboundMessages ? "auto" : "webhook",
       }),
+      isPermanentSendError: isTelegramBlocked,
     });
   }
 
@@ -287,18 +321,75 @@ export function isMessagingSurfaceEnabled(
   return options.openSignup ? options.deploymentModelConfigured : true;
 }
 
+/** Bounds one vendor send so a hung request cannot stall the sequential outbox drain. */
+const MESSAGING_SEND_TIMEOUT_MS = 10_000;
+
+/** Slack errors a retry cannot fix: the bot cannot reach the channel or its token is dead. */
+const SLACK_PERMANENT_ERRORS = new Set([
+  "channel_not_found",
+  "not_in_channel",
+  "is_archived",
+  "invalid_auth",
+  "account_inactive",
+  "token_revoked",
+]);
+
+/** Meta 131047: outside the 24-hour window only a template can reach the user. */
+const WHATSAPP_REENGAGEMENT_REQUIRED = 131047;
+
+/**
+ * WhatsApp caps one text at 4096 characters and the adapter sends longer
+ * ones as several messages. The outbox splits first, the same way, so each
+ * part is its own row and a retry re-sends only the parts that failed.
+ */
+export function splitOutboundBody(provider: string, body: string): string[] {
+  return provider === "whatsapp" ? splitMessage(body) : [body];
+}
+
 /** Sendblue reports outbound delivery as webhooks the Chat SDK ignores. */
-export function parseSendblueStatus(payload: unknown): MessagingOutboundStatus | null {
-  if (typeof payload !== "object" || payload === null) return null;
-  const body = payload as Record<string, unknown>;
-  if (body.is_outbound !== true) return null;
-  if (typeof body.message_handle !== "string" || !body.message_handle) return null;
-  return {
-    type: "status",
-    provider: "sendblue",
-    handle: body.message_handle,
-    status: typeof body.status === "string" ? body.status : "",
-  };
+export function parseSendblueStatuses(payload: unknown): MessagingOutboundStatus[] {
+  const body = asRecord(payload);
+  const handle = body && stringField(body, "message_handle");
+  if (body?.is_outbound !== true || !handle) return [];
+  return [
+    { type: "status", provider: "sendblue", handle, status: stringField(body, "status") ?? "" },
+  ];
+}
+
+/**
+ * WhatsApp reports asynchronous delivery (including 24-hour-window failures
+ * such as 131047) only as `statuses[]` webhooks, which the Chat SDK skips.
+ */
+export function parseWhatsAppStatuses(payload: unknown): MessagingOutboundStatus[] {
+  const statuses: MessagingOutboundStatus[] = [];
+  for (const entry of arrayField(asRecord(payload), "entry")) {
+    for (const change of arrayField(asRecord(entry), "changes")) {
+      for (const item of arrayField(asRecord(asRecord(change)?.value), "statuses")) {
+        const record = asRecord(item) ?? {};
+        const handle = stringField(record, "id");
+        const status = stringField(record, "status");
+        if (!handle || !status) continue;
+        statuses.push({
+          type: "status",
+          provider: "whatsapp",
+          handle,
+          status: status.toUpperCase(),
+        });
+      }
+    }
+  }
+  return statuses;
+}
+
+/** Slack's marker for a dispatched event; it turns Slack's retries into no-ops. */
+function slackRedeliveryKeys(payload: unknown): string[] {
+  const eventId = stringField(asRecord(payload) ?? {}, "event_id");
+  return eventId ? [`slack:event-delivered:${eventId}`] : [];
+}
+
+/** Telegram 403 (Chat SDK PermissionError): the user blocked the bot. */
+function isTelegramBlocked(error: unknown): boolean {
+  return error instanceof Error && error.name === "PermissionError";
 }
 
 /** Pull Slack team-room fields the Chat SDK does not expose on Message. */
@@ -343,6 +434,11 @@ function slackPlatformError(error: unknown): string | undefined {
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function arrayField(record: Record<string, unknown> | null, key: string): unknown[] {
+  const value = record?.[key];
+  return Array.isArray(value) ? value : [];
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {

@@ -2,6 +2,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { LinkFavicons } from "@rakazo/chat-ui/web";
 import { LinkFaviconsContext, RemoteImagesContext } from "@rakazo/chat-ui/web";
 import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts";
+import { analyticsScreen } from "@rakazo/core";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import {
   lazy,
@@ -12,12 +13,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Navigate, Outlet, Route, Routes, useSearchParams } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { LoadingState } from "./components/ai/primitives";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SubscriptionGate } from "./components/SubscriptionGate";
 import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
+import { desktopBridge } from "./lib/desktop";
 import { markAfterPaint, markOnce } from "./lib/performance";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
 import { rpc } from "./lib/rpc";
@@ -97,6 +99,23 @@ function SessionApp() {
     () => false,
   );
   const session = authClient.useSession();
+  const pathname = useLocation().pathname;
+  const screen = analyticsScreen(pathname);
+  const analyticsUserId = session.data?.user.id;
+  const lastScreen = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!analyticsUserId) {
+      lastScreen.current = undefined;
+      return;
+    }
+    if (!screen) return;
+    const key = `${analyticsUserId}:${screen}`;
+    if (lastScreen.current === key) return;
+    lastScreen.current = key;
+    void Promise.resolve()
+      .then(() => rpc.analytics.screen({ screen, surface: desktopBridge() ? "desktop" : "web" }))
+      .catch(() => undefined);
+  }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
   const [holdingUnreachable, setHoldingUnreachable] = useState(false);
   const nextHolding = holdUnreachableGate(gate, holdingUnreachable);

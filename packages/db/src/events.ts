@@ -1,6 +1,7 @@
-import type { RealtimeFanout } from "@rakazo/adapter-kit";
+import type { ProductAnalytics, RealtimeFanout } from "@rakazo/adapter-kit";
 import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
+  AnalyticsTrigger,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   encodeLoginSecret,
   LoginSecretValue,
@@ -268,20 +269,24 @@ export interface RunSecretWriter {
 export function createThreadEvents(
   prisma: PrismaClient,
   realtime?: RealtimeFanout,
-  options: { catchUpMs?: number; runSecretWriter?: RunSecretWriter } = {},
+  options: {
+    catchUpMs?: number;
+    runSecretWriter?: RunSecretWriter;
+    analytics?: ProductAnalytics;
+  } = {},
 ): ThreadEvents {
   return {
     answerRunInput: (input) => answerRunInput(prisma, input, realtime, options.runSecretWriter),
-    append: (input) => appendEvent(prisma, input, realtime),
+    append: (input) => appendEvent(prisma, input, realtime, options.analytics),
     claimSteering: (input) => claimSteering(prisma, input),
     clearThread: (input) => clearThread(prisma, input, realtime),
     finalizeComputerControlRelease: (input) =>
       finalizeComputerControlRelease(prisma, input, realtime),
-    finalizeRun: (input) => finalizeRun(prisma, input, realtime),
+    finalizeRun: (input) => finalizeRun(prisma, input, realtime, options.analytics),
     notify: (threadId, seq) => notifyRealtime(realtime, threadId, seq),
     pauseRunForInput: (input) => pauseRunForInput(prisma, input, realtime),
     pauseRunForTakeover: (input) => pauseRunForTakeover(prisma, input, realtime),
-    sendUserMessage: (input) => sendUserMessage(prisma, input, realtime),
+    sendUserMessage: (input) => sendUserMessage(prisma, input, realtime, options.analytics),
     follow: (threadId, cursor, signal) =>
       followThreadEvents(prisma, threadId, cursor, realtime, signal, options.catchUpMs),
   };
@@ -378,6 +383,7 @@ export async function sendUserMessage(
   prisma: PrismaClient,
   input: SendUserMessageInput,
   realtime?: RealtimeFanout,
+  analytics?: ProductAnalytics,
 ): Promise<SendUserMessageResult> {
   const replay = async (): Promise<SendUserMessageResult | null> => {
     if (!input.clientNonce) return null;
@@ -521,6 +527,11 @@ export async function sendUserMessage(
     throw error;
   });
   if ("replay" in committed) return committed.replay;
+  analytics?.capture(
+    input.userId,
+    { name: "message_sent", trigger: input.trigger },
+    { id: committed.message.id, at: committed.message.createdAt },
+  );
   await notifyRealtime(realtime, input.threadId, committed.event.seq).catch((error) => {
     // The event is durable; subscribers recover it from their persisted cursor.
     getLogger().error("user message realtime notification", error);
@@ -1314,11 +1325,18 @@ export async function appendEvent(
   prisma: PrismaClient,
   input: AppendEventInput,
   realtime?: RealtimeFanout,
+  analytics?: ProductAnalytics,
 ): Promise<ProductEvent> {
   // Concurrent writers in one thread (group members, bot messages) can deadlock on the thread row.
   const event = await withTransactionRetry(() =>
     prisma.$transaction((tx: Prisma.TransactionClient) => appendEventInTransaction(tx, input)),
   );
+  if (
+    input.runId &&
+    (input.type === "run.started" || input.type === "run.completed" || input.type === "run.failed")
+  ) {
+    void captureRunAnalytics(prisma, analytics, input.runId, input.type);
+  }
   const productEvent = mapProductEvent(event);
   await notifyRealtime(realtime, event.threadId, event.seq);
   return productEvent;
@@ -1328,9 +1346,11 @@ export async function finalizeRun(
   prisma: PrismaClient,
   input: FinalizeRunInput,
   realtime?: RealtimeFanout,
+  analytics?: ProductAnalytics,
 ): Promise<FinalizeRunResult | false> {
   const committed = await withTransactionRetry(() => finalizeRunOnce(prisma, input));
   if (!committed) return false;
+  void captureRunAnalytics(prisma, analytics, input.runId, `run.${input.outcome}`);
   await notifyRealtime(realtime, committed.threadId, committed.seq);
   return { continuationRunId: committed.continuationRunId };
 }
@@ -1767,5 +1787,44 @@ class ChangeLatch {
       signal?.addEventListener("abort", finish, { once: true });
       if (this.generation !== expected || signal?.aborted) finish();
     });
+  }
+}
+
+async function captureRunAnalytics(
+  prisma: PrismaClient,
+  analytics: ProductAnalytics | undefined,
+  runId: string,
+  type: "run.started" | "run.completed" | "run.failed",
+): Promise<void> {
+  if (!analytics) return;
+  try {
+    const run = await prisma.run.findUnique({
+      where: { id: runId },
+      select: {
+        userId: true,
+        trigger: true,
+        startedAt: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
+    if (!run) return;
+    const trigger = AnalyticsTrigger.safeParse(run.trigger);
+    if (!trigger.success) return;
+    const identity = {
+      id: runId,
+      at: (type === "run.started" ? run.startedAt : run.completedAt) ?? run.createdAt,
+    };
+    if (type === "run.failed")
+      analytics.capture(run.userId, { name: "run_failed", trigger: trigger.data }, identity);
+    else
+      analytics.capture(
+        run.userId,
+        { name: type === "run.started" ? "run_started" : "run_completed", trigger: trigger.data },
+        identity,
+      );
+  } catch {
+    // Measurement must never turn a committed run into a failed request or worker job.
+    getLogger().warn("Run analytics unavailable.");
   }
 }

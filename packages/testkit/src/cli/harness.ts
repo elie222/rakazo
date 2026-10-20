@@ -169,7 +169,13 @@ async function main() {
     }
 
     const [
-      { ComposioEmulator, EmailEmulator, PipedreamConnector, ThirdPartyConnectorEmulator },
+      {
+        ComposioEmulator,
+        DestinationEmulator,
+        EmailEmulator,
+        PipedreamConnector,
+        ThirdPartyConnectorEmulator,
+      },
       { createApp },
     ] = await Promise.all([import("@rakazo/adapters"), import("../../../../apps/api/src/app.ts")]);
     const { serve } = await import("@hono/node-server");
@@ -189,6 +195,7 @@ async function main() {
       databaseUrl,
       prisma: undefined,
       composio: new ComposioEmulator(),
+      connectors: [new DestinationEmulator()],
       pipedream,
       email,
       remoteConnectors: {

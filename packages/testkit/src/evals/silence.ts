@@ -101,10 +101,9 @@ function grade(e: Evidence, expected: Array<"silent" | "release" | "failure">): 
     ),
     check(
       "no-external-writes",
-      e.destinationWrites === 0 &&
-        [...e.calls, ...runs.flatMap((r) => r.calls)].every(
-          (c) => c.outcome !== "write" && c.outcome !== "uncertain-write",
-        ),
+      [...e.calls, ...runs.flatMap((r) => r.calls)].every(
+        (c) => c.outcome !== "write" && c.outcome !== "uncertain-write",
+      ),
     ),
     ...expected.flatMap((outcome, index) => {
       const run = runs[index];

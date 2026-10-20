@@ -1,14 +1,17 @@
 import { ORPCError } from "@orpc/server";
 import type { BillingPrice, BillingProvider } from "@rakazo/adapter-kit";
+import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import type { Actor, BillingStatus } from "@rakazo/contracts";
-import type { PrismaClient } from "@rakazo/db";
+import type { BillingAccount, PrismaClient } from "@rakazo/db";
 import {
   billingAccountForOrganization,
   createBillingAccount,
   hasBillingAccess,
+  needsBillingPortal,
   organizationForMember,
   organizationSeatCount,
   ownedBillingAccounts,
+  replaceBillingCustomer,
   syncBillingSnapshot,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -77,6 +80,29 @@ export function createBillingService(deps: {
       getLogger().warn("billing sync for unknown customer", { "billing.customer_id": customerId });
   }
 
+  async function newCustomer(actor: Actor, organizationId: string) {
+    return (await provider.createCustomer({ email: actor.email, organizationId })).customerId;
+  }
+
+  /** Runs `call`; if the provider deleted the customer, swaps in a new one and runs it again. */
+  async function withLiveCustomer<T>(
+    actor: Actor,
+    account: BillingAccount,
+    call: (customerId: string) => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await call(account.customerId);
+    } catch (error) {
+      if (!(error instanceof BillingCustomerNotFoundError)) throw error;
+      const replaced = await replaceBillingCustomer(prisma, {
+        organizationId: account.organizationId,
+        previousCustomerId: account.customerId,
+        customerId: await newCustomer(actor, account.organizationId),
+      });
+      return call(replaced.customerId);
+    }
+  }
+
   return {
     async status(actor) {
       if (actor.isDeploymentOwner) {
@@ -126,27 +152,40 @@ export function createBillingService(deps: {
       if (hasBillingAccess(account?.status ?? null)) {
         throw new ORPCError("CONFLICT", { message: "Already subscribed" });
       }
-      if (!account) {
-        const { customerId } = await provider.createCustomer({
-          email: actor.email,
-          organizationId,
-        });
-        account = await createBillingAccount(prisma, { organizationId, customerId });
+      // The existing subscription resumes once paid; a new checkout would bill twice.
+      if (needsBillingPortal(account?.status ?? null)) {
+        throw new ORPCError("CONFLICT", { message: "Resume the subscription in billing" });
       }
-      return provider.createCheckout({
-        customerId: account.customerId,
-        seats: await organizationSeatCount(prisma, organizationId),
-        ...(account.subscribedAt ? {} : { trialDays: TRIAL_DAYS }),
-        successUrl: `${deps.webOrigin}${BILLING_RETURN_PATH}`,
-        cancelUrl: appUrl,
+      account ??= await createBillingAccount(prisma, {
+        organizationId,
+        customerId: await newCustomer(actor, organizationId),
       });
+      const seats = await organizationSeatCount(prisma, organizationId);
+      const trial = account.subscribedAt ? {} : { trialDays: TRIAL_DAYS };
+      try {
+        return await withLiveCustomer(actor, account, (customerId) =>
+          provider.createCheckout({
+            customerId,
+            seats,
+            ...trial,
+            successUrl: `${deps.webOrigin}${BILLING_RETURN_PATH}`,
+            cancelUrl: appUrl,
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof BillingCheckoutCompletedError)) throw error;
+        await sync(account.customerId);
+        throw new ORPCError("CONFLICT", { message: "Already subscribed" });
+      }
     },
 
     async portal(actor) {
       const { organizationId } = await managedOrganization(actor);
       const account = await billingAccountForOrganization(prisma, organizationId);
       if (!account) throw new ORPCError("NOT_FOUND", { message: "No billing account" });
-      return provider.createPortal({ customerId: account.customerId, returnUrl: appUrl });
+      return withLiveCustomer(actor, account, (customerId) =>
+        provider.createPortal({ customerId, returnUrl: appUrl }),
+      );
     },
 
     sync,

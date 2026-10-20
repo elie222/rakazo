@@ -1096,13 +1096,6 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
     parameters: parametersFor(tool),
     prepareArguments: (args: unknown) => {
       const raw = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
-      if (tool.name === "destination.write") {
-        return {
-          collection: String(raw.collection ?? "notes"),
-          title: String(raw.title ?? "Rakazo result"),
-          body: String(raw.body ?? ""),
-        };
-      }
       if (tool.name === "remember") {
         return {
           content: String(raw.content ?? ""),
@@ -1734,13 +1727,6 @@ function safeJsonSchemaParameters(tool: ConnectorTool) {
 function builtinParameters(tool: ConnectorTool) {
   if (tool.name === "write_file") {
     return Type.Object({ path: Type.String(), content: Type.String() });
-  }
-  if (tool.name === "destination.write") {
-    return Type.Object({
-      collection: Type.String(),
-      title: Type.String(),
-      body: Type.String(),
-    });
   }
   if (tool.name === "request_takeover") {
     return Type.Object({ reason: Type.String() });

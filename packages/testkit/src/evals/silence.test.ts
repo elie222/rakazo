@@ -30,7 +30,6 @@ function evidence(run: Partial<RoutineEvidence> = {}): Evidence {
     approvalPending: false,
     pendingApproval: null,
     priorMemory: "",
-    destinationWrites: 0,
     toolNames: [],
     messaging: { originThreadId: null, outbound: [] },
     routineRuns: [routineRun],

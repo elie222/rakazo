@@ -223,6 +223,10 @@ export class DockerSandboxProvider implements SandboxProvider {
       res,
       context.signal,
     );
+    // The supervisor answers a missing container with Docker's 404 as the command's stderr.
+    if (body.code !== 0 && /no such container/i.test(body.stderr)) {
+      throw sandboxGoneError(computer);
+    }
     if (body.stdout) yield { type: "stdout", data: body.stdout };
     if (body.stderr) yield { type: "stderr", data: body.stderr };
     yield { type: "exit", code: body.code };

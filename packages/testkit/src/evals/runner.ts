@@ -30,7 +30,6 @@ export type EvalApp = {
   runtime: AgentRuntime;
   notifications?: NotificationProvider;
   harnessIssues?: readonly string[];
-  connector?: { records: readonly unknown[] };
   awaitIdle?: () => Promise<void>;
   finalizeBackground?: () => Promise<void>;
   cacheDecisions?: readonly CacheDecisionMeasurement[];
@@ -631,7 +630,6 @@ export async function runTrial(
       clarificationPending,
       pendingApproval,
       priorMemory,
-      destinationWrites: handles.connector?.records.length ?? 0,
       toolNames: [...seenTools.values()].map((event) => event.name),
       messaging: {
         originThreadId: messagingOriginThreadId,

@@ -40,6 +40,12 @@ export type HomeCopy = {
     mock: { model: string; weekdays: string; approval: string; approve: string; deny: string };
     features: Array<{ title: string; body: string }>;
   };
+  platforms: {
+    heading: string;
+    web: string;
+    desktop: string;
+    mobile: string;
+  };
   roster: {
     eyebrow: string;
     heading: string;
@@ -375,6 +381,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "You set the limits", body: "Decide which actions need your approval." },
       ],
     },
+    platforms: {
+      heading: "Wherever you are",
+      web: "Web",
+      desktop: "Desktop",
+      mobile: "Mobile",
+    },
     roster: {
       eyebrow: "Your bot team",
       heading: "Give each bot a job",
@@ -489,6 +501,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "Arbeitet nach Zeitplan", body: "Wiederkehrende Aufgaben laufen, solange dein Computer an ist." },
         { title: "Du setzt die Grenzen", body: "Bestimme, welche Aktionen deine Freigabe brauchen." },
       ],
+    },
+    platforms: {
+      heading: "Überall, wo du bist",
+      web: "Web",
+      desktop: "Desktop",
+      mobile: "Mobil",
     },
     roster: {
       eyebrow: "Dein Bot-Team",
@@ -608,6 +626,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "내가 정하는 권한", body: "승인이 필요한 작업을 정하세요." },
       ],
     },
+    platforms: {
+      heading: "어디서든",
+      web: "웹",
+      desktop: "데스크톱",
+      mobile: "모바일",
+    },
     roster: {
       eyebrow: "나만의 봇 팀",
       heading: "봇마다 역할을 주세요",
@@ -725,6 +749,12 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { title: "按时自动执行", body: "电脑保持开机，重复任务按时执行。" },
         { title: "由你设定权限", body: "决定哪些操作需要你批准。" },
       ],
+    },
+    platforms: {
+      heading: "随时随地",
+      web: "网页版",
+      desktop: "桌面端",
+      mobile: "移动端",
     },
     roster: {
       eyebrow: "你的 Bot 团队",

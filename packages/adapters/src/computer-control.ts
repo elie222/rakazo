@@ -8,7 +8,7 @@ import {
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { toComputerRef } from "./computer-support.js";
-import { isSandboxGoneError } from "./e2b-sandbox.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
 
 export const DEFAULT_TAKEOVER_LEASE_MS = 15 * 60 * 1000;
 

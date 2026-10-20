@@ -4,6 +4,7 @@ import type {
   AgentContextStrategy,
   AgentRuntime,
   BillingProvider,
+  ConnectorProvider,
   JobPublisher,
   ManagedConnectorProvider,
   MessagingSurface,
@@ -16,7 +17,6 @@ import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
-  DestinationEmulator,
   RemoteConnectorDependencies,
 } from "@rakazo/adapters";
 import {
@@ -31,6 +31,7 @@ import {
   createMessagingContextLoader,
   createMessagingTeamChatHistory,
   createMessagingTeamChatSender,
+  createProductAnalytics,
   createRunExecutor,
   createRunSandbox,
   createRunSecretWriter,
@@ -148,7 +149,6 @@ export interface AppHandles {
   prisma: PrismaClient;
   jobs: JobPublisher;
   sandbox: SandboxProvider;
-  connector: DestinationEmulator;
   composio?: ComposioProvider;
   connectors: ConnectorRegistry;
   messaging?: MessagingSurface;
@@ -167,6 +167,8 @@ export async function createApp(
     realtime?: RealtimeFanout;
     sandbox?: SandboxProvider;
     composio?: ComposioProvider;
+    /** Test-only connector providers registered beside the configured ones. */
+    connectors?: ConnectorProvider[];
     pipedream?: ManagedConnectorProvider;
     messaging?: MessagingSurface;
     email?: TransactionalEmailProvider;
@@ -183,6 +185,7 @@ export async function createApp(
     realtime: realtimeOverride,
     sandbox: sandboxOverride,
     composio: composioOverride,
+    connectors: connectorOverrides = [],
     pipedream: pipedreamOverride,
     messaging: messagingOverride,
     email: emailOverride,
@@ -217,7 +220,9 @@ export async function createApp(
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
+  const analytics = createProductAnalytics();
   const events = createThreadEvents(prisma, realtime, {
+    analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
   const ticketBoardEnabled = env.ticketBoardEnabled;
@@ -379,15 +384,14 @@ export async function createApp(
         : undefined),
     pipedream,
   });
-  const stack = createConnectorStack(false, composioOverride, [
+  const stack = createConnectorStack(composioOverride, [
     installed,
     ...integrationSettings
       .providers()
       .filter((provider) => !composioOverride || provider.describe().id !== "composio"),
     mcp,
+    ...connectorOverrides,
   ]);
-  const connector = stack.destination;
-  await connector.start();
   integrationSettings.warmDirectories();
   const runtime =
     runtimeOverride ??
@@ -400,6 +404,7 @@ export async function createApp(
     notificationsOverride ??
     new ExpoPushProvider(env.dataDir, (sessionId) => pushSessionExpiresAt(prisma, sessionId), jobs);
   const auth = createAuth(prisma, {
+    analytics,
     passwordAuth: env.passwordAuth,
     oidc: env.oidc,
     secret: env.authSecret,
@@ -552,6 +557,7 @@ export async function createApp(
   reconciler?.start();
 
   const router = createRouter({
+    analytics,
     cloudAgent,
     codexCatalog,
     prisma,
@@ -999,7 +1005,6 @@ export async function createApp(
     prisma,
     jobs,
     sandbox,
-    connector,
     composio: stack.composio,
     connectors: stack.connector,
     messaging,
@@ -1035,11 +1040,11 @@ export async function createApp(
       await jobs.close();
       await secrets.close();
       await realtime.close();
-      await connector.stop();
       await mcp.close();
       await prisma.$disconnect().catch(() => undefined);
       await created.pool?.end().catch(() => undefined);
       await ownedJobPool?.end().catch(() => undefined);
+      await analytics?.flush();
       await logger.flush({ timeoutMs: 2_000 });
     },
   };

@@ -12,6 +12,7 @@ import { isLocalMcpHost } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
 import {
   createSafeRemoteFetch,
+  listMcpTools,
   type RemoteTransportDependencies,
   type SafeRemoteFetch,
 } from "./remote-mcp.js";
@@ -358,7 +359,7 @@ export class McpSession {
 
   async listTools(options?: { signal?: AbortSignal }): Promise<ListToolsResult> {
     this.assertConnected();
-    return this.client.listTools({}, { signal: options?.signal });
+    return { tools: await listMcpTools(this.client, { signal: options?.signal }) };
   }
 
   async callTool(

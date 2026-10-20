@@ -1,9 +1,22 @@
-import type { Command200Response } from "@boatdev/sdk";
+import type * as TimersPromises from "node:timers/promises";
+import type { SandboxStateEnum } from "@boatdev/sdk";
+import { ResponseError } from "@boatdev/sdk";
+import type { ComputerRef } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { parse } from "shell-quote";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BoatSandboxSdk } from "./boat-sandbox.js";
-import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
-import { desktopCommandResponder } from "./linux-desktop.test-support.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BoatSandboxProvider } from "./boat-sandbox.js";
+import type { BoatRecovery } from "./boat-sandbox.test-support.js";
+import { FakeBoatApi } from "./boat-sandbox.test-support.js";
+import { isSandboxGoneError } from "./sandbox-errors.js";
+
+// Polling waits advance a virtual clock, so state and deadline tests run instantly.
+vi.mock("node:timers/promises", async (importOriginal) => ({
+  ...(await importOriginal<typeof TimersPromises>()),
+  setTimeout: async (ms = 0) => {
+    vi.setSystemTime(Date.now() + ms);
+  },
+}));
 
 const context = {
   operationId: "test",
@@ -14,24 +27,50 @@ const context = {
   signal: new AbortController().signal,
 };
 
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
+async function boat() {
+  const api = new FakeBoatApi();
+  const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
+  const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+  return { api, provider, computer };
+}
+
+function reconnect(provider: BoatSandboxProvider, computer: ComputerRef) {
+  return provider.provision(
+    {
+      botId: computer.botId,
+      homePath: "/unused",
+      providerRef: computer.providerRef,
+      providerKind: "boat",
+    },
+    context,
+  );
+}
+
 describe("BoatSandboxProvider", () => {
   it("creates no-env sandboxes and implements execution and file operations", async () => {
-    const fixture = boatFixture();
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const api = new FakeBoatApi();
+    const create = vi.spyOn(api, "create");
+    const command = vi.spyOn(api, "command");
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, api);
     const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
 
     expect(computer).toMatchObject({
-      id: "bx_testbox2",
-      providerRef: "bx_testbox2",
+      id: "bx_fake1",
+      providerRef: "bx_fake1",
       kind: "boat",
       fresh: true,
     });
-    expect(fixture.create).toHaveBeenCalledWith(
+    expect(create).toHaveBeenCalledWith(
       {
         createSandboxRequest: {
           ttlSeconds: 7200,
@@ -44,8 +83,10 @@ describe("BoatSandboxProvider", () => {
 
     await provider.prepare(computer, context);
     expect(
-      fixture.command.mock.calls.some(([request]) =>
-        request.commandRequest.command.includes("rakazo-home/.browser-profiles"),
+      command.mock.calls.some(([request]) =>
+        "commandRequest" in request
+          ? request.commandRequest.command.includes("rakazo-home/.browser-profiles")
+          : false,
       ),
     ).toBe(true);
 
@@ -61,13 +102,13 @@ describe("BoatSandboxProvider", () => {
       { type: "stdout", data: "hello\n" },
       { type: "exit", code: 0 },
     ]);
-    const executeRequest = fixture.command.mock.calls.find(([request]) =>
-      request.commandRequest.command.includes("TEST_VALUE=works"),
-    )?.[0];
-    expect(parse(executeRequest?.commandRequest.command ?? "").at(-1)).toBe(
+    const executeRequest = command.mock.calls
+      .map(([request]) => ("commandRequest" in request ? request.commandRequest : undefined))
+      .find((request) => request?.command.includes("TEST_VALUE=works"));
+    expect(parse(executeRequest?.command ?? "").at(-1)).toBe(
       "'env' 'TEST_VALUE=works' 'env' '-u' 'FAILED' '--' 'echo' 'hello'",
     );
-    expect(executeRequest?.commandRequest.cwd).toBe("rakazo-home/notes");
+    expect(executeRequest?.cwd).toBe("rakazo-home/notes");
 
     await provider.writeFile(
       computer,
@@ -87,56 +128,180 @@ describe("BoatSandboxProvider", () => {
     ]);
   });
 
-  it("resumes archived sandboxes and replaces deleted references", async () => {
-    const archived = boatFixture({ state: "archived" });
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, archived.client);
-    const reconnected = await provider.provision(
-      {
-        botId: "bot-a",
-        homePath: "/unused",
-        providerRef: "bx_existing2",
-        providerKind: "boat",
-      },
-      context,
-    );
-    expect(reconnected).toMatchObject({ providerRef: "bx_existing2", fresh: false });
-    expect(archived.resume).toHaveBeenCalledWith(
-      {
-        sandboxId: "bx_existing2",
-        resumeRequest: { noEnv: true, ttlSeconds: 7200 },
-      },
+  it("resumes an archived sandbox with no inherited environment", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    api.setState(computer.id, "archived");
+
+    await expect(reconnect(provider, computer)).resolves.toMatchObject({
+      providerRef: computer.providerRef,
+      fresh: false,
+      started: true,
+    });
+    expect(resume).toHaveBeenCalledWith(
+      { sandboxId: computer.id, resumeRequest: { noEnv: true, ttlSeconds: 7200 } },
       { signal: context.signal },
     );
-
-    const missing = boatFixture();
-    missing.get.mockRejectedValueOnce({ status: 404 });
-    const replacing = new BoatSandboxProvider({ apiKey: "test-key" }, missing.client);
-    const replacement = await replacing.provision(
-      {
-        botId: "bot-b",
-        homePath: "/unused",
-        providerRef: "bx_missing2",
-        providerKind: "boat",
-      },
-      context,
-    );
-    expect(replacement).toMatchObject({ providerRef: "bx_testbox2", fresh: true });
   });
 
-  it("replaces archived sandboxes whose data Boat has deleted", async () => {
-    const expired = boatFixture({ state: "archived" });
-    expired.get.mockResolvedValueOnce({
-      ok: true,
-      type: "sandbox.info",
-      sandbox: sandbox("bx_expired2", "archived", new Date("2026-10-21T02:07:00Z")),
-    });
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, expired.client);
-    const replacement = await provider.provision(
-      { botId: "bot-a", homePath: "/unused", providerRef: "bx_expired2", providerKind: "boat" },
-      context,
+  // Every Boat state, error and recover answer either leaves a usable sandbox or reports it gone
+  // so the caller replaces it from its checkpoint. Nothing may keep failing on the same ref.
+  type Outcome = "kept" | "started" | "replaced";
+  const stateOutcomes: Record<SandboxStateEnum, Outcome> = {
+    init: "kept",
+    provisioning: "kept",
+    provisioned: "kept",
+    cloning: "kept",
+    ready: "kept",
+    idle: "kept",
+    running: "kept",
+    archiving: "started",
+    archived: "started",
+    error: "started",
+    cancelled: "replaced",
+  };
+  const recoveryOutcomes: Record<BoatRecovery, Outcome> = {
+    recovers: "started",
+    no_machine: "started",
+    too_soon: "started",
+    sandbox_is_reachable: "started",
+    stuck: "replaced",
+    recover_unsupported: "replaced",
+    reset_failed: "replaced",
+  };
+  const lifecycle: [string, (api: FakeBoatApi, id: string) => void, Outcome][] = [
+    ...Object.entries(stateOutcomes).map(
+      ([state, outcome]): [string, (api: FakeBoatApi, id: string) => void, Outcome] => [
+        `state ${state}`,
+        (api, id) =>
+          state === "error" ? api.fail(id) : api.setState(id, state as SandboxStateEnum),
+        outcome,
+      ],
+    ),
+    ...Object.entries(recoveryOutcomes).map(
+      ([recovery, outcome]): [string, (api: FakeBoatApi, id: string) => void, Outcome] => [
+        `error state, recover answers ${recovery}`,
+        (api, id) => api.fail(id, recovery as BoatRecovery),
+        outcome,
+      ],
+    ),
+    ["snapshot data expired", (api, id) => api.expire(id), "replaced"],
+    ["deleted", (api, id) => api.delete(id), "replaced"],
+  ];
+
+  it.each(lifecycle)(
+    "prepare on %s either works or reports the sandbox gone",
+    async (_name, setup, outcome) => {
+      const { api, provider, computer } = await boat();
+      setup(api, computer.id);
+
+      const result = await provider.prepare(computer, context).then(
+        () => "ready",
+        (error: unknown) => error,
+      );
+      if (outcome === "replaced") expect(isSandboxGoneError(result)).toBe(true);
+      else expect(result).toBe("ready");
+    },
+  );
+
+  it.each(lifecycle)(
+    "reconnecting on %s keeps a usable sandbox or replaces it",
+    async (_name, setup, outcome) => {
+      const { api, provider, computer } = await boat();
+      setup(api, computer.id);
+
+      const ref = await reconnect(provider, computer);
+      await provider.prepare(ref, context);
+      expect(ref.providerRef === computer.providerRef).toBe(outcome !== "replaced");
+      expect(ref.fresh).toBe(outcome === "replaced");
+      if (outcome !== "replaced") expect(ref.started).toBe(outcome === "started");
+      expect(["ready", "idle", "running"]).toContain(api.state(ref.providerRef));
+    },
+  );
+
+  it("resumes a sandbox Boat archived on its own and retries the refused work once", async () => {
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    await provider.prepare(computer, context);
+    await provider.writeFile(computer, { path: "kept.txt", content: Uint8Array.of(1) }, context);
+    // The TTL ran out with no sleep job to stop it first.
+    api.setState(computer.id, "archived");
+
+    expect(await provider.readFile(computer, "kept.txt", context)).toEqual(Uint8Array.of(1));
+    expect(resume).toHaveBeenCalledOnce();
+    api.setState(computer.id, "archived");
+    const events = [];
+    for await (const event of provider.execute(computer, { argv: ["echo", "awake"] }, context)) {
+      events.push(event);
+    }
+    expect(events).toEqual([
+      { type: "stdout", data: "awake\n" },
+      { type: "exit", code: 0 },
+    ]);
+
+    api.setState(computer.id, "archived");
+    api.expire(computer.id);
+    const error = await provider.readFile(computer, "kept.txt", context).catch((e: unknown) => e);
+    expect(isSandboxGoneError(error)).toBe(true);
+  });
+
+  it("keeps an errored sandbox when Boat refuses recover without a known code", async () => {
+    const recover = vi.spyOn(FakeBoatApi.prototype, "recover");
+    const { api, provider, computer } = await boat();
+    api.fail(computer.id);
+    recover.mockRejectedValueOnce(
+      new ResponseError(new Response("upstream HTML", { status: 409 }), "conflict"),
     );
-    expect(replacement).toMatchObject({ providerRef: "bx_testbox2", fresh: true });
-    expect(expired.resume).not.toHaveBeenCalled();
+
+    const error = await provider.prepare(computer, context).catch((failure: unknown) => failure);
+    expect((error as Error).message).toContain("HTTP 409");
+    expect(isSandboxGoneError(error)).toBe(false);
+  });
+
+  it("replaces a sandbox whose data expires between the lookup and the resume", async () => {
+    const lookup = FakeBoatApi.prototype.get;
+    const get = vi.spyOn(FakeBoatApi.prototype, "get");
+    const resume = vi.spyOn(FakeBoatApi.prototype, "resume");
+    const { api, provider, computer } = await boat();
+    api.setState(computer.id, "archived");
+    get.mockImplementationOnce(async (request) => {
+      const response = await lookup.call(api, request);
+      api.expire(computer.id);
+      return response;
+    });
+
+    const replacement = await reconnect(provider, computer);
+    expect(resume).toHaveBeenCalledOnce();
+    expect(replacement).toMatchObject({ fresh: true });
+    expect(replacement.providerRef).not.toBe(computer.providerRef);
+  });
+
+  it("reports Boat's machine-start limit as a rate limit, not a gone sandbox", async () => {
+    const { api, provider, computer } = await boat();
+    api.rateLimit();
+
+    // Reconnecting to a running sandbox is not a start.
+    await expect(reconnect(provider, computer)).resolves.toMatchObject({ fresh: false });
+
+    api.setState(computer.id, "archived");
+    const resumed = await reconnect(provider, computer).catch((error: unknown) => error);
+    expect(resumed).toBeInstanceOf(SandboxRateLimitError);
+    expect(isSandboxGoneError(resumed)).toBe(false);
+    expect(((resumed as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
+
+    await expect(
+      provider.provision({ botId: "bot-b", homePath: "/unused" }, context),
+    ).rejects.toBeInstanceOf(SandboxRateLimitError);
+  });
+
+  it("keeps the sandbox when Boat rejects the credentials", async () => {
+    const { api, provider, computer } = await boat();
+    api.unauthorized();
+
+    const error = await reconnect(provider, computer).catch((failure: unknown) => failure);
+    expect((error as Error).message).toContain("HTTP 401, unauthorized");
+    expect(isSandboxGoneError(error)).toBe(false);
+    expect(error).not.toBeInstanceOf(SandboxRateLimitError);
   });
 
   it("downloads binary files over the JSON endpoint limit through the SDK artifact route", async () => {
@@ -147,46 +312,44 @@ describe("BoatSandboxProvider", () => {
       .mockResolvedValueOnce(
         new Response(content, { headers: { "content-length": String(content.byteLength) } }),
       );
-    try {
-      const provider = new BoatSandboxProvider({
-        apiKey: "test-key",
-        apiUrl: "https://boat.test/api/v1",
-      });
-      const computer = {
-        id: "bx_testbox2",
-        providerRef: "bx_testbox2",
-        kind: "boat" as const,
-        botId: "bot-a",
-      };
-      const filePath = "notes/a file & more.bin";
-      const downloaded = await provider.readFile(computer, filePath, context);
+    const provider = new BoatSandboxProvider({
+      apiKey: "test-key",
+      apiUrl: "https://boat.test/api/v1",
+    });
+    const computer = {
+      id: "bx_testbox2",
+      providerRef: "bx_testbox2",
+      kind: "boat" as const,
+      botId: "bot-a",
+    };
+    const filePath = "notes/a file & more.bin";
+    const downloaded = await provider.readFile(computer, filePath, context);
 
-      expect(Buffer.from(downloaded).equals(content)).toBe(true);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      const [request, init] = fetchMock.mock.calls[0]!;
-      const url = new URL(String(request));
-      expect(url.pathname).toBe("/api/v1/sandboxes/bx_testbox2/artifacts");
-      expect(url.searchParams.get("path")).toBe(`/home/user/rakazo-home/${filePath}`);
-      expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer test-key");
-      expect(init?.signal).toBe(context.signal);
-    } finally {
-      fetchMock.mockRestore();
-    }
+    expect(Buffer.from(downloaded).equals(content)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [request, init] = fetchMock.mock.calls[0]!;
+    const url = new URL(String(request));
+    expect(url.pathname).toBe("/api/v1/sandboxes/bx_testbox2/artifacts");
+    expect(url.searchParams.get("path")).toBe(`/home/user/rakazo-home/${filePath}`);
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer test-key");
+    expect(init?.signal).toBe(context.signal);
   });
 
   it("exports browser profile files over 5 MiB without losing their bytes", async () => {
-    const fixture = boatFixture();
+    const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+    const { api, provider, computer } = await boat();
     const content = Buffer.alloc(6 * 1024 * 1024, 0xab);
-    fixture.files.set("/home/user/rakazo-home/.browser-profiles/chrome/Default/History", content);
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    api.files(computer.id).set("/home/user/rakazo-home/.browser-profiles/chrome/Default/History", {
+      content,
+      executable: false,
+    });
     const exported = [];
     for await (const file of provider.exportWorkspace(computer, context)) exported.push(file);
 
     expect(exported).toHaveLength(1);
     expect(exported[0]?.path).toBe(".browser-profiles/chrome/Default/History");
     expect(Buffer.from(exported[0]!.content).equals(content)).toBe(true);
-    expect(fixture.artifactRaw).toHaveBeenCalledWith(
+    expect(artifactRaw).toHaveBeenCalledWith(
       {
         sandboxId: computer.id,
         path: "/home/user/rakazo-home/.browser-profiles/chrome/Default/History",
@@ -198,19 +361,19 @@ describe("BoatSandboxProvider", () => {
   it.each([undefined, "1", "20"])(
     "cancels oversized downloads with content-length %s",
     async (contentLength) => {
-      const fixture = boatFixture();
+      const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+      const { provider, computer } = await boat();
       const cancel = vi.fn();
       const pull = vi.fn((controller: ReadableStreamDefaultController<Uint8Array>) => {
         controller.enqueue(Uint8Array.from([1, 2, 3]));
       });
       const body = new ReadableStream({ pull, cancel }, { highWaterMark: 0 });
-      fixture.artifactRaw.mockResolvedValueOnce({
+      artifactRaw.mockResolvedValueOnce({
         raw: new Response(body, {
           headers: contentLength ? { "content-length": contentLength } : undefined,
         }),
+        value: async () => new Blob(),
       });
-      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-      const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
 
       await expect(
         provider.readFile(computer, "large.bin", context, { maxBytes: 4 }),
@@ -222,10 +385,13 @@ describe("BoatSandboxProvider", () => {
   );
 
   it("accepts empty files and files exactly at the download limit", async () => {
-    const fixture = boatFixture();
-    fixture.files.set("/home/user/rakazo-home/exact.bin", Uint8Array.from([0, 255]));
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const { api, provider, computer } = await boat();
+    const files = api.files(computer.id);
+    files.set("/home/user/rakazo-home/empty.bin", { content: new Uint8Array(), executable: false });
+    files.set("/home/user/rakazo-home/exact.bin", {
+      content: Uint8Array.from([0, 255]),
+      executable: false,
+    });
 
     expect(await provider.readFile(computer, "empty.bin", context, { maxBytes: 0 })).toHaveLength(
       0,
@@ -235,8 +401,18 @@ describe("BoatSandboxProvider", () => {
     );
   });
 
+  it("reports a missing file without calling the sandbox gone", async () => {
+    const { provider, computer } = await boat();
+    const error = await provider
+      .readFile(computer, "missing.txt", context)
+      .catch((failure: unknown) => failure);
+    expect((error as Error).message).toContain("HTTP 404, not_found");
+    expect(isSandboxGoneError(error)).toBe(false);
+  });
+
   it("propagates interrupted downloads instead of returning partial files", async () => {
-    const fixture = boatFixture();
+    const artifactRaw = vi.spyOn(FakeBoatApi.prototype, "artifactRaw");
+    const { provider, computer } = await boat();
     const aborted = new DOMException("download aborted", "AbortError");
     let first = true;
     const body = new ReadableStream({
@@ -246,18 +422,18 @@ describe("BoatSandboxProvider", () => {
         first = false;
       },
     });
-    fixture.artifactRaw.mockResolvedValueOnce({ raw: new Response(body) });
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    artifactRaw.mockResolvedValueOnce({
+      raw: new Response(body),
+      value: async () => new Blob(),
+    });
 
     await expect(provider.readFile(computer, "partial.bin", context)).rejects.toBe(aborted);
     expect(body.locked).toBe(false);
   });
 
   it("captures independent desktops and exposes protected ports", async () => {
-    const fixture = boatFixture();
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const command = vi.spyOn(FakeBoatApi.prototype, "command");
+    const { provider, computer } = await boat();
     await provider.prepare(computer, context);
 
     const observation = await provider.observe(computer, context);
@@ -285,8 +461,10 @@ describe("BoatSandboxProvider", () => {
       context,
     );
     expect(
-      fixture.command.mock.calls.some(([request]) =>
-        request.commandRequest.command.includes("xdotool mousemove 100 200 click 1"),
+      command.mock.calls.some(([request]) =>
+        "commandRequest" in request
+          ? request.commandRequest.command.includes("xdotool mousemove 100 200 click 1")
+          : false,
       ),
     ).toBe(true);
 
@@ -297,14 +475,12 @@ describe("BoatSandboxProvider", () => {
   });
 
   it("refuses a desktop URL that is not served over HTTPS", async () => {
-    const fixture = boatFixture();
-    fixture.hostPort.mockResolvedValue({
+    vi.spyOn(FakeBoatApi.prototype, "hostPort").mockResolvedValue({
       ok: true,
       type: "sandbox.host",
       url: "http://boat-test-6100.on.boat.dev?_token=secret",
     });
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const { provider, computer } = await boat();
     await provider.prepare(computer, context);
     await expect(
       provider.connectScreen(computer, { view: "stream", interactive: false }, context),
@@ -312,21 +488,16 @@ describe("BoatSandboxProvider", () => {
   });
 
   it("archives on stop and permanently deletes on destroy", async () => {
-    const fixture = boatFixture();
-    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
-    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
-    fixture.stop.mockResolvedValueOnce(actionResponse("archiving"));
-    fixture.get
-      .mockResolvedValueOnce(infoResponse("bx_testbox2", "ready"))
-      .mockResolvedValue(infoResponse("bx_testbox2", "archived"));
+    const stop = vi.spyOn(FakeBoatApi.prototype, "stop");
+    const { api, provider, computer } = await boat();
 
     await provider.stop(computer, context);
-    expect(fixture.stop).toHaveBeenCalledWith(
-      { sandboxId: "bx_testbox2" },
-      { signal: context.signal },
-    );
+    expect(stop).toHaveBeenCalledWith({ sandboxId: computer.id }, { signal: context.signal });
+    expect(api.state(computer.id)).toBe("archived");
     await provider.destroy(computer, context);
-    expect(fixture.deleteSandbox).toHaveBeenCalledWith("bx_testbox2");
+    expect(api.state(computer.id)).toBeUndefined();
+    await expect(provider.stop(computer, context)).resolves.toBeUndefined();
+    await expect(provider.destroy(computer, context)).resolves.toBeUndefined();
   });
 
   it("bounds a stalled permanent-delete request", async () => {
@@ -382,151 +553,4 @@ describe("BoatSandboxProvider", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(deadline.signal);
     expect(fetchMock.mock.calls[1]?.[1]?.signal).toBe(deadline.signal);
   });
-
-  it("recognizes provider 404 errors without swallowing transient failures", () => {
-    expect(isUnrecoverableBoatError({ status: 404 })).toBe(true);
-    expect(isUnrecoverableBoatError(new Error("temporary Boat outage"))).toBe(false);
-  });
 });
-
-function boatFixture(options: { state?: string } = {}) {
-  const files = new Map<string, Uint8Array>();
-  const respond = desktopCommandResponder();
-  const create = vi.fn(async () => createResponse());
-  const fixture = {
-    state: options.state ?? "ready",
-    create,
-    get: vi.fn(async ({ sandboxId }: { sandboxId: string }) =>
-      infoResponse(sandboxId, fixture.state),
-    ),
-    resume: vi.fn(async ({ sandboxId }: { sandboxId: string }) => {
-      fixture.state = "ready";
-      return actionResponse("ready", sandboxId);
-    }),
-    stop: vi.fn(async ({ sandboxId }: { sandboxId: string }) =>
-      actionResponse("archiving", sandboxId),
-    ),
-    update: vi.fn(async ({ sandboxId }: { sandboxId: string }) =>
-      infoResponse(sandboxId, fixture.state),
-    ),
-    deleteSandbox: vi.fn(async () => undefined),
-    hostPort: vi.fn(async ({ hostPortRequest }: { hostPortRequest: { port: number } }) => ({
-      ok: true,
-      type: "sandbox.host",
-      url: `https://boat-test-${hostPortRequest.port}.on.boat.dev?_token=secret`,
-    })),
-    desktop: vi.fn(async () => ({
-      ok: true,
-      type: "desktop.url",
-      success: true,
-      desktopUrl: "https://vnc.sandbox.test/vnc.html?password=pw&_token=secret",
-      mode: "vnc",
-    })),
-    commandStatus: vi.fn(),
-    command: vi.fn(async (request: { commandRequest: { command: string; cwd?: string } }) => {
-      const command = request.commandRequest.command;
-      const response = respond(command);
-      if (response) return finished(response);
-      if (command.includes("TEST_VALUE=works")) return finished({ stdout: "hello\n" });
-      if (command.includes("find ") && command.includes("rakazo-home/bin")) {
-        const target = "/home/user/rakazo-home/bin/tool";
-        return finished({
-          stdout: `${Buffer.from(target).toString("base64")}\tfile\t3\t1\n`,
-        });
-      }
-      if (
-        command.includes("find ") &&
-        command.includes("rakazo-home") &&
-        command.includes("-type f")
-      ) {
-        const stdout = [...files.entries()]
-          .filter(([filePath]) => filePath.startsWith("/home/user/rakazo-home/"))
-          .map(([filePath, content]) => {
-            const executable = filePath.endsWith("/bin/tool") ? "1" : "0";
-            return `${Buffer.from(filePath).toString("base64")}\tfile\t${content.byteLength}\t${executable}\n`;
-          })
-          .join("");
-        return finished({ stdout });
-      }
-      if (command.includes("import -window root")) {
-        return finished({
-          stdout: [
-            "WIDTH=1920",
-            "HEIGHT=1080",
-            "X=21",
-            "Y=34",
-            "WINDOW=42",
-            `TITLE=${Buffer.from("Boat browser").toString("base64")}`,
-            "",
-          ].join("\n"),
-        });
-      }
-      return finished();
-    }),
-    writeFile: vi.fn(
-      async ({ fileWriteRequest }: { fileWriteRequest: { path: string; content: string } }) => {
-        files.set(
-          fileWriteRequest.path,
-          Uint8Array.from(Buffer.from(fileWriteRequest.content, "base64")),
-        );
-        return {
-          ok: true,
-          type: "file.written" as const,
-          success: true,
-          path: fileWriteRequest.path,
-          encoding: "base64" as const,
-          size: files.get(fileWriteRequest.path)?.byteLength ?? 0,
-        };
-      },
-    ),
-    artifactRaw: vi.fn(async ({ path }: { path: string }) => {
-      const content = path.startsWith("/tmp/rakazo-observe-")
-        ? Uint8Array.from([1, 2, 3])
-        : (files.get(path) ?? new Uint8Array());
-      return { raw: new Response(Buffer.from(content)) };
-    }),
-  };
-  return { ...fixture, files, client: fixture as unknown as BoatSandboxSdk };
-}
-
-function sandbox(id: string, state: string, dataExpiredAt: Date | null = null) {
-  return {
-    id,
-    name: "Test Boat",
-    state,
-    dataExpiredAt,
-    desktopAvailable: true,
-    snapshotAvailable: state === "archived" && !dataExpiredAt,
-  };
-}
-
-function createResponse() {
-  return {
-    ok: true,
-    type: "sandbox.created",
-    status: "provisioning",
-    ttlSeconds: null,
-    sandbox: sandbox("bx_testbox2", "provisioning"),
-  };
-}
-
-function infoResponse(id: string, state: string) {
-  return { ok: true, type: "sandbox.info", sandbox: sandbox(id, state) };
-}
-
-function actionResponse(status: string, id = "bx_testbox2") {
-  return { ok: true, type: "sandbox.action", id, status, sandbox: sandbox(id, status) };
-}
-
-function finished(overrides: Partial<Command200Response> = {}): Command200Response {
-  return {
-    ok: true,
-    type: "command.finished",
-    success: true,
-    exitCode: 0,
-    stdout: "",
-    stderr: "",
-    timedOut: false,
-    ...overrides,
-  } as Command200Response;
-}

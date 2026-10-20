@@ -117,7 +117,10 @@ function billingDate(
   if (status.state === "trialing" && status.trialEndsAt) {
     return { kind: "trial", at: status.trialEndsAt };
   }
-  if (!status.currentPeriodEndsAt) return null;
+  // Unpaid and paused subscriptions do not renew until the owner resumes them.
+  if (!status.currentPeriodEndsAt || status.state === "unpaid" || status.state === "paused") {
+    return null;
+  }
   if (status.cancelAtPeriodEnd || status.state === "canceled") {
     return { kind: "ends", at: status.currentPeriodEndsAt };
   }

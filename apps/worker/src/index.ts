@@ -15,6 +15,7 @@ import {
   createJobReconciler,
   createMessagingContextLoader,
   createPostgresReconciliationLeadership,
+  createProductAnalytics,
   createRoutineRetryNoticeReconciler,
   createRunExecutor,
   createRunSandbox,
@@ -88,7 +89,9 @@ async function main() {
   if (secrets.describe().capabilities.degraded)
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
+  const analytics = createProductAnalytics();
   const events = createThreadEvents(prisma, realtime, {
+    analytics,
     runSecretWriter: createRunSecretWriter(secrets),
   });
   const ticketBoardEnabled = process.env.TICKET_BOARD_ENABLED === "true";
@@ -157,13 +160,11 @@ async function main() {
       pipedream,
     },
   );
-  const stack = createConnectorStack(false, undefined, [
+  const stack = createConnectorStack(undefined, [
     new InstalledConnectorProvider(prisma, secrets, {}, allowPrivateEndpoint),
     ...integrationSettings.providers(),
     mcp,
   ]);
-  const connector = stack.destination;
-  await connector.start();
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
@@ -298,11 +299,11 @@ async function main() {
       await jobs.close();
       await secrets.close();
       await realtime.close();
-      await connector.stop();
       await mcp.close();
       await prisma.$disconnect().catch(() => undefined);
       await pool.end().catch(() => undefined);
     } finally {
+      await analytics?.flush();
       await shutdownPiTelemetry();
       await logger.flush({ timeoutMs: 2_000 });
     }

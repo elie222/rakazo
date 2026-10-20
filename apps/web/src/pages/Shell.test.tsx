@@ -3,6 +3,7 @@
 import { i18n } from "@lingui/core";
 import type { AgentSkillCatalogEntry, ThreadMessage } from "@rakazo/contracts";
 import type { ComposerMention } from "@rakazo/core";
+import { MODEL_REQUIRED_SEND_ERROR } from "@rakazo/core";
 import type { ComponentProps, ReactNode } from "react";
 import { act, createRef } from "react";
 import type { Root } from "react-dom/client";
@@ -71,6 +72,7 @@ function renderComposer(
     pendingAttachments: [],
     attachmentNotice: null,
     sendError: null,
+    onOpenModels: () => {},
     runError: null,
     runErrorId: null,
     onRunErrorPresented: () => {},
@@ -115,6 +117,20 @@ it("shows a readable run error with raw details, while preserving send errors", 
   rerenderComposer({ sendError: "Could not send the message." });
   expect(error?.textContent).toBe("Could not send the message.");
   expect(error?.querySelector("details")).toBeNull();
+});
+
+it("links the missing-model send error to model settings", () => {
+  const onOpenModels = vi.fn();
+  renderComposer(async () => true, { sendError: MODEL_REQUIRED_SEND_ERROR, onOpenModels });
+  const link = container?.querySelector<HTMLButtonElement>(
+    '[data-testid="composer-error-open-models"]',
+  );
+  expect(link?.textContent).toBe(MODEL_REQUIRED_SEND_ERROR);
+  act(() => link?.click());
+  expect(onOpenModels).toHaveBeenCalledOnce();
+
+  rerenderComposer({ sendError: "Could not send the message." });
+  expect(container?.querySelector('[data-testid="composer-error-open-models"]')).toBeNull();
 });
 
 function pickAttachment() {

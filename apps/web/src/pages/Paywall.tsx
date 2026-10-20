@@ -18,10 +18,16 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
     clearSpaceSelection();
     navigate("/");
   }, setError);
+  // An unpaid or paused subscription resumes from the portal; a new checkout would bill twice.
+  const resumable = status.state === "unpaid" || status.state === "paused";
+  const showCheckout = status.canManage && !resumable;
   const showPortal =
     status.canManage &&
     status.hasCustomer &&
-    (status.state === "past_due" || status.state === "incomplete" || status.state === "canceled");
+    (resumable ||
+      status.state === "past_due" ||
+      status.state === "incomplete" ||
+      status.state === "canceled");
 
   async function open(target: "checkout" | "portal") {
     if (pending || signingOut) return;
@@ -55,7 +61,8 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
       title={title}
       onSubmit={(event) => {
         event.preventDefault();
-        if (status.canManage) void open("checkout");
+        if (showCheckout) void open("checkout");
+        else if (showPortal) void open("portal");
       }}
     >
       <div data-testid="billing-paywall" className="flex w-full flex-col items-center">
@@ -74,7 +81,7 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
             ))}
           </ul>
         ) : null}
-        {status.canManage ? (
+        {showCheckout ? (
           <Button type="submit" size="lg" disabled={pending || signingOut} className={submitClass}>
             {status.trialAvailable ? (
               <Trans>Start {trialDays}-day free trial</Trans>
@@ -87,7 +94,7 @@ export function PaywallPage({ status }: { status: BillingStatus }) {
           <Button
             type="button"
             size="lg"
-            variant="secondary"
+            variant={showCheckout ? "secondary" : "default"}
             disabled={pending || signingOut}
             className={submitClass}
             onClick={() => void open("portal")}

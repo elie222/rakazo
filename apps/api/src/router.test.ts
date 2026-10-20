@@ -70,6 +70,33 @@ describe("account preferences", () => {
     return { update, updateMany, deps, actor, handler: new RPCHandler(createRouter(deps)) };
   }
 
+  it("records only validated screens under the authenticated actor", async () => {
+    const { deps, actor } = preferencesDeps("robot");
+    const capture = vi.fn();
+    deps.analytics = { capture, flush: async () => undefined };
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    await expect(client.analytics.screen({ screen: "chat", surface: "desktop" })).resolves.toEqual({
+      ok: true,
+    });
+    expect(capture).toHaveBeenCalledWith(actor.userId, {
+      name: "screen_viewed",
+      screen: "chat",
+      surface: "desktop",
+    });
+    await expect(
+      client.analytics.screen({
+        screen: "chat",
+        surface: "web",
+        email: "private@example.test",
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    const anonymous = createRouterClient(createRouter(deps), { context: {} as never });
+    await expect(
+      anonymous.analytics.screen({ screen: "chat", surface: "web" }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(capture).toHaveBeenCalledTimes(1);
+  });
+
   it("reports model credential store outages as service unavailable", async () => {
     const { deps, actor } = preferencesDeps("robot");
     Object.assign(deps.prisma, {

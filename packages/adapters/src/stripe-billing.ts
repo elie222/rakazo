@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import type {
   BillingCheckoutRequest,
   BillingPrice,
@@ -6,10 +6,13 @@ import type {
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
 } from "@rakazo/adapter-kit";
+import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import { z } from "zod";
 
 export const STRIPE_API_VERSION = "2025-08-27.basil";
 const WEBHOOK_TOLERANCE_SECONDS = 300;
+const MAX_RETRIES = 2;
+const MAX_RETRY_DELAY_MS = 5_000;
 
 export interface StripeBillingConfig {
   secretKey: string;
@@ -18,6 +21,7 @@ export interface StripeBillingConfig {
   fetch?: typeof fetch;
   apiBase?: string;
   now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const priceSchema = z.object({
@@ -58,7 +62,25 @@ const checkoutListSchema = z.object({
   data: z.array(z.object({ id: z.string().min(1) })),
   has_more: z.boolean(),
 });
+const errorSchema = z.object({
+  error: z.object({
+    type: z.string().optional(),
+    code: z.string().optional(),
+    param: z.string().optional(),
+    message: z.string().optional(),
+  }),
+});
 type StripeSubscription = z.infer<typeof subscriptionSchema>;
+
+class StripeRequestError extends Error {
+  constructor(
+    message: string,
+    readonly type: string | undefined,
+  ) {
+    super(message);
+    this.name = "StripeRequestError";
+  }
+}
 
 /** Stripe REST wire format and credentials stay inside this adapter. */
 export class StripeBillingProvider implements BillingProvider {
@@ -66,12 +88,14 @@ export class StripeBillingProvider implements BillingProvider {
   private readonly fetchImpl: typeof fetch;
   private readonly apiBase: string;
   private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
 
   constructor(config: StripeBillingConfig) {
     this.config = config;
     this.fetchImpl = config.fetch ?? fetch;
     this.apiBase = config.apiBase ?? "https://api.stripe.com";
     this.now = config.now ?? Date.now;
+    this.sleep = config.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   }
 
   describe() {
@@ -97,12 +121,10 @@ export class StripeBillingProvider implements BillingProvider {
 
   async createCustomer(input: { email: string; organizationId: string }) {
     const customer = idSchema.parse(
-      await this.request(
-        "POST",
-        "/v1/customers",
-        { email: input.email, metadata: { organization_id: input.organizationId } },
-        `customer:${input.organizationId}`,
-      ),
+      await this.request("POST", "/v1/customers", {
+        email: input.email,
+        metadata: { organization_id: input.organizationId },
+      }),
     );
     return { customerId: customer.id };
   }
@@ -111,6 +133,11 @@ export class StripeBillingProvider implements BillingProvider {
     // An abandoned session has no subscription yet, so the access check still passes.
     // Expire it before opening another; a completed session is not open and stays paid once.
     await this.expireOpenCheckouts(input.customerId);
+    // With no open session left, any checkout that completed since the caller's access check,
+    // before or during the expiry, has already left its subscription behind.
+    const live = await this.listSubscriptions(input.customerId);
+    if (live.some((s) => holdsBillingSubscription(mapStripeSubscriptionStatus(s.status))))
+      throw new BillingCheckoutCompletedError();
     const body = encodeStripeForm({
       mode: "subscription",
       customer: input.customerId,
@@ -122,7 +149,6 @@ export class StripeBillingProvider implements BillingProvider {
       success_url: input.successUrl,
       cancel_url: input.cancelUrl,
     });
-    // No idempotency key: identical params from a later attempt must get a fresh session.
     const session = urlSchema.parse(await this.request("POST", "/v1/checkout/sessions", body));
     return { url: session.url };
   }
@@ -138,7 +164,7 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async getCustomerSubscription(customerId: string): Promise<BillingSubscriptionSnapshot | null> {
-    const subscriptions = (await this.listSubscriptions(customerId)).map((subscription) => ({
+    const subscriptions = (await this.listLiveSubscriptions(customerId)).map((subscription) => ({
       subscription,
       status: mapStripeSubscriptionStatus(subscription.status),
       created: subscription.created,
@@ -155,7 +181,9 @@ export class StripeBillingProvider implements BillingProvider {
   }
 
   async cancelCustomerSubscriptions(customerId: string) {
-    for (const subscription of await this.listSubscriptions(customerId)) {
+    // First, so an abandoned checkout cannot start a subscription after the cancel.
+    await this.expireOpenCheckouts(customerId).catch(ignoreDeletedCustomer);
+    for (const subscription of await this.listLiveSubscriptions(customerId)) {
       // Only terminal states; unpaid and paused subscriptions can still resume and charge.
       if (subscription.status === "canceled" || subscription.status === "incomplete_expired")
         continue;
@@ -178,12 +206,26 @@ export class StripeBillingProvider implements BillingProvider {
       if (fresh.length === 0) return;
       for (const session of fresh) {
         seen.add(session.id);
-        await this.request(
-          "POST",
-          `/v1/checkout/sessions/${encodeURIComponent(session.id)}/expire`,
-        );
+        try {
+          await this.request(
+            "POST",
+            `/v1/checkout/sessions/${encodeURIComponent(session.id)}/expire`,
+          );
+        } catch (error) {
+          // No longer open: it expired on its own or was just paid, which the caller rechecks.
+          if (!(error instanceof StripeRequestError && error.type === "invalid_request_error"))
+            throw error;
+        }
       }
     }
+  }
+
+  /** Deleting a customer cancels its subscriptions, so a deleted one has none left. */
+  private listLiveSubscriptions(customerId: string): Promise<StripeSubscription[]> {
+    return this.listSubscriptions(customerId).catch((error: unknown) => {
+      ignoreDeletedCustomer(error);
+      return [];
+    });
   }
 
   private async listSubscriptions(customerId: string): Promise<StripeSubscription[]> {
@@ -210,55 +252,100 @@ export class StripeBillingProvider implements BillingProvider {
     method: "GET" | "POST" | "DELETE",
     path: string,
     params?: Record<string, unknown> | string,
-    idempotencyKey?: string,
   ): Promise<unknown> {
     const body = typeof params === "string" ? params : params && encodeStripeForm(params);
-    const response = await this.fetchImpl(`${this.apiBase}${path}`, {
-      method,
-      redirect: "error",
-      signal: AbortSignal.timeout(30_000),
-      headers: {
-        Authorization: `Bearer ${this.config.secretKey}`,
-        "Stripe-Version": STRIPE_API_VERSION,
-        Accept: "application/json",
-        ...(body === undefined ? {} : { "Content-Type": "application/x-www-form-urlencoded" }),
-        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
-      },
-      body,
-    });
-    const json: unknown = await response.json().catch(() => undefined);
-    if (!response.ok) {
-      const message = z
-        .object({ error: z.object({ message: z.string() }) })
-        .safeParse(json)
-        .data?.error.message.replaceAll(this.config.secretKey, "[redacted]");
-      throw new Error(`Stripe request failed (${response.status})${message ? `: ${message}` : ""}`);
+    // One key per call: retries replay the first outcome, a later call starts fresh. Stripe
+    // keeps a key's response, even a 500, for 24 hours, so a fixed key would wedge the call.
+    const idempotencyKey = method === "POST" ? randomUUID() : undefined;
+    for (let attempt = 0; ; attempt++) {
+      const response = await this.fetchImpl(`${this.apiBase}${path}`, {
+        method,
+        redirect: "error",
+        signal: AbortSignal.timeout(30_000),
+        headers: {
+          Authorization: `Bearer ${this.config.secretKey}`,
+          "Stripe-Version": STRIPE_API_VERSION,
+          Accept: "application/json",
+          ...(body === undefined ? {} : { "Content-Type": "application/x-www-form-urlencoded" }),
+          ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+        },
+        body,
+      });
+      const json: unknown = await response.json().catch(() => undefined);
+      if (response.ok) {
+        if (json === undefined) throw new Error("Invalid Stripe response");
+        return json;
+      }
+      if (attempt < MAX_RETRIES && shouldRetry(response)) {
+        await this.sleep(retryDelayMs(response, attempt));
+        continue;
+      }
+      const error = errorSchema.safeParse(json).data?.error;
+      if (error?.code === "resource_missing" && error.param === "customer")
+        throw new BillingCustomerNotFoundError();
+      const message = error?.message?.replaceAll(this.config.secretKey, "[redacted]");
+      throw new StripeRequestError(
+        `Stripe request failed (${response.status})${message ? `: ${message}` : ""}`,
+        error?.type,
+      );
     }
-    if (json === undefined) throw new Error("Invalid Stripe response");
-    return json;
   }
 }
 
-/** Stripe statuses collapse onto the provider-neutral set. */
+function ignoreDeletedCustomer(error: unknown): void {
+  if (!(error instanceof BillingCustomerNotFoundError)) throw error;
+}
+
+/** Stripe's explicit hint wins; otherwise lock conflicts, rate limits and 5xx are transient. */
+function shouldRetry(response: Response): boolean {
+  const hint = response.headers.get("stripe-should-retry");
+  if (hint === "true") return true;
+  if (hint === "false") return false;
+  return response.status === 409 || response.status === 429 || response.status >= 500;
+}
+
+function retryDelayMs(response: Response, attempt: number): number {
+  const retryAfter = Number(response.headers.get("retry-after"));
+  const delay = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt;
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
+}
+
+/** Stripe statuses collapse onto the provider-neutral set; `incomplete_expired` is terminal. */
 export function mapStripeSubscriptionStatus(status: string): BillingSubscriptionStatus {
   if (
     status === "trialing" ||
     status === "active" ||
     status === "past_due" ||
-    status === "incomplete"
+    status === "incomplete" ||
+    status === "unpaid" ||
+    status === "paused"
   )
     return status;
   return "canceled";
 }
 
-/** Prefers the newest subscription that grants access, else the newest overall. */
+/**
+ * Prefers the newest subscription that grants access, then one that can still resume and charge
+ * (so a later ended one cannot hide it), else the newest overall.
+ */
 export function pickBillingSubscription<
   T extends { status: BillingSubscriptionStatus; created: number },
 >(subscriptions: T[]): T | undefined {
   const newestFirst = [...subscriptions].sort((a, b) => b.created - a.created);
   return (
-    newestFirst.find((s) => ["trialing", "active", "past_due"].includes(s.status)) ?? newestFirst[0]
+    newestFirst.find((s) => grantsAccess(s.status)) ??
+    newestFirst.find((s) => holdsBillingSubscription(s.status)) ??
+    newestFirst[0]
   );
+}
+
+function grantsAccess(status: BillingSubscriptionStatus) {
+  return status === "trialing" || status === "active" || status === "past_due";
+}
+
+/** Grants access now or resumes once paid, so another checkout would bill twice. */
+export function holdsBillingSubscription(status: BillingSubscriptionStatus) {
+  return grantsAccess(status) || status === "unpaid" || status === "paused";
 }
 
 function toSnapshot(
@@ -307,6 +394,7 @@ export function signStripeWebhook(secret: string, body: string, timestamp: numbe
 
 const syncEventTypes = new Set([
   "checkout.session.completed",
+  "customer.deleted",
   "invoice.paid",
   "invoice.payment_failed",
 ]);

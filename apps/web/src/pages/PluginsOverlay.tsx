@@ -27,6 +27,7 @@ import {
   Input,
   NativeSelect,
   NativeSelectOption,
+  Spinner,
 } from "@rakazo/ui-web";
 import { ChevronDown, ChevronLeft, ChevronUp, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -695,6 +696,7 @@ export function PluginsOverlay({
         {!detailItem ? (
           <div className="px-8 pt-4">
             <Input
+              disabled={loading}
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
@@ -707,7 +709,20 @@ export function PluginsOverlay({
           </div>
         ) : null}
 
-        <div id="integration-list" className="rk-scroll flex-1 overflow-y-auto px-8 py-6">
+        {loading ? (
+          <div className="grid flex-1 place-items-center" aria-busy="true">
+            <Spinner
+              className="size-5 text-muted-foreground"
+              aria-label={t`Loading integrations…`}
+            />
+          </div>
+        ) : null}
+
+        <div
+          id="integration-list"
+          hidden={loading}
+          className="rk-scroll flex-1 overflow-y-auto px-8 py-6"
+        >
           <Button
             variant="outline"
             className="mb-4"
@@ -734,13 +749,7 @@ export function PluginsOverlay({
             renderDetail(detailItem)
           ) : (
             <>
-              {loading ? (
-                <p className="text-muted-foreground/80">
-                  <Trans>Loading integrations…</Trans>
-                </p>
-              ) : null}
-
-              {showFeatured ? (
+              {!loading && showFeatured ? (
                 <div className="mb-6" data-testid="featured-connectors">
                   {!loading && catalog.length === 0 ? (
                     <p className="text-[13.5px] leading-6 text-muted-foreground/80">

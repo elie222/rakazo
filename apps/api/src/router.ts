@@ -7,6 +7,7 @@ import type {
   ConnectorCatalogItem,
   JobPublisher,
   MemoryStore,
+  ProductAnalytics,
   SandboxProvider,
   SecretStore,
   UsageOperationKind,
@@ -173,6 +174,7 @@ import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  MODEL_REQUIRED_SEND_ERROR,
   nextCronDateAcrossStrict,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
@@ -564,6 +566,7 @@ function mcpAssignmentDto(row: {
 }
 
 export interface RouterDeps {
+  analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -848,6 +851,12 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         return aiConsentStatus(deps, context.actor);
+      }),
+    },
+    analytics: {
+      screen: authed.analytics.screen.handler(async ({ context, input }) => {
+        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
+        return { ok: true as const };
       }),
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
@@ -2262,7 +2271,7 @@ export function createRouter(deps: RouterDeps) {
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
         if ((await modelSetup(deps, context.actor)).needsModel) {
-          throw new ORPCError("BAD_REQUEST", { message: "Connect a model to start a run." });
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind === "bot") {

@@ -336,6 +336,33 @@ appropriate retention/access controls, since this content can contain secrets or
 data. Unknown attributes and exception messages/stacks stay excluded. Export is batched,
 best effort, and flushed when the worker shuts down; collector failures do not fail runs.
 
+### Product analytics
+
+Product analytics is off by default. To enable the PostHog adapter, set
+`ANALYTICS_PROVIDER=posthog`, `ANALYTICS_KEY` to a project capture token, and
+`ANALYTICS_HOST` to the HTTPS ingestion host (default `https://us.i.posthog.com`)
+on API and worker. Also set `ANALYTICS_PSEUDONYM_SECRET` to a server-only random
+value (`openssl rand -hex 32`), identical on API and worker. Retain it when rotating
+the public capture token so user and event identities stay stable. Never send this
+secret to the browser or collector. Set `ANALYTICS_PROVIDER=none` to disable it.
+The public website uses its separate `PUBLIC_POSTHOG_KEY` configuration.
+
+The backend sends account creation, session creation, fixed screen names, message
+counts, and run starts/outcomes. Run events include the shared trigger enum;
+analytics does not read or classify error text. User identifiers are pseudonymized
+with the server-only secret. No names,
+emails, prompts, responses, message text, DOM, URLs, search parameters, document
+contents, request metadata, or raw errors are exported. There is no browser or
+mobile analytics SDK, autocapture, session replay, or third-party script.
+Web, Electron, and mobile send only fixed screen/surface enums to the authenticated
+API; lifecycle events come from the shared backend. This works across clients
+without giving a collector access to their content. Local and self-hosted
+installations remain off until their backend is configured.
+
+Delivery is best effort: memory is bounded, requests time out, and shutdown flushes
+pending events. Analytics failure does not fail product operations. This is not a
+durable audit trail, and events from before enablement are not backfilled.
+
 ### Logging
 
 Backend services write structured logs to stdout. `LOG_LEVEL` is `debug`, `info`, `warn`, `error`,

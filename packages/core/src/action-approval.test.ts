@@ -17,8 +17,7 @@ import {
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
-  it("requires approval for consequential builtins and destination writes", () => {
-    expect(toolRequiresApproval("destination.write", false)).toBe(true);
+  it("requires approval for consequential builtins and connector writes", () => {
     expect(toolRequiresApproval("destination.write", true)).toBe(true);
     expect(toolRequiresApproval("secret_request", false)).toBe(true);
     expect(toolRequiresApproval("forget_secret", false)).toBe(true);

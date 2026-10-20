@@ -42,13 +42,13 @@ import {
   cronFromPreset,
   expandPeerReplies,
   foldPeerReplies,
-  formatMessageTime,
   groupVoiceChats,
   inferAttachmentMimeType,
   isActive,
   isPeerReceiptBlocks,
   isRunTerminalEvent,
   isToolActivityBlock,
+  MODEL_REQUIRED_SEND_ERROR,
   mentionChipKey,
   nestRosterByParent,
   normalizeRunError,
@@ -4044,6 +4044,7 @@ function SpaceShell() {
             pendingAttachments={activePendingAttachments}
             attachmentNotice={attachmentNotice}
             sendError={sendError}
+            onOpenModels={() => openSettings("models")}
             runError={displayedRunError}
             runErrorId={displayedRunErrorId}
             onRunErrorPresented={handleRunErrorPresented}
@@ -5645,40 +5646,11 @@ const Transcript = memo(function Transcript({
                       onSpeak={() => onSpeak(message)}
                       onOpenComputer={onOpenComputer}
                       showToolActivity={showToolActivity}
+                      onReply={onReply}
+                      onReact={onReact}
                     />
-                    {peerReceipt ? null : (
-                      <MessageHoverActions
-                        message={message}
-                        side={message.role === "user" ? "start" : "end"}
-                        onReply={onReply}
-                        onReact={onReact}
-                      />
-                    )}
                   </div>
                 </div>
-                {!peerReceipt && !message.id.startsWith("progress:") ? (
-                  <time
-                    dateTime={message.createdAt}
-                    data-testid="message-hover-time"
-                    className={cn(
-                      "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100 [@media(hover:none)]:transition-none",
-                      // Hover keeps the date in the side margin. Touch leaves that margin for the bubble and drops the revealed time under it.
-                      message.role === "user"
-                        ? "start-0 max-w-[max(8rem,16%)] text-start"
-                        : "end-0 max-w-[max(8rem,12%)] text-end",
-                      "[@media(hover:none)]:group-hover/message:static [@media(hover:none)]:group-focus-within/message:static [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:static",
-                      "[@media(hover:none)]:group-hover/message:block [@media(hover:none)]:group-focus-within/message:block [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:block",
-                      "[@media(hover:none)]:group-hover/message:mt-1 [@media(hover:none)]:group-focus-within/message:mt-1 [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:mt-1",
-                      "[@media(hover:none)]:group-hover/message:w-full [@media(hover:none)]:group-focus-within/message:w-full [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:w-full",
-                      "[@media(hover:none)]:group-hover/message:max-w-none [@media(hover:none)]:group-focus-within/message:max-w-none [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:max-w-none",
-                      message.role === "user"
-                        ? "[@media(hover:none)]:group-hover/message:text-end [@media(hover:none)]:group-focus-within/message:text-end [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-end"
-                        : "[@media(hover:none)]:group-hover/message:text-start [@media(hover:none)]:group-focus-within/message:text-start [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-start",
-                    )}
-                  >
-                    {formatMessageTime(message.createdAt, i18n.locale || "en")}
-                  </time>
-                ) : null}
                 {!peerReceipt && messageReactions ? (
                   <div
                     data-testid="message-reactions"
@@ -5823,6 +5795,7 @@ export const Composer = memo(function Composer({
   pendingAttachments,
   attachmentNotice,
   sendError,
+  onOpenModels,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -5852,6 +5825,7 @@ export const Composer = memo(function Composer({
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
   sendError: string | null;
+  onOpenModels: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -6363,10 +6337,21 @@ export const Composer = memo(function Composer({
           className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive"
         >
           <div className="min-w-0 flex-1">
-            {sendError ??
+            {sendError === MODEL_REQUIRED_SEND_ERROR ? (
+              <button
+                type="button"
+                data-testid="composer-error-open-models"
+                onClick={onOpenModels}
+                className="text-left underline underline-offset-2 hover:text-foreground"
+              >
+                {sendError}
+              </button>
+            ) : (
+              (sendError ??
               (runError
                 ? normalizeRunError(runError, translateRunError, i18n.locale || "en").summary
-                : null)}
+                : null))
+            )}
             {!sendError && runError ? (
               <details key={runError} className="mt-1">
                 <summary className="w-fit cursor-pointer">{t`Details`}</summary>
@@ -7037,6 +7022,8 @@ const MessageView = memo(function MessageView({
   onSpeak,
   onOpenComputer,
   showToolActivity,
+  onReply,
+  onReact,
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
@@ -7060,6 +7047,8 @@ const MessageView = memo(function MessageView({
   onSpeak: () => void;
   onOpenComputer: (botId?: string) => void;
   showToolActivity: boolean;
+  onReply: (message: ThreadMessage) => void;
+  onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
   const isNarration =
@@ -7109,65 +7098,82 @@ const MessageView = memo(function MessageView({
       />
     </>
   );
+  // Anchored below the speaker and reply line so the rail centers on the bubble itself.
+  const hoverActions = isPeerReceiptBlocks(message.blocks) ? null : (
+    <MessageHoverActions
+      message={message}
+      side={message.role === "user" ? "start" : "end"}
+      onReply={onReply}
+      onReact={onReact}
+    />
+  );
   if (isNarration) {
     if (visibleNarrationBlocks.length === 0) return null;
     if (isToolOnlyNarration(message.blocks, showToolActivity)) {
       return (
         <>
           {messageContext}
-          <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} />
+          <div className="relative">
+            <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} />
+            {hoverActions}
+          </div>
         </>
       );
     }
     return (
       <>
         {messageContext}
-        <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
-          <div
-            data-testid="message-bot-bubble"
-            className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-            dir="auto"
-          >
-            {visibleNarrationBlocks.map((block, i) => {
-              if (block.kind === "steps") {
-                return (
-                  <ToolActivityDisclosure
-                    key={i}
-                    live={isLive}
-                    stepCount={toolStepCount(block.steps)}
-                    durationMs={block.durationMs}
-                  >
-                    <ToolSteps
-                      steps={block.steps}
-                      currentIndex={isLive ? block.steps.length - 1 : undefined}
-                      limit={isLive ? LIVE_TOOL_STEP_WINDOW : undefined}
-                    />
-                  </ToolActivityDisclosure>
-                );
-              }
-              if (block.kind === "text" || block.kind === "progress") {
-                return (
-                  <div
-                    key={i}
-                    data-quote-message-id={block.kind === "text" ? quoteMessageId : undefined}
-                  >
-                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
-                  </div>
-                );
-              }
-              return null;
-            })}
-            {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-              <button
-                type="button"
-                aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                onClick={onSpeak}
-                className="text-[12px] text-muted-foreground hover:text-foreground"
-              >
-                {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-              </button>
-            ) : null}
+        <div className="relative w-fit max-w-full [@media(hover:none)]:w-full">
+          <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
+            <div
+              data-testid="message-bot-bubble"
+              className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+              dir="auto"
+            >
+              {visibleNarrationBlocks.map((block, i) => {
+                if (block.kind === "steps") {
+                  return (
+                    <ToolActivityDisclosure
+                      key={i}
+                      live={isLive}
+                      stepCount={toolStepCount(block.steps)}
+                      durationMs={block.durationMs}
+                    >
+                      <ToolSteps
+                        steps={block.steps}
+                        currentIndex={isLive ? block.steps.length - 1 : undefined}
+                        limit={isLive ? LIVE_TOOL_STEP_WINDOW : undefined}
+                      />
+                    </ToolActivityDisclosure>
+                  );
+                }
+                if (block.kind === "text" || block.kind === "progress") {
+                  return (
+                    <div
+                      key={i}
+                      data-quote-message-id={block.kind === "text" ? quoteMessageId : undefined}
+                    >
+                      <ChatMarkdown streaming={block.kind === "progress"}>
+                        {block.text}
+                      </ChatMarkdown>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+              {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
+                <button
+                  type="button"
+                  aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                  onClick={onSpeak}
+                  className="text-[12px] text-muted-foreground hover:text-foreground"
+                >
+                  {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
+                </button>
+              ) : null}
+            </div>
           </div>
+          {hoverActions}
         </div>
       </>
     );
@@ -7175,353 +7181,360 @@ const MessageView = memo(function MessageView({
   return (
     <>
       {messageContext}
-      {message.blocks.map((block, i) => {
-        if (block.kind === "steps" && shouldRenderToolCard(block, showToolActivity)) {
-          return (
-            <StandaloneToolActivity
-              key={i}
-              live={isLive}
-              steps={block.steps}
-              stepCount={toolStepCount(block.steps)}
-              durationMs={block.durationMs}
-            />
-          );
-        }
-        if (isToolActivityBlock(block)) return null;
-        if (block.kind === "handoff") {
-          const from = memberName?.(block.fromBotId) ?? t`bot`;
-          const to = memberName?.(block.toBotId) ?? t`bot`;
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
-            >
-              <span>
-                ↪ {to} ← {from}
-              </span>
-              <span>{block.text}</span>
-            </div>
-          );
-        }
-        if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
-          const sent = block.kind === "bot_message_sent";
-          const peer = sent ? block.toBotName : block.fromBotName;
-          const peerBotId = sent ? block.toBotId : block.fromBotId;
-          const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
-          return (
-            <CollaborationMarker
-              key={i}
-              ariaLabel={label}
-              color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
-              identity={peerBotId}
-              label={label}
-              onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
-              replies={
-                !sent && peerReplies
-                  ? {
-                      expanded: peerReplies === "expanded",
-                      label: peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
-                      onToggle: () => onTogglePeerReplies(message.id),
-                    }
-                  : undefined
-              }
-            />
-          );
-        }
-        if (block.kind === "channel_message") {
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
-            >
-              <span>
-                {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
-                {block.text}
-              </span>
-            </div>
-          );
-        }
-        if (block.kind === "meta") {
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
-            >
-              <span className="text-warning">◷</span>
-              <span>{block.text}</span>
-            </div>
-          );
-        }
-        if (block.kind === "progress") {
-          return (
-            <div
-              key={i}
-              className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
-            >
-              <div
-                data-testid="message-bot-bubble"
-                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-                dir="auto"
-              >
-                <ChatMarkdown streaming>{block.text}</ChatMarkdown>
-              </div>
-            </div>
-          );
-        }
-        if (block.kind === "subagent") {
-          const running = block.status === "running";
-          const failed = block.status === "failed";
-          return (
-            <div
-              key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-medium text-foreground" dir="auto">
-                  {block.name}
-                </span>
-                <span
-                  className={`rounded-full px-[11px] py-1 text-[13px] ${
-                    failed
-                      ? "bg-destructive/15 text-destructive"
-                      : running
-                        ? "bg-warning/15 text-warning"
-                        : "bg-success/15 text-success"
-                  }`}
-                  style={{
-                    animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-                  }}
-                >
-                  {running ? <Trans>subagent</Trans> : block.status}
-                </span>
-              </div>
-              <div className="mt-2 text-[13.5px] text-muted-foreground">{block.task}</div>
-              {block.progress || block.result ? (
-                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
-                  <ChatMarkdown streaming={running}>
-                    {block.result || block.progress || ""}
-                  </ChatMarkdown>
-                </div>
-              ) : null}
-            </div>
-          );
-        }
-        if (block.kind === "child_bot") {
-          const removed = block.status === "deleted" || block.status === "archived";
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={removed}
-              onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-foreground" dir="auto">
-                  {block.name}
-                </span>
-                <span
-                  className={`rounded-full px-[11px] py-1 text-[13px] ${
-                    removed ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"
-                  }`}
-                >
-                  {block.status === "archived" ? (
-                    <Trans>archived</Trans>
-                  ) : block.status === "deleted" ? (
-                    <Trans>deleted</Trans>
-                  ) : (
-                    <Trans>bot</Trans>
-                  )}
-                </span>
-              </div>
-              <div className="mt-2 text-[14.5px] leading-[1.5] text-foreground/75" dir="auto">
-                {removed
-                  ? block.status === "archived"
-                    ? t`Archived. Chat, memory, and files kept.`
-                    : t`Removed with chat, computer, and memory.`
-                  : block.title || t`Opened its thread.`}
-              </div>
-            </button>
-          );
-        }
-        if (block.kind === "choice") {
-          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
-          if (!botId) return null;
-          return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
-        }
-        if (block.kind === "app_connect") {
-          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
-          if (!botId) return null;
-          return (
-            <div key={i} className="flex justify-start py-1">
-              <AppConnectCard botId={botId} block={block} />
-            </div>
-          );
-        }
-        if (block.kind === "chart") {
-          return (
-            <div key={i} className="flex justify-start">
-              <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
-            </div>
-          );
-        }
-        if (block.kind === "mcp_approval") {
-          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
-          if (!botId) return null;
-          return (
-            <div key={i} className="flex justify-start">
-              <McpApprovalCard botId={botId} threadId={message.threadId} block={block} />
-            </div>
-          );
-        }
-        if (block.kind === "image") {
-          return (
-            <div
-              key={i}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <ArtifactImage
-                target={artifactTarget}
-                artifactId={block.artifactId}
-                name={block.name}
+      <div className="relative">
+        {message.blocks.map((block, i) => {
+          if (block.kind === "steps" && shouldRenderToolCard(block, showToolActivity)) {
+            return (
+              <StandaloneToolActivity
+                key={i}
+                live={isLive}
+                steps={block.steps}
+                stepCount={toolStepCount(block.steps)}
+                durationMs={block.durationMs}
               />
-            </div>
-          );
-        }
-        if (block.kind === "file") {
-          return (
-            <div
-              key={i}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <ArtifactFileCard
-                target={artifactTarget}
-                artifactId={block.artifactId}
-                name={block.name}
-                mimeType={block.mimeType}
-                size={block.size}
-              />
-            </div>
-          );
-        }
-        if (block.kind === "text" && message.role === "user") {
-          // User bubbles stay literal text on web and mobile. Only explicit URLs
-          // and email addresses are links, so a sent address is tappable without
-          // formatting bold or headings.
-          return (
-            <div key={i} className="flex w-fit max-w-full justify-end [@media(hover:none)]:w-full">
+            );
+          }
+          if (isToolActivityBlock(block)) return null;
+          if (block.kind === "handoff") {
+            const from = memberName?.(block.fromBotId) ?? t`bot`;
+            const to = memberName?.(block.toBotId) ?? t`bot`;
+            return (
               <div
-                data-testid="message-user-bubble"
-                data-quote-message-id={quoteMessageId}
-                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
-                dir="auto"
+                key={i}
+                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
               >
-                <LinkifiedText>{block.text}</LinkifiedText>
+                <span>
+                  ↪ {to} ← {from}
+                </span>
+                <span>{block.text}</span>
               </div>
-            </div>
-          );
-        }
-        if (block.kind === "text") {
-          return (
-            <div
-              key={i}
-              className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
-            >
+            );
+          }
+          if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
+            const sent = block.kind === "bot_message_sent";
+            const peer = sent ? block.toBotName : block.fromBotName;
+            const peerBotId = sent ? block.toBotId : block.fromBotId;
+            const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
+            return (
+              <CollaborationMarker
+                key={i}
+                ariaLabel={label}
+                color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
+                identity={peerBotId}
+                label={label}
+                onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+                replies={
+                  !sent && peerReplies
+                    ? {
+                        expanded: peerReplies === "expanded",
+                        label:
+                          peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
+                        onToggle: () => onTogglePeerReplies(message.id),
+                      }
+                    : undefined
+                }
+              />
+            );
+          }
+          if (block.kind === "channel_message") {
+            return (
               <div
-                data-testid="message-bot-bubble"
-                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-                dir="auto"
+                key={i}
+                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
               >
-                <div data-quote-message-id={quoteMessageId}>
-                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                <span>
+                  {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
+                  {block.text}
+                </span>
+              </div>
+            );
+          }
+          if (block.kind === "meta") {
+            return (
+              <div
+                key={i}
+                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
+              >
+                <span className="text-warning">◷</span>
+                <span>{block.text}</span>
+              </div>
+            );
+          }
+          if (block.kind === "progress") {
+            return (
+              <div
+                key={i}
+                className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
+              >
+                <div
+                  data-testid="message-bot-bubble"
+                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                  dir="auto"
+                >
+                  <ChatMarkdown streaming>{block.text}</ChatMarkdown>
                 </div>
-                {voiceReady ? (
-                  <button
-                    type="button"
-                    aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                    onClick={onSpeak}
-                    className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+              </div>
+            );
+          }
+          if (block.kind === "subagent") {
+            const running = block.status === "running";
+            const failed = block.status === "failed";
+            return (
+              <div
+                key={i}
+                className="w-[min(420px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[15px] font-medium text-foreground" dir="auto">
+                    {block.name}
+                  </span>
+                  <span
+                    className={`rounded-full px-[11px] py-1 text-[13px] ${
+                      failed
+                        ? "bg-destructive/15 text-destructive"
+                        : running
+                          ? "bg-warning/15 text-warning"
+                          : "bg-success/15 text-success"
+                    }`}
+                    style={{
+                      animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+                    }}
                   >
-                    {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                  </button>
+                    {running ? <Trans>subagent</Trans> : block.status}
+                  </span>
+                </div>
+                <div className="mt-2 text-[13.5px] text-muted-foreground">{block.task}</div>
+                {block.progress || block.result ? (
+                  <div className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
+                    <ChatMarkdown streaming={running}>
+                      {block.result || block.progress || ""}
+                    </ChatMarkdown>
+                  </div>
                 ) : null}
               </div>
-            </div>
-          );
-        }
-        if (block.kind === "card") {
-          return (
-            <div key={i} className="flex justify-start">
-              <div className="flex flex-col gap-2 rounded-[20px] bg-muted px-5 py-4">
-                {block.lines.map((line) => (
-                  <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
-                    <span className="text-success">✓</span>
-                    <span className="font-semibold text-white">{line.k}</span>
-                    <span className="text-muted-foreground">→</span>
-                    <span>{line.v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
-        if (block.kind === "ask") {
-          return (
-            <AskCard
-              key={i}
-              block={block}
-              canAnswer={canAnswer}
-              onAnswer={(text, username) => onAnswer(message, text, username)}
-            />
-          );
-        }
-        if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
-        if (block.kind === "skill_draft") {
-          return (
-            <div key={i} className="flex justify-start">
-              <SkillDraftCard block={block} onRefresh={onRefresh} onAddRoutine={onAddRoutine} />
-            </div>
-          );
-        }
-        if (block.kind === "computer") {
-          return (
-            <div
-              key={i}
-              data-testid="computer-card"
-              className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-foreground">
-                  <Trans>Computer</Trans>
-                </span>
-                <span
-                  className={
-                    block.state === "Needs you"
-                      ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
-                      : block.state === "Skipped"
-                        ? "rounded-full bg-foreground/10 px-[11px] py-1 text-[13px] text-muted-foreground"
-                        : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
-                  }
-                >
-                  {block.state}
-                </span>
-              </div>
-              <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
-                <ChatMarkdown>{block.text}</ChatMarkdown>
-              </div>
-              <Button
+            );
+          }
+          if (block.kind === "child_bot") {
+            const removed = block.status === "deleted" || block.status === "archived";
+            return (
+              <button
+                key={i}
                 type="button"
-                size="sm"
-                data-testid="computer-card-open"
-                onClick={() => onOpenComputer(message.botId)}
+                disabled={removed}
+                onClick={() => onOpenBot(block.botId)}
+                className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
               >
-                <Trans>Open</Trans>
-              </Button>
-            </div>
-          );
-        }
-        return null;
-      })}
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-medium text-foreground" dir="auto">
+                    {block.name}
+                  </span>
+                  <span
+                    className={`rounded-full px-[11px] py-1 text-[13px] ${
+                      removed ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"
+                    }`}
+                  >
+                    {block.status === "archived" ? (
+                      <Trans>archived</Trans>
+                    ) : block.status === "deleted" ? (
+                      <Trans>deleted</Trans>
+                    ) : (
+                      <Trans>bot</Trans>
+                    )}
+                  </span>
+                </div>
+                <div className="mt-2 text-[14.5px] leading-[1.5] text-foreground/75" dir="auto">
+                  {removed
+                    ? block.status === "archived"
+                      ? t`Archived. Chat, memory, and files kept.`
+                      : t`Removed with chat, computer, and memory.`
+                    : block.title || t`Opened its thread.`}
+                </div>
+              </button>
+            );
+          }
+          if (block.kind === "choice") {
+            const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+            if (!botId) return null;
+            return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
+          }
+          if (block.kind === "app_connect") {
+            const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+            if (!botId) return null;
+            return (
+              <div key={i} className="flex justify-start py-1">
+                <AppConnectCard botId={botId} block={block} />
+              </div>
+            );
+          }
+          if (block.kind === "chart") {
+            return (
+              <div key={i} className="flex justify-start">
+                <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
+              </div>
+            );
+          }
+          if (block.kind === "mcp_approval") {
+            const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+            if (!botId) return null;
+            return (
+              <div key={i} className="flex justify-start">
+                <McpApprovalCard botId={botId} threadId={message.threadId} block={block} />
+              </div>
+            );
+          }
+          if (block.kind === "image") {
+            return (
+              <div
+                key={i}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <ArtifactImage
+                  target={artifactTarget}
+                  artifactId={block.artifactId}
+                  name={block.name}
+                />
+              </div>
+            );
+          }
+          if (block.kind === "file") {
+            return (
+              <div
+                key={i}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <ArtifactFileCard
+                  target={artifactTarget}
+                  artifactId={block.artifactId}
+                  name={block.name}
+                  mimeType={block.mimeType}
+                  size={block.size}
+                />
+              </div>
+            );
+          }
+          if (block.kind === "text" && message.role === "user") {
+            // User bubbles stay literal text on web and mobile. Only explicit URLs
+            // and email addresses are links, so a sent address is tappable without
+            // formatting bold or headings.
+            return (
+              <div
+                key={i}
+                className="flex w-fit max-w-full justify-end [@media(hover:none)]:w-full"
+              >
+                <div
+                  data-testid="message-user-bubble"
+                  data-quote-message-id={quoteMessageId}
+                  className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
+                  dir="auto"
+                >
+                  <LinkifiedText>{block.text}</LinkifiedText>
+                </div>
+              </div>
+            );
+          }
+          if (block.kind === "text") {
+            return (
+              <div
+                key={i}
+                className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
+              >
+                <div
+                  data-testid="message-bot-bubble"
+                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                  dir="auto"
+                >
+                  <div data-quote-message-id={quoteMessageId}>
+                    <ChatMarkdown>{block.text}</ChatMarkdown>
+                  </div>
+                  {voiceReady ? (
+                    <button
+                      type="button"
+                      aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                      onClick={onSpeak}
+                      className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+                    >
+                      {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          }
+          if (block.kind === "card") {
+            return (
+              <div key={i} className="flex justify-start">
+                <div className="flex flex-col gap-2 rounded-[20px] bg-muted px-5 py-4">
+                  {block.lines.map((line) => (
+                    <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
+                      <span className="text-success">✓</span>
+                      <span className="font-semibold text-white">{line.k}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span>{line.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          if (block.kind === "ask") {
+            return (
+              <AskCard
+                key={i}
+                block={block}
+                canAnswer={canAnswer}
+                onAnswer={(text, username) => onAnswer(message, text, username)}
+              />
+            );
+          }
+          if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
+          if (block.kind === "skill_draft") {
+            return (
+              <div key={i} className="flex justify-start">
+                <SkillDraftCard block={block} onRefresh={onRefresh} onAddRoutine={onAddRoutine} />
+              </div>
+            );
+          }
+          if (block.kind === "computer") {
+            return (
+              <div
+                key={i}
+                data-testid="computer-card"
+                className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-medium text-foreground">
+                    <Trans>Computer</Trans>
+                  </span>
+                  <span
+                    className={
+                      block.state === "Needs you"
+                        ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
+                        : block.state === "Skipped"
+                          ? "rounded-full bg-foreground/10 px-[11px] py-1 text-[13px] text-muted-foreground"
+                          : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                    }
+                  >
+                    {block.state}
+                  </span>
+                </div>
+                <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
+                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="computer-card-open"
+                  onClick={() => onOpenComputer(message.botId)}
+                >
+                  <Trans>Open</Trans>
+                </Button>
+              </div>
+            );
+          }
+          return null;
+        })}
+        {hoverActions}
+      </div>
     </>
   );
 });

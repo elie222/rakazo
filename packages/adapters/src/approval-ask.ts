@@ -101,11 +101,6 @@ export function buildApprovalAskBlock(
 }
 
 function describeApprovalAction(toolName: string, args: Record<string, unknown>): string {
-  if (toolName === "destination.write") {
-    const collection = args.collection ? String(args.collection) : "records";
-    const title = args.title ? ` "${String(args.title)}"` : "";
-    return `writing${title} to ${collection}`;
-  }
   if (toolName === "delete_bot" || toolName === "archive_bot") {
     const name = args.confirm_name ?? args.confirmName;
     return name ? `${toolName.replace("_", " ")} (${String(name)})` : toolName.replace("_", " ");
