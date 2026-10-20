@@ -139,6 +139,7 @@ describe("createJobReconciler", () => {
       payload: { runId: "run-1" },
       replaceKey: "run:run-1",
       keepExisting: true,
+      replaceLockedBefore: expect.any(Date),
     });
     expect(enqueue).toHaveBeenCalledWith({
       name: "routine.wakeup",
@@ -170,28 +171,25 @@ describe("createJobReconciler", () => {
     );
   });
 
-  it("replaces a locked job only for a run whose lease expired", async () => {
+  it("replaces any lock for an expired lease but only an old lock for a queued run", async () => {
     const prisma = fakePrisma([
       { id: "run-queued", status: "queued", updatedAt: new Date() },
       { id: "run-expired", status: "running", updatedAt: new Date() },
     ]);
     const { jobs, enqueue } = publisher();
+    const before = Date.now();
 
     await createJobReconciler({ prisma, jobs }).reconcileOnce();
 
-    expect(enqueue).toHaveBeenCalledWith({
-      name: "run.continue",
-      payload: { runId: "run-queued" },
-      replaceKey: "run:run-queued",
-      keepExisting: true,
-    });
-    expect(enqueue).toHaveBeenCalledWith({
-      name: "run.continue",
-      payload: { runId: "run-expired" },
-      replaceKey: "run:run-expired",
-      keepExisting: true,
-      replaceLocked: true,
-    });
+    const cutoff = (runId: string) => {
+      const job = enqueue.mock.calls
+        .map(([queued]) => queued)
+        .find((queued) => queued.name === "run.continue" && queued.payload.runId === runId);
+      return job?.name === "run.continue" ? job.replaceLockedBefore?.getTime() : undefined;
+    };
+    expect(cutoff("run-expired")).toBeGreaterThanOrEqual(before);
+    expect(cutoff("run-queued")).toBeLessThanOrEqual(Date.now() - 5 * 60_000);
+    expect(cutoff("run-queued")).toBeGreaterThanOrEqual(before - 5 * 60_000);
   });
 
   it("restores expiry for orphaned user-control leases without a control bot", async () => {

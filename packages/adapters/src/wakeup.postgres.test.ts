@@ -255,7 +255,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         payload: { runId: "reclaimed" },
         replaceKey: key,
         keepExisting: true,
-        replaceLocked: true,
+        replaceLockedBefore: new Date(),
       });
       const reclaimed = await keyedRow(key);
       expect(reclaimed?.attempts).toBe(0);
@@ -268,6 +268,40 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     } finally {
       await testPool()
         .query("delete from graphile_worker._private_jobs where locked_by = $1", [deadWorker])
+        .catch(() => undefined);
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
+  it("keeps a job locked after replaceLockedBefore", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-live-lock:${Date.now()}`;
+    const liveWorker = `contract-live-worker-${Date.now()}`;
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "finishing" },
+        replaceKey: key,
+      });
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = 1, locked_at = now(), locked_by = $2 where key = $1`,
+        [key, liveWorker],
+      );
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "too-early" },
+        replaceKey: key,
+        keepExisting: true,
+        replaceLockedBefore: new Date(Date.now() - 5 * 60_000),
+      });
+      const kept = await keyedRow(key);
+      expect(kept?.attempts).toBe(1);
+      expect(kept?.payload).toContain("finishing");
+    } finally {
+      await testPool()
+        .query("delete from graphile_worker._private_jobs where locked_by = $1", [liveWorker])
         .catch(() => undefined);
       await publisher.cancel(key).catch(() => undefined);
       await publisher.close();

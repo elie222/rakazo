@@ -672,10 +672,10 @@ export type BackgroundJob = {
      */
     keepExisting?: boolean;
     /**
-     * With `keepExisting`, still replace a job that a worker has locked. Only for
-     * a run whose lease expired: its worker is gone and will never unlock the job.
+     * With `keepExisting`, still replace a job a worker locked at or before this
+     * time. A worker that died never unlocks its job, so it would never run again.
      */
-    replaceLocked?: boolean;
+    replaceLockedBefore?: Date;
     /** Cap retried executions; omit to use the job queue's default. */
     maxAttempts?: number;
   };

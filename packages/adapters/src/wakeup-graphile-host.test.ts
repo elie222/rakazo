@@ -212,7 +212,7 @@ describe("GraphileJobPublisher.enqueue", () => {
     await publisher.close();
   });
 
-  it("keeps a locked job unless replaceLocked is set", async () => {
+  it("keeps a job locked after replaceLockedBefore", async () => {
     const runAt = new Date("2030-01-01T00:00:00.000Z");
     const lockedAt = new Date("2030-01-01T00:00:01.000Z");
     const jobs = new Map([["run:run-1", { attempts: 1, maxAttempts: 25, runAt, lockedAt }]]);
@@ -223,6 +223,7 @@ describe("GraphileJobPublisher.enqueue", () => {
       replaceKey: "run:run-1",
       availableAt: new Date("2030-01-01T00:00:02.000Z"),
       keepExisting: true,
+      replaceLockedBefore: new Date("2030-01-01T00:00:00.000Z"),
     });
     const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
     expect(options?.jobKeyMode).toBe("unsafe_dedupe");
@@ -242,7 +243,7 @@ describe("GraphileJobPublisher.enqueue", () => {
       replaceKey: "run:run-1",
       availableAt: reclaimedAt,
       keepExisting: true,
-      replaceLocked: true,
+      replaceLockedBefore: lockedAt,
     });
     const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
     expect(options?.jobKeyMode).toBeUndefined();
