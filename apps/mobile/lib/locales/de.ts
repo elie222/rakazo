@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Pick a chat to share to": "Wähle einen Chat zum Teilen",
+  "could not read": "konnte nicht gelesen werden",
   Close: "Schließen",
   Link: "Link",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":

@@ -46,6 +46,7 @@ import { GroupAvatar } from "../components/group-avatar";
 import { HomeErrorState } from "../components/home-error-state";
 import { InboxSwipeRow } from "../components/inbox-swipe-row";
 import { NativeSymbol } from "../components/native-symbol";
+import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
   activityStatusLabel,
@@ -98,6 +99,11 @@ import {
   inboxRowActionList,
   unreadOverrideKey,
 } from "../lib/inbox-swipe";
+import {
+  cancelIncomingShare,
+  hasIncomingShare,
+  subscribeIncomingShare,
+} from "../lib/incoming-share";
 import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -175,6 +181,11 @@ function HomeSession({ embedded = false, onSelectSpace }: InboxPaneProps & { emb
 }
 
 function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean }) {
+  const shareWaiting = useSyncExternalStore(
+    subscribeIncomingShare,
+    hasIncomingShare,
+    hasIncomingShare,
+  );
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
@@ -1238,6 +1249,18 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         </View>
       )}
 
+      {shareWaiting ? (
+        <View style={{ height: 56, zIndex: 1 }}>
+          <ThreadErrorNotice
+            top={0}
+            inset={columnInset}
+            error={null}
+            summary={t("Pick a chat to share to")}
+            actionLabel={t("Cancel")}
+            onDetails={cancelIncomingShare}
+          />
+        </View>
+      ) : null}
       <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>
         <CompactRowsContext.Provider value={compactRows}>
           <FlatList<InboxItem>

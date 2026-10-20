@@ -1,8 +1,9 @@
-import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
+import { readIncomingShareFile } from "./incoming-share";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
@@ -99,17 +100,35 @@ export async function readSharedFiles(
   files: Array<{ uri: string; name: string; mimeType: string | null }>,
   existingCount = 0,
   maxBytes = ATTACHMENT_MAX_BYTES,
-): Promise<{
-  attachments: PickedAttachment[];
-  skipped: PickSkip[];
-}> {
-  const candidates = await Promise.all(
-    files.map(async (file) => {
-      const mimeType = inferAttachmentMimeType(file.name, file.mimeType ?? undefined);
-      const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
-      const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
-      return { name: file.name, mimeType, size, contentBase64, previewUri };
-    }),
-  );
-  return filterPickedAttachments(existingCount, candidates, maxBytes);
+) {
+  const attachments: PickedAttachment[] = [];
+  const skipped: PickSkip[] = [];
+  const failedFiles: typeof files = [];
+  for (const file of files) {
+    if (existingCount + attachments.length >= ATTACHMENT_MAX_COUNT) {
+      skipped.push({ name: file.name, reason: `max ${ATTACHMENT_MAX_COUNT} attachments` });
+      continue;
+    }
+    try {
+      const result = await readIncomingShareFile(file.uri, async (copy, name, type) => {
+        const mimeType = inferAttachmentMimeType(name, type || file.mimeType || undefined);
+        const { contentBase64, size } = await readUriAsBase64(copy.uri, maxBytes);
+        // The cache copy is removed after this read; previews must own their bytes.
+        const previewUri = mimeType?.startsWith("image/")
+          ? `data:${mimeType};base64,${contentBase64}`
+          : undefined;
+        return filterPickedAttachments(
+          existingCount + attachments.length,
+          [{ name, mimeType, size, contentBase64, previewUri }],
+          maxBytes,
+        );
+      });
+      attachments.push(...result.attachments);
+      skipped.push(...result.skipped);
+    } catch {
+      skipped.push({ name: file.name, reason: "could not read" });
+      failedFiles.push(file);
+    }
+  }
+  return { attachments, skipped, failedFiles };
 }

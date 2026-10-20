@@ -10,6 +10,8 @@ import {
   settingsSheetCloser,
 } from "./settings-sheet";
 
+vi.mock("./incoming-share", () => ({ receiveIncomingShare: vi.fn() }));
+
 const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("settings sheet", () => {

@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Pick a chat to share to": "Выберите чат для отправки",
+  "could not read": "не удалось прочитать",
   Close: "Закрыть",
   Link: "Ссылка",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":

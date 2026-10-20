@@ -1,4 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Pick a chat to share to": "Kies een chat om mee te delen",
+  "could not read": "kon niet worden gelezen",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "Laat deze bot de bots organiseren, afstemmen en plannen die hij zelf maakt. Jij keurt elke wijziging goed.",
   "Too many attempts. Try again in a few minutes.":

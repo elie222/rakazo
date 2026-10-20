@@ -11,12 +11,14 @@ export function ThreadErrorNotice({
   error,
   summary,
   onDetails,
+  actionLabel,
 }: {
   top: number;
   inset: number;
   error: string | null;
   summary: string | null;
   onDetails: () => void;
+  actionLabel?: string;
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
@@ -49,7 +51,7 @@ export function ThreadErrorNotice({
               {summary}
             </Text>
             <NativeActionButton
-              label={t("Details")}
+              label={actionLabel ?? t("Details")}
               prominence="quiet"
               size="compact"
               onPress={onDetails}

@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Pick a chat to share to": "选择要分享到的聊天",
+  "could not read": "无法读取",
   Close: "关闭",
   Link: "链接",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":

@@ -171,7 +171,11 @@ import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
-import { takeIncomingShare } from "../lib/incoming-share";
+import {
+  isIncomingShareCurrent,
+  retryIncomingShare,
+  takeIncomingShare,
+} from "../lib/incoming-share";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
 import { saveLastBotId } from "../lib/last-bot";
@@ -280,7 +284,7 @@ function formatAttachmentSkip(item: { name: string; reason: string }): string {
   if (maxMatch) {
     return t("{name} (max {count} attachments)", { name, count: maxMatch[1] ?? "" });
   }
-  return `${name} (${item.reason})`;
+  return `${name} (${t(item.reason)})`;
 }
 
 function isWorkingStatus(status: string | undefined): boolean {
@@ -1651,17 +1655,49 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     setError(null);
   }, [threadKey]);
 
-  // Something shared from another app lands in the composer of the chat picked for it.
+  // Import only once settings are available, and keep mixed text/files together.
+  const importingShare = useRef(false);
+  const [shareImporting, setShareImporting] = useState(false);
   useEffect(() => {
-    if (!threadKey || readOnly) return;
-    void takeIncomingShare().then((share) => {
-      if (!share) return;
-      if (share.text) composerRef.current?.insert(share.text);
-      if (share.files.length) {
-        void addAttachments((count, maxBytes) => readSharedFiles(share.files, count, maxBytes));
+    if (!threadKey || readOnly || !uploadConfig || importingShare.current) return;
+    const share = takeIncomingShare();
+    if (!share) return;
+    let active = true;
+    importingShare.current = true;
+    setShareImporting(true);
+    void (async () => {
+      try {
+        const result = await readSharedFiles(
+          share.files,
+          activePendingAttachments.length,
+          attachmentMaxBytes(uploadConfig),
+        );
+        if (!active || !isIncomingShareCurrent(share)) {
+          return;
+        }
+        if (result.failedFiles.length)
+          retryIncomingShare({ ...share, text: "", files: result.failedFiles });
+        setPendingAttachments((current) => [
+          ...current,
+          ...result.attachments.map((attachment) => ({ ...attachment, threadKey })),
+        ]);
+        setAttachmentNotice(
+          result.skipped.length
+            ? t("Skipped {items}", {
+                items: result.skipped.map((item) => formatAttachmentSkip(item)).join(", "),
+              })
+            : null,
+        );
+        if (share.text) composerRef.current?.insert(share.text);
+      } finally {
+        importingShare.current = false;
+        setShareImporting(false);
       }
-    });
-  }, [threadKey, readOnly]);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [threadKey, readOnly, uploadConfig]);
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {
@@ -1679,7 +1715,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   async function send() {
-    if (readOnly) return;
+    if (readOnly || importingShare.current) return;
     const initialBotTarget = botId;
     const initialGroupTarget = groupId;
     if ((!initialBotTarget && !initialGroupTarget) || sending || preparingSend.current) return;
@@ -2732,7 +2768,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           botId={botId}
           onCall={onCall}
           working={working}
-          sending={sending}
+          sending={sending || shareImporting}
           styles={styles}
           attachActions={attachActions}
           attachFrom={attachFrom}
