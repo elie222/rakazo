@@ -409,11 +409,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         let requireEmailVerification = false;
         if (ctx.path === "/sign-up/email") {
           if (!policy?.enabled) {
-            throw new APIError("BAD_REQUEST", { message: "Registration is closed" });
+            throw new APIError("BAD_REQUEST", {
+              code: "REGISTRATION_CLOSED",
+              message: "Registration is closed",
+            });
           }
           const email = String(ctx.body?.email ?? "");
           if (!emailAllowed(email, policy.allowlist)) {
-            throw new APIError("BAD_REQUEST", { message: "Email is not allowed to register" });
+            throw new APIError("BAD_REQUEST", {
+              code: "EMAIL_NOT_ALLOWED",
+              message: "Email is not allowed to register",
+            });
           }
           if (policy.allowlist.length > 0 && !env.email) {
             const held = await holdFirstAccountGate(prisma);
@@ -489,7 +495,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             const oidcSignIn = isOidcCallback(ctx);
             const bypassAllowlist = oidcSignIn && env.oidc?.allowSignupBypass;
             if (!user || isMessagingEmail(user.email)) {
-              throw new APIError("FORBIDDEN", { message: "Email verification required" });
+              throw new APIError("FORBIDDEN", {
+                code: "EMAIL_VERIFICATION_REQUIRED",
+                message: "Email verification required",
+              });
             }
             if (!user.emailVerified && policy.allowlist.length > 0 && !bypassAllowlist) {
               if (oidcSignIn)
@@ -498,13 +507,19 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Email verification required",
                 });
               if (env.email || !emailAllowed(user.email, policy.allowlist)) {
-                throw new APIError("FORBIDDEN", { message: "Email verification required" });
+                throw new APIError("FORBIDDEN", {
+                  code: "EMAIL_VERIFICATION_REQUIRED",
+                  message: "Email verification required",
+                });
               }
               // Mailbox ownership is not proved. The claim serializes the exemption
               // so a second overlapping signup cannot take it as well.
               const admitted = await claimUnverifiedFirstAccount(prisma, user.id);
               if (!admitted || !ctx) {
-                throw new APIError("FORBIDDEN", { message: "Email verification required" });
+                throw new APIError("FORBIDDEN", {
+                  code: "EMAIL_VERIFICATION_REQUIRED",
+                  message: "Email verification required",
+                });
               }
               await ctx.context.internalAdapter.updateUser(user.id, { emailVerified: true });
             }
@@ -516,7 +531,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 !policy.enabled ||
                 (!bypassAllowlist && !emailAllowed(user.email, policy.allowlist))
               ) {
-                throw new APIError("FORBIDDEN", { message: "Registration is closed" });
+                throw new APIError("FORBIDDEN", {
+                  code: "REGISTRATION_CLOSED",
+                  message: "Registration is closed",
+                });
               }
               await bootstrapUserSpace(prisma, user, env);
             }

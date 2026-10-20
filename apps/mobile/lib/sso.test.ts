@@ -1,6 +1,7 @@
 import { openAuthSessionAsync, WebBrowserResultType } from "expo-web-browser";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { authHeaders, clearSpace, currentApiBase, fetchMobileJson } from "./api";
+import { activateUiLocale } from "./i18n";
 import { currentSessionGeneration, replaceSessionTokenIfCurrent } from "./session";
 import { continueWithSso } from "./sso";
 
@@ -43,7 +44,10 @@ beforeEach(() => {
     url: `rakazo://sign-in?cookie=${encodeURIComponent("better-auth.session_token=new-session; Path=/; HttpOnly")}`,
   });
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  activateUiLocale("en");
+});
 it("uses the Expo proxy, validates the session, and saves the existing session store", async () => {
   await expect(continueWithSso()).resolves.toBe(true);
   const [url, callback] = vi.mocked(openAuthSessionAsync).mock.calls[0]!;
@@ -134,4 +138,17 @@ it("maps an unavailable session endpoint", async () => {
     body: {},
   });
   await expect(continueWithSso()).rejects.toThrow("Could not reach the server");
+});
+
+it.each([
+  ["EMAIL_VERIFICATION_REQUIRED", "E-Mail-Verifizierung erforderlich"],
+  ["REGISTRATION_CLOSED", "Registrierung ist geschlossen"],
+])("translates the OIDC callback error %s", async (code, message) => {
+  activateUiLocale("de");
+  vi.mocked(openAuthSessionAsync).mockResolvedValue({
+    type: "success",
+    url: `rakazo://sign-in?error=${code}`,
+  });
+  await expect(continueWithSso()).rejects.toThrow(message);
+  expect(replaceSessionTokenIfCurrent).not.toHaveBeenCalled();
 });

@@ -194,6 +194,46 @@ describe("loopback trusted origins", () => {
 });
 
 describe("identity trust through auth endpoints", () => {
+  it.each([
+    ["missing user", null],
+    ["messaging identity", "msg-test@messaging.invalid"],
+    ["email delivery", "approved@example.test"],
+    ["disallowed email", "outsider@other.test", false],
+    ["first-account claim denied", "approved@example.test", false],
+  ])("codes required verification for %s", async (_reason, email, delivery = true) => {
+    const f = fixture({ allowlist: "@example.test", delivery });
+    f.data.user!.push({ id: "other-user", email: "other@example.test" });
+    const hook = f.auth.options.databaseHooks!.session!.create!.before!;
+    await expect(
+      hook(
+        { userId: "pending-user" } as never,
+        {
+          path: "/sign-in/email",
+          context: {
+            internalAdapter: {
+              findUserById: vi.fn(async () =>
+                email ? { id: "pending-user", email, emailVerified: false } : null,
+              ),
+            },
+          },
+        } as never,
+      ),
+    ).rejects.toMatchObject({
+      body: { code: "EMAIL_VERIFICATION_REQUIRED", message: "Email verification required" },
+    });
+  });
+
+  it("returns a translation code when registration is closed", async () => {
+    const f = fixture();
+    f.policy.signupsEnabled = false;
+    const response = await f.signup();
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: "REGISTRATION_CLOSED",
+      message: "Registration is closed",
+    });
+  });
+
   it("keeps first-owner bootstrap and password signup available without email for open deployments", async () => {
     const f = fixture({ delivery: false });
     const response = await f.signup();
@@ -212,7 +252,12 @@ describe("identity trust through auth endpoints", () => {
 
   it("admits the first allowlisted account without email delivery and still blocks everyone else", async () => {
     const f = fixture({ allowlist: "@example.test", delivery: false });
-    expect((await f.signup("outsider@other.test")).status).toBe(400);
+    const disallowed = await f.signup("outsider@other.test");
+    expect(disallowed.status).toBe(400);
+    expect(await disallowed.json()).toMatchObject({
+      code: "EMAIL_NOT_ALLOWED",
+      message: "Email is not allowed to register",
+    });
     expect(f.data.user).toHaveLength(0);
     const response = await f.signup();
     expect(response.status).toBe(200);
@@ -311,7 +356,12 @@ describe("identity trust through auth endpoints", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    expect((await f.signin()).status).toBe(403);
+    const response = await f.signin();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: "EMAIL_NOT_VERIFIED",
+      message: "Email not verified",
+    });
     expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
   });
 
@@ -382,7 +432,12 @@ describe("identity trust through auth endpoints", () => {
     await f.signup();
     await f.verify();
     f.policy.signupsEnabled = false;
-    expect((await f.signin()).status).toBe(403);
+    const response = await f.signin();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: "REGISTRATION_CLOSED",
+      message: "Registration is closed",
+    });
     expect(bootstrapUserSpace).not.toHaveBeenCalled();
     f.policy.signupsEnabled = true;
     f.policy.signupAllowlist = "someone-else@example.test";
