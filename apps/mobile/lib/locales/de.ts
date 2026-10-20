@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Close: "Schließen",
+  Link: "Link",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "Erlaubt diesem Bot, die von ihm erstellten Bots zu organisieren, anzupassen und zu planen. Du genehmigst jede Änderung.",
   "Too many attempts. Try again in a few minutes.":

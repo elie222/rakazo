@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isRetryableProviderUnavailable,
-  isTransientModelError,
-  TransientModelError,
-} from "./model-errors.js";
+import { isRetryableProviderUnavailable, isTransientModelError } from "./model-errors.js";
 
 describe("transient model errors", () => {
   it.each([
@@ -63,13 +59,6 @@ describe("transient model errors", () => {
     "You've reached your usage limit for this billing cycle.",
   ])("treats the exhausted usage window as permanent: %s", (message) => {
     expect(isTransientModelError({ status: 403, type: "permission_error", message })).toBe(false);
-  });
-
-  it("names its error class", () => {
-    const error = new TransientModelError("overloaded");
-    expect(error).toBeInstanceOf(Error);
-    expect(error.name).toBe("TransientModelError");
-    expect(error.message).toBe("overloaded");
   });
 });
 

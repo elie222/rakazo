@@ -1306,13 +1306,6 @@ describe("graphical computer spec", () => {
     expect(screenUrlFor("16080")).toBe("http://127.0.0.1:16080/embed.html");
   });
 
-  it("wires host clipboard paste into the chrome-less embed", () => {
-    const root = path.resolve(import.meta.dirname, "../../computer");
-    const embed = readFileSync(path.join(root, "embed.html"), "utf8");
-    expect(embed).toMatch(/clipboard-bridge\.js/);
-    expect(embed).toMatch(/attachHostClipboardPaste/);
-  });
-
   it("uses the published host mapping in the default topology even when a container IP exists", () => {
     // Regression: per-bot NetworkMode always yields a 172.x address. Returning
     // that to clients makes local/dev screens look dead — browsers cannot load

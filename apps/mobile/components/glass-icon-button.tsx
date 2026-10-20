@@ -12,6 +12,7 @@ import { NativeSymbol } from "./native-symbol";
  * with the primary token.
  */
 export function GlassIconButton({
+  testID,
   accessibilityLabel,
   onPress,
   ios,
@@ -23,6 +24,7 @@ export function GlassIconButton({
   selected,
   fallbackStyle,
 }: {
+  testID?: string;
   accessibilityLabel: string;
   onPress: () => void;
   ios: string;
@@ -50,6 +52,7 @@ export function GlassIconButton({
       ]}
     >
       <Pressable
+        testID={testID}
         accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         accessibilityState={selected === undefined ? undefined : { selected }}

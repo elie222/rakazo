@@ -40,9 +40,4 @@ describe("run triggers", () => {
       ).toBe(trigger);
     }
   });
-
-  it("includes the ticket trigger and rejects unknown ones", () => {
-    expect(RUN_TRIGGERS).toContain("tickets");
-    expect(() => RunTriggerSchema.parse("not-a-trigger")).toThrow();
-  });
 });

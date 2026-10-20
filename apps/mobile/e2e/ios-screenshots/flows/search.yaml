@@ -5,7 +5,17 @@ name: Search
     file: ../subflows/sign-in.yaml
     env:
       RAKAZO_ACTIVE_EMAIL: ${RAKAZO_SCREENSHOT_EMAIL}
-- tapOn: "Search"
+- tapOn:
+    id: "home-search-button"
+    optional: true
+- runFlow:
+    when:
+      notVisible:
+        id: "search-sheet-field"
+    commands:
+      - tapOn: "Search"
+- tapOn:
+    id: "search-sheet-field"
 - takeScreenshot: 01-search-empty
 - inputText: "zzzz-no-such-fixture"
 - extendedWaitUntil:
@@ -21,3 +31,6 @@ name: Search
     visible: ".*marigold checklist.*"
     timeout: 15000
 - takeScreenshot: 03-search-results
+
+- tapOn:
+    id: "search-sheet-close"

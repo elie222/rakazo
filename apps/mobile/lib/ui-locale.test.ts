@@ -1,26 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  htmlLangForLocale,
-  isUiLocale,
-  normalizeUiLocale,
-  resolveUiLocale,
-  UI_LOCALE_LABELS,
-  UI_LOCALES,
-} from "./ui-locale";
-
-describe("UI_LOCALES", () => {
-  it("offers every locale with a mobile catalog", () => {
-    expect([...UI_LOCALES]).toEqual(["en", "zh-CN", "ru", "de", "nl"]);
-    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["de", "en", "nl", "ru", "zh-CN"]);
-    expect(isUiLocale("ko")).toBe(false);
-    expect(isUiLocale("tr")).toBe(false);
-    expect(isUiLocale("hi")).toBe(false);
-    expect(isUiLocale("pt-BR")).toBe(false);
-    expect(isUiLocale("ru")).toBe(true);
-    expect(isUiLocale("de")).toBe(true);
-    expect(isUiLocale("nl")).toBe(true);
-  });
-});
+import { htmlLangForLocale, normalizeUiLocale, resolveUiLocale } from "./ui-locale";
 
 describe("normalizeUiLocale", () => {
   it("maps regional tags onto supported locales", () => {

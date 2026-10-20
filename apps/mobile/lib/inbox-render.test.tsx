@@ -79,7 +79,6 @@ function measure(before: boolean) {
     openBot: action,
     openGroup: action,
     groupAction: action,
-    openSearchHit: action,
     organizeBot: action,
     organizeGroup: action,
     spaceBusy: false,
@@ -212,7 +211,6 @@ it.each(["midnight", "focus", "foreground"])(
       me: { spaceId: "space-1" },
       openBot: action,
       openGroup: action,
-      openSearchHit: action,
       organizeBot: action,
       organizeGroup: action,
       spaceBusy: false,
@@ -353,6 +351,55 @@ it("renders saved bot rows without a title or notification setting", () => {
       "|No messages yet|Beta, No messages yet",
       "|No messages yet|Gamma, notifications silenced, No messages yet muted",
     ]);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("waits for a saved or live inbox before publishing a remounted session's search roster", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const publish = vi.fn();
+  const effectStart = source.indexOf(
+    "  useEffect(() => {\n",
+    source.indexOf("  const inboxSpaces ="),
+  );
+  const effect = source.slice(effectStart, source.indexOf("  const listData =", effectStart));
+  const compiled = ts.transpileModule(
+    `return function PublishRoster({ me, inboxSpaces }) { ${effect}\nreturn null; };`,
+    { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const PublishRoster = new Function("useEffect", "setSearchInbox", compiled)(
+    useEffect,
+    publish,
+  ) as ComponentType<{ me: { spaceId: string } | null; inboxSpaces: unknown[] }>;
+  const root = createRoot(document.createElement("div"));
+  const loaded = [{ id: "space-a", bots: [{ id: "bot-a" }], groups: [] }];
+  try {
+    act(() => root.render(<PublishRoster key="session-1" me={null} inboxSpaces={[]} />));
+    expect(publish).not.toHaveBeenCalled();
+    // Either a verified saved inbox or the first live response supplies me and the roster.
+    act(() =>
+      root.render(
+        <PublishRoster key="session-1" me={{ spaceId: "space-a" }} inboxSpaces={loaded} />,
+      ),
+    );
+    expect(publish).toHaveBeenLastCalledWith(loaded);
+    publish.mockClear();
+    // HomeSession remounts Home for the new generation, even behind an unfocused route.
+    act(() => root.render(<PublishRoster key="session-2" me={null} inboxSpaces={[]} />));
+    expect(publish).not.toHaveBeenCalled();
+    act(() =>
+      root.render(
+        <PublishRoster key="session-2" me={{ spaceId: "space-a" }} inboxSpaces={loaded} />,
+      ),
+    );
+    expect(publish).toHaveBeenCalledExactlyOnceWith(loaded);
+    // A loaded inbox may legitimately become empty; only the initial placeholder is skipped.
+    act(() =>
+      root.render(<PublishRoster key="session-2" me={{ spaceId: "space-a" }} inboxSpaces={[]} />),
+    );
+    expect(publish).toHaveBeenLastCalledWith([]);
   } finally {
     act(() => root.unmount());
     vi.unstubAllGlobals();

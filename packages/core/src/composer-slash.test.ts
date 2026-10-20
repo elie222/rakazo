@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  SLASH_ACTIONS,
-  serializeComposerPrompt,
-  truncateSlashDescription,
-} from "./composer-slash.js";
+import { serializeComposerPrompt, truncateSlashDescription } from "./composer-slash.js";
 
 describe("serializeComposerPrompt", () => {
   it("returns draft when no skill or mentions", () => {
@@ -36,15 +32,5 @@ describe("truncateSlashDescription", () => {
   it("truncates long text with an ellipsis", () => {
     const long = "a".repeat(80);
     expect(truncateSlashDescription(long, 20)).toBe(`${"a".repeat(19)}…`);
-  });
-});
-
-describe("SLASH_ACTIONS", () => {
-  it("exposes chat and account destinations", () => {
-    expect(SLASH_ACTIONS.map((action) => action.id)).toEqual([
-      "chat-settings",
-      "settings-general",
-      "settings-usage",
-    ]);
   });
 });

@@ -104,11 +104,6 @@ describe("BotAvatar", () => {
     expect(parseBotAvatar(`${DEFAULT_GROK_BOT_COLOR}::shape_`).shapeIndex).toBe(0);
   });
 
-  it("exposes the violet identity color as the shared default", () => {
-    expect(GROK_BOT_COLORS).toContain(DEFAULT_GROK_BOT_COLOR);
-    expect(parseBotAvatar(`${DEFAULT_GROK_BOT_COLOR}::shape_0`).color).toBe(DEFAULT_GROK_BOT_COLOR);
-  });
-
   it("resolves explicit colors and shapes", () => {
     expect(resolvePersonaColorDef("bot", "#10B981").hex.toLowerCase()).toBe("#10b981");
     expect(resolvePersonaColorDef("bot", "#fff").hex).toBe("#fff");

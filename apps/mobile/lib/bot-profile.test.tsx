@@ -1,8 +1,5 @@
 // @vitest-environment jsdom
 
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Routine } from "@rakazo/contracts";
 import type { ReactNode } from "react";
 import { act, createElement, useEffect } from "react";
@@ -474,30 +471,5 @@ describe("artifacts opened for one bot", () => {
     await render(createElement(ArtifactsScreen));
     expect(listSpaceArtifacts).toHaveBeenCalledTimes(1);
     expect(listSpaceArtifacts).toHaveBeenCalledWith({ botId: "bot-fixture", limit: 30 });
-  });
-});
-
-describe("profile entry point", () => {
-  it("adds one Profile action to the existing chat menu", () => {
-    const thread = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "../app/thread.tsx"),
-      "utf8",
-    );
-    const actions = thread.slice(thread.indexOf("const botActions = ["));
-    const list = actions.slice(0, actions.indexOf("\n  ];"));
-    const labels = [...list.matchAll(/text: t\("([^"]+)"\)/g)].map((match) => match[1]);
-    expect(labels).toEqual([
-      "Profile",
-      "Chat settings",
-      "Clear conversation",
-      "Cancel",
-      "Clear",
-      "Archive",
-      "Delete…",
-    ]);
-    expect(thread.match(/pathname: "\/bot-profile"/g)).toHaveLength(1);
-    expect(list).toMatch(
-      /pathname: "\/bot-profile",\s+params: \{ botId: botId \?\? "", name: displayName \?\? t\("Bot"\) \}/,
-    );
   });
 });

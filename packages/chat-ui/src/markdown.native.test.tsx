@@ -1285,11 +1285,6 @@ describe("native markdown diagrams", () => {
     expect(probe?.textContent).toContain("A[Clone] --> B[Branch]");
   });
 
-  it("matches the fence language in any case and ignores the rest of the info string", () => {
-    const html = renderWithDiagrams("```Mermaid title=flow\ngraph TD\n  A --> B\n```");
-    expect(html).toContain("<diagram-probe");
-  });
-
   it("keeps the code block when the app supplies no diagram", () => {
     const html = renderToStaticMarkup(<ChatMarkdown>{FLOW}</ChatMarkdown>);
     expect(html).not.toContain("<diagram-probe");

@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Close: "关闭",
+  Link: "链接",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。",
   "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",

@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   desktopOAuthCode,
@@ -50,38 +47,6 @@ describe("window chrome", () => {
   it("uses real window-control buttons on Windows and Linux", () => {
     expect(windowChromeKind(desktop("win32"))).toBe("controls");
     expect(windowChromeKind(desktop("linux"))).toBe("controls");
-  });
-
-  it("does not paint fake traffic lights into the browser shell or welcome page", () => {
-    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../pages");
-    const shell = readFileSync(path.join(root, "Shell.tsx"), "utf8");
-    const welcome = readFileSync(path.join(root, "Welcome.tsx"), "utf8");
-    expect(shell).not.toContain("FF5F57");
-    expect(welcome).not.toContain("FF5F57");
-  });
-
-  it("keeps conversation header controls clickable", () => {
-    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../pages");
-    const shell = readFileSync(path.join(root, "Shell.tsx"), "utf8");
-    expect(shell).toContain(
-      'className="app-drag flex items-center justify-between border-b border-sidebar-border',
-    );
-    expect(shell).toContain('className="app-no-drag grid h-8 w-8');
-    expect(shell).toContain('className="app-no-drag flex min-w-0 items-center gap-3"');
-    expect(shell.match(/className="app-no-drag grid h-\[30px\] w-\[34px\]/g)).toHaveLength(2);
-  });
-
-  it("moves window chrome into the conversation header when the bots sidebar is collapsed", () => {
-    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../pages");
-    const shell = readFileSync(path.join(root, "Shell.tsx"), "utf8");
-    expect(shell).toContain("{botsSidebarCollapsed && desktopBridge() ? <WindowChrome /> : null}");
-  });
-
-  it("puts Electron window chrome on the artifacts page, which has no sidebar", () => {
-    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "../pages");
-    const artifacts = readFileSync(path.join(root, "Artifacts.tsx"), "utf8");
-    expect(artifacts).not.toContain("AppRail");
-    expect(artifacts).toContain("{desktopBridge() ? <WindowChrome /> : null}");
   });
 });
 

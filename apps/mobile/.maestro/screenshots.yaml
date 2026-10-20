@@ -55,13 +55,25 @@ tags:
     timeout: 10000
 - takeScreenshot: "05-activity"
 
-- tapOn: "Search"
+- tapOn:
+    id: "home-search-button"
+    optional: true
+- runFlow:
+    when:
+      notVisible:
+        id: "search-sheet-field"
+    commands:
+      - tapOn: "Search"
+- tapOn:
+    id: "search-sheet-field"
 - inputText: "fixture"
 - hideKeyboard
 - extendedWaitUntil:
     visible: "Weekly fixture review"
     timeout: 10000
 - takeScreenshot: "06-search-results"
+- tapOn:
+    id: "search-sheet-close"
 
 - openLink: "rakazo:///new"
 - assertVisible: "Name this bot"

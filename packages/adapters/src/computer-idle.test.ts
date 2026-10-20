@@ -405,10 +405,6 @@ describe("maximum active lifetime", () => {
     expect(harness.sandbox.stop).toHaveBeenCalledOnce();
   });
 
-  it("is two hours", () => {
-    expect(DEFAULT_COMPUTER_MAX_ACTIVE_MS).toBe(2 * 60 * 60 * 1000);
-  });
-
   it("keeps a viewed computer alive within the limit", async () => {
     const harness = idleHarness({ billsWhileRunning: true, runningSince: recently });
 

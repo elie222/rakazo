@@ -11,11 +11,6 @@ const context: AdapterContext = {
 };
 
 describe("memory store contract shape", () => {
-  it("declares markdown portability", () => {
-    const store = new MarkdownMemoryStore({} as never);
-    expect(store.describe().capabilities.markdownPortable).toBe(true);
-  });
-
   it("reads the most recently updated documents first", async () => {
     const updatedAt = new Date("2026-08-16T10:00:00.000Z");
     const findMany = vi

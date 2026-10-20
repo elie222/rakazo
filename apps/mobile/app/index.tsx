@@ -1,5 +1,5 @@
 import { MenuView } from "@expo/ui/community/menu";
-import type { RunActivityRow, SearchHit, SpaceBot, SpaceGroup } from "@rakazo/contracts";
+import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
@@ -35,11 +35,9 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
-import { KeyboardController } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
@@ -80,7 +78,7 @@ import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
-import { botTag, filterBots, formatThreadTime, userInitials } from "../lib/inbox";
+import { botTag, formatThreadTime, userInitials } from "../lib/inbox";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxSpace, InboxSpaceItem } from "../lib/inbox-spaces";
 import {
@@ -106,9 +104,7 @@ import { iosAtLeast } from "../lib/native-controls";
 import { previewSnippet } from "../lib/preview";
 import { registerPushToken } from "../lib/push";
 import { loadSavedInbox, saveInbox } from "../lib/saved-chats";
-import { querySpaceSearch } from "../lib/search";
-import { mobileSearchDestination } from "../lib/search-destination";
-import { dedupeSearchHits, searchHitListKey, searchHitRowPreview } from "../lib/search-list";
+import { setSearchInbox } from "../lib/search-inbox";
 import { promptSectionName } from "../lib/section-name-prompt";
 import {
   currentReadySessionGeneration,
@@ -132,16 +128,7 @@ const SWIPE_ROWS = Platform.OS === "ios";
 type PinnedChat =
   | { kind: "bot"; bot: MobileBot | SpaceBot }
   | { kind: "group"; group: MobileGroup | SpaceGroup };
-type InboxItem =
-  | InboxSpaceItem
-  | { type: "search"; hit: SearchHit }
-  | { type: "pinned"; chats: PinnedChat[] };
-
-function filterGroups<T extends { name: string; preview: string }>(groups: T[], query: string) {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return groups;
-  return groups.filter((group) => `${group.name} ${group.preview}`.toLowerCase().includes(needle));
-}
+type InboxItem = InboxSpaceItem | { type: "pinned"; chats: PinnedChat[] };
 
 async function openMobileSpace(spaceId: string | undefined, open: () => void) {
   if (spaceId && !(await selectSpace(spaceId))) {
@@ -228,10 +215,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   const [ready, setReady] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
   const [unreadOverrides, setUnreadOverrides] = useState<ReadonlyMap<string, boolean>>(
     () => new Map(),
   );
@@ -399,7 +382,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
 
   const loadActivity = useCallback(async () => {
     if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-    if (!hasSession || !activityMode || searching || query.trim()) {
+    if (!hasSession || !activityMode) {
       activityRequestId.current += 1;
       setActivity({ active: [], recent: [] });
       return;
@@ -413,11 +396,11 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
     }
-  }, [activityMode, hasSession, query, searching]);
+  }, [activityMode, hasSession]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!hasSession || !activityMode || searching || query.trim()) return;
+      if (!hasSession || !activityMode) return;
       let cancelled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -434,75 +417,24 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         activityRequestId.current += 1;
         if (timer !== undefined) clearTimeout(timer);
       };
-    }, [activityMode, hasSession, loadActivity, query, searching]),
+    }, [activityMode, hasSession, loadActivity]),
   );
-
-  useEffect(() => {
-    const trimmed = query.trim();
-    if (!searching || !trimmed) {
-      setSearchHits([]);
-      setSearchLoading(false);
-      return;
-    }
-    const abort = new AbortController();
-    const timer = setTimeout(() => {
-      setSearchLoading(true);
-      void querySpaceSearch(trimmed)
-        .then((hits) => {
-          if (!abort.signal.aborted) setSearchHits(hits);
-        })
-        .catch(() => {
-          if (!abort.signal.aborted) setSearchHits([]);
-        })
-        .finally(() => {
-          if (!abort.signal.aborted) setSearchLoading(false);
-        });
-    }, 200);
-    return () => {
-      abort.abort();
-      clearTimeout(timer);
-    };
-  }, [query, searching]);
 
   const visible = useMemo(
-    () => filterBots(applyUnreadOverrides("bot", bots, unreadOverrides), query),
-    [bots, query, unreadOverrides],
+    () => applyUnreadOverrides("bot", bots, unreadOverrides),
+    [bots, unreadOverrides],
   );
-  const visibleGroups = useMemo(() => {
-    return filterGroups(applyUnreadOverrides("group", groups, unreadOverrides), query);
-  }, [groups, query, unreadOverrides]);
-  const listData = useMemo((): InboxItem[] => {
-    if (query.trim() && searching) {
-      return dedupeSearchHits(searchHits).map((hit) => ({ type: "search" as const, hit }));
-    }
-    // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
-    const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
-    const pinned: PinnedChat[] = [
-      ...[...visible, ...otherSpaces.flatMap((space) => filterBots(space.bots, query))]
-        .filter((bot) => bot.pinned)
-        .map((bot) => ({ kind: "bot" as const, bot })),
-      ...[...visibleGroups, ...otherSpaces.flatMap((space) => filterGroups(space.groups, query))]
-        .filter((group) => group.pinned)
-        .map((group) => ({ kind: "group" as const, group })),
-    ];
-    const listedBots = visible.filter((bot) => SWIPE_ROWS || !bot.pinned);
-    const listedGroups = visibleGroups.filter((group) => SWIPE_ROWS || !group.pinned);
-    const sidebarSpaces =
+  const visibleGroups = useMemo(
+    () => applyUnreadOverrides("group", groups, unreadOverrides),
+    [groups, unreadOverrides],
+  );
+  const inboxSpaces = useMemo(
+    () =>
       spaces.length > 0
         ? spaces.map((space) =>
             space.id === me?.spaceId
-              ? { ...space, bots: listedBots, groups: listedGroups, botSections }
-              : {
-                  ...space,
-                  bots: filterBots(space.bots, query).filter((bot) => SWIPE_ROWS || !bot.pinned),
-                  groups: space.groups.filter(
-                    (group) =>
-                      (SWIPE_ROWS || !group.pinned) &&
-                      `${group.name} ${group.preview}`
-                        .toLowerCase()
-                        .includes(query.trim().toLowerCase()),
-                  ),
-                },
+              ? { ...space, bots: visible, groups: visibleGroups, botSections }
+              : space,
           )
         : me
           ? [
@@ -511,26 +443,37 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                 name: t("Personal"),
                 isDefault: true,
                 hasContent: true,
-                bots: listedBots,
-                groups: listedGroups,
+                bots: visible,
+                groups: visibleGroups,
                 botSections,
               },
             ]
-          : [];
+          : [],
+    [spaces, me, visible, visibleGroups, botSections, t, locale],
+  );
+  useEffect(() => {
+    // A remounted session has no roster until its saved or live inbox arrives.
+    if (me) setSearchInbox(inboxSpaces);
+  }, [inboxSpaces, me]);
+  const listData = useMemo((): InboxItem[] => {
+    // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
+    const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
+    const pinned: PinnedChat[] = [
+      ...[...visible, ...otherSpaces.flatMap((space) => space.bots)]
+        .filter((bot) => bot.pinned)
+        .map((bot) => ({ kind: "bot" as const, bot })),
+      ...[...visibleGroups, ...otherSpaces.flatMap((space) => space.groups)]
+        .filter((group) => group.pinned)
+        .map((group) => ({ kind: "group" as const, group })),
+    ];
+    const sidebarSpaces = inboxSpaces.map((space) => ({
+      ...space,
+      bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned),
+      groups: space.groups.filter((group) => SWIPE_ROWS || !group.pinned),
+    }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsedRosterParents, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [
-    botSections,
-    collapsedRosterParents,
-    locale,
-    me,
-    spaces,
-    query,
-    searching,
-    searchHits,
-    visible,
-    visibleGroups,
-  ]);
+  }, [inboxSpaces, collapsedRosterParents, me?.spaceId, spaces, visible, visibleGroups]);
   const initials = userInitials(me?.name ?? "");
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId
@@ -551,7 +494,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   const columnInset = embedded
     ? 0
     : readableGutter(windowWidth, Math.max(insets.left, insets.right));
-  // Liquid Glass uses the native bar: glass bar items, a native menu, and bottom search.
+  // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat has no navigation bar of its own.
   const nativeHeader = iosAtLeast(26) && !embedded;
   const navigation = useNavigation();
@@ -761,6 +704,13 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           onPress: () => router.push("/artifacts"),
         },
         {
+          type: "button" as const,
+          accessibilityLabel: t("Search"),
+          identifier: "home-search-button",
+          icon: { type: "sfSymbol" as const, name: "magnifyingglass" },
+          onPress: () => router.push("/search"),
+        },
+        {
           type: "menu" as const,
           accessibilityLabel: t("Create"),
           icon: { type: "sfSymbol" as const, name: "plus" },
@@ -788,18 +738,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           },
         },
       ],
-      headerSearchBarOptions: {
-        placeholder: t("Search"),
-        hideWhenScrolling: false,
-        autoCapitalize: "none",
-        onFocus: () => setSearching(true),
-        onChangeText: (event: { nativeEvent: { text: string } }) =>
-          setQuery(event.nativeEvent.text),
-        onCancelButtonPress: () => {
-          setSearching(false);
-          setQuery("");
-        },
-      },
     });
   }, [
     nativeHeader,
@@ -815,15 +753,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     locale,
   ]);
 
-  const openSearchHit = useCallback(
-    (hit: SearchHit) => {
-      setQuery("");
-      setSearchHits([]);
-      // Wait for the search keyboard to close before sizing the destination composer.
-      void KeyboardController.dismiss().then(() => router.push(mobileSearchDestination(hit)));
-    },
-    [router],
-  );
   const openBot = useCallback(
     (bot: MobileBot | SpaceBot) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
@@ -1071,9 +1000,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
 
   const renderItem = useCallback(
     ({ item }: { item: InboxItem }) =>
-      item.type === "search" ? (
-        <SearchRow hit={item.hit} onPress={openSearchHit} />
-      ) : item.type === "pinned" ? (
+      item.type === "pinned" ? (
         <PinnedTiles
           chats={item.chats}
           onOpenBot={openBot}
@@ -1209,7 +1136,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       me?.spaceId,
       openBot,
       openGroup,
-      openSearchHit,
       organizeBot,
       organizeFromMenu,
       organizeGroup,
@@ -1231,8 +1157,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   if (!hasSession) return <Redirect href="/sign-in" />;
   // With nothing to show, the failure takes the screen; over saved chats it stays one line.
   // Headings of empty saved Spaces are not chats, so they do not hide the failure.
-  const showLoadFailure =
-    Boolean(loadFailure) && !searching && listData.every((item) => item.type === "heading");
+  const showLoadFailure = Boolean(loadFailure) && listData.every((item) => item.type === "heading");
   const inlineError = error ?? (showLoadFailure ? null : (loadFailure?.message ?? null));
 
   return (
@@ -1267,22 +1192,17 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               />
             </HeaderButton>
             <HeaderButton
-              accessibilityLabel={t("Search")}
-              active={searching}
-              onPress={() =>
-                setSearching((open) => {
-                  if (open) setQuery("");
-                  return !open;
-                })
-              }
-            >
-              <NativeSymbol ios="magnifyingglass" android="search" size={17} />
-            </HeaderButton>
-            <HeaderButton
               accessibilityLabel={t("Artifacts")}
               onPress={() => router.push("/artifacts")}
             >
               <NativeSymbol ios="square.stack.3d.up" android="layers-outline" size={17} />
+            </HeaderButton>
+            <HeaderButton
+              testID="home-search-button"
+              accessibilityLabel={t("Search")}
+              onPress={() => router.push("/search")}
+            >
+              <NativeSymbol ios="magnifyingglass" android="search" size={17} />
             </HeaderButton>
             {Platform.OS === "android" ? (
               // A plain button: the native Android menu trigger collapses to zero width when the
@@ -1327,18 +1247,12 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               if (item.type === "pinned") return "pinned";
               if (item.type === "heading") return `heading-${item.key}`;
               if (item.type === "bot") return item.bot.id;
-              if (item.type === "group") return `group-${item.group.id}`;
-              return searchHitListKey(item.hit);
+              return `group-${item.group.id}`;
             }}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             indicatorStyle={appearance === "dark" ? "white" : "black"}
-            contentContainerStyle={[
-              styles.list,
-              { paddingHorizontal: columnInset },
-              // iOS moves the active search bar to the bottom and removes the navigation inset.
-              nativeHeader && searching ? { paddingTop: insets.top + 12 } : undefined,
-            ]}
+            contentContainerStyle={[styles.list, { paddingHorizontal: columnInset }]}
             contentInsetAdjustmentBehavior="automatic"
             refreshControl={
               <RefreshControl
@@ -1354,22 +1268,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
             }
             ListHeaderComponent={
               <>
-                {searching && !nativeHeader ? (
-                  <TextInput
-                    autoFocus
-                    value={query}
-                    onChangeText={setQuery}
-                    placeholder={t("Search")}
-                    placeholderTextColor={tokens.mutedForeground}
-                    autoCorrect={false}
-                    autoCapitalize="none"
-                    returnKeyType="search"
-                    keyboardAppearance={appearance}
-                    clearButtonMode="while-editing"
-                    style={styles.searchField}
-                  />
-                ) : null}
-
                 {inlineError ? <Text style={styles.error}>{inlineError}</Text> : null}
                 {spaceRecoveryId ? (
                   <Pressable
@@ -1381,10 +1279,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                     <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                   </Pressable>
                 ) : null}
-                {activityMode &&
-                !searching &&
-                !query.trim() &&
-                (activity.active.length > 0 || activity.recent.length > 0) ? (
+                {activityMode && (activity.active.length > 0 || activity.recent.length > 0) ? (
                   <ActivitySection activity={activity} bots={bots} />
                 ) : null}
               </>
@@ -1399,20 +1294,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                   onSignIn={() => void signInAgain()}
                 />
               ) : (
-                <Text style={styles.empty}>
-                  {query.trim() && searching
-                    ? searchLoading
-                      ? t("Searching…")
-                      : t("No results")
-                    : query.trim()
-                      ? t("No matching bots")
-                      : searching
-                        ? t("Search conversations, files, and routines")
-                        : // Before any load (an offline launch with nothing saved) the bots are unknown.
-                          me
-                          ? t("Tap + to create a bot")
-                          : null}
-                </Text>
+                <Text style={styles.empty}>{me ? t("Tap + to create a bot") : null}</Text>
               )
             }
             ListFooterComponent={
@@ -1652,6 +1534,7 @@ function ConversationRow({
 }
 
 function HeaderButton({
+  testID,
   children,
   onPress,
   accessibilityLabel,
@@ -1661,12 +1544,14 @@ function HeaderButton({
   children: ReactNode;
   onPress: () => void;
   accessibilityLabel: string;
+  testID?: string;
   active?: boolean;
   accent?: boolean;
 }) {
   const styles = useThemedStyles(createHomeStyles);
   return (
     <Pressable
+      testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected: active }}
@@ -1683,34 +1568,6 @@ function HeaderButton({
     </Pressable>
   );
 }
-
-const SearchRow = memo(function SearchRow({
-  hit,
-  onPress,
-}: {
-  hit: SearchHit;
-  onPress: (hit: SearchHit) => void;
-}) {
-  const styles = useThemedStyles(createHomeStyles);
-  return (
-    <Pressable
-      onPress={() => onPress(hit)}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-    >
-      <View style={styles.rowBody}>
-        <View style={styles.rowTop}>
-          <Text style={styles.name} numberOfLines={1}>
-            {hit.title}
-          </Text>
-          <Text style={styles.time}>{hit.kind}</Text>
-        </View>
-        <Text style={styles.preview} numberOfLines={2}>
-          {searchHitRowPreview(hit)}
-        </Text>
-      </View>
-    </Pressable>
-  );
-});
 
 /** Android pinned chats open with a tap and organize with a long press. */
 const PinnedTiles = memo(function PinnedTiles({
@@ -2025,19 +1882,6 @@ function createHomeStyles() {
       color: native.label,
       fontSize: 15,
       fontWeight: "600",
-    },
-    searchField: {
-      marginHorizontal: 16,
-      marginBottom: 8,
-      minHeight: 44,
-      paddingVertical: 10,
-      textAlignVertical: "center",
-      borderRadius: 10,
-      backgroundColor: native.fill,
-      color: native.label,
-      paddingHorizontal: 12,
-      fontSize: 17,
-      writingDirection: "auto",
     },
     error: {
       color: native.secondaryLabel,

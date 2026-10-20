@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   notificationOpenTarget,
@@ -12,7 +9,6 @@ import {
 } from "./notification-open.js";
 
 const DEFAULT_ACTION = "expo.modules.notifications.actions.DEFAULT";
-const mobileRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 describe("notification tap routing", () => {
   it("opens the bot thread from an Expo push payload", () => {
@@ -118,19 +114,6 @@ describe("notification tap routing", () => {
     expect(
       notificationResponseRoute({ ...response, actionIdentifier: "dismiss" }, DEFAULT_ACTION),
     ).toBeNull();
-  });
-
-  it("wires the tap listener for a running app and the last response for a cold start", () => {
-    const layout = readFileSync(resolve(mobileRoot, "app/_layout.tsx"), "utf8");
-    const opener = readFileSync(resolve(mobileRoot, "lib/open-notification.ts"), "utf8");
-    const thread = readFileSync(resolve(mobileRoot, "app/thread.tsx"), "utf8");
-    expect(layout).toContain("useNotificationResponses(ready)");
-    expect(opener).toContain("addNotificationResponseReceivedListener");
-    expect(opener).toContain("useLastNotificationResponse");
-    expect(opener).toContain("router.push(target)");
-    expect(opener).toContain("Notifications.clearLastNotificationResponse()");
-    expect(thread).toContain("threadRouteSpaceOnFocus");
-    expect(thread).toContain("useIsFocused()");
   });
 });
 

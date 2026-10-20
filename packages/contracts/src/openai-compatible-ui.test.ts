@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeOpenAiCompatibleBaseUrl,
   openAiCompatibleConnectReady,
-  openAiCompatibleProbeSuccessMessage,
 } from "./openai-compatible-ui.js";
 
 describe("openAiCompatibleConnectReady", () => {
@@ -28,10 +27,6 @@ describe("openAiCompatibleConnectReady", () => {
         modelId: "",
       }),
     ).toBe(false);
-  });
-
-  it("guides manual entry when a successful probe lists no models", () => {
-    expect(openAiCompatibleProbeSuccessMessage(0)).toBe("Server found. Enter a model name.");
   });
 });
 

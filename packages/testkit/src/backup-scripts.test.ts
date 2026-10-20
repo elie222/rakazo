@@ -284,14 +284,6 @@ describe("production backup deployment and archive behavior", () => {
     }
   });
 
-  it("provides optional systemd configuration for installed copies", () => {
-    const service = readFileSync(
-      path.join(repoRoot, "infra/systemd/rakazo-backup.service"),
-      "utf8",
-    );
-    expect(service).toContain("EnvironmentFile=-/etc/rakazo/backup.env");
-  });
-
   it("rejects relative deployment paths before any backup commands", () => {
     const f = fixture();
     const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: "relative" });

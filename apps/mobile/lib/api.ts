@@ -100,6 +100,11 @@ let spaceSelectionGeneration = 0;
  * cannot claim the selection after a newer attempt has started. */
 let spaceSelectionRequestGeneration = 0;
 
+/** Includes pending selections that have not claimed the in-memory space yet. */
+export function spaceSelectionSeq(): number {
+  return spaceSelectionRequestGeneration;
+}
+
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
 }

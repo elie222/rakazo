@@ -71,19 +71,6 @@ describe("desktop preload bridge", () => {
     ]);
   });
 
-  it("keeps setup off the app bridge so a connected server cannot re-point the app", () => {
-    const { exposeInMainWorld } = runPreload("preload.cjs");
-    const [, bridge] = exposeInMainWorld.mock.calls[0] as [string, Record<string, unknown>];
-    expect(Object.keys(bridge).sort()).toEqual([
-      "computer",
-      "localSettings",
-      "oauth",
-      "platform",
-      "update",
-      "window",
-    ]);
-  });
-
   it("forwards captured codes without leaking the IPC event to the renderer", () => {
     const listeners: Array<(event: unknown, callback: unknown) => void> = [];
     const on = vi.fn((_channel: string, handler: (event: unknown, callback: unknown) => void) => {

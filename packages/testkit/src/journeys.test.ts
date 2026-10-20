@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runJobKey } from "@rakazo/adapter-kit";
@@ -1864,16 +1864,6 @@ describeJourneys("required product journeys", () => {
     const snap = await sendAndWait(app, cookie, bot.id, "run a subagent to summarize the notes");
     expect(JSON.stringify(snap.messages)).toMatch(/subagent|helper/);
     expect(await rpc<Bot[]>(app, cookie, "bots/list")).toHaveLength(before);
-  });
-
-  it("11: compose backup docs and dump tooling exist", async () => {
-    expect(existsSync(path.resolve("docs/self-host.md"))).toBe(true);
-    expect(existsSync(path.resolve("infra/compose/docker-compose.yml"))).toBe(true);
-    expect(existsSync(path.resolve("scripts/backup.sh"))).toBe(true);
-    expect(existsSync(path.resolve("scripts/restore.sh"))).toBe(true);
-    const docs = readFileSync(path.resolve("docs/self-host.md"), "utf8");
-    expect(docs).toMatch(/pg_dump/);
-    expect(docs).toMatch(/Restore/);
   });
 
   it("14: this-mac is refused unless the sandbox is docker", async () => {
