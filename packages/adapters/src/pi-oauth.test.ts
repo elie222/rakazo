@@ -7,6 +7,7 @@ import {
   COPILOT_OAUTH_PROVIDER,
   isRetiredModelCredentialError,
   kickModelCredentialRefresh,
+  loadProviderOAuth,
   matchesFailedOAuthSecret,
   OAUTH_ACCOUNT_CHANGED_ERROR,
   oauthCredentialAccountId,
@@ -140,12 +141,22 @@ describe("model secrets", () => {
       serializeModelSecret({
         kind: "openai_compatible",
         baseUrl: "http://127.0.0.1:8000/v1",
+        enabledModelIds: ["local/default", "local/other"],
       }),
     );
     expect(parsed).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
+      enabledModelIds: ["local/default", "local/other"],
     });
+  });
+
+  it("leaves enabledModelIds undefined on an openai-compatible secret saved without it", () => {
+    const parsed = parseModelSecret(
+      JSON.stringify({ kind: "openai_compatible", baseUrl: "http://127.0.0.1:8000/v1" }),
+    );
+    expect(parsed).toEqual({ kind: "openai_compatible", baseUrl: "http://127.0.0.1:8000/v1" });
+    expect(parsed.kind === "openai_compatible" && parsed.enabledModelIds).toBeUndefined();
   });
 
   it("rejects credential JSON that declares a kind but misses its fields", () => {
@@ -1166,11 +1177,16 @@ describe("kickModelCredentialRefresh", () => {
 });
 
 describe("PiOAuthLogins", () => {
-  it("rejects providers without a subscription sign-in flow", async () => {
+  it("keeps ChatGPT OAuth on Codex rather than plain OpenAI", () => {
+    expect(loadProviderOAuth("openai")).toBeUndefined();
+    expect(loadProviderOAuth(CHATGPT_OAUTH_PROVIDER)?.isSubscription).toBe(true);
+  });
+
+  it.each(["openrouter", "openai"])("rejects subscription sign-in for %s", async (provider) => {
     const logins = new PiOAuthLogins();
-    await expect(
-      logins.begin({ userId: "u", spaceId: "w", provider: "openrouter" }),
-    ).rejects.toThrow(/ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/);
+    await expect(logins.begin({ userId: "u", spaceId: "w", provider })).rejects.toThrow(
+      /ChatGPT Plus\/Pro, Claude Pro\/Max, GitHub Copilot, and SuperGrok/,
+    );
   });
 
   it("runs the anthropic auth-url flow via submitted code", async () => {

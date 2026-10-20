@@ -1,4 +1,9 @@
 import type { ModelCatalogEntry } from "@rakazo/contracts";
+import {
+  canonicalPiProviderId,
+  normalizeOpenAiCompatibleBaseUrl,
+  selectCompatibleModelCredential,
+} from "@rakazo/contracts";
 import { matchesSearchQuery } from "./search.js";
 
 /** Effort choices an OpenAI-compatible endpoint stores when reasoning is enabled. */
@@ -44,16 +49,28 @@ export function clampCatalogThinkingLevel(
 }
 
 export const POPULAR_MODEL_PROVIDER_IDS = [
-  "openrouter",
+  "openai",
   "openai-codex",
   "anthropic",
-  "openai",
   "google",
+  "openrouter",
   "vercel-ai-gateway",
 ] as const;
 
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
-const POPULAR_MODEL_PROVIDER_ID_SET = new Set<string>(POPULAR_MODEL_PROVIDER_IDS);
+const POPULAR_MODEL_PROVIDER_IDS_LIST: readonly string[] = POPULAR_MODEL_PROVIDER_IDS;
+
+/** Popular providers in curated order, then the rest in their original order. */
+export function popularModelProvidersFirst<T>(
+  items: readonly T[],
+  providerId: (item: T) => string,
+): T[] {
+  const rank = (item: T) => {
+    const index = POPULAR_MODEL_PROVIDER_IDS_LIST.indexOf(providerId(item));
+    return index === -1 ? DEFAULT_PROVIDER_COUNT : index;
+  };
+  return [...items].sort((a, b) => rank(a) - rank(b));
+}
 
 /** Keep provider selection short while ensuring a deployment's current default is never hidden. */
 export function featuredModelProviders(
@@ -61,16 +78,15 @@ export function featuredModelProviders(
   selectedProvider: string,
 ): ModelCatalogEntry[] {
   const byId = new Map(providers.map((entry) => [entry.provider, entry]));
-  const ordered = [
-    ...POPULAR_MODEL_PROVIDER_IDS.map((id) => byId.get(id)).filter(
-      (entry): entry is ModelCatalogEntry => entry !== undefined,
-    ),
-    ...providers.filter((entry) => !POPULAR_MODEL_PROVIDER_ID_SET.has(entry.provider)),
-  ];
+  const ordered = popularModelProvidersFirst(providers, (entry) => entry.provider);
   const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
-  const selected = byId.get(selectedProvider);
+  const selected = byId.get(canonicalPiProviderId(selectedProvider));
 
-  if (!selected || featured.some((entry) => entry.provider === selectedProvider)) return featured;
+  if (
+    !selected ||
+    featured.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
+  )
+    return featured;
   return [...featured.slice(0, DEFAULT_PROVIDER_COUNT - 1), selected];
 }
 
@@ -89,7 +105,9 @@ export function pickCatalogModelId(
   provider: string,
   preferredId?: string | null,
 ): string {
-  const entries = catalog.filter((entry) => entry.provider === provider);
+  const entries = catalog.filter(
+    (entry) => canonicalPiProviderId(entry.provider) === canonicalPiProviderId(provider),
+  );
   if (preferredId) {
     if (entries.some((entry) => entry.id === preferredId)) return preferredId;
     const basename = preferredId.split("/").at(-1);
@@ -107,10 +125,12 @@ export function selectedProviderOutsideSearchResults(
   allProviders: readonly ModelCatalogEntry[],
   selectedProvider: string,
 ): ModelCatalogEntry | undefined {
-  if (filteredProviders.some((entry) => entry.provider === selectedProvider)) {
+  if (
+    filteredProviders.some((entry) => entry.provider === canonicalPiProviderId(selectedProvider))
+  ) {
     return undefined;
   }
-  return allProviders.find((entry) => entry.provider === selectedProvider);
+  return allProviders.find((entry) => entry.provider === canonicalPiProviderId(selectedProvider));
 }
 
 /**
@@ -141,6 +161,9 @@ type CredentialModelRef = {
   provider: string;
   label: string;
   modelId?: string | null;
+  enabledModelIds?: readonly string[] | null;
+  isDefault?: boolean;
+  preferenceRank?: number;
 };
 
 function modelToken(value: string): string {
@@ -159,13 +182,16 @@ function canonicalApiModelId(provider: string, modelId: string): string | undefi
 }
 
 export function modelOptionKey(provider: string, modelId: string): string {
-  return `${provider}::${modelId}`;
+  return `${canonicalPiProviderId(provider)}::${modelId}`;
 }
 
 export function parseModelOptionKey(key: string): { provider: string; modelId: string } | null {
   const separator = key.indexOf("::");
   if (separator <= 0) return null;
-  return { provider: key.slice(0, separator), modelId: key.slice(separator + 2) };
+  return {
+    provider: canonicalPiProviderId(key.slice(0, separator)),
+    modelId: key.slice(separator + 2),
+  };
 }
 
 /**
@@ -182,7 +208,11 @@ export function resolveSelectableModelId(
   if (!trimmed) return "";
   const canonical = canonicalApiModelId(provider, trimmed);
   if (canonical) return canonical;
-  const entries = catalog.filter((entry) => entry.provider === provider && !entry.placeholder);
+  const entries = catalog.filter(
+    (entry) =>
+      canonicalPiProviderId(entry.provider) === canonicalPiProviderId(provider) &&
+      !entry.placeholder,
+  );
   if (entries.some((entry) => entry.id === trimmed)) return trimmed;
   const token = modelToken(trimmed);
   const byId = entries.filter((entry) => modelToken(entry.id) === token);
@@ -194,10 +224,69 @@ export function resolveSelectableModelId(
   return trimmed;
 }
 
+function freeFormChoice(credential: CredentialModelRef, modelId: string): ConnectedModelChoice {
+  return {
+    key: modelOptionKey(credential.provider, modelId),
+    provider: credential.provider,
+    modelId,
+    label: `${credential.label} · ${modelId}`,
+  };
+}
+
+function catalogChoices(providerModels: readonly CatalogModelRef[]): ConnectedModelChoice[] {
+  return providerModels.map((entry) => {
+    const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
+    return {
+      key: modelOptionKey(entry.provider, modelId),
+      provider: entry.provider,
+      modelId,
+      label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
+    };
+  });
+}
+
+/** The connected credential that runs `modelId`: an enabled id or the connection default. */
+export function credentialForModel<C extends CredentialModelRef>(
+  credentials: readonly C[],
+  provider: string | null | undefined,
+  modelId: string | null | undefined,
+): C | undefined {
+  if (!provider || !modelId) return undefined;
+  const candidates = credentials.filter((credential) => credential.provider === provider);
+  const preferences = [...candidates].sort(
+    (left, right) =>
+      Number(Boolean(right.isDefault)) - Number(Boolean(left.isDefault)) ||
+      (left.preferenceRank ?? Infinity) - (right.preferenceRank ?? Infinity),
+  );
+  const matching = preferences.filter((credential) => credential.modelId === modelId);
+  const preferred =
+    preferences.find(
+      (credential) =>
+        credential.isDefault || credential.preferenceRank !== undefined || credential.modelId,
+    ) ?? candidates[0];
+  const selected = matching.find((credential) => credential.isDefault) ?? matching[0] ?? preferred;
+  if (provider !== "openai-compatible")
+    return (
+      matching[0] ?? candidates.find((credential) => credential.enabledModelIds?.includes(modelId))
+    );
+  if (!selected) return undefined;
+  const refs = candidates.map((credential) => ({
+    credential,
+    defaultModel: credential.modelId,
+    enabledModelIds: credential.enabledModelIds,
+  }));
+  return selectCompatibleModelCredential(
+    refs.find((ref) => ref.credential === selected)!,
+    refs,
+    modelId,
+  )?.credential;
+}
+
 /**
  * Models a connected provider can run. Catalog entries submit their API ids.
  * A saved display label expands to those ids instead of becoming the only choice.
  * A custom id that is not a catalog label stays a single free-form option.
+ * A connection with enabled ids offers one free-form option per id.
  */
 export function connectedModelChoices(
   credentials: readonly CredentialModelRef[],
@@ -207,32 +296,22 @@ export function connectedModelChoices(
   const seen = new Set<string>();
   for (const credential of credentials) {
     const providerModels = catalog.filter(
-      (entry) => entry.provider === credential.provider && !entry.placeholder,
+      (entry) =>
+        canonicalPiProviderId(entry.provider) === canonicalPiProviderId(credential.provider) &&
+        !entry.placeholder,
     );
     const raw = credential.modelId?.trim() ?? "";
     const resolved = raw ? resolveSelectableModelId(providerModels, credential.provider, raw) : "";
     const resolvedInCatalog = providerModels.some(
       (entry) => resolveSelectableModelId(providerModels, entry.provider, entry.id) === resolved,
     );
+    const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
-      raw && !resolvedInCatalog
-        ? [
-            {
-              key: modelOptionKey(credential.provider, resolved || raw),
-              provider: credential.provider,
-              modelId: resolved || raw,
-              label: `${credential.label} · ${resolved || raw}`,
-            },
-          ]
-        : providerModels.map((entry) => {
-            const modelId = resolveSelectableModelId(providerModels, entry.provider, entry.id);
-            return {
-              key: modelOptionKey(entry.provider, modelId),
-              provider: entry.provider,
-              modelId,
-              label: `${entry.providerName ?? entry.provider} · ${entry.label}`,
-            };
-          });
+      enabled.length > 0
+        ? enabled.map((id) => freeFormChoice(credential, id))
+        : raw && !resolvedInCatalog
+          ? [freeFormChoice(credential, resolved || raw)]
+          : catalogChoices(providerModels);
     for (const choice of next) {
       if (seen.has(choice.key)) continue;
       seen.add(choice.key);
@@ -251,4 +330,57 @@ export function filterModelCatalog(
   return entries.filter((entry) =>
     matchesSearchQuery(query, entry.label, entry.id, entry.providerName ?? entry.provider),
   );
+}
+
+type SavedCompatibleModels = { baseUrl?: string; enabledModelIds?: readonly string[] };
+
+/** The server's endpoint form; half-typed text that is not a URL yet compares as trimmed text. */
+function comparableBaseUrl(baseUrl: string): string {
+  try {
+    return normalizeOpenAiCompatibleBaseUrl(baseUrl);
+  } catch {
+    return baseUrl.trim();
+  }
+}
+
+/** The saved enabled ids, but only while the form still points at the saved endpoint. */
+export function savedCompatibleModelIds(
+  credential: SavedCompatibleModels | undefined,
+  baseUrl: string,
+): string[] {
+  if (
+    !credential?.enabledModelIds ||
+    comparableBaseUrl(credential.baseUrl ?? "") !== comparableBaseUrl(baseUrl)
+  ) {
+    return [];
+  }
+  return [...credential.enabledModelIds];
+}
+
+/** One row per model the endpoint may run: saved ids, then local ticks, then probed ids. */
+export function compatibleModelRows(
+  savedIds: readonly string[],
+  enabledIds: readonly string[],
+  probedIds: readonly string[],
+): string[] {
+  return [...new Set([...savedIds, ...enabledIds, ...probedIds])];
+}
+
+export function toggleEnabledModelId(
+  enabledIds: readonly string[],
+  id: string,
+  enabled: boolean,
+): string[] {
+  return enabled ? [...new Set([...enabledIds, id])] : enabledIds.filter((entry) => entry !== id);
+}
+
+/**
+ * Whether "Use this model" may switch the default to `modelId`. The server
+ * refuses ids outside a saved list; an unread list (undefined) is not checked.
+ */
+export function canUseCompatibleModelAsDefault(
+  savedIds: readonly string[] | undefined,
+  modelId: string,
+): boolean {
+  return savedIds === undefined || savedIds.includes(modelId);
 }

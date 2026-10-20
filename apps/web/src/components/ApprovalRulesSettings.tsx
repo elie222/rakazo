@@ -3,7 +3,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import type { ActionApprovalRule, ActionAutoReviewSettings } from "@rakazo/contracts";
 import { Button, Label, Switch } from "@rakazo/ui-web";
 import { useEffect, useId, useState } from "react";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 import { errorText } from "../lib/user-error";
 
 function describeRule(rule: ActionApprovalRule): string {
@@ -26,6 +26,7 @@ function describeRule(rule: ActionApprovalRule): string {
 }
 
 export function ApprovalRulesSettings() {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const autoReviewId = useId();
   const [rules, setRules] = useState<ActionApprovalRule[]>([]);
@@ -109,10 +110,7 @@ export function ApprovalRulesSettings() {
 
   return (
     <div data-testid="action-confirmation-settings" className="pt-5">
-      <h3 className="text-[15px] font-medium text-foreground">
-        <Trans>Action confirmations</Trans>
-      </h3>
-      <div className="mt-4 flex flex-col items-start gap-2">
+      <div className="flex flex-col items-start gap-2">
         <Button
           variant="outline"
           disabled={loading || savingPreset !== null}

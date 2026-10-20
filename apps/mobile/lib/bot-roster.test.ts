@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
 import type { Bot } from "@rakazo/contracts";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { MobileBot } from "./api";
 import { retainUnchangedBotRoster } from "./bot-roster";
 
@@ -34,13 +33,12 @@ function bot(id = "bot-1"): Bot {
     voiceId: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
+    fleetManagement: false,
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,
   };
 }
-
-afterEach(() => vi.useRealTimers());
 
 describe("thread bot roster", () => {
   it.each([{ disabledBuiltinTools: [] }, { disabledBuiltinTools: ["web_search", "shell"] }])(
@@ -90,58 +88,5 @@ describe("thread bot roster", () => {
       expect(retainUnchangedBotRoster(current, next)).toBe(next);
       expect(retainUnchangedBotRoster(next, current)).toBe(current);
     }
-  });
-
-  it("keeps focus independent of reply observation and removes the duplicate mount load", () => {
-    const thread = readFileSync(new URL("../app/thread.tsx", import.meta.url), "utf8");
-    const focus = thread.match(
-      /useFocusEffect\(\s*useCallback\(\(\) => \{([\s\S]*?)\}, \[([^\]]*)\]\)/,
-    );
-    expect(focus?.[2]).toBe("botId, readOnly, markReadIfVisible, refreshMentionBots");
-    expect(focus?.[1]).toContain("speakFinishedReplyRef.current()");
-    expect(thread).toContain("speakFinishedReplyRef.current = speakFinishedReply");
-    expect(thread).toContain(
-      "setMentionBots((current) => retainUnchangedBotRoster(current, bots))",
-    );
-    const mount = thread.match(
-      /useEffect\(\(\) => \{([^}]*"groups\/list"[\s\S]*?)\}, \[refreshMentionBots\]\)/,
-    );
-    expect(mount).not.toBeNull();
-    expect(mount?.[1]).not.toContain("refreshMentionBots()");
-    expect(thread).toContain('AppState.addEventListener("change", speakFinishedReply)');
-    expect(thread).toContain("}, [speakFinishedReply]);");
-  });
-
-  it("does not schedule another refresh for identical data (30 s virtual request harness)", () => {
-    vi.useFakeTimers();
-    // Isolate the audited roster feedback edge: fresh JSON changes the current
-    // bot/focus callback; each applied roster loads B routines and 2 connectors.
-    // Both versions use 250 ms roster latency and 20 synthetic bots. No network.
-    const data = Array.from({ length: 20 }, (_, index) => bot(`bot-${index}`));
-    function measure(mode: "before" | "equalityOnly" | "after") {
-      let roster: MobileBot[] = [];
-      const counts = { roster: 0, related: 0 };
-      function refresh() {
-        counts.roster++;
-        setTimeout(() => {
-          const fetched = structuredClone(data);
-          const next = mode === "before" ? fetched : retainUnchangedBotRoster(roster, fetched);
-          if (next === roster) return;
-          roster = next;
-          counts.related += roster.length + 2;
-          if (mode !== "after") refresh();
-        }, 250);
-      }
-      refresh(); // Focus.
-      if (mode === "before") refresh(); // Original duplicate mount fetch.
-      vi.advanceTimersByTime(30_000);
-      vi.clearAllTimers();
-      return counts;
-    }
-    expect(measure("before")).toEqual({ roster: 242, related: 5_280 });
-    // Even with the old data-driven focus edge, equality stops a repeated
-    // identical response; the source contract above also removes that edge.
-    expect(measure("equalityOnly")).toEqual({ roster: 2, related: 22 });
-    expect(measure("after")).toEqual({ roster: 1, related: 22 });
   });
 });

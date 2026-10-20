@@ -1,10 +1,46 @@
 import {
   CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE,
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
+  ModelConnectInputSchema,
 } from "@rakazo/contracts";
+import { canUseCompatibleModelAsDefault } from "@rakazo/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildModelConnectPlaintext, modelCredentialDto } from "./model-connect.js";
+import {
+  buildModelConnectPlaintext,
+  modelCredentialDto,
+  storedOpenAiCompatibleProbeKey,
+} from "./model-connect.js";
 import { parseModelSecret, serializeModelSecret } from "./pi-oauth.js";
+
+describe("stored OpenAI-compatible probe key", () => {
+  const baseUrl = "https://example.invalid/v1";
+  const stored = serializeModelSecret({
+    kind: "openai_compatible",
+    baseUrl,
+    apiKey: "fake-saved-key",
+  });
+
+  it.each([baseUrl, `${baseUrl}/`, "https://example.invalid", "https://example.invalid/"])(
+    "reuses the key for the matching normalized URL %s",
+    (url) => {
+      expect(storedOpenAiCompatibleProbeKey(url, stored)).toBe("fake-saved-key");
+    },
+  );
+
+  it("does not transfer a key to a different host", () => {
+    expect(storedOpenAiCompatibleProbeKey("https://other.invalid/v1", stored)).toBeUndefined();
+  });
+
+  it.each([
+    undefined,
+    serializeModelSecret({ kind: "openai_compatible", baseUrl }),
+    JSON.stringify({ kind: "openai_compatible", baseUrl, apiKey: "   " }),
+    serializeModelSecret({ kind: "api_key", key: "fake-other-key" }),
+    '{"kind":"openai_compatible",',
+  ])("ignores absent, keyless, unrelated or corrupt secrets: %s", (plaintext) => {
+    expect(storedOpenAiCompatibleProbeKey(baseUrl, plaintext)).toBeUndefined();
+  });
+});
 
 describe("built-in provider output limits", () => {
   const row = {
@@ -320,6 +356,33 @@ describe("modelCredentialDto", () => {
     });
   });
 
+  it.each([
+    { name: "legacy secret", enabledModelIds: undefined, expected: undefined },
+    { name: "listed secret with the default", enabledModelIds: ["Y", "X"], expected: ["Y", "X"] },
+    { name: "listed secret without the default", enabledModelIds: ["X"], expected: ["Y", "X"] },
+  ])("exposes the effective enabled models for a $name", ({ enabledModelIds, expected }) => {
+    const plaintext = serializeModelSecret({
+      kind: "openai_compatible",
+      baseUrl: "https://example.invalid/v1",
+      ...(enabledModelIds ? { enabledModelIds } : {}),
+    });
+    const row = {
+      id: "cred-listed",
+      provider: "openai-compatible",
+      label: "Server",
+      isDefault: true,
+      defaultModel: "Y",
+    };
+    const dto = modelCredentialDto(row, plaintext);
+    expect(dto.enabledModelIds).toEqual(expected);
+    if (enabledModelIds === undefined) {
+      expect(dto).not.toHaveProperty("enabledModelIds");
+      expect(canUseCompatibleModelAsDefault(dto.enabledModelIds, "new-default")).toBe(true);
+    } else {
+      expect(canUseCompatibleModelAsDefault(dto.enabledModelIds, "new-default")).toBe(false);
+    }
+  });
+
   it("projects image support for the selected model only", () => {
     const plaintext = serializeModelSecret({
       kind: "openai_compatible",
@@ -484,6 +547,7 @@ it.each([true, false])(
       kind: "openai_compatible",
       baseUrl: "http://localhost:8000/v1",
       reasoning,
+      enabledModelIds: ["arbitrary-model"],
     });
     expect(
       modelCredentialDto(
@@ -498,7 +562,9 @@ it.each([true, false])(
       ),
     ).toMatchObject({
       reasoning,
-      thinkingLevels: reasoning ? ["off", "minimal", "low", "medium", "high"] : ["off"],
+      thinkingLevels: reasoning
+        ? ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+        : ["off"],
     });
   },
 );
@@ -578,6 +644,50 @@ describe("compatible connection updates", () => {
     expect(parseModelSecret(nextVision)).toMatchObject({
       visionModelIds: ["arbitrary-model", "another-vision-model"],
     });
+  });
+  it("stores the enabled models de-duplicated with the default first", () => {
+    const saved = parseModelSecret(
+      buildModelConnectPlaintext({
+        ...input,
+        enabledModelIds: [" other-model ", "arbitrary-model", "other-model", "third-model"],
+      }),
+    );
+    expect(saved).toMatchObject({
+      enabledModelIds: ["arbitrary-model", "other-model", "third-model"],
+    });
+  });
+  it("inherits the enabled models on the same endpoint when the input omits them", () => {
+    const configured = buildModelConnectPlaintext({ ...input, enabledModelIds: ["other-model"] });
+    const updated = buildModelConnectPlaintext(
+      { ...input, modelId: "third-model", reasoning: false },
+      configured,
+    );
+    expect(parseModelSecret(updated)).toMatchObject({
+      enabledModelIds: ["third-model", "arbitrary-model", "other-model"],
+    });
+  });
+  it("drops the enabled models when the endpoint changes", () => {
+    const configured = buildModelConnectPlaintext({ ...input, enabledModelIds: ["other-model"] });
+    const moved = buildModelConnectPlaintext(
+      { ...input, baseUrl: "http://localhost:8001/v1" },
+      configured,
+    );
+    expect(parseModelSecret(moved)).toMatchObject({ enabledModelIds: ["arbitrary-model"] });
+  });
+  it("keeps the client list plus the default when the previous secret is unreadable", () => {
+    const saved = parseModelSecret(
+      buildModelConnectPlaintext(
+        { ...input, apiKey: "fake-replacement-key", enabledModelIds: ["other-model"] },
+        undefined,
+        { omitVisionModelIds: true },
+      ),
+    );
+    expect(saved).toMatchObject({ enabledModelIds: ["arbitrary-model", "other-model"] });
+  });
+  it("lets an explicit list replace the inherited one", () => {
+    const configured = buildModelConnectPlaintext({ ...input, enabledModelIds: ["other-model"] });
+    const updated = buildModelConnectPlaintext({ ...input, enabledModelIds: [] }, configured);
+    expect(parseModelSecret(updated)).toMatchObject({ enabledModelIds: ["arbitrary-model"] });
   });
   it("persists the image limit while preserving it on connection updates", () => {
     const configured = buildModelConnectPlaintext({
@@ -670,5 +780,54 @@ describe("compatible connection updates", () => {
     const baseUrl = "http://example.invalid/v1";
     const legacy = serializeModelSecret({ kind: "openai_compatible", baseUrl, apiKey: "fake-key" });
     expect(() => buildModelConnectPlaintext({ ...input, baseUrl }, legacy)).toThrow(/HTTPS/);
+  });
+});
+
+it("exposes saved Azure credentials under the catalog provider id", () => {
+  expect(
+    modelCredentialDto({
+      id: "credential-azure",
+      provider: "azure-openai-responses",
+      label: "Azure",
+      isDefault: true,
+      defaultModel: "gpt-4o",
+    }),
+  ).toMatchObject({ provider: "azure", modelId: "gpt-4o" });
+});
+
+describe("compatible model selection limit", () => {
+  it("round-trips a full list across spaces without growing it or dropping selected models", () => {
+    const ids = Array.from({ length: 500 }, (_, index) => `model-${index}`);
+    let plaintext: string | undefined;
+    for (const modelId of ["space-a", "space-b", "space-c", "space-a"]) {
+      const input = ModelConnectInputSchema.parse({
+        provider: "openai-compatible",
+        baseUrl: "http://localhost:8000/v1",
+        modelId,
+        enabledModelIds: ids,
+      });
+      plaintext = buildModelConnectPlaintext(input, plaintext);
+      const parsed = parseModelSecret(plaintext);
+      expect(parsed.kind).toBe("openai_compatible");
+      if (parsed.kind !== "openai_compatible") throw new Error("Wrong secret kind");
+      expect(parsed.enabledModelIds).toEqual(ids);
+      const dto = modelCredentialDto(
+        {
+          id: "credential",
+          provider: input.provider,
+          label: "Local",
+          isDefault: true,
+          defaultModel: modelId,
+        },
+        plaintext,
+      );
+      expect(dto.enabledModelIds).toEqual([modelId, ...ids]);
+      expect(
+        ModelConnectInputSchema.safeParse({
+          ...input,
+          enabledModelIds: dto.enabledModelIds?.filter((id) => id !== modelId),
+        }).success,
+      ).toBe(true);
+    }
   });
 });

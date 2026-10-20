@@ -2,6 +2,7 @@ import { createSlackAdapter } from "@chat-adapter/slack";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { createWhatsAppAdapter } from "@chat-adapter/whatsapp";
 import type { MessagingInboundMessage, MessagingOutboundStatus } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { Adapter } from "chat";
 import { createLarkAdapter, Domain } from "chat-adapter-lark";
 import { createSendblueAdapter } from "chat-adapter-sendblue";
@@ -25,6 +26,8 @@ export interface MessagingEnvironmentValues {
   whatsappVerifyToken?: string | undefined;
   telegramBotToken?: string | undefined;
   telegramWebhookSecret?: string | undefined;
+  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
+  telegramBots?: TelegramBotCredentials[] | undefined;
   larkAppId?: string | undefined;
   larkAppSecret?: string | undefined;
   larkVerificationToken?: string | undefined;
@@ -51,12 +54,46 @@ export function messagingEnvFromProcess(
     whatsappVerifyToken: clean(env.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: clean(env.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    telegramBots: telegramBotsFromEnv(env),
     larkAppId: clean(env.LARK_APP_ID),
     larkAppSecret: clean(env.LARK_APP_SECRET),
     larkVerificationToken: clean(env.LARK_VERIFICATION_TOKEN),
     larkEncryptKey: clean(env.LARK_ENCRYPT_KEY),
     larkDomain: clean(env.LARK_DOMAIN),
   };
+}
+
+/** One extra Telegram bot, mounted as provider `telegram-<name>`. */
+export interface TelegramBotCredentials {
+  name: string;
+  botToken: string;
+  webhookSecret: string;
+}
+
+const TELEGRAM_NAMED_TOKEN = /^TELEGRAM_BOT_TOKEN_([A-Z0-9]+)$/;
+
+/**
+ * Extra Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> plus
+ * TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>. Each is its own Telegram bot (own
+ * token, own getUpdates slot), so one person can link a different Rakazo bot
+ * — typically one per space — to each. <NAME> is letters and digits only and
+ * becomes the provider id `telegram-<name>` (lowercased), which also names
+ * its webhook route. A name with no secret is skipped, like the default bot.
+ */
+export function telegramBotsFromEnv(
+  env: Record<string, string | undefined>,
+): TelegramBotCredentials[] {
+  const bots: TelegramBotCredentials[] = [];
+  for (const [key, value] of Object.entries(env)) {
+    const suffix = TELEGRAM_NAMED_TOKEN.exec(key)?.[1];
+    if (!suffix) continue;
+    const botToken = value?.trim();
+    const webhookSecret = env[`TELEGRAM_WEBHOOK_SECRET_TOKEN_${suffix}`]?.trim();
+    if (!botToken || !webhookSecret) continue;
+    bots.push({ name: suffix.toLowerCase(), botToken, webhookSecret });
+  }
+  bots.sort((a, b) => a.name.localeCompare(b.name));
+  return bots;
 }
 
 /**
@@ -107,7 +144,7 @@ export function messagingPlatformsFromEnv(
     } satisfies Pick<Adapter, "isDM">);
     platforms.push({
       provider: "sendblue",
-      capabilities: { direct: true, groups: true, typing: true },
+      capabilities: { direct: true, groups: true, receipt: "typing" },
       adapter,
       directThreadId: (address) =>
         adapter.encodeThreadId({ fromNumber: lineNumber, contactNumber: address }),
@@ -119,13 +156,22 @@ export function messagingPlatformsFromEnv(
   }
 
   if (env.slackBotToken && env.slackSigningSecret) {
+    const adapter = createSlackAdapter({
+      botToken: env.slackBotToken,
+      signingSecret: env.slackSigningSecret,
+    });
+    // Slack's reactions.add fails with already_reacted when a replayed inbound reacts twice.
+    const addReaction = adapter.addReaction.bind(adapter);
+    Object.assign(adapter, {
+      addReaction: (threadId, messageId, emoji) =>
+        addReaction(threadId, messageId, emoji).catch((error: unknown) => {
+          if (slackPlatformError(error) !== "already_reacted") throw error;
+        }),
+    } satisfies Pick<Adapter, "addReaction">);
     platforms.push({
       provider: "slack",
-      capabilities: { direct: true, groups: true, typing: false },
-      adapter: createSlackAdapter({
-        botToken: env.slackBotToken,
-        signingSecret: env.slackSigningSecret,
-      }),
+      capabilities: { direct: true, groups: true, receipt: "reaction" },
+      adapter,
       enrichTeamRoom: enrichSlackTeamRoom,
     });
   }
@@ -138,7 +184,7 @@ export function messagingPlatformsFromEnv(
   ) {
     platforms.push({
       provider: "whatsapp",
-      capabilities: { direct: true, groups: false, typing: false },
+      capabilities: { direct: true, groups: false, receipt: null },
       adapter: createWhatsAppAdapter({
         accessToken: env.whatsappAccessToken,
         phoneNumberId: env.whatsappPhoneNumberId,
@@ -148,12 +194,14 @@ export function messagingPlatformsFromEnv(
     });
   }
 
+  const telegramTokens = new Set<string>();
   // Both required: without the secret token the adapter accepts unsigned
   // webhook posts, so a forged update could reach inbound processing.
   if (env.telegramBotToken && env.telegramWebhookSecret) {
+    telegramTokens.add(env.telegramBotToken.trim());
     platforms.push({
       provider: "telegram",
-      capabilities: { direct: true, groups: false, typing: false },
+      capabilities: { direct: true, groups: false, receipt: null },
       // Auto mode: uses the webhook route when Telegram has one registered
       // (checked via getWebhookInfo), and otherwise falls back to
       // long-polling getUpdates. Self-hosted/local deployments typically
@@ -173,13 +221,36 @@ export function messagingPlatformsFromEnv(
     });
   }
 
+  // Same rules as the default bot; each named bot has its own token and so
+  // its own getUpdates slot. The surface maps their native "telegram:" thread
+  // ids to "telegram-<name>:" so conversations with each bot stay distinct.
+  for (const bot of env.telegramBots ?? []) {
+    if (telegramTokens.has(bot.botToken.trim())) {
+      getLogger().warn("skipping Telegram bot that reuses another bot's token", {
+        provider: `telegram-${bot.name}`,
+      });
+      continue;
+    }
+    telegramTokens.add(bot.botToken.trim());
+    platforms.push({
+      provider: `telegram-${bot.name}`,
+      adapterName: "telegram",
+      capabilities: { direct: true, groups: false, receipt: null },
+      adapter: createTelegramAdapter({
+        botToken: bot.botToken,
+        secretToken: bot.webhookSecret,
+        mode: options.pollInboundMessages ? "auto" : "webhook",
+      }),
+    });
+  }
+
   // App ID, secret, and verification token are all required: without the
   // token the adapter accepts unsigned webhook posts. Encrypt key and
   // domain are optional (event encryption / open.feishu.cn vs open.larksuite.com).
   if (env.larkAppId && env.larkAppSecret && env.larkVerificationToken) {
     platforms.push({
       provider: "lark",
-      capabilities: { direct: true, groups: false, typing: false },
+      capabilities: { direct: true, groups: false, receipt: null },
       // Webhook-only: ws/long-connection incoming would consume events so
       // the HTTP webhook at /api/v1/messaging/webhook/lark never sees them.
       adapter: createLarkAdapter({
@@ -255,32 +326,19 @@ export function enrichSlackTeamRoom(
   if (threadTs) enrichment.replyThreadId = threadTs;
   else enrichment.replyThreadId = null;
   if (!base.isDirect) {
-    const text = stringField(event, "text") ?? base.content;
-    const botUserId = slackAuthorizedBotUserId(root);
-    // app_mention is Slack's bot-directed event. A bare <@U…> mention of
-    // someone else must stay ambient so listen policy still applies.
-    enrichment.kind =
-      eventType === "app_mention" || mentionsSlackBot(text, botUserId) ? "mention" : "ambient";
+    // Slack sends both app_mention and message.* for one channel mention and
+    // the SDK keeps whichever arrives first, so the plain event relies on the
+    // SDK's own mention check. A mention of someone else stays ambient so
+    // listen policy still applies.
+    enrichment.kind = eventType === "app_mention" || base.mentionsBot ? "mention" : "ambient";
   }
   return enrichment;
 }
 
-/** Bot user id from Slack's event authorizations (the app that received the event). */
-function slackAuthorizedBotUserId(root: Record<string, unknown>): string | undefined {
-  const authorizations = root.authorizations;
-  if (!Array.isArray(authorizations)) return undefined;
-  for (const entry of authorizations) {
-    const record = asRecord(entry);
-    if (!record || record.is_bot !== true) continue;
-    const userId = stringField(record, "user_id");
-    if (userId) return userId;
-  }
-  return undefined;
-}
-
-function mentionsSlackBot(text: string, botUserId: string | undefined): boolean {
-  if (!botUserId) return false;
-  return text.includes(`<@${botUserId}>`);
+function slackPlatformError(error: unknown): string | undefined {
+  const record = asRecord(error);
+  if (record?.code !== "slack_webapi_platform_error") return undefined;
+  return stringField(asRecord(record.data) ?? {}, "error");
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

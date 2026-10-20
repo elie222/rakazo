@@ -40,7 +40,9 @@ function installPageHelper(url: string, html: string) {
   const browser = (
     domWindow as unknown as {
       __rakazoPageBrowser: {
-        snapshot: () => { elements: Array<{ ref: string; name: string; value?: string }> };
+        snapshot: () => {
+          elements: Array<{ ref: string; name: string; role: string; value?: string }>;
+        };
         fill: (ref: string, value: string, origin?: string) => { url: string };
       };
     }
@@ -95,5 +97,22 @@ describe("live page helper saved-login fill", () => {
     const email = refFor("Email", browser.snapshot().elements);
     expect(() => browser.fill(email, "fake-user", origin)).toThrow(/HTTPS/);
     expect(fieldValue(domWindow, "Email")).toBe("");
+  });
+});
+
+describe("live page helper upload targets", () => {
+  it("lists hidden and role-overridden file inputs without crowding out page controls", () => {
+    const hidden = Array.from(
+      { length: 80 },
+      (_, i) => `<input type="file" aria-label="Hidden ${i}" style="display:none" />`,
+    ).join("");
+    const { browser } = installPageHelper(
+      "https://upload.example.test/",
+      `${hidden}<input type="file" role="button" aria-label="Receipt" /><button>Save</button>`,
+    );
+    const { elements } = browser.snapshot();
+    expect(elements.find((el) => el.name === "Save")?.role).toBe("button");
+    expect(elements.find((el) => el.name === "Receipt")?.role).toBe("file upload");
+    expect(elements.filter((el) => el.role === "file upload")).toHaveLength(81);
   });
 });

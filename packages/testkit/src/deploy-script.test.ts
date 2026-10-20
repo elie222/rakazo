@@ -63,7 +63,20 @@ function fixture() {
     `#!/bin/bash
 echo "docker $* @ $(git rev-parse --short HEAD)" >> "$COMMAND_LOG"
 if [[ "$*" == *" build" && -n "\${FAIL_BUILD:-}" ]]; then exit 1; fi
+if [[ "$1" == info ]]; then echo /var/lib/docker; fi
+if [[ "$*" == *" images -q" ]]; then echo sha256:running; fi
+if [[ "$1" == tag && -n "\${FAIL_TAG:-}" ]]; then exit 1; fi
+if [[ "$*" == "image ls "* ]]; then echo rakazo-rollback:old; fi
 exit 0
+`,
+    0o755,
+  );
+  write(
+    path.join(bin, "df"),
+    `#!/bin/bash
+echo "df $*" >> "$COMMAND_LOG"
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "/dev/fake 104857600 0 \${FREE_KB:-52428800} 0% /"
 `,
     0o755,
   );
@@ -122,7 +135,9 @@ describe("production deploy script", () => {
     write(path.join(deploy.checkout, ".last-deployed-revision"), `${deploy.first}\n`);
     const result = deploy.run();
     expect(result.status).toBe(0);
-    expect(deploy.commands()).toEqual(["curl https://app.example.test/health"]);
+    expect(deploy.commands().filter((line) => !/^(df|docker info) /.test(line))).toEqual([
+      "curl https://app.example.test/health",
+    ]);
   });
 
   it("deploys when the checkout matches but that revision was never recorded", () => {
@@ -132,7 +147,7 @@ describe("production deploy script", () => {
     expect(result.stdout).not.toContain("already at");
     expect(deploy.head()).toBe(deploy.first);
     expect(deploy.deployed()).toBe(deploy.first);
-    const docker = deploy.commands().filter((line) => line.startsWith("docker"));
+    const docker = deploy.commands().filter((line) => / (config|build|up) /.test(`${line} `));
     expect(docker.map((line) => line.split(" @ ")[0])).toEqual([
       "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml config --quiet",
       "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml build",
@@ -157,12 +172,53 @@ describe("production deploy script", () => {
     expect(result.status).toBe(0);
     expect(deploy.head()).toBe(next);
     expect(deploy.deployed()).toBe(next);
-    const docker = deploy.commands().filter((line) => line.startsWith("docker"));
+    const docker = deploy.commands().filter((line) => / (config|build|up) /.test(`${line} `));
     expect(docker.map((line) => line.split(" @ ")[0])).toEqual([
       "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml config --quiet",
       "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml build",
       "docker compose --env-file .env -f infra/compose/docker-compose.prod.yml up -d --remove-orphans",
     ]);
+  });
+
+  it("keeps the previous images and prunes the rest after a healthy rollout", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    expect(deploy.run().status).toBe(0);
+    const commands = deploy.commands().map((line) => line.split(" @ ")[0]);
+    expect(commands.slice(commands.findIndex((line) => line.includes(" up -d ")) + 1)).toEqual([
+      "curl https://app.example.test/health",
+      "docker image ls --format {{.Repository}}:{{.Tag}} rakazo-rollback",
+      "docker rmi rakazo-rollback:old",
+      "docker tag sha256:running rakazo-rollback:running",
+      "docker image prune --force",
+      "docker builder prune --all --force --filter until=24h",
+    ]);
+  });
+
+  it("keeps every image when the previous ones could not be tagged", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    const result = deploy.run({ FAIL_TAG: "1" });
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("skipping image prune");
+    expect(deploy.commands().some((line) => line.startsWith("docker image prune"))).toBe(false);
+  });
+
+  it("rejects a threshold with a leading zero", () => {
+    const deploy = fixture();
+    const result = deploy.run({ RAKAZO_DEPLOY_MIN_FREE_GB: "08" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("whole number");
+  });
+
+  it("refuses to build with too little free disk", () => {
+    const deploy = fixture();
+    commit(deploy.upstream, "next");
+    const result = deploy.run({ FREE_KB: String(2 * 1024 * 1024), RAKAZO_DEPLOY_MIN_FREE_GB: "5" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Only 2GB free");
+    expect(deploy.head()).toBe(deploy.first);
+    expect(deploy.commands().some((line) => line.includes(" build"))).toBe(false);
   });
 
   it("rolls back to the previous revision when the build fails", () => {

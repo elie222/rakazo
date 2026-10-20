@@ -22,6 +22,8 @@ import { providerLabel } from "../lib/messaging";
 import { rpc } from "../lib/rpc";
 import { ExternalConversationSettings } from "./ExternalConversationSettings";
 
+const LINK_POLL_MS = 3_000;
+
 export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const { t } = useLingui();
   const [status, setStatus] = useState<MessagingStatus | null>(null);
@@ -31,7 +33,11 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
   const [externalConversations, setExternalConversations] = useState<ExternalConversation[]>([]);
   const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
   const [linkBotId, setLinkBotId] = useState("");
-  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [linkRequest, setLinkRequest] = useState<{
+    code: string;
+    expiresAt: string;
+    botId: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
@@ -54,11 +60,56 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Linking completes in the chat app: watch for a new or reassigned identity.
+  useEffect(() => {
+    if (!linkRequest) return;
+    const known = new Map(status?.identities.map((identity) => [identity.id, identity.botId]));
+    let active = true;
+    let poll: number;
+    const expire = window.setTimeout(
+      () => {
+        active = false;
+        window.clearTimeout(poll);
+        setLinkRequest(null);
+      },
+      Math.max(0, Date.parse(linkRequest.expiresAt) - Date.now()),
+    );
+    async function pollStatus() {
+      try {
+        const next = await rpc.messaging.status();
+        if (!active) return;
+        if (
+          next.identities.some(
+            (identity) =>
+              identity.botId === linkRequest?.botId && known.get(identity.id) !== identity.botId,
+          )
+        ) {
+          active = false;
+          window.clearTimeout(expire);
+          setStatus(next);
+          setLinkRequest(null);
+          await refresh();
+        }
+      } catch {
+        // A transient failure can be retried while the code is valid.
+      } finally {
+        if (active) poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
+      }
+    }
+    poll = window.setTimeout(() => void pollStatus(), LINK_POLL_MS);
+    return () => {
+      active = false;
+      window.clearTimeout(poll);
+      window.clearTimeout(expire);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkRequest]);
+
   async function act(action: () => Promise<unknown>) {
     setError(null);
     // A displayed code must always match the current selection and link
     // state; the link action re-sets it after issuing.
-    setLinkCode(null);
+    setLinkRequest(null);
     try {
       await action();
       await refresh();
@@ -80,6 +131,8 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
       .filter(Boolean)
       .join(" · ");
   }
+
+  const linkCode = linkRequest?.code;
 
   return (
     <Dialog
@@ -152,7 +205,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               value={linkBotId}
               onChange={(event) => {
                 setLinkBotId(event.target.value);
-                setLinkCode(null);
+                setLinkRequest(null);
               }}
             >
               <NativeSelectOption value="">{t`Choose a bot…`}</NativeSelectOption>
@@ -168,7 +221,7 @@ export function MessagingSettingsOverlay({ onClose }: { onClose: () => void }) {
               onClick={() =>
                 void act(async () => {
                   const issued = await rpc.messaging.link.start({ botId: linkBotId });
-                  setLinkCode(issued.code);
+                  setLinkRequest({ ...issued, botId: linkBotId });
                 })
               }
             >

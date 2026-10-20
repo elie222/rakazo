@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   deviceVoices: vi.fn(),
   voiceForBot: vi.fn(),
   setVoiceForBot: vi.fn(),
+  rpc: vi.fn(),
+  back: vi.fn(),
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
   speak: vi.fn(),
@@ -41,16 +43,23 @@ vi.mock("./device-voice", () => ({ loadDeviceVoiceEnabled: async () => true }));
 vi.mock("./voice", () => ({ stopVoicePlayback: mocks.stopVoicePlayback }));
 vi.mock("expo-speech", () => ({ stop: mocks.stop, speak: mocks.speak }));
 vi.mock("./api", () => ({
-  rpc: async (procedure: string) => {
+  rpc: async (procedure: string, input?: unknown) => {
+    if (procedure === "bots/update") return mocks.rpc(procedure, input);
     if (procedure === "bots/get")
-      return { id: "bot-fixture", name: "Fixture", title: "", computerMode: "team" };
+      return {
+        id: "bot-fixture",
+        name: "Fixture",
+        title: "",
+        computerMode: "team",
+        fleetManagement: false,
+      };
     if (procedure === "me") return {};
     return [];
   },
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ back: vi.fn() }),
+  useRouter: () => ({ back: mocks.back }),
   useLocalSearchParams: () => ({ botId: "bot-fixture" }),
   useFocusEffect: (effect: () => (() => void) | undefined) => useEffect(effect, [effect]),
 }));
@@ -98,12 +107,45 @@ vi.mock("./native", () => ({
 }));
 vi.mock("./i18n", () => {
   const t = (text: string, values?: { name: string }) => text.replace("{name}", values?.name ?? "");
-  return { useI18n: () => ({ t }) };
+  return { t, useI18n: () => ({ t }) };
 });
+vi.mock("../components/settings-group", () => ({
+  SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
+}));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
+vi.mock("./bot-avatar-edit", () => ({
+  avatarColor: (value: string) => value,
+  avatarShape: () => null,
+  isAvatarPhoto: () => false,
+  withAvatarColor: (_value: string, color: string) => color,
+  withAvatarShape: (value: string) => value,
+}));
 vi.mock("../components/computer-mode-picker", () => ({ ComputerModePicker: () => null }));
-vi.mock("../components/native-action-button", () => ({ NativeActionButton: () => null }));
-vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
+vi.mock("../components/native-action-button", () => ({
+  NativeActionButton: ({ label, onPress }: { label: string; onPress: () => void }) =>
+    createElement("button", { type: "button", onClick: onPress }, label),
+}));
+vi.mock("../components/native-switch", () => ({
+  NativeSwitch: ({
+    accessibilityLabel,
+    onValueChange,
+    value,
+    disabled,
+  }: {
+    accessibilityLabel: string;
+    onValueChange: (value: boolean) => void;
+    value: boolean;
+    disabled?: boolean;
+  }) =>
+    createElement("button", {
+      type: "button",
+      "aria-label": accessibilityLabel,
+      role: "switch",
+      "aria-checked": value,
+      disabled,
+      onClick: () => onValueChange(!value),
+    }),
+}));
 vi.mock("../components/row-accessories", () => ({ Chevron: () => null }));
 vi.mock("../components/native-symbol", () => ({
   NativeSymbol: ({ ios, android }: { ios: string; android: string }) =>
@@ -159,6 +201,47 @@ describe("bot settings device voice menu", () => {
   });
   const render = async () => act(async () => root.render(<BotSettingsScreen />));
   const menu = () => container.querySelector('[data-menu="Device voice"]');
+
+  it("persists fleet toggles immediately without adding them to unrelated saves", async () => {
+    mocks.rpc.mockResolvedValue(undefined);
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    if (!toggle) throw new Error("Missing fleet switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("bots/update", {
+      botId: "bot-fixture",
+      fleetManagement: true,
+    });
+    mocks.rpc.mockClear();
+    const save = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Save",
+    );
+    if (!save) throw new Error("Missing Save");
+    await act(async () => {
+      save.click();
+    });
+    for (const [, input] of mocks.rpc.mock.calls)
+      expect(input).not.toHaveProperty("fleetManagement");
+  });
+
+  it("restores the fleet toggle when saving fails", async () => {
+    mocks.rpc.mockRejectedValueOnce(new Error("offline"));
+    await render();
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    if (!toggle) throw new Error("Missing fleet switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith("bots/update", {
+      botId: "bot-fixture",
+      fleetManagement: true,
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.disabled).toBe(false);
+    expect(container.textContent).toContain("offline");
+  });
 
   it("marks the current voice, keeps the plain row, and saves before playing a sample", async () => {
     await render();

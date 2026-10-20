@@ -96,6 +96,41 @@ function multiGroupTools(): ConnectorTool[] {
   ];
 }
 
+function serverTools(slug: string, tools: Array<[string, string]>): ConnectorTool[] {
+  return tools.map(([toolName, description]) => ({
+    name: `mcp__${slug}__${toolName}`,
+    description,
+    inputSchema: { type: "object", properties: {} },
+    route: { connectorId: "mcp", resourceId: `srv-${slug}`, toolName, catalogGroup: slug },
+  }));
+}
+
+const linearTools = serverTools("linear", [
+  ["create_attachment", "Create an attachment on an issue"],
+  ["create_document", "Create a document"],
+  ["delete_attachment", "Delete an attachment"],
+  ["get_document", "Retrieve a document"],
+  ["get_issue", "Retrieve an issue by id"],
+  ["get_project", "Retrieve a project"],
+  ["get_team", "Retrieve a team"],
+  ["list_comments", "List comments on an issue"],
+  ["list_issues", "List issues in the workspace"],
+  ["list_projects", "List projects in the workspace"],
+  ["list_teams", "List teams"],
+  ["save_comment", "Create or update a comment on an issue"],
+  ["save_issue", "Create or update an issue"],
+]);
+
+const githubTools = serverTools("github", [
+  ["create_pull_request", "Create a new pull request in a GitHub repository"],
+  ["get_file_contents", "Get the contents of a file or directory"],
+  ["issue_read", "Get information about a specific issue"],
+  ["list_pull_requests", "List pull requests in a GitHub repository"],
+  ["merge_pull_request", "Merge a pull request"],
+  ["pull_request_read", "Get information on a specific pull request"],
+  ["search_code", "Search code across repositories"],
+]);
+
 describe("lazy tool catalog", () => {
   it("exposes tools directly at the limit and switches to lazy wrappers above it", () => {
     expect(tools(DIRECT_TOOL_LIMIT)).toHaveLength(20);
@@ -132,7 +167,109 @@ describe("lazy tool catalog", () => {
 
   it("returns an empty catalog as an empty tool list", () => {
     expect(catalogEntries([])).toEqual([]);
-    expect(searchCatalog([], { query: "anything" })).toEqual({ tools: [] });
+    expect(searchCatalog([], { query: "anything" })).toMatchObject({ tools: [], groups: [] });
+  });
+
+  it("matches query words separately and keeps an exact name first", () => {
+    const entries = catalogEntries([...githubTools, ...linearTools]);
+    const names = (query: string) => {
+      const result = searchCatalog(entries, { query });
+      return "tools" in result ? result.tools.map((tool) => tool.name) : [];
+    };
+    expect(names("github pull request get")[0]).toBe("mcp__github__pull_request_read");
+    expect(names("linear project")).toEqual([
+      "mcp__linear__get_project",
+      "mcp__linear__list_projects",
+    ]);
+    expect(names("linear save issue")[0]).toBe("mcp__linear__save_issue");
+    expect(names("save_issue")[0]).toBe("mcp__linear__save_issue");
+    expect(names("issue_read")[0]).toBe("mcp__github__issue_read");
+  });
+
+  const insideWordNames = (query: string) => {
+    const entries = catalogEntries([
+      ...serverTools("gmail", [["send_message", "Send a message"]]),
+      ...serverTools("jira", [
+        ["getJiraIssue", "Fetch one issue"],
+        ["searchJiraIssuesUsingJql", "Search issues"],
+      ]),
+    ]);
+    const result = searchCatalog(entries, { query });
+    return "tools" in result ? result.tools.map((tool) => tool.name) : [];
+  };
+
+  it("falls back to a match inside a source name when no word start matches", () => {
+    expect(insideWordNames("mail")).toEqual(["mcp__gmail__send_message"]);
+  });
+
+  it("falls back to a match inside a camelCase tool name when no word start matches", () => {
+    expect(insideWordNames("JiraIssue")[0]).toBe("mcp__jira__getJiraIssue");
+  });
+
+  it("lists every name in a source when the query is only that source", () => {
+    expect(linearTools.length).toBeGreaterThan(TOOL_SEARCH_LIMIT);
+    const entries = catalogEntries([...githubTools, ...linearTools]);
+    const result = searchCatalog(entries, { query: "Linear" });
+    expect(result).toMatchObject({ group: "linear" });
+    expect("names" in result && result.names).toContain("save_issue");
+    expect("names" in result && result.names).toHaveLength(linearTools.length);
+  });
+
+  it("matches a group regardless of case when no label matches exactly", () => {
+    const entries = catalogEntries([...githubTools, ...linearTools]);
+    expect(searchCatalog(entries, { group: "Linear" })).toMatchObject({
+      group: "linear",
+      names: expect.arrayContaining(["save_issue", "list_projects"]),
+    });
+    const searched = searchCatalog(entries, { group: "Linear", query: "issue" });
+    expect("tools" in searched && searched.tools.map((tool) => tool.name)).toContain(
+      "mcp__linear__save_issue",
+    );
+  });
+
+  it("returns sources and a hint when nothing matches", () => {
+    const entries = catalogEntries([...githubTools, ...linearTools]);
+    expect(searchCatalog(entries, { query: "calendar event" })).toEqual({
+      tools: [],
+      groups: [
+        { group: "github", count: githubTools.length },
+        { group: "linear", count: linearTools.length },
+      ],
+      hint: expect.stringContaining("Built-in tools are called directly"),
+    });
+  });
+
+  it("adds the hint to partial matches when no tool matches every word", () => {
+    const entries = catalogEntries([...githubTools, ...linearTools]);
+    const result = searchCatalog(entries, { query: "read_file" });
+    expect(result).toMatchObject({
+      groups: expect.arrayContaining([{ group: "github", count: githubTools.length }]),
+      hint: expect.stringContaining("Built-in tools are called directly"),
+    });
+    expect("tools" in result && result.tools.length).toBeGreaterThan(0);
+    expect(searchCatalog(entries, { query: "linear issue" })).not.toHaveProperty("hint");
+  });
+
+  it("names every source with its count when the full index does not fit", () => {
+    const big = Array.from({ length: NAME_INDEX_MAX_NAMES + 5 }, (_, index) => ({
+      name: `tool_${index}`,
+      description: "Shared",
+      inputSchema: { type: "object", properties: {} },
+      route: {
+        connectorId: "test",
+        resourceId: "big",
+        toolName: `tool_${index}`,
+        catalogGroup: "huge",
+      },
+    }));
+    const entries = catalogEntries([...big, ...linearTools]);
+    const [search] = lazyCatalogTools("connectors", "mcp", "MCP", entries);
+    expect(search?.description).toContain(
+      `Sources: huge (${NAME_INDEX_MAX_NAMES + 5}), linear (${linearTools.length})`,
+    );
+    expect(search?.description).toContain("linear:\n  create_attachment,");
+    expect(search?.description).toContain("save_issue");
+    expect(search?.description).not.toContain("tool_0");
   });
 
   it("lists grouped names for an empty query without dumping schemas", () => {
@@ -178,6 +315,14 @@ describe("lazy tool catalog", () => {
       names: ["Upper_0", "Upper_1"],
     });
     expect(searchCatalog(entries, { group: "gmail" })).toEqual({
+      group: "gmail",
+      names: ["lower_0", "lower_1"],
+    });
+    expect(searchCatalog(entries, { query: "Gmail" })).toEqual({
+      group: "Gmail",
+      names: ["Upper_0", "Upper_1"],
+    });
+    expect(searchCatalog(entries, { query: "gmail" })).toEqual({
       group: "gmail",
       names: ["lower_0", "lower_1"],
     });
@@ -237,7 +382,8 @@ describe("lazy tool catalog", () => {
     expect(JSON.stringify(result)).not.toContain("secretShape");
     const [search] = lazyCatalogTools("connectors", "mcp", "MCP", entries);
     expect(search?.description).toContain("Empty query lists sources");
-    expect(search?.description).not.toContain("tool_0");
+    expect(search?.description).toContain("Sources: group_0 (50), group_1 (50)");
+    expect(search?.description).not.toContain("tool_200");
   });
 
   it("filters query search by group and keeps schema-free hits", () => {
@@ -350,6 +496,118 @@ describe("lazy tool catalog", () => {
     await expect(execute()).rejects.toThrow();
     expect(executeResolved).not.toHaveBeenCalled();
   });
+
+  it("accepts group-qualified names a model builds from search output", () => {
+    const route = (resourceId: string, toolName: string, catalogGroup: string) => ({
+      connectorId: "mcp",
+      resourceId,
+      toolName,
+      catalogGroup,
+    });
+    const entries = catalogEntries([
+      {
+        name: "mcp__pc-files__read_text_file",
+        description: "Read",
+        inputSchema: { type: "object", properties: {} },
+        route: route("srv-files", "read_text_file", "pc-files"),
+      },
+      {
+        name: "mcp__history__list_day",
+        description: "List day",
+        inputSchema: { type: "object", properties: {} },
+        route: route("srv-history", "list_day", "history"),
+      },
+      {
+        name: "mcp__other__list_day",
+        description: "List day elsewhere",
+        inputSchema: { type: "object", properties: {} },
+        route: route("srv-other", "list_day", "other"),
+      },
+    ]);
+    for (const id of [
+      "pc-files:read_text_file",
+      "pc-files/read_text_file",
+      "pc-files__read_text_file",
+      "PC-Files:read_text_file",
+      "pc-files:mcp__pc-files__read_text_file",
+    ]) {
+      expect(loadCatalogEntry(entries, { id }).tool.name).toBe("mcp__pc-files__read_text_file");
+    }
+    expect(loadCatalogEntry(entries, { id: "history:list_day" }).tool.name).toBe(
+      "mcp__history__list_day",
+    );
+    expect(() => loadCatalogEntry(entries, { id: "list_day" })).toThrow(/ambiguous.*srv-/);
+    expect(() => loadCatalogEntry(entries, { id: "pc-files:write_file" })).toThrow(
+      "unknown or not authorized",
+    );
+    expect(() => loadCatalogEntry(entries, { id: "history:read_text_file" })).toThrow(
+      "unknown or not authorized",
+    );
+  });
+
+  it("matches group names whose length changes when lowercased", () => {
+    const entries = catalogEntries([
+      {
+        name: "read_file",
+        description: "Read file",
+        inputSchema: { type: "object" },
+        route: {
+          connectorId: "mcp",
+          resourceId: "srv-files",
+          toolName: "read_file",
+          catalogGroup: "İstanbul:files",
+        },
+      },
+    ]);
+    for (const group of ["İstanbul:files", "i̇stanbul:files"]) {
+      for (const separator of [":", "/", "__", "."]) {
+        expect(loadCatalogEntry(entries, { id: `${group}${separator}read_file` })).toBe(entries[0]);
+      }
+    }
+  });
+
+  it.each(["short", "full"])(
+    "rejects collisions between %s and group-qualified names while preserving exact ids",
+    (nameKind) => {
+      const id = "pc-files:read_file";
+      const entries = catalogEntries([
+        {
+          name: nameKind === "full" ? id : "mcp__other__read_file",
+          description: "Other tool",
+          inputSchema: { type: "object" },
+          route: {
+            connectorId: "mcp",
+            resourceId: "srv-other",
+            toolName: nameKind === "short" ? id : "other_read_file",
+            catalogGroup: "other",
+          },
+        },
+        {
+          name: "mcp__pc-files__read_file",
+          description: "Read file",
+          inputSchema: { type: "object" },
+          route: {
+            connectorId: "mcp",
+            resourceId: "srv-files",
+            toolName: "read_file",
+            catalogGroup: "pc-files",
+          },
+        },
+      ]);
+
+      expect(() => loadCatalogEntry(entries, { id })).toThrow(
+        `Tool name is ambiguous; use one of these ids: ${entries.map((entry) => entry.id).join(", ")}`,
+      );
+      const exactEntry = { ...entries[1]!, id };
+      expect(loadCatalogEntry([...entries, exactEntry], { id })).toBe(exactEntry);
+
+      const overlappingEntry = {
+        ...entries[1]!,
+        tool: { ...entries[1]!.tool, name: id },
+      };
+      expect(loadCatalogEntry([overlappingEntry], { id })).toBe(overlappingEntry);
+    },
+  );
 
   it("still rejects non-object args and unknown ids", () => {
     const entries = catalogEntries(tools(1));

@@ -25,15 +25,23 @@ vi.mock("react-native", () => {
       onPress,
       accessibilityLabel,
       disabled,
+      style,
     }: {
       children?: ReactNode;
       onPress: () => void;
       accessibilityLabel: string;
       disabled?: boolean;
+      style?: object;
     }) =>
       createElement(
         "button",
-        { type: "button", onClick: onPress, "aria-label": accessibilityLabel, disabled },
+        {
+          type: "button",
+          onClick: onPress,
+          "aria-label": accessibilityLabel,
+          disabled,
+          "data-style": JSON.stringify(style),
+        },
         children,
       ),
     TextInput: ({
@@ -55,7 +63,16 @@ vi.mock("@expo/ui/community/menu", () => ({
   MenuView: ({ children }: { children?: ReactNode }) => children,
 }));
 vi.mock("../components/glass-surface", () => ({
-  GlassSurface: ({ children }: { children?: ReactNode }) => children,
+  GlassSurface: ({
+    children,
+    shape = "capsule",
+    style,
+  }: {
+    children?: ReactNode;
+    shape?: string;
+    style?: object;
+  }) =>
+    createElement("div", { "data-glass": shape, "data-style": JSON.stringify(style) }, children),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));
 vi.mock("./native", () => ({ useMobileTokens: () => ({}), useResolvedAppearance: () => "light" }));
@@ -200,5 +217,18 @@ describe("thread composer isolation", () => {
     expect(container.querySelector('[data-testid="slash-picker"]')).toBeNull();
     press("Call");
     expect(props.startVoiceCall).toHaveBeenCalledOnce();
+  });
+
+  it("insets the call and send pills equally from the capsule's bottom and trailing edges", () => {
+    const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);
+    for (const label of ["Call", "Send"]) {
+      if (label === "Send") type("Hello");
+      const button = container.querySelector(`button[aria-label="${label}"]`)!;
+      const pill = style(button.querySelector("[data-glass]")!);
+      const capsule = style(button.closest('[data-glass="roundedRectangle"]')!);
+      const inset = (capsule.minHeight - pill.height) / 2;
+      expect(style(button).marginBottom).toBe(inset);
+      expect(capsule.paddingEnd).toBe(inset);
+    }
   });
 });

@@ -178,7 +178,7 @@ export function createEmulatedSendbluePlatform(emulator: SendBlueEmulator): Mess
   } satisfies Pick<Adapter, "isDM">);
   return {
     provider: "sendblue",
-    capabilities: { direct: true, groups: true, typing: true },
+    capabilities: { direct: true, groups: true, receipt: "typing" },
     adapter,
     directThreadId: (address) =>
       adapter.encodeThreadId({ fromNumber: emulator.phoneNumber, contactNumber: address }),

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import type { Group } from "@rakazo/contracts";
+import type { Bot, Group } from "@rakazo/contracts";
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -14,36 +15,40 @@ vi.mock("@lingui/react/macro", () => {
 });
 // The alert dialog's Cancel closes it through onOpenChange, as Base UI does.
 let dismissDialog: (() => void) | undefined;
-vi.mock("@rakazo/ui-web", () => ({
-  BotAvatar: () => <span />,
-  Button: (props: ComponentProps<"button">) => <button {...props} />,
-  Input: (props: ComponentProps<"input">) => <input {...props} />,
-  AlertDialog: ({
-    children,
-    onOpenChange,
-  }: {
-    children: ReactNode;
-    onOpenChange: (open: boolean) => void;
-  }) => {
-    dismissDialog = () => onOpenChange(false);
-    return <div role="alertdialog">{children}</div>;
-  },
-  AlertDialogAction: (props: ComponentProps<"button">) => <button {...props} />,
-  AlertDialogCancel: (props: ComponentProps<"button">) => (
-    <button {...props} onClick={() => dismissDialog?.()} />
-  ),
-  AlertDialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  AlertDialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
-  AlertDialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  AlertDialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  AlertDialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
-  Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
-  DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
-}));
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
+  const { Checkbox } = await importOriginal<typeof UiWeb>();
+  return {
+    Checkbox,
+    BotAvatar: () => <span />,
+    Button: (props: ComponentProps<"button">) => <button {...props} />,
+    Input: (props: ComponentProps<"input">) => <input {...props} />,
+    AlertDialog: ({
+      children,
+      onOpenChange,
+    }: {
+      children: ReactNode;
+      onOpenChange: (open: boolean) => void;
+    }) => {
+      dismissDialog = () => onOpenChange(false);
+      return <div role="alertdialog">{children}</div>;
+    },
+    AlertDialogAction: (props: ComponentProps<"button">) => <button {...props} />,
+    AlertDialogCancel: (props: ComponentProps<"button">) => (
+      <button {...props} onClick={() => dismissDialog?.()} />
+    ),
+    AlertDialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    AlertDialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+    AlertDialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    AlertDialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    AlertDialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+    Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+    DialogFooter: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+  };
+});
 
 import { GroupSettings } from "./GroupPanel";
 
@@ -68,12 +73,57 @@ const group: Group = {
 let container: HTMLDivElement;
 let root: Root;
 
+function fakeBot(id: string, name: string, title: string): Bot {
+  return {
+    id,
+    spaceId: "space-1",
+    name,
+    title,
+    description: "",
+    instructions: "",
+    color: "blue",
+    notifyOnFinish: true,
+    pinned: false,
+    sectionId: null,
+    archivedAt: null,
+    unread: false,
+    parentBotId: null,
+    memoryScope: null,
+    threadId: `thread-${id}`,
+    preview: "",
+    status: "idle",
+    runErrorId: null,
+    computerMode: "team",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    voiceId: null,
+    autoSpeak: false,
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    teamChatAmbientEnabled: false,
+    teamChatRules: "",
+    disabledBuiltinTools: [],
+    webhookConfigured: false,
+    fleetManagement: false,
+    spawnKey: null,
+  };
+}
+
+const bots = [
+  fakeBot("bot-1", "Researcher", "Reads papers"),
+  fakeBot("bot-2", "Writer", "Drafts prose"),
+  fakeBot("bot-3", "Runner", "Runs tasks"),
+];
+
 async function render(
   options: {
     onSave?: () => Promise<void>;
     onRemove?: () => Promise<void>;
     covered?: boolean;
     instance?: string;
+    bots?: ComponentProps<typeof GroupSettings>["bots"];
+    onOpenBot?: (botId: string) => void;
   } = {},
 ) {
   const onRemove = vi.fn(options.onRemove ?? (async () => undefined));
@@ -83,10 +133,11 @@ async function render(
       <GroupSettings
         key={options.instance}
         group={group}
-        bots={[]}
+        bots={options.bots ?? bots}
         onSave={options.onSave ?? (async () => undefined)}
         onRemove={onRemove}
         onClose={onClose}
+        onOpenBot={options.onOpenBot}
         covered={options.covered}
       />,
     );
@@ -216,5 +267,70 @@ describe("GroupSettings", () => {
     await click("Cancel");
     expect(container.querySelector('[role="alertdialog"]')).toBeNull();
     expect(onRemove).not.toHaveBeenCalled();
+  });
+
+  const rowNames = () =>
+    [...container.querySelectorAll('[role="checkbox"]')].map((el) => el.parentElement?.textContent);
+
+  it("shows only group members until Show all expands the roster", async () => {
+    await render();
+    expect(rowNames()).toEqual(["Researcher", "Writer"]);
+    await click("Show all");
+    expect(rowNames()).toEqual(["Researcher", "Writer", "Runner"]);
+    await click("Show selected");
+    expect(rowNames()).toEqual(["Researcher", "Writer"]);
+  });
+
+  it("filters the expanded roster by name or title", async () => {
+    await render();
+    await click("Show all");
+    const filter = container.querySelector('input[aria-label="Filter bots"]');
+    expect(filter).not.toBeNull();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filter, "  PROSE ");
+      filter!.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(rowNames()).toEqual(["Writer"]);
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(filter, "zzz");
+      filter!.dispatchEvent(new Event("input", { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("No bots match");
+    await click("Show selected");
+    expect(rowNames()).toEqual(["Researcher", "Writer"]);
+    expect(container.querySelector('input[aria-label="Filter bots"]')).toBeNull();
+  });
+
+  it("opens the bot profile from the name and keeps unchecked members listed", async () => {
+    const onOpenBot = vi.fn();
+    await render({ onOpenBot });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((el) => el.textContent === "Researcher")!
+        .click();
+      await Promise.resolve();
+    });
+    expect(onOpenBot).toHaveBeenCalledWith("bot-1");
+    await act(async () => {
+      container
+        .querySelector<HTMLElement>('[role="checkbox"][aria-label^="Remove Researcher"]')!
+        .click();
+      await Promise.resolve();
+    });
+    expect(rowNames()).toEqual(["Researcher", "Writer"]);
+    const unchecked = container.querySelector<HTMLElement>(
+      '[role="checkbox"][aria-label="Add Researcher to the group"]',
+    );
+    expect(unchecked?.getAttribute("aria-checked")).toBe("false");
+    await act(async () => unchecked!.click());
+    expect(
+      container
+        .querySelector('[role="checkbox"][aria-label="Remove Researcher from the group"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("true");
   });
 });

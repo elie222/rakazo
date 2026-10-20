@@ -86,18 +86,6 @@ describe("createRepos.listBots", () => {
     );
   });
 
-  it("passes memoryScope through as null when unset", async () => {
-    await expect(reposFor(null).listBots(actor)).resolves.toEqual([
-      expect.objectContaining({ memoryScope: null }),
-    ]);
-  });
-
-  it("passes memoryScope through when set to shared", async () => {
-    await expect(reposFor("shared").listBots(actor)).resolves.toEqual([
-      expect.objectContaining({ memoryScope: "shared" }),
-    ]);
-  });
-
   it("classifies initial preview runs once across bots, including non-peer results", async () => {
     const prisma = {
       bot: {
@@ -336,6 +324,45 @@ describe("createRepos.listBots", () => {
     ]);
     expect(messageFindMany).toHaveBeenCalledTimes(4);
   });
+
+  it("dates the row by its newest message, not the bot's last settings write", async () => {
+    const prisma = {
+      bot: {
+        findMany: vi.fn(async () => [
+          {
+            ...baseBot,
+            updatedAt: new Date("2026-08-21T09:00:00.000Z"),
+            thread: {
+              ...baseBot.thread,
+              messages: [
+                {
+                  seq: 2,
+                  createdAt: new Date("2026-08-20T10:30:00.000Z"),
+                  blocks: [{ kind: "text", text: "Latest answer" }],
+                },
+                {
+                  seq: 1,
+                  createdAt: new Date("2026-08-20T10:00:00.000Z"),
+                  blocks: [{ kind: "text", text: "Question" }],
+                },
+              ],
+            },
+          },
+        ]),
+      },
+      run: { findMany: vi.fn(async () => []) },
+    };
+
+    await expect(createRepos(prisma as unknown as PrismaClient).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ updatedAt: "2026-08-20T10:30:00.000Z" }),
+    ]);
+  });
+
+  it("keeps the bot's own updatedAt for a chat with no messages", async () => {
+    await expect(reposFor(null).listBots(actor)).resolves.toEqual([
+      expect.objectContaining({ updatedAt: "2026-08-19T00:00:00.000Z" }),
+    ]);
+  });
 });
 
 describe("createRepos.listSpaceBotsForSpaces", () => {
@@ -354,7 +381,12 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         parentBotId: null,
         thread: {
           unread: true,
-          messages: [{ blocks: [{ kind: "text", text: "Waiting for a reply" }] }],
+          messages: [
+            {
+              createdAt: new Date("2026-08-19T12:00:00.000Z"),
+              blocks: [{ kind: "text", text: "Waiting for a reply" }],
+            },
+          ],
           runs: [{ id: "run-failed", status: "failed" }],
         },
         runs: [{ status: "running" }],
@@ -377,10 +409,21 @@ describe("createRepos.listSpaceBotsForSpaces", () => {
         preview: "Waiting for a reply",
         status: "running",
         runErrorId: "run-failed",
-        updatedAt: "2026-08-20T00:00:00.000Z",
+        updatedAt: "2026-08-19T12:00:00.000Z",
       },
     ]);
     const query = findMany.mock.calls[0]![0];
+    expect(query.select.thread).toEqual(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          messages: {
+            orderBy: { seq: "desc" },
+            take: 1,
+            select: { blocks: true, createdAt: true },
+          },
+        }),
+      }),
+    );
     expect(query.where).toEqual(
       expect.objectContaining({ spaceId: { in: ["ws-2"] }, userId: actor.userId }),
     );
@@ -426,4 +469,54 @@ describe("createRepos.reorderBots", () => {
     );
     expect(update).not.toHaveBeenCalled();
   });
+});
+
+it("finds incoming calls independently of the sidebar message window", async () => {
+  const blocks = [
+    {
+      kind: "call_request",
+      callId: "call-1",
+      reason: "Review",
+      opening: "Ready?",
+      status: "ringing",
+      expiresAt: new Date(Date.now() + 45_000).toISOString(),
+    },
+  ];
+  const messageQuery = vi.fn(async () => [{ threadId: "thread-1", role: "bot", blocks }]);
+  const prisma = {
+    bot: {
+      findMany: vi.fn(async () => [
+        baseBot,
+        { ...baseBot, id: "bot-2", thread: { ...baseBot.thread, id: "thread-2" } },
+      ]),
+    },
+    message: { findMany: messageQuery },
+  } as unknown as PrismaClient;
+  const now = Date.now();
+  const bots = await createRepos(prisma, {
+    phoneCallsEnabled: true,
+    phoneCallRingSeconds: 90,
+  }).listBots(actor);
+  expect(bots[0]?.incomingCall?.callId).toBe("call-1");
+  expect(messageQuery).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        createdAt: { gt: expect.any(Date) },
+        threadId: { in: ["thread-1", "thread-2"] },
+        role: "bot",
+        clientNonce: { startsWith: "call:", endsWith: ":request" },
+      }),
+      distinct: ["threadId"],
+    }),
+  );
+  const cutoff = (
+    messageQuery.mock.calls[0] as unknown as [{ where: { createdAt: { gt: Date } } }]
+  )[0].where.createdAt.gt.getTime();
+  expect(cutoff).toBeGreaterThanOrEqual(now - 90_000);
+  expect(cutoff).toBeLessThanOrEqual(Date.now() - 90_000);
+  expect(messageQuery).toHaveBeenCalledOnce();
+  expect(bots[1]?.incomingCall).toBeNull();
+  messageQuery.mockClear();
+  expect((await createRepos(prisma).listBots(actor))[0]?.incomingCall).toBeNull();
+  expect(messageQuery).not.toHaveBeenCalled();
 });

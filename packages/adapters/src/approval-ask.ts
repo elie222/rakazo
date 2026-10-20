@@ -1,16 +1,71 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { redactSecrets } from "@rakazo/core";
+import { BOT_INSTRUCTIONS_MAX_LENGTH } from "@rakazo/contracts";
+import { instructionUpdateDiff, redactSecrets, toolRequiresExplicitApproval } from "@rakazo/core";
 
-const MAX_APPROVAL_SUMMARY_LENGTH = 500;
-const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
+export const MAX_APPROVAL_SUMMARY_LENGTH = 500;
+export const MAX_APPROVAL_DETAIL_LENGTH = 4_000;
+
+/** A fleet card built from the resolved request: a title and the lines under it. */
+export type FleetCardSummary = { title: string; lines: string[] };
+
+/**
+ * The instruction card shows the whole new text, like `propose_instructions_update`, so its detail
+ * holds the longest instructions plus the two length lines above them.
+ */
+export function approvalDetailLength(toolName: string): number {
+  return toolName === "set_child_instructions"
+    ? BOT_INSTRUCTIONS_MAX_LENGTH + MAX_APPROVAL_SUMMARY_LENGTH
+    : MAX_APPROVAL_DETAIL_LENGTH;
+}
 
 export function buildApprovalAskBlock(
   effectId: string,
   toolName: string,
   args: Record<string, unknown>,
   secrets: string[],
-  options?: { reviewReason?: string },
+  options?: { reviewReason?: string; summary?: FleetCardSummary },
 ): MessageBlock {
+  if (options?.summary) {
+    // Built from what was resolved before the effect was recorded, not from what the model typed.
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: truncate(redactSecrets(options.summary.title, secrets), MAX_APPROVAL_SUMMARY_LENGTH),
+      detail: truncate(
+        redactSecrets(options.summary.lines.join("\n"), secrets),
+        approvalDetailLength(toolName),
+      ),
+      detailFormat: toolName === "set_child_instructions" ? "code" : "text",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Allow once" },
+        { id: "deny", label: "Deny" },
+      ],
+    };
+  }
+  if (toolName === "propose_instructions_update") {
+    const before = redactSecrets(String(args.previousInstructions ?? ""), secrets);
+    const after = redactSecrets(String(args.instructions ?? ""), secrets);
+    const reason = redactSecrets(String(args.reason), secrets);
+    return {
+      kind: "ask",
+      approvalEffectId: effectId,
+      text: "Update instructions?",
+      detail: instructionUpdateDiff(before, after, reason),
+      instructionUpdate: {
+        botId: String(args.botId ?? ""),
+        before,
+        after,
+        reason,
+      },
+      detailFormat: "code",
+      status: "pending",
+      actions: [
+        { id: "allow", label: "Apply" },
+        { id: "deny", label: "Dismiss" },
+      ],
+    };
+  }
   const summary = describeApprovalAction(toolName, args);
   const detail = formatApprovalDetail(toolName, args, options?.reviewReason);
   const safeDetail = detail ? redactSecrets(detail, secrets) : undefined;
@@ -32,11 +87,16 @@ export function buildApprovalAskBlock(
             { id: "allow", label: "Create space", outcome: "created" },
             { id: "deny", label: "Cancel", outcome: "cancelled" },
           ]
-        : [
-            { id: "allow", label: "Allow once" },
-            { id: "always", label: "Always allow this tool" },
-            { id: "deny", label: "Deny" },
-          ],
+        : toolRequiresExplicitApproval(toolName)
+          ? [
+              { id: "allow", label: "Allow once" },
+              { id: "deny", label: "Deny" },
+            ]
+          : [
+              { id: "allow", label: "Allow once" },
+              { id: "always", label: "Always allow this tool" },
+              { id: "deny", label: "Deny" },
+            ],
   };
 }
 

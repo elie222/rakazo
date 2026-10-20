@@ -53,6 +53,8 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
     });
 
     const locale = await activateUiLocale("de");
@@ -94,6 +96,12 @@ describe("activateUiLocale", () => {
       fr: async () => {
         throw new Error("fr missing");
       },
+      he: async () => {
+        throw new Error("he missing");
+      },
+      nl: async () => {
+        throw new Error("nl missing");
+      },
     });
 
     const locale = await activateUiLocale("ko");
@@ -118,6 +126,8 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
     });
 
     const first = activateUiLocale("de");
@@ -147,6 +157,8 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
     });
 
     await activateUiLocale("en");
@@ -181,6 +193,8 @@ describe("activateUiLocale", () => {
       es: async () => ({ messages: { Settings: "Configuración" } }),
       ru: async () => ({ messages: { Settings: "Настройки" } }),
       fr: async () => ({ messages: { Settings: "Paramètres" } }),
+      he: async () => ({ messages: { Settings: "הגדרות" } }),
+      nl: async () => ({ messages: { Settings: "Instellingen" } }),
     });
 
     await activateUiLocale("en");

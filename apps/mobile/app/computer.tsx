@@ -1,9 +1,17 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
+import { displayName } from "@rakazo/core";
 import { useLocalSearchParams, useNavigation } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import {
+  AppState,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import {
   initialWindowMetrics,
@@ -42,6 +50,7 @@ import { createComputerRefresh } from "../lib/computer-refresh";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
+import { holdFreeRotation } from "../lib/orientation";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { errorText } from "../lib/user-error";
 
@@ -51,7 +60,7 @@ export default function Computer() {
   const navigation = useNavigation();
   const stacked = stacksAtTextScale(useWindowDimensions().fontScale);
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
-  const name = nameParam || t("Bot");
+  const name = displayName(nameParam, t("Bot"));
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -70,6 +79,9 @@ export default function Computer() {
     bridge: createComputerKeyboardBridge(),
   });
   const heldScreenUrl = useRef<string | null>(null);
+  // Bumped to load the screen page again after the app returns from the background or the
+  // WebView loses its renderer; either can leave the stream black until it reconnects.
+  const [screenReload, setScreenReload] = useState(0);
 
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl, currentApiBase());
   useEffect(() => setScreenError(null), [embeddedScreenUrl]);
@@ -85,7 +97,7 @@ export default function Computer() {
   heldScreenUrl.current = loadedScreenUrl;
   // The gate follows the page the WebView actually loaded. A capability refresh that
   // does not reload that page must not open a session the bridge will never acknowledge.
-  const keyboardSurfaceKey = `${computerOpen}:${hasControl}:${loadedScreenUrl ?? ""}`;
+  const keyboardSurfaceKey = `${computerOpen}:${hasControl}:${screenReload}:${loadedScreenUrl ?? ""}`;
   if (keyboardGate.current.key !== keyboardSurfaceKey) {
     keyboardGate.current = {
       key: keyboardSurfaceKey,
@@ -196,18 +208,27 @@ export default function Computer() {
     }).catch(() => undefined);
   }, [readyBotId, botId, computer?.state, switching]);
 
+  const reloadScreen = useCallback(async () => {
+    await refresh().catch(() => undefined);
+    heldScreenUrl.current = null;
+    setScreenError(null);
+    setScreenReload((count) => count + 1);
+  }, [refresh]);
+
   useEffect(() => {
-    // Let the full-screen desktop rotate to landscape; the rest of the app stays portrait.
-    const lock = computerOpen
-      ? ScreenOrientation.OrientationLock.DEFAULT
-      : ScreenOrientation.OrientationLock.PORTRAIT_UP;
-    void ScreenOrientation.lockAsync(lock).catch(() => undefined);
-    return () => {
-      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
-        () => undefined,
-      );
-    };
-  }, [computerOpen]);
+    if (!computerOpen) return;
+    let backgrounded = false;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "background") backgrounded = true;
+      if (state !== "active" || !backgrounded) return;
+      backgrounded = false;
+      void reloadScreen();
+    });
+    return () => subscription.remove();
+  }, [computerOpen, reloadScreen]);
+
+  // Let the full-screen desktop rotate to landscape; phone-sized windows elsewhere stay portrait.
+  useEffect(() => (computerOpen ? holdFreeRotation() : undefined), [computerOpen]);
 
   useEffect(() => {
     if (!botId || computer?.state !== "running") return;
@@ -305,8 +326,10 @@ export default function Computer() {
           </View>
         ) : computer?.state === "running" && embeddedScreenUrl && !screenError ? (
           <ScreenWebView
+            key={screenReload}
             url={embeddedScreenUrl}
             interactive={false}
+            onRendererLost={() => void reloadScreen()}
             onError={() => {
               refreshController.invalidateScreen();
               setScreenError(
@@ -511,6 +534,7 @@ export default function Computer() {
               <View style={{ flex: 1, backgroundColor: tokens.card }}>
                 {loadedScreenUrl ? (
                   <ScreenWebView
+                    key={screenReload}
                     url={loadedScreenUrl}
                     interactive={hasControl}
                     nativeKeyboard={hasControl}
@@ -521,6 +545,7 @@ export default function Computer() {
                       if (!isComputerKeyboardReadyMessage(data, String(gate.session))) return;
                       injectKeyboardCommands(gate.bridge.ready());
                     }}
+                    onRendererLost={() => void reloadScreen()}
                     onError={() => {
                       refreshController.invalidateScreen();
                       setScreenError(
@@ -591,6 +616,7 @@ function ScreenWebView({
   keyboardSession,
   webViewRef,
   onKeyboardMessage,
+  onRendererLost,
   onError,
 }: {
   url: string;
@@ -599,6 +625,7 @@ function ScreenWebView({
   keyboardSession?: string;
   webViewRef?: RefObject<WebView | null>;
   onKeyboardMessage?: (data: string) => void;
+  onRendererLost?: () => void;
   onError: () => void;
 }) {
   const tokens = useMobileTokens();
@@ -642,6 +669,8 @@ function ScreenWebView({
       overScrollMode="never"
       onError={onError}
       onHttpError={onError}
+      onRenderProcessGone={onRendererLost}
+      onContentProcessDidTerminate={onRendererLost}
     />
   );
 }

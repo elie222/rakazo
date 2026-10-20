@@ -1,6 +1,6 @@
 # Self-hosting Rakazo
 
-The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Box). It is not a static site. The marketing site in `apps/www` can be hosted separately.
+The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Boat). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
 ## Local (source checkout)
 
@@ -31,7 +31,7 @@ run `bash install-images.sh`. Flags may be combined in either order: `--prepare-
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `box` and add the matching API key. The published-images
+`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
@@ -122,6 +122,14 @@ create/delete cycles need no firewall maintenance; deleting a computer removes i
 traffic from the match and nothing else. A computer provisioned before the flag flips
 is replaced on its next provision — resuming it on an unnamed bridge would bypass the
 restriction.
+
+Computers resolve names through Docker's embedded DNS, which forwards each lookup to the
+host's resolvers from inside the computer's network. When the host's resolver has a private
+address, as a cloud VPC resolver or a LAN router does, the ruleset drops that forward too and
+every lookup times out while connections by IP still work. Set `SANDBOX_COMPUTER_DNS` to
+public resolvers (comma-separated IP addresses, such as `1.1.1.1,1.0.0.1`) and recreate the
+supervisor: Docker then forwards computers' lookups there, and each computer picks the
+servers up on its next provision.
 
 To disable restricted egress, set `SANDBOX_COMPUTER_EGRESS=open`, recreate the
 supervisor, and run `sudo bash infra/compose/restrict-computer-egress.sh --remove`.
@@ -234,6 +242,18 @@ current provider, so **Link SSO** becomes available again. Link the new identity
 existing signed-in account; authenticated-session, verified-email and matching-email checks
 still apply. Restoring the old issuer makes its existing links usable again.
 
+Ordinary SSO sign-in and linking may reuse the identity provider's existing session. They
+do not grant fresh authentication proof for account deletion. The account settings' explicit
+reauthentication flow requests `prompt=login` and `max_age=0`, binds the callback to the
+same linked issuer and subject, and requires the initiating session to remain valid. Only
+that callback grants proof to the resulting session, expiring five minutes after provider
+authentication (callback delays do not extend it). Its verified
+ID token must contain an `auth_time` consistent with that request (allowing 60 seconds of
+clock skew) and less than five minutes old. Missing, stale or invalid claims fail closed.
+OAuth callbacks are single-use, including concurrent requests. Password verification and
+emailed deletion codes remain available. Submit deletion codes through the account settings
+or the CSRF-protected `POST /api/auth/delete-user` endpoint; the GET deletion callback is disabled.
+
 SSO signup follows closed registration and the deployment allowlist before creating an account.
 Allowlisted provider emails must be verified; the password signup's first-account exemption
 never upgrades an OIDC email. `OIDC_ALLOW_SIGNUP_BYPASS=true` explicitly admits IdP identities
@@ -251,7 +271,7 @@ on first use, refreshed in the background, and failures back off up to one minut
 reflects discovery, not a guarantee that the provider's token endpoint is currently reachable.
 
 Account deletion keeps the existing password confirmation for password users. Users without a
-password may delete after a provider sign-in within five minutes; **Sign in again** starts a fresh
+password may delete after explicit provider reauthentication within five minutes; **Sign in again** starts a fresh
 provider round-trip bound to the signed-in account. Choosing a different identity cannot confirm
 deletion or create another account in that flow. A stale or borrowed session alone cannot authorize deletion. With transactional
 email configured, **Send deletion code** sends a single-use code to the account email, valid for ten
@@ -294,6 +314,28 @@ Billing stays off, with no paywall, unless `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_
 `STRIPE_PRICE_ID` are all set (see `.env.example`). Setting only some of them stops the API at
 startup.
 
+### Pi tracing
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` on the worker to enable optional OpenTelemetry traces
+(for example, `http://otel-collector:4318`). The OTLP/HTTP exporter appends `/v1/traces`
+to the base endpoint and honors standard `OTEL_EXPORTER_OTLP_HEADERS` (comma-separated
+`key=value` pairs) and `OTEL_SERVICE_NAME` (default `rakazo-worker`). Compose workers
+read these settings from `.env`. With an empty or unset endpoint, no tracing SDK loads
+or initializes. No collector or hosted service is required to run Rakazo.
+
+Traces contain a `rakazo.agent.run` span with `pi.ai.request` model-call spans and
+`pi.agent.tool` steps, including duration, token usage, cost when known, and success/error
+status. Each span carries `rakazo.bot.id`, `rakazo.run.id`, and `rakazo.routine.id`
+when the run belongs to a routine. Helper model calls inherit the same correlation.
+Pi 0.87.1 exposes built-in telemetry through its newer harness; Rakazo’s legacy Agent
+adapter maps its model and tool lifecycle through the same Pi telemetry contract.
+
+Prompt, response, tool arguments and tool results are excluded by default.
+`OTEL_CAPTURE_CONTENT=true` includes them: enable only with a trusted collector and
+appropriate retention/access controls, since this content can contain secrets or personal
+data. Unknown attributes and exception messages/stacks stay excluded. Export is batched,
+best effort, and flushed when the worker shuts down; collector failures do not fail runs.
+
 ### Logging
 
 Backend services write structured logs to stdout. `LOG_LEVEL` is `debug`, `info`, `warn`, `error`,
@@ -305,6 +347,18 @@ Services set `service.name` (`rakazo-api`, `rakazo-worker`, `rakazo-sandbox-supe
 `rakazo-updater`). A partial Axiom config logs a one-time warning and stays off. `AXIOM_EDGE` is a
 regional hostname; `AXIOM_EDGE_URL` must be https and wins when both are set.
 
+Error reporting to Sentry or a Sentry-compatible collector such as GlitchTip is optional:
+
+- `SENTRY_DSN` reports backend `error` logs, with the exception chain, `service`, and request or job
+  ids as tags. Uncaught exceptions are reported before exit.
+- `SENTRY_BROWSER_DSN` reports web app errors. The browser reads it from `/api/monitoring/config` at
+  startup and posts reports to `/api/monitoring/tunnel`; the API forwards only envelopes addressed
+  to that DSN. Use a separate project from `SENTRY_DSN`.
+- `SENTRY_ENVIRONMENT` names the deployment. `SENTRY_RELEASE` defaults to the image's `GIT_SHA`.
+
+Neither SDK sends cookies, headers, request bodies, user identity, console output, or log context.
+Reporting is off without a DSN; an invalid DSN logs a warning and stays off.
+
 Compose passes these into the API, worker, supervisor, and updater. Computer containers and updater
 child commands do not receive them.
 
@@ -313,18 +367,21 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, box. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
-# E2B, CreateOS and Box still apply their own timeouts.
+# E2B, CreateOS and Boat still apply their own timeouts.
+COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
+RAKAZO_MESSAGE_USER_MAX_CHARS=500 # message_user length cap; narration stays at 500
+BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the next is refused
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
-BOX_API_KEY=              # when SANDBOX_PROVIDER=box
+BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
 To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio, llama.cpp, or
@@ -359,6 +416,49 @@ screenshot computer tools stay available. Existing connections default to disabl
 managed endpoints, the deployment-wide fallback remains
 `RAKAZO_OPENAI_COMPATIBLE_VISION_MODELS=gpt4o-vision,llava`.
 
+### Prompt cache capabilities
+
+The model connection API accepts `cacheCapabilities`, including `scope`,
+`retentionMs`, `minimumTokens`, and `retentionMode`. Declare a positive
+`retentionMs` only when the endpoint supports prefix reuse for that window.
+For these connections with usable history-retrieval tools, the runtime
+automatically uses cache-aware context:
+recent history remains bounded on a cold request, and subsequent requests keep
+that selected prefix while it is likely warm and fits the context budget.
+Connections with unknown retention or `retentionMode: "none"` retain the default
+retrieval policy. An explicit executor context strategy still takes precedence.
+Callers without usable history-retrieval tools keep fitting original history
+under the model's context budget instead of replacing it with snapshots.
+
+Cache warmth is advisory. Changing instructions or tools, context pressure,
+worker eviction, or a process restart can require fresh prompt processing.
+These settings do not create backend KV snapshots or keep a model loaded;
+the inference server is responsible for retention and conversation switching.
+
+### Web search and page reading
+
+Builtin `web_search` and `web_fetch` use keyless HTTP search (DuckDuckGo HTML) and local
+Readability extraction by default. To choose [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp),
+set `WEB_PROVIDER=parallel` in `.env` and restart both the API and worker. The same bot tools
+then return search excerpts and extracted page markdown through HTTPS MCP at
+`https://search.parallel.ai/mcp`. Search uses Fast mode without an account or API key.
+
+This option sends search queries and requested page URLs to Parallel, which retrieves pages
+on its servers. Conversation accounting uses an HMAC of internal IDs keyed by
+`ENCRYPTION_KEY` (shared by the API and worker), so deployments with distinct secrets send
+distinct session IDs. Rotating that secret resets the session IDs; the existing development-only
+encryption-key fallback also applies here. Anonymous access has service limits; rate-limit and provider errors are returned
+to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
+`WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
+
+To choose [Keenable](https://docs.keenable.ai) instead, set `WEB_PROVIDER=keenable` and restart
+both the API and worker. The same bot tools then return search snippets and extracted page
+markdown through HTTPS MCP at `https://api.keenable.ai/mcp`, without an account or API key. This
+option sends search queries and requested page URLs to Keenable, which retrieves pages on its
+servers. Anonymous access is rate limited per IP address; set `KEENABLE_API_KEY` on the API and
+worker to send a key and lift those limits. Errors, per-bot disabled tools and the way back to
+the default work as described for Parallel.
+
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud
@@ -377,15 +477,17 @@ support. Existing token limits still apply; effort is not a separate reasoning-t
 
 Do not commit `.env`. Never put `COMPOSIO_API_KEY`, OpenRouter keys, or provider tokens in git, logs, or chat.
 
-Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only.
+Optional messaging platforms (iMessage, Slack, WhatsApp, Telegram, Feishu/Lark) mount when their env credentials are set — see `.env.example`. Point a Feishu/Lark bot event subscription at `/api/v1/messaging/webhook/lark` (webhook/HTTP inbound only; do not enable long connection). Groups stay iMessage-only. Telegram can run several bots side by side (`TELEGRAM_BOT_TOKEN_<NAME>` plus `TELEGRAM_WEBHOOK_SECRET_TOKEN_<NAME>`), for example one per space, so the same person can chat with a different Rakazo bot through each.
 
 ## Choosing a computer provider
 
-The Electron desktop app is a client of the same API. Docker and E2B still apply. On first launch, Electron asks the deployment owner whether bots should keep using Docker or run on this Mac as you. `SANDBOX_PROVIDER=desktop` is a separate, explicit provider that always runs commands on the service host.
+The Electron desktop app is a client of the same API. Docker remains the default. For an app-managed local instance, the deployment owner can choose **Use this Mac** (macOS) or **Use this computer** (Windows/Linux). After native confirmation, an authenticated bridge sends commands from the Docker backend to Electron, where they run under your OS account. **Computer Access…** in the app menu changes the choice; **Revoke Local Computer Access** immediately disconnects active operations and revokes the saved permission. Local execution requires the desktop app to remain running. Connecting to an existing remote instance does not grant it access to your computer. Browser and mobile clients use the deployment’s configured computer; they do not expose their own host. `SANDBOX_PROVIDER=desktop` remains a separate configuration for backends running directly on the intended host.
+
+Native file reads and workspace exports are limited to 8 MiB per file. A larger workspace file fails the checkpoint and preserves the previous saved workspace; local files remain on the computer. Writes are bounded by the 12 MiB encoded request limit.
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
   local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
-  Optional: set `e2b`, `daytona`, `createos`, or `box` plus the matching API key for remote computers.
+  Optional: set `e2b`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
   optional. Keep the supervisor private, as the included Compose files do.
@@ -398,15 +500,22 @@ The Electron desktop app is a client of the same API. Docker and E2B still apply
   Configure `CREATEOS_SANDBOX_API_KEY` and optionally `CREATEOS_SANDBOX_BASE_URL`,
   `CREATEOS_SANDBOX_SHAPE`, or `CREATEOS_SANDBOX_ROOTFS`. Rakazo defaults to
   `https://api.sb.createos.sh`, `s-2vcpu-2gb`, and `desktop:1`.
-- **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally
-  `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable
-  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Box uses the shared Linux
+- **Boat** provides a managed Linux desktop through `BOAT_API_KEY` and optionally
+  `BOAT_API_URL`. Rakazo always creates or resumes sandboxes with `noEnv: true`, keeps the portable
+  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Boat uses the shared Linux
   desktop runtime and protected port routes for concurrent bot desktops. Each bot has its own
   persistent Chrome profile; logins are not shared between bots.
-- **Desktop provider** / **This Mac** runs commands on the API/worker host. Docker stays the default.
-  The Electron app asks once; if you choose This Mac, bots can use working directories under your home
-  folder. Do not enable it on a public or shared service. macOS does not show its own permission
-  dialog for this.
+- **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
+  or Linux through the native bridge. Bots can read/change local files and launch installed apps
+  through OS commands, subject to your account and OS permissions. Portable file tools and
+  checkpoints remain scoped to bot workspaces; use commands for other local folders. Graphical
+  screen control is unavailable. Permission is remembered locally and can be revoked from the
+  app menu. Only enable this for a trusted personal instance: every bot on that instance can use
+  your account’s permissions.
+- **Desktop provider** (`SANDBOX_PROVIDER=desktop`) runs commands directly on the API/worker host.
+  Setting this inside a container does not grant access to the physical computer. Docker deployments
+  use the authenticated native bridge when local computer access is selected; they never silently
+  fall back to executing on the backend host.
 - **Fake** is only an emulator for verification.
 - **None** boots the product without a computer host (fallback when Docker/supervisor is not
   configured, or when a remote provider is selected without its API key).
@@ -470,7 +579,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
-# e2b, daytona, or box
+# e2b, daytona, or boat
 SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
@@ -525,25 +634,32 @@ content while a digest is present.
 For the single-VM production layout, install `infra/compose/backup-prod.sh` as
 `/usr/local/sbin/rakazo-backup` and enable the supplied `rakazo-backup.timer`. It creates a verified
 Postgres custom-format dump plus an application-data archive under `/var/backups/rakazo`, with mode
-`0600` and seven-day rotation. These local snapshots help with operator mistakes but are not a
-substitute for an encrypted off-host backup or provider snapshot.
+`0600`. It keeps the newest `RAKAZO_BACKUP_KEEP` verified snapshots (default `3`) and removes
+older ones only after a new snapshot verifies. It fails before writing if the disk has less free
+space than the last snapshot used, and a failed run removes its partial snapshot. These local
+snapshots help with operator mistakes but are not a substitute for an encrypted off-host backup or
+provider snapshot.
 
 The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
 `RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
 (mode `0600`). The service reads this optional file on each run; the script uses the selected
 checkout's `.env` and production Compose file. If the stack was started with a custom `-p`,
 set the same `COMPOSE_PROJECT_NAME` in that file. For a manual run, export these variables instead.
-When updating an existing backup installation, reinstall both the script and service unit,
-then run `systemctl daemon-reload`.
+Set `RAKAZO_BACKUP_KEEP` in the same file. When updating an existing backup installation, reinstall
+both the script and service unit, then run `systemctl daemon-reload`.
 
 To deploy from CI, install `infra/compose/deploy-main.sh` as `/usr/local/sbin/rakazo-deploy-main`
 and give CI a key restricted to it in the deploy user's `authorized_keys`
 (`restrict,command="/usr/local/sbin/rakazo-deploy-main" ssh-ed25519 …`). It builds `origin/main`,
 restarts the stack, waits for `https://$RAKAZO_HOST/health`, and rolls back on failure. Build and
 start are time-limited so a stuck build fails the deploy instead of holding its lock; a deploy that
-finds the lock held exits non-zero. For a checkout outside `/srv/rakazo`, put
-`RAKAZO_DEPLOY_DIR=/absolute/path` in a root-owned `/etc/rakazo/deploy.env` readable by the
-deploy user.
+finds the lock held exits non-zero. A deploy refuses to start with less than
+`RAKAZO_DEPLOY_MIN_FREE_GB` (default `5`) free, and after a healthy rollout it removes untagged
+images and build cache unused for a day, keeping the previous images tagged `rakazo-rollback`.
+For a checkout outside `/srv/rakazo`, put `RAKAZO_DEPLOY_DIR=/absolute/path` (and any of these
+settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. After pulling a new
+version of the script, reinstall it with
+`sudo install -m 0755 infra/compose/deploy-main.sh /usr/local/sbin/rakazo-deploy-main`.
 
 ### Docker computers on the production stack
 
@@ -858,6 +974,55 @@ service's trust boundary. `SIGNUPS_ENABLED` applies on the API's first start. A 
 `SIGNUP_ALLOWLIST` applies on every API start.
 The optional marketing site in `apps/www` can be hosted separately.
 
+## Image and video generation
+
+Bot media tools are disabled by default. Configure the worker (and API for inline
+execution) with a provider and its generic HTTP connection:
+
+```dotenv
+MEDIA_GENERATION_PROVIDER=fal
+MEDIA_GENERATION_BASE_URL=https://queue.fal.run
+MEDIA_GENERATION_API_KEY=replace-with-media-api-key
+MEDIA_GENERATION_IMAGE_MODEL=fal-ai/flux/schnell
+MEDIA_GENERATION_VIDEO_MODEL=fal-ai/wan/v2.2-a14b/text-to-video
+```
+
+`MEDIA_GENERATION_PROVIDER` accepts `disabled` (the default), `fal`, or `fake`
+(for offline testing only). The base URL is optional and defaults to the URL above.
+Only set the image/video model fields for capabilities you want enabled. Compatible
+servers can use the same connection fields; models must support the corresponding
+fal queue API and Flux/Wan input and output shapes. Credentials stay on the server. Set these in
+your deployment secret configuration; never commit actual credentials.
+
+Bots use `generate_image` to attach one PNG or `generate_video` to submit a
+four-second MP4. The video tool returns a job ID and queued/running status; call it
+again with `jobId` to check progress and attach the completed video. Saved jobs
+can be polled after worker restarts by the same owner/bot/thread. The first version
+requires polling through the bot; it does not automatically deliver jobs in the
+background. Use the existing per-bot tool switches and action approval rules to
+control access. Both tools require approval by default. Ticket board runs keep
+these chat-only media tools unavailable so ticket work stays on the board.
+
+Each run allows at most two submissions (including failures). Submissions are
+never retried automatically: a lost response can mean the provider accepted and
+charged for the request. Provider errors omit remote response bodies. Configure
+account budgets and rate limits with your provider; the run cap is not a currency
+budget. Provider 429 responses are returned without automatic retries. Outputs
+must fit both the 10 MiB media ceiling and the configured attachment limit;
+larger outputs are rejected.
+
+Images use existing inline chat rendering. MP4 files can be previewed with native
+video controls on web and Electron and opened/downloaded through the existing
+native file flow on mobile. No new mobile player or settings screen is required.
+
 ## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
+
+## Upload size
+
+`MAX_UPLOAD_SIZE_MB` sets the per-file chat attachment and computer file transfer limit
+in MiB (1 MiB = 1,048,576 bytes). It defaults to `10` and must be a positive integer.
+Set it in `.env` and restart the API, worker, and Docker supervisor (when used). Web, desktop, and mobile use the
+limit advertised by the server. If a reverse proxy limits request bodies, allow
+room for base64 encoding (about 4/3 of the file size) and the JSON envelope.

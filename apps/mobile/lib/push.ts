@@ -13,7 +13,8 @@ export async function registerPushToken() {
     if (!token) return;
     await rpc("notifications/registerPush", { token });
   } catch {
-    // Expo Go cannot mint an ExponentPushToken without an EAS project id.
+    // Expo Go without an EAS project id and Android builds without a Firebase config
+    // cannot mint an Expo push token.
   }
 }
 

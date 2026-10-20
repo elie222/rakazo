@@ -1,9 +1,15 @@
 import { createServer } from "node:http";
-import { Sandbox, SandboxNotFoundError, TimeoutError } from "@e2b/desktop";
+import { Sandbox, SandboxError, SandboxNotFoundError, TimeoutError } from "@e2b/desktop";
 import { describe, expect, it, vi } from "vitest";
 import { shouldSkipPortableWorkspaceFile } from "./computer-workspace.js";
 import type { E2BSandboxSdk } from "./e2b-sandbox.js";
-import { E2BSandboxProvider, isSandboxGoneError } from "./e2b-sandbox.js";
+import {
+  E2BSandboxProvider,
+  e2bCreateOptions,
+  isSandboxGoneError,
+  keepingAwake,
+} from "./e2b-sandbox.js";
+import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
 
 const context = {
@@ -15,6 +21,10 @@ const context = {
 };
 
 describe("E2B computer backend", () => {
+  it("bills while running", () => {
+    expect(new E2BSandboxProvider("test-key").billsWhileRunning()).toBe(true);
+  });
+
   it("removes inherited variables after the command environment overlay", async () => {
     const run = vi.fn(async () => ({ stdout: "", stderr: "", exitCode: 0 }));
     const provider = new E2BSandboxProvider("test-key", {
@@ -155,6 +165,60 @@ describe("E2B computer backend", () => {
       fresh: false,
     });
     expect(sdk.create).not.toHaveBeenCalled();
+  });
+
+  it("creates new computers from the Rakazo computer template", async () => {
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn().mockResolvedValue({ sandboxId: "fresh" }),
+      connect: vi.fn(),
+      pause: vi.fn(),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+
+    await expect(
+      provider.provision({ botId: "bot-1", homePath: "/unused" }, context),
+    ).resolves.toMatchObject({ providerRef: "fresh", fresh: true });
+    expect(sdk.create).toHaveBeenCalledOnce();
+    expect(sdk.create).toHaveBeenCalledWith(
+      E2B_COMPUTER_TEMPLATE,
+      e2bCreateOptions("bot-1", "test-key"),
+    );
+  });
+
+  it("falls back to the stock desktop template when this account has not built it", async () => {
+    const missing = Object.assign(new SandboxError("404: template 'rakazo-computer' not found"), {
+      statusCode: 404,
+    });
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn().mockRejectedValueOnce(missing).mockResolvedValue({ sandboxId: "stock" }),
+      connect: vi.fn(),
+      pause: vi.fn(),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+
+    await expect(
+      provider.provision({ botId: "bot-1", homePath: "/unused" }, context),
+    ).resolves.toMatchObject({ providerRef: "stock", fresh: true });
+    expect(sdk.create).toHaveBeenNthCalledWith(
+      2,
+      E2B_DESKTOP_TEMPLATE,
+      e2bCreateOptions("bot-1", "test-key"),
+    );
+  });
+
+  it("does not hide other create failures behind the stock template", async () => {
+    const limited = Object.assign(new SandboxError("429: rate limited"), { statusCode: 429 });
+    const sdk: E2BSandboxSdk = {
+      create: vi.fn().mockRejectedValue(limited),
+      connect: vi.fn(),
+      pause: vi.fn(),
+    };
+    const provider = new E2BSandboxProvider("test-key", sdk);
+
+    await expect(provider.provision({ botId: "bot-1", homePath: "/unused" }, context)).rejects.toBe(
+      limited,
+    );
+    expect(sdk.create).toHaveBeenCalledOnce();
   });
 
   it("creates a replacement when the provider confirms the sandbox no longer exists", async () => {
@@ -826,3 +890,58 @@ describe("sandbox-gone detection", () => {
 function _unwrapSetupCommand(command: string): string {
   return command.startsWith("bash -c '") ? command.slice(9, -1).replaceAll(`'"'"'`, "'") : command;
 }
+
+describe("keepingAwake", () => {
+  it("finishes the first timeout extension before reading", async () => {
+    const order: string[] = [];
+    const desktop = {
+      setTimeout: vi.fn(async () => {
+        await Promise.resolve();
+        order.push("extended");
+      }),
+    };
+    const items = (async function* () {
+      order.push("read");
+      yield 1;
+    })();
+    for await (const _ of keepingAwake(desktop, items)) {
+      // drain
+    }
+    expect(order).toEqual(["extended", "read"]);
+  });
+
+  it("extends the sandbox timeout while a long export is still reading", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("SANDBOX_IDLE_MS", "180000");
+    try {
+      const desktop = { setTimeout: vi.fn(async () => undefined) };
+      let finish!: () => void;
+      const slow = (async function* () {
+        yield "first";
+        await new Promise<void>((resolve) => (finish = resolve));
+        yield "last";
+      })();
+      const read: string[] = [];
+      const done = (async () => {
+        for await (const item of keepingAwake(desktop, slow)) read.push(item);
+      })();
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(desktop.setTimeout).toHaveBeenCalledTimes(1);
+      expect(read).toEqual(["first"]);
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(desktop.setTimeout).toHaveBeenCalledWith(180_000);
+      expect(desktop.setTimeout.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+      finish();
+      await done;
+      const calls = desktop.setTimeout.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(600_000);
+      expect(desktop.setTimeout).toHaveBeenCalledTimes(calls);
+      expect(read).toEqual(["first", "last"]);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllEnvs();
+    }
+  });
+});

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  latestAnswerableAskMessageId,
+  answerableAskMessageIds,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "./answerable-ask.js";
 
-describe("latestAnswerableAskMessageId", () => {
+describe("answerableAskMessageIds", () => {
   it("finds a waiting prompt even when a newer group run is active", () => {
     expect(
-      latestAnswerableAskMessageId({
+      answerableAskMessageIds({
         run: { id: "run-newer", status: "running" },
         activeRuns: [
           { id: "run-newer", status: "running" },
@@ -22,22 +22,40 @@ describe("latestAnswerableAskMessageId", () => {
           },
         ],
       }),
-    ).toBe("ask-1");
+    ).toEqual(new Set(["ask-1"]));
+  });
+
+  it("keeps every pending card answerable after newer work and messages", () => {
+    expect(
+      answerableAskMessageIds({
+        activeRuns: [
+          { id: "paused-a", status: "waiting_input" },
+          { id: "paused-b", status: "waiting_input" },
+          { id: "new", status: "running" },
+        ],
+        messages: [
+          { id: "question", runId: "paused-a", blocks: [{ kind: "ask", status: "pending" }] },
+          { id: "approval", runId: "paused-b", blocks: [{ kind: "ask", status: "pending" }] },
+          { id: "done", runId: "paused-a", blocks: [{ kind: "ask", status: "answered" }] },
+          { id: "new-message", runId: "new", blocks: [{ kind: "text" }] },
+        ],
+      }),
+    ).toEqual(new Set(["question", "approval"]));
   });
 
   it("ignores answered prompts and prompts from non-waiting runs", () => {
     expect(
-      latestAnswerableAskMessageId({
+      answerableAskMessageIds({
         run: { id: "run-1", status: "running" },
         messages: [{ id: "ask-1", runId: "run-1", blocks: [{ kind: "ask", status: "pending" }] }],
       }),
-    ).toBeNull();
+    ).toEqual(new Set());
     expect(
-      latestAnswerableAskMessageId({
+      answerableAskMessageIds({
         run: { id: "run-1", status: "waiting_input" },
         messages: [{ id: "ask-1", runId: "run-1", blocks: [{ kind: "ask", status: "answered" }] }],
       }),
-    ).toBeNull();
+    ).toEqual(new Set());
   });
 });
 

@@ -1,3 +1,4 @@
+import { getLogger } from "@rakazo/logging";
 import { Domain } from "chat-adapter-lark";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -8,6 +9,7 @@ import {
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   parseSendblueStatus,
+  telegramBotsFromEnv,
 } from "./messaging-platforms.js";
 
 // Fake credentials: adapters are constructed offline, never called.
@@ -93,6 +95,92 @@ describe("messagingPlatformsFromEnv", () => {
     expect((telegram.adapter as unknown as { mode: string }).mode).toBe("webhook");
   });
 
+  it("mounts each named Telegram bot as its own telegram-<name> provider", () => {
+    const platforms = messagingPlatformsFromEnv({
+      telegramBotToken: "tg-token",
+      telegramWebhookSecret: "tg-webhook-secret",
+      telegramBots: [{ name: "work", botToken: "tg-work", webhookSecret: "tg-work-secret" }],
+    });
+    expect(platforms.map((platform) => [platform.provider, platform.adapterName])).toEqual([
+      ["telegram", undefined],
+      ["telegram-work", "telegram"],
+    ]);
+    expect((platforms[1]!.adapter as unknown as { mode: string }).mode).toBe("webhook");
+  });
+
+  it("reads named Telegram bots from TELEGRAM_BOT_TOKEN_<NAME> pairs", () => {
+    expect(
+      telegramBotsFromEnv({
+        TELEGRAM_BOT_TOKEN: "default",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+        TELEGRAM_BOT_TOKEN_WORK: " tg-work ",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_WORK: " work-secret ",
+        TELEGRAM_BOT_TOKEN_HOME2: "tg-home",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_HOME2: "home-secret",
+        // Unsigned webhooks would be accepted, so a name without a secret stays off.
+        TELEGRAM_BOT_TOKEN_NOSECRET: "tg-nosecret",
+        TELEGRAM_BOT_TOKEN_BAD_NAME: "tg-bad",
+        TELEGRAM_WEBHOOK_SECRET_TOKEN_BAD_NAME: "bad-secret",
+      }),
+    ).toEqual([
+      { name: "home2", botToken: "tg-home", webhookSecret: "home-secret" },
+      { name: "work", botToken: "tg-work", webhookSecret: "work-secret" },
+    ]);
+  });
+
+  it("skips a named Telegram bot that reuses the default or another bot's token", () => {
+    expect(
+      providers(
+        messagingEnvFromProcess({
+          TELEGRAM_BOT_TOKEN: "tg-shared",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN: "default-secret",
+          TELEGRAM_BOT_TOKEN_COPY: " tg-shared ",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN_COPY: "copy-secret",
+          TELEGRAM_BOT_TOKEN_ALPHA: "tg-other",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN_ALPHA: "alpha-secret",
+          TELEGRAM_BOT_TOKEN_BETA: "tg-other",
+          TELEGRAM_WEBHOOK_SECRET_TOKEN_BETA: "beta-secret",
+        }),
+      ),
+    ).toEqual(["telegram", "telegram-alpha"]);
+  });
+
+  it("keeps the first named token when mounting credentials directly", () => {
+    const warn = vi.spyOn(getLogger(), "warn");
+    try {
+      expect(
+        providers({
+          telegramBots: [
+            { name: "first", botToken: "tg-shared", webhookSecret: "first-secret" },
+            { name: "second", botToken: " tg-shared ", webhookSecret: "second-secret" },
+          ],
+        }),
+      ).toEqual(["telegram-first"]);
+      expect(warn).toHaveBeenCalledWith("skipping Telegram bot that reuses another bot's token", {
+        provider: "telegram-second",
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain("tg-shared");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it.each([undefined, "", "   "])(
+    "does not reserve an incomplete default bot's token (%s)",
+    (secret) => {
+      expect(
+        providers(
+          messagingEnvFromProcess({
+            TELEGRAM_BOT_TOKEN: "tg-shared",
+            TELEGRAM_WEBHOOK_SECRET_TOKEN: secret,
+            TELEGRAM_BOT_TOKEN_WORK: "tg-shared",
+            TELEGRAM_WEBHOOK_SECRET_TOKEN_WORK: "work-secret",
+          }),
+        ),
+      ).toEqual(["telegram-work"]);
+    },
+  );
+
   it("forces Lark into webhook inbound so worker initialize cannot open a long connection", () => {
     const lark = messagingPlatformsFromEnv({
       larkAppId: "cli-fake",
@@ -156,16 +244,16 @@ describe("messagingPlatformsFromEnv", () => {
     }
   });
 
-  it("declares group and typing support only for sendblue", () => {
+  it("declares group support and the receipt for each platform", () => {
     const platforms = messagingPlatformsFromEnv(fullEnv);
     const capabilities = Object.fromEntries(
       platforms.map((platform) => [platform.provider, platform.capabilities]),
     );
-    expect(capabilities.sendblue).toEqual({ direct: true, groups: true, typing: true });
-    expect(capabilities.slack).toEqual({ direct: true, groups: true, typing: false });
-    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, typing: false });
-    expect(capabilities.telegram).toEqual({ direct: true, groups: false, typing: false });
-    expect(capabilities.lark).toEqual({ direct: true, groups: false, typing: false });
+    expect(capabilities.sendblue).toEqual({ direct: true, groups: true, receipt: "typing" });
+    expect(capabilities.slack).toEqual({ direct: true, groups: true, receipt: "reaction" });
+    expect(capabilities.whatsapp).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.telegram).toEqual({ direct: true, groups: false, receipt: null });
+    expect(capabilities.lark).toEqual({ direct: true, groups: false, receipt: null });
   });
 });
 
@@ -319,20 +407,15 @@ describe("enrichSlackTeamRoom", () => {
     expect(enrichment.kind).toBe("ambient");
   });
 
-  it("marks message events that mention the authorized bot as mention", () => {
-    const enrichment = enrichSlackTeamRoom(
-      {
-        team_id: "T1",
-        authorizations: [{ user_id: "U_BOT", is_bot: true }],
-        event: {
-          type: "message",
-          channel: "C1",
-          text: "hey <@U_BOT> ship Friday?",
-          user: "U_OTHER",
-        },
-      },
-      base,
-    );
-    expect(enrichment.kind).toBe("mention");
+  it("marks a plain message event as mention when the platform reports a bot mention", () => {
+    const raw = {
+      type: "message",
+      channel: "C1",
+      text: "<@U_BOT> respond back please?",
+      user: "U_OTHER",
+      team: "T1",
+    };
+    expect(enrichSlackTeamRoom(raw, { ...base, mentionsBot: true }).kind).toBe("mention");
+    expect(enrichSlackTeamRoom(raw, base).kind).toBe("ambient");
   });
 });

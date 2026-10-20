@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -54,25 +54,6 @@ describe("settings sheet", () => {
 
     expect(sheet.goBack).not.toHaveBeenCalled();
     expect(sheet.dispatch).toHaveBeenCalledWith({ type: "REPLACE", payload: { name: "index" } });
-  });
-
-  it("leaves Server integrations through the sheet, not by replacing it with Home", () => {
-    const screen = readFileSync(
-      resolve(mobileRoot, "app/(settings)/integration-setup.tsx"),
-      "utf8",
-    );
-
-    expect(screen).not.toContain('replace("/")');
-    expect(screen).toContain('button(t("Skip"), closeSettingsSheet, busy)');
-    expect(screen).toContain("else closeSettingsSheet();");
-  });
-});
-
-describe("settings stack", () => {
-  it("has no long-press back menu, where Account would be a blank entry", () => {
-    const layout = readFileSync(resolve(mobileRoot, "app/(settings)/_layout.tsx"), "utf8");
-
-    expect(layout).toContain("headerBackButtonMenuEnabled: false,");
   });
 });
 

@@ -8,14 +8,11 @@ ENV_FILE="${PROJECT_DIR}/.env"
 BACKUP_ROOT="/var/backups/rakazo"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SNAPSHOT_DIR="${BACKUP_ROOT}/${STAMP}"
-
-install -d -m 700 "${BACKUP_ROOT}" "${SNAPSHOT_DIR}"
+# Verified snapshots kept on this host.
+KEEP="${RAKAZO_BACKUP_KEEP:-3}"
+[[ "${KEEP}" =~ ^[1-9][0-9]*$ ]] || { echo "RAKAZO_BACKUP_KEEP must be a positive whole number" >&2; exit 1; }
 
 compose=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
-
-"${compose[@]}" exec -T postgres sh -c \
-  'pg_dump --format=custom --no-owner --no-privileges -U "$POSTGRES_USER" "$POSTGRES_DB"' \
-  > "${SNAPSHOT_DIR}/rakazo.dump"
 
 # Archive the appdata volume from the host, not through `compose exec api`.
 #
@@ -31,12 +28,45 @@ compose=(docker compose --env-file "${ENV_FILE}" -f "${COMPOSE_FILE}")
 # key and ignores an operator's `-p` or COMPOSE_PROJECT_NAME, so reconstructing
 # "<project>_appdata" would inspect the default project's volume on any stack
 # started under another name, and silently archive the wrong one. This uses the
-# same compose invocation as the pg_dump above, so both target one stack.
+# same compose invocation as the pg_dump below, so both target one stack.
 api="$("${compose[@]}" ps -q api)"
 [[ -n "${api}" ]] || { echo "the api service is not running; cannot locate /data" >&2; exit 1; }
 appdata="$(docker inspect "${api}" \
   --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Source}}{{end}}{{end}}')"
 [[ -n "${appdata}" ]] || { echo "the api container has no /data mount" >&2; exit 1; }
+
+install -d -m 700 "${BACKUP_ROOT}"
+# One backup at a time, so cleanup never removes a snapshot another run is still writing.
+exec 8>"${BACKUP_ROOT}/.lock"
+flock -n 8 || { echo "Another Rakazo backup is running" >&2; exit 1; }
+# Newest first; stamps sort by time. Only stamp-named directories are ever listed or removed.
+snapshots() {
+  find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended \
+    -regex '.*/[0-9]{8}T[0-9]{6}Z' -print | sort -r
+}
+
+# A full disk leaves a partial snapshot, so check first. Expect the size of the last verified
+# snapshot, or of the data itself when there is none yet.
+last=""
+while read -r dir; do
+  if [[ -f "${dir}/SHA256SUMS" ]]; then last="${dir}"; break; fi
+done < <(snapshots)
+need_kb="$(du -sk "${last:-${appdata}}" | awk '{ print $1 }')"
+free_kb="$(df -Pk "${BACKUP_ROOT}" | awk 'NR == 2 { print $4 }')"
+if ((free_kb < need_kb)); then
+  echo "Only $((free_kb / 1024))MB free in ${BACKUP_ROOT}; this backup needs about $((need_kb / 1024))MB." >&2
+  echo "Remove old snapshots there or free space elsewhere, then run the backup again." >&2
+  exit 1
+fi
+
+install -d -m 700 "${SNAPSHOT_DIR}"
+# Never leave a partial snapshot behind: it uses space and looks like a backup.
+verified=0
+trap '[[ "${verified}" == 1 ]] || rm -rf -- "${SNAPSHOT_DIR}"' EXIT
+
+"${compose[@]}" exec -T postgres sh -c \
+  'pg_dump --format=custom --no-owner --no-privileges -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  > "${SNAPSHOT_DIR}/rakazo.dump"
 
 # Bots write while this runs. GNU tar exits 1 for "file changed as we read it",
 # which is expected on a live system and still yields a usable archive; only a
@@ -56,8 +86,17 @@ sha256sum "${SNAPSHOT_DIR}/rakazo.dump" "${SNAPSHOT_DIR}/appdata.tgz" \
   > "${SNAPSHOT_DIR}/SHA256SUMS"
 chmod 600 "${SNAPSHOT_DIR}"/*
 
-# Keep seven daily snapshots. BACKUP_ROOT is intentionally fixed above so this
-# cleanup can never expand to an environment-controlled or broad path.
-find "${BACKUP_ROOT}" -mindepth 1 -maxdepth 1 -type d -mtime +6 -exec rm -rf -- {} +
+verified=1
+
+# Keep the newest KEEP verified snapshots and drop the rest, including partial ones from failed
+# runs. BACKUP_ROOT is intentionally fixed above so this can never reach a broad path.
+kept=0
+while read -r dir; do
+  if [[ -f "${dir}/SHA256SUMS" ]] && ((kept < KEEP)); then
+    kept=$((kept + 1))
+  else
+    rm -rf -- "${dir}"
+  fi
+done < <(snapshots)
 
 echo "Verified Rakazo backup written to ${SNAPSHOT_DIR}"

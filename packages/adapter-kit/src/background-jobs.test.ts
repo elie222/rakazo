@@ -6,6 +6,7 @@ import {
   historyCompactJobKey,
   messagingDeliverJob,
   parseBackgroundJob,
+  routineRetryJob,
 } from "./background-jobs.js";
 import type { BackgroundJobHandlers } from "./types.js";
 
@@ -13,10 +14,12 @@ function handlers(): BackgroundJobHandlers {
   return {
     "run.continue": vi.fn(async () => undefined),
     "routine.wakeup": vi.fn(async () => undefined),
+    "routine.retry": vi.fn(async () => undefined),
     "computer.update": vi.fn(async () => undefined),
     "computer.sleep": vi.fn(async () => undefined),
     "computer.control-expire": vi.fn(async () => undefined),
     "skill.teaching-expire": vi.fn(async () => undefined),
+    "call.expire": vi.fn(async () => undefined),
     "history.compact": vi.fn(async () => undefined),
     "messaging.deliver": vi.fn(async () => undefined),
     "cloud_agent.poll": vi.fn(async () => undefined),
@@ -52,6 +55,20 @@ describe("background job contracts", () => {
     });
   });
 
+  it("validates and dispatches a routine retry keyed to the failed run", async () => {
+    const target = handlers();
+    await dispatchBackgroundJob(target, "routine.retry", { runId: "run-1" });
+    expect(target["routine.retry"]).toHaveBeenCalledWith({ runId: "run-1" });
+    expect(() => parseBackgroundJob("routine.retry", { runId: "" })).toThrow();
+    const availableAt = new Date("2026-08-15T12:12:00.000Z");
+    expect(routineRetryJob("run-1", availableAt)).toEqual({
+      name: "routine.retry",
+      payload: { runId: "run-1" },
+      availableAt,
+      replaceKey: "routine.retry:run-1",
+    });
+  });
+
   it("rejects unknown names and malformed deliveries", () => {
     expect(() => parseBackgroundJob("unknown", {})).toThrow("Unknown background job");
     expect(() =>
@@ -67,18 +84,6 @@ describe("background job contracts", () => {
         leaseId: "",
       }),
     ).toThrow();
-  });
-
-  it("validates and dispatches a control-expiry job", async () => {
-    const target = handlers();
-    await dispatchBackgroundJob(target, "computer.control-expire", {
-      computerId: "computer-1",
-      leaseId: "lease-1",
-    });
-    expect(target["computer.control-expire"]).toHaveBeenCalledWith({
-      computerId: "computer-1",
-      leaseId: "lease-1",
-    });
   });
 });
 

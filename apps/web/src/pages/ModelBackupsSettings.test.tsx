@@ -173,7 +173,11 @@ describe("ModelBackupsSettings", () => {
     });
     await flush();
 
+    const section = container.querySelector('[data-testid="model-backups"]');
+    expect(section?.getAttribute("aria-labelledby")).toBe("model-backups-title");
+    expect(section?.querySelector("h3#model-backups-title")?.textContent).toBe("Backup models");
     expect(container.textContent).toContain("Add connected models to use them as backups.");
+    expect(container.textContent).not.toContain("Connect a provider to add backups.");
     expect(button("Save backups").disabled).toBe(true);
     expect(backupApi.backups).toHaveBeenCalledTimes(1);
     expect(backupApi.setBackups).not.toHaveBeenCalled();

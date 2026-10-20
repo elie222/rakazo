@@ -1,5 +1,5 @@
 import { RPCHandler } from "@orpc/server/fetch";
-import { listPiCatalog } from "@rakazo/adapters";
+import { listPiCatalog, serializeModelSecret } from "@rakazo/adapters";
 import type { Actor } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -13,7 +13,14 @@ const owner: Actor = {
   isDeploymentOwner: true,
 };
 
-function setup(options: { actor?: Actor; existing?: Array<Record<string, unknown>> } = {}) {
+function setup(
+  options: {
+    actor?: Actor;
+    existing?: Array<Record<string, unknown>>;
+    /** An openai-compatible connection with this stored list and space default. */
+    compatible?: { enabledModelIds: string[]; defaultModel: string };
+  } = {},
+) {
   const rows = [...(options.existing ?? [])];
   const spaceBackupModel = {
     findMany: vi.fn(async ({ where }: { where: { userId: string; spaceId: string } }) =>
@@ -38,7 +45,7 @@ function setup(options: { actor?: Actor; existing?: Array<Record<string, unknown
   const credential = {
     id: "credential-one",
     userId: owner.userId,
-    provider: "openrouter",
+    provider: options.compatible ? "openai-compatible" : "openrouter",
     label: "fixture",
     secretId: "secret-one",
     createdAt: new Date(0),
@@ -55,19 +62,43 @@ function setup(options: { actor?: Actor; existing?: Array<Record<string, unknown
       ),
     },
     spaceModelPreference: {
-      findMany: vi.fn().mockResolvedValue([]),
+      findMany: vi.fn().mockResolvedValue(
+        options.compatible
+          ? [
+              {
+                id: "preference-one",
+                modelId: options.compatible.defaultModel,
+                thinkingLevel: null,
+                isDefault: true,
+                updatedAt: new Date(0),
+                credential,
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(),
       updateMany: vi.fn(),
     },
     secret: {
       findMany: vi.fn().mockResolvedValue([{ id: "secret-one", ciphertext: "fixture-ciphertext" }]),
+      findFirst: vi.fn().mockResolvedValue({ id: "secret-one", ciphertext: "fixture-ciphertext" }),
     },
     $transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
   } as unknown as PrismaClient;
   const deps = {
     prisma,
-    secrets: { load: vi.fn(() => "fake-api-key-for-offline-tests") },
+    secrets: {
+      load: vi.fn(() =>
+        options.compatible
+          ? serializeModelSecret({
+              kind: "openai_compatible",
+              baseUrl: "http://127.0.0.1:11434/v1",
+              enabledModelIds: options.compatible.enabledModelIds,
+            })
+          : "fake-api-key-for-offline-tests",
+      ),
+    },
     env: {
       agentRuntime: "pi",
       defaultProvider: "openrouter",
@@ -97,6 +128,17 @@ const availableModel = listPiCatalog().find(
 )!;
 
 describe("model backup settings API", () => {
+  it("rejects a compatible catalog placeholder outside the enabled list", async () => {
+    const { call, spaceBackupModel } = setup({
+      compatible: { enabledModelIds: ["enabled"], defaultModel: "enabled" },
+    });
+    const { response } = await call("models/setBackups", [
+      { provider: "openai-compatible", modelId: "custom" },
+    ]);
+    expect(response.status).toBe(400);
+    expect(spaceBackupModel.createMany).not.toHaveBeenCalled();
+  });
+
   it("returns an empty list for a new user and reads only that user's active Space", async () => {
     const { call, spaceBackupModel } = setup({
       existing: [
@@ -214,6 +256,37 @@ describe("model backup settings API", () => {
     expect(spaceBackupModel.deleteMany).not.toHaveBeenCalled();
     expect(spaceBackupModel.createMany).not.toHaveBeenCalled();
     expect(rows).toEqual([existing]);
+  });
+
+  it("accepts a backup on a second enabled openai-compatible model", async () => {
+    const { call, rows } = setup({
+      compatible: { enabledModelIds: ["local-a", "local-b"], defaultModel: "local-a" },
+    });
+
+    const { response } = await call("models/setBackups", [
+      { provider: "openai-compatible", modelId: "local-b" },
+    ]);
+
+    expect(response.status).toBe(200);
+    expect(rows).toEqual([
+      expect.objectContaining({ provider: "openai-compatible", modelId: "local-b", position: 0 }),
+    ]);
+  });
+
+  it("rejects a backup on an openai-compatible model outside the enabled list", async () => {
+    const { call, spaceBackupModel } = setup({
+      compatible: { enabledModelIds: ["local-a"], defaultModel: "local-a" },
+    });
+
+    const { response } = await call("models/setBackups", [
+      { provider: "openai-compatible", modelId: "local-z" },
+    ]);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      json: { message: "Unknown model for that provider" },
+    });
+    expect(spaceBackupModel.deleteMany).not.toHaveBeenCalled();
   });
 
   it("isolates writes between users and Spaces", async () => {

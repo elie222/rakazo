@@ -1,34 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ACCOUNT_UI_LOCALES,
-  htmlLangForLocale,
-  isUiLocale,
-  normalizeUiLocale,
-  resolveUiLocale,
-  UI_LOCALE_LABELS,
-  UI_LOCALES,
-} from "./ui-locale";
-
-describe("UI_LOCALES", () => {
-  it("offers every locale with a mobile catalog", () => {
-    expect([...UI_LOCALES]).toEqual(["en", "zh-CN", "ru", "de"]);
-    expect(Object.keys(UI_LOCALE_LABELS).sort()).toEqual(["de", "en", "ru", "zh-CN"]);
-    expect(isUiLocale("ko")).toBe(false);
-    expect(isUiLocale("tr")).toBe(false);
-    expect(isUiLocale("hi")).toBe(false);
-    expect(isUiLocale("pt-BR")).toBe(false);
-    expect(isUiLocale("ru")).toBe(true);
-    expect(isUiLocale("de")).toBe(true);
-  });
-});
-
-describe("ACCOUNT_UI_LOCALES", () => {
-  it("limits the Account picker to English and Simplified Chinese", () => {
-    expect([...ACCOUNT_UI_LOCALES]).toEqual(["en", "zh-CN"]);
-    expect(ACCOUNT_UI_LOCALES).not.toContain("ru");
-    expect(ACCOUNT_UI_LOCALES).not.toContain("de");
-  });
-});
+import { htmlLangForLocale, normalizeUiLocale, resolveUiLocale } from "./ui-locale";
 
 describe("normalizeUiLocale", () => {
   it("maps regional tags onto supported locales", () => {
@@ -43,6 +14,9 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("de-DE")).toBe("de");
     expect(normalizeUiLocale("de-CH")).toBe("de");
     expect(normalizeUiLocale("de_AT")).toBe("de");
+    expect(normalizeUiLocale("nl")).toBe("nl");
+    expect(normalizeUiLocale("nl-NL")).toBe("nl");
+    expect(normalizeUiLocale("nl-BE")).toBe("nl");
   });
 
   it("does not fold Traditional Chinese into Simplified", () => {

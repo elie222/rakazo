@@ -61,6 +61,7 @@ test("drag bots into collapsed sections, another section's row, and group chats"
   await sidebar
     .locator(`[data-roster-bot-id="${alpha.id}"]`)
     .dragTo(sidebar.getByRole("button", { name: "Collapse Unassigned", exact: true }));
+  // Wait for the save and roster refresh before dragging a row whose position changes.
   await expect(
     sidebar
       .locator('[data-sidebar-group="unassigned"]')

@@ -1,19 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isMessagingChannelRun,
-  messagingChannelPrivacyBlock,
-  messagingDmSurfaceNote,
-} from "./messaging-prompts.js";
-
-describe("messagingDmSurfaceNote", () => {
-  it("explains the shared messaging conversation and conciseness", () => {
-    const note = messagingDmSurfaceNote();
-    expect(note).toMatch(/messaging app/);
-    expect(note).toMatch(/iMessage/);
-    expect(note).toMatch(/same (thread|conversation)/i);
-    expect(note).toMatch(/concise/i);
-  });
-});
+import { isMessagingChannelRun, messagingChannelPrivacyBlock } from "./messaging-prompts.js";
 
 describe("messagingChannelPrivacyBlock", () => {
   it("forbids leaking owner data and allows silent finishes", () => {

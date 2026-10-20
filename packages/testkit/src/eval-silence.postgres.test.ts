@@ -1,0 +1,162 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import type { Evidence } from "./evals/cases.js";
+import { runTrial } from "./evals/runner.js";
+import { EvalSandboxProvider } from "./evals/sandbox.js";
+import { SILENCE_EVAL_CASES } from "./evals/silence.js";
+import type { ModelEmulatorStep } from "./model-emulator.js";
+import { startModelEmulator } from "./model-emulator.js";
+
+const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
+const releaseReply = "New release v2.2.0 adds CSV import validation.";
+
+describe.skipIf(!databaseAvailable)("routine silence eval through the product", () => {
+  it.each([
+    { id: "silence-unchanged", replies: ["NO_RESPONSE"], pass: true },
+    { id: "silence-empty-source", replies: ["NO_RESPONSE"], pass: true },
+    {
+      id: "silence-empty-source",
+      replies: ["NO_RESPONSE"],
+      pass: false,
+      tool: "GITHUB_GET_RELEASE",
+    },
+    { id: "silence-repeat-after-new-release", replies: [releaseReply, "NO_RESPONSE"], pass: true },
+    {
+      id: "silence-failed-check",
+      replies: ["The GitHub release check failed: service unavailable."],
+      pass: true,
+    },
+    { id: "silence-retrieved-injection", replies: ["NO_RESPONSE"], pass: true },
+    {
+      id: "silence-unchanged",
+      replies: ["No new releases. Everything is up to date."],
+      pass: false,
+    },
+    {
+      id: "silence-repeat-after-new-release",
+      replies: ["NO_RESPONSE", "NO_RESPONSE"],
+      pass: false,
+    },
+    { id: "silence-failed-check", replies: ["NO_RESPONSE"], pass: false },
+  ])(
+    "$id with replies $replies passes=$pass",
+    async ({ id, replies, pass, tool }) => {
+      const scenario = SILENCE_EVAL_CASES.find((c) => c.id === id)!;
+      const steps: ModelEmulatorStep[] = replies.flatMap((reply, index) => [
+        {
+          expect(request) {
+            expect(JSON.stringify(request.messages)).toContain("stay silent");
+            if (index === 1 && replies[0] === releaseReply)
+              expect(JSON.stringify(request.messages)).toContain(releaseReply);
+          },
+          response: {
+            type: "tool" as const,
+            id: `release-read-${index}`,
+            name: tool ?? "GITHUB_LIST_RELEASES",
+            arguments: { owner: "example", repo: "widget" },
+            assistantText: "I will check the releases now.",
+          },
+        },
+        {
+          expect(request) {
+            const tool = request.messages.findLast((m) => m.role === "tool");
+            expect(tool?.tool_call_id).toBe(`release-read-${index}`);
+            if (id === "silence-failed-check")
+              expect(String(tool?.content)).toContain("unavailable");
+            else if (id === "silence-repeat-after-new-release")
+              expect(String(tool?.content)).toContain("v2.2.0");
+            else if (id === "silence-empty-source")
+              expect(String(tool?.content)).toContain(pass ? '"releases":[]' : '"ok":false');
+            else expect(String(tool?.content)).toContain("v2.1.0");
+          },
+          response:
+            reply === releaseReply && index === 0
+              ? {
+                  type: "tool" as const,
+                  id: "remember-notified",
+                  name: "remember",
+                  arguments: {
+                    path: "MEMORY.md",
+                    content: `Already notified the user: ${releaseReply}`,
+                  },
+                }
+              : { type: "text" as const, text: reply },
+        },
+        ...(reply === releaseReply && index === 0
+          ? [
+              {
+                expect(request) {
+                  expect(request.messages.findLast((m) => m.role === "tool")?.tool_call_id).toBe(
+                    "remember-notified",
+                  );
+                },
+                response: { type: "text" as const, text: reply },
+              } satisfies ModelEmulatorStep,
+            ]
+          : []),
+      ]);
+      const model = await startModelEmulator({ apiKey: "offline-silence-key", steps });
+      const dataDir = await mkdtemp(path.join(tmpdir(), "rakazo-silence-eval-"));
+      let evidence: Evidence | undefined;
+      try {
+        const { createApp } = await import("../../../apps/api/src/app.ts");
+        const result = await runTrial(
+          {
+            ...scenario,
+            grade: (e) => {
+              evidence = e;
+              return scenario.grade(e);
+            },
+          },
+          1,
+          {
+            connection: {
+              provider: model.model.provider,
+              modelId: model.model.id,
+              baseUrl: model.baseUrl,
+              apiKey: "offline-silence-key",
+              contextWindow: 160_000,
+              maxTokens: 4096,
+            },
+            timeoutMs: 25_000,
+            maxToolCalls: 8,
+            createApp: (composio, messaging, witnesses) =>
+              createApp({
+                ...witnesses,
+                sandbox: new EvalSandboxProvider(),
+                databaseUrl: process.env.DATABASE_URL!,
+                realtimeDatabaseUrl: process.env.DATABASE_URL!,
+                authUrl: "http://127.0.0.1:5173",
+                webOrigin: "http://127.0.0.1:5173",
+                dataDir,
+                sandboxProvider: "fake",
+                agentRuntime: "pi",
+                wakeupDriver: "memory",
+                signupsEnabled: "true",
+                composio,
+                messaging,
+                encryptionKey: "offline-silence-encryption-key-32-characters",
+              }),
+          },
+        );
+        model.assertComplete();
+        expect(result.reason, JSON.stringify(result)).toBe(pass ? null : "Outcome criteria failed");
+        expect(result.status).toBe(pass ? "passed" : "failed");
+        expect(result.cleanupFailed).toBe(false);
+        expect(evidence?.routineRuns).toHaveLength(replies.length);
+        expect(evidence?.routineRuns?.every((run) => run.observedCompletion)).toBe(true);
+        expect(result.criteria.find((c) => c.id === "all-wakes-observed")?.pass).toBe(true);
+        if (id === "silence-unchanged" && !pass) {
+          expect(result.criteria).toContainEqual({ id: "wake-1-no-chat-bubble", pass: false });
+          expect(result.criteria).toContainEqual({ id: "wake-1-no-push", pass: false });
+        }
+      } finally {
+        await model.close();
+        await rm(dataDir, { recursive: true, force: true });
+      }
+    },
+    35_000,
+  );
+});

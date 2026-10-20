@@ -1,20 +1,28 @@
+import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
 import type { Actor } from "@rakazo/contracts";
+import { credentialForModel } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   defaultCatalogModelId,
+  enabledOpenAiCompatibleModelIds,
+  findConnectedModelCredential,
   inboundRoutineModelPin,
+  loadStoredModelSecret,
   modelCredentialAuthKindsForSpace,
   pinnedModelCredentialError,
+  prepareAllowedThinkingLevels,
   readStoredModelAuth,
   routineRunModelPin,
   runModelChoice,
   selectConfiguredModel,
   selectDefaultCredentialId,
+  validateBotModelChange,
   validateConnectedModelChoice,
   validateModelAuthAvailability,
 } from "./model-selection.js";
 import { listAvailablePiCatalog } from "./pi-catalog-availability.js";
+import { listPiCatalog } from "./pi-models.js";
 
 type SelectionInput = Parameters<typeof selectConfiguredModel>[0];
 
@@ -279,6 +287,21 @@ describe("routine model pin", () => {
         { modelProvider: "other", modelId: "other-model", thinkingLevel: null },
       ]),
     ).toEqual({});
+  });
+
+  it("leaves openai-compatible ids that differ from the default to the run path", () => {
+    expect(
+      pinnedModelCredentialError(
+        { modelProvider: "openai-compatible", modelId: "listed-model", thinkingLevel: null },
+        { defaultModel: "default-model" },
+      ),
+    ).toBeUndefined();
+    expect(
+      pinnedModelCredentialError(
+        { modelProvider: "openai-compatible", modelId: "listed-model", thinkingLevel: null },
+        null,
+      ),
+    ).toBe("Connect that model provider first");
   });
 
   it("rejects a pinned model whose credential is missing or belongs to another free-form model", () => {
@@ -965,22 +988,123 @@ describe("model auth availability", () => {
   });
 });
 
+describe("connected model credential selection", () => {
+  it("routes legacy pins and new choices to enabled connections without storing choices", async () => {
+    const selected = credential("openai-compatible", "X");
+    const alternate = { ...selected, id: "alternate", secretId: "secret-alternate" };
+    const secrets: Record<string, string> = {
+      [selected.secretId]: JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://legacy.example/v1",
+      }),
+      [alternate.secretId]: JSON.stringify({
+        kind: "openai_compatible",
+        baseUrl: "https://alternate.example/v1",
+        enabledModelIds: ["Y", "Z"],
+        reasoning: true,
+      }),
+    };
+    const preferences = [
+      {
+        id: "preference",
+        credential: selected,
+        modelId: "X",
+        isDefault: true,
+        thinkingLevel: null,
+        updatedAt: new Date(0),
+      },
+    ];
+    const prisma = {
+      spaceModelPreference: {
+        findMany: vi.fn(async () => preferences),
+        findFirst: vi.fn(
+          async ({ where }: { where: { modelId: string } }) =>
+            preferences.find((preference) => preference.modelId === where.modelId) ?? null,
+        ),
+        upsert: vi.fn(),
+      },
+      userModelCredential: { findMany: vi.fn(async () => [alternate, selected]) },
+      secret: {
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+          ciphertext: secrets[where.id],
+        })),
+      },
+    };
+    const load = vi.fn(async (plaintext: string) => plaintext);
+
+    const db = prisma as unknown as PrismaClient;
+    const actor = { userId: "user-1", spaceId: "space-1" };
+    const clients = [
+      { ...alternate, label: "B", modelId: null, enabledModelIds: ["Y", "Z"] },
+      { ...selected, label: "A", modelId: "X", isDefault: true },
+    ];
+    for (const model of ["Y", "Z", "Y"]) {
+      await expect(
+        validateBotModelChange(
+          {
+            prisma: db,
+            secretStore: { load },
+            refreshExpiredCredential: vi.fn(),
+            defaultModel: async () => ({ provider: null, model: null }),
+          },
+          {
+            ...actor,
+            provider: "openai-compatible",
+            model,
+            thinkingLevel: "high",
+            current: { provider: "openai-compatible", model: "X" },
+          },
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      const resolved = await findConnectedModelCredential(
+        db,
+        { load },
+        actor,
+        "openai-compatible",
+        model,
+      );
+      expect(resolved?.id).toBe(alternate.id);
+      expect(credentialForModel(clients, "openai-compatible", model)?.id).toBe(resolved?.id);
+      await expect(
+        prepareAllowedThinkingLevels(
+          { prisma: db, secretStore: { load } },
+          actor,
+          "openai-compatible",
+          model,
+        ),
+      ).resolves.toMatchObject({ allowed: expect.arrayContaining(["high"]) });
+    }
+    expect(prisma.spaceModelPreference.upsert).not.toHaveBeenCalled();
+    expect(preferences).toHaveLength(1);
+    expect(preferences[0]).toMatchObject({ modelId: "X", isDefault: true });
+  });
+});
+
 describe("connected model validation", () => {
   const actor: Pick<Actor, "userId" | "spaceId"> = {
     userId: "user-1",
     spaceId: "space-1",
   };
+  const noStore = {
+    load: async (): Promise<string> => {
+      throw new Error("no secret expected");
+    },
+  };
 
   it("accepts catalog and saved free-form models but rejects unavailable choices", async () => {
     const catalogPrisma = {
       spaceModelPreference: { findFirst: async () => null },
-      userModelCredential: { findFirst: async () => credential("xai", null) },
+      userModelCredential: {
+        findMany: vi.fn(async () => []),
+        findFirst: async () => credential("xai", null),
+      },
     } as unknown as PrismaClient;
     await expect(
-      validateConnectedModelChoice(catalogPrisma, actor, "xai", "grok-4.6"),
+      validateConnectedModelChoice(catalogPrisma, noStore, actor, "xai", "grok-4.6"),
     ).resolves.toBeUndefined();
     await expect(
-      validateConnectedModelChoice(catalogPrisma, actor, "xai", "not-a-model"),
+      validateConnectedModelChoice(catalogPrisma, noStore, actor, "xai", "not-a-model"),
     ).resolves.toBe("Unknown model for that provider");
 
     const preferenceFindFirst = vi.fn(
@@ -1017,10 +1141,17 @@ describe("connected model validation", () => {
     );
     const customPrisma = {
       spaceModelPreference: { findFirst: preferenceFindFirst },
-      userModelCredential: { findFirst: async () => null },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
+      secret: { findFirst: async () => null },
     } as unknown as PrismaClient;
     await expect(
-      validateConnectedModelChoice(customPrisma, actor, "openai-compatible", "private-model"),
+      validateConnectedModelChoice(
+        customPrisma,
+        noStore,
+        actor,
+        "openai-compatible",
+        "private-model",
+      ),
     ).resolves.toBeUndefined();
     expect(preferenceFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1034,22 +1165,311 @@ describe("connected model validation", () => {
       }),
     );
     await expect(
-      validateConnectedModelChoice(customPrisma, actor, "openai-compatible", "missing-model"),
+      validateConnectedModelChoice(
+        customPrisma,
+        noStore,
+        actor,
+        "openai-compatible",
+        "missing-model",
+      ),
     ).resolves.toBe("Unknown model for that provider");
 
     const disconnectedPrisma = {
       spaceModelPreference: { findFirst: async () => null },
-      userModelCredential: { findFirst: async () => null },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
     } as unknown as PrismaClient;
     await expect(
-      validateConnectedModelChoice(disconnectedPrisma, actor, "anthropic", "claude-opus-4-6"),
+      validateConnectedModelChoice(
+        disconnectedPrisma,
+        noStore,
+        actor,
+        "anthropic",
+        "claude-opus-4-6",
+      ),
     ).resolves.toBe("Connect that model provider first");
 
-    await expect(validateConnectedModelChoice(catalogPrisma, actor, "xai", "null")).resolves.toBe(
+    await expect(
+      validateConnectedModelChoice(catalogPrisma, noStore, actor, "xai", "null"),
+    ).resolves.toBe("Unknown model for that provider");
+    await expect(
+      validateConnectedModelChoice(catalogPrisma, noStore, actor, "xai", "undefined"),
+    ).resolves.toBe("Unknown model for that provider");
+  });
+});
+
+describe("enabled openai-compatible models", () => {
+  const actor: Pick<Actor, "userId" | "spaceId"> = { userId: "user-1", spaceId: "space-1" };
+  const baseUrl = "http://127.0.0.1:8000/v1";
+
+  it("returns the default first, then the stored list, trimmed and unique", () => {
+    expect(enabledOpenAiCompatibleModelIds({ kind: "openai_compatible", baseUrl }, "x")).toEqual([
+      "x",
+    ]);
+    expect(
+      enabledOpenAiCompatibleModelIds(
+        { kind: "openai_compatible", baseUrl, enabledModelIds: [" a ", "x", "", "a", "b"] },
+        " x ",
+      ),
+    ).toEqual(["x", "a", "b"]);
+    expect(
+      enabledOpenAiCompatibleModelIds(
+        { kind: "openai_compatible", baseUrl, enabledModelIds: ["X"] },
+        "Y",
+      ),
+    ).toEqual(["Y", "X"]);
+    expect(enabledOpenAiCompatibleModelIds(undefined, null)).toEqual([]);
+    expect(enabledOpenAiCompatibleModelIds({ kind: "api_key", key: "k" }, "x")).toEqual(["x"]);
+  });
+
+  function compatiblePrisma(defaultModel: string, ciphertext: string | null) {
+    return {
+      spaceModelPreference: {
+        findFirst: async (args: { where: { modelId?: string }; select?: unknown }) => {
+          if (args.where.modelId !== undefined && args.select) {
+            return args.where.modelId === defaultModel ? { id: "preference" } : null;
+          }
+          return {
+            credential: credential("openai-compatible", defaultModel),
+            isDefault: true,
+            modelId: defaultModel,
+            thinkingLevel: null,
+          };
+        },
+      },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: async () => null },
+      secret: {
+        findFirst: vi.fn(async () =>
+          ciphertext === null ? null : { id: "secret-openai-compatible", ciphertext },
+        ),
+      },
+    } as unknown as PrismaClient;
+  }
+  const store = {
+    load: async (ciphertext: string) => {
+      if (ciphertext === "broken") throw new Error("cannot decrypt");
+      if (ciphertext === "down") throw new SecretStoreUnavailableError();
+      return ciphertext;
+    },
+  };
+  const legacy = JSON.stringify({ kind: "openai_compatible", baseUrl });
+  const listed = JSON.stringify({ kind: "openai_compatible", baseUrl, enabledModelIds: ["X"] });
+  const validate = (prisma: PrismaClient, modelId: string) =>
+    validateConnectedModelChoice(prisma, store, actor, "openai-compatible", modelId);
+
+  it("accepts an id from the stored list that no preference names", async () => {
+    await expect(validate(compatiblePrisma("Y", listed), "X")).resolves.toBeUndefined();
+  });
+
+  it("accepts the space default beside a stored list that omits it", async () => {
+    await expect(validate(compatiblePrisma("Y", listed), "Y")).resolves.toBeUndefined();
+  });
+
+  it("accepts non-default ids on a legacy secret when no connection enables them", async () => {
+    await expect(validate(compatiblePrisma("Y", legacy), "Y")).resolves.toBeUndefined();
+    await expect(validate(compatiblePrisma("Y", legacy), "X")).resolves.toBeUndefined();
+  });
+
+  it("fails closed when the secret is missing or unreadable", async () => {
+    await expect(validate(compatiblePrisma("Y", null), "X")).resolves.toBe(
       "Unknown model for that provider",
     );
+    await expect(validate(compatiblePrisma("Y", "broken"), "X")).resolves.toBe(
+      "Unknown model for that provider",
+    );
+    await expect(validate(compatiblePrisma("Y", "{not json"), "X")).resolves.toBe(
+      "Unknown model for that provider",
+    );
+  });
+
+  it("enforces enabled ids even for the catalog placeholder, with legacy compatibility", async () => {
+    await expect(validate(compatiblePrisma("Y", listed), "custom")).resolves.toBe(
+      "Unknown model for that provider",
+    );
+    await expect(validate(compatiblePrisma("Y", legacy), "custom")).resolves.toBeUndefined();
+  });
+
+  it("propagates an unavailable secret store", async () => {
+    await expect(validate(compatiblePrisma("Y", "down"), "X")).rejects.toBeInstanceOf(
+      SecretStoreUnavailableError,
+    );
+  });
+});
+
+describe("loadStoredModelSecret", () => {
+  const prisma = {
+    secret: {
+      findFirst: vi.fn(async ({ where }: { where: { id: string } }) =>
+        where.id === "missing" ? null : { id: where.id, ciphertext: `cipher-${where.id}` },
+      ),
+    },
+  };
+  const store = {
+    load: vi.fn(async (ciphertext: string) => {
+      if (ciphertext === "cipher-down") throw new SecretStoreUnavailableError();
+      if (ciphertext === "cipher-corrupt") throw new Error("bad ciphertext");
+      return "fake-plaintext";
+    }),
+  };
+  const load = (secretId: string) =>
+    loadStoredModelSecret(prisma as never, store, "user-1", secretId);
+
+  it("reports missing, unreadable and loaded secrets with the ciphertext ref", async () => {
+    await expect(load("missing")).resolves.toEqual({ status: "missing" });
+    await expect(load("corrupt")).resolves.toEqual({
+      status: "unreadable",
+      ciphertext: "cipher-corrupt",
+    });
+    await expect(load("ok")).resolves.toEqual({
+      status: "loaded",
+      ciphertext: "cipher-ok",
+      plaintext: "fake-plaintext",
+    });
+    expect(prisma.secret.findFirst).toHaveBeenCalledWith({
+      where: { id: "ok", userId: "user-1", spaceId: null },
+      select: { id: true, ciphertext: true },
+    });
+  });
+
+  it("propagates a secret store outage", async () => {
+    await expect(load("down")).rejects.toBeInstanceOf(SecretStoreUnavailableError);
+  });
+});
+
+describe("bot model change validation", () => {
+  const scope = { userId: "user-1", spaceId: "space-1" };
+  const oauthSecret = JSON.stringify({
+    type: "oauth",
+    access: "access-token",
+    refresh: "refresh-token",
+    expires: Date.now() + 60_000,
+  });
+
+  function changeDeps(connected: Record<string, ReturnType<typeof credential>>) {
+    const prisma = {
+      // A saved model lives on the space preference, as the picker writes it.
+      spaceModelPreference: {
+        findFirst: async (args: { where: { credential?: { provider?: string } } }) => {
+          const saved = connected[args.where.credential?.provider ?? ""];
+          if (!saved?.defaultModel) return null;
+          return {
+            credential: saved,
+            isDefault: true,
+            modelId: saved.defaultModel,
+            thinkingLevel: null,
+          };
+        },
+      },
+      userModelCredential: {
+        findFirst: async (args: { where: { provider?: string } }) =>
+          connected[args.where.provider ?? ""] ?? null,
+      },
+      secret: {
+        findFirst: async (args: { where: { id?: string } }) => ({
+          id: args.where.id,
+          ciphertext: `cipher-${args.where.id}`,
+        }),
+      },
+    } as unknown as PrismaClient;
+    return {
+      prisma,
+      secretStore: { load: async () => oauthSecret },
+      refreshExpiredCredential: vi.fn(),
+      defaultModel: async () => ({ provider: "xai", model: "grok-4.6" }),
+    };
+  }
+
+  it("rejects a disconnected provider and an unknown model", async () => {
+    const deps = changeDeps({ xai: credential("xai", "saved-model") });
     await expect(
-      validateConnectedModelChoice(catalogPrisma, actor, "xai", "undefined"),
-    ).resolves.toBe("Unknown model for that provider");
+      validateBotModelChange(deps, { ...scope, provider: "anthropic", model: "claude-opus-4-6" }),
+    ).resolves.toEqual({ ok: false, error: "Connect that model provider first" });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: "xai", model: "not-a-model" }),
+    ).resolves.toEqual({ ok: false, error: "Unknown model for that provider" });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: "xai", model: "saved-model" }),
+    ).resolves.toEqual({ ok: true, provider: "xai", model: "saved-model", thinkingLevel: null });
+  });
+
+  it("rejects a model the stored credential cannot call", async () => {
+    const deps = changeDeps({ "openai-codex": credential("openai-codex", null) });
+    const result = await validateBotModelChange(deps, {
+      ...scope,
+      provider: "openai-codex",
+      model: "gpt-5.3-codex-spark",
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: expect.stringMatching(/not available with your current sign-in/i),
+    });
+  });
+
+  it("rejects a thinking level the model does not offer, including the default model", async () => {
+    const deps = changeDeps({ xai: credential("xai", null) });
+    const levels = listPiCatalog().find(
+      (item) => item.provider === "xai" && item.id === "grok-4.6",
+    )?.thinkingLevels;
+    expect(levels).not.toContain("off");
+    const error = `Thinking level must be one of: ${levels?.join(", ")}`;
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "xai",
+        model: "grok-4.6",
+        thinkingLevel: "off",
+      }),
+    ).resolves.toEqual({ ok: false, error });
+    await expect(
+      validateBotModelChange(deps, { ...scope, provider: null, model: null, thinkingLevel: "off" }),
+    ).resolves.toEqual({ ok: false, error });
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "xai",
+        model: "grok-4.6",
+        thinkingLevel: "high",
+      }),
+    ).resolves.toEqual({ ok: true, provider: "xai", model: "grok-4.6", thinkingLevel: "high" });
+  });
+
+  it("uses canonical catalog thinking levels for a saved Azure provider alias", async () => {
+    const entry = listPiCatalog().find(
+      (item) => item.provider === "azure" && item.thinkingLevels?.length,
+    );
+    expect(entry).toBeDefined();
+    const deps = changeDeps({});
+    await expect(
+      prepareAllowedThinkingLevels(deps, scope, "azure-openai-responses", entry!.id),
+    ).resolves.toEqual({ allowed: entry!.thinkingLevels });
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "azure-openai-responses",
+        model: entry!.id,
+        current: { provider: "azure-openai-responses", model: entry!.id },
+        thinkingLevel: "unsupported",
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: `Thinking level must be one of: ${entry!.thinkingLevels!.join(", ")}`,
+    });
+  });
+
+  it("skips model checks when the model is unchanged", async () => {
+    const deps = changeDeps({});
+    await expect(
+      validateBotModelChange(deps, {
+        ...scope,
+        provider: "xai",
+        model: "retired-model",
+        current: { provider: "xai", model: "retired-model" },
+      }),
+    ).resolves.toEqual({ ok: true, provider: "xai", model: "retired-model", thinkingLevel: null });
+  });
+
+  it("clears the model", async () => {
+    await expect(
+      validateBotModelChange(changeDeps({}), { ...scope, provider: null, model: null }),
+    ).resolves.toEqual({ ok: true, provider: null, model: null, thinkingLevel: null });
   });
 });

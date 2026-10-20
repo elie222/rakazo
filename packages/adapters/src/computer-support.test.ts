@@ -21,6 +21,13 @@ describe("Team Computer bot folders", () => {
     expect(resolveBotWorkspaceCwd("team", "bot-1", "/Users/me/project")).toBe("/Users/me/project");
   });
 
+  it("preserves Windows absolute working directories even when the backend runs on Linux", () => {
+    const drive = String.raw`C:\Users\example\project`;
+    const share = String.raw`\\server\share\project`;
+    expect(resolveBotWorkspaceCwd("team", "bot-1", drive)).toBe(drive);
+    expect(resolveBotWorkspaceCwd("team", "bot-1", share)).toBe(share);
+  });
+
   it("keeps shared, bot-root, and absolute paths at the Team root", () => {
     expect(resolveBotWorkspacePath("team", "bot-1", "shared/brief.md")).toBe("shared/brief.md");
     expect(resolveBotWorkspacePath("team", "bot-1", "bots/bot-2/result.md")).toBe(

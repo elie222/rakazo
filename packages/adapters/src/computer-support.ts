@@ -99,7 +99,8 @@ export function resolveBotWorkspaceCwd(
 ): string | undefined {
   if (scope !== "team") return requestedCwd;
   if (!requestedCwd || requestedCwd === ".") return teamBotWorkspaceDirectory(botId);
-  if (requestedCwd.startsWith("/")) return requestedCwd;
+  if (path.posix.isAbsolute(requestedCwd) || path.win32.isAbsolute(requestedCwd))
+    return requestedCwd;
   return resolveBotWorkspacePath(scope, botId, requestedCwd);
 }
 

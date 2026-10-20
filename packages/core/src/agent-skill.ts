@@ -496,7 +496,7 @@ function formatYamlBlockScalar(key: string, value: string): string {
     indicator = "|+";
     const core = value.slice(0, -trailing);
     // keep decoder yields 1 + trailingBlanks newlines; emit trailingBlanks blank lines.
-    lines = [core, ...Array.from({ length: trailing - 1 }, () => "")];
+    lines = [...core.split("\n"), ...Array.from({ length: trailing - 1 }, () => "")];
   }
   const indented = lines.map((line) => `  ${line}`).join("\n");
   return `${key}: ${indicator}\n${indented}`;

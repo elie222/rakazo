@@ -21,7 +21,7 @@ test("Korean messaging settings show linked chat apps, channels, and connections
       body: JSON.stringify({
         json: {
           enabled: true,
-          providers: ["sendblue", "slack", "whatsapp", "telegram", "lark"],
+          providers: ["sendblue", "slack", "whatsapp", "telegram", "telegram-work", "lark"],
           openSignup: false,
           identities: [
             {
@@ -30,6 +30,13 @@ test("Korean messaging settings show linked chat apps, channels, and connections
               address: "+15551230001",
               botId: "bot-1",
               botName: "Chief",
+            },
+            {
+              id: "mi-2",
+              provider: "telegram-work",
+              address: "424242",
+              botId: "bot-2",
+              botName: "Lead",
             },
           ],
         },
@@ -87,16 +94,25 @@ test("Korean messaging settings show linked chat apps, channels, and connections
   await page.getByRole("button", { name: new RegExp(userName) }).click();
   await page.getByRole("button", { name: "Settings" }).click();
   const settings = page.getByTestId("user-settings");
+  await settings
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Messaging", exact: true }) })
+    .scrollIntoViewIfNeeded();
+  await captureScreenshot(page, testInfo, "settings-messaging-summary");
   await settings.getByTestId("ui-locale-select").click();
   await settings.getByRole("option", { name: "한국어", exact: true }).click();
   await expect(settings.getByRole("heading", { name: "메시징", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "메시징 설정 관리" }).click();
 
   await expect(page.getByTestId("messaging-settings")).toBeVisible();
-  await expect(page.getByText("iMessage · Slack · WhatsApp · Telegram · Feishu")).toBeVisible();
+  await expect(
+    page.getByText("iMessage · Slack · WhatsApp · Telegram · Telegram (work) · Feishu"),
+  ).toBeVisible();
   await expect(page.getByText("iMessage · +15551230001")).toBeVisible();
   await expect(page.getByText("→ Chief")).toBeVisible();
-  await expect(page.getByRole("button", { name: "연결 해제" })).toBeVisible();
+  await expect(page.getByText("Telegram (work) · 424242")).toBeVisible();
+  await expect(page.getByText("→ Lead")).toBeVisible();
+  await expect(page.getByRole("button", { name: "연결 해제" })).toHaveCount(2);
   await expect(page.getByText("Family")).toBeVisible();
   await expect(page.getByText("Dana's Assistant")).toBeVisible();
   await expect(page.getByRole("button", { name: "승인" })).toHaveCount(2);

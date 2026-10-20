@@ -37,6 +37,11 @@ export interface RakazoDesktopOAuthCallback {
 }
 
 export interface RakazoDesktop {
+  computer?: {
+    requestAccess: () => Promise<boolean>;
+    revokeAccess: () => Promise<void>;
+    onConfigure: (listener: () => void) => () => void;
+  };
   /** Only the isolated local settings window is authorized to call this bridge. */
   localSettings?: {
     request: (pathname: string, body: string) => Promise<{ status: number; body: string }>;
@@ -77,6 +82,8 @@ export interface DesktopSetup {
 
 export interface DesktopSetupState {
   defaultLocalUrl: string;
+  /** Hosted Rakazo origin, saved as an `existing` server when chosen. */
+  cloudUrl: string;
   saved: DesktopSetup | null;
   /** Present when a saved or newly selected server could not be reopened. */
   error?: string;

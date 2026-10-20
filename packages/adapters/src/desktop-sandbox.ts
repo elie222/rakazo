@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import {
   lstat,
@@ -13,6 +12,7 @@ import {
   unlink,
   writeFile,
 } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 import type {
   AdapterContext,
@@ -27,6 +27,7 @@ import type {
   SandboxProvider,
   ScreenRequest,
   ScreenSession,
+  WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
 import {
@@ -35,6 +36,8 @@ import {
   normalizeWorkspacePath,
   placeholderObservation,
 } from "./computer-support.js";
+import type { NativeProcessTree } from "./desktop-process-tree.js";
+import { spawnOwnedCommand } from "./desktop-process-tree.js";
 import { isAllowedDesktopPath, normalizeDesktopWorkspacePath } from "./desktop-sandbox-paths.js";
 import {
   createExclusiveChildViaDirectoryFdWin32,
@@ -45,6 +48,7 @@ import {
   type Win32FileHandle,
   win32NtRelativeAvailable,
 } from "./desktop-sandbox-win32-path.js";
+import { removeOwnedWorkspaceChildren } from "./desktop-workspace-cleanup.js";
 import { sandboxCommandEnvironment } from "./sandbox-command-environment.js";
 
 const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
@@ -61,8 +65,57 @@ interface DesktopBox {
 
 export class DesktopSandboxProvider implements SandboxProvider {
   readonly boxes = new Map<string, DesktopBox>();
+  private readonly processTrees = new Map<NativeProcessTree, { home: string; runId?: string }>();
+  private processSweep?: NodeJS.Timeout;
 
-  constructor(private readonly opts: { root?: string; hostRoots?: string[] } = {}) {}
+  private sweepProcesses() {
+    for (const tree of this.processTrees.keys()) {
+      if (!tree.alive()) {
+        tree.close();
+        this.processTrees.delete(tree);
+      }
+    }
+    if (!this.processTrees.size) {
+      clearInterval(this.processSweep);
+      this.processSweep = undefined;
+    }
+  }
+
+  cancelAllCommands() {
+    for (const tree of this.processTrees.keys()) {
+      tree.kill();
+      tree.close();
+    }
+    this.processTrees.clear();
+    clearInterval(this.processSweep);
+    this.processSweep = undefined;
+  }
+
+  async cancelRunWork(
+    computer: ComputerRef,
+    _computerId: string,
+    runId: string,
+    _context: AdapterContext,
+  ) {
+    const box = this.boxFor(computer);
+    if (!box) return;
+    this.cancelOwnedProcesses(box.home, runId);
+  }
+
+  private cancelOwnedProcesses(home: string, runId?: string) {
+    for (const [tree, owner] of this.processTrees) {
+      if (owner.home === home && (runId === undefined || owner.runId === runId)) {
+        tree.kill();
+        tree.close();
+        this.processTrees.delete(tree);
+      }
+    }
+    this.sweepProcesses();
+  }
+
+  constructor(
+    private readonly opts: { root?: string; hostRoots?: string[]; maxFileBytes?: number } = {},
+  ) {}
 
   describe() {
     return {
@@ -116,6 +169,72 @@ export class DesktopSandboxProvider implements SandboxProvider {
     return ref;
   }
 
+  async workspaceDirectories(
+    computer: ComputerRef,
+    request: WorkspaceDirectoryRequest,
+    context: AdapterContext,
+  ): Promise<string[]> {
+    const { home } = this.requiredBox(computer);
+    if (request.action === "ensure") {
+      for (const directory of request.paths) {
+        if (context.signal.aborted) throw context.signal.reason;
+        // The existing contained parent walk creates directories without creating a marker file.
+        await localWorkspaceTarget(
+          home,
+          `${normalizeDesktopWorkspacePath(directory)}/.directory`,
+          false,
+        );
+      }
+      return [];
+    }
+    const entries: string[] = [];
+    const parents = request.action === "list" ? ["bots", ".browser-profiles"] : [request.parent];
+    let refused = false;
+    for (const parent of parents) {
+      if (parent !== "bots" && parent !== ".browser-profiles")
+        throw new Error("Path escapes the computer workspace");
+      const pattern = parent === "bots" ? /^[A-Za-z0-9_-]+$/ : /^chromium-bot-[0-9a-f]{32}$/;
+      const names =
+        request.action === "remove"
+          ? request.names.filter((name) => {
+              if (pattern.test(name)) return true;
+              refused = true;
+              return false;
+            })
+          : [];
+      const parentPath = path.join(home, parent);
+      const info = await lstat(parentPath, { bigint: true }).catch((error) => {
+        if (hasErrorCode(error, "ENOENT")) return null;
+        throw error;
+      });
+      if (!info) continue;
+      if (info.isSymbolicLink() || !info.isDirectory()) {
+        if (request.action === "list") continue;
+        throw new Error("Path escapes the computer workspace");
+      }
+      const target = await localWorkspaceTarget(home, parent, true);
+      if (request.action === "list") {
+        for (const name of await readdir(target)) entries.push(`${parent}/${name}`);
+      } else if (request.action === "remove") {
+        await removeOwnedWorkspaceChildren(target, names, info, context.signal);
+      }
+    }
+    if (refused) throw new Error("Path escapes the computer workspace");
+    return entries;
+  }
+
+  async isRunning(computer: ComputerRef, _context: AdapterContext) {
+    return this.boxes.get(computer.id)?.running ?? false;
+  }
+
+  async environment() {
+    return {
+      platform: process.platform,
+      home: homedir(),
+      shell: process.platform === "win32" ? "powershell.exe" : process.env.SHELL || "/bin/sh",
+    };
+  }
+
   async prepare(_computer: ComputerRef, _context: AdapterContext): Promise<void> {}
 
   async *execute(
@@ -137,12 +256,22 @@ export class DesktopSandboxProvider implements SandboxProvider {
     }
     await mkdir(cwd, { recursive: true });
     const argv = request.argv.length ? request.argv : ["echo", "ready"];
+    this.sweepProcesses();
+    if (this.processTrees.size >= 256) throw new Error("Too many local background commands");
     yield* streamLocalCommand(
       argv,
       cwd,
       boundedSandboxCommandTimeoutMs(request.timeoutMs),
       context.signal,
       request,
+      (tree) => {
+        this.processTrees.set(tree, { home: box.home, runId: context.runId });
+        if (!this.processSweep) {
+          this.processSweep = setInterval(() => this.sweepProcesses(), 1000);
+          this.processSweep.unref();
+        }
+      },
+      () => this.sweepProcesses(),
     );
   }
 
@@ -244,7 +373,7 @@ export class DesktopSandboxProvider implements SandboxProvider {
 
   async *exportWorkspace(computer: ComputerRef): AsyncIterable<PortableFile> {
     const box = this.requiredBox(computer);
-    yield* walkDesktopWorkspace(box.home, "");
+    yield* walkDesktopWorkspace(box.home, "", this.opts.maxFileBytes);
   }
 
   async importWorkspace(
@@ -261,12 +390,18 @@ export class DesktopSandboxProvider implements SandboxProvider {
 
   async stop(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxFor(computer);
-    if (box) box.running = false;
+    if (box) {
+      box.running = false;
+      this.cancelOwnedProcesses(box.home);
+    }
   }
 
   async destroy(computer: ComputerRef, _context: AdapterContext): Promise<void> {
     const box = this.boxFor(computer);
-    if (box) this.boxes.delete(box.ref.id);
+    if (box) {
+      this.cancelOwnedProcesses(box.home);
+      this.boxes.delete(box.ref.id);
+    }
     this.boxes.delete(computer.id);
     if (box && this.opts.root) {
       await writeFile(path.join(box.home, ".stopped"), new Date().toISOString(), "utf8").catch(
@@ -664,15 +799,21 @@ function hasErrorCode(error: unknown, code: string): error is NodeJS.ErrnoExcept
   return error instanceof Error && "code" in error && error.code === code;
 }
 
-async function* walkDesktopWorkspace(home: string, directory: string): AsyncIterable<PortableFile> {
+async function* walkDesktopWorkspace(
+  home: string,
+  directory: string,
+  maxFileBytes?: number,
+): AsyncIterable<PortableFile> {
   const target = await localWorkspaceTarget(home, directory, true);
   for (const entry of await readdir(target, { withFileTypes: true })) {
     const relative = normalizeWorkspacePath(directory ? `${directory}/${entry.name}` : entry.name);
     const child = await localWorkspaceTarget(home, relative, true).catch(() => null);
     if (!child) continue;
     const info = await stat(child);
-    if (info.isDirectory()) yield* walkDesktopWorkspace(home, relative);
+    if (info.isDirectory()) yield* walkDesktopWorkspace(home, relative, maxFileBytes);
     else if (info.isFile()) {
+      if (maxFileBytes !== undefined && info.size > maxFileBytes)
+        throw new Error(`computer file exceeds ${maxFileBytes} bytes`);
       yield {
         path: relative,
         content: new Uint8Array(await readFile(child)),
@@ -707,19 +848,26 @@ async function* streamLocalCommand(
   timeoutMs: number,
   signal: AbortSignal,
   request: CommandRequest,
+  own: (tree: NativeProcessTree) => void,
+  sweep: () => void,
 ): AsyncIterable<ProcessEvent> {
+  if (signal.aborted) {
+    yield { type: "stderr", data: "command aborted\n" };
+    yield { type: "exit", code: 130 };
+    return;
+  }
   const direct = directCommandArgv(argv);
   if (!direct) {
     yield { type: "stderr", data: "command rejected\n" };
     yield { type: "exit", code: 1 };
     return;
   }
-  const child = spawn(direct[0]!, direct.slice(1), {
+  const { child, tree } = spawnOwnedCommand(
+    direct,
     cwd,
-    env: sandboxCommandEnvironment(request, process.env),
-    detached: process.platform !== "win32",
-    shell: false,
-  });
+    sandboxCommandEnvironment(request, process.env),
+  );
+  own(tree);
   const queue: ProcessEvent[] = [];
   let ended = false;
   let settled = false;
@@ -743,7 +891,7 @@ async function* streamLocalCommand(
     notify?.();
   };
   const terminate = (message: string, code: number) => {
-    killProcessTree(child.pid);
+    tree.kill();
     child.stdout?.destroy();
     child.stderr?.destroy();
     finish(code, message);
@@ -792,31 +940,11 @@ async function* streamLocalCommand(
     if (!settled) {
       clearTimeout(timeout);
       signal.removeEventListener("abort", abort);
-      killProcessTree(child.pid);
+      tree.kill();
       settled = true;
       ended = true;
     }
-  }
-}
-
-function killProcessTree(pid: number | undefined) {
-  if (!pid) return;
-  if (process.platform === "win32") {
-    const killer = spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
-      stdio: "ignore",
-      shell: false,
-    });
-    killer.unref();
-    return;
-  }
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // The process exited between the timeout and termination attempt.
-    }
+    sweep();
   }
 }
 

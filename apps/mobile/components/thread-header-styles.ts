@@ -26,6 +26,11 @@ export function createThreadHeaderStyles() {
       fontSize: 18,
       fontWeight: "600",
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 20,
+    },
     circleButton: {
       flex: 1,
       borderRadius: 999,
@@ -36,13 +41,6 @@ export function createThreadHeaderStyles() {
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: tokens.border,
       backgroundColor: tokens.card,
-    },
-    headerFade: {
-      position: "absolute",
-      top: 0,
-      left: 0,
-      right: 0,
-      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${tokens.background} 58%, ${transparentBackground} 100%)`,
     },
     composerFade: {
       position: "absolute",

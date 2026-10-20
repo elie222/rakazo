@@ -191,7 +191,11 @@ export async function provisionComputer(
           maintenanceId: existing.maintenanceId ?? null,
           ...(context.botId ? { bots: { some: { id: context.botId, archivedAt: null } } } : {}),
         },
-        data: { updatedAt: new Date() },
+        // A row activated by an older release has no clock yet; start it now.
+        data: {
+          updatedAt: new Date(),
+          ...(existing.runningSince ? {} : { runningSince: new Date() }),
+        },
       });
       if (retained.count !== 1) throw new ComputerBusyError();
       await deps.sandbox.prepare(ref, context);
@@ -366,6 +370,11 @@ export async function provisionComputer(
         state: "running",
         providerRef: ref.providerRef,
         kind: ref.kind,
+        // A reconnect to a computer that stayed up continues its stretch; any start begins one.
+        runningSince:
+          existing.state === "running" && existing.runningSince && !ref.started && !replacement
+            ? existing.runningSince
+            : new Date(),
         ...(!reconnecting
           ? {
               controlHolder: activeControl ? "user" : controlHolder,
@@ -480,10 +489,7 @@ export function screenLeaseIdForRun(
   return screenLeaseId(lease?.runId ?? runId, lease?.fence ?? fence);
 }
 
-/**
- * Dedicated computers do not take an active computer-execution lease, but a retained screen
- * needs an increasing fence across runs. Keep the sequence in the expired per-computer/bot row.
- */
+/** Dedicated screen leases serialize workers and retain the fence after release. */
 export async function acquireDedicatedScreenLeaseFence(
   prisma: PrismaClient,
   input: {
@@ -521,15 +527,18 @@ export async function acquireDedicatedScreenLeaseFence(
       FOR UPDATE SKIP LOCKED`;
     if (currentRun.length !== 1) throw new ComputerBusyError();
 
-    const expiredAt = new Date(0);
+    // An unexpired holder owns the screen until release, pause, or expiry. Keep the
+    // expired row so explicit release never resets the next worker's screen fence.
+    // The current worker ownership check also permits resuming this run's held takeover.
     const now = new Date();
+    const expiresAt = new Date(now.getTime() + EXECUTION_LEASE_MS);
     const [existing] = await tx.computerExecutionLease.updateManyAndReturn({
       where: {
         computerId: input.computerId,
         botId: input.botId,
-        expiresAt: { lte: now },
+        OR: [{ expiresAt: { lte: now } }, { runId: input.runId }],
       },
-      data: { runId: input.runId, expiresAt: expiredAt, fence: { increment: 1 } },
+      data: { runId: input.runId, expiresAt, fence: { increment: 1 } },
       select: { fence: true },
     });
     if (existing) {
@@ -553,7 +562,7 @@ export async function acquireDedicatedScreenLeaseFence(
           botId: input.botId,
           runId: input.runId,
           fence,
-          expiresAt: expiredAt,
+          expiresAt,
         },
         select: { fence: true },
       });
@@ -714,7 +723,7 @@ export function computerSupportsUpdate(kind: string): boolean {
 /** Kinds whose provider opens a user terminal through the shared Linux screen gateway. */
 export function computerSupportsTerminal(kind: string): boolean {
   return (
-    kind === "docker" || kind === "e2b" || kind === "daytona" || kind === "box" || kind === "fake"
+    kind === "docker" || kind === "e2b" || kind === "daytona" || kind === "boat" || kind === "fake"
   );
 }
 

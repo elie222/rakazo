@@ -8,7 +8,6 @@ import type {
   MessageBlock,
   MessageReaction,
   ReplyPreview,
-  RunStatus,
   ThreadSnapshot,
 } from "@rakazo/contracts";
 import { GROUP_MEMBER_MIN, MessageBlock as MessageBlockSchema } from "@rakazo/contracts";
@@ -16,9 +15,10 @@ import {
   ACTIVE_RUN_STATUSES,
   BACKGROUND_RUN_TRIGGERS,
   callIdFromClientNonce,
-  isActive,
   isConversationalRun,
+  messageReaction,
   projectMessages,
+  QUEUE_HOLDING_RUN_STATUSES,
   resolveGroupTargetBotIds,
   runFailureError,
 } from "@rakazo/core";
@@ -65,17 +65,8 @@ export type ThreadTarget =
 const THREAD_MESSAGE_PAGE_SIZE = 100;
 const RUNS_NEEDING_CONTINUE = new Set(["queued", "waiting_takeover"]);
 
-const STEERABLE_RUN_STATUSES = new Set(["queued", "leased", "running", "waiting_takeover"]);
-/**
- * A routine's, webhook's, or creation intro's turn is its own prompt, not the conversation.
- * A user message that lands while one is busy (not `waiting_input`) is stored as pending
- * steering (no run): that run never claims it, and the continuation started when it finishes
- * answers with the full thread. Starting a second run beside the intro overlaps it on a
- * dedicated computer, where there is no per-bot execution lease, and both can reply.
- * Composer text answers a waiting ask, including a routine or webhook ask, only when no
- * steerable conversational run is active. When one is, the text steers that run and the
- * ask stays on its card.
- */
+const STEERABLE_RUN_STATUSES = new Set<string>(QUEUE_HOLDING_RUN_STATUSES);
+/** Background work holds pending steering; paused cards never hold the queue. */
 function steersUserMessage(run: { status: string; trigger?: string | null }) {
   return STEERABLE_RUN_STATUSES.has(run.status) && isConversationalRun(run.trigger);
 }
@@ -354,20 +345,22 @@ export async function threadSnapshot(
       deps.prisma.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR SHARE`;
-          const [messagePage, last, waitingRun, busyOrFailed] = await Promise.all([
+          const [messagePage, last, activeRuns, busyOrFailed] = await Promise.all([
             loadMessagePage(tx, target.threadId, undefined, THREAD_MESSAGE_PAGE_SIZE),
             tx.event.findFirst({
               where: { threadId: target.threadId },
               orderBy: { seq: "desc" },
               select: { seq: true },
             }),
-            // Waiting asks win over a concurrent busy run, including peer bot_message
-            // and ticket runs. Busy ticket work stays off the transcript below.
-            tx.run.findFirst({
+            tx.run.findMany({
               where: {
                 botId: target.botId,
                 threadId: target.threadId,
-                status: { in: ["waiting_input", "waiting_takeover"] },
+                status: { in: [...ACTIVE_RUN_STATUSES] },
+                OR: [
+                  { trigger: { notIn: ["bot_message", ...BACKGROUND_RUN_TRIGGERS] } },
+                  { status: { in: ["waiting_input", "waiting_takeover"] } },
+                ],
               },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             }),
@@ -384,7 +377,7 @@ export async function threadSnapshot(
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             }),
           ]);
-          const run = waitingRun ?? busyOrFailed;
+          const run = pickPrimaryPrivateActiveRun(activeRuns) ?? busyOrFailed;
           // A failed run is only the thread's word while it is still the newest
           // terminal run; otherwise a stale failure would resurface in the
           // composer error strip on every load, forever. Instead of comparing
@@ -407,11 +400,11 @@ export async function threadSnapshot(
               : null;
           const currentRun = run?.status === "failed" && newestTerminal?.id !== run.id ? null : run;
           const liveEvents =
-            currentRun && isActive(currentRun.status as RunStatus)
+            activeRuns.length > 0
               ? await tx.event.findMany({
                   where: {
                     threadId: target.threadId,
-                    runId: currentRun.id,
+                    runId: { in: activeRuns.map((run) => run.id) },
                     type: {
                       in: [
                         "thread.progress",
@@ -424,7 +417,7 @@ export async function threadSnapshot(
                   orderBy: { seq: "asc" },
                 })
               : [];
-          return { messagePage, last, run: currentRun, liveEvents };
+          return { messagePage, last, run: currentRun, activeRuns, liveEvents };
         },
         { timeout: 15_000, maxWait: 5_000 },
       ),
@@ -436,6 +429,7 @@ export async function threadSnapshot(
       messages: messagesWithLiveEvents(core.messagePage.messages, core.liveEvents),
       olderCursor: core.messagePage.olderCursor,
       run: core.run ? mapRun(core.run) : null,
+      activeRuns: core.activeRuns.map(mapRun),
       computer: toComputerStatus(target.botId, target.bot.computer, busyBotName),
     };
   }
@@ -524,17 +518,21 @@ export async function threadSnapshot(
   };
 }
 
-/**
- * Prefer a waiting ask/takeover over a merely-busy run for the group's headline
- * `run` field, even when the busy run started more recently — createdAt-desc
- * ordering alone would let a fresh busy run for one bot bury an older waiting
- * card for another. `activeRuns` still carries every active run regardless of
- * which one is picked here, so nothing is hidden from the client, only the
- * single-run summary field.
- */
+/** Keep waiting asks and takeovers in the group headline ahead of newer busy runs. */
 function pickPrimaryActiveRun<T extends { status: string }>(runs: readonly T[]): T | undefined {
   return (
     runs.find((run) => run.status === "waiting_input" || run.status === "waiting_takeover") ??
+    runs[0]
+  );
+}
+
+/** Private threads prioritize takeover, then live work, while pending cards stay active. */
+function pickPrimaryPrivateActiveRun<T extends { status: string }>(
+  runs: readonly T[],
+): T | undefined {
+  return (
+    runs.find((run) => run.status === "waiting_takeover") ??
+    runs.find((run) => QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status)) ??
     runs[0]
   );
 }
@@ -720,29 +718,21 @@ export async function sendThreadMessage(
           },
           select: { id: true, taskId: true, status: true, trigger: true },
         });
-        const waitingRuns = activeRuns.filter((run) => run.status === "waiting_input");
-        if (waitingRuns.length && !activeRuns.some(steersUserMessage)) {
-          const answerText = input.text?.trim();
-          if (!answerText) {
-            throw new ORPCError("CONFLICT", {
-              message: "Answer the pending ask first.",
-            });
-          }
-          for (const run of waitingRuns) {
-            const answered = await answerWaitingRunWithTextInTransaction(tx, {
+        const answered: typeof activeRuns = [];
+        for (const run of activeRuns.filter((run) => run.status === "waiting_input")) {
+          if (
+            await answerWaitingRunWithTextInTransaction(tx, {
               spaceId: actor.spaceId,
               threadId: target.threadId,
               runId: run.id,
               answeredByUserId: actor.userId,
-              answer: answerText,
-            });
-            if (!answered) {
-              throw new ORPCError("CONFLICT", {
-                message: "Answer the pending ask first.",
-              });
-            }
-          }
-          const answered = waitingRuns.map((run) => ({ ...run, status: "queued" }));
+              answer: input.text ?? "",
+              beforeMessageSeq: message.seq,
+            })
+          )
+            answered.push({ ...run, status: "queued" });
+        }
+        if (answered.length) {
           const primary = answered[0];
           if (!primary) throw new IsolationError();
           await tx.message.update({ where: { id: message.id }, data: { runId: primary.id } });
@@ -754,6 +744,7 @@ export async function sendThreadMessage(
             runId: primary.id,
             payload: {
               messageId: message.id,
+              seq: message.seq,
               role: "user",
               blocks,
               callId,
@@ -765,16 +756,10 @@ export async function sendThreadMessage(
           });
           return { message, runs: answered, eventSeq: event.seq };
         }
-        if (
-          activeRuns.some(
-            (run) => run.status !== "waiting_input" && !STEERABLE_RUN_STATUSES.has(run.status),
-          )
-        ) {
-          throw new ORPCError("CONFLICT", {
-            message: "Answer the pending ask first.",
-          });
-        }
-        const active = activeRuns.find(steersUserMessage) ?? activeRuns[0];
+        const holdingRuns = activeRuns.filter((run) =>
+          QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
+        );
+        const active = holdingRuns.find(steersUserMessage) ?? holdingRuns[0];
         if (active) {
           await tx.steeringMessage.create({
             data: {
@@ -793,6 +778,7 @@ export async function sendThreadMessage(
             runId: active.id,
             payload: {
               messageId: message.id,
+              seq: message.seq,
               role: "user",
               blocks,
               callId,
@@ -840,6 +826,7 @@ export async function sendThreadMessage(
           runId: run.id,
           payload: {
             messageId: message.id,
+            seq: message.seq,
             role: "user",
             blocks,
             callId,
@@ -891,41 +878,24 @@ export async function sendThreadMessage(
       });
       const activeByBotId = new Map<string, (typeof activeRuns)[number]>();
       const answeredByBotId = new Map<string, Array<(typeof activeRuns)[number]>>();
-      const conversationalBotIds = new Set(
-        activeRuns.filter(steersUserMessage).map((run) => run.botId),
-      );
       for (const run of activeRuns) {
         if (run.status === "waiting_input") {
-          if (conversationalBotIds.has(run.botId)) continue;
-          const answerText = input.text?.trim();
-          if (!answerText) {
-            throw new ORPCError("CONFLICT", {
-              message: "Answer the pending ask first.",
-            });
-          }
           const answered = await answerWaitingRunWithTextInTransaction(tx, {
             spaceId: actor.spaceId,
             threadId: target.threadId,
             runId: run.id,
             answeredByUserId: actor.userId,
-            answer: answerText,
+            answer: input.text ?? "",
+            beforeMessageSeq: message.seq,
           });
-          if (!answered) {
-            throw new ORPCError("CONFLICT", {
-              message: "Answer the pending ask first.",
-            });
+          if (answered) {
+            const queuedForBot = answeredByBotId.get(run.botId) ?? [];
+            queuedForBot.push({ ...run, status: "queued" });
+            answeredByBotId.set(run.botId, queuedForBot);
           }
-          const queuedRun = { ...run, status: "queued" };
-          const queuedForBot = answeredByBotId.get(run.botId);
-          if (queuedForBot) queuedForBot.push(queuedRun);
-          else answeredByBotId.set(run.botId, [queuedRun]);
           continue;
         }
-        if (!STEERABLE_RUN_STATUSES.has(run.status)) {
-          throw new ORPCError("CONFLICT", {
-            message: "Answer the pending ask first.",
-          });
-        }
+        if (!STEERABLE_RUN_STATUSES.has(run.status)) continue;
         const current = activeByBotId.get(run.botId);
         if (!current || (!steersUserMessage(current) && steersUserMessage(run))) {
           activeByBotId.set(run.botId, run);
@@ -1001,6 +971,7 @@ export async function sendThreadMessage(
         runId: firstRun?.id ?? activeRuns[0]?.id,
         payload: {
           messageId: message.id,
+          seq: message.seq,
           role: "user",
           blocks,
           callId,
@@ -1037,25 +1008,33 @@ export async function sendThreadMessage(
   return sendResult(committed.message, committed.runs);
 }
 
+const REACTION_TURN_COOLDOWN_MS = 30_000;
+
 /**
- * Append an emoji reply to the conversation so the next AI turn sees its target.
- * Clients render it beneath that message; the reaction itself does not start an AI turn.
+ * Append a human emoji reply with its target. Any reaction to the bot's latest
+ * message may wake it, with silence allowed. Only thumbs answer an ordinary pending
+ * ask; busy bots, recent reaction turns, and older targets stay quiet context.
+ * A 👍 on a pending takeover counts as done and hands computer control back.
+ * Approval and secret asks remain on their cards. Reactions are append-only.
  */
 export async function reactToThreadMessage(
-  deps: { prisma: PrismaClient },
+  deps: { prisma: PrismaClient; jobs: JobPublisher },
   actor: Actor,
   target: ThreadTarget,
   input: {
     messageId: string;
     reaction: MessageReaction;
     clientNonce: string;
+    /** False when a send could not start a run either (no model, teaching). */
+    mayStartTurn: boolean;
   },
+  releaseTakeover?: (runId: string) => Promise<void>,
 ) {
-  return deps.prisma.$transaction(async (tx) => {
+  const committed = await deps.prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM threads WHERE id = ${target.threadId} FOR UPDATE`;
     const parent = await tx.message.findFirst({
       where: { id: input.messageId, threadId: target.threadId },
-      select: { id: true },
+      select: { id: true, seq: true, role: true, botId: true, runId: true },
     });
     if (!parent) throw new IsolationError();
     const existing = await tx.message.findUnique({
@@ -1064,8 +1043,28 @@ export async function reactToThreadMessage(
       },
       select: { id: true },
     });
-    if (existing) return { eventSeq: null };
-    const botId = target.kind === "bot" ? target.botId : target.memberBotIds[0];
+    if (existing) {
+      // A retry finishes a takeover handoff whose release failed after the 👍 was saved.
+      const steering = releaseTakeover
+        ? await tx.steeringMessage.findFirst({
+            where: { messageId: existing.id, claimedAt: null },
+            select: { run: { select: { id: true, taskId: true, status: true } } },
+          })
+        : null;
+      const run = steering?.run;
+      return { eventSeq: null, runs: run?.status === "waiting_takeover" ? [run] : [] };
+    }
+    const members =
+      target.kind === "group" ? await lockAndLoadGroupMembers(tx, actor, target) : undefined;
+    const currentTarget = members
+      ? { ...target, memberBotIds: members.map((member) => member.botId) }
+      : target;
+    const replyBotId = input.mayStartTurn
+      ? await reactionReplyBotId(tx, currentTarget, parent)
+      : undefined;
+    const botId =
+      replyBotId ??
+      (currentTarget.kind === "bot" ? currentTarget.botId : currentTarget.memberBotIds[0]);
     if (!botId) throw new IsolationError();
     const blocks: MessageBlock[] = [{ kind: "text", text: input.reaction }];
     const message = await createThreadMessageInTransaction(tx, {
@@ -1075,16 +1074,160 @@ export async function reactToThreadMessage(
       replyToMessageId: parent.id,
       clientNonce: input.clientNonce,
     });
+    const runs = replyBotId
+      ? await startReactionTurn(tx, actor, target.threadId, replyBotId, parent, message, {
+          ...input,
+          canReleaseTakeover: Boolean(releaseTakeover),
+        })
+      : [];
     if (target.kind === "group") await touchGroupUpdatedAt(tx, target.groupId);
     const event = await appendEventInTransaction(tx, {
       spaceId: actor.spaceId,
       threadId: target.threadId,
       botId,
       type: "thread.message.created",
-      payload: { messageId: message.id, role: "user", blocks, replyToMessageId: parent.id },
+      ...(runs[0] ? { runId: runs[0].id } : {}),
+      payload: {
+        messageId: message.id,
+        role: "user",
+        blocks,
+        replyToMessageId: parent.id,
+        ...(runs.length ? { runIds: runs.map((run) => run.id) } : {}),
+      },
     });
-    return { eventSeq: event.seq };
+    return { eventSeq: event.seq, runs };
   });
+  if (releaseTakeover) {
+    for (const run of committed.runs) {
+      if (run.status === "waiting_takeover") await releaseTakeover(run.id);
+    }
+  }
+  await enqueueRunsNeedingContinue(deps.jobs, committed.runs);
+  return { eventSeq: committed.eventSeq, runIds: committed.runs.map((run) => run.id) };
+}
+
+/** The bot that wrote the thread's newest message, when the reaction targets that message. */
+async function reactionReplyBotId(
+  tx: Prisma.TransactionClient,
+  target: ThreadTarget,
+  parent: { seq: number; role: string; botId: string | null },
+) {
+  // Only the authenticated human reaction route calls this path; bots cannot wake each other.
+  if (parent.role !== "bot" || !parent.botId) return undefined;
+  const memberBotIds = target.kind === "bot" ? [target.botId] : target.memberBotIds;
+  if (!memberBotIds.includes(parent.botId)) return undefined;
+  // Earlier reactions may follow it; any other message means the conversation moved on.
+  const newer = await tx.message.findMany({
+    where: { threadId: target.threadId, seq: { gt: parent.seq } },
+    orderBy: { seq: "asc" },
+    take: 51,
+    select: { role: true, blocks: true, replyToMessageId: true },
+  });
+  if (newer.length > 50) return undefined;
+  const onlyReactions = newer.every((message) =>
+    messageReaction({
+      ...message,
+      blocks: Array.isArray(message.blocks) ? (message.blocks as MessageBlock[]) : [],
+    }),
+  );
+  return onlyReactions ? parent.botId : undefined;
+}
+
+async function startReactionTurn(
+  tx: Prisma.TransactionClient,
+  actor: Actor,
+  threadId: string,
+  botId: string,
+  parent: { id: string; runId: string | null },
+  message: { id: string; seq: number },
+  input: { reaction: MessageReaction; clientNonce: string; canReleaseTakeover: boolean },
+): Promise<Array<{ id: string; taskId: string; status: string }>> {
+  const activeRuns = await tx.run.findMany({
+    where: { threadId, botId, status: { in: [...ACTIVE_RUN_STATUSES] } },
+    select: { id: true, taskId: true, status: true },
+  });
+  const holdingRuns = activeRuns.filter((run) =>
+    QUEUE_HOLDING_RUN_STATUSES.some((status) => status === run.status),
+  );
+  const active = activeRuns.find((run) => run.id === parent.runId) ?? holdingRuns[0];
+  const others = holdingRuns.filter((run) => run.id !== active?.id);
+  if (active) {
+    // A 👍 while this run waits for the user to finish on the computer means "done", the
+    // same as a typed reply: it steers the run and the caller hands control back.
+    // Only when the caller can hand control back (bot threads), as with a typed reply.
+    if (
+      input.canReleaseTakeover &&
+      input.reaction === "👍" &&
+      !others.length &&
+      active.status === "waiting_takeover" &&
+      active.id === parent.runId
+    ) {
+      await tx.steeringMessage.create({
+        data: { messageId: message.id, botId, userId: actor.userId, runId: active.id },
+      });
+      await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+      return [active];
+    }
+    if (
+      (input.reaction === "👍" || input.reaction === "👎") &&
+      active.status === "waiting_input" &&
+      active.id === parent.runId
+    ) {
+      const answered = await answerWaitingRunWithTextInTransaction(tx, {
+        spaceId: actor.spaceId,
+        threadId,
+        runId: active.id,
+        answeredByUserId: actor.userId,
+        answer: input.reaction === "👍" ? "yes" : "no",
+        messageId: parent.id,
+      });
+      if (answered) {
+        await tx.message.update({ where: { id: message.id }, data: { runId: active.id } });
+        return [{ ...active, status: "queued" }];
+      }
+      // Approval and secret cards still require an explicit card answer.
+      return [];
+    }
+    if (holdingRuns.length) return [];
+  }
+  // The cooldown limits new turns only, so a quick answer to a pending ask still goes through.
+  const recentReaction = await tx.run.findFirst({
+    where: {
+      threadId,
+      botId,
+      trigger: "reaction",
+      status: { not: "cancelled" },
+      createdAt: { gte: new Date(Date.now() - REACTION_TURN_COOLDOWN_MS) },
+    },
+    select: { id: true },
+  });
+  if (recentReaction) return [];
+  const task = await tx.task.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId,
+      threadId,
+      userId: actor.userId,
+      prompt: input.reaction,
+      status: "queued",
+    },
+  });
+  const run = await tx.run.create({
+    data: {
+      spaceId: actor.spaceId,
+      botId,
+      threadId,
+      taskId: task.id,
+      userId: actor.userId,
+      status: "queued",
+      trigger: "reaction",
+      clientNonce: sendRunClientNonce(input.clientNonce, message.id),
+      sourceMessageId: message.id,
+    },
+  });
+  await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
+  await cancelSupersededQueuedRuns(tx, { threadId, botIds: [botId], keepRunIds: [run.id] });
+  return [run];
 }
 
 export async function stopThreadRuns(

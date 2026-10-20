@@ -4,11 +4,13 @@ vi.mock("expo-modules-core", () => ({ requireNativeModule: vi.fn() }));
 vi.mock("expo-notifications", () => ({
   setNotificationHandler: vi.fn(),
   getPresentedNotificationsAsync: vi.fn(async () => []),
+  dismissNotificationAsync: vi.fn(async () => undefined),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 
 import * as Notifications from "expo-notifications";
 import {
+  afterChatNotifyChange,
   configureForegroundNotifications,
   notificationTargetsThread,
   setOpenNotificationThread,
@@ -53,5 +55,20 @@ describe("notification thread targeting", () => {
     await expect(
       handler?.handleNotification({ request: { content: { data: { botId: "bot-2" } } } } as never),
     ).resolves.toMatchObject({ shouldShowBanner: true, shouldShowList: true });
+  });
+});
+
+describe("after a chat's notifications change", () => {
+  it("clears that chat's delivered notifications only when they are turned off", async () => {
+    vi.mocked(Notifications.getPresentedNotificationsAsync).mockResolvedValue([
+      { request: { identifier: "a", content: { data: { threadId: "thread-1" } } } },
+      { request: { identifier: "b", content: { data: { threadId: "thread-2" } } } },
+    ] as never);
+
+    await afterChatNotifyChange("", "", "", { threadId: "thread-1", notify: true });
+    expect(Notifications.dismissNotificationAsync).not.toHaveBeenCalled();
+
+    await afterChatNotifyChange("", "", "", { threadId: "thread-1", notify: false });
+    expect(vi.mocked(Notifications.dismissNotificationAsync).mock.calls).toEqual([["a"]]);
   });
 });

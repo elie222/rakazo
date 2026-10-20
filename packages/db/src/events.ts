@@ -1,6 +1,7 @@
 import type { RealtimeFanout } from "@rakazo/adapter-kit";
 import type { BotSecretDestination, MessageBlock, ProductEvent } from "@rakazo/contracts";
 import {
+  BOT_INSTRUCTIONS_MAX_LENGTH,
   encodeLoginSecret,
   LoginSecretValue,
   MessageBlock as MessageBlockSchema,
@@ -8,13 +9,18 @@ import {
 import {
   blocksToAgentHistoryText,
   callIdFromClientNonce,
+  instructionUpdateDiff,
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
+  messageReaction,
   messagingChannelId,
+  QUEUE_HOLDING_RUN_STATUSES,
+  releasedTakeoverComputerBlocks,
   resolveAskChoice,
   sanitizeJsonValue,
 } from "@rakazo/core";
+import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
 import { getLogger } from "@rakazo/logging";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -52,7 +58,7 @@ export interface ThreadEvents {
   ): Promise<FinalizeComputerControlReleaseResult | false>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   notify(threadId: string, seq: number): Promise<void>;
-  pauseRunForInput(input: PauseRunForInput): Promise<boolean>;
+  pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
@@ -423,7 +429,7 @@ export async function sendUserMessage(
                 threadId: input.threadId,
                 botId: input.botId,
                 status: {
-                  in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"],
+                  in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
               select: { id: true, taskId: true, trigger: true },
@@ -470,15 +476,17 @@ export async function sendUserMessage(
           await tx.message.update({ where: { id: message.id }, data: { runId: run.id } });
         }
       } else if (createRun && busy) {
-        const held = !isConversationalRun(busy.trigger);
+        const held = input.trigger === "webhook" || !isConversationalRun(busy.trigger);
         await tx.steeringMessage.create({
           data: {
             messageId: message.id,
             botId: input.botId,
             userId: input.userId,
-            // Keep messaging on the hold so the later run is mirrored back to that app.
+            // External deliveries retain their origin and never become app follow-ups.
             runId: held ? null : busy.id,
-            ...(held && input.trigger === "messaging" ? { originTrigger: "messaging" } : {}),
+            ...(input.trigger === "messaging" || input.trigger === "webhook"
+              ? { originTrigger: input.trigger }
+              : {}),
             ...(input.modelPin
               ? {
                   modelProvider: input.modelPin.modelProvider,
@@ -557,7 +565,7 @@ export async function claimSteering(
     const pendingWhere = directMessage
       ? { runId: null, originTrigger: "messaging" }
       : channelId
-        ? { runId: null }
+        ? { runId: null, originTrigger: "messaging" }
         : { runId: null, originTrigger: null };
     const steering = await tx.steeringMessage.findMany({
       where: {
@@ -686,10 +694,27 @@ async function commitAnswerRunInput(
     : undefined;
   if (login && !login.success) return null;
   let approvalEffect: { id: string; kind: string } | null = null;
+  let editedInstructions: string | undefined;
+  let approvalAnswer = input.answer;
+  if (approvalAsk && pendingAsk.instructionUpdate && input.answer.startsWith("{")) {
+    try {
+      const edited = JSON.parse(input.answer);
+      if (
+        typeof edited.instructions !== "string" ||
+        edited.instructions.length > BOT_INSTRUCTIONS_MAX_LENGTH ||
+        Object.keys(edited).length !== 1
+      )
+        return null;
+      editedInstructions = edited.instructions;
+      approvalAnswer = "allow";
+    } catch {
+      return null;
+    }
+  }
   let approvalUserId: string | null = null;
 
   if (approvalAsk) {
-    if (!pendingAsk.actions?.some((action) => action.id === input.answer)) return null;
+    if (!pendingAsk.actions?.some((action) => action.id === approvalAnswer)) return null;
     approvalEffect = await tx.externalEffect.findFirst({
       where: {
         id: pendingAsk.approvalEffectId,
@@ -699,6 +724,15 @@ async function commitAnswerRunInput(
       },
     });
     if (!approvalEffect) return null;
+    if (pendingAsk.instructionUpdate) {
+      if (
+        approvalEffect.kind !== "propose_instructions_update" ||
+        pendingAsk.instructionUpdate.botId !== run.botId ||
+        (approvalAnswer !== "allow" && approvalAnswer !== "deny") ||
+        run.userId !== input.answeredByUserId
+      )
+        return null;
+    }
     if (input.answer === "always") {
       if (run.userId !== input.answeredByUserId) return null;
       approvalUserId = input.answeredByUserId;
@@ -719,7 +753,7 @@ async function commitAnswerRunInput(
   });
   if (queued.count !== 1) return null;
 
-  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? input.answer);
+  const recordedAnswer = secretAsk ? "" : (selectedChoice?.id ?? approvalAnswer);
   const callId = callIdFromClientNonce(input.clientNonce);
   const recordsCallUtterance = Boolean(callId && !secretAsk);
 
@@ -746,7 +780,30 @@ async function commitAnswerRunInput(
   }
 
   if (approvalAsk) {
-    const allowed = input.answer === "allow" || input.answer === "always";
+    if (pendingAsk.instructionUpdate) {
+      if (editedInstructions !== undefined) {
+        const stored = await tx.externalEffect.findUniqueOrThrow({
+          where: { id: approvalEffect!.id },
+        });
+        const request = stored.request as Record<string, Prisma.InputJsonValue>;
+        await tx.externalEffect.update({
+          where: { id: approvalEffect!.id },
+          data: {
+            request: { ...request, instructions: editedInstructions },
+            idempotencyKey: approvalEffectKey(input.runId, approvalEffect!.kind, {
+              ...request,
+              instructions: editedInstructions,
+            }),
+          },
+        });
+      }
+      if (approvalAnswer === "deny")
+        await tx.bot.updateMany({
+          where: { id: run.botId, pendingInstructionsRunId: input.runId },
+          data: { pendingInstructionsRunId: null },
+        });
+    }
+    const allowed = approvalAnswer === "allow" || approvalAnswer === "always";
     await tx.externalEffect.update({
       where: { id: approvalEffect!.id },
       data: { status: allowed ? "approved" : "denied" },
@@ -817,6 +874,16 @@ async function commitAnswerRunInput(
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
+          ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
+            ? {
+                instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
+                detail: instructionUpdateDiff(
+                  pendingAsk.instructionUpdate.before,
+                  editedInstructions,
+                  pendingAsk.instructionUpdate.reason,
+                ),
+              }
+            : {}),
         }
       : block,
   );
@@ -860,6 +927,9 @@ export async function answerWaitingRunWithTextInTransaction(
     runId: string;
     answeredByUserId: string;
     answer: string;
+    beforeMessageSeq?: number;
+    /** Explicit reaction target; composer replies must pass the latest-message check. */
+    messageId?: string;
   },
 ): Promise<{ threadId: string; seq: number } | null> {
   const answer = input.answer.trim();
@@ -867,6 +937,28 @@ export async function answerWaitingRunWithTextInTransaction(
   const found = await findPendingAsk(tx, input);
   if (!found) return null;
   if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
+  if (input.messageId !== undefined) {
+    if (input.messageId !== found.messageId) return null;
+  } else {
+    // Reactions are projected beneath their target, not new transcript messages.
+    let beforeSeq = input.beforeMessageSeq;
+    while (true) {
+      const latest = await tx.message.findFirst({
+        where: {
+          threadId: input.threadId,
+          ...(beforeSeq === undefined ? {} : { seq: { lt: beforeSeq } }),
+        },
+        orderBy: { seq: "desc" },
+        select: { id: true, seq: true, role: true, blocks: true, replyToMessageId: true },
+      });
+      if (!latest) return null;
+      if (!messageReaction({ ...latest, blocks: latest.blocks as MessageBlock[] })) {
+        if (latest.id !== found.messageId) return null;
+        break;
+      }
+      beforeSeq = latest.seq;
+    }
+  }
   return commitAnswerRunInput(tx, { ...input, messageId: found.messageId, answer });
 }
 
@@ -874,7 +966,7 @@ export async function pauseRunForInput(
   prisma: PrismaClient,
   input: PauseRunForInput,
   realtime?: RealtimeFanout,
-): Promise<boolean> {
+): Promise<FinalizeRunResult | false> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
     // concurrent clear cannot deadlock against this transaction.
@@ -899,6 +991,7 @@ export async function pauseRunForInput(
       },
     });
     if (paused.count !== 1) return null;
+    await expireComputerExecutionLeases(tx, { runId: input.runId });
 
     const attempt = await tx.attempt.updateMany({
       where: {
@@ -935,12 +1028,13 @@ export async function pauseRunForInput(
       payload: {},
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
-    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+    const continuationRunId = await createPendingSteeringRun(tx, input);
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId };
   });
 
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
-  return true;
+  return { continuationRunId: committed.continuationRunId };
 }
 
 export async function pauseRunForTakeover(
@@ -1117,9 +1211,38 @@ export async function finalizeComputerControlRelease(
       select: { thread: { select: { id: true } } },
     });
     if (!bot?.thread) return { threadId: null, seq: null, runId };
+
+    // The card lives on the run thread. A group run is not the bot's own thread.
+    // Computer row is already locked above. Lock the thread after that, before
+    // reading the card. Chat send (#1406) commits its thread lock in
+    // sendUserMessage / sendThreadMessage before it calls release, so it does
+    // not hold the thread while this transaction holds the computer. Keeping
+    // computer-then-thread matches that split and this function's existing order.
+    let runThreadId: string | null = null;
+    if (input.runId) {
+      const waiting = await tx.run.findUnique({
+        where: { id: input.runId },
+        select: { threadId: true, status: true },
+      });
+      runThreadId = waiting?.threadId ?? null;
+      if (runThreadId) {
+        await tx.$queryRaw`SELECT id FROM threads WHERE id = ${runThreadId} FOR UPDATE`;
+      }
+      // A stopped run cannot write history, and the release must still clear the lease.
+      if (runThreadId && waiting?.status !== "cancelled") {
+        await settleReleasedTakeoverCardsInTransaction(tx, {
+          spaceId: input.spaceId,
+          threadId: runThreadId,
+          botId: input.botId,
+          runId: input.runId,
+          reason: input.reason,
+        });
+      }
+    }
+
     const event = await appendEventInTransaction(tx, {
       spaceId: input.spaceId,
-      threadId: bot.thread.id,
+      threadId: runThreadId ?? bot.thread.id,
       botId: input.botId,
       runId: runId ?? undefined,
       type: "computer.takeover.released",
@@ -1137,6 +1260,54 @@ export async function finalizeComputerControlRelease(
     await notifyRealtime(realtime, committed.threadId, committed.seq);
   }
   return { runId: committed.runId };
+}
+
+/**
+ * Clear a pending takeover computer card when the run resumes.
+ * Release already settles the card; this covers a card that is still pending.
+ * No message write and no notify when nothing is pending.
+ */
+export async function settleReleasedTakeoverCards(
+  prisma: PrismaClient,
+  input: { spaceId: string; threadId: string; botId: string; runId: string; reason: unknown },
+  notify?: (threadId: string, seq: number) => Promise<void>,
+): Promise<void> {
+  const seq = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    await tx.$queryRaw`SELECT id FROM threads WHERE id = ${input.threadId} FOR UPDATE`;
+    return settleReleasedTakeoverCardsInTransaction(tx, input);
+  });
+  if (seq !== null) await notify?.(input.threadId, seq);
+}
+
+async function settleReleasedTakeoverCardsInTransaction(
+  tx: Prisma.TransactionClient,
+  input: { spaceId: string; threadId: string; botId: string; runId: string; reason: unknown },
+): Promise<number | null> {
+  const messages = await tx.message.findMany({
+    where: { threadId: input.threadId, runId: input.runId, role: "bot" },
+    select: { id: true, blocks: true },
+  });
+  let lastSeq: number | null = null;
+  for (const message of messages) {
+    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
+    if (!parsed.success) continue;
+    const blocks = releasedTakeoverComputerBlocks(parsed.data, input.reason);
+    if (!blocks) continue;
+    await tx.message.update({
+      where: { id: message.id },
+      data: { blocks: blocks as Prisma.InputJsonValue },
+    });
+    const updated = await appendEventInTransaction(tx, {
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      botId: input.botId,
+      type: "thread.message.updated",
+      runId: input.runId,
+      payload: { messageId: message.id, role: "bot", blocks },
+    });
+    lastSeq = updated.seq;
+  }
+  return lastSeq;
 }
 
 export async function appendEvent(
@@ -1352,7 +1523,7 @@ export async function createPendingSteeringRun(
     where: {
       threadId: input.threadId,
       botId: input.botId,
-      status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+      status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
     },
     select: { id: true },
   });
@@ -1367,7 +1538,8 @@ export async function createPendingSteeringRun(
     orderBy: [{ message: { seq: "asc" } }, { id: "asc" }],
   });
   if (pending.length === 0) return null;
-  // One origin per continuation so a group channel and a direct chat are not answered together.
+  // One origin per continuation so a group channel and the owner's private chat are not answered
+  // together. The app and the owner's direct line are one private conversation.
   const origin = steeringOrigin(pending[0]!);
   const batch = pending.filter((item) => steeringOrigin(item) === origin);
   const source = batch.at(-1)!;
@@ -1378,7 +1550,10 @@ export async function createPendingSteeringRun(
       botId: input.botId,
       threadId: input.threadId,
       userId: batch[0]!.userId,
-      prompt: "Respond to the user's steering context.",
+      prompt:
+        origin === "webhook"
+          ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
+          : "Respond to the user's steering context.",
       status: "queued",
     },
   });
@@ -1390,7 +1565,18 @@ export async function createPendingSteeringRun(
       taskId: task.id,
       userId: batch[0]!.userId,
       status: "queued",
-      trigger: origin === "app" ? "follow_up" : "messaging",
+      // A private continuation is a follow-up the owner wrote only when every message in it came
+      // from the app; one direct-line delivery keeps it messaging, so it is never owner-started.
+      // Rows queued before origins were recorded are recognized by their channel message.
+      trigger:
+        origin === "webhook"
+          ? "webhook"
+          : origin === "private" &&
+              batch.every(
+                (item) => item.originTrigger === null && !hasChannelMessage(item.message.blocks),
+              )
+            ? "follow_up"
+            : "messaging",
       sourceMessageId: source.message.id,
       ...(modelPin ?? {}),
     },
@@ -1426,13 +1612,18 @@ function continuationModelPin(
   };
 }
 
+function hasChannelMessage(blocks: unknown): boolean {
+  return (blocks as MessageBlock[]).some((block) => block.kind === "channel_message");
+}
+
 function steeringOrigin(item: {
   originTrigger: string | null;
   message: { blocks: unknown };
 }): string {
-  if (item.originTrigger !== "messaging") return "app";
+  if (item.originTrigger === "webhook") return "webhook";
+  if (item.originTrigger !== "messaging") return "private";
   const channelId = messagingChannelId(item.message.blocks as MessageBlock[] | undefined);
-  return channelId ? `channel:${channelId}` : "dm";
+  return channelId ? `channel:${channelId}` : "private";
 }
 
 export async function appendEventInTransaction(

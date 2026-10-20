@@ -82,7 +82,22 @@ describe("Railway computers", () => {
       }),
     );
     expect(vi.mocked(Sandbox.create).mock.calls[0]?.[0]).not.toHaveProperty("env");
+    expect(vi.mocked(Sandbox.create).mock.calls[0]?.[0]).not.toHaveProperty("region");
     expect(JSON.stringify(ref)).not.toContain('"token"');
+  });
+
+  it("creates computers in the configured region and reconnects without one", async () => {
+    const regional = new RailwaySandboxProvider({
+      token: "test",
+      environmentId: "environment",
+      region: "asia-southeast1-eqsg3a",
+    });
+    await regional.provision({ botId: "bot", homePath: "/unused" }, ctx);
+    expect(Sandbox.create).toHaveBeenCalledWith(
+      expect.objectContaining({ region: "asia-southeast1-eqsg3a" }),
+    );
+    await regional.keepAlive(computer);
+    expect(vi.mocked(Sandbox.connect).mock.calls.at(-1)?.[1]).not.toHaveProperty("region");
   });
 
   it.each(["ISOLATED", undefined, "unexpected"])(
@@ -394,8 +409,18 @@ describe("Railway computers", () => {
     );
   });
 
-  it.each(["DESTROYED", "DESTROYING", "FAILED"])("replaces a %s computer", async (status) => {
-    vi.mocked(Sandbox.connect).mockResolvedValue({ ...sandbox, status } as unknown as Sandbox);
+  it.each([
+    ["DESTROYED", "PRIVATE"],
+    ["DESTROYING", "PRIVATE"],
+    ["FAILED", "PRIVATE"],
+    ["DESTROYED", undefined],
+    ["FAILED", undefined],
+  ])("replaces a %s computer with %s networking", async (status, networkIsolation) => {
+    vi.mocked(Sandbox.connect).mockResolvedValue({
+      ...sandbox,
+      status,
+      networkIsolation,
+    } as unknown as Sandbox);
     expect(
       await provider.provision(
         { botId: "bot", homePath: "/unused", providerRef: "old", providerKind: "railway" },

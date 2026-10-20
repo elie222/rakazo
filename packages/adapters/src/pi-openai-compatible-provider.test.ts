@@ -109,6 +109,7 @@ describe("model connect", () => {
     expect(parsed).toEqual({
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
+      enabledModelIds: ["qwen3-4b"],
     });
     expect(secretValuesToRedact(parsed)).toEqual([]);
   });
@@ -141,6 +142,7 @@ describe("model connect", () => {
       kind: "openai_compatible",
       baseUrl: "http://127.0.0.1:8000/v1",
       apiKey: "local-secret",
+      enabledModelIds: ["local-model"],
     });
   });
 
@@ -334,6 +336,28 @@ describe("openai-compatible provider", () => {
     }
   });
 
+  it("cancels a pending connection without waiting for the connect timeout", async () => {
+    const controller = new AbortController();
+    let markLookupStarted: () => void = () => {};
+    const lookupStarted = new Promise<void>((resolve) => {
+      markLookupStarted = resolve;
+    });
+    const safeFetch = createOpenAiCompatibleFetch(undefined, async () => {
+      markLookupStarted();
+      return new Promise(() => {});
+    });
+    const outcome = safeFetch("https://localhost:8000/v1/models", {
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    try {
+      await lookupStarted;
+      controller.abort();
+      await expect(outcome).resolves.toMatchObject({ name: "AbortError" });
+    } finally {
+      controller.abort();
+    }
+  });
+
   it("carries a Request's method, headers and body through as init", async () => {
     let seen: { url: string; init?: RequestInit } | undefined;
     const safeFetch = createOpenAiCompatibleFetch(async (input, init) => {
@@ -436,6 +460,43 @@ describe("openai-compatible provider", () => {
     ).resolves.toEqual(["legacy"]);
   });
 
+  it("accepts a gateway catalogue up to the custom model-count limit", async () => {
+    const ids = Array.from({ length: 4_000 }, (_, index) => `m${index}`);
+    const fetchImpl = async () => Response.json({ data: ids.map((id) => ({ id })) });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).resolves.toEqual(ids);
+  });
+
+  it("accepts metadata-rich catalogues larger than 64 KiB", async () => {
+    const data = Array.from({ length: 100 }, (_, index) => ({
+      id: `model-${index}`,
+      description: "x".repeat(1024),
+      context_length: 128_000,
+    }));
+    const fetchImpl = async () => Response.json({ data });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).resolves.toEqual(data.map((model) => model.id));
+  });
+
+  it("rejects catalogues above the custom model-count limit", async () => {
+    const fetchImpl = async () =>
+      Response.json({
+        data: Array.from({ length: 4_001 }, (_, index) => ({ id: `m${index}` })),
+      });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/too many or overly long model ids/);
+  });
+
+  it("still rejects overly long individual model IDs", async () => {
+    const fetchImpl = async () => Response.json({ data: [{ id: "x".repeat(257) }] });
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/too many or overly long model ids/);
+  });
+
   it("rejects redirect responses during probing", async () => {
     const fetchImpl: typeof fetch = async (_input, init) => {
       expect(init?.redirect).toBe("error");
@@ -478,7 +539,7 @@ describe("openai-compatible provider", () => {
   });
 
   it("rejects oversized model lists", async () => {
-    const fetchImpl = async () => new Response("x".repeat(64 * 1024 + 1));
+    const fetchImpl = async () => new Response("x".repeat(2 * 1024 * 1024 + 1));
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
     ).rejects.toThrow(/too large.*explicit model id/is);
@@ -493,7 +554,29 @@ describe("openai-compatible provider", () => {
             cancelled = true;
           },
         }),
-        { headers: { "content-length": String(64 * 1024 + 1) } },
+        { headers: { "content-length": String(2 * 1024 * 1024 + 1) } },
+      );
+    await expect(
+      probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),
+    ).rejects.toThrow(/too large.*explicit model id/is);
+    expect(cancelled).toBe(true);
+  });
+
+  it("cancels streamed responses that cross the custom byte limit", async () => {
+    let cancelled = false;
+    const fetchImpl = async () =>
+      new Response(
+        new ReadableStream({
+          /** Cross the byte cap in a second chunk without declaring a content length. */
+          start(controller) {
+            controller.enqueue(new Uint8Array(2 * 1024 * 1024));
+            controller.enqueue(new Uint8Array(1));
+          },
+          /** Record cancellation so the test can verify the oversized stream is released. */
+          cancel() {
+            cancelled = true;
+          },
+        }),
       );
     await expect(
       probeOpenAiCompatibleModels({ baseUrl: "http://127.0.0.1:8000/v1" }, fetchImpl),

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openNewSpace, rpc, signup } from "./helpers";
 
-test("spaces stay invisible by default and chat creation requires approval", async ({
+test("the only space is named in the sidebar and chat creation requires approval", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -9,7 +9,7 @@ test("spaces stay invisible by default and chat creation requires approval", asy
   await completeOnboarding(page);
 
   const sidebar = page.locator("aside").first();
-  await expect(sidebar.getByText("Personal", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Personal", { exact: true })).toBeVisible();
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
   await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
   await expect(page.getByRole("menuitem", { name: "Rename space" })).toBeVisible();
@@ -219,4 +219,51 @@ test("deleting the last bot in a space stays in the app after first use", async 
   await expect(sidebar.getByText("Side", { exact: true })).toHaveCount(0);
   await sidebar.getByRole("button", { name: /^Archived/ }).click();
   await expect(sidebar.getByText("Chief", { exact: true })).toBeVisible();
+});
+
+test("a space's menu opens its settings in place, and settings can switch space", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `spaces-settings-${stamp}@rakazo.test`, "password12", "Space Owner");
+  await completeOnboarding(page);
+
+  const sidebar = page.locator("aside").first();
+  await openNewSpace(page);
+  const dialog = page.getByRole("dialog", { name: "New space" });
+  await dialog.getByLabel("Name").fill("Support");
+  await dialog.getByRole("button", { name: "Create space", exact: true }).click();
+  await completeOnboarding(page);
+  await expect(sidebar.getByText("Support", { exact: true })).toBeVisible();
+  const chatUrl = page.url();
+  const selected = await page.evaluate(() => localStorage.getItem("rakazo:space-id"));
+  await page.evaluate(() => {
+    document.documentElement.dataset.settingsTest = "same-document";
+  });
+
+  // Support is selected; Personal's menu opens Personal's settings without leaving Support.
+  await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  const settings = page.getByTestId("user-settings");
+  await expect(settings).toHaveAttribute("data-settings-section", "models");
+  const picker = settings.getByTestId("settings-space");
+  await expect(picker).toHaveText("Personal");
+  expect(page.url()).toBe(chatUrl);
+  expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
+  await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
+  await captureScreenshot(page, testInfo, "space-settings-from-menu");
+
+  await picker.click();
+  await expect(settings.getByRole("option", { name: "Support", exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "space-settings-switcher");
+  await settings.getByRole("option", { name: "Support", exact: true }).click();
+  await expect(picker).toHaveText("Support");
+  await expect(settings).toHaveAttribute("data-settings-section", "models");
+  expect(page.url()).toBe(chatUrl);
+  expect(await page.evaluate(() => localStorage.getItem("rakazo:space-id"))).toBe(selected);
+  await expect(page.locator("html")).toHaveAttribute("data-settings-test", "same-document");
+
+  // Sections that are not per space show no picker.
+  await settings.getByTestId("settings-nav-general").click();
+  await expect(settings.getByTestId("settings-space")).toHaveCount(0);
 });

@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { i18n } from "@lingui/core";
+import { ORPCError } from "@orpc/client";
 import type { Bot } from "@rakazo/contracts";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
@@ -9,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../lib/rpc", () => ({
   rpc: {
+    bots: { get: vi.fn(), update: vi.fn(), restoreInstructions: vi.fn() },
     voice: { voices: vi.fn().mockResolvedValue([]) },
     models: {
       credentials: vi.fn().mockResolvedValue([]),
@@ -35,13 +38,21 @@ vi.mock("@rakazo/ui-web", () => ({
   NativeSelect: (props: ComponentProps<"select">) => <select {...props} />,
   NativeSelectOption: (props: ComponentProps<"option">) => <option {...props} />,
   Switch: ({
-    onCheckedChange: _onCheckedChange,
-    checked: _checked,
+    onCheckedChange,
+    checked,
     ...props
   }: ComponentProps<"button"> & {
     checked?: boolean;
     onCheckedChange?: (checked: boolean) => void;
-  }) => <button type="button" {...props} />,
+  }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onCheckedChange?.(!checked)}
+      {...props}
+    />
+  ),
   Toggle: ({
     onPressedChange: _onPressedChange,
     pressed,
@@ -64,12 +75,13 @@ vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
 vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => null }));
 vi.mock("../KnowledgeSection", () => ({ KnowledgeSection: () => null }));
 
+import { InstructionSettings } from "../../components/InstructionSettings";
 import { rpc } from "../../lib/rpc";
 import { BotSettings } from "./bot-panel";
 
 const longInstructions = "I".repeat(4_000);
 
-function bot(description = "Billing"): Bot {
+function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
   return {
     id: "bot-1",
     spaceId: "space-1",
@@ -99,9 +111,11 @@ function bot(description = "Billing"): Bot {
     thinkingLevel: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
+    fleetManagement: false,
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,
+    ...overrides,
   };
 }
 
@@ -111,11 +125,11 @@ const onSave = vi.fn(
   async (_patch: Parameters<ComponentProps<typeof BotSettings>["onSave"]>[0]) => undefined,
 );
 
-async function render(description = "Billing") {
+async function render(description = "Billing", overrides: Partial<Bot> = {}) {
   await act(async () => {
     root.render(
       <BotSettings
-        bot={bot(description)}
+        bot={bot(description, overrides)}
         memoryProviderConfigured={false}
         onSkillsChange={() => undefined}
         onSave={onSave}
@@ -166,6 +180,8 @@ async function clickSave() {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   onSave.mockReset().mockResolvedValue(undefined);
+  vi.mocked(rpc.bots.update).mockReset();
+  vi.mocked(rpc.bots.get).mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -219,6 +235,85 @@ describe("BotSettings model choices", () => {
   });
 });
 
+describe("BotSettings thinking options", () => {
+  it("preserves saved thinking on a profile save when options are hidden", async () => {
+    await render("Billing", {
+      modelProvider: "openai-compatible",
+      modelId: "beta",
+      thinkingLevel: "high",
+    });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("thinkingLevel");
+  });
+
+  it("shows the connection's thinking levels for a bot on a second enabled model", async () => {
+    i18n.load("en", {});
+    i18n.activate("en");
+    vi.mocked(rpc.models.credentials).mockResolvedValueOnce([
+      {
+        id: "newer",
+        provider: "openai-compatible",
+        label: "Newer",
+        hasKey: true,
+        isDefault: false,
+        enabledModelIds: ["beta"],
+        thinkingLevels: ["off"],
+      },
+      {
+        id: "cred-compatible",
+        provider: "openai-compatible",
+        label: "Local server",
+        hasKey: true,
+        isDefault: true,
+        modelId: "alpha",
+        enabledModelIds: ["alpha", "beta"],
+        thinkingLevels: ["off", "low", "high"],
+      },
+    ]);
+    await render("Billing", { modelProvider: "openai-compatible", modelId: "beta" });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const [model, thinking] = [...container.querySelectorAll("select")];
+    if (!(model instanceof HTMLSelectElement)) throw new Error("Missing model select");
+    expect(model.value).toBe("openai-compatible::beta");
+    if (!(thinking instanceof HTMLSelectElement)) throw new Error("Missing thinking select");
+    expect([...thinking.options].map((option) => option.value)).toEqual(["", "low", "high"]);
+  });
+});
+
+describe("BotSettings fleet management saves", () => {
+  it("cannot restore a stale enabled value when another session disables it", async () => {
+    await render("Billing", { fleetManagement: true });
+    await render("Billing", { fleetManagement: false });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
+  });
+
+  it("restores the toggle when the immediate save fails", async () => {
+    await render();
+    onSave.mockRejectedValueOnce(new Error("offline"));
+    const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
+    if (!toggle) throw new Error("Missing switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it.each([false, true])("saves only the fleet toggle from %s", async (enabled) => {
+    await render("Billing", { fleetManagement: enabled });
+    const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
+    if (!toggle) throw new Error("Missing switch");
+    await act(async () => {
+      toggle.click();
+    });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ fleetManagement: !enabled });
+    await clickSave();
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("fleetManagement");
+  });
+});
+
 describe("BotSettings description saves", () => {
   it("leaves instructions off a save that does not edit the description", async () => {
     await render();
@@ -233,8 +328,8 @@ describe("BotSettings description saves", () => {
     await clickSave();
     expect(onSave.mock.calls[0]?.[0]).toMatchObject({
       description: "Invoices",
-      instructions: "Invoices",
     });
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("instructions");
 
     // The parent still passes the description from when the panel opened.
     await render();
@@ -253,8 +348,8 @@ describe("BotSettings description saves", () => {
     await clickSave();
     expect(onSave.mock.calls[1]?.[0]).toMatchObject({
       description: "Billing",
-      instructions: "Billing",
     });
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("instructions");
   });
 
   it("keeps the previous description as the baseline when a save fails", async () => {
@@ -265,7 +360,131 @@ describe("BotSettings description saves", () => {
     await clickSave();
     expect(onSave.mock.calls[1]?.[0]).toMatchObject({
       description: "Invoices",
-      instructions: "Invoices",
     });
+    expect(onSave.mock.lastCall?.[0]).not.toHaveProperty("instructions");
+  });
+});
+
+describe("instruction settings refresh", () => {
+  it("refreshes a saved field against its latest baseline before the parent catches up", async () => {
+    const initial = bot();
+    vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Saved edit" });
+    await act(async () => {
+      root.render(<InstructionSettings bot={initial} />);
+    });
+    await setDescription("Saved edit");
+    await act(async () => {
+      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    await act(async () => {
+      root.render(<InstructionSettings bot={{ ...initial, instructions: "External update" }} />);
+    });
+    expect(descriptionField().value).toBe("External update");
+    await setDescription("Fresh edit");
+    vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Fresh edit" });
+    await act(async () => {
+      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(rpc.bots.update).toHaveBeenLastCalledWith({
+      botId: initial.id,
+      instructions: "Fresh edit",
+      expectedInstructions: "External update",
+    });
+  });
+  it("keeps a dirty draft when run completion refreshes the bot", async () => {
+    const initial = bot();
+    await act(async () => {
+      root.render(<InstructionSettings bot={initial} />);
+    });
+    await setDescription("Unsaved instructions");
+    await act(async () => {
+      root.render(
+        <InstructionSettings bot={{ ...initial, updatedAt: "2026-09-02T00:00:00.000Z" }} />,
+      );
+    });
+    expect(descriptionField().value).toBe("Unsaved instructions");
+  });
+  it("saves the original draft baseline after a newer instruction refresh", async () => {
+    const initial = bot();
+    vi.mocked(rpc.bots.update).mockResolvedValueOnce({
+      ...initial,
+      instructions: "Unsaved instructions",
+    });
+    await act(async () => {
+      root.render(<InstructionSettings bot={initial} />);
+    });
+    await setDescription("Unsaved instructions");
+    await act(async () => {
+      root.render(
+        <InstructionSettings bot={{ ...initial, instructions: "Newer saved instructions" }} />,
+      );
+    });
+    await act(async () => {
+      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(rpc.bots.update).toHaveBeenCalledWith({
+      botId: initial.id,
+      instructions: "Unsaved instructions",
+      expectedInstructions: initial.instructions,
+    });
+  });
+  it("reloads the current instructions and baseline after a conflict", async () => {
+    const initial = bot();
+    vi.mocked(rpc.bots.update).mockRejectedValueOnce(
+      new ORPCError("CONFLICT", { message: "Instructions changed" }),
+    );
+    vi.mocked(rpc.bots.get)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({
+        ...initial,
+        instructions: "Newer saved instructions",
+      });
+    await act(async () => {
+      root.render(<InstructionSettings bot={initial} />);
+    });
+    await setDescription("Unsaved instructions");
+    await act(async () => {
+      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    const reload = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Reload",
+    );
+    if (!reload) throw new Error("Missing reload action");
+    expect(descriptionField().value).toBe("Unsaved instructions");
+    await act(async () => {
+      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(rpc.bots.update).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      reload.click();
+    });
+    expect(descriptionField().value).toBe("Unsaved instructions");
+    expect(container.textContent).toContain("Reload");
+    await act(async () => {
+      reload.click();
+    });
+    expect(descriptionField().value).toBe("Newer saved instructions");
+    vi.mocked(rpc.bots.update).mockResolvedValueOnce({ ...initial, instructions: "Fresh draft" });
+    await setDescription("Fresh draft");
+    await act(async () => {
+      descriptionField().dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    expect(rpc.bots.update).toHaveBeenLastCalledWith({
+      botId: initial.id,
+      instructions: "Fresh draft",
+      expectedInstructions: "Newer saved instructions",
+    });
+  });
+  it("refreshes pristine instructions after an external update", async () => {
+    const initial = bot();
+    await act(async () => {
+      root.render(<InstructionSettings bot={initial} />);
+    });
+    await act(async () => {
+      root.render(
+        <InstructionSettings bot={{ ...initial, instructions: "Approved replacement" }} />,
+      );
+    });
+    expect(descriptionField().value).toBe("Approved replacement");
   });
 });

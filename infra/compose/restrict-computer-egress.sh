@@ -2,7 +2,11 @@
 # Restricted egress for Rakazo bot computers (SANDBOX_COMPUTER_EGRESS=restricted).
 #
 # Computers keep full public-internet egress (browsing, DNS, apt, git over SSH)
-# but can no longer reach:
+# but can no longer reach the destinations below. DNS keeps working only while
+# the host's resolver is public: Docker forwards computers' lookups to it from
+# their own network, so a private one (a VPC or LAN resolver) needs
+# SANDBOX_COMPUTER_DNS set to public resolvers (docs/self-host.md).
+# Blocked:
 #   - the Docker host itself (INPUT drop; replies to host-initiated connections
 #     stay open so supervisor control and published screen ports keep working),
 #   - RFC1918 / CGNAT / link-local destinations, including cloud metadata at

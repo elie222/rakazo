@@ -1,5 +1,6 @@
 import type { ModelBackupChoice, ModelCatalogEntry, ModelCredential } from "./domain.js";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "./domain.js";
+import { canonicalPiProviderId } from "./model-provider.js";
 
 export type ConnectedBackupOption = ModelBackupChoice & {
   label: string;
@@ -7,18 +8,20 @@ export type ConnectedBackupOption = ModelBackupChoice & {
 };
 
 export function backupChoiceKey(choice: ModelBackupChoice): string {
-  return JSON.stringify([choice.provider, choice.modelId]);
+  return JSON.stringify([canonicalPiProviderId(choice.provider), choice.modelId]);
 }
 
 export function connectedBackupOptions(
   catalog: ModelCatalogEntry[],
   credentials: ModelCredential[],
 ): ConnectedBackupOption[] {
-  const connected = new Set(credentials.map((credential) => credential.provider));
+  const connected = new Set(
+    credentials.map((credential) => canonicalPiProviderId(credential.provider)),
+  );
   const options: ConnectedBackupOption[] = [];
   for (const entry of catalog) {
     if (
-      !connected.has(entry.provider) ||
+      !connected.has(canonicalPiProviderId(entry.provider)) ||
       entry.provider === OPENAI_COMPATIBLE_PROVIDER_ID ||
       entry.placeholder
     ) {
@@ -31,22 +34,24 @@ export function connectedBackupOptions(
       providerName: entry.providerName ?? entry.provider,
     });
   }
-  const compatibleCredential = credentials.find(
-    (credential) =>
-      credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID && credential.modelId?.trim(),
-  );
-  if (compatibleCredential?.modelId) {
-    const entry = catalog.find(
-      (candidate) =>
-        candidate.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
-        candidate.id === compatibleCredential.modelId,
-    );
-    options.push({
-      provider: OPENAI_COMPATIBLE_PROVIDER_ID,
-      modelId: compatibleCredential.modelId,
-      label: entry?.label ?? compatibleCredential.modelId,
-      providerName: entry?.providerName ?? OPENAI_COMPATIBLE_PROVIDER_ID,
-    });
+  const seen = new Set<string>();
+  for (const credential of credentials) {
+    if (credential.provider !== OPENAI_COMPATIBLE_PROVIDER_ID) continue;
+    for (const raw of credential.enabledModelIds ?? [credential.modelId ?? ""]) {
+      const modelId = raw.trim();
+      if (!modelId || seen.has(modelId)) continue;
+      seen.add(modelId);
+      const entry = catalog.find(
+        (candidate) =>
+          candidate.provider === OPENAI_COMPATIBLE_PROVIDER_ID && candidate.id === modelId,
+      );
+      options.push({
+        provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+        modelId,
+        label: entry?.label ?? modelId,
+        providerName: entry?.providerName ?? OPENAI_COMPATIBLE_PROVIDER_ID,
+      });
+    }
   }
   return options;
 }
@@ -70,7 +75,9 @@ export function sameBackupChoices(left: ModelBackupChoice[], right: ModelBackupC
     left.length === right.length &&
     left.every(
       (choice, index) =>
-        choice.provider === right[index]?.provider && choice.modelId === right[index]?.modelId,
+        canonicalPiProviderId(choice.provider) ===
+          canonicalPiProviderId(right[index]?.provider ?? "") &&
+        choice.modelId === right[index]?.modelId,
     )
   );
 }

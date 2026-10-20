@@ -8,7 +8,7 @@ import {
   signup,
 } from "./helpers";
 
-test("actions run by default while optional confirmations live in advanced user settings", async ({
+test("actions run by default while optional confirmations live in space settings", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -31,11 +31,12 @@ test("actions run by default while optional confirmations live in advanced user 
   await expect(settings).toBeFocused();
   await expect(settings.getByText("Advanced", { exact: true })).toBeVisible();
   await expect(settings.getByText("Optional controls most people never need")).toHaveCount(0);
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).not.toBeVisible();
-  await captureScreenshot(page, testInfo, "51-user-settings-advanced-collapsed");
+  // Confirmations are per space, so they live in their own section, not General.
+  await expect(settings.getByRole("heading", { name: "Action confirmations" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "51-user-settings-general");
 
-  await settings.getByText("Advanced", { exact: true }).click();
-  await expect(settings.getByRole("heading", { name: "Action confirmations" })).toBeVisible();
+  await settings.getByTestId("settings-nav-confirmations").click();
+  await expect(settings.getByRole("heading", { name: "Confirmations", exact: true })).toBeVisible();
   await expect(
     settings.getByText(
       "Bots act without asking by default. Add an exception only when you want to review a type of action first.",
@@ -68,17 +69,23 @@ test("actions run by default while optional confirmations live in advanced user 
   expect(allowBox).toBeTruthy();
   expect(alwaysBox).toBeTruthy();
   expect(denyBox).toBeTruthy();
-  expect(alwaysBox!.y).toBeGreaterThan(allowBox!.y + allowBox!.height - 2);
-  expect(denyBox!.y).toBeGreaterThan(alwaysBox!.y + alwaysBox!.height - 2);
-  expect(Math.abs(allowBox!.x - alwaysBox!.x)).toBeLessThan(2);
-  const optionList = allowOnce.locator("xpath=ancestor::div[contains(@class,'space-y-1.5')][1]");
-  const listBox = await optionList.boundingBox();
-  expect(listBox).toBeTruthy();
-  expect(Math.abs(allowBox!.width - listBox!.width)).toBeLessThan(2);
+  expect(alwaysBox!.y).toBe(allowBox!.y);
+  expect(denyBox!.y).toBe(allowBox!.y);
+  expect(alwaysBox!.x).toBeGreaterThan(allowBox!.x);
+  expect(denyBox!.x).toBeGreaterThan(alwaysBox!.x);
   await captureScreenshot(page, testInfo, "53-action-confirmation-pending");
+  const viewport = page.viewportSize();
+  await page.setViewportSize({ width: 400, height: 900 });
+  await expect(allowOnce).toBeVisible();
+  await expect(alwaysAllow).toBeVisible();
+  await expect(deny).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(400);
+  if (viewport) await page.setViewportSize(viewport);
 
   await page.getByRole("button", { name: "Deny", exact: true }).click();
-  await expect(page.getByText("Denied", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("transcript").getByText("Denied", { exact: true })).toHaveClass(
+    /text-muted-foreground/,
+  );
   await waitForRunIdle(page);
   await expectComposerReady(page);
   await captureScreenshot(page, testInfo, "54-action-confirmation-denied");

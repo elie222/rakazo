@@ -345,6 +345,25 @@ describe("LocalStackController", () => {
     return stack;
   }
 
+  it("passes the native connection only to Compose and reconciles a changed bridge", async () => {
+    const hostComputer = { url: "http://host.docker.internal:45175", token: "ab".repeat(32) };
+    const stack = controller({ hostComputer });
+    expect(await stack.matchesDesiredStack()).toBe(false);
+    expect((await stack.start()).phase).toBe("ready");
+    expect(await stack.matchesDesiredStack()).toBe(true);
+    const compose = calls.filter((call) => call.args[0] === "compose");
+    expect(compose.length).toBeGreaterThan(0);
+    for (const call of compose) {
+      expect(call.env.SANDBOX_HOST_URL).toBe(hostComputer.url);
+      expect(call.env.SANDBOX_HOST_TOKEN).toBe(hostComputer.token);
+    }
+    expect(
+      await controller({
+        hostComputer: { ...hostComputer, token: "cd".repeat(32) },
+      }).matchesDesiredStack(),
+    ).toBe(false);
+  });
+
   it("pushes every state change so the setup window is never left waiting on a poll", async () => {
     const pushed: string[] = [];
     const stack = controller({ onState: (state) => pushed.push(state.phase) });

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { installPreloadRecovery } from "./preload-recovery";
+import { installPreloadRecovery, readPreloadRecoveryState } from "./preload-recovery";
 
 describe("preload recovery", () => {
-  function createTarget(store = new Map<string, string>(), onLine = true) {
+  function createTarget(store = new Map<string, string>(), onLine = true, state = {}) {
     let listener: EventListener | undefined;
     const reload = vi.fn();
     const target = {
@@ -20,9 +20,48 @@ describe("preload recovery", () => {
       },
       setTimeout: vi.fn(() => 1),
     };
-    installPreloadRecovery(target as unknown as Window);
+    installPreloadRecovery(target as unknown as Window, () => state);
     return { listener: () => listener, reload };
   }
+
+  it("arms overlay restoration only for an automatic reload and consumes it once", () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => store.get(key) ?? null,
+      removeItem: (key: string) => {
+        store.delete(key);
+      },
+    };
+    const state = { settings: true, integrations: false };
+    const { listener } = createTarget(store, true, state);
+    expect(readPreloadRecoveryState(storage)).toEqual({});
+    listener()?.(new Event("vite:preloadError", { cancelable: true }));
+    expect(readPreloadRecoveryState(storage)).toEqual(state);
+    expect(readPreloadRecoveryState(storage)).toEqual({});
+    expect(store.get("rk:preload-recovery")).toBe("1");
+  });
+
+  it("does not block startup when session storage access is restricted", () => {
+    const target = {
+      get sessionStorage(): Storage {
+        throw new Error("Storage is restricted");
+      },
+    };
+    expect(() => installPreloadRecovery(target as Window)()).not.toThrow();
+  });
+
+  it("ignores malformed recovery state", () => {
+    const store = new Map([["rk:preload-recovery-state", "invalid"]]);
+    expect(
+      readPreloadRecoveryState({
+        getItem: (key: string) => store.get(key) ?? null,
+        removeItem: (key: string) => {
+          store.delete(key);
+        },
+      }),
+    ).toEqual({});
+    expect(store.size).toBe(0);
+  });
 
   it("reloads once without suppressing another failure during navigation", () => {
     const { listener, reload } = createTarget();

@@ -8,6 +8,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-dialog: var(--dialog);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -53,6 +54,10 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
 }
 

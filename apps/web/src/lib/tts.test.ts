@@ -46,7 +46,10 @@ describe("Speaker", () => {
     expect(speaker.state.error).toBe("ElevenLabs rejected that key.");
   });
 
-  it("keeps speak requests in the space where playback started", async () => {
+  it.each([
+    { spaceId: undefined, expectedSpaceId: "space-support" },
+    { spaceId: "space-edited", expectedSpaceId: "space-edited" },
+  ])("keeps both speech requests in $expectedSpaceId", async ({ spaceId, expectedSpaceId }) => {
     const changeSelectedSpace = stubSelectedSpace("space-support");
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
@@ -87,16 +90,16 @@ describe("Speaker", () => {
         changeSelectedSpace("space-other");
         return ["Hello."];
       });
-    await speaker.speak("Hello.", { messageId: "m1" });
+    await speaker.speak("Hello.", { messageId: "m1", spaceId });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/voice/speak",
       expect.objectContaining({ credentials: "include" }),
     );
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
-    expect(headers.get("x-rakazo-space-id")).toBe("space-support");
+    expect(headers.get("x-rakazo-space-id")).toBe(expectedSpaceId);
     expect(headers.get("content-type")).toBe("application/json");
-    expect(prepare.mock.calls[0]?.[3]).toBe("space-support");
+    expect(prepare.mock.calls[0]?.[3]).toBe(expectedSpaceId);
   });
 
   it("rejects oversized audio without waiting for response cancellation", async () => {

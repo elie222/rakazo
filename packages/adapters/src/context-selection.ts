@@ -231,6 +231,108 @@ function shortenStructuredResult(source: string, size: number): string | undefin
   return encoded;
 }
 
+/**
+ * MCP results put JSON in a text content part (sometimes beside other parts). Treating that inner
+ * JSON as one prose leaf cuts IDs and cursors out of it, so shorten JSON text parts with their own
+ * control-preserving rules, shrink sibling parts and outer metadata the same way, and re-wrap.
+ * Non-JSON envelopes fall through to the generic path.
+ */
+function isJsonTextPart(part: { type?: string; text?: unknown } | undefined): part is {
+  type: "text";
+  text: string;
+} {
+  if (part?.type !== "text" || typeof part.text !== "string") return false;
+  const trimmed = part.text.trimStart();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return false;
+  try {
+    JSON.parse(part.text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function shortenMcpEnvelope(source: string, size: number): string | undefined {
+  let payload: { content?: Array<{ type?: string; text?: unknown }> } & Record<string, unknown>;
+  try {
+    payload = JSON.parse(source);
+  } catch {
+    return;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const originalParts = payload.content;
+  if (!Array.isArray(originalParts) || !originalParts.some(isJsonTextPart)) return;
+
+  const wrap = (nextParts: typeof originalParts) =>
+    JSON.stringify({ ...payload, content: nextParts });
+
+  // Shrink outer metadata first so the inner budget is not crushed by a large _meta blob.
+  const outer = { ...payload };
+  delete outer.content;
+  delete outer.structuredContent;
+  let outerSource = JSON.stringify(outer);
+  if (outerSource.length > Math.max(64, Math.floor(size / 4))) {
+    const shortenedOuter = shortenStructuredResult(outerSource, Math.max(64, Math.floor(size / 4)));
+    if (shortenedOuter !== undefined) {
+      Object.assign(payload, JSON.parse(shortenedOuter));
+      if (shortenedOuter !== outerSource) payload.contextTruncated = true;
+      outerSource = shortenedOuter;
+    }
+  }
+
+  const structuredSource =
+    payload.structuredContent === undefined ? undefined : JSON.stringify(payload.structuredContent);
+  let parts = originalParts.map((part) => ({ ...part }));
+  const emptyJsonShell = parts.map((part) => (isJsonTextPart(part) ? { ...part, text: "" } : part));
+  let budget = Math.max(128, size - wrap(emptyJsonShell).length);
+  let encoded = wrap(parts);
+
+  for (let attempt = 0; attempt < 6 && encoded.length > size; attempt++) {
+    let changed = false;
+    parts = parts.map((part) => {
+      if (isJsonTextPart(part)) {
+        const shortened = shortenStructuredResult(part.text, budget);
+        if (shortened === undefined || shortened === part.text) return part;
+        changed = true;
+        return { ...part, text: shortened };
+      }
+      const serialized = JSON.stringify(part);
+      if (serialized.length <= 128) return part;
+      const shortened = shortenStructuredResult(
+        serialized,
+        Math.min(budget, Math.max(128, Math.floor(size / 4))),
+      );
+      if (shortened === undefined || shortened === serialized) return part;
+      try {
+        const parsed = JSON.parse(shortened) as typeof part;
+        if (!parsed || typeof parsed !== "object") return part;
+        changed = true;
+        return parsed;
+      } catch {
+        return part;
+      }
+    });
+    if (structuredSource !== undefined) {
+      const shortenedStructured = shortenStructuredResult(structuredSource, budget);
+      try {
+        payload.structuredContent = JSON.parse(shortenedStructured ?? "");
+        if (shortenedStructured !== structuredSource) changed = true;
+      } catch {
+        delete payload.structuredContent;
+        changed = true;
+      }
+    }
+    if (changed) payload.contextTruncated = true;
+    encoded = wrap(parts);
+    if (encoded.length <= size) break;
+    if (!changed) break;
+    budget = Math.max(128, Math.floor(budget * (size / encoded.length)) - 1);
+  }
+  // Soft target may still be exceeded by protected ids. Keep the envelope on this path even when
+  // nothing could shrink: the generic shortener would cut the JSON text and drop its ids.
+  return encoded;
+}
+
 /** Shorten evidence cheaply while keeping structured controls and original-history offsets. */
 export function shortenToolResultText(
   source: string,
@@ -239,6 +341,7 @@ export function shortenToolResultText(
 ): string {
   return (
     shortenHistoryResult(source, size, tool) ??
+    shortenMcpEnvelope(source, size) ??
     shortenStructuredResult(source, size) ??
     `${source.slice(0, Math.floor(size / 2))}\n[Tool result truncated to fit context; inspect original evidence before claiming omitted details.]\n${source.slice(-Math.floor(size / 2))}`
   );

@@ -13,7 +13,7 @@ export async function runThreadSubscription(options: {
   loadHead: () => Promise<ThreadHead | null>;
   refresh: () => Promise<unknown>;
   currentSnapshot: () => ThreadHead | null;
-  subscribe: (cursor: number) => Promise<AsyncIterable<ProductEvent>>;
+  subscribe: (cursor: number, signal: AbortSignal) => Promise<AsyncIterable<ProductEvent>>;
   beforeEvent?: (event: ProductEvent) => void;
   applyEvent: (event: ProductEvent) => void;
   onEvent: (event: ProductEvent, initial: ThreadHead) => void;
@@ -58,8 +58,12 @@ export async function runThreadSubscription(options: {
   }
   let retryMs = 250;
   while (!signal.aborted) {
+    const attempt = new AbortController();
+    const abortAttempt = () => attempt.abort(signal.reason);
+    signal.addEventListener("abort", abortAttempt, { once: true });
+    if (signal.aborted) abortAttempt();
     try {
-      const events = await options.subscribe(cursor);
+      const events = await options.subscribe(cursor, attempt.signal);
       const iterator = events[Symbol.asyncIterator]();
       try {
         let pending: Promise<IteratorResult<ProductEvent>> | undefined;
@@ -72,8 +76,7 @@ export async function runThreadSubscription(options: {
               timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
             }),
           ]).finally(() => clearTimeout(timer));
-          // Abandon the iterator, not the caller's signal, so the loop below re-subscribes.
-          if (next === "idle" || next.done) break;
+          if (signal.aborted || next === "idle" || next.done) break;
           pending = undefined;
           const event = next.value;
           retryMs = 250;
@@ -89,11 +92,17 @@ export async function runThreadSubscription(options: {
           options.onEvent(event, head);
         }
       } finally {
-        // Not awaited: a half-open iterator can take as long to close as it took to go quiet.
+        // Cancel the HTTP request before reconnecting. Iterator.return alone can
+        // leave the fetch socket open in Safari and exhaust the shared tab pool.
+        attempt.abort();
         void iterator.return?.(undefined).catch(() => {});
       }
     } catch {
       // Reconnect from the last durable event after a transient transport failure.
+    } finally {
+      signal.removeEventListener("abort", abortAttempt);
+      // Also release attempts that failed before returning an iterator.
+      attempt.abort();
     }
     if (signal.aborted) return;
     await options.refresh().catch(() => null);

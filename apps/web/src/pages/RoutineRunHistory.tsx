@@ -1,15 +1,17 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { RoutineHistory } from "@rakazo/contracts";
+import { normalizeRunError } from "@rakazo/core";
 import { Button } from "@rakazo/ui-web";
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { rpc } from "../lib/rpc";
+import { translateRunError } from "../lib/run-error";
 import { formatToolActivityDuration } from "../lib/tool-activity-view";
 import { statusLabel, statusTone } from "./ActivityList";
 
 export function RoutineRunHistory({ routineId }: { routineId: string }) {
-  const { i18n } = useLingui();
+  const { i18n, t } = useLingui();
   const [history, setHistory] = useState<RoutineHistory | null>(null);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -217,6 +219,19 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                   </time>
                   <span className={statusTone(run.status)}>{statusLabel(run.status)}</span>
                 </div>
+                {run.status === "failed" && run.error ? (
+                  <div className="mt-1 text-destructive">
+                    <p>
+                      {normalizeRunError(run.error, translateRunError, i18n.locale || "en").summary}
+                    </p>
+                    <details key={run.error} className="mt-1">
+                      <summary className="w-fit cursor-pointer">{t`Details`}</summary>
+                      <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+                        {run.error}
+                      </pre>
+                    </details>
+                  </div>
+                ) : null}
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span>{duration}</span>
                   {chatTo ? (

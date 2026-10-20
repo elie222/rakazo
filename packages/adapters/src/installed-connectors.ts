@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -7,6 +8,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 import {
   AuthSchema,
@@ -37,7 +39,9 @@ import {
   lazyCatalogTools,
   MAX_DESCRIPTION_LENGTH,
   resolveCatalogCall,
+  SELECTED_SCHEMA_MAX_BYTES,
 } from "./lazy-tool-catalog.js";
+import { localSchemaReference } from "./openai-tool-parameters.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies, RemoteUrlPolicy } from "./remote-mcp.js";
 import {
@@ -394,7 +398,10 @@ export async function prepareApiInstall(input: {
   let operationsValue = input.config.operations;
   if (input.config.openApi === true || input.config.openapi === true) {
     const documentUrl = new URL(input.source);
-    const documentHeaders: Record<string, string> = { accept: "application/json", ...headers };
+    const documentHeaders: Record<string, string> = {
+      accept: "application/json, application/yaml;q=0.9",
+      ...headers,
+    };
     applyCredential(documentUrl, documentHeaders, auth, input.credential);
     const document = await loadOpenApiDocument(documentUrl, documentHeaders, input.signal, remote);
     const imported = importOpenApiDocument(document);
@@ -427,10 +434,59 @@ async function loadOpenApiDocument(
     if (size > 2_000_000) throw new Error("OpenAPI document is too large");
     const { text, truncated } = await readBoundedText(response, 2_000_000);
     if (truncated) throw new Error("OpenAPI document is too large");
-    return JSON.parse(text) as Record<string, unknown>;
+    return parseOpenApiText(text);
   } finally {
     await safeFetch.close().catch(() => undefined);
   }
+}
+
+/** OpenAPI documents may be published as JSON or YAML; JSON is tried first. */
+function parseOpenApiText(text: string): Record<string, unknown> {
+  let document: unknown;
+  try {
+    document = JSON.parse(text);
+  } catch {
+    try {
+      // Without duplicate-key checks large mappings parse in linear time; the last key wins, as
+      // with JSON.parse. Warnings would print document excerpts outside the logger.
+      const parsed: unknown = parseYaml(text, { uniqueKeys: false, logLevel: "error" });
+      // An anchor that refers to its own ancestor parses into a circular object.
+      document = isCircular(parsed) ? undefined : parsed;
+    } catch {
+      document = undefined;
+    }
+  }
+  if (!document || typeof document !== "object" || Array.isArray(document)) {
+    throw new Error("OpenAPI document is not valid JSON or YAML");
+  }
+  return document as Record<string, unknown>;
+}
+
+/** Iterative depth-first walk; shared (non-circular) nodes are visited once. */
+function isCircular(root: unknown): boolean {
+  const open = new Set<object>();
+  const finished = new Set<object>();
+  const stack: Array<[object, Iterator<unknown>]> = [];
+  const enter = (value: unknown): boolean => {
+    if (!value || typeof value !== "object" || finished.has(value)) return false;
+    if (open.has(value)) return true;
+    open.add(value);
+    stack.push([value, Object.values(value)[Symbol.iterator]()]);
+    return false;
+  };
+  if (enter(root)) return true;
+  while (stack.length > 0) {
+    const [node, children] = stack[stack.length - 1]!;
+    const next = children.next();
+    if (!next.done) {
+      if (enter(next.value)) return true;
+      continue;
+    }
+    stack.pop();
+    open.delete(node);
+    finished.add(node);
+  }
+  return false;
 }
 
 export function importOpenApiDocument(document: Record<string, unknown>): {
@@ -448,6 +504,7 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
   if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
     throw new Error("OpenAPI document has no paths");
   }
+  const refs: OpenApiRefs = { document, size: 0, literalSizes: new Map() };
   const operations: ApiOperation[] = [];
   for (const [path, pathValue] of Object.entries(paths)) {
     if (!pathValue || typeof pathValue !== "object" || Array.isArray(pathValue)) continue;
@@ -457,21 +514,21 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
       const operation = raw as Record<string, unknown>;
       const id = typeof operation.operationId === "string" ? operation.operationId : undefined;
       if (!id) continue;
+      refs.size = 0;
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       const queryParameters: string[] = [];
       const headerParameters: string[] = [];
-      const commonParameters = Array.isArray((pathValue as Record<string, unknown>).parameters)
-        ? ((pathValue as Record<string, unknown>).parameters as unknown[])
-        : [];
-      const ownParameters = Array.isArray(operation.parameters)
-        ? (operation.parameters as unknown[])
-        : [];
-      for (const parameterValue of [...commonParameters, ...ownParameters]) {
-        if (!parameterValue || typeof parameterValue !== "object") continue;
-        const parameter = parameterValue as Record<string, unknown>;
-        if (typeof parameter.name !== "string") continue;
-        properties[parameter.name] = asRecord(parameter.schema) ?? { type: "string" };
+      for (const parameter of openApiParameters(
+        document,
+        (pathValue as Record<string, unknown>).parameters,
+        operation.parameters,
+      )) {
+        properties[parameter.name] = asRecord(
+          inlineOpenApiSchema(refs, parameter.schema, "string"),
+        ) ?? {
+          type: "string",
+        };
         if (parameter.in === "query") queryParameters.push(parameter.name);
         if (parameter.in === "header") {
           if (isSensitiveHeader(parameter.name) || isTransportHeader(parameter.name)) {
@@ -481,10 +538,10 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
         }
         if (parameter.required === true) required.push(parameter.name);
       }
-      const requestBody = asRecord(operation.requestBody);
+      const requestBody = asRecord(dereferenceOpenApi(document, operation.requestBody));
       const content = asRecord(requestBody?.content);
       const jsonBody = asRecord(content?.["application/json"]);
-      const bodySchema = asRecord(jsonBody?.schema);
+      const bodySchema = asRecord(inlineOpenApiSchema(refs, jsonBody?.schema, "object"));
       if (bodySchema) {
         properties.body = bodySchema;
         if (requestBody?.required === true) required.push("body");
@@ -517,6 +574,281 @@ export function importOpenApiDocument(document: Record<string, unknown>): {
     throw new Error("OpenAPI document has no operations with operationId");
   }
   return { baseUrl, operations };
+}
+
+/** Longer same-document `$ref` chains resolve as unknown, like remote and cyclic refs. */
+const MAX_OPENAPI_REF_DEPTH = 8;
+/**
+ * JSON bytes of one tool's schema past which further refs stay unresolved: well inside what
+ * the tool catalog will load, and small enough that a full import stays a modest config.
+ */
+const MAX_OPENAPI_INLINED_SIZE = SELECTED_SCHEMA_MAX_BYTES / 5;
+/** Keywords whose value is a schema or a list of schemas; all other values are literal data. */
+const OPENAPI_SUBSCHEMA_KEYWORDS = new Set([
+  "additionalItems",
+  "additionalProperties",
+  "allOf",
+  "anyOf",
+  "contains",
+  "else",
+  "if",
+  "items",
+  "not",
+  "oneOf",
+  "prefixItems",
+  "propertyNames",
+  "then",
+  "unevaluatedItems",
+  "unevaluatedProperties",
+]);
+/** Keywords whose value maps names to schemas. */
+const OPENAPI_SUBSCHEMA_MAP_KEYWORDS = new Set([
+  "$defs",
+  "definitions",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+]);
+
+type OpenApiRefs = {
+  document: Record<string, unknown>;
+  /** JSON bytes reserved so far for the current operation's tool schema. */
+  size: number;
+  /** JSON bytes of each document node without following refs, measured once. */
+  literalSizes: Map<object, number>;
+};
+
+/** Follow a Reference Object within the same document; remote refs are never fetched. */
+function dereferenceOpenApi(document: Record<string, unknown>, value: unknown): unknown {
+  const seen = new Set<string>();
+  let current = value;
+  while (asRecord(current) && typeof (current as { $ref?: unknown }).$ref === "string") {
+    const ref = (current as { $ref: string }).$ref;
+    if (seen.has(ref) || seen.size >= MAX_OPENAPI_REF_DEPTH) return undefined;
+    seen.add(ref);
+    current = localSchemaReference(document, ref);
+  }
+  return current;
+}
+
+/** Path-level parameters, each overridden by an operation parameter with the same name and location. */
+function openApiParameters(
+  document: Record<string, unknown>,
+  ...lists: unknown[]
+): Array<Record<string, unknown> & { name: string }> {
+  const merged = new Map<string, Record<string, unknown> & { name: string }>();
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const value of list) {
+      const parameter = asRecord(dereferenceOpenApi(document, value));
+      if (typeof parameter?.name !== "string") continue;
+      merged.set(`${String(parameter.in)}:${parameter.name}`, {
+        ...parameter,
+        name: parameter.name,
+      });
+    }
+  }
+  return [...merged.values()];
+}
+
+/**
+ * Inline same-document schema refs so a stored tool schema stands alone; nothing is fetched.
+ * A remote, missing, cyclic, or too-deep ref, or one whose target would not fit the tool's size
+ * limit, keeps only its siblings and a `type`: the target's when known, otherwise
+ * `unresolvedType` (a parameter is a string on the wire; anything else defaults to an object,
+ * since tool-schema converters read a schema without a type as a string). A schema's full size
+ * is reserved before its refs expand, so fields not yet visited always count.
+ */
+function inlineOpenApiSchema(refs: OpenApiRefs, schema: unknown, unresolvedType: string): unknown {
+  refs.size += literalOpenApiSize(refs, schema);
+  return expandOpenApiSchema(refs, schema, [], unresolvedType);
+}
+
+function expandOpenApiSchema(
+  refs: OpenApiRefs,
+  schema: unknown,
+  chain: string[],
+  unresolvedType = "object",
+): unknown {
+  const record = asRecord(schema);
+  if (!record) return schema;
+  const ref = typeof record.$ref === "string" ? record.$ref : undefined;
+  const expand = (value: unknown) =>
+    Array.isArray(value)
+      ? value.map((item) => expandOpenApiSchema(refs, item, chain))
+      : expandOpenApiSchema(refs, value, chain);
+  const fields = Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => !ref || key !== "$ref")
+      .map(([key, value]) => {
+        if (OPENAPI_SUBSCHEMA_KEYWORDS.has(key)) return [key, expand(value)];
+        const schemas = OPENAPI_SUBSCHEMA_MAP_KEYWORDS.has(key) ? asRecord(value) : undefined;
+        if (!schemas) return [key, value];
+        return [
+          key,
+          Object.fromEntries(
+            Object.entries(schemas).map(([name, item]) => [
+              name,
+              expandOpenApiSchema(refs, item, chain),
+            ]),
+          ),
+        ];
+      }),
+  );
+  if (!ref) return fields;
+  const target = localSchemaReference(refs.document, ref);
+  const unresolved = { ...openApiPlaceholder(target, unresolvedType), ...fields };
+  if (
+    target === undefined ||
+    chain.includes(ref) ||
+    chain.length >= MAX_OPENAPI_REF_DEPTH ||
+    refs.size + literalOpenApiSize(refs, target) > MAX_OPENAPI_INLINED_SIZE
+  ) {
+    return unresolved;
+  }
+  refs.size += literalOpenApiSize(refs, target);
+  const resolved = expandOpenApiSchema(refs, target, [...chain, ref], unresolvedType);
+  if (Object.keys(fields).length === 0) return resolved;
+  const resolvedRecord = asRecord(resolved);
+  return resolvedRecord ? mergeOpenApiSchemas(resolvedRecord, fields) : unresolved;
+}
+
+/** The known target's type (and an array's item type) for a ref that is not inlined. */
+function openApiPlaceholder(target: unknown, unresolvedType: string): Record<string, unknown> {
+  const type = asRecord(target)?.type ?? unresolvedType;
+  if (type !== "array") return { type };
+  return { type, items: { type: asRecord(asRecord(target)?.items)?.type ?? "object" } };
+}
+
+/** Keywords that describe a schema without constraining it; a `$ref` sibling replaces them. */
+const OPENAPI_ANNOTATION_KEYWORDS = new Set([
+  "$comment",
+  "default",
+  "deprecated",
+  "description",
+  "example",
+  "examples",
+  "readOnly",
+  "title",
+  "writeOnly",
+]);
+const OPENAPI_LOWER_BOUNDS = new Set([
+  "exclusiveMinimum",
+  "minimum",
+  "minItems",
+  "minLength",
+  "minProperties",
+]);
+const OPENAPI_UPPER_BOUNDS = new Set([
+  "exclusiveMaximum",
+  "maximum",
+  "maxItems",
+  "maxLength",
+  "maxProperties",
+]);
+/** Keywords that decide which property names an object accepts. */
+const OPENAPI_OBJECT_SHAPE_KEYWORDS = new Set([
+  "additionalProperties",
+  "patternProperties",
+  "properties",
+  "unevaluatedProperties",
+]);
+
+/**
+ * Whether merging `other` into a closed object would admit names the closed side rejects:
+ * its `additionalProperties`/`unevaluatedProperties` would then cover the other's properties.
+ */
+function widensClosedObject(closed: Record<string, unknown>, other: Record<string, unknown>) {
+  const restricts = (value: unknown) => value !== undefined && value !== true;
+  if (
+    !restricts(closed.additionalProperties) &&
+    !restricts(closed.unevaluatedProperties) &&
+    closed.patternProperties === undefined
+  ) {
+    return false;
+  }
+  const declared = asRecord(closed.properties) ?? {};
+  return (
+    Object.keys(asRecord(other.properties) ?? {}).some((name) => !Object.hasOwn(declared, name)) ||
+    (other.patternProperties !== undefined &&
+      !isDeepStrictEqual(other.patternProperties, closed.patternProperties))
+  );
+}
+
+/**
+ * A `$ref` (`schema`) and its siblings (`other`) both apply in OpenAPI 3.1; combine them into
+ * one schema that tool-schema converters read correctly. Annotations come from the siblings.
+ * A constraint that can't be combined keeps the referenced schema's version: that can accept
+ * more than the spec does, but never changes a value's type, and the API still validates.
+ */
+function mergeOpenApiSchemas(
+  schema: Record<string, unknown>,
+  other: Record<string, unknown>,
+): Record<string, unknown> {
+  const keepShape = widensClosedObject(schema, other) || widensClosedObject(other, schema);
+  const merged = { ...schema };
+  for (const [key, value] of Object.entries(other)) {
+    const current = merged[key];
+    if (keepShape && OPENAPI_OBJECT_SHAPE_KEYWORDS.has(key)) continue;
+    if (
+      current === undefined ||
+      OPENAPI_ANNOTATION_KEYWORDS.has(key) ||
+      key.startsWith("x-") ||
+      isDeepStrictEqual(current, value)
+    ) {
+      merged[key] = value;
+    } else if (key === "required" && Array.isArray(current) && Array.isArray(value)) {
+      merged[key] = [...new Set([...current, ...value])];
+    } else if (key === "enum" && Array.isArray(current) && Array.isArray(value)) {
+      const allowed = current.filter((item) => value.some((each) => isDeepStrictEqual(item, each)));
+      if (allowed.length > 0) merged[key] = allowed;
+    } else if (
+      typeof current === "number" &&
+      typeof value === "number" &&
+      OPENAPI_LOWER_BOUNDS.has(key)
+    ) {
+      merged[key] = Math.max(current, value);
+    } else if (
+      typeof current === "number" &&
+      typeof value === "number" &&
+      OPENAPI_UPPER_BOUNDS.has(key)
+    ) {
+      merged[key] = Math.min(current, value);
+    } else if (key === "items" && asRecord(current) && asRecord(value)) {
+      merged[key] = mergeOpenApiSchemas(
+        current as Record<string, unknown>,
+        value as Record<string, unknown>,
+      );
+    } else if (key === "properties" && asRecord(current) && asRecord(value)) {
+      const properties = { ...(current as Record<string, unknown>) };
+      for (const [name, property] of Object.entries(value as Record<string, unknown>)) {
+        const existing = asRecord(properties[name]);
+        const next = asRecord(property);
+        if (properties[name] === undefined) properties[name] = property;
+        else if (existing && next) properties[name] = mergeOpenApiSchemas(existing, next);
+      }
+      merged[key] = properties;
+    }
+  }
+  return merged;
+}
+
+/** JSON bytes of one node, excluding its children. */
+function openApiNodeSize(value: unknown): number {
+  if (typeof value === "string") return Buffer.byteLength(JSON.stringify(value)) + 1;
+  if (typeof value === "number") return String(value).length + 1;
+  if (!value || typeof value !== "object") return 6;
+  return Object.keys(value).reduce((size, key) => size + openApiNodeSize(key) + 1, 2);
+}
+
+function literalOpenApiSize(refs: OpenApiRefs, value: unknown): number {
+  if (!value || typeof value !== "object") return openApiNodeSize(value);
+  const known = refs.literalSizes.get(value);
+  if (known !== undefined) return known;
+  let size = openApiNodeSize(value);
+  for (const field of Object.values(value)) size += literalOpenApiSize(refs, field);
+  refs.literalSizes.set(value, size);
+  return size;
 }
 
 /** Lead with the validated route; the provider's prose is bounded and labeled as the provider's. */

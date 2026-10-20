@@ -97,7 +97,7 @@ function flattenRootUnion(
 }
 
 /** Resolve only same-document JSON pointers; never fetch external schemas. */
-function localSchemaReference(root: Record<string, unknown>, ref: string): unknown {
+export function localSchemaReference(root: Record<string, unknown>, ref: string): unknown {
   if (ref === "#") return root;
   if (!ref.startsWith("#/")) return undefined;
   let pointer: string;

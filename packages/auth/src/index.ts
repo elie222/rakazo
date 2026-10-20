@@ -2,6 +2,7 @@ import { expo } from "@better-auth/expo";
 import type { TransactionalEmail, TransactionalEmailProvider } from "@rakazo/adapter-kit";
 import {
   allowlistedSignupAdmission,
+  displayName,
   emailAllowed,
   firstAccountClaimDecision,
   isMessagingEmail,
@@ -10,6 +11,7 @@ import {
 } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { bootstrapUserSpace } from "@rakazo/db";
+import type { BetterAuthOptions } from "better-auth";
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import {
@@ -19,14 +21,9 @@ import {
   getOAuthState,
 } from "better-auth/api";
 import { bearer, organization } from "better-auth/plugins";
-import {
-  accountSecurity,
-  OIDC_FRESH_AGE,
-  oidcProofKey,
-  sessionForAuthHook,
-} from "./account-security.js";
+import { accountSecurity, oidcProofKey, sessionForAuthHook } from "./account-security.js";
 import type { OidcConfig } from "./oidc.js";
-import { oidcDiscovery } from "./oidc.js";
+import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
 
 export type { OidcConfig } from "./oidc.js";
 
@@ -40,6 +37,7 @@ export interface AuthEnv {
   signupAllowlist: string | undefined;
   extraOrigins?: string[];
   email?: TransactionalEmailProvider;
+  logger?: BetterAuthOptions["logger"];
   onEmailError?: (error: unknown) => void;
   beforeDeleteUser?: (userId: string) => Promise<void>;
   /** Runs when a session row is deleted. Delivery also drops a token whose session is missing or expired. */
@@ -250,6 +248,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
   const discovery = env.oidc ? oidcDiscovery(env.oidc) : undefined;
   const auth = betterAuth({
     appName: "Rakazo",
+    logger: env.logger,
     secret: env.secret,
     baseURL: env.baseURL,
     trustedOrigins: [...buildTrustedOrigins(env), "rakazo://"],
@@ -376,7 +375,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         ) {
           const session = await sessionForAuthHook(ctx);
           if (!session || isMessagingEmail(session.user.email)) throw new APIError("UNAUTHORIZED");
-          await addOAuthServerContext({ reauthUserId: session.user.id });
+          const accounts = await ctx.context.internalAdapter.findAccounts(session.user.id);
+          const accountIds = accounts
+            .filter((account) => isCurrentOidcAccount(account, env.oidc?.issuer))
+            .map((account) => account.accountId);
+          if (!accountIds.length || ctx.body.idToken) throw new APIError("FORBIDDEN");
+          await addOAuthServerContext({
+            reauthUserId: session.user.id,
+            reauthSessionToken: session.session.token,
+            reauthAccountIds: accountIds,
+            reauthStartedAt: Math.floor(Date.now() / 1_000),
+          });
         }
         for (const value of [ctx.body?.email, ctx.body?.newEmail]) {
           if (typeof value === "string" && isMessagingEmail(value)) {
@@ -401,11 +410,17 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         let requireEmailVerification = false;
         if (ctx.path === "/sign-up/email") {
           if (!policy?.enabled) {
-            throw new APIError("BAD_REQUEST", { message: "Registration is closed" });
+            throw new APIError("BAD_REQUEST", {
+              code: "REGISTRATION_CLOSED",
+              message: "Registration is closed",
+            });
           }
           const email = String(ctx.body?.email ?? "");
           if (!emailAllowed(email, policy.allowlist)) {
-            throw new APIError("BAD_REQUEST", { message: "Email is not allowed to register" });
+            throw new APIError("BAD_REQUEST", {
+              code: "EMAIL_NOT_ALLOWED",
+              message: "Email is not allowed to register",
+            });
           }
           if (policy.allowlist.length > 0 && !env.email) {
             const held = await holdFirstAccountGate(prisma);
@@ -481,7 +496,10 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             const oidcSignIn = isOidcCallback(ctx);
             const bypassAllowlist = oidcSignIn && env.oidc?.allowSignupBypass;
             if (!user || isMessagingEmail(user.email)) {
-              throw new APIError("FORBIDDEN", { message: "Email verification required" });
+              throw new APIError("FORBIDDEN", {
+                code: "EMAIL_VERIFICATION_REQUIRED",
+                message: "Email verification required",
+              });
             }
             if (!user.emailVerified && policy.allowlist.length > 0 && !bypassAllowlist) {
               if (oidcSignIn)
@@ -490,13 +508,19 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                   message: "Email verification required",
                 });
               if (env.email || !emailAllowed(user.email, policy.allowlist)) {
-                throw new APIError("FORBIDDEN", { message: "Email verification required" });
+                throw new APIError("FORBIDDEN", {
+                  code: "EMAIL_VERIFICATION_REQUIRED",
+                  message: "Email verification required",
+                });
               }
               // Mailbox ownership is not proved. The claim serializes the exemption
               // so a second overlapping signup cannot take it as well.
               const admitted = await claimUnverifiedFirstAccount(prisma, user.id);
               if (!admitted || !ctx) {
-                throw new APIError("FORBIDDEN", { message: "Email verification required" });
+                throw new APIError("FORBIDDEN", {
+                  code: "EMAIL_VERIFICATION_REQUIRED",
+                  message: "Email verification required",
+                });
               }
               await ctx.context.internalAdapter.updateUser(user.id, { emailVerified: true });
             }
@@ -508,17 +532,28 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
                 !policy.enabled ||
                 (!bypassAllowlist && !emailAllowed(user.email, policy.allowlist))
               ) {
-                throw new APIError("FORBIDDEN", { message: "Registration is closed" });
+                throw new APIError("FORBIDDEN", {
+                  code: "REGISTRATION_CLOSED",
+                  message: "Registration is closed",
+                });
               }
               await bootstrapUserSpace(prisma, user, env);
             }
           },
           after: async (session, ctx) => {
-            if (ctx && isOidcCallback(ctx)) {
+            const context =
+              ctx && isOidcCallback(ctx) ? (await getOAuthState())?.serverContext : undefined;
+            // Set only after ID-token verification and exact linked-account binding.
+            if (
+              ctx &&
+              context?.reauthUserId === session.userId &&
+              typeof context.reauthExpiresAt === "number" &&
+              context.reauthExpiresAt > Date.now()
+            ) {
               await ctx.context.internalAdapter.createVerificationValue({
                 identifier: oidcProofKey(session.id),
                 value: session.userId,
-                expiresAt: new Date(Date.now() + OIDC_FRESH_AGE * 1_000),
+                expiresAt: new Date(context.reauthExpiresAt),
               });
             }
             const previous = replacedSession(ctx);
@@ -537,6 +572,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             if (isMessagingEmail(user.email)) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });
             }
+            return {
+              data: {
+                ...user,
+                ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
+              },
+            };
           },
         },
         update: {
@@ -544,6 +585,12 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
             if (user.email && isMessagingEmail(user.email)) {
               throw new APIError("BAD_REQUEST", { message: "Email is not available" });
             }
+            return {
+              data: {
+                ...user,
+                ...(user.name !== undefined ? { name: displayName(user.name, "") } : {}),
+              },
+            };
           },
         },
       },
@@ -568,7 +615,7 @@ export function passwordResetEmail(
   user: { id: string; email: string; name: string },
   resetUrl: string,
 ): TransactionalEmail {
-  const name = user.name.trim() || "there";
+  const name = displayName(user.name, "there");
   const safeName = escapeHtml(name);
   const safeUrl = escapeHtml(resetUrl);
   return {

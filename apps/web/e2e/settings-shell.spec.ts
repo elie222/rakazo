@@ -63,6 +63,10 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect
     .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo.responseStreaming")))
     .toBe("on");
+  const deleteAccount = settings.getByRole("button", { name: "Delete account", exact: true });
+  await deleteAccount.scrollIntoViewIfNeeded();
+  await expect(deleteAccount).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-general-delete-account");
 
   await settings.getByTestId("settings-nav-models").click();
   await expect(settings).toHaveAttribute("data-settings-section", "models");
@@ -95,4 +99,22 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect(page.getByTestId("user-settings")).toHaveAttribute("data-settings-section", "usage");
   await expect(page.getByTestId("usage-settings")).toBeVisible();
   await captureScreenshot(page, testInfo, "settings-shell-usage");
+});
+
+test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
+  // These screenshots never submit credentials or contact Honcho.
+  const stamp = Date.now();
+  await signup(page, `memory-honcho-${stamp}@rakazo.test`, "password12", "Memory settings");
+  await completeOnboarding(page);
+  const settings = await openUserSettings(page, "memory");
+  const memory = settings.getByTestId("memory-settings");
+  await memory.getByLabel("Provider").selectOption("honcho");
+  await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
+  await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
+  await captureScreenshot(page, testInfo, "memory-honcho-empty");
+  await memory.getByLabel("API key", { exact: true }).fill("hch-test-key");
+  await memory.getByLabel("Workspace", { exact: true }).fill("team-notes");
+  await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "memory-honcho-filled");
 });

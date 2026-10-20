@@ -1,5 +1,5 @@
 import { createTelegramAdapter } from "@chat-adapter/telegram";
-import type { AdapterContext } from "@rakazo/adapter-kit";
+import type { AdapterContext, MessagingInboundEvent } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatSdkMessagingSurface } from "./chat-sdk-surface.js";
 
@@ -54,7 +54,7 @@ function createSurface(sendErrors: string[] = []) {
     mode: "webhook",
   });
   const surface = new ChatSdkMessagingSurface([
-    { provider: "telegram", capabilities: { direct: true, groups: false, typing: false }, adapter },
+    { provider: "telegram", capabilities: { direct: true, groups: false, receipt: null }, adapter },
   ]);
   return { surface, sends, threadId: adapter.encodeThreadId({ chatId: "123" }) };
 }
@@ -114,5 +114,115 @@ describe("Telegram messaging Markdown", () => {
     );
     expect(sends).toHaveLength(2);
     expect(sends[1]).not.toHaveProperty("parse_mode");
+  });
+});
+
+describe("Telegram bots side by side", () => {
+  const telegramUpdate = (text: string) => ({
+    update_id: 1,
+    message: {
+      message_id: 7,
+      date: 1_700_000_000,
+      chat: { id: 123, type: "private", first_name: "Ada" },
+      from: { id: 123, is_bot: false, first_name: "Ada" },
+      text,
+    },
+  });
+
+  function createTwoBotSurface() {
+    const sends: { token: string; chatId: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init: RequestInit) => {
+        const url = new URL(input);
+        const [, botPath, method] = url.pathname.split("/");
+        const token = botPath!.replace(/^bot/, "");
+        if (method === "getMe") {
+          return Response.json({ ok: true, result: { id: 9, is_bot: true, username: token } });
+        }
+        if (method === "sendRichMessage") {
+          return Response.json(
+            { ok: false, error_code: 404, description: "Not Found" },
+            {
+              status: 404,
+            },
+          );
+        }
+        if (method !== "sendMessage") throw new Error(`Unexpected Telegram method: ${method}`);
+        const payload = JSON.parse(String(init.body)) as { chat_id: unknown; text: string };
+        sends.push({ token, chatId: payload.chat_id });
+        return Response.json({
+          ok: true,
+          result: {
+            message_id: 42,
+            date: 1_700_000_000,
+            chat: { id: 123, type: "private" },
+            from: { id: 9, is_bot: true, first_name: token },
+            text: payload.text,
+          },
+        });
+      }),
+    );
+    const telegram = (botToken: string, secretToken: string) =>
+      createTelegramAdapter({ botToken, secretToken, mode: "webhook" });
+    const capabilities = { direct: true, groups: false, receipt: null };
+    const surface = new ChatSdkMessagingSurface([
+      { provider: "telegram", capabilities, adapter: telegram("home-token", "home-secret") },
+      {
+        provider: "telegram-work",
+        adapterName: "telegram",
+        capabilities,
+        adapter: telegram("work-token", "work-secret"),
+      },
+    ]);
+    const inbound: MessagingInboundEvent[] = [];
+    surface.onInbound(async (event) => {
+      inbound.push(event);
+    });
+    return { surface, sends, inbound };
+  }
+
+  const webhook = (secret: string, text: string) =>
+    new Request("https://rakazo.test/api/v1/messaging/webhook/x", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": secret,
+      },
+      body: JSON.stringify(telegramUpdate(text)),
+    });
+
+  it("keeps the same Telegram user's chats with each bot apart, inbound and outbound", async () => {
+    const { surface, sends, inbound } = createTwoBotSurface();
+
+    expect(
+      (await surface.handleWebhook("telegram", webhook("home-secret", "hi home")))?.status,
+    ).toBe(200);
+    expect(
+      (await surface.handleWebhook("telegram-work", webhook("work-secret", "hi work")))?.status,
+    ).toBe(200);
+    expect(inbound).toMatchObject([
+      { provider: "telegram", threadId: "telegram:123", from: "123", content: "hi home" },
+      { provider: "telegram-work", threadId: "telegram-work:123", from: "123", content: "hi work" },
+    ]);
+
+    await surface.sendToThread({ threadId: "telegram-work:123", body: "from work" }, context);
+    await surface.sendToThread({ threadId: "telegram:123", body: "from home" }, context);
+    expect(sends).toEqual([
+      { token: "work-token", chatId: "123" },
+      { token: "home-token", chatId: "123" },
+    ]);
+    expect(await surface.openDirectThread("telegram-work", "123", context)).toBe(
+      "telegram-work:123",
+    );
+  });
+
+  it("rejects an update signed with another bot's webhook secret", async () => {
+    const { surface, inbound } = createTwoBotSurface();
+
+    const response = await surface.handleWebhook("telegram-work", webhook("home-secret", "x"));
+
+    expect(response?.status).toBe(401);
+    expect(inbound).toEqual([]);
   });
 });

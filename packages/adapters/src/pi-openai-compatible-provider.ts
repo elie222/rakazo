@@ -26,6 +26,7 @@ import {
   normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "./openai-compatible-url.js";
+import { MODEL_CONNECT_TIMEOUT_MS } from "./pi-runtime-limits.js";
 import { guardToolCallNames } from "./pi-tool-call-guard.js";
 import { dispatcherFetch, fetchPairedWithDispatcher } from "./undici-fetch.js";
 
@@ -41,13 +42,15 @@ export function openAiCompatibleVisionModelIds(): ReadonlySet<string> {
   return declaredVisionModelIds(OPENAI_COMPATIBLE_VISION_MODELS_ENV);
 }
 
-const MAX_MODELS_RESPONSE_BYTES = 64 * 1024;
-const MAX_MODEL_IDS = 500;
+/** Custom endpoints can be aggregators; keep their discovery bounded below pinned catalogs. */
+const MAX_MODELS_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_MODEL_IDS = 4_000;
 /** Pinned catalogs (OpenRouter is ~1 MiB). Custom server URLs stay on the tight caps. */
 const CATALOG_MAX_MODELS_RESPONSE_BYTES = 8 * 1024 * 1024;
 const CATALOG_MAX_MODEL_IDS = 8_000;
 const MAX_MODEL_ID_LENGTH = 256;
 
+/** Select response-size and model-count caps, using larger caps for pinned catalogs. */
 function modelsProbeLimits(catalogProbe?: boolean): { maxBytes: number; maxModelIds: number } {
   return catalogProbe
     ? { maxBytes: CATALOG_MAX_MODELS_RESPONSE_BYTES, maxModelIds: CATALOG_MAX_MODEL_IDS }
@@ -78,7 +81,7 @@ export function openAiCompatibleModel(
       supportsReasoningEffort: reasoning,
       thinkingFormat: "openai",
     },
-    thinkingLevelMap: { off: "none" },
+    thinkingLevelMap: reasoning ? { off: "none", xhigh: "xhigh", max: "max" } : { off: "none" },
     input: inputModalities(acceptsImages),
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow,
@@ -182,24 +185,24 @@ export function createOpenAiCompatibleFetch(
       assertHttpsForKeyedOpenAiCompatibleUrl(url, "present");
     }
     const hostname = url.hostname.replace(/^\[|\]$/g, "");
-    const dispatcher =
-      isIP(hostname) === 0
-        ? new Agent({
-            connect: { lookup: createOpenAiCompatibleLookup(url, resolve) },
-          })
-        : undefined;
-    // Node's fetch rejects this package Agent. Pair them only when the
-    // dispatcher is attached; a caller-supplied fetch stays in charge.
-    const transport = dispatcher ? fetchPairedWithDispatcher(baseFetch) : baseFetch;
+    const dispatcher = new Agent({
+      connect: {
+        timeout: MODEL_CONNECT_TIMEOUT_MS,
+        ...(isIP(hostname) === 0 ? { lookup: createOpenAiCompatibleLookup(url, resolve) } : {}),
+      },
+    });
+    // Node's fetch rejects this package Agent. Use its matching fetch;
+    // a caller-supplied fetch stays in charge.
+    const transport = fetchPairedWithDispatcher(baseFetch);
     try {
       const response = await transport(url, {
         ...(await requestInitFor(input, init)),
         redirect: "error",
-        ...(dispatcher ? { dispatcher } : {}),
-      } as RequestInit & { dispatcher?: Agent });
-      return dispatcher ? await closeDispatcherWithResponse(response, dispatcher) : response;
+        dispatcher,
+      } as RequestInit & { dispatcher: Agent });
+      return await closeDispatcherWithResponse(response, dispatcher);
     } catch (error) {
-      await dispatcher?.close().catch(() => undefined);
+      await dispatcher.destroy().catch(() => undefined);
       throw error;
     }
   };

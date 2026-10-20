@@ -219,6 +219,30 @@ clip: |
       /at most 80 characters/,
     );
   });
+
+  it.each([2, 3])(
+    "round-trips multiline keep-chomp values with %i trailing newlines",
+    (trailing) => {
+      const notes = `First step\n\n  Nested step\nLast step${"\n".repeat(trailing)}`;
+      const parsed = parseSkillMd(`---
+name: Release notes
+description: Prepare release notes
+notes: |+
+  First step
+
+    Nested step
+  Last step${"\n".repeat(trailing)}---
+
+Write the notes.
+`);
+      if ("error" in parsed) throw new Error(parsed.error);
+      expect(parsed.frontmatter.notes).toBe(notes);
+
+      const again = parseSkillMd(buildSkillMd(parsed));
+      if ("error" in again) throw new Error(again.error);
+      expect(again.frontmatter.notes).toBe(notes);
+    },
+  );
 });
 
 describe("skill prompt helpers", () => {

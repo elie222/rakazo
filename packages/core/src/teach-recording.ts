@@ -57,13 +57,13 @@ export function computerInputForDomKey(
 }
 
 export const DEFAULT_COMPUTER_SCREEN = { width: 1280, height: 800 } as const;
-export const BOX_COMPUTER_SCREEN = { width: 1920, height: 1080 } as const;
+export const BOAT_COMPUTER_SCREEN = { width: 1920, height: 1080 } as const;
 
 export function computerScreenSize(kind: string | null | undefined): {
   width: number;
   height: number;
 } {
-  return kind === "box" ? BOX_COMPUTER_SCREEN : DEFAULT_COMPUTER_SCREEN;
+  return kind === "boat" ? BOAT_COMPUTER_SCREEN : DEFAULT_COMPUTER_SCREEN;
 }
 
 function clamp(value: number, max: number): number {

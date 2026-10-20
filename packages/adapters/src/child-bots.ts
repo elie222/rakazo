@@ -8,7 +8,12 @@ import type {
   SandboxProvider,
 } from "@rakazo/adapter-kit";
 import { routineJobKey, runContinueJob, runJobKey } from "@rakazo/adapter-kit";
-import { type Actor, type Bot, type ComputerMode, GROUP_MEMBER_MIN } from "@rakazo/contracts";
+import type { Actor, Bot, ComputerMode } from "@rakazo/contracts";
+import {
+  BOT_DESCRIPTION_MAX_LENGTH,
+  BOT_INSTRUCTIONS_MAX_LENGTH,
+  GROUP_MEMBER_MIN,
+} from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import {
   cancelRunsInTransaction,
@@ -59,6 +64,7 @@ export async function spawnBot(
     spawnKey: string;
     name: string;
     title?: string;
+    description?: string;
     instructions?: string;
     prompt?: string;
     computerMode?: ComputerMode;
@@ -79,8 +85,8 @@ export async function spawnBot(
     created = await createRepos(deps.prisma).createBot(actor, {
       name,
       title: (input.title ?? "").trim(),
-      description: "",
-      instructions: (input.instructions ?? "").trim(),
+      description: (input.description ?? "").trim().slice(0, BOT_DESCRIPTION_MAX_LENGTH),
+      instructions: (input.instructions ?? "").trim().slice(0, BOT_INSTRUCTIONS_MAX_LENGTH),
       notifyOnFinish: true,
       parentBotId: input.spawnedBy.id,
       spawnKey: input.spawnKey,
@@ -217,6 +223,15 @@ type LifecycleBot = {
   webhookSecretId?: string | null;
 };
 
+/** Bots the caller created. No `archivedAt` filter: a retry on an archived child must still reconcile. */
+export function createdByWhere(caller: {
+  botId: string;
+  userId: string;
+  spaceId: string;
+}): Prisma.BotWhereInput {
+  return { parentBotId: caller.botId, userId: caller.userId, spaceId: caller.spaceId };
+}
+
 export async function archiveSpawnedBot(
   deps: BotLifecycleDeps,
   input: {
@@ -234,11 +249,11 @@ export async function archiveSpawnedBot(
   }
 
   const spawned = await deps.prisma.bot.findMany({
-    where: {
-      parentBotId: input.spawnedByBotId,
+    where: createdByWhere({
+      botId: input.spawnedByBotId,
       userId: input.userId,
       spaceId: input.spaceId,
-    },
+    }),
   });
   const matches = input.botId
     ? spawned.filter((bot) => bot.id === input.botId)
@@ -632,7 +647,7 @@ async function sharedTeamComputer(
   return computer;
 }
 
-const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "box", "createos"]);
+const REMOTE_TEAM_SANDBOX_KINDS = new Set(["e2b", "daytona", "boat", "createos"]);
 // The bot is already deleted; whatever this misses is removed when the computer next boots.
 const LIVE_CLEANUP_BUDGET_MS = 10_000;
 

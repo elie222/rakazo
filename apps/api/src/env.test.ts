@@ -7,6 +7,35 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it("keeps calls off unless explicitly enabled", () => {
+    expect(loadEnv(base).phoneCallsEnabled).toBe(false);
+    for (const value of ["false", "1", ""]) {
+      expect(loadEnv({ ...base, PHONE_CALLS_ENABLED: value }).phoneCallsEnabled).toBe(false);
+    }
+    expect(loadEnv({ ...base, PHONE_CALLS_ENABLED: "true" }).phoneCallsEnabled).toBe(true);
+  });
+  it("parses the call ring window and falls back for invalid values", () => {
+    expect(loadEnv(base).phoneCallRingSeconds).toBe(45);
+    expect(loadEnv({ ...base, PHONE_CALL_RING_SECONDS: "90" }).phoneCallRingSeconds).toBe(90);
+    for (const value of ["", "0", "-1", "invalid", "NaN", "Infinity"]) {
+      expect(loadEnv({ ...base, PHONE_CALL_RING_SECONDS: value }).phoneCallRingSeconds).toBe(45);
+    }
+  });
+
+  it("defaults uploads to 10 MiB and parses a configured limit", () => {
+    expect(loadEnv(base).maxUploadSizeBytes).toBe(10 * 1024 * 1024);
+    expect(loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: "" }).maxUploadSizeBytes).toBe(10 * 1024 * 1024);
+    expect(loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: " 25 " }).maxUploadSizeBytes).toBe(
+      25 * 1024 * 1024,
+    );
+  });
+
+  it.each(["0", "-1", "1.5", "NaN", "Infinity", "1e3", "0x10", "9007199254740991"])(
+    "rejects invalid upload limit %s",
+    (value) => {
+      expect(() => loadEnv({ ...base, MAX_UPLOAD_SIZE_MB: value })).toThrow("MAX_UPLOAD_SIZE_MB");
+    },
+  );
   it("keeps the ticket board off unless explicitly enabled", () => {
     expect(loadEnv(base).ticketBoardEnabled).toBe(false);
     for (const value of ["false", "1", ""])
@@ -92,17 +121,17 @@ describe("loadEnv", () => {
     });
   });
 
-  it("loads provider-specific Box configuration", () => {
+  it("loads provider-specific Boat configuration", () => {
     const env = loadEnv({
       ...base,
-      SANDBOX_PROVIDER: "box",
-      BOX_API_KEY: "test-box-key",
-      BOX_API_URL: "https://box.test/api/v1",
+      SANDBOX_PROVIDER: "boat",
+      BOAT_API_KEY: "test-boat-key",
+      BOAT_API_URL: "https://boat.test/api/v1",
     });
     expect(env).toMatchObject({
-      sandboxProvider: "box",
-      boxApiKey: "test-box-key",
-      boxApiUrl: "https://box.test/api/v1",
+      sandboxProvider: "boat",
+      boatApiKey: "test-boat-key",
+      boatApiUrl: "https://boat.test/api/v1",
     });
   });
 

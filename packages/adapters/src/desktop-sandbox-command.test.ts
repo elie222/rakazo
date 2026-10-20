@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ProcessEvent } from "@rakazo/adapter-kit";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as processTree from "./desktop-process-tree.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
 
 const ctx = {
@@ -18,6 +19,30 @@ describe("desktop command execution", () => {
 
   afterEach(() => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  it("never starts an OS process for an already-cancelled command", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "rakazo-desktop-command-"));
+    roots.push(root);
+    const desktop = new DesktopSandboxProvider({ root });
+    const computer = await desktop.provision({ botId: "cancelled", homePath: "/unused" }, ctx);
+    const spawn = vi.spyOn(processTree, "spawnOwnedCommand").mockImplementation(() => {
+      throw new Error("A cancelled command must not create a process");
+    });
+    try {
+      const result = await collect(
+        desktop.execute(
+          computer,
+          { argv: [process.execPath, "-e", "process.exit(0)"] },
+          { ...ctx, signal: AbortSignal.abort() },
+        ),
+      );
+      expect(result).toMatchObject({ code: 130, stderr: "command aborted\n" });
+      expect(spawn).not.toHaveBeenCalled();
+    } finally {
+      spawn.mockRestore();
+      await desktop.destroy(computer, ctx);
+    }
   });
 
   it("does not pass the program or its arguments through a shell", async () => {

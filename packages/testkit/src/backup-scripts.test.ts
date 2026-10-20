@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -113,6 +114,14 @@ for (const file of process.argv.slice(2)) {
 `,
   );
   chmodSync(checksum, 0o755);
+  write(
+    path.join(bin, "df"),
+    `#!/bin/bash
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "/dev/fake 104857600 0 \${FREE_KB:-52428800} 0% /"
+`,
+  );
+  chmodSync(path.join(bin, "df"), 0o755);
   // No inherited deployment settings, credentials, or executable search paths.
   const env = {
     PATH: [bin, path.dirname(process.execPath), "/usr/bin", "/bin"].join(path.delimiter),
@@ -144,6 +153,11 @@ for (const file of process.argv.slice(2)) {
         .map((line) => JSON.parse(line));
     },
   };
+}
+
+/** Snapshot directories, without the backup lock file. */
+function snapshotNames(root: string) {
+  return readdirSync(root).filter((name) => name !== ".lock");
 }
 
 function contents(archive: string) {
@@ -270,14 +284,6 @@ describe("production backup deployment and archive behavior", () => {
     }
   });
 
-  it("provides optional systemd configuration for installed copies", () => {
-    const service = readFileSync(
-      path.join(repoRoot, "infra/systemd/rakazo-backup.service"),
-      "utf8",
-    );
-    expect(service).toContain("EnvironmentFile=-/etc/rakazo/backup.env");
-  });
-
   it("rejects relative deployment paths before any backup commands", () => {
     const f = fixture();
     const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_DEPLOY_DIR: "relative" });
@@ -307,6 +313,58 @@ describe("production backup deployment and archive behavior", () => {
       const result = f.run("infra/compose/backup-prod.sh", [], failure);
       expect(result.status).not.toBe(0);
       expect(result.stdout).not.toContain("Verified Rakazo backup");
+      // The partial snapshot is removed.
+      expect(snapshotNames(f.snapshots)).toEqual([]);
     },
   );
+
+  it("keeps the newest verified snapshots and drops older and partial ones", () => {
+    const f = fixture();
+    const stamps = ["20261014T000000Z", "20261015T000000Z", "20261016T000000Z", "20261017T000000Z"];
+    for (const stamp of stamps) write(path.join(f.snapshots, stamp, "SHA256SUMS"), "sums");
+    write(path.join(f.snapshots, "20261018T000000Z/appdata.tgz"), "partial");
+    write(path.join(f.snapshots, "notes/keep.txt"), "not a snapshot");
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_KEEP: "2" });
+    expect(result.status, result.stderr).toBe(0);
+    const current = path.basename(result.stdout.trim().split("written to ")[1]);
+    expect(snapshotNames(f.snapshots).sort()).toEqual(
+      ["20261017T000000Z", current, "notes"].sort(),
+    );
+  });
+
+  it("fails before writing when the disk is short of the last snapshot's size", () => {
+    const f = fixture();
+    write(path.join(f.snapshots, "20261017T000000Z/SHA256SUMS"), "x".repeat(64 * 1024));
+    const result = f.run("infra/compose/backup-prod.sh", [], { FREE_KB: "1" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("this backup needs about");
+    expect(snapshotNames(f.snapshots)).toEqual(["20261017T000000Z"]);
+    expect(f.commands().some((args) => args.includes("sh"))).toBe(false);
+  });
+
+  it("refuses to run while another backup holds the lock", () => {
+    const f = fixture();
+    mkdirSync(f.snapshots, { recursive: true });
+    const lock = path.join(f.snapshots, ".lock");
+    writeFileSync(lock, "");
+    const result = spawnSync(
+      "flock",
+      [lock, "/bin/bash", path.join(f.checkout, "infra/compose/backup-prod.sh")],
+      {
+        cwd: f.root,
+        env: f.env,
+        encoding: "utf8",
+        timeout: 10_000,
+      },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Another Rakazo backup is running");
+  });
+
+  it("rejects a non-positive retention", () => {
+    const f = fixture();
+    const result = f.run("infra/compose/backup-prod.sh", [], { RAKAZO_BACKUP_KEEP: "0" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("RAKAZO_BACKUP_KEEP");
+  });
 });

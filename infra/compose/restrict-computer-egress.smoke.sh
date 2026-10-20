@@ -303,9 +303,11 @@ RAKAZO_IPTABLES="$bin/missing-iptables" RAKAZO_IP6TABLES="$bin/missing-ip6tables
 docs="$root/../../docs/self-host.md"
 grep -q 'restrict-computer-egress.sh' "$docs" || fail "self-host.md does not mention the script"
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$docs" || fail "self-host.md does not document the flag"
-for compose in docker-compose.yml docker-compose.images.yml docker-compose.topology.yml; do
-  grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/$compose" ||
-    fail "$compose does not pass SANDBOX_COMPUTER_EGRESS"
+for compose in docker-compose.yml docker-compose.images.yml docker-compose.topology.yml \
+  docker-compose.prod.docker.yml; do
+  for flag in SANDBOX_COMPUTER_EGRESS SANDBOX_COMPUTER_DNS; do
+    grep -q "$flag" "$root/$compose" || fail "$compose does not pass $flag"
+  done
 done
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/../../.env.example" || fail ".env.example lacks the flag"
 grep -q 'SANDBOX_COMPUTER_EGRESS' "$root/.env.images.example" ||

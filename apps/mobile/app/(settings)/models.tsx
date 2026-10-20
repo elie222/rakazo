@@ -20,12 +20,17 @@ import {
 } from "@rakazo/contracts";
 import {
   COMPATIBLE_THINKING_LEVELS,
+  canUseCompatibleModelAsDefault,
   clampCatalogThinkingLevel,
+  compatibleModelRows,
   createModelProbe,
   featuredModelProviders,
   filterModelCatalog,
   initialModelProbeState,
   pickCatalogModelId,
+  popularModelProvidersFirst,
+  savedCompatibleModelIds,
+  toggleEnabledModelId,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
@@ -114,6 +119,7 @@ export default function Models() {
   const [ownKeyProvider, setOwnKeyProvider] = useState<string | null>(null);
   const [showAllProviders, setShowAllProviders] = useState(false);
   const [modelId, setModelId] = useState("");
+  const [enabledModelIds, setEnabledModelIds] = useState<string[]>([]);
   const [modelSearch, setModelSearch] = useState({ provider: "", query: "" });
   const [apiKey, setApiKey] = useState("");
   const [accountId, setAccountId] = useState("");
@@ -233,6 +239,7 @@ export default function Models() {
       current.provider === nextProvider ? current : { provider: nextProvider, query: "" },
     );
     setModelId(nextModel);
+    setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
       setBaseUrl(nextCredential?.baseUrl ?? "");
       setReasoning(nextCredential?.reasoning ?? false);
@@ -362,11 +369,14 @@ export default function Models() {
       entries.push(entry);
       grouped.set(entry.provider, entries);
     }
-    return [...grouped].map(([id, entries]) => ({
-      id,
-      name: entries[0]?.providerName ?? id,
-      entries,
-    }));
+    return popularModelProvidersFirst(
+      [...grouped].map(([id, entries]) => ({
+        id,
+        name: entries[0]?.providerName ?? id,
+        entries,
+      })),
+      (group) => group.id,
+    );
   }, [catalog]);
   const featuredProviders = useMemo(
     () =>
@@ -455,6 +465,11 @@ export default function Models() {
     activeCredential?.reasoning
       ? thinkingLevelLabel(activeCredential?.thinkingLevel ?? "medium", t)
       : null;
+  const compatibleRows = compatibleModelRows(
+    savedCompatibleModelIds(credential, baseUrl),
+    enabledModelIds,
+    probeModels,
+  );
   const isActive =
     me?.defaultProvider === selected?.provider &&
     me?.defaultModel === (isOpenAiCompatible ? modelId.trim() : selected?.id);
@@ -487,6 +502,8 @@ export default function Models() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
+    setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
     clearFeedback();
   }
@@ -525,6 +542,7 @@ export default function Models() {
     setSupportsImages(nextCredential?.supportsImages ?? false);
     setMaxImagesPerPrompt(String(nextCredential?.maxImagesPerPrompt ?? ""));
     setModelId(nextModelId);
+    setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
     setBaseUrl(
       nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID ? (nextCredential?.baseUrl ?? "") : "",
     );
@@ -704,6 +722,8 @@ export default function Models() {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
               modelId: modelId.trim(),
+              // The server adds the default itself.
+              enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
               reasoning,
               thinkingLevel: stagedThinking,
               maxTokens: parsedMaxTokens,
@@ -921,40 +941,55 @@ export default function Models() {
       />
       {feedbackAnchor === "probe" ? feedback : null}
       <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t("Model")}</Text>
-      {probeModels.length && probeModels.includes(modelId) ? (
+      {/* The switches stay visible while the default is "Other model…" or a typed id. */}
+      {compatibleRows.length ? (
         <View style={styles.card}>
-          {probeModels.map((entry) => (
+          {compatibleRows.map((entry) => (
+            // The switch sits beside the radio, not inside it: an accessible
+            // Pressable would merge it into the row and hide it from VoiceOver.
+            <View key={entry} style={styles.modelRow}>
+              <Pressable
+                accessibilityRole="radio"
+                accessibilityState={{ selected: entry === modelId }}
+                disabled={probing}
+                onPress={() => stageCompatibleModelId(entry)}
+                style={({ pressed }) => [
+                  styles.modelRowChoice,
+                  probing && styles.disabled,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.modelLabel}>{entry}</Text>
+                {entry === modelId ? <Checkmark /> : null}
+              </Pressable>
+              <NativeSwitch
+                accessibilityLabel={entry}
+                value={entry === modelId || enabledModelIds.includes(entry)}
+                onValueChange={(value) =>
+                  setEnabledModelIds((current) => toggleEnabledModelId(current, entry, value))
+                }
+                disabled={busy || entry === modelId}
+              />
+            </View>
+          ))}
+          {compatibleRows.includes(modelId) ? (
             <Pressable
-              key={entry}
               accessibilityRole="radio"
-              accessibilityState={{ selected: entry === modelId }}
+              accessibilityState={{ selected: false }}
               disabled={probing}
-              onPress={() => stageCompatibleModelId(entry)}
+              onPress={() => stageCompatibleModelId("")}
               style={({ pressed }) => [
                 styles.modelRow,
                 probing && styles.disabled,
                 pressed && styles.pressed,
               ]}
             >
-              <Text style={styles.modelLabel}>{entry}</Text>
-              {entry === modelId ? <Checkmark /> : null}
+              <Text style={styles.modelLabel}>{t("Other model…")}</Text>
             </Pressable>
-          ))}
-          <Pressable
-            accessibilityRole="radio"
-            accessibilityState={{ selected: false }}
-            disabled={probing}
-            onPress={() => stageCompatibleModelId("")}
-            style={({ pressed }) => [
-              styles.modelRow,
-              probing && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.modelLabel}>{t("Other model…")}</Text>
-          </Pressable>
+          ) : null}
         </View>
-      ) : (
+      ) : null}
+      {compatibleRows.includes(modelId) ? null : (
         <>
           <TextInput
             accessibilityLabel={t("Model id")}
@@ -1476,7 +1511,12 @@ export default function Models() {
   const saveRow =
     credential && (!isActive || thinkingDirty || usingServerCredentials) ? (
       <NativeActionButton
-        disabled={busy || (isOpenAiCompatible && !modelId.trim())}
+        disabled={
+          busy ||
+          (isOpenAiCompatible &&
+            (!modelId.trim() ||
+              !canUseCompatibleModelAsDefault(credential.enabledModelIds, modelId.trim())))
+        }
         label={
           pending === "default"
             ? t("Switching…")
@@ -1569,12 +1609,9 @@ export default function Models() {
                   >
                     <View style={styles.providerCopy}>
                       <Text style={styles.providerName}>{group.name}</Text>
-                      <Text style={styles.secondary}>
-                        {savedModelLabel ??
-                          t(group.entries.length === 1 ? "{count} model" : "{count} models", {
-                            count: group.entries.length,
-                          })}
-                      </Text>
+                      {savedModelLabel ? (
+                        <Text style={styles.secondary}>{savedModelLabel}</Text>
+                      ) : null}
                     </View>
                     {group.id === provider ? <Checkmark /> : null}
                   </Pressable>
@@ -1595,11 +1632,6 @@ export default function Models() {
             >
               <View style={styles.providerCopy}>
                 <Text style={styles.providerName}>{group.name}</Text>
-                <Text style={styles.secondary}>
-                  {t(group.entries.length === 1 ? "{count} model" : "{count} models", {
-                    count: group.entries.length,
-                  })}
-                </Text>
               </View>
               {group.id === provider ? <Checkmark /> : null}
             </Pressable>
@@ -1954,6 +1986,13 @@ function createModelsStyles() {
       gap: 12,
       borderBottomWidth: StyleSheet.hairlineWidth,
       borderBottomColor: native.fillPressed,
+    },
+    modelRowChoice: {
+      flex: 1,
+      alignSelf: "stretch",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
     },
     modelLabel: {
       flex: 1,

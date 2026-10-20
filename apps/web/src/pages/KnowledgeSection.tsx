@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
+import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import {
   Badge,
   Button,
@@ -17,7 +18,7 @@ import {
 import { BookOpen, Maximize2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { downloadArtifactBytes } from "../lib/artifact-open";
-import { rpc } from "../lib/rpc";
+import { useSpaceRpc } from "../lib/space-rpc";
 
 const fieldClass = "mt-2 w-full font-mono text-[13px] leading-relaxed";
 
@@ -36,6 +37,7 @@ export function KnowledgeSection({
   botId: string;
   onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   return (
     <section className="mt-6" data-testid="bot-knowledge">
@@ -66,6 +68,7 @@ export function KnowledgeSection({
 
 /** The space's shared memory documents, mounted in the Memory settings overlay. */
 export function SpaceMemorySection() {
+  const rpc = useSpaceRpc();
   return (
     <div className="mt-6" data-testid="space-memory-documents">
       <div className="mb-2 text-[12.5px] uppercase tracking-[0.08em] text-muted-foreground">
@@ -89,6 +92,7 @@ function MemoryDocumentList({
   exportFilename: string;
   testId: string;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const [loading, setLoading] = useState(true);
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
@@ -97,6 +101,7 @@ function MemoryDocumentList({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const generation = useRef(0);
   const loadRef = useRef(load);
   loadRef.current = load;
@@ -125,6 +130,31 @@ function MemoryDocumentList({
     setOpenId(doc.id);
     setDraft(doc.content);
     setError(null);
+    setConfirmingDelete(false);
+  }
+
+  function closeDoc() {
+    setOpenId(null);
+    setConfirmingDelete(false);
+  }
+
+  async function remove(doc: MemoryDocument) {
+    if (busy) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await rpc.memory.remove({ documentId: doc.id });
+      setDocs((current) => current.filter((entry) => entry.id !== doc.id));
+      closeDoc();
+    } catch {
+      setError(t`Could not remove`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function save(doc: MemoryDocument): Promise<boolean> {
@@ -134,7 +164,7 @@ function MemoryDocumentList({
     try {
       const updated = await rpc.memory.update({ documentId: doc.id, content: draft });
       setDocs((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
-      setOpenId(null);
+      closeDoc();
       return true;
     } catch {
       setError(t`Could not save`);
@@ -178,7 +208,7 @@ function MemoryDocumentList({
             variant="ghost"
             type="button"
             disabled={busy}
-            onClick={() => (openId === doc.id ? setOpenId(null) : openDoc(doc))}
+            onClick={() => (openId === doc.id ? closeDoc() : openDoc(doc))}
             className={rowClass(openId === doc.id)}
           >
             <span className="flex w-full items-baseline justify-between gap-3">
@@ -236,7 +266,7 @@ function MemoryDocumentList({
                     variant="ghost"
                     type="button"
                     disabled={busy}
-                    onClick={() => setOpenId(null)}
+                    onClick={closeDoc}
                     className="rounded-lg px-3 py-1.5 text-[13px] text-muted-foreground"
                   >
                     <Trans>Cancel</Trans>
@@ -252,6 +282,17 @@ function MemoryDocumentList({
                   <Maximize2 className="mr-1 h-3 w-3" />
                   <Trans>Full Editor</Trans>
                 </Button>
+                {isDeletableMemoryDocument(doc.path) ? (
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void remove(doc)}
+                    className="ml-auto rounded-lg px-3 py-1.5 text-[13px] text-destructive"
+                  >
+                    {confirmingDelete ? <Trans>Confirm delete</Trans> : <Trans>Delete</Trans>}
+                  </Button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -378,6 +419,7 @@ function AgentSkills({
 }: {
   onSkillsChange: (skills: AgentSkillCatalogEntry[]) => void;
 }) {
+  const rpc = useSpaceRpc();
   const { t } = useLingui();
   const [loading, setLoading] = useState(true);
   const [skills, setSkills] = useState<AgentSkillCatalogEntry[]>([]);

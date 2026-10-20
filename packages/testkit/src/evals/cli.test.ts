@@ -139,3 +139,21 @@ it("fingerprints a tracked report diff larger than the child-process default buf
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("lists the silence suite without inference", () => {
+  const output = execFileSync(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      path.resolve(import.meta.dirname, "../cli/evals.ts"),
+      "--suite",
+      "silence",
+      "--list",
+    ],
+    { encoding: "utf8", timeout: 20_000 },
+  );
+  expect(output.trim().split("\n")).toHaveLength(5);
+  expect(output).toContain("silence-repeat-after-new-release:");
+  expect(output).toContain("silence-failed-check:");
+});

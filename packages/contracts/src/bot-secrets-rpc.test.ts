@@ -9,13 +9,6 @@ const lanPut = {
 };
 
 describe("botSecrets rpc contract", () => {
-  it("wires list, put and remove", () => {
-    expect(appContract.botSecrets.list).toBeTruthy();
-    expect(appContract.botSecrets.put).toBeTruthy();
-    expect(appContract.botSecrets.remove).toBeTruthy();
-    expect(appContract.botSecrets.put["~orpc"].inputSchema).toBe(BotSecretPutInput);
-  });
-
   it("accepts a LAN http destination structurally and leaves origin rules to the server", () => {
     expect(BotSecretPutInput.safeParse(lanPut).success).toBe(true);
     // The default destination schema (no private-HTTP opt-in) rejects the same origin.

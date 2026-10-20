@@ -103,7 +103,17 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("ask"),
     text: z.string(),
     approvalEffectId: Id.optional(),
+    instructionUpdate: z
+      .object({
+        botId: Id,
+        before: z.string(),
+        after: z.string(),
+        reason: z.string(),
+        undoVersionId: Id.optional(),
+      })
+      .optional(),
     detail: z.string().optional(),
+    detailFormat: z.enum(["text", "code"]).optional(),
     input: z.enum(["text", "secret"]).optional(),
     /** Why the secret is needed; drives field label on the masked card. */
     purpose: SecretAskPurpose.optional(),
@@ -161,6 +171,21 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     callId: z.string().optional(),
     title: z.string(),
     farewell: z.string(),
+    /** Connected time the caller's client measured; absent when the bot hung up. */
+    durationSeconds: z.number().int().nonnegative().optional(),
+  }),
+  z.object({
+    /** The bot is calling the user; the card tracks the call from ringing to its outcome. */
+    kind: z.literal("call_request"),
+    callId: z.string(),
+    /** Why the bot is calling, shown on the incoming call. */
+    reason: z.string(),
+    /** The bot's first spoken sentence once the user answers. */
+    opening: z.string(),
+    status: z.enum(["ringing", "answered", "declined", "missed"]),
+    expiresAt: z.string(),
+    /** Connected time the user's client measured after answering. */
+    durationSeconds: z.number().int().nonnegative().optional(),
   }),
   z.object({ kind: z.literal("meta"), text: z.string() }),
   z.object({

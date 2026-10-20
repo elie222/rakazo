@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { copyFile, lstat, mkdir, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import path from "node:path";
@@ -19,6 +20,7 @@ export const STACK_COMPOSE_FILE = "docker-compose.images.yml";
 export const STACK_ENV_TEMPLATE = ".env.images.example";
 export const STACK_ENV_FILE = ".env";
 export const STACK_WEB_URL_FILE = ".desktop-web-url";
+export const STACK_HOST_CONFIG_FILE = ".desktop-host-config";
 export const STACK_TOKEN_FILE = ".desktop-stack-token";
 export const STACK_OUTPUT_LINES = 20;
 export const STACK_HEALTH_TIMEOUT_MS = 120_000;
@@ -274,6 +276,7 @@ function interrupted(signal: AbortSignal, result: RunDockerResult): boolean {
 }
 
 export interface LocalStackDeps {
+  hostComputer?: { url: string; token: string };
   platform: string;
   env: NodeJS.ProcessEnv;
   exists: (file: string) => boolean;
@@ -335,6 +338,12 @@ export class LocalStackController {
 
   /** Fast path for launch: only a stack with our private token and desired image may be reused. */
   async matchesDesiredStack(url = this.currentWebUrl): Promise<boolean> {
+    if (
+      this.deps.hostComputer &&
+      (await readPrivateFile(path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE), 256)) !==
+        this.hostConfigIdentity()
+    )
+      return false;
     const token = await readStackToken(this.deps.stackDir);
     if (token === null) return false;
     this.currentStackToken = token;
@@ -522,6 +531,11 @@ export class LocalStackController {
     const deadline = Date.now() + (this.deps.healthTimeoutMs ?? STACK_HEALTH_TIMEOUT_MS);
     while (!signal.aborted) {
       if ((await this.deps.probe(this.currentWebUrl, signal, stackToken)) === this.deps.imageTag) {
+        if (this.deps.hostComputer)
+          await writePrivateFile(
+            path.join(this.deps.stackDir, STACK_HOST_CONFIG_FILE),
+            this.hostConfigIdentity(),
+          );
         this.push({ type: "ready" });
         return;
       }
@@ -536,10 +550,16 @@ export class LocalStackController {
     });
   }
 
+  private hostConfigIdentity() {
+    return createHash("sha256").update(JSON.stringify(this.deps.hostComputer)).digest("hex");
+  }
+
   private docker(binary: string, args: string[], timeoutMs: number, signal?: AbortSignal) {
     return this.deps.run(binary, args, {
       cwd: this.deps.stackDir,
       env: dockerSpawnEnv(this.deps.platform, this.deps.env, binary, {
+        SANDBOX_HOST_URL: this.deps.hostComputer?.url ?? "",
+        SANDBOX_HOST_TOKEN: this.deps.hostComputer?.token ?? "",
         RAKAZO_IMAGE_TAG: this.deps.imageTag,
         RAKAZO_COMPUTER_IMAGE_TAG: this.deps.imageTag,
         ...(this.currentStackToken === null

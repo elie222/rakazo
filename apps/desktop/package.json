@@ -1,13 +1,16 @@
 {
   "name": "@rakazo/desktop",
   "productName": "Rakazo",
-  "version": "0.2.0",
+  "version": "0.3.1",
+  "author": {
+    "name": "Rakazo"
+  },
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
     "dev": "pnpm build && electron .",
-    "build": "tsc -p tsconfig.json && node scripts/copy-static.mjs",
+    "build": "pnpm check && node scripts/build.mjs && node scripts/copy-static.mjs",
     "pack": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --mac --win --linux",
     "pack:dir": "pnpm --filter @rakazo/web build && pnpm build && electron-builder --dir",
     "check": "tsc --noEmit -p tsconfig.json",
@@ -17,15 +20,18 @@
   },
   "dependencies": {
     "@rakazo/contracts": "workspace:*",
-    "electron-updater": "6.8.9"
+    "electron-updater": "6.8.9",
+    "koffi": "3.3.3"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "@rakazo/adapters": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "44.8.0",
+    "electron": "44.9.1",
     "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.12"
   },
   "build": {
     "appId": "dev.rakazo.desktop",
@@ -52,11 +58,18 @@
       }
     ],
     "extraMetadata": {
+      "name": "rakazo",
       "main": "dist/main.js"
     },
     "mac": {
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "category": "public.app-category.productivity",
+      "x64ArchFiles": "**/node_modules/@koromix/koffi-darwin-*/darwin_*/koffi.node",
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Rakazo uses the microphone for dictation and voice calls with your bots."
+      },
       "target": [
         "dmg",
         "zip"

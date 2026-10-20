@@ -16,12 +16,14 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { sandboxIdleMs } from "./computer-idle.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
   shouldSkipPortableWorkspaceFile,
 } from "./computer-workspace.js";
+import { E2B_COMPUTER_TEMPLATE, E2B_DESKTOP_TEMPLATE } from "./e2b-template.js";
 import { LinuxDesktop, PREPARE_LINUX_DESKTOP } from "./linux-desktop.js";
 import { sandboxCommandArgv } from "./sandbox-command-environment.js";
 
@@ -29,7 +31,7 @@ const E2B_WORKSPACE = "/home/user/rakazo-home";
 const E2B_BROWSER_PROFILES = `${E2B_WORKSPACE}/.browser-profiles`;
 
 export interface E2BSandboxSdk {
-  create(options: ReturnType<typeof e2bCreateOptions>): Promise<Sandbox>;
+  create(template: string, options: ReturnType<typeof e2bCreateOptions>): Promise<Sandbox>;
   connect(id: string, options: { apiKey: string; timeoutMs: number }): Promise<Sandbox>;
   pause(id: string, options: { apiKey: string }): Promise<void>;
 }
@@ -62,11 +64,22 @@ export function isSandboxGoneError(error: unknown): boolean {
   return false;
 }
 
+function isTemplateMissingError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    ((error as { statusCode?: unknown }).statusCode === 404 || /^404:/.test(error.message))
+  );
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 export class E2BSandboxProvider implements SandboxProvider {
+  billsWhileRunning(): boolean {
+    return true;
+  }
+
   private readonly desktops = new LinuxDesktop({
     environment: async () => ({
       homeDir: "/home/user",
@@ -175,7 +188,7 @@ export class E2BSandboxProvider implements SandboxProvider {
         if (!isSandboxGoneError(error)) throw error;
       }
     }
-    const desktop = await this.sdk.create(e2bCreateOptions(request.botId, this.apiKey));
+    const desktop = await this.createDesktop(e2bCreateOptions(request.botId, this.apiKey));
     this.boxes.set(desktop.sandboxId, desktop);
     this.lastTouchedAt.set(desktop.sandboxId, Date.now());
     return {
@@ -315,7 +328,7 @@ export class E2BSandboxProvider implements SandboxProvider {
   ): AsyncIterable<PortableFile> {
     const desktop = await this.box(computer);
     await this.desktops.stopBrowsers(computer, context);
-    yield* walkE2BWorkspace(desktop, "", context);
+    yield* keepingAwake(desktop, walkE2BWorkspace(desktop, "", context));
   }
 
   async importWorkspace(
@@ -390,6 +403,19 @@ export class E2BSandboxProvider implements SandboxProvider {
     await desktop?.kill();
   }
 
+  /** Prefer the right-sized template; an account that has not built it keeps the stock one. */
+  private async createDesktop(options: ReturnType<typeof e2bCreateOptions>): Promise<Sandbox> {
+    try {
+      return await this.sdk.create(E2B_COMPUTER_TEMPLATE, options);
+    } catch (error) {
+      if (!isTemplateMissingError(error)) throw error;
+      getLogger().warn("E2B computer template is not built; using the stock desktop template", {
+        template: E2B_COMPUTER_TEMPLATE,
+      });
+      return this.sdk.create(E2B_DESKTOP_TEMPLATE, options);
+    }
+  }
+
   private forget(id: string): void {
     this.boxes.delete(id);
     this.connections.delete(id);
@@ -444,6 +470,25 @@ async function writeE2BFiles(
     await desktop.commands.run(`chmod 700 -- ${executable.join(" ")}`, {
       signal: context.signal,
     });
+  }
+}
+
+/**
+ * Reading a large workspace can outlast the idle window, and E2B pauses the sandbox mid-read
+ * when it does. Extend the timeout until the reader finishes.
+ */
+export async function* keepingAwake<T>(
+  desktop: Pick<Sandbox, "setTimeout">,
+  items: AsyncIterable<T>,
+): AsyncIterable<T> {
+  const idleMs = sandboxIdleMs();
+  const extend = () => desktop.setTimeout(idleMs).catch(() => undefined);
+  await extend();
+  const timer = setInterval(() => void extend(), Math.min(60_000, idleMs / 2));
+  try {
+    yield* items;
+  } finally {
+    clearInterval(timer);
   }
 }
 

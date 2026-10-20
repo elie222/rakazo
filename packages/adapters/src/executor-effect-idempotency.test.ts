@@ -1,4 +1,10 @@
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type {
+  AgentRunRequest,
+  MemoryCommitRequest,
+  MemoryReadRequest,
+  MemorySnapshot,
+} from "@rakazo/adapter-kit";
+import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -7,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import type * as AutoReviewModule from "./auto-review.js";
 import type * as ComputerLifecycleModule from "./computer-lifecycle.js";
 import { createRunExecutor } from "./executor.js";
+import { FakeMediaGenerationProvider } from "./media-generation-provider.js";
 
 vi.mock("./computer-lifecycle.js", async (importOriginal) => ({
   ...(await importOriginal<typeof ComputerLifecycleModule>()),
@@ -46,6 +53,13 @@ type ToolCall = {
 function fixture(runId = "run-1") {
   const effects: Effect[] = [];
   const results: unknown[] = [];
+  const media = new FakeMediaGenerationProvider();
+  const artifactRows: Array<{ id: string; name: string; mimeType: string; size: number }> = [];
+  const artifactPut = vi.fn();
+  const messageCreate = vi.fn(async ({ data }: { data: unknown }) => ({
+    id: "message-1",
+    ...(data as object),
+  }));
   const scratchpadRows: Array<{
     id: string;
     spaceId: string;
@@ -68,8 +82,23 @@ function fixture(runId = "run-1") {
     trigger: "user",
     leaseFence: 0,
   };
-  const memoryCommit = vi.fn(async () => ({ revision: "rev-1" }));
+  const memoryCommit = vi.fn(async (_request: MemoryCommitRequest) => ({ revision: "rev-1" }));
+  const memoryDocuments: MemorySnapshot["documents"] = [];
   const externalEffect = {
+    findFirst: vi.fn(
+      async ({
+        where,
+      }: {
+        where: { runId?: string; kind?: string; request?: { equals: string } };
+      }) =>
+        effects.find(
+          (effect) =>
+            (!where.runId || effect.runId === where.runId) &&
+            (!where.kind || effect.kind === where.kind) &&
+            (!where.request ||
+              (effect.request as { executionId?: string }).executionId === where.request.equals),
+        ) ?? null,
+    ),
     findMany: vi.fn(
       async ({
         where,
@@ -100,9 +129,20 @@ function fixture(runId = "run-1") {
       Object.assign(effects.find((effect) => effect.id === where.id)!, data);
     }),
     updateMany: vi.fn(
-      async ({ where, data }: { where: { id: string; status: string }; data: Partial<Effect> }) => {
+      async ({
+        where,
+        data,
+      }: {
+        where: { id: string; status?: string | { not: string } };
+        data: Partial<Effect>;
+      }) => {
         const effect = effects.find(
-          (effect) => effect.id === where.id && effect.status === where.status,
+          (effect) =>
+            effect.id === where.id &&
+            (!where.status ||
+              (typeof where.status === "string"
+                ? effect.status === where.status
+                : effect.status !== where.status.not)),
         );
         if (!effect) return { count: 0 };
         Object.assign(effect, data);
@@ -111,6 +151,7 @@ function fixture(runId = "run-1") {
     ),
   };
   const prisma = {
+    user: { findUnique: vi.fn(async () => null) },
     run: {
       findUnique: vi.fn(async () => run),
       findUniqueOrThrow: vi.fn(async () => run),
@@ -135,8 +176,18 @@ function fixture(runId = "run-1") {
       update: vi.fn(),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    thread: { findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })) },
-    message: { findMany: vi.fn(async () => []) },
+    thread: {
+      findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),
+      update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
+    },
+    message: { findMany: vi.fn(async () => []), create: messageCreate },
+    event: { create: vi.fn(async () => ({ seq: 1 })) },
+    artifact: {
+      findFirst: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          artifactRows.find((row) => row.id === where.id) ?? null,
+      ),
+    },
     task: {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Update shared state" })),
     },
@@ -198,7 +249,12 @@ function fixture(runId = "run-1") {
     yield { type: "done" as const, text: "Done" };
   });
   const executor = createRunExecutor({
-    prisma,
+    prisma: {
+      ...prisma,
+      $transaction: async (work: (tx: typeof prisma) => Promise<unknown>) => work(prisma),
+    },
+    mediaGeneration: media,
+    artifacts: { put: artifactPut, get: vi.fn() },
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     connector: {
       discoverTools: async () => [],
@@ -208,22 +264,35 @@ function fixture(runId = "run-1") {
     sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
     memory: {
       describe: () => ({ capabilities: {} }),
-      read: async () => ({ documents: [] }),
+      read: async (request: MemoryReadRequest) => ({
+        documents: memoryDocuments.filter((doc) => !request.path || doc.path === request.path),
+      }),
       search: async () => [],
       commit: memoryCommit,
+      remove: vi.fn(async () => ({ removed: false })),
       exportMarkdown: async function* () {},
     },
     memoryProviders: { resolve: async () => null },
-    events: { append: vi.fn(async () => undefined), pauseRunForInput, finalizeRun },
+    events: {
+      append: vi.fn(async () => undefined),
+      notify: vi.fn(async () => undefined),
+      pauseRunForInput,
+      finalizeRun,
+    },
     jobs: { enqueue: vi.fn(async () => undefined) },
     secrets: [],
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 
   return {
     effects,
+    media,
+    artifactRows,
+    artifactPut,
+    messageCreate,
     results,
     scratchpadRows,
     memoryCommit,
+    memoryDocuments,
     setCalls(next: ToolCall[]) {
       calls = next;
     },
@@ -238,6 +307,103 @@ function fixture(runId = "run-1") {
 }
 
 describe("mutating tool effect idempotency keys", () => {
+  it.each(["generate_image", "generate_video"] as const)(
+    "recovers interrupted %s through the executor with a changed tool-call ID",
+    async (name) => {
+      const runId = `run-recover-${name}`;
+      const f = fixture(runId);
+      const args = { prompt: "create a landscape" };
+      f.effects.push({
+        id: "wrapper",
+        spaceId: "space-1",
+        runId,
+        kind: name,
+        idempotencyKey: toolEffectIdempotencyKey(runId, name, args),
+        status: "executing",
+        request: args,
+      });
+      f.effects.push({
+        id: "saved-media",
+        spaceId: "space-1",
+        runId,
+        kind: "media_generation_job",
+        idempotencyKey: `media:${runId}:0`,
+        status: name === "generate_image" ? "media_polling" : "media_pending",
+        request: { prompt: args.prompt, executionId: "wrapper" },
+        result: {
+          provider: "fake",
+          ...(name === "generate_video"
+            ? { jobId: "remote-video" }
+            : { artifactId: "saved-image" }),
+        },
+      });
+      f.artifactRows.push({
+        id: "saved-image",
+        name: "generated.png",
+        mimeType: "image/png",
+        size: 4,
+      });
+      const image = vi.spyOn(f.media, "generateImage");
+      const video = vi.spyOn(f.media, "generateVideo");
+      const poll = vi.spyOn(f.media, "pollVideo");
+      f.setCalls([{ name, args, executionId: "new-call-after-restart" }]);
+      await f.run();
+      expect(f.results[0]).toEqual(
+        name === "generate_video"
+          ? { jobId: "saved-media", status: "queued" }
+          : { status: "completed", artifactId: "saved-image" },
+      );
+      expect(f.effects[0]?.status).toBe("completed");
+      f.setCalls([{ name, args, executionId: "another-call-after-restart" }]);
+      await f.run();
+      expect(f.results[1]).toEqual(f.results[0]);
+      expect(image).not.toHaveBeenCalled();
+      expect(video).not.toHaveBeenCalled();
+      expect(poll).not.toHaveBeenCalled();
+      expect(f.artifactPut).not.toHaveBeenCalled();
+      if (name === "generate_image") expect(f.messageCreate).toHaveBeenCalledTimes(1);
+      else expect(f.messageCreate).not.toHaveBeenCalled();
+    },
+  );
+  it("keys a new video job by the stable approved effect instead of the model call ID", async () => {
+    const f = fixture("run-media-submit");
+    const args = { prompt: "create a landscape" };
+    f.effects.push({
+      id: "wrapper",
+      spaceId: "space-1",
+      runId: "run-media-submit",
+      kind: "generate_video",
+      idempotencyKey: toolEffectIdempotencyKey("run-media-submit", "generate_video", args),
+      status: "approved",
+      request: args,
+    });
+    const submit = vi.spyOn(f.media, "generateVideo");
+    f.setCalls([{ name: "generate_video", args, executionId: "model-call-id" }]);
+    await f.run();
+    expect(submit).toHaveBeenCalledTimes(1);
+    expect(
+      f.effects.find((effect) => effect.kind === "media_generation_job")?.request,
+    ).toMatchObject({ executionId: "wrapper" });
+    expect(f.results[0]).toMatchObject({ status: "queued" });
+  });
+  it("keeps interrupted media with no saved result uncertain instead of submitting again", async () => {
+    const f = fixture("run-unknown-media");
+    const args = { prompt: "create a landscape" };
+    f.effects.push({
+      id: "wrapper",
+      spaceId: "space-1",
+      runId: "run-unknown-media",
+      kind: "generate_video",
+      idempotencyKey: toolEffectIdempotencyKey("run-unknown-media", "generate_video", args),
+      status: "executing",
+      request: args,
+    });
+    const submit = vi.spyOn(f.media, "generateVideo");
+    f.setCalls([{ name: "generate_video", args, executionId: "changed-call-id" }]);
+    await f.run();
+    expect(f.results[0]).toMatchObject({ uncertain: true });
+    expect(submit).not.toHaveBeenCalled();
+  });
   it("executes different tools that share a reused provider tool-call id", async () => {
     const f = fixture("run-a");
     f.setCalls([
@@ -273,6 +439,115 @@ describe("mutating tool effect idempotency keys", () => {
         item: expect.objectContaining({ title: "follow up with design" }),
       }),
     );
+  });
+
+  it("appends a remembered fact to the bot's existing memory", async () => {
+    const f = fixture("run-append");
+    f.memoryDocuments.push({
+      id: "doc-1",
+      path: "MEMORY.md",
+      content: "Save trip files to Drive.\n",
+      revision: 2,
+      updatedAt: new Date(0).toISOString(),
+    });
+    f.setCalls([
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "The client is Combient." },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.memoryCommit).toHaveBeenCalledOnce();
+    expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
+      path: "MEMORY.md",
+      content: "Save trip files to Drive.\nThe client is Combient.\n",
+      expectedRevision: 2,
+    });
+    expect(f.results[0]).toEqual({ ok: true });
+  });
+
+  it.each(["", "   ", "  MEMORY.md  "])(
+    "normalizes remember path %j before reading and committing",
+    async (path) => {
+      const f = fixture("run-path");
+      f.memoryDocuments.push(
+        { id: "other", path: "other.md", content: "unrelated\n", revision: 7 },
+        { id: "memory", path: "MEMORY.md", content: "existing\n", revision: 2 },
+      );
+      f.setCalls([
+        { name: "remember", args: { path, content: "new fact" }, executionId: "call_0" },
+      ]);
+
+      await f.run();
+
+      expect(f.memoryCommit).toHaveBeenCalledOnce();
+      expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
+        path: "MEMORY.md",
+        content: "existing\nnew fact\n",
+        expectedRevision: 2,
+      });
+      expect(f.results[0]).toEqual({ ok: true });
+    },
+  );
+
+  it("does not save a fact the bot's memory already holds", async () => {
+    const f = fixture("run-known");
+    f.memoryDocuments.push({
+      id: "doc-1",
+      path: "MEMORY.md",
+      content: "The client is Combient.\n",
+      revision: 1,
+      updatedAt: new Date(0).toISOString(),
+    });
+    f.setCalls([
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "The client is Combient." },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.memoryCommit).not.toHaveBeenCalled();
+    expect(f.results[0]).toEqual({ ok: true });
+  });
+
+  it("re-reads and appends again when another save wins the race", async () => {
+    const f = fixture("run-race");
+    f.memoryCommit.mockImplementationOnce(async () => {
+      f.memoryDocuments.push({
+        id: "doc-1",
+        path: "MEMORY.md",
+        content: "another writer fact\n",
+        revision: 1,
+        updatedAt: new Date(0).toISOString(),
+      });
+      throw new Error(MEMORY_REVISION_CONFLICT_ERROR);
+    });
+    f.setCalls([
+      {
+        name: "remember",
+        args: { path: "MEMORY.md", content: "durable fact" },
+        executionId: "call_0",
+      },
+    ]);
+
+    await f.run();
+
+    expect(f.memoryCommit).toHaveBeenCalledTimes(2);
+    expect(f.memoryCommit.mock.calls[0]?.[0]).toMatchObject({
+      content: "durable fact\n",
+      expectedRevision: 0,
+    });
+    expect(f.memoryCommit.mock.calls[1]?.[0]).toMatchObject({
+      content: "another writer fact\ndurable fact\n",
+      expectedRevision: 1,
+    });
+    expect(f.results[0]).toEqual({ ok: true });
   });
 
   it("executes the same provider tool-call id on different runs", async () => {

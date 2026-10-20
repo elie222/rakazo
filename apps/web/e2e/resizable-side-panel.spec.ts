@@ -16,8 +16,9 @@ test("computer rail resizes its preview and remembers width", async ({ page }, t
   await expect(separator).toBeVisible();
   await expect(panel).toHaveCSS("width", "384px");
   const before = (await page.getByTestId("computer-preview").boundingBox())!;
+  // Wait for the handle to settle and receive pointer events before dragging.
+  await separator.hover({ position: { x: 3, y: 100 } });
   const handle = (await separator.boundingBox())!;
-  await page.mouse.move(handle.x + 3, handle.y + 100);
   await page.mouse.down();
   await page.mouse.move(handle.x - 250, handle.y + 100, { steps: 12 });
   await page.mouse.up();

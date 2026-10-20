@@ -1,5 +1,6 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 import { cloudAgentBlockFromPayload } from "./cloud-agent.js";
+import { preserveIdentitySource } from "./identity-source.js";
 
 export function projectMessages(
   events: Array<{
@@ -365,15 +366,19 @@ export function subagentBlockFromPayload(
   payload: Record<string, unknown>,
 ): Extract<MessageBlock, { kind: "subagent" }> {
   const status = payload.status;
-  return {
-    kind: "subagent",
-    agentId: String(payload.agentId ?? ""),
-    name: String(payload.name ?? "subagent"),
-    task: String(payload.task ?? ""),
-    status: status === "completed" || status === "failed" ? status : "running",
-    progress: payload.progress ? String(payload.progress) : undefined,
-    result: payload.result ? String(payload.result) : undefined,
-  };
+  return preserveIdentitySource(
+    payload,
+    {
+      kind: "subagent",
+      agentId: String(payload.agentId ?? ""),
+      name: String(payload.name ?? ""),
+      task: String(payload.task ?? ""),
+      status: status === "completed" || status === "failed" ? status : "running",
+      progress: payload.progress ? String(payload.progress) : undefined,
+      result: payload.result ? String(payload.result) : undefined,
+    },
+    ["name"],
+  );
 }
 
 export function redactSecrets(value: string, secrets: string[]): string {

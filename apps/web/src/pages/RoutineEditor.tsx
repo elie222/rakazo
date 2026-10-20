@@ -1,9 +1,17 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
-import type { ModelCatalogEntry, ModelCredential, Routine } from "@rakazo/contracts";
+import type {
+  ModelCatalogEntry,
+  ModelCredential,
+  Routine,
+  RoutineWatch,
+  RoutineWatchInput,
+} from "@rakazo/contracts";
+import { ROUTINE_WATCH_DEFAULT_MINUTES, ROUTINE_WATCH_MIN_MINUTES } from "@rakazo/contracts";
 import {
   type CronFreq,
   type CronPreset,
+  credentialForModel,
   cronFromPreset,
   defaultCronPreset,
   formatCron,
@@ -25,11 +33,13 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Switch,
   Textarea,
 } from "@rakazo/ui-web";
 import {
   ChevronLeft,
   Clock,
+  Eye,
   GitBranch,
   Globe,
   MessageSquare,
@@ -94,7 +104,88 @@ export type RoutineDraftState = {
   /** Empty runs this routine on the bot's model. */
   modelKey: string;
   thinkingLevel: string;
+  /** Null unless the routine starts when something changes. */
+  watch: RoutineWatchDraft | null;
 };
+
+/** The change trigger as the editor holds it: free text until saved. */
+export type RoutineWatchDraft = {
+  kind: RoutineWatch["kind"];
+  /** One path per line. */
+  paths: string;
+  command: string;
+  tool: string;
+  /** JSON object of arguments for the tool. */
+  args: string;
+  /** Comma-separated field names; see RoutineWatch.track. */
+  track: string;
+  everyMinutes: number;
+  loud: boolean;
+};
+
+export function emptyWatchDraft(): RoutineWatchDraft {
+  return {
+    kind: "files",
+    paths: "",
+    command: "",
+    tool: "",
+    args: "{}",
+    track: "",
+    everyMinutes: ROUTINE_WATCH_DEFAULT_MINUTES,
+    loud: false,
+  };
+}
+
+function watchDraftFromRoutine(watch: RoutineWatch | null): RoutineWatchDraft | null {
+  if (!watch) return null;
+  return {
+    kind: watch.kind,
+    paths: (watch.paths ?? []).join("\n"),
+    command: watch.command ?? "",
+    tool: watch.tool ?? "",
+    args: JSON.stringify(watch.args ?? {}),
+    track: (watch.track ?? []).join(", "),
+    everyMinutes: watch.everyMinutes,
+    loud: watch.loud,
+  };
+}
+
+/** The draft as the api takes it, or the reason it cannot be saved. */
+export function watchFromDraft(
+  draft: RoutineWatchDraft,
+): { watch: RoutineWatchInput } | { error: string } {
+  const base = { kind: draft.kind, everyMinutes: draft.everyMinutes, loud: draft.loud };
+  const fields = draft.track
+    .split(",")
+    .map((field) => field.trim())
+    .filter(Boolean);
+  const track = fields.length ? { track: fields } : {};
+  if (draft.kind === "files") {
+    const paths = draft.paths
+      .split("\n")
+      .map((path) => path.trim())
+      .filter(Boolean);
+    if (!paths.length) return { error: t`Add a file or folder to watch` };
+    return { watch: { ...base, paths } };
+  }
+  if (draft.kind === "command") {
+    if (!draft.command.trim()) return { error: t`Add a command to run` };
+    return { watch: { ...base, command: draft.command.trim(), ...track } };
+  }
+  if (!draft.tool.trim()) return { error: t`Pick a tool to check` };
+  let args: unknown;
+  try {
+    args = JSON.parse(draft.args.trim() || "{}");
+  } catch {
+    return { error: t`Tool arguments must be JSON` };
+  }
+  if (!args || typeof args !== "object" || Array.isArray(args)) {
+    return { error: t`Tool arguments must be a JSON object` };
+  }
+  return {
+    watch: { ...base, tool: draft.tool.trim(), args: args as Record<string, unknown>, ...track },
+  };
+}
 
 export function emptyRoutineDraft(): RoutineDraftState {
   return {
@@ -108,6 +199,7 @@ export function emptyRoutineDraft(): RoutineDraftState {
     runAtLocal: "",
     modelKey: "",
     thinkingLevel: "",
+    watch: null,
   };
 }
 
@@ -126,6 +218,7 @@ export function draftFromRoutine(routine: Routine): RoutineDraftState {
         ? modelOptionKey(routine.modelProvider, routine.modelId)
         : "",
     thinkingLevel: routine.thinkingLevel ?? "",
+    watch: watchDraftFromRoutine(routine.watch),
   };
 }
 
@@ -138,6 +231,7 @@ export function routineTriggerSummary(routine: Routine): string {
   else if (routine.messageProvider === "teams") parts.push(t`Teams message`);
   else if (routine.messageProvider) parts.push(t`Message event`);
   for (const cron of routine.crons) parts.push(formatCron(cron));
+  if (routine.watch) parts.push(t`When something changes`);
   return parts.length > 0 ? parts.join(" · ") : t`No trigger`;
 }
 
@@ -264,9 +358,10 @@ export function RoutineEditor({
         (entry) => entry.provider === selectedModel.provider && entry.id === selectedModel.modelId,
       )
     : undefined;
-  const selectedCredential = credentials.find(
-    (entry) =>
-      entry.provider === selectedModel?.provider && entry.modelId === selectedModel?.modelId,
+  const selectedCredential = credentialForModel(
+    credentials,
+    selectedModel?.provider,
+    selectedModel?.modelId,
   );
   const thinkingOptions = (
     selectedCredential?.thinkingLevels ??
@@ -280,7 +375,8 @@ export function RoutineEditor({
     draft.schedules.length > 0 ||
     draft.webhookEnabled ||
     draft.githubEnabled ||
-    Boolean(draft.messageProvider);
+    Boolean(draft.messageProvider) ||
+    Boolean(draft.watch);
   const canTest = Boolean(editing) && !saving && !running;
   const needsOneShotArm =
     editing != null && routineNeedsOneShotArm(editing, draft.schedules.map(cronFromPreset));
@@ -520,6 +616,15 @@ export function RoutineEditor({
             />
           ) : null}
 
+          {draft.watch ? (
+            <WatchTriggerCard
+              watch={draft.watch}
+              state={editing?.watch ? editing.watchState : null}
+              onChange={(watch) => onChange({ ...draft, watch })}
+              onRemove={() => onChange({ ...draft, watch: null })}
+            />
+          ) : null}
+
           {draft.messageProvider ? (
             <MessageTriggerCard
               provider={draft.messageProvider}
@@ -551,7 +656,7 @@ export function RoutineEditor({
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top">
             <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
+              <DropdownMenuSubTrigger disabled={Boolean(draft.watch)}>
                 <Clock />
                 <Trans>On a schedule</Trans>
               </DropdownMenuSubTrigger>
@@ -597,6 +702,14 @@ export function RoutineEditor({
               </span>
             ))}
 
+            <DropdownMenuItem
+              disabled={Boolean(draft.watch) || draft.schedules.length > 0}
+              onClick={() => onChange({ ...draft, watch: emptyWatchDraft() })}
+            >
+              <Eye />
+              <Trans>When something changes</Trans>
+            </DropdownMenuItem>
+
             <DropdownMenuItem disabled={draft.githubEnabled} onClick={() => void addGithub()}>
               <GitBranch />
               <Trans>Git event</Trans>
@@ -611,7 +724,7 @@ export function RoutineEditor({
 
         {!hasTriggers ? (
           <p className="mt-2 text-xs text-muted-foreground/70">
-            <Trans>Add a schedule, webhook, GitHub, or message trigger to run this routine.</Trans>
+            <Trans>Add a trigger to run this routine.</Trans>
           </p>
         ) : null}
       </div>
@@ -628,6 +741,155 @@ export function RoutineEditor({
       ) : null}
 
       {editing ? <RoutineRunHistory key={editing.id} routineId={editing.id} /> : null}
+    </div>
+  );
+}
+
+function WatchTriggerCard({
+  watch,
+  state,
+  onChange,
+  onRemove,
+}: {
+  watch: RoutineWatchDraft;
+  state: Routine["watchState"];
+  onChange: (watch: RoutineWatchDraft) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useLingui();
+  const id = useId();
+  const status = !state
+    ? null
+    : state.outcome === "failed"
+      ? t`Check failed: ${state.detail ?? ""}`
+      : state.outcome === "changed"
+        ? t`Last check ${new Date(state.checkedAt).toLocaleString()}: changed`
+        : t`Last check ${new Date(state.checkedAt).toLocaleString()}: no changes`;
+  return (
+    <div className="rounded-xl border border-border p-3" data-testid="routine-watch-card">
+      <div className="flex items-center gap-2.5 px-0.5">
+        <Eye size={16} strokeWidth={1.6} className="text-muted-foreground" aria-hidden />
+        <span className="flex-1 text-[14.5px] text-foreground">
+          <Trans>When something changes</Trans>
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t`Remove change trigger`}
+          onClick={onRemove}
+          className="text-muted-foreground"
+        >
+          <X />
+        </Button>
+      </div>
+      <div className="mt-3 space-y-3">
+        <NativeSelect
+          size="sm"
+          aria-label={t`What to watch`}
+          value={watch.kind}
+          onChange={(event) =>
+            onChange({ ...watch, kind: event.target.value as RoutineWatchDraft["kind"] })
+          }
+        >
+          <NativeSelectOption value="files">{t`Files or folders on the computer`}</NativeSelectOption>
+          <NativeSelectOption value="command">{t`A command's output`}</NativeSelectOption>
+          <NativeSelectOption value="tool">{t`An integration tool`}</NativeSelectOption>
+        </NativeSelect>
+        {watch.kind === "files" ? (
+          <Textarea
+            aria-label={t`Files or folders, one per line`}
+            placeholder={"inbox/\nreports/latest.csv"}
+            value={watch.paths}
+            onChange={(e) => onChange({ ...watch, paths: e.target.value })}
+            rows={3}
+          />
+        ) : null}
+        {watch.kind === "command" ? (
+          <Input
+            aria-label={t`Command`}
+            placeholder="curl -s https://example.com/status"
+            value={watch.command}
+            onChange={(e) => onChange({ ...watch, command: e.target.value })}
+            className="font-mono text-[13px]"
+          />
+        ) : null}
+        {watch.kind === "tool" ? (
+          <>
+            <Input
+              aria-label={t`Tool name`}
+              placeholder="brain_changed"
+              value={watch.tool}
+              onChange={(e) => onChange({ ...watch, tool: e.target.value })}
+              className="font-mono text-[13px]"
+            />
+            <Textarea
+              aria-label={t`Tool arguments (JSON)`}
+              value={watch.args}
+              onChange={(e) => onChange({ ...watch, args: e.target.value })}
+              rows={2}
+              className="font-mono text-[13px]"
+            />
+          </>
+        ) : null}
+        {watch.kind !== "files" ? (
+          <Input
+            aria-label={t`Fields that mark a change`}
+            placeholder={t`Fields to compare, e.g. id, modifiedTime (optional)`}
+            value={watch.track}
+            onChange={(e) => onChange({ ...watch, track: e.target.value })}
+            className="font-mono text-[13px]"
+          />
+        ) : null}
+        <label
+          htmlFor={`${id}-every`}
+          className="flex items-center gap-2 text-[13.5px] text-muted-foreground"
+        >
+          <Trans>Check every</Trans>
+          <Input
+            id={`${id}-every`}
+            type="number"
+            min={ROUTINE_WATCH_MIN_MINUTES}
+            max={1440}
+            value={watch.everyMinutes || ""}
+            onChange={(e) =>
+              onChange({
+                ...watch,
+                everyMinutes: Number(e.target.value),
+              })
+            }
+            onBlur={() =>
+              onChange({
+                ...watch,
+                everyMinutes: Math.min(
+                  1440,
+                  Math.max(ROUTINE_WATCH_MIN_MINUTES, Math.round(watch.everyMinutes)),
+                ),
+              })
+            }
+            className="h-8 w-20"
+          />
+          <Trans>minutes</Trans>
+        </label>
+        <label
+          htmlFor={`${id}-loud`}
+          className="flex items-center gap-2 text-[13.5px] text-muted-foreground"
+        >
+          <Switch
+            id={`${id}-loud`}
+            checked={watch.loud}
+            onCheckedChange={(loud) => onChange({ ...watch, loud })}
+          />
+          <Trans>Post "No changes" in chat</Trans>
+        </label>
+        {status ? (
+          <p
+            data-testid="routine-watch-status"
+            className={`text-[12.5px] ${state?.outcome === "failed" ? "text-destructive" : "text-muted-foreground/80"}`}
+          >
+            {status}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

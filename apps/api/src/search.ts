@@ -1,5 +1,10 @@
 import type { Actor, MessageBlock, SearchHit } from "@rakazo/contracts";
-import { extractLinksFromText, matchesSearchQuery, snippetAroundMatch } from "@rakazo/core";
+import {
+  displayName,
+  extractLinksFromText,
+  matchesSearchQuery,
+  snippetAroundMatch,
+} from "@rakazo/core";
 import { Prisma, type PrismaClient } from "@rakazo/db";
 
 const SEARCH_LIMIT = 25;
@@ -85,7 +90,7 @@ export async function querySpaceSearch(
         botId: bot.id,
         botName: bot.name,
         title: bot.name,
-        snippet: bot.title || bot.description || bot.name,
+        snippet: displayName(bot.title, "") || bot.description || displayName(bot.name, ""),
       },
       CONVERSATION_HIT_LIMIT * 2,
     );
@@ -107,7 +112,7 @@ export async function querySpaceSearch(
         groupId: group.id,
         groupName: group.name,
         title: group.name,
-        snippet: group.name,
+        snippet: displayName(group.name, ""),
       },
       CONVERSATION_HIT_LIMIT * 2,
     );

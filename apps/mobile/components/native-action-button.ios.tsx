@@ -1,6 +1,7 @@
 import { Button, Host, Label, ProgressView, Text } from "@expo/ui/swift-ui";
 import {
   accessibilityAddTraits,
+  accessibilityHidden,
   accessibilityLabel as accessibilityName,
   accessibilityRemoveTraits,
   buttonStyle,
@@ -13,6 +14,7 @@ import {
   progressViewStyle,
   tint,
 } from "@expo/ui/swift-ui/modifiers";
+import { View } from "react-native";
 import { useMobileTokens, useResolvedAppearance } from "../lib/native";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionFills, actionProminence, iosAtLeast } from "../lib/native-controls";
@@ -21,6 +23,8 @@ import { actionFills, actionProminence, iosAtLeast } from "../lib/native-control
 export function NativeActionButton({
   label,
   accessibilityLabel,
+  accessibilityActions,
+  onAccessibilityAction,
   onPress,
   disabled = false,
   busy = false,
@@ -51,7 +55,7 @@ export function NativeActionButton({
       : effectiveProminence === "primary"
         ? tokens.primary
         : undefined;
-  return (
+  const button = (
     <Host
       colorScheme={scheme}
       ignoreSafeArea="container"
@@ -69,6 +73,7 @@ export function NativeActionButton({
         onPress={inactive ? undefined : onPress}
         role={role}
         modifiers={[
+          ...(accessibilityActions?.length ? [accessibilityHidden(true)] : []),
           buttonStyle(swiftStyle(effectiveProminence)),
           controlSize(
             small ? "small" : stretches ? "large" : prominence === "quiet" ? "small" : "regular",
@@ -110,6 +115,23 @@ export function NativeActionButton({
         ) : undefined}
       </Button>
     </Host>
+  );
+  // Expo UI does not expose SwiftUI custom accessibility actions. Give the native
+  // control one React Native accessibility element with the same activation and menu.
+  return accessibilityActions?.length ? (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: inactive, ...(selected === undefined ? {} : { selected }) }}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={onAccessibilityAction}
+      onAccessibilityTap={inactive ? undefined : onPress}
+    >
+      {button}
+    </View>
+  ) : (
+    button
   );
 }
 

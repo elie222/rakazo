@@ -44,8 +44,8 @@ describe("computerInputForDomKey", () => {
 });
 
 describe("computerScreenSize", () => {
-  it("uses box geometry and the 1280x800 default for other sandboxes", () => {
-    expect(computerScreenSize("box")).toEqual({ width: 1920, height: 1080 });
+  it("uses boat geometry and the 1280x800 default for other sandboxes", () => {
+    expect(computerScreenSize("boat")).toEqual({ width: 1920, height: 1080 });
     expect(computerScreenSize("e2b")).toEqual({ width: 1280, height: 800 });
     expect(computerScreenSize("daytona")).toEqual({ width: 1280, height: 800 });
   });

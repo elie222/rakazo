@@ -49,13 +49,13 @@ function createFakeSurface(sendError?: Error) {
       capabilities: { providers: ["sendblue"] },
     }),
     platforms: () => [
-      { provider: "sendblue", capabilities: { direct: true, groups: true, typing: true } },
+      { provider: "sendblue", capabilities: { direct: true, groups: true, receipt: "typing" } },
     ],
     handleWebhook: () => null,
     onInbound: () => undefined,
     sendToThread,
     openDirectThread,
-    sendTyping: vi.fn(async () => undefined),
+    acknowledge: vi.fn(async () => undefined),
   };
   return { messaging, sendToThread, openDirectThread };
 }

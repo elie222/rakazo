@@ -8,9 +8,11 @@ import type {
 import Markdown, {
   createMarkdownIt,
   FitImage,
+  renderRules as libraryRenderRules,
   MarkdownStream,
 } from "@ronradtke/react-native-markdown-display";
-import type { ReactNode } from "react";
+import { Highlight, themes } from "prism-react-renderer";
+import type { ComponentType, ReactNode } from "react";
 import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
 import type {
   NativeScrollEvent,
@@ -50,6 +52,7 @@ import {
 } from "./markdown";
 
 import { useMarkdownLinkAppOrigin, useMarkdownLinkCopy } from "./markdown-link-prompt";
+import { isMermaidFence } from "./mermaid";
 
 function keepMarkdownLinkToken(_url: string) {
   return true;
@@ -64,6 +67,9 @@ const WORD_JOINER = "\u2060";
 // around the link.
 const ISOLATE = "\u2068";
 const POP_ISOLATE = "\u2069";
+
+// The library's own rules, for the blocks this file only sometimes replaces.
+const libraryRules = libraryRenderRules(Text);
 
 // One shared parser: the Markdown components memoize on its identity.
 const markdownParser = createMarkdownIt();
@@ -579,13 +585,78 @@ function TableRow({
   );
 }
 
-const tableFrame: ViewStyle = {
+const scrollFrame: ViewStyle = {
   width: "100%",
   maxWidth: "100%",
   minWidth: 0,
   flexShrink: 1,
   flexDirection: "row",
 };
+
+/**
+ * A block that scrolls sideways when it is wider than the bubble. Tables pass the width they lay
+ * out to; code is measured.
+ */
+function SidewaysScrollView({
+  contentWidth,
+  onViewportWidth,
+  onScroll,
+  style,
+  children,
+}: {
+  contentWidth?: number;
+  onViewportWidth?: (width: number) => void;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  style?: StyleProp<ViewStyle>;
+  children?: ReactNode;
+}) {
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+  const measured = contentWidth === undefined;
+  const width = contentWidth ?? measuredWidth;
+  // A block that fits isn't a scroll area, so VoiceOver shouldn't announce scroll bars on it.
+  const overflows = viewportWidth > 0 && width > viewportWidth;
+  return (
+    <View
+      style={scrollFrame}
+      onLayout={(event) => {
+        const next = Math.round(event.nativeEvent.layout.width);
+        setViewportWidth(next);
+        onViewportWidth?.(next);
+      }}
+    >
+      <ScrollView
+        horizontal
+        scrollEnabled={overflows}
+        showsHorizontalScrollIndicator={overflows}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
+        directionalLockEnabled
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        onContentSizeChange={measured ? (next) => setMeasuredWidth(Math.round(next)) : undefined}
+        style={[
+          style,
+          viewportWidth > 0 ? { width: viewportWidth } : { flexGrow: 1, flexShrink: 1 },
+        ]}
+        // Measured content fills a bubble it fits, like a block that doesn't scroll.
+        contentContainerStyle={{ flexGrow: measured ? 1 : 0 }}
+      >
+        <View
+          // iOS won't scroll while an ancestor, like a pressable bubble, holds the touch.
+          onStartShouldSetResponder={() => Platform.OS === "ios" && overflows}
+          style={
+            measured
+              ? { flexGrow: 1 }
+              : { width: contentWidth, minWidth: contentWidth, flexShrink: 0 }
+          }
+        >
+          {children}
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
 
 function TableScrollView({
   table,
@@ -599,9 +670,6 @@ function TableScrollView({
   const [viewportWidth, setViewportWidth] = useState(0);
   const [scrollX, setScrollX] = useState(0);
   const widths = useMemo(() => fittedColumnWidths(table, viewportWidth), [table, viewportWidth]);
-  const contentWidth = widths.reduce((total, width) => total + width, 0);
-  // A table that fits isn't a scroll area, so VoiceOver shouldn't announce scroll bars on it.
-  const overflows = viewportWidth > 0 && contentWidth > viewportWidth;
   const tableLayout = useMemo(
     () => ({ widths, viewportWidth, scrollX }),
     [widths, viewportWidth, scrollX],
@@ -615,38 +683,112 @@ function TableScrollView({
     );
   };
   return (
-    <View
-      style={tableFrame}
-      onLayout={(event) => {
-        const next = Math.round(event.nativeEvent.layout.width);
-        setViewportWidth((current) => (current === next ? current : next));
-      }}
-    >
-      <TableLayoutContext.Provider value={tableLayout}>
-        <ScrollView
-          horizontal
-          scrollEnabled={overflows}
-          showsHorizontalScrollIndicator={overflows}
-          showsVerticalScrollIndicator={false}
-          nestedScrollEnabled
-          directionalLockEnabled
-          scrollEventThrottle={16}
-          onScroll={onScroll}
-          style={[
-            style,
-            viewportWidth > 0 ? { width: viewportWidth } : { flexGrow: 1, flexShrink: 1 },
-          ]}
-          contentContainerStyle={{ flexGrow: 0 }}
-        >
-          <View
-            // iOS won't scroll while an ancestor, like a pressable bubble, holds the touch.
-            onStartShouldSetResponder={() => Platform.OS === "ios" && overflows}
-            style={{ width: contentWidth, minWidth: contentWidth, flexShrink: 0 }}
-          >
-            {children}
-          </View>
-        </ScrollView>
-      </TableLayoutContext.Provider>
+    <TableLayoutContext.Provider value={tableLayout}>
+      <SidewaysScrollView
+        contentWidth={widths.reduce((total, width) => total + width, 0)}
+        onViewportWidth={setViewportWidth}
+        onScroll={onScroll}
+        style={style}
+      >
+        {children}
+      </SidewaysScrollView>
+    </TableLayoutContext.Provider>
+  );
+}
+
+export type MermaidDiagramProps = {
+  source: string;
+  palette: ColorTokens;
+  colorScheme: ResolvedAppearance;
+  /** The code block, for the app to show while the diagram draws or when it cannot. */
+  fallback: ReactNode;
+};
+
+/**
+ * Draws a ```mermaid fence. Mermaid needs a browser engine, so the app supplies the drawing
+ * (a WebView); without one, a fence stays a code block.
+ */
+export const MermaidDiagramContext = createContext<ComponentType<MermaidDiagramProps> | null>(null);
+
+const DiagramSurfaceContext = createContext<{
+  streaming: boolean;
+  palette: ColorTokens;
+  colorScheme: ResolvedAppearance;
+}>({ streaming: false, palette: darkTokens, colorScheme: "dark" });
+
+function MermaidFence({ source, fallback }: { source: string; fallback: ReactNode }) {
+  const Diagram = useContext(MermaidDiagramContext);
+  const { streaming, palette, colorScheme } = useContext(DiagramSurfaceContext);
+  // A streaming reply may still be writing the fence, so it reads as code until the reply ends.
+  if (!Diagram || streaming || !source.trim()) return fallback;
+  return (
+    <Diagram source={source} palette={palette} colorScheme={colorScheme} fallback={fallback} />
+  );
+}
+
+/**
+ * The library's fenced code block, drawn here so its lines keep their shape and scroll sideways
+ * in the same scroll view as tables.
+ */
+function CodeFence({
+  code,
+  language,
+  colorScheme,
+  styleMap,
+}: {
+  code: string;
+  language: string;
+  colorScheme: ResolvedAppearance;
+  styleMap: MarkdownStyleMap;
+}) {
+  const theme = colorScheme === "dark" ? themes.oneDark : themes.oneLight;
+  return (
+    <View style={styleMap._VIEW_SAFE_fence}>
+      {language ? (
+        <View style={styleMap._VIEW_SAFE_fence_header}>
+          <Text style={styleMap.fence_language_label}>{language}</Text>
+        </View>
+      ) : null}
+      <SidewaysScrollView>
+        <Highlight theme={theme} code={code} language={language || "text"}>
+          {({ tokens, getTokenProps }) => (
+            <View style={styleMap._VIEW_SAFE_fence_code}>
+              {tokens.map((line, lineIndex) => (
+                <View key={lineIndex} style={layout.codeLine}>
+                  {line.every((token) => token.empty) ? (
+                    <Text style={[{ color: theme.plain.color }, styleMap.fence_token]}> </Text>
+                  ) : null}
+                  {line
+                    .filter((token) => !token.empty)
+                    .map((token, tokenIndex) => {
+                      const tokenStyle = getTokenProps({ token }).style;
+                      return (
+                        <Text
+                          key={tokenIndex}
+                          style={[
+                            // Prism leaves plain text to inherit the line's colour, which
+                            // React Native text doesn't. A colour set on fence_token wins.
+                            { color: theme.plain.color },
+                            styleMap.fence_token,
+                            tokenStyle?.color != null ? { color: tokenStyle.color } : null,
+                            tokenStyle?.fontStyle != null
+                              ? { fontStyle: tokenStyle.fontStyle as TextStyle["fontStyle"] }
+                              : null,
+                            tokenStyle?.fontWeight != null
+                              ? { fontWeight: tokenStyle.fontWeight as TextStyle["fontWeight"] }
+                              : null,
+                          ]}
+                        >
+                          {token.content}
+                        </Text>
+                      );
+                    })}
+                </View>
+              ))}
+            </View>
+          )}
+        </Highlight>
+      </SidewaysScrollView>
     </View>
   );
 }
@@ -709,6 +851,26 @@ function listItemRule(
 // outside the text flow and collapses the bubble height, overlapping later messages.
 const renderRules: RenderRules = {
   list_item: listItemRule,
+  fence: (node, _children, _parents, styleMap, _onCopyCode, colorScheme) => {
+    const info = typeof node.sourceInfo === "string" ? node.sourceInfo : "";
+    const source = node.content.replace(/\n$/, "");
+    const codeBlock = (
+      <CodeFence
+        key={node.key}
+        code={source}
+        language={info.trim().split(/\s+/)[0] ?? ""}
+        colorScheme={colorScheme === "dark" ? "dark" : "light"}
+        styleMap={styleMap}
+      />
+    );
+    if (!isMermaidFence(info)) return codeBlock;
+    return <MermaidFence key={node.key} source={source} fallback={codeBlock} />;
+  },
+  code_block: (node, children, parents, styleMap, ...extra) => (
+    <SidewaysScrollView key={node.key}>
+      {libraryRules.code_block?.(node, children, parents, styleMap, ...extra)}
+    </SidewaysScrollView>
+  ),
   textgroup: (node, children, _parent, styleMap) => (
     <Text
       key={node.key}
@@ -1031,6 +1193,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }: ChatMarkdownProps & { palette?: ColorTokens; colorScheme?: ResolvedAppearance }) {
   const openLink = useNativeLinkConfirm();
   const styles = useMemo(() => markdownStyles(palette), [palette]);
+  const diagramSurface = useMemo(
+    () => ({ streaming, palette, colorScheme }),
+    [streaming, palette, colorScheme],
+  );
   const sharedProps = {
     colorScheme,
     markdownit: markdownParser,
@@ -1046,13 +1212,15 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     <OpenLinkContext.Provider value={openLink}>
       <View style={layout.wrap}>
         <LinkFaviconsPausedContext.Provider value={streaming}>
-          {streaming ? (
-            <MarkdownStream {...sharedProps} cursorColor={palette.mutedForeground} streaming>
-              {children}
-            </MarkdownStream>
-          ) : (
-            <Markdown {...sharedProps}>{children}</Markdown>
-          )}
+          <DiagramSurfaceContext.Provider value={diagramSurface}>
+            {streaming ? (
+              <MarkdownStream {...sharedProps} cursorColor={palette.mutedForeground} streaming>
+                {children}
+              </MarkdownStream>
+            ) : (
+              <Markdown {...sharedProps}>{children}</Markdown>
+            )}
+          </DiagramSurfaceContext.Provider>
         </LinkFaviconsPausedContext.Provider>
       </View>
     </OpenLinkContext.Provider>
@@ -1073,6 +1241,9 @@ const layout = StyleSheet.create({
   },
   reversedRow: {
     flexDirection: "row-reverse",
+  },
+  codeLine: {
+    flexDirection: "row",
   },
   // React Native mirrors `right` in a right-to-left app, so it is always the far side.
   farSideText: {
@@ -1107,5 +1278,4 @@ const layout = StyleSheet.create({
 
 export type { ChatMarkdownProps, LinkFavicons } from "./markdown";
 export { LinkFaviconsContext, RemoteImagesContext } from "./markdown";
-
 export { MarkdownLinkPromptProvider } from "./markdown-link-prompt";

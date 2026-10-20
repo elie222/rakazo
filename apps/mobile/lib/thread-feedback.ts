@@ -271,7 +271,12 @@ export function sendWaitingMessages(force = false): Promise<void> {
   running = task;
   return task;
 }
-export function useThreadFeedback(threadKey: string | undefined, newNonce: () => string) {
+/** `echoed` holds the seqs of the chat's user messages on screen; an echoed send hides in that render. */
+export function useThreadFeedback(
+  threadKey: string | undefined,
+  newNonce: () => string,
+  echoed?: ReadonlySet<number>,
+) {
   const [error, setError] = useState<string | null>(null);
   const allSends = useSyncExternalStore(subscribe, getUnsentSends, getUnsentSends);
   const activeThread = useRef(threadKey);
@@ -294,6 +299,9 @@ export function useThreadFeedback(threadKey: string | undefined, newNonce: () =>
       }
     };
   }, [threadKey]);
+  useEffect(() => {
+    if (threadKey && echoed) confirmEchoes(threadKey, echoed);
+  }, [threadKey, echoed]);
   return {
     error,
     setError(value: string | null) {
@@ -302,7 +310,12 @@ export function useThreadFeedback(threadKey: string | undefined, newNonce: () =>
     refreshed(key = threadKey) {
       if (key === activeThread.current) setError(null);
     },
-    unsentSends: allSends.filter((a) => a.payload.originThreadKey === threadKey && inScope(a)),
+    unsentSends: allSends.filter(
+      (a) =>
+        a.payload.originThreadKey === threadKey &&
+        inScope(a) &&
+        !(a.acceptedSeq !== undefined && echoed?.has(a.acceptedSeq)),
+    ),
     sendAttempt(payload: SendPayload): SendAttempt {
       const scope = config?.scope();
       if (!scope) throw new Error("SESSION_CHANGED");

@@ -22,6 +22,7 @@ import {
   replaceCompletedExternalEffectResult,
   resolveDuplicateEffectGate,
   settleUncertainEffect,
+  uncertainEffectResult,
 } from "./approval-effect.js";
 
 describe("approved effect replay", () => {
@@ -313,6 +314,28 @@ describe("resolveDuplicateEffectGate", () => {
     expect(
       resolveDuplicateEffectGate({ status: "uncertain", result }, "destination.write"),
     ).toEqual({ action: "return", result });
+  });
+});
+
+describe("uncertainEffectResult", () => {
+  const listFleetHint = "Call list_fleet to check whether it happened before retrying.";
+  it.each([
+    ["update_bot", { bot_id: "bot-child", name: "Ranger" }],
+    ["set_child_instructions", {}],
+  ])("points %s to list_fleet before a retry", (toolName, args) => {
+    expect(uncertainEffectResult(toolName, args).error).toContain(listFleetHint);
+  });
+
+  it.each(["set_child_bot_model", "create_child_routine"])(
+    "asks the owner to verify uncertain %s outcomes",
+    (tool) => {
+      expect(uncertainEffectResult(tool).error).toContain("Ask the owner to verify the outcome");
+      expect(uncertainEffectResult(tool).error).toContain("do not retry automatically");
+    },
+  );
+
+  it("keeps the destination hint for update_bot on the bot itself", () => {
+    expect(uncertainEffectResult("update_bot", { name: "Me" }).error).not.toContain("list_fleet");
   });
 });
 

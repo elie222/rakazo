@@ -11,9 +11,13 @@ import type {
   SandboxProvider,
   ScreenRequest,
   TerminalRequest,
+  WorkspaceDirectoryRequest,
 } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
+import { cancelComputerRunWork } from "./computer-idle.js";
+import { manageComputerWorkspaceDirectories } from "./computer-workspace.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
+import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { createSandboxProvider, type SandboxProviderOptions } from "./sandbox-factory.js";
 
 export function sandboxKindForBot(envKind: string, computerHost: string | null | undefined) {
@@ -35,10 +39,7 @@ export function createRunSandbox(
   if (kind !== "docker" || !opts.prisma) return primary;
   return new HostAwareSandbox(
     primary,
-    new DesktopSandboxProvider({
-      root: opts.dataDir,
-      hostRoots: [homedir()],
-    }),
+    new HostComputerSandbox(opts.hostComputerUrl ?? "", opts.hostComputerToken ?? ""),
     async () => {
       const settings = await opts.prisma!.deploymentSettings.findUnique({
         where: { id: "default" },
@@ -79,6 +80,11 @@ export class HostAwareSandbox implements SandboxProvider {
     return computer.kind === "desktop" ? this.host : this.isolated;
   }
 
+  async provisionKind() {
+    const provider = (await this.hostEnabled()) ? this.host : this.isolated;
+    return provider.describe().id as ComputerRef["kind"];
+  }
+
   async provision(
     request: {
       botId: string;
@@ -105,6 +111,11 @@ export class HostAwareSandbox implements SandboxProvider {
     return provider.isRunning?.(computer, context) ?? false;
   }
 
+  async environment(computer: ComputerRef, context: AdapterContext) {
+    const provider = this.route(computer);
+    return provider.environment?.(computer, context);
+  }
+
   prepare(computer: ComputerRef, context: AdapterContext) {
     return this.route(computer).prepare(computer, context);
   }
@@ -114,7 +125,21 @@ export class HostAwareSandbox implements SandboxProvider {
     request: CommandRequest,
     context: AdapterContext,
   ): AsyncIterable<ProcessEvent> {
+    if (computer.kind === "desktop" && !(await this.hostEnabled()))
+      throw new Error("Local computer access is disabled");
     yield* this.route(computer).execute(computer, request, context);
+  }
+
+  workspaceDirectories(
+    computer: ComputerRef,
+    request: WorkspaceDirectoryRequest,
+    context: AdapterContext,
+  ) {
+    return manageComputerWorkspaceDirectories(this.route(computer), computer, request, context);
+  }
+
+  cancelRunWork(computer: ComputerRef, computerId: string, runId: string, context: AdapterContext) {
+    return cancelComputerRunWork(this.route(computer), computer, computerId, runId, context);
   }
 
   connectScreen(computer: ComputerRef, request: ScreenRequest, context: AdapterContext) {
@@ -177,6 +202,10 @@ export class HostAwareSandbox implements SandboxProvider {
 
   snapshot(computer: ComputerRef, context: AdapterContext) {
     return this.route(computer).snapshot(computer, context);
+  }
+
+  billsWhileRunning(computer: ComputerRef): boolean {
+    return this.route(computer).billsWhileRunning?.(computer) ?? false;
   }
 
   keepAlive(computer: ComputerRef) {

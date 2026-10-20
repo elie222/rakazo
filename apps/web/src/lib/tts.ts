@@ -13,6 +13,7 @@ export interface SpeechSnapshot {
 }
 
 interface SpeakOptions {
+  spaceId?: string | null;
   voiceId?: string;
   botId?: string;
   messageId?: string;
@@ -83,7 +84,7 @@ export class Speaker {
     const controller = new AbortController();
     this.request = controller;
     const live = () => this.token === mine && !controller.signal.aborted;
-    const spaceId = selectedSpaceId();
+    const spaceId = opts.spaceId ?? selectedSpaceId();
 
     this.set({ status: "preparing", botId: opts.botId, messageId: opts.messageId });
     let utterances: string[];

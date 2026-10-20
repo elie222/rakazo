@@ -9,6 +9,9 @@ name: Settings
 - extendedWaitUntil:
     visible: ".*Change password.*"
     timeout: 15000
+- assertNotVisible: "(?s).*__[A-Za-z0-9]+__.*"
+- assertNotVisible: "(?is).*[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}.*"
+- assertNotVisible: "(?s).*c[a-z0-9]{24}.*"
 - takeScreenshot: 01-account
 - tapOn: "Dark"
 - takeScreenshot: 02-account-dark
@@ -113,7 +116,6 @@ name: Settings
     centerElement: true
 - tapOn: "Language"
 - extendedWaitUntil:
-    visible: ".*English.*|.*Cancel.*"
+    visible: "Deutsch"
     timeout: 10000
 - takeScreenshot: 16-language
-- tapOn: "Cancel"

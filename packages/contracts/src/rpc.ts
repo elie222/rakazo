@@ -4,7 +4,6 @@ import { AiConsentQuerySchema, AiConsentStatusSchema } from "./ai-consent.js";
 import {
   ARTIFACT_DESCRIPTION_MAX_LENGTH,
   ARTIFACT_NAME_MAX_LENGTH,
-  ATTACHMENT_MAX_BASE64_LENGTH,
   ATTACHMENT_MAX_COUNT,
 } from "./attachments.js";
 import {
@@ -37,6 +36,7 @@ import {
   BillingStatusSchema,
   BotMcpServerSchema,
   BotSchema,
+  BotSectionName,
   BotSectionSchema,
   CapabilityInstallSchema,
   ComputerModeSchema,
@@ -71,6 +71,7 @@ import {
   ModelConnectInputSchema,
   ModelCredentialSchema,
   ModelOAuthBeginSchema,
+  OPENAI_COMPATIBLE_PROVIDER_ID,
   REPLY_QUOTE_MAX_LENGTH,
   ReorderBotsInput,
   RoutineSchema,
@@ -89,6 +90,7 @@ import {
   ThinkingLevelSchema,
   ThreadMessagePageSchema,
   ThreadSnapshotSchema,
+  TimeZoneSchema,
   UpdateAgentSkillInput,
   UpdateBotInput,
   UpdateExternalConversationPolicyInput,
@@ -106,6 +108,7 @@ import {
   IntegrationSetupStateSchema,
 } from "./integration-settings.js";
 import { MessageReactionSchema } from "./reactions.js";
+import { RoutineWatchSchema } from "./routine-watch.js";
 import { RoutineHistorySchema, RoutineRunCursorSchema, RunsListOutputSchema } from "./runs.js";
 import { SearchQueryOutputSchema } from "./search.js";
 
@@ -192,7 +195,20 @@ export const appContract = {
     portal: oc.output(z.object({ url: z.string().url() })),
   },
   preferences: {
-    update: oc.input(z.object({ avatarStyle: AvatarStyleSchema })).output(MeSchema),
+    update: oc
+      .input(
+        z
+          .object({
+            avatarStyle: AvatarStyleSchema.optional(),
+            timezone: TimeZoneSchema.nullable().optional(),
+          })
+          .refine((input) => input.avatarStyle !== undefined || input.timezone !== undefined, {
+            message: "Nothing to update",
+          }),
+      )
+      .output(MeSchema),
+    /** Saves a detected timezone only while none is saved, so it never replaces a choice. */
+    adoptTimezone: oc.input(z.object({ timezone: TimeZoneSchema })).output(MeSchema),
   },
   spaces: {
     list: oc.output(SpaceNavigationSchema),
@@ -296,6 +312,16 @@ export const appContract = {
     duplicate: oc.input(botId).output(BotSchema),
     reorder: oc.input(ReorderBotsInput).output(z.object({ ok: z.literal(true) })),
     update: oc.input(UpdateBotInput).output(BotSchema),
+    restoreInstructions: oc
+      .input(
+        z.object({
+          botId: Id,
+          versionId: Id,
+          expectedInstructions: z.string(),
+          undo: z.boolean().optional(),
+        }),
+      )
+      .output(BotSchema),
     setComputer: oc.input(z.object({ botId: Id, mode: ComputerModeSchema })).output(BotSchema),
     archive: oc.input(botId).output(z.object({ ok: z.literal(true) })),
     restore: oc.input(botId).output(z.object({ ok: z.literal(true) })),
@@ -323,12 +349,15 @@ export const appContract = {
   },
   botSections: {
     list: oc.output(z.array(BotSectionSchema)),
-    create: oc
-      .input(threadTarget.safeExtend({ name: z.string().trim().min(1).max(60) }))
-      .output(BotSectionSchema),
-    update: oc
-      .input(z.object({ sectionId: Id, name: z.string().trim().min(1).max(60) }))
-      .output(BotSectionSchema),
+    create: oc.input(threadTarget.safeExtend({ name: BotSectionName })).output(BotSectionSchema),
+    update: oc.input(z.object({ sectionId: Id, name: BotSectionName })).output(BotSectionSchema),
+    remove: oc.input(z.object({ sectionId: Id })).output(
+      z.object({
+        id: Id,
+        releasedBots: z.number().int().nonnegative(),
+        releasedGroups: z.number().int().nonnegative(),
+      }),
+    ),
   },
   threads: {
     head: oc.input(threadTarget).output(
@@ -372,7 +401,7 @@ export const appContract = {
           clientNonce: z.string().min(1).max(200),
         }),
       )
-      .output(z.object({ ok: z.literal(true) })),
+      .output(z.object({ ok: z.literal(true), runIds: z.array(Id).optional() })),
     stop: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     followUp: oc
       .input(
@@ -393,6 +422,38 @@ export const appContract = {
             .min(1)
             .max(200)
             .regex(/^[^:]+$/),
+          /** How long the call was connected, measured from pickup on the caller's client. */
+          durationSeconds: z
+            .number()
+            .int()
+            .nonnegative()
+            .max(7 * 24 * 60 * 60)
+            .optional(),
+        }),
+      )
+      .output(z.object({ ok: z.literal(true) })),
+    /** The user picked up the bot's call: returns what the bot opens with. */
+    answerCall: oc
+      .input(
+        botId.safeExtend({
+          callId: z
+            .string()
+            .min(1)
+            .max(200)
+            .regex(/^[^:]+$/),
+        }),
+      )
+      .output(z.object({ opening: z.string(), reason: z.string() })),
+    /** The user turned the bot's call down, asked for it later, or it rang out. */
+    declineCall: oc
+      .input(
+        botId.safeExtend({
+          callId: z
+            .string()
+            .min(1)
+            .max(200)
+            .regex(/^[^:]+$/),
+          outcome: z.enum(["declined", "missed"]),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -459,7 +520,7 @@ export const appContract = {
         z.object({
           botId: Id,
           path: z.string().min(1),
-          contentBase64: z.string().max(ATTACHMENT_MAX_BASE64_LENGTH),
+          contentBase64: z.string(),
         }),
       )
       .output(z.object({ ok: z.literal(true) })),
@@ -477,6 +538,7 @@ export const appContract = {
     update: oc
       .input(z.object({ documentId: Id, content: z.string() }))
       .output(MemoryDocumentSchema),
+    remove: oc.input(z.object({ documentId: Id })).output(z.object({ ok: z.literal(true) })),
     exportMarkdown: oc.input(z.object({ botId: Id.optional() })).output(z.string()),
     providerConfig: oc.output(SpaceMemoryConfigSchema.nullable()),
     connectProvider: oc
@@ -526,6 +588,8 @@ export const appContract = {
             thinkingLevel: ThinkingLevelSchema.nullable().optional(),
             /** ISO datetime to arm a never-run one-shot. */
             runAt: IsoDate.optional(),
+            /** Null removes the change trigger. */
+            watch: RoutineWatchSchema.nullable().optional(),
           })
           .superRefine((value, ctx) => {
             if (
@@ -533,11 +597,12 @@ export const appContract = {
               value.crons.length === 0 &&
               value.webhookEnabled === false &&
               value.githubEnabled === false &&
-              value.messageProvider === null
+              value.messageProvider === null &&
+              value.watch === null
             ) {
               ctx.addIssue({
                 code: "custom",
-                message: "Add a schedule, webhook, GitHub, or message trigger",
+                message: "Add a schedule, webhook, GitHub, message, or change trigger",
                 path: ["crons"],
               });
             }
@@ -853,7 +918,7 @@ export const appContract = {
             name: z.string().min(1).max(ARTIFACT_NAME_MAX_LENGTH),
             description: z.string().max(ARTIFACT_DESCRIPTION_MAX_LENGTH).optional(),
             mimeType: z.string().min(1),
-            contentBase64: z.string().min(1).max(ATTACHMENT_MAX_BASE64_LENGTH),
+            contentBase64: z.string().min(1),
             /** Unique per upload; a retry with the same nonce returns the artifact it created. */
             clientNonce: z.string().min(1).max(200).optional(),
           }),
@@ -908,12 +973,27 @@ export const appContract = {
     credentials: oc.output(z.array(VoiceCredentialSchema)),
     connect: oc
       .input(
-        z.object({
-          provider: z.string(),
-          apiKey: z.string().min(8),
-          voiceId: z.string().max(120).optional(),
-          speechModel: z.string().max(64).optional(),
-        }),
+        z
+          .object({
+            provider: z.string(),
+            /** Optional only for a self-hosted server, which may run without a key. */
+            apiKey: z.string().max(4096).default(""),
+            voiceId: z.string().max(120).optional(),
+            speechModel: z.string().max(64).optional(),
+            /** Self-hosted (OpenAI-compatible) server address and model ids. */
+            baseUrl: z.string().max(2048).optional(),
+            ttsModel: z.string().max(200).optional(),
+            sttModel: z.string().max(200).optional(),
+          })
+          .superRefine((input, ctx) => {
+            if (input.provider === OPENAI_COMPATIBLE_PROVIDER_ID) {
+              if (!input.baseUrl?.trim()) {
+                ctx.addIssue({ code: "custom", path: ["baseUrl"], message: "Enter a server URL." });
+              }
+            } else if (input.apiKey.length < 8) {
+              ctx.addIssue({ code: "custom", path: ["apiKey"], message: "Enter an API key." });
+            }
+          }),
       )
       .output(VoiceCredentialSchema),
     disconnect: oc

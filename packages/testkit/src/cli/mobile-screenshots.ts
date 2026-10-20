@@ -26,6 +26,13 @@ const HOST_API_URL = `http://127.0.0.1:${API_PORT}`;
 const DEVICE_CONTROL_URL = `http://127.0.0.1:${DEVICE_CONTROL_PORT}`;
 const EXPAND_NOTIFICATIONS_URL = `${DEVICE_CONTROL_URL}/expand-notifications`;
 const WEB_ORIGIN = "http://127.0.0.1:5180";
+/** Flows to run, in order. A flow with a window runs on the emulator resized to it. */
+const FLOWS: { name: string; window?: { size: string; density: string } }[] = [
+  { name: "screenshots" },
+  { name: "notification-demo" },
+  // An unfolded foldable, about 750dp wide, where the chat list sits beside the open chat.
+  { name: "split-view", window: { size: "1968x2184", density: "420" } },
+];
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 
@@ -79,39 +86,26 @@ async function main() {
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
-    for (const flow of ["screenshots", "notification-demo"]) {
-      await runProcess(
-        "maestro",
-        [
-          "test",
-          "--no-ansi",
-          "--flatten-debug-output",
-          "--debug-output",
-          path.join(REPORT_DIR, "debug", flow),
-          "--test-output-dir",
-          REPORT_DIR,
-          "--format",
-          "HTML",
-          "--output",
-          path.join(REPORT_DIR, `${flow}.html`),
-          "-e",
-          `RAKAZO_SCREENSHOT_EMAIL=${EMAIL}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_PASSWORD=${PASSWORD}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_BOT_ID=${fixture.botId}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
-          "-e",
-          `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
-          "-e",
-          `RAKAZO_NOTIFICATION_VIDEO=${path.join(REPORT_DIR, "notification-demo")}`,
-          "-e",
-          `RAKAZO_EXPAND_NOTIFICATIONS_URL=${EXPAND_NOTIFICATIONS_URL}`,
-          path.join(FLOW_DIR, `${flow}.yaml`),
-        ],
-        process.env,
-      );
+    for (const { name: flow, window } of FLOWS) {
+      // A failed reset is reported without hiding why the flow failed.
+      let flowFailed = false;
+      let flowError: unknown;
+      try {
+        if (window) resizeEmulator(window.size, window.density);
+        await runFlow(flow, fixture);
+      } catch (error) {
+        flowFailed = true;
+        flowError = error;
+      }
+      if (window) {
+        try {
+          resizeEmulator("reset", "reset");
+        } catch (resetError) {
+          if (!flowFailed) throw resetError;
+          console.error("Could not reset the emulator window", resetError);
+        }
+      }
+      if (flowFailed) throw flowError;
     }
     await writeFile(
       path.join(REPORT_DIR, "summary.json"),
@@ -128,6 +122,48 @@ async function main() {
     await handles.stop().catch(() => undefined);
     await rm(DATA_DIR, { recursive: true, force: true });
   }
+}
+
+function resizeEmulator(size: string, density: string) {
+  execFileSync("adb", ["shell", "wm", "size", size], { stdio: "inherit" });
+  execFileSync("adb", ["shell", "wm", "density", density], { stdio: "inherit" });
+}
+
+async function runFlow(flow: string, fixture: Awaited<ReturnType<typeof seedFixture>>) {
+  await runProcess(
+    "maestro",
+    [
+      "test",
+      "--no-ansi",
+      "--flatten-debug-output",
+      "--debug-output",
+      path.join(REPORT_DIR, "debug", flow),
+      "--test-output-dir",
+      REPORT_DIR,
+      "--format",
+      "HTML",
+      "--output",
+      path.join(REPORT_DIR, `${flow}.html`),
+      "-e",
+      `RAKAZO_MOBILE_API_URL=http://10.0.2.2:${API_PORT}`,
+      "-e",
+      `RAKAZO_SCREENSHOT_EMAIL=${EMAIL}`,
+      "-e",
+      `RAKAZO_SCREENSHOT_PASSWORD=${PASSWORD}`,
+      "-e",
+      `RAKAZO_SCREENSHOT_BOT_ID=${fixture.botId}`,
+      "-e",
+      `RAKAZO_SCREENSHOT_GROUP_ID=${fixture.groupId}`,
+      "-e",
+      `RAKAZO_SCREENSHOT_ROUTINE_ID=${fixture.routineId}`,
+      "-e",
+      "RAKAZO_NOTIFICATION_VIDEO=notification-demo",
+      "-e",
+      `RAKAZO_EXPAND_NOTIFICATIONS_URL=${EXPAND_NOTIFICATIONS_URL}`,
+      path.join(FLOW_DIR, `${flow}.yaml`),
+    ],
+    process.env,
+  );
 }
 
 /** Maestro host-side helper: expand the Android shade without flaky status-bar swipes. */
@@ -208,6 +244,9 @@ async function seedFixture(app: App, prisma: PrismaClient) {
     notifyOnFinish: true,
   });
   await rpc(app, cookie, "bots/archive", { botId: archived.id });
+  for (const botId of [writer.id, support.id]) {
+    await rpc(app, cookie, "bots/update", { botId, pinned: true });
+  }
 
   const group = await rpc<{ id: string }>(app, cookie, "groups/create", {
     name: "Launch team",
@@ -258,7 +297,7 @@ async function seedFixture(app: App, prisma: PrismaClient) {
       status: "completed",
     },
   });
-  await prisma.run.create({
+  const run = await prisma.run.create({
     data: {
       spaceId: botThread.spaceId,
       userId: botThread.userId,
@@ -273,6 +312,58 @@ async function seedFixture(app: App, prisma: PrismaClient) {
       startedAt: new Date(Date.now() - 2_000),
       completedAt: new Date(),
     },
+  });
+  // A peer exchange: Researcher messages Writer, and Writer's update wakes a peer run.
+  await createThreadMessage(prisma, {
+    threadId: botThread.id,
+    role: "bot",
+    botId: researcher.id,
+    runId: run.id,
+    blocks: [
+      {
+        kind: "bot_message_sent",
+        toBotId: writer.id,
+        toBotName: "Writer",
+        text: "Draft the fixture launch note.",
+      },
+    ],
+  });
+  const peerRun = await prisma.run.create({
+    data: {
+      spaceId: botThread.spaceId,
+      userId: botThread.userId,
+      botId: researcher.id,
+      threadId: botThread.id,
+      taskId: task.id,
+      status: "completed",
+      trigger: "bot_message",
+      modelProvider: "scripted",
+      modelId: "scripted",
+      startedAt: new Date(Date.now() - 1_000),
+      completedAt: new Date(),
+    },
+  });
+  await createThreadMessage(prisma, {
+    threadId: botThread.id,
+    role: "user",
+    runId: peerRun.id,
+    markUnread: false,
+    blocks: [
+      {
+        kind: "bot_message_received",
+        fromBotId: writer.id,
+        fromBotName: "Writer",
+        text: "The fixture launch note is drafted.",
+      },
+    ],
+  });
+  await createThreadMessage(prisma, {
+    threadId: botThread.id,
+    role: "bot",
+    botId: researcher.id,
+    runId: peerRun.id,
+    markUnread: false,
+    blocks: [{ kind: "text", text: "Update from Writer: The fixture launch note is drafted." }],
   });
 
   return { botId: researcher.id, groupId: group.id, routineId: routine.id };

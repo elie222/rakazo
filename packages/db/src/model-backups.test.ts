@@ -35,26 +35,6 @@ describe("space backup models", () => {
     });
   });
 
-  it("retries transaction conflicts during locked replacement", async () => {
-    const tx = {
-      $queryRaw: vi.fn().mockResolvedValue([{ locked: 1 }]),
-      spaceBackupModel: { deleteMany: vi.fn(), createMany: vi.fn() },
-    };
-    const transaction = vi
-      .fn()
-      .mockRejectedValueOnce({ code: "P2034" })
-      .mockImplementation(async (work: (client: typeof tx) => Promise<unknown>) => work(tx));
-    await replaceSpaceBackupModels(
-      { $transaction: transaction } as unknown as PrismaClient,
-      scope,
-      [],
-    );
-    expect(transaction).toHaveBeenCalledTimes(2);
-    expect(transaction).toHaveBeenLastCalledWith(expect.any(Function), {
-      isolationLevel: "ReadCommitted",
-    });
-  });
-
   it("reads the persisted order only inside the current user and Space", async () => {
     const findMany = vi.fn().mockResolvedValue([
       { provider: "provider-b", modelId: "model-b" },

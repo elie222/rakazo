@@ -31,6 +31,8 @@ model User {
   createdAt                   DateTime                     @default(now())
   updatedAt                   DateTime                     @updatedAt
   avatarStyle                 String                       @default("organic")
+  /// IANA timezone such as "Pacific/Auckland". Null until set; bots then get UTC only.
+  timezone                    String?
   sessions                    Session[]
   accounts                    Account[]
   members                     Member[]
@@ -399,6 +401,9 @@ model Bot {
   title             String            @default("")
   description       String            @default("")
   instructions      String            @default("")
+  selfUpdateInstructions Boolean @default(false)
+  instructionHistory Json @default("[]")
+  pendingInstructionsRunId String?
   color             String
   notifyOnFinish    Boolean           @default(true)
   pinned            Boolean           @default(false)
@@ -426,6 +431,7 @@ model Bot {
   webhookSecretId   String?
   teamChatAmbientEnabled Boolean @default(false)
   teamChatRules          String  @default("")
+  fleetManagement        Boolean @default(false)
   routines          Routine[]
   scratchpadItems   ScratchpadItem[]
   taughtSkills      TaughtSkill[]
@@ -640,6 +646,8 @@ model Run {
   sourceMessage        Message?         @relation("RunSourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   routineId            String?
   routine              Routine?         @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  // The failed routine run this run retries. Unique, so a run is retried at most once.
+  retryOfRunId         String?          @unique
   startedAt            DateTime?
   completedAt          DateTime?
   botOutcomeReturnedAt DateTime?
@@ -784,6 +792,10 @@ model Routine {
   modelProvider  String?
   modelId        String?
   thinkingLevel  String?
+  /// Change trigger (RoutineWatchSchema); null when the routine does not watch anything.
+  watch          Json?
+  /// Last check's result (RoutineWatchStateSchema), written by the checker.
+  watchState     Json?
   lastRunAt      DateTime?
   nextRunAt      DateTime?
   createdAt      DateTime  @default(now())
@@ -998,6 +1010,8 @@ model Computer {
   executionLeaseExpiresAt DateTime?
   executionFence          Int                      @default(0)
   screenUrl               String?
+  /// When the computer last started running; bounds how long it can stay up in one stretch.
+  runningSince            DateTime?
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
   bots                    Bot[]

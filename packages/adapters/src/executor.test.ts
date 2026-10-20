@@ -1,5 +1,5 @@
 import type { MessageBlock } from "@rakazo/contracts";
-import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE } from "@rakazo/contracts";
+import { CLOUDFLARE_AI_GATEWAY_CONFIG_MESSAGE, FLEET_TOOL_NAMES } from "@rakazo/contracts";
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
@@ -11,8 +11,9 @@ import {
   isTerminalModelSetupError,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
-  parseUpdateBotPatch,
+  offeredFleetTools,
   persistentComputerInstruction,
+  REACTION_SILENT_REPLY_GUIDANCE,
   runNotificationsEnabled,
   selectBuiltinToolsForRun,
   settleSteeringAttachmentLoads,
@@ -24,8 +25,9 @@ import {
   voiceCallInstruction,
   withRecentTurnImages,
 } from "./executor.js";
-import { UnavailableModelForAuthError } from "./model-selection.js";
+import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
+import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 describe("bot tool permissions", () => {
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
@@ -360,6 +362,41 @@ describe("run tool selection", () => {
     );
     expect(toolNames("user")).toContain("schedule_create");
     expect(toolNames("user")).toContain("task_catalog");
+  });
+
+  it("offers fleet tools only with the switch on and only on runs the owner started", () => {
+    const fleetTools = (
+      trigger: string,
+      fleetManagement: boolean,
+      followUpFromUser = false,
+      disabledBuiltinTools?: string[],
+    ) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger,
+        semanticMemoryEnabled: false,
+        messagingChannelRun: false,
+        fleetManagement,
+        followUpFromUser,
+        disabledBuiltinTools,
+      })
+        .map((tool) => tool.name)
+        .filter((name) => (FLEET_TOOL_NAMES as readonly string[]).includes(name))
+        .sort();
+    const all = [...FLEET_TOOL_NAMES].sort();
+    expect(fleetTools("user", false)).toEqual([]);
+    expect(fleetTools("bot_message", false)).toEqual([]);
+    expect(fleetTools("user", true)).toEqual(all);
+    expect(fleetTools("call_end", true)).toEqual(all);
+    expect(fleetTools("follow_up", true, true)).toEqual(all);
+    expect(fleetTools("follow_up", true, false)).toEqual([]);
+    for (const trigger of ["bot_message", "messaging", "spawn", "tickets", "webhook", "routine"]) {
+      expect(fleetTools(trigger, true), trigger).toEqual([]);
+    }
+    expect(fleetTools("user", true, false, ["list_fleet", "create_group"])).toEqual(
+      all.filter((name) => name !== "list_fleet" && name !== "create_group"),
+    );
   });
 
   it("offers end_call on a hang-up run so it can title the call", () => {
@@ -926,7 +963,162 @@ function modelPreference({
   };
 }
 
+const COMPATIBLE_PROVIDER = "openai-compatible";
+const COMPATIBLE_BASE_URL = "http://127.0.0.1:8000/v1";
+
+function compatibleSecret(enabledModelIds?: string[]) {
+  return serializeModelSecret({
+    kind: "openai_compatible",
+    baseUrl: COMPATIBLE_BASE_URL,
+    reasoning: true,
+    ...(enabledModelIds ? { enabledModelIds } : {}),
+  });
+}
+
+// One compatible connection; `defaults` maps spaceId to that space's saved model.
+function compatiblePrismaParts(defaults: Record<string, string>, plaintext: string) {
+  const findFirst = vi.fn(
+    async (args: {
+      where: {
+        spaceId?: string;
+        modelId?: string;
+        isDefault?: boolean;
+        credential?: { provider?: string };
+      };
+    }) => {
+      const modelId = args.where.spaceId ? defaults[args.where.spaceId] : undefined;
+      if (!modelId) return null;
+      if (args.where.modelId && args.where.modelId !== modelId) return null;
+      if (args.where.credential?.provider !== COMPATIBLE_PROVIDER && !args.where.isDefault) {
+        return null;
+      }
+      return modelPreference({
+        provider: COMPATIBLE_PROVIDER,
+        secretId: "secret-compat",
+        modelId,
+        isDefault: true,
+      });
+    },
+  );
+  return {
+    spaceModelPreference: { findFirst },
+    userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+    deploymentSettings: { findUnique: vi.fn(async () => null) },
+    secret: {
+      findFirst: vi.fn(async () => ({ id: "secret-compat", ciphertext: plaintext })),
+      findUnique: vi.fn(async () => null),
+    },
+  };
+}
+
+function compatibleExecutor(
+  prisma: Record<string, unknown>,
+  plaintext: string,
+  extra: Record<string, unknown> = {},
+) {
+  return createRunExecutor({
+    prisma: prisma as unknown as PrismaClient,
+    secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+    ...extra,
+  } as unknown as Parameters<typeof createRunExecutor>[0]);
+}
+
+function pinnedRoutineRunPrisma(modelId: string) {
+  const run = {
+    id: "run-1",
+    botId: "bot-1",
+    threadId: "thread-1",
+    taskId: "task-1",
+    userId: "user-1",
+    spaceId: "ws-1",
+    status: "queued",
+    trigger: "routine",
+    routineId: "routine-1",
+    modelProvider: COMPATIBLE_PROVIDER,
+    modelId,
+    thinkingLevel: null,
+    modelPinned: true,
+    sourceMessageId: null,
+    checkpoint: null,
+    leaseFence: 0,
+  };
+  const bot = {
+    id: "bot-1",
+    name: "Assistant",
+    modelProvider: null,
+    modelId: null,
+    thinkingLevel: null,
+    memoryScope: "isolated",
+    computer: { id: "computer-1", scope: "private" },
+  };
+  return {
+    run: {
+      findUnique: vi.fn(async () => run),
+      findUniqueOrThrow: vi.fn(async () => ({ status: "leased", startedAt: null })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    bot: {
+      findUniqueOrThrow: vi.fn(async (args: { select?: { computerId?: boolean } }) =>
+        args.select?.computerId ? { computerId: "computer-1", computerSwitching: false } : bot,
+      ),
+    },
+    computer: { findUniqueOrThrow: vi.fn(async () => ({ scope: "private", state: "running" })) },
+    attempt: {
+      create: vi.fn(async () => ({ id: "attempt-1" })),
+      updateMany: vi.fn(async () => ({ count: 1 })),
+    },
+    thread: {
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: "thread-1",
+        groupId: null,
+        historyCompactionSummary: null,
+        historyCompactedUpToSeq: null,
+        historyCompactionGeneration: 0,
+      })),
+    },
+    message: { findMany: vi.fn(async () => []) },
+    task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
+    connection: { findMany: vi.fn(async () => []) },
+    taughtSkill: { findMany: vi.fn(async () => []) },
+    botSecret: { findMany: vi.fn(async () => []) },
+    agentSecret: { findMany: vi.fn(async () => []) },
+    agentSkill: { findMany: vi.fn(async () => []) },
+    scratchpadItem: { findMany: vi.fn(async () => []) },
+  };
+}
+
+async function continuePinnedRoutineRun(plaintext: string, modelId: string) {
+  const runtimeRun = vi.fn();
+  const enqueue = vi.fn(async () => undefined);
+  const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
+  const executor = compatibleExecutor(
+    {
+      ...pinnedRoutineRunPrisma(modelId),
+      ...compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
+    },
+    plaintext,
+    {
+      runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
+      memoryProviders: { resolve: vi.fn(async () => null) },
+      memory: { read: vi.fn(async () => ({ documents: [] })) },
+      events: { append: vi.fn(async () => undefined), finalizeRun },
+      jobs: { enqueue },
+      secrets: [],
+    },
+  );
+  // The fixture has no computer stack, so a run that passes model resolution
+  // stops at computer setup (requeued, not finalized).
+  await executor.continueRun("run-1", "worker-1").catch(() => undefined);
+  return { finalizeRun, runtimeRun, enqueue };
+}
+
 describe("parseUpdateBotPatch", () => {
+  it("treats a blank bot_id as omitted, as providers send it", () => {
+    expect(parseUpdateBotPatch({ name: "Scout", bot_id: "" }, "Chief")).toEqual({
+      patch: { name: "Scout" },
+    });
+  });
+
   it("accepts notifyOnFinish on its own", () => {
     expect(parseUpdateBotPatch({ notifyOnFinish: false }, "Chief")).toEqual({
       patch: { notifyOnFinish: false },
@@ -1018,7 +1210,7 @@ describe("userTurnInstructions", () => {
     "A bot and a subagent are different. Never use both for the same request.",
     "create_space proposes a new privacy boundary inside the current organization. Use it when the user asks to create a space or separate data between teams or projects. It always pauses for explicit user approval; never claim the space exists before the tool succeeds.",
     "spawn_bot creates a lasting regular bot (own chat, computer, memory) that appears in the user's bot list. If the user asked to create a bot, call spawn_bot once and stop. Do not run_subagent to demo it.",
-    "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
+    "update_bot updates this bot's own name (chat header / list label), title, description, avatar, and notifyOnFinish. Your description is the short public summary teammates see; it does not change your instructions. When the user asks you to rename yourself, change your title or description, change your profile picture, or turn finish notifications on or off, call update_bot — do not claim you changed them without the tool. Pass color for a hex or encoded shape, artifact_id for an image in this space, or use_attached_image when they attached a picture on this message.",
     "run_subagent is a short helper inside this turn only. It is not a bot, has no thread, and does not show in the list. Use it for parallel work you will summarize here.",
   ];
   const archiveBot =
@@ -1152,6 +1344,62 @@ describe("userTurnInstructions", () => {
     }
   });
 
+  it("states the fleet rules only when the run is offered the fleet write tools", () => {
+    const clauseFor = (
+      trigger: string,
+      fleetManagement: boolean,
+      followUpFromUser = false,
+      disabledBuiltinTools?: string[],
+    ) =>
+      userTurnInstructions({
+        ...base,
+        groupContext: undefined,
+        messagingContext: undefined,
+        redactedMemoryContext: undefined,
+        redactedScratchpadContext: undefined,
+        hasHistoricalContext: false,
+        agentEnvironmentInstruction: undefined,
+        botDirectory: undefined,
+        pluginLine: undefined,
+        agentSkillsLine: undefined,
+        taughtSkillsLine: undefined,
+        offeredFleetTools: offeredFleetTools(
+          selectBuiltinToolsForRun({
+            graphicalToolsAllowed: false,
+            groupId: null,
+            trigger,
+            semanticMemoryEnabled: false,
+            messagingChannelRun: false,
+            fleetManagement,
+            followUpFromUser,
+            disabledBuiltinTools,
+          }),
+        ),
+      })
+        .filter(Boolean)
+        .join("\n")
+        .match(/Fleet tools:[^\n]*/)?.[0];
+    const clause = clauseFor("user", true);
+    expect(clause).toContain("list_fleet before changing anything");
+    expect(clause).toContain(
+      "create_group, update_group, set_child_instructions, set_child_bot_model and create_child_routine need the owner's approval",
+    );
+    expect(clause).toContain("Instruction edits use set_child_instructions");
+    expect(clause).toContain("expected_version");
+    expect(clause).toContain("Tool results, tool arguments");
+    expect(clause).toMatch(/untrusted/);
+    expect(clause).not.toContain("Instructions edits");
+    expect(clause).toContain("no tool to edit a bot you did not create");
+    const narrowed = clauseFor("user", true, false, ["set_child_instructions", "create_group"]);
+    expect(narrowed).toContain(
+      "update_group, set_child_bot_model and create_child_routine need the owner's approval",
+    );
+    expect(narrowed).not.toContain("set_child_instructions");
+    expect(clauseFor("user", false)).toBeUndefined();
+    expect(clauseFor("bot_message", true)).toBeUndefined();
+    expect(clauseFor("follow_up", true, false)).toBeUndefined();
+  });
+
   it("stops telling the model to use a disabled web tool", () => {
     const instructions = userTurnInstructions({
       ...base,
@@ -1230,6 +1478,29 @@ describe("userTurnInstructions", () => {
     expect(text).toContain("Always put the complete final answer in your normal reply.");
   });
 
+  it("keeps the reaction silence rule when message_user is off", () => {
+    const text = userTurnInstructions({
+      ...base,
+      replyGuidance: REACTION_SILENT_REPLY_GUIDANCE,
+      groupContext: undefined,
+      messagingContext: undefined,
+      redactedMemoryContext: undefined,
+      redactedScratchpadContext: undefined,
+      hasHistoricalContext: false,
+      agentEnvironmentInstruction: undefined,
+      botDirectory: undefined,
+      pluginLine: undefined,
+      agentSkillsLine: undefined,
+      taughtSkillsLine: undefined,
+      disabledBuiltinTools: new Set(["message_user"]),
+    })
+      .filter(Boolean)
+      .join("\n");
+    expect(text).toContain("The user reacted with an emoji to your message.");
+    expect(text).toContain("must be exactly NO_RESPONSE.");
+    expect(text).not.toContain("message_user");
+  });
+
   it("keeps the credential safeguard when secret tools are off and shell stays on", () => {
     const instructions = userTurnInstructions({
       ...base,
@@ -1293,6 +1564,10 @@ describe("dockerComputerToolInstruction", () => {
   it("documents rootless Python tool installation only for Docker images", () => {
     expect(dockerComputerToolInstruction("docker")).toContain("uv tool install <package>");
     expect(dockerComputerToolInstruction("docker")).toContain("without sudo");
+    expect(dockerComputerToolInstruction("docker")).toContain("`python3 -c`");
+    expect(dockerComputerToolInstruction("docker", new Set(["shell"]))).not.toContain(
+      "`python3 -c`",
+    );
     expect(dockerComputerToolInstruction("desktop")).toBeUndefined();
     expect(dockerComputerToolInstruction("e2b")).toBeUndefined();
   });
@@ -1459,6 +1734,25 @@ describe("createRunExecutor", () => {
       historyCompactedUpToSeq: null,
       includeSemanticRecall: false,
     });
+  });
+
+  it("keeps the current reaction out of history because its target is supplied in the prompt", () => {
+    const messages = [
+      { id: "parent", role: "assistant", content: "Proceed?" },
+      {
+        id: "reaction",
+        role: "user",
+        content: "User reacted with 👍 to <reaction_target>Proceed?</reaction_target>",
+      },
+    ];
+    expect(
+      threadContextForRun(
+        "reaction",
+        { messages, summary: null, historyCompactedUpToSeq: null },
+        false,
+        "reaction",
+      ).messages,
+    ).toEqual([messages[0]]);
   });
 
   it("isolates routine runs from every thread-history source", () => {
@@ -2381,7 +2675,7 @@ bots: [Chief]
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
       connection: { findMany: vi.fn(async () => []) },
       spaceModelPreference: { findFirst: vi.fn(async () => null) },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       taughtSkill: { findMany: vi.fn(async () => []) },
       agentSecret: { findMany: vi.fn(async () => []) },
@@ -2487,7 +2781,7 @@ bots: [Chief]
             : null,
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       taughtSkill: { findMany: vi.fn(async () => []) },
       botSecret: { findMany: vi.fn(async () => []) },
@@ -2550,7 +2844,7 @@ bots: [Chief]
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
@@ -2593,7 +2887,7 @@ bots: [Chief]
     );
     const prisma = {
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
     const executor = createRunExecutor({
@@ -2620,7 +2914,7 @@ bots: [Chief]
     );
   });
 
-  it("rejects a free-form selection when the owning preference disappears", async () => {
+  it("rejects a free-form selection when the owning preference disappears on a listed connection", async () => {
     const preference = modelPreference({
       provider: "openai-compatible",
       secretId: "secret-compat",
@@ -2640,14 +2934,18 @@ bots: [Chief]
         return null;
       },
     );
+    const plaintext = compatibleSecret(["newest-model"]);
     const prisma = {
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
-      secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
+      secret: {
+        findFirst: vi.fn(async () => ({ id: "secret-compat", ciphertext: plaintext })),
+        findUnique: vi.fn(async () => null),
+      },
     } as unknown as PrismaClient;
     const executor = createRunExecutor({
       prisma,
-      secretStore: { load: vi.fn(), put: vi.fn() },
+      secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
     } as unknown as Parameters<typeof createRunExecutor>[0]);
 
     await expect(
@@ -2657,6 +2955,226 @@ bots: [Chief]
         "private-model",
       ),
     ).rejects.toThrow("Unknown model for that provider");
+  });
+
+  it("rejects a compatible lookup if its secret disappears after validation", async () => {
+    const plaintext = compatibleSecret(["second-model"]);
+    const prisma = compatiblePrismaParts({ "ws-1": "space-model" }, plaintext);
+    prisma.secret.findFirst.mockResolvedValueOnce({ id: "secret-compat", ciphertext: plaintext });
+    prisma.secret.findFirst.mockResolvedValueOnce(null as never);
+    const executor = compatibleExecutor(prisma, plaintext);
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-1" },
+        COMPATIBLE_PROVIDER,
+        "second-model",
+      ),
+    ).rejects.toThrow("Unknown model for that provider");
+  });
+
+  it.each([false, true])(
+    "uses the connection enabling the offered model (preferred also enables: %s)",
+    async (shared) => {
+      const scope = { userId: "user-1", spaceId: "ws-1" };
+      const preference = {
+        ...modelPreference({
+          provider: COMPATIBLE_PROVIDER,
+          secretId: "preferred",
+          modelId: "space-model",
+          isDefault: true,
+        }),
+        updatedAt: new Date("2026-08-30"),
+        thinkingLevel: null,
+      };
+      const alternate = { ...preference.credential, id: "alternate", secretId: "alternate" };
+      const secrets = {
+        preferred: serializeModelSecret({
+          kind: "openai_compatible",
+          baseUrl: "https://preferred.example/v1",
+          apiKey: "fake-preferred",
+          enabledModelIds: shared ? ["second-model"] : ["space-model"],
+        }),
+        alternate: serializeModelSecret({
+          kind: "openai_compatible",
+          baseUrl: "https://alternate.example/v1",
+          apiKey: "fake-alternate",
+          enabledModelIds: ["second-model"],
+          reasoning: true,
+        }),
+      };
+      const prisma = {
+        spaceModelPreference: {
+          findMany: vi.fn(async () => [preference]),
+          findFirst: vi.fn(async () => null),
+        },
+        userModelCredential: { findMany: vi.fn(async () => [alternate, preference.credential]) },
+        secret: {
+          findFirst: vi.fn(async ({ where }: { where: { id: keyof typeof secrets } }) => ({
+            id: where.id,
+            ciphertext: secrets[where.id],
+          })),
+        },
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: COMPATIBLE_PROVIDER,
+            modelId: "second-model",
+            thinkingLevel: null,
+          })),
+        },
+        deploymentSettings: { findUnique: vi.fn(async () => null) },
+      };
+      const secretStore = { load: vi.fn(async (value: string) => value), put: vi.fn() };
+      const executor = createRunExecutor({ prisma, secretStore } as unknown as Parameters<
+        typeof createRunExecutor
+      >[0]);
+      await expect(
+        validateConnectedModelChoice(
+          prisma as unknown as PrismaClient,
+          secretStore,
+          scope,
+          COMPATIBLE_PROVIDER,
+          "second-model",
+        ),
+      ).resolves.toBeUndefined();
+      const expected = {
+        id: "second-model",
+        baseUrl: shared ? "https://preferred.example/v1" : "https://alternate.example/v1",
+        apiKey: shared ? "fake-preferred" : "fake-alternate",
+      };
+      await expect(
+        executor.resolveConnectedModel(scope, COMPATIBLE_PROVIDER, "second-model"),
+      ).resolves.toMatchObject(expected);
+      await expect(executor.resolveModel({ ...scope, botId: "bot-1" })).resolves.toMatchObject(
+        expected,
+      );
+    },
+  );
+
+  it("resolves a helper model enabled only in the connection's list", async () => {
+    const plaintext = compatibleSecret(["space-model", "second-model"]);
+    const executor = compatibleExecutor(
+      compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
+      plaintext,
+    );
+
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-1" },
+        COMPATIBLE_PROVIDER,
+        "second-model",
+      ),
+    ).resolves.toMatchObject({
+      provider: COMPATIBLE_PROVIDER,
+      id: "second-model",
+      baseUrl: COMPATIBLE_BASE_URL,
+      reasoning: true,
+    });
+  });
+
+  it.each([
+    ["a model missing from the enabled list", compatibleSecret(["space-model", "second-model"])],
+  ])("fails a pinned routine run on %s before the model call", async (_case, plaintext) => {
+    const { finalizeRun, runtimeRun, enqueue } = await continuePinnedRoutineRun(
+      plaintext,
+      "removed-model",
+    );
+
+    expect(finalizeRun).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "failed", error: "Unknown model for that provider" }),
+    );
+    expect(runtimeRun).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([compatibleSecret(["space-model", "second-model"]), compatibleSecret()])(
+    "lets a pinned routine use a non-default model on a listed or legacy connection",
+    async (plaintext) => {
+      const { finalizeRun } = await continuePinnedRoutineRun(plaintext, "second-model");
+
+      expect(finalizeRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it("resolves a legacy-secret bot pinned on a non-default model, as before lists", async () => {
+    const plaintext = compatibleSecret();
+    const executor = compatibleExecutor(
+      {
+        ...compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: COMPATIBLE_PROVIDER,
+            modelId: "other-model",
+            thinkingLevel: null,
+          })),
+        },
+      },
+      plaintext,
+    );
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({ id: "other-model", baseUrl: COMPATIBLE_BASE_URL });
+  });
+
+  it("keeps another space's default effective after a list was saved elsewhere", async () => {
+    // Legacy secret, space B saved Y, then space A connected with the list [X].
+    const plaintext = compatibleSecret(["model-x"]);
+    const executor = compatibleExecutor(
+      compatiblePrismaParts({ "ws-a": "model-x", "ws-b": "model-y" }, plaintext),
+      plaintext,
+    );
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-b" }),
+    ).resolves.toMatchObject({
+      provider: COMPATIBLE_PROVIDER,
+      id: "model-y",
+      baseUrl: COMPATIBLE_BASE_URL,
+    });
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-b" },
+        COMPATIBLE_PROVIDER,
+        "model-y",
+      ),
+    ).resolves.toMatchObject({ id: "model-y" });
+  });
+
+  it("rejects a catalog placeholder outside the enabled list", async () => {
+    const plaintext = compatibleSecret(["space-model"]);
+    const executor = compatibleExecutor(
+      compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
+      plaintext,
+    );
+
+    await expect(
+      executor.resolveConnectedModel(
+        { userId: "user-1", spaceId: "ws-1" },
+        COMPATIBLE_PROVIDER,
+        "custom",
+      ),
+    ).rejects.toThrow("Unknown model for that provider");
+  });
+
+  it("keeps a bot's thinking level on a non-default enabled model", async () => {
+    const plaintext = compatibleSecret(["space-model", "second-model"]);
+    const executor = compatibleExecutor(
+      {
+        ...compatiblePrismaParts({ "ws-1": "space-model" }, plaintext),
+        bot: {
+          findFirst: vi.fn(async () => ({
+            modelProvider: COMPATIBLE_PROVIDER,
+            modelId: "second-model",
+            thinkingLevel: "low",
+          })),
+        },
+      },
+      plaintext,
+    );
+
+    await expect(
+      executor.resolveModel({ userId: "user-1", spaceId: "ws-1", botId: "bot-1" }),
+    ).resolves.toMatchObject({ id: "second-model", thinkingLevel: "low", reasoning: true });
   });
 
   it("rejects a saved Codex Spark model for ChatGPT subscription sign-in", async () => {
@@ -2686,7 +3204,7 @@ bots: [Chief]
           }),
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
@@ -2731,7 +3249,7 @@ bots: [Chief]
           }),
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
@@ -2795,7 +3313,7 @@ bots: [Chief]
           }),
         ),
       },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-codex", ciphertext: plaintext })),
@@ -2837,7 +3355,7 @@ bots: [Chief]
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({ id: "secret-scripted", ciphertext: plaintext })),
@@ -2889,7 +3407,7 @@ bots: [Chief]
     const prisma = {
       bot: { findFirst: vi.fn(async () => bot) },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: {
         findFirst: vi.fn(async () => ({
@@ -2949,7 +3467,7 @@ bots: [Chief]
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
@@ -2988,7 +3506,7 @@ bots: [Chief]
     const prisma = {
       bot: { findFirst: vi.fn(async () => null) },
       spaceModelPreference: { findFirst: vi.fn(async () => null) },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: {
         findUnique: vi.fn(async () => ({
           defaultModelProvider: "anthropic",
@@ -3030,7 +3548,7 @@ bots: [Chief]
         })),
       },
       spaceModelPreference: { findFirst },
-      userModelCredential: { findFirst: vi.fn(async () => null) },
+      userModelCredential: { findMany: vi.fn(async () => []), findFirst: vi.fn(async () => null) },
       deploymentSettings: { findUnique: vi.fn(async () => null) },
       secret: { findFirst: vi.fn(async () => null), findUnique: vi.fn(async () => null) },
     } as unknown as PrismaClient;
@@ -3106,5 +3624,27 @@ describe("ticket board tool capability", () => {
     }).map((tool) => tool.name);
     for (const name of ["message_bot", "handoff_to_bot", "message_agent"])
       expect(backgroundNames).not.toContain(name);
+  });
+});
+
+describe("call_user availability", () => {
+  const options = {
+    graphicalToolsAllowed: false,
+    groupId: null,
+    trigger: "user_message",
+    semanticMemoryEnabled: false,
+    messagingChannelRun: false,
+    phoneCallsEnabled: true,
+  };
+  const offered = (patch = {}) =>
+    selectBuiltinToolsForRun({ ...options, ...patch }).some((tool) => tool.name === "call_user");
+  it("requires the server flag and a private non-ticket turn", () => {
+    expect(offered()).toBe(true);
+    expect(offered({ phoneCallsEnabled: false })).toBe(false);
+    expect(offered({ phoneCallsEnabled: undefined })).toBe(false);
+    expect(offered({ groupId: "group-1" })).toBe(false);
+    expect(offered({ messagingChannelRun: true })).toBe(false);
+    expect(offered({ trigger: "tickets" })).toBe(false);
+    expect(offered({ voiceCall: true })).toBe(false);
   });
 });

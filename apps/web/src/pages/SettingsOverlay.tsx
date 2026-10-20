@@ -9,12 +9,18 @@ import {
   Gauge,
   Monitor,
   Settings,
+  ShieldCheck,
   Volume2,
   XIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApprovalRulesSettings } from "../components/ApprovalRulesSettings";
 import { computersAreUnavailable } from "../components/ComputersUnavailableHint";
+import { ListboxSelect } from "../components/ListboxSelect";
+import { rpcForSpace } from "../lib/rpc";
+import { SpaceRpcProvider } from "../lib/space-rpc";
+import { errorText } from "../lib/user-error";
 import {
   ComputerSettingsPanel,
   GeneralSettingsPanels,
@@ -31,10 +37,19 @@ export type SettingsSection =
   | "models"
   | "memory"
   | "voice"
+  | "confirmations"
   | "usage"
   | "computer"
   | "billing"
   | "updates";
+
+/** Sections whose settings belong to a space; only these show the space picker. */
+const SPACE_SECTIONS: ReadonlySet<SettingsSection> = new Set([
+  "models",
+  "memory",
+  "voice",
+  "confirmations",
+]);
 
 type NavItem = {
   id: SettingsSection;
@@ -43,6 +58,10 @@ type NavItem = {
 };
 
 export function SettingsOverlay({
+  space,
+  spaces = [],
+  currentSpaceId,
+  onSpaceChange,
   email,
   name,
   usage,
@@ -50,6 +69,8 @@ export function SettingsOverlay({
   initialSection = "general",
   avatarStyle,
   onAvatarStyleChange,
+  timezone,
+  onTimezoneChange,
   isDeploymentOwner = false,
   billingEnabled = false,
   sandboxProvider,
@@ -61,6 +82,12 @@ export function SettingsOverlay({
   onClose,
   onVoiceStatusMaybeChanged,
 }: {
+  /** The space the per-space sections act on; it need not be the selected space. */
+  space?: { id: string; name: string } | null;
+  spaces?: { id: string; name: string }[];
+  /** The space the app is showing; its memory config comes from the shell. */
+  currentSpaceId?: string | null;
+  onSpaceChange?: (spaceId: string) => void;
   email?: string | null;
   name: string;
   usage?: {
@@ -73,6 +100,8 @@ export function SettingsOverlay({
   initialSection?: SettingsSection;
   avatarStyle: AvatarStyle;
   onAvatarStyleChange: (style: AvatarStyle) => Promise<void>;
+  timezone: string | null;
+  onTimezoneChange: (timezone: string) => Promise<void>;
   isDeploymentOwner?: boolean;
   billingEnabled?: boolean;
   sandboxProvider?: string | null;
@@ -95,6 +124,42 @@ export function SettingsOverlay({
   const showComputer =
     keepComputerRecovery || (isDeploymentOwner && computersAreUnavailable(sandboxProvider));
   const panelBusy = memoryBusy || voiceBusy;
+  const spaceScoped = SPACE_SECTIONS.has(section);
+  const spaceId = spaceScoped ? (space?.id ?? null) : null;
+  // The shell only holds the selected space's memory config; another space's loads here.
+  const otherSpace = Boolean(spaceId && currentSpaceId && spaceId !== currentSpaceId);
+  // Kept with the space it was loaded for, so a switch never shows the previous space's config.
+  const [otherMemory, setOtherMemory] = useState<
+    { spaceId: string } & (
+      | { config: SpaceMemoryConfig | null; error?: never }
+      | { config?: never; error: string }
+    )
+  >();
+  const [memoryLoadAttempt, setMemoryLoadAttempt] = useState(0);
+  const otherMemoryError = otherMemory?.spaceId === spaceId ? otherMemory.error : undefined;
+  const otherMemoryConfig = otherMemory?.spaceId === spaceId ? otherMemory.config : undefined;
+  const setOtherMemoryConfig = useCallback(
+    (config: SpaceMemoryConfig | null) => {
+      if (spaceId) setOtherMemory({ spaceId, config });
+    },
+    [spaceId],
+  );
+  useEffect(() => {
+    if (section !== "memory" || !otherSpace || !spaceId) return;
+    let cancelled = false;
+    setOtherMemory(undefined);
+    rpcForSpace(spaceId)
+      .memory.providerConfig()
+      .then((config) => {
+        if (!cancelled) setOtherMemory({ spaceId, config });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setOtherMemory({ spaceId, error: errorText(err) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [section, otherSpace, spaceId, memoryLoadAttempt]);
   const releaseComputerRecovery = useCallback(() => {
     window.clearTimeout(recoveryHoldTimer.current);
     recoveryHoldTimer.current = undefined;
@@ -138,6 +203,7 @@ export function SettingsOverlay({
     { id: "models", label: t`Models`, icon: Cpu },
     { id: "memory", label: t`Memory`, icon: Brain },
     { id: "voice", label: t`Voice`, icon: Volume2 },
+    { id: "confirmations", label: t`Confirmations`, icon: ShieldCheck },
     { id: "usage", label: t`Usage`, icon: Gauge },
     ...(showComputer ? [{ id: "computer" as const, label: t`Computer`, icon: Monitor }] : []),
     ...(billingEnabled ? [{ id: "billing" as const, label: t`Billing`, icon: CreditCard }] : []),
@@ -170,8 +236,6 @@ export function SettingsOverlay({
     leaveSettings(onClose);
   }
 
-  const widePane = section === "models" || section === "voice";
-
   return (
     <Dialog
       open
@@ -192,11 +256,7 @@ export function SettingsOverlay({
         initialFocus={() =>
           section === "usage" ? (usageRef.current ?? panelRef.current) : panelRef.current
         }
-        className={`flex max-h-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[calc(100%-5rem)] ${
-          widePane
-            ? "h-[min(760px,calc(100%-2rem))] w-[min(1080px,calc(100%-2rem))] sm:max-w-[1080px]"
-            : "h-[min(720px,calc(100%-2rem))] w-[min(920px,calc(100%-2rem))] sm:max-w-[920px]"
-        }`}
+        className="flex h-[min(760px,calc(100%-2rem))] max-h-[calc(100%-2rem)] w-[min(1080px,calc(100%-2rem))] flex-col gap-0 overflow-hidden rounded-2xl p-0 sm:max-h-[calc(100%-5rem)] sm:max-w-[1080px]"
       >
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <nav
@@ -230,9 +290,28 @@ export function SettingsOverlay({
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex items-start justify-between gap-4 px-6 pt-6 sm:px-8 sm:pt-7">
-              <DialogTitle className="text-2xl font-medium text-foreground">
-                {sectionTitle}
-              </DialogTitle>
+              <div className="flex min-w-0 flex-col gap-2">
+                <DialogTitle className="text-2xl font-medium text-foreground">
+                  {sectionTitle}
+                </DialogTitle>
+                {!spaceScoped ? null : space && spaces.length > 1 && onSpaceChange ? (
+                  <ListboxSelect
+                    className="w-56"
+                    testId="settings-space"
+                    label={t`Space`}
+                    options={spaces.map((option) => ({ value: option.id, label: option.name }))}
+                    value={space.id}
+                    disabled={panelBusy}
+                    onChange={(next) => {
+                      if (next !== space.id) leaveSettings(() => onSpaceChange(next));
+                    }}
+                  />
+                ) : space ? (
+                  <p data-testid="settings-space" className="text-sm text-muted-foreground">
+                    {space.name}
+                  </p>
+                ) : null}
+              </div>
               <DialogClose
                 aria-label={closeLabel}
                 disabled={panelBusy}
@@ -242,59 +321,79 @@ export function SettingsOverlay({
               </DialogClose>
             </div>
 
-            <div
-              className={`min-h-0 flex-1 ${
-                section === "models" || section === "voice" || section === "memory"
-                  ? "flex flex-col overflow-hidden"
-                  : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-5 sm:px-8 sm:pb-8"
-              }`}
-            >
-              {section === "general" ? (
-                <GeneralSettingsPanels
-                  email={email}
-                  name={name}
-                  avatarStyle={avatarStyle}
-                  onAvatarStyleChange={onAvatarStyleChange}
-                  messagingEnabled={messagingEnabled}
-                  onOpenMessaging={
-                    onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
-                  }
-                  isDeploymentOwner={isDeploymentOwner}
-                />
-              ) : null}
-              {section === "usage" ? (
-                <UsageSettingsPanel usage={usage} panelRef={usageRef} />
-              ) : null}
-              {section === "computer" && showComputer ? (
-                <ComputerSettingsPanel
-                  sandboxProvider={sandboxProvider}
-                  onSandboxProviderChange={(next) => {
-                    onSandboxProviderChange?.(next);
-                    holdComputerRecovery();
-                  }}
-                  onRecoveryDismissed={releaseComputerRecovery}
-                />
-              ) : null}
-              {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
-              {section === "updates" ? (
-                <UpdatesSettingsPanel isDeploymentOwner={isDeploymentOwner} />
-              ) : null}
-              {section === "models" ? (
-                <ModelSettingsOverlay embedded onClose={requestClose} />
-              ) : null}
-              {section === "memory" ? (
-                <MemorySettingsOverlay
-                  embedded
-                  onClose={requestClose}
-                  config={memoryConfig}
-                  onConfigChange={onMemoryConfigChange}
-                  onBusyChange={setMemoryBusy}
-                />
-              ) : null}
-              {section === "voice" ? (
-                <VoiceSettingsOverlay embedded onClose={requestClose} onBusyChange={setVoiceBusy} />
-              ) : null}
-            </div>
+            <SpaceRpcProvider spaceId={spaceId}>
+              <div
+                key={spaceId ?? "selected"}
+                className={`min-h-0 flex-1 ${
+                  section === "models" || section === "voice" || section === "memory"
+                    ? "flex flex-col overflow-hidden"
+                    : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-5 sm:px-8 sm:pb-8"
+                }`}
+              >
+                {section === "general" ? (
+                  <GeneralSettingsPanels
+                    email={email}
+                    name={name}
+                    avatarStyle={avatarStyle}
+                    onAvatarStyleChange={onAvatarStyleChange}
+                    timezone={timezone}
+                    onTimezoneChange={onTimezoneChange}
+                    messagingEnabled={messagingEnabled}
+                    onOpenMessaging={
+                      onOpenMessaging ? () => leaveSettings(onOpenMessaging) : undefined
+                    }
+                    isDeploymentOwner={isDeploymentOwner}
+                  />
+                ) : null}
+                {section === "confirmations" ? <ApprovalRulesSettings /> : null}
+                {section === "usage" ? (
+                  <UsageSettingsPanel usage={usage} panelRef={usageRef} />
+                ) : null}
+                {section === "computer" && showComputer ? (
+                  <ComputerSettingsPanel
+                    sandboxProvider={sandboxProvider}
+                    onSandboxProviderChange={(next) => {
+                      onSandboxProviderChange?.(next);
+                      holdComputerRecovery();
+                    }}
+                    onRecoveryDismissed={releaseComputerRecovery}
+                  />
+                ) : null}
+                {section === "billing" && billingEnabled ? <BillingSettingsPanel /> : null}
+                {section === "updates" ? (
+                  <UpdatesSettingsPanel isDeploymentOwner={isDeploymentOwner} />
+                ) : null}
+                {section === "models" ? (
+                  <ModelSettingsOverlay embedded onClose={requestClose} />
+                ) : null}
+                {section === "memory" && otherSpace && otherMemoryError ? (
+                  <div className="px-6 py-6 sm:px-8">
+                    <p className="mb-4 text-sm text-destructive">{otherMemoryError}</p>
+                    <Button
+                      variant="outline"
+                      onClick={() => setMemoryLoadAttempt((attempt) => attempt + 1)}
+                    >
+                      {t`Retry`}
+                    </Button>
+                  </div>
+                ) : section === "memory" ? (
+                  <MemorySettingsOverlay
+                    embedded
+                    onClose={requestClose}
+                    config={otherSpace ? otherMemoryConfig : memoryConfig}
+                    onConfigChange={otherSpace ? setOtherMemoryConfig : onMemoryConfigChange}
+                    onBusyChange={setMemoryBusy}
+                  />
+                ) : null}
+                {section === "voice" ? (
+                  <VoiceSettingsOverlay
+                    embedded
+                    onClose={requestClose}
+                    onBusyChange={setVoiceBusy}
+                  />
+                ) : null}
+              </div>
+            </SpaceRpcProvider>
           </div>
         </div>
       </DialogContent>

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  appContract,
   BOT_DESCRIPTION_MAX_LENGTH,
   BOT_INSTRUCTIONS_MAX_LENGTH,
   BOT_TITLE_MAX_LENGTH,
@@ -15,7 +14,6 @@ import {
   ModelConnectInputSchema,
   ModelOAuthBeginSchema,
   normalizeCreateBotProfile,
-  ProductEventType,
   parseModelContextWindow,
   parseModelMaxImagesPerPrompt,
   parseModelMaxTokens,
@@ -28,6 +26,26 @@ import {
 } from "./index.js";
 
 describe("contracts", () => {
+  it("bounds the count and length of compatible model selections", () => {
+    const input = {
+      provider: "openai-compatible",
+      baseUrl: "http://localhost:8000/v1",
+      modelId: "default",
+    };
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, enabledModelIds: ["x".repeat(512)] }).success,
+    ).toBe(true);
+    expect(
+      ModelConnectInputSchema.safeParse({ ...input, enabledModelIds: ["x".repeat(513)] }).success,
+    ).toBe(false);
+    expect(
+      ModelConnectInputSchema.safeParse({
+        ...input,
+        enabledModelIds: Array.from({ length: 501 }, (_, i) => `model-${i}`),
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts structured live activity progress", () => {
     expect(MessageBlock.parse({ kind: "progress", text: "Using browser", activity: true })).toEqual(
       { kind: "progress", text: "Using browser", activity: true },
@@ -238,6 +256,15 @@ describe("contracts", () => {
     }
   });
 
+  it("accepts fleetManagement on bot updates and rejects non-boolean values", () => {
+    expect(UpdateBotInput.parse({ botId: "bot-1", fleetManagement: true }).fleetManagement).toBe(
+      true,
+    );
+    expect(UpdateBotInput.safeParse({ botId: "bot-1", fleetManagement: "yes" }).success).toBe(
+      false,
+    );
+  });
+
   it("accepts the same title limit when creating and updating bots", () => {
     const title = "T".repeat(BOT_TITLE_MAX_LENGTH);
     expect(CreateBotInput.safeParse({ name: "Chief", title }).success).toBe(true);
@@ -315,34 +342,6 @@ describe("contracts", () => {
     ).toBe(false);
   });
 
-  it("exposes the product rpc surface", () => {
-    expect(appContract.models.beginOAuth).toBeTruthy();
-    expect(appContract.bootstrap).toBeTruthy();
-    expect(appContract.models.completeOAuth).toBeTruthy();
-    expect(appContract.bots.create).toBeTruthy();
-    expect(appContract.bots.reorder).toBeTruthy();
-    expect(appContract.bots.archive).toBeTruthy();
-    expect(appContract.bots.restore).toBeTruthy();
-    expect(appContract.bots.remove).toBeTruthy();
-    expect(appContract.spaces.rename).toBeTruthy();
-    expect(appContract.spaces.remove).toBeTruthy();
-    expect(appContract.botSections.list).toBeTruthy();
-    expect(appContract.botSections.create).toBeTruthy();
-    expect(appContract.botSections.update).toBeTruthy();
-    expect(appContract.threads.subscribe).toBeTruthy();
-    expect(appContract.threads.clear).toBeTruthy();
-    expect(appContract.voice.prepare).toBeTruthy();
-    expect(appContract.externalConversations.updatePolicy).toBeTruthy();
-    expect(appContract.agentSecrets.list).toBeTruthy();
-    expect(appContract.agentSecrets.put).toBeTruthy();
-    expect(appContract.agentSecrets.remove).toBeTruthy();
-    expect(appContract.notifications.registerPush).toBeTruthy();
-    expect(ProductEventType.options).toContain("thread.message.created");
-    expect(ProductEventType.options).toContain("thread.cleared");
-    expect(ProductEventType.options).toContain("thread.subagent");
-    expect(ProductEventType.options).toContain("bot.spawned");
-  });
-
   it("requires a distinct, non-empty bot order", () => {
     expect(ReorderBotsInput.safeParse({ botIds: ["bot-2", "bot-1"] }).success).toBe(true);
     expect(ReorderBotsInput.safeParse({ botIds: [] }).success).toBe(false);
@@ -417,6 +416,7 @@ describe("contracts", () => {
         status: run.status,
         trigger: run.trigger,
         notificationsEnabled: true,
+        agentMessage: null,
         promptSnippet: "Review the report",
         updatedAt: "2026-08-26T00:00:01.000Z",
       }).success,

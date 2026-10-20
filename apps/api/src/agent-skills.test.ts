@@ -1,8 +1,8 @@
 import type { Actor } from "@rakazo/contracts";
-import { buildSkillMd } from "@rakazo/core";
+import { buildSkillMd, parseSkillMd } from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
-import { createAgentSkillsService } from "./agent-skills.js";
+import { createAgentSkillsService, resolveSkillContent } from "./agent-skills.js";
 
 const actor: Actor = {
   spaceId: "space-1",
@@ -134,4 +134,36 @@ describe("built-in skill precedence in the API", () => {
       await expect(service.get(actor, { skillId: "saved-1" })).rejects.toThrow();
     },
   );
+});
+
+describe("imported skill content in the API", () => {
+  it("keeps multiline keep-chomp metadata editable after normalization", async () => {
+    const imported = resolveSkillContent({
+      content: `---
+name: Release notes
+description: Prepare release notes
+notes: |+
+  First step
+  Second step
+
+---
+
+Write the notes.
+`,
+    });
+    const { service } = setup([{ ...savedSkill(imported.name), ...imported }]);
+
+    const updated = await service.update(actor, {
+      skillId: "saved-1",
+      description: "Prepare weekly release notes",
+      body: "Write the weekly notes.",
+    });
+
+    const parsed = parseSkillMd(updated.content);
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.name).toBe("Release notes");
+    expect(parsed.description).toBe("Prepare weekly release notes");
+    expect(parsed.body).toBe("Write the weekly notes.");
+    expect(parsed.frontmatter.notes).toBe("First step\nSecond step\n\n");
+  });
 });

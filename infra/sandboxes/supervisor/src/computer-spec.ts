@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import path from "node:path";
 import { MAX_DESKTOP_DISPLAY, screenPorts } from "@rakazo/core/node/desktop-runtime";
 import type Docker from "dockerode";
@@ -170,6 +171,32 @@ export function resolveComputerEgressMode(
 }
 
 /**
+ * DNS servers for computers, from SANDBOX_COMPUTER_DNS (comma-separated IP addresses).
+ * Unset keeps Docker's default: a computer on its own network asks Docker's embedded
+ * resolver, which forwards to the host's resolvers from inside the computer's network.
+ * Restricted egress drops that forward when the host's resolver has a private address
+ * (a cloud VPC resolver, a LAN router), so every name lookup times out; servers set here
+ * replace the host's as the forward target, and public ones stay reachable.
+ */
+export function resolveComputerDns(value = process.env.SANDBOX_COMPUTER_DNS): string[] | undefined {
+  const servers = (value ?? "")
+    .split(",")
+    .map((server) => server.trim())
+    .filter(Boolean);
+  if (servers.length === 0) return undefined;
+  const invalid = servers.find((server) => isIP(server) === 0);
+  if (invalid) throw new Error(`Unsupported SANDBOX_COMPUTER_DNS server: ${invalid}`);
+  return servers;
+}
+
+/** Whether a container's DNS servers are the ones configured (none configured: none set). */
+export function computerDnsMatches(current: string[] | null | undefined, desired?: string[]) {
+  const have = current ?? [];
+  const want = desired ?? [];
+  return have.length === want.length && have.every((server, index) => server === want[index]);
+}
+
+/**
  * Host bridge interface name for a computer network. Linux caps interface names
  * at 15 bytes (IFNAMSIZ), so "rakazo-c" gets a 7-hex-char suffix derived from the
  * same digest as the network name — deterministic across recreate, unique per bot.
@@ -307,6 +334,7 @@ export interface ComputerCreateInput {
   controlToken?: string;
   networkMode?: string;
   publishControlPort?: boolean;
+  dns?: string[];
 }
 
 interface PointerInput {
@@ -369,6 +397,7 @@ export function containerCreateOptions(input: ComputerCreateInput) {
       ReadonlyPaths: ["/usr/share/novnc"],
       AutoRemove: false,
       NetworkMode: input.networkMode ?? "bridge",
+      ...(input.dns ? { Dns: input.dns } : {}),
     },
     WorkingDir: "/home/rakazo",
   };

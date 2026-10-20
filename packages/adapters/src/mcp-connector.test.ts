@@ -51,7 +51,12 @@ function mcpFetch(
     failNext: boolean;
     initializations: number;
     headers?: Record<string, string>[];
-    tools?: Array<{ name: string; description?: string; inputSchema: Record<string, unknown> }>;
+    tools?: Array<{
+      name: string;
+      description?: string;
+      inputSchema: Record<string, unknown>;
+      annotations?: { readOnlyHint?: boolean };
+    }>;
     calls?: string[];
   },
   expectedUrl = "https://mcp.example.test/mcp",
@@ -1217,4 +1222,35 @@ describe("allowlistDrift", () => {
       stringAllowedCount: 1,
     });
   });
+});
+
+it("preserves explicit MCP read-only annotations for unattended consumers", async () => {
+  const state = {
+    failNext: false,
+    initializations: 0,
+    tools: [
+      { name: "read", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } },
+      { name: "write", inputSchema: { type: "object" }, annotations: { readOnlyHint: false } },
+      { name: "unknown", inputSchema: { type: "object" } },
+    ],
+  };
+  vi.stubGlobal("fetch", mcpFetch(state));
+  const connector = new McpConnector(
+    { botMcpServer: { findMany: vi.fn(async () => [ASSIGNMENT]) } } as never,
+    new EncryptedSecretStore("fake-key"),
+    { network: TEST_NETWORK },
+  );
+  try {
+    const tools = await connector.discoverTools({
+      operationId: "test",
+      traceId: "test",
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    });
+    expect(tools.map((tool) => tool.readOnly)).toEqual([true, false, undefined]);
+  } finally {
+    await connector.close();
+  }
 });

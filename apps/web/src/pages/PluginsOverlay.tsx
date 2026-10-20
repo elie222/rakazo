@@ -36,6 +36,7 @@ import { Blocks, ChevronDown, ChevronLeft, ChevronUp, Sparkles, X } from "lucide
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IntegrationSetup } from "../components/integrations/IntegrationSetup";
 import { SkillsTab } from "../components/integrations/SkillsTab";
+import { connectedAppMarks } from "../lib/connected-apps";
 import { optionalCatalogFeedProbe } from "../lib/optional-catalog-feed";
 import { rpc } from "../lib/rpc";
 
@@ -76,10 +77,12 @@ function nextAccountLabel(itemName: string, existingCount: number) {
   return existingCount <= 0 ? itemName : `${itemName} ${existingCount + 1}`;
 }
 export function PluginsOverlay({
+  onConnectedAppsChange,
   onClose,
   onOpenMcp,
   activeBotId,
 }: {
+  onConnectedAppsChange?: (apps: ReturnType<typeof connectedAppMarks>) => void;
   onClose: () => void;
   onOpenMcp?: () => void;
   activeBotId?: string;
@@ -112,6 +115,7 @@ export function PluginsOverlay({
   const [catalogFeedPending, setCatalogFeedPending] = useState(false);
   const [catalogFeedSearched, setCatalogFeedSearched] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [detailKey, setDetailKey] = useState<{ connectorId: string; slug: string } | null>(null);
   const [tools, setTools] = useState<ConnectionTool[]>([]);
   const [toolsLoading, setToolsLoading] = useState(false);
@@ -126,6 +130,7 @@ export function PluginsOverlay({
       rpc.connections.list(),
       optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: "" })),
     ]);
+    setCatalogLoaded(true);
     setCatalog(items);
     setConnections(rows);
     setLabelDrafts((current) => {
@@ -152,6 +157,10 @@ export function PluginsOverlay({
       .finally(() => setLoading(false));
     return () => connectionAttempt.current?.abort();
   }, []);
+
+  useEffect(() => {
+    if (catalogLoaded) onConnectedAppsChange?.(connectedAppMarks(catalog, connections));
+  }, [catalog, catalogLoaded, connections, onConnectedAppsChange]);
 
   const detailItem = useMemo(() => {
     if (!detailKey) return null;

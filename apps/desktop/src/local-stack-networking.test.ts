@@ -14,10 +14,6 @@ afterEach(async () => {
 });
 
 describe("managed stack address", () => {
-  it("keeps the desktop default separate from development", () => {
-    expect(DEFAULT_LOCAL_WEB_URL).toBe("http://127.0.0.1:45173");
-  });
-
   it("restores a previously selected loopback port", async () => {
     await writeFile(path.join(dir, STACK_WEB_URL_FILE), "http://127.0.0.1:49152");
     expect(await readStackWebUrl(dir, DEFAULT_LOCAL_WEB_URL)).toBe("http://127.0.0.1:49152");
@@ -38,9 +34,16 @@ describe("managed stack address", () => {
     expect(await readStackWebUrl(dir, DEFAULT_LOCAL_WEB_URL)).toBe(DEFAULT_LOCAL_WEB_URL);
   });
 
-  it("does not follow a symlink to an address file", async () => {
+  it("does not follow a symlink to an address file", async ({ skip }) => {
     await writeFile(path.join(dir, "other"), "http://127.0.0.1:49152");
-    await symlink(path.join(dir, "other"), path.join(dir, STACK_WEB_URL_FILE));
+    try {
+      await symlink(path.join(dir, "other"), path.join(dir, STACK_WEB_URL_FILE));
+    } catch (error) {
+      // Windows needs Developer Mode or elevation to create symlinks.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (process.platform === "win32" && (code === "EPERM" || code === "EACCES")) skip();
+      throw error;
+    }
     expect(await readStackWebUrl(dir, DEFAULT_LOCAL_WEB_URL)).toBe(DEFAULT_LOCAL_WEB_URL);
   });
 

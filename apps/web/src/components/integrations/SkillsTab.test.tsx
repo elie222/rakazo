@@ -122,6 +122,7 @@ function makeMockBot(partial: Partial<Bot> & { id: string; name: string }): Bot 
     thinkingLevel: null,
     teamChatAmbientEnabled: false,
     teamChatRules: "",
+    fleetManagement: false,
     disabledBuiltinTools: [],
     webhookConfigured: false,
     spawnKey: null,

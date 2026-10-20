@@ -202,6 +202,7 @@ test("routine history expands from the latest run and pages older executions", a
     botId,
     groupId: null,
     status,
+    error: status === "failed" ? "504: request timed out" : null,
     messageId: null,
     createdAt: `2026-01-02T${hour}:00:00Z`,
     startedAt: `2026-01-02T${hour}:00:00Z`,
@@ -230,9 +231,64 @@ test("routine history expands from the latest run and pages older executions", a
   await history.getByRole("button", { name: "Load older runs" }).click();
   await expect(history.getByTestId("routine-run-row")).toHaveCount(3);
   await expect(history.getByText("Failed", { exact: true })).toBeVisible();
+  await expect(
+    history.getByText("Your model provider took too long to respond. Try again.", { exact: true }),
+  ).toBeVisible();
+  const diagnostic = history.getByText("504: request timed out", { exact: true });
+  await expect(diagnostic).toBeHidden();
+  await history.getByText("Details", { exact: true }).click();
+  await expect(diagnostic).toBeVisible();
+  await history.getByText("Details", { exact: true }).click();
+  await expect(diagnostic).toBeHidden();
   await expect(history.getByText("Cancelled", { exact: true })).toBeVisible();
   await expect(history.getByRole("button", { name: "Load older runs" })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "routine-history-expanded");
   await history.getByRole("button", { name: "Run history" }).click();
   await expect(history.getByTestId("routine-run-row")).toHaveCount(1);
+});
+
+test("an unchanged routine completes without adding a chat reply", async ({ page }, testInfo) => {
+  await signup(page, `routine-silent-${Date.now()}@rakazo.test`, "password12", "Quiet Routine");
+  await completeOnboarding(page);
+  const botId = activeBotId(page);
+  const routine = await rpc<Routine>(page, "routines/create", {
+    botId,
+    name: "Quiet release check",
+    prompt: "silent routine fixture",
+    crons: ["0 9 * * *"],
+    timezone: "UTC",
+    active: false,
+    notify: true,
+  });
+  const { runId } = await rpc<{ runId: string }>(page, "routines/testRun", {
+    routineId: routine.id,
+  });
+  await expect
+    .poll(async () => {
+      const history = await rpc<{ runs: Array<{ id: string; status: string }> }>(
+        page,
+        "routines/history",
+        { routineId: routine.id },
+      );
+      return history.runs.find((run) => run.id === runId)?.status;
+    })
+    .toBe("completed");
+  const snapshot = await rpc<{
+    messages: Array<{ runId: string | null; blocks: Array<{ kind: string }> }>;
+  }>(page, "threads/get", { botId });
+  expect(
+    snapshot.messages
+      .filter((message) => message.runId === runId)
+      .flatMap((message) => message.blocks)
+      .filter((block) => block.kind !== "steps"),
+  ).toEqual([]);
+  const transcript = page.getByTestId("transcript");
+  await expect(transcript.getByText("NO_RESPONSE", { exact: false })).toHaveCount(0);
+  await expect(transcript.getByText("Checking for changes.", { exact: false })).toHaveCount(0);
+  await page.getByTitle("Agent computer").click();
+  await page.getByRole("button", { name: /Quiet release check/ }).click();
+  await expect(
+    page.getByTestId("routine-run-history").getByText("Done", { exact: true }),
+  ).toBeVisible();
+  await captureScreenshot(page, testInfo, "routine-unchanged-silent");
 });

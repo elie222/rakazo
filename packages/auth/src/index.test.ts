@@ -41,6 +41,35 @@ describe("auth policy", () => {
     }
   });
 
+  it.each(["sign-in/email", "sign-up/email"])("logs internal failures from %s", async (path) => {
+    const error = new Error("database unavailable");
+    const log = vi.fn();
+    const auth = createAuth(
+      { deploymentSettings: { findUnique: vi.fn().mockRejectedValue(error) } } as never,
+      {
+        secret: "offline-auth-secret-at-least-32-characters",
+        baseURL: "https://api.example.test",
+        webOrigin: "https://app.example.test",
+        signupsEnabled: "true",
+        signupAllowlist: "",
+        logger: { level: "error", log },
+      },
+    );
+    const response = await auth.handler(
+      new Request(`https://api.example.test/api/auth/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "https://app.example.test" },
+        body: JSON.stringify({
+          email: "test@example.test",
+          password: "test-password-123",
+          name: "Test",
+        }),
+      }),
+    );
+    expect(response.status).toBe(500);
+    expect(log).toHaveBeenCalledWith("error", expect.any(String), error);
+  });
+
   it("disables organization deletion inside Better Auth as well", async () => {
     const auth = createAuth({} as never, {
       secret: "test-secret-that-is-long-enough-for-better-auth",
@@ -176,4 +205,46 @@ describe("resolveSignupPolicy", () => {
       }),
     ).resolves.toEqual({ enabled: false, allowlist: ["approved@example.com"] });
   });
+});
+
+describe("stored account names", () => {
+  const auth = createAuth({} as never, {
+    secret: "offline-auth-secret-at-least-32-characters",
+    baseURL: "https://api.example.test",
+    webOrigin: "https://app.example.test",
+    signupsEnabled: "true",
+    signupAllowlist: "",
+  });
+  it.each(["", " ", "__TestTok1__", "550e8400-e29b-41d4-a716-446655440000"])(
+    "normalizes unusable names on creation and updates: %s",
+    async (name) => {
+      const hooks = auth.options.databaseHooks!.user!;
+      expect(
+        await hooks.create!.before!({ name, email: "demo@example.com" } as never),
+      ).toMatchObject({ data: { name: "" } });
+      expect(await hooks.update!.before!({ name })).toMatchObject({ data: { name: "" } });
+    },
+  );
+  it("preserves real names and does not change names during unrelated updates", async () => {
+    const hook = auth.options.databaseHooks!.user!.update!.before!;
+    expect(await hook({ name: " 李雷 " })).toMatchObject({ data: { name: "李雷" } });
+    const result = await hook({ emailVerified: true });
+    expect(result).toEqual({ data: { emailVerified: true } });
+  });
+});
+
+it("preserves readable numbered account names on writes", async () => {
+  const auth = createAuth({} as never, {
+    secret: "offline-auth-secret-at-least-32-characters",
+    baseURL: "https://api.example.test",
+    webOrigin: "https://app.example.test",
+    signupsEnabled: "true",
+    signupAllowlist: "",
+  });
+  expect(
+    await auth.options.databaseHooks!.user!.create!.before!({
+      name: "CustomerSupportBot2026",
+      email: "demo@example.com",
+    } as never),
+  ).toMatchObject({ data: { name: "CustomerSupportBot2026" } });
 });

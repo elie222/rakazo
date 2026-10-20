@@ -59,7 +59,14 @@ export function ComputerCard({
         <Text
           style={[
             styles.state,
-            { color: block.state === "Needs you" ? tokens.warning : tokens.success },
+            {
+              color:
+                block.state === "Needs you"
+                  ? tokens.warning
+                  : block.state === "Skipped"
+                    ? tokens.mutedForeground
+                    : tokens.success,
+            },
           ]}
         >
           {block.state}

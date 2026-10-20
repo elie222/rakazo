@@ -1,15 +1,21 @@
+import type { TelegramBotCredentials } from "@rakazo/adapters";
 import {
+  boatApiKeyFromEnv,
+  boatApiUrlFromEnv,
   resolveCloudAgentProvider,
   resolveDeploymentModel,
   resolveSandboxProvider,
   secretStoreOptionsFromEnv,
+  telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";
 import {
+  phoneCallSettings,
   resolveAuthSecret,
   resolveEncryptionKey,
   resolveScreenProxySecret,
   resolveSupervisorToken,
+  uploadSizeFromEnv,
 } from "@rakazo/core";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
@@ -34,6 +40,10 @@ export interface AppEnv {
   /** Opt-in Pi JSONL session recording under DATA_DIR/pi-sessions. Default off. */
   piSessionRecording: boolean;
   ticketBoardEnabled: boolean;
+  phoneCallsEnabled: boolean;
+  phoneCallRingSeconds: number;
+  phoneCallCooldownMinutes: number;
+  maxUploadSizeBytes: number;
   sandboxSupervisorUrl: string;
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
@@ -51,8 +61,8 @@ export interface AppEnv {
   daytonaApiKey: string | undefined;
   daytonaApiUrl: string | undefined;
   daytonaTarget: string | undefined;
-  boxApiKey: string | undefined;
-  boxApiUrl: string | undefined;
+  boatApiKey: string | undefined;
+  boatApiUrl: string | undefined;
   composioApiKey: string | undefined;
   /** Optional integrations.sh-compatible catalog base URL. */
   integrationsCatalogUrl: string | undefined;
@@ -79,6 +89,8 @@ export interface AppEnv {
   whatsappVerifyToken: string | undefined;
   telegramBotToken: string | undefined;
   telegramWebhookSecret: string | undefined;
+  /** Extra named Telegram bots (TELEGRAM_BOT_TOKEN_<NAME>), e.g. one per space. */
+  telegramBots?: TelegramBotCredentials[];
   larkAppId: string | undefined;
   larkAppSecret: string | undefined;
   larkVerificationToken: string | undefined;
@@ -100,6 +112,8 @@ export interface AppEnv {
   mcpAllowPrivateEndpoint: boolean;
   port: number;
   gitSha: string | undefined;
+  /** Browser error reporting, served to the web app at runtime. The DSN is public by design. */
+  browserMonitoring: { dsn: string; environment?: string; release?: string } | undefined;
   /** Private Compose control-network URL for the opt-in updater sidecar. */
   updaterUrl: string | undefined;
   /** Bearer shared with the updater; never sent to the browser. */
@@ -174,6 +188,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     dataDir: source.DATA_DIR ?? "./data",
     piSessionRecording: source.PI_SESSION_RECORDING === "true",
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
+    ...phoneCallSettings(source),
+    maxUploadSizeBytes: uploadSizeFromEnv(source),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
@@ -191,8 +207,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
     daytonaTarget: source.DAYTONA_TARGET,
-    boxApiKey: source.BOX_API_KEY,
-    boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
+    boatApiKey: boatApiKeyFromEnv(source),
+    boatApiUrl: boatApiUrlFromEnv(source),
     composioApiKey: source.COMPOSIO_API_KEY,
     integrationsCatalogUrl: optional(source.INTEGRATIONS_CATALOG_URL),
     pipedreamClientId: optional(source.PIPEDREAM_CLIENT_ID),
@@ -218,6 +234,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     whatsappVerifyToken: optional(source.WHATSAPP_VERIFY_TOKEN),
     telegramBotToken: optional(source.TELEGRAM_BOT_TOKEN),
     telegramWebhookSecret: optional(source.TELEGRAM_WEBHOOK_SECRET_TOKEN),
+    telegramBots: telegramBotsFromEnv(source),
     larkAppId: optional(source.LARK_APP_ID),
     larkAppSecret: optional(source.LARK_APP_SECRET),
     larkVerificationToken: optional(source.LARK_VERIFICATION_TOKEN),
@@ -238,6 +255,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     mcpAllowPrivateEndpoint: source.MCP_ALLOW_PRIVATE_ENDPOINT === "true",
     port: Number(source.API_PORT ?? 3100),
     gitSha: optional(source.GIT_SHA) ?? optional(source.RAKAZO_GIT_SHA),
+    browserMonitoring: browserMonitoringFromEnv(source),
     updaterUrl,
     updaterToken,
     imageTag: optional(source.RAKAZO_IMAGE_TAG),
@@ -248,6 +266,17 @@ function required(source: NodeJS.ProcessEnv, key: string): string {
   const value = source[key];
   if (!value) throw new Error(`Missing ${key}`);
   return value;
+}
+
+function browserMonitoringFromEnv(source: NodeJS.ProcessEnv): AppEnv["browserMonitoring"] {
+  const dsn = optional(source.SENTRY_BROWSER_DSN);
+  if (!dsn) return undefined;
+  const sha = optional(source.GIT_SHA);
+  return {
+    dsn,
+    environment: optional(source.SENTRY_ENVIRONMENT),
+    release: optional(source.SENTRY_RELEASE) ?? (sha === "unknown" ? undefined : sha),
+  };
 }
 
 function optional(value: string | undefined): string | undefined {

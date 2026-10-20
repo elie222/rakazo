@@ -4,12 +4,12 @@ import type { SandboxProviderOptions } from "./sandbox-factory.js";
 export function resolveSandboxProvider(source: NodeJS.ProcessEnv = process.env): string {
   const configured = source.SANDBOX_PROVIDER;
   if (configured !== undefined && !configured.trim()) return "none";
-  const requested = configured?.trim() || "docker";
+  const requested = legacyProvider(configured?.trim() || "docker");
   if (requested === "none") return "none";
   if (requested === "e2b" && !optional(source.E2B_API_KEY)) return "none";
   if (requested === "daytona" && !optional(source.DAYTONA_API_KEY)) return "none";
   if (requested === "createos" && !optional(source.CREATEOS_SANDBOX_API_KEY)) return "none";
-  if (requested === "box" && !optional(source.BOX_API_KEY)) return "none";
+  if (requested === "boat" && !boatApiKeyFromEnv(source)) return "none";
   if (
     requested === "railway" &&
     (!optional(source.RAILWAY_API_TOKEN) || !optional(source.RAILWAY_ENVIRONMENT_ID))
@@ -31,6 +31,8 @@ export function sandboxProviderOptionsFromEnv(
   source: NodeJS.ProcessEnv = process.env,
 ): Pick<
   SandboxProviderOptions,
+  | "hostComputerUrl"
+  | "hostComputerToken"
   | "e2bApiKey"
   | "daytonaApiKey"
   | "daytonaApiUrl"
@@ -42,10 +44,13 @@ export function sandboxProviderOptionsFromEnv(
   | "railwayApiToken"
   | "railwayEnvironmentId"
   | "railwayMaxWorkspaceFileBytes"
-  | "boxApiKey"
-  | "boxApiUrl"
+  | "railwaySandboxRegion"
+  | "boatApiKey"
+  | "boatApiUrl"
 > {
   return {
+    hostComputerUrl: source.SANDBOX_HOST_URL,
+    hostComputerToken: source.SANDBOX_HOST_TOKEN,
     e2bApiKey: source.E2B_API_KEY,
     daytonaApiKey: source.DAYTONA_API_KEY,
     daytonaApiUrl: source.DAYTONA_API_URL,
@@ -57,12 +62,28 @@ export function sandboxProviderOptionsFromEnv(
     railwayApiToken: source.RAILWAY_API_TOKEN,
     railwayEnvironmentId: source.RAILWAY_ENVIRONMENT_ID,
     railwayMaxWorkspaceFileBytes: source.RAILWAY_MAX_WORKSPACE_FILE_BYTES,
-    boxApiKey: source.BOX_API_KEY,
-    boxApiUrl: source.BOX_API_URL ?? source.BOX_BASE_URL,
+    railwaySandboxRegion: optional(source.RAILWAY_SANDBOX_REGION),
+    boatApiKey: boatApiKeyFromEnv(source),
+    boatApiUrl: boatApiUrlFromEnv(source),
   };
 }
 
 function optional(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed || undefined;
+}
+
+/** Box was renamed to Boat; keep deployments with the old settings booting. */
+function legacyProvider(provider: string): string {
+  return provider === "box" ? "boat" : provider;
+}
+
+export function boatApiKeyFromEnv(source: NodeJS.ProcessEnv): string | undefined {
+  return optional(source.BOAT_API_KEY) ?? optional(source.BOX_API_KEY);
+}
+
+export function boatApiUrlFromEnv(source: NodeJS.ProcessEnv): string | undefined {
+  return (
+    optional(source.BOAT_API_URL) ?? optional(source.BOX_API_URL) ?? optional(source.BOX_BASE_URL)
+  );
 }

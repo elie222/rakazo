@@ -40,15 +40,71 @@ function fixture(count = 30) {
   const context: Context = { systemPrompt: request.instructions, tools: [], messages };
   return { request, context };
 }
+function enableHistoryRetrieval(request: AgentRunRequest) {
+  request.tools = ["read_history", "search_history"].map((name) => ({
+    name,
+    description: name,
+    inputSchema: { type: "object" },
+  }));
+  request.executeTool = async () => ({});
+}
 describe("runtime context policy", () => {
+  it("preserves a selected prefix across turns with a declared cache window", () => {
+    const { request, context } = fixture(30);
+    request.threadId = "declared-cache-thread";
+    enableHistoryRetrieval(request);
+    request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
+    const first = createRuntimeContextPolicy(request);
+    const initial = first.prepareContext(context, model);
+    first.onUsage({ inputTokens: 1000, outputTokens: 10, cacheReadTokens: 0 });
+    const next = createRuntimeContextPolicy(request);
+    const continued = next.prepareContext(
+      {
+        ...context,
+        messages: [...context.messages, { role: "user", content: "Next question", timestamp: 101 }],
+      },
+      model,
+    );
+    expect(first.getDecision()!.strategy).toBe("cache-aware");
+    expect(next.getDecision()!.predictedCache).toBe("likely-warm");
+    expect(continued.messages.slice(0, initial.messages.length)).toEqual(initial.messages);
+    expect(continued.messages).toHaveLength(initial.messages.length + 1);
+  });
+  it("honors an explicit retrieval override even with a declared cache window", () => {
+    const { request, context } = fixture(30);
+    enableHistoryRetrieval(request);
+    request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
+    request.contextStrategy = "retrieval";
+    const policy = createRuntimeContextPolicy(request);
+    policy.prepareContext(context, model);
+    expect(policy.getDecision()!.strategy).toBe("retrieval");
+  });
+  it.each([undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "does not infer cache-aware context from an unknown or invalid window %s",
+    (retentionMs) => {
+      const { request, context } = fixture();
+      enableHistoryRetrieval(request);
+      request.model.cacheCapabilities = { scope: "connection", retentionMs };
+      const policy = createRuntimeContextPolicy(request);
+      policy.prepareContext(context, model);
+      expect(policy.getDecision()!.strategy).toBe("retrieval");
+    },
+  );
+  it("retains retrieval when caching is explicitly disabled", () => {
+    const { request, context } = fixture();
+    enableHistoryRetrieval(request);
+    request.model.cacheCapabilities = {
+      scope: "connection",
+      retentionMs: 300000,
+      retentionMode: "none",
+    };
+    const policy = createRuntimeContextPolicy(request);
+    policy.prepareContext(context, model);
+    expect(policy.getDecision()!.strategy).toBe("retrieval");
+  });
   it("matches the qualified explicit strategy when backend history retrieval is usable", () => {
     const { request, context } = fixture();
-    request.tools = ["read_history", "search_history"].map((name) => ({
-      name,
-      description: name,
-      inputSchema: { type: "object" },
-    }));
-    request.executeTool = async () => ({});
+    enableHistoryRetrieval(request);
     const implicit = createRuntimeContextPolicy(request);
     const explicit = createRuntimeContextPolicy({
       ...request,
@@ -59,10 +115,20 @@ describe("runtime context policy", () => {
     );
     expect(implicit.getDecision()!.strategy).toBe("retrieval");
   });
-  it.each(["no tools", "one tool", "no backend"])(
-    "preserves fitting standalone originals with %s",
-    (capability) => {
-      const { request, context } = fixture();
+  it.each([
+    [false, "no tools"],
+    [false, "one tool"],
+    [false, "no backend"],
+    [true, "no tools"],
+    [true, "one tool"],
+    [true, "no backend"],
+  ])(
+    "preserves fitting standalone originals with declared cache %s and %s",
+    (declaredCache, capability) => {
+      // Exceed the cold snapshot allowance while fitting the model's window.
+      const { request, context } = fixture(60);
+      if (declaredCache)
+        request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
       request.tools = (
         capability === "no tools"
           ? []
@@ -81,8 +147,10 @@ describe("runtime context policy", () => {
       expect(explicit.messages.length).toBeLessThan(context.messages.length);
     },
   );
-  it("bounds standalone originals by the model window while preserving current input", () => {
+  it.each([false, true])("bounds standalone originals with declared cache %s", (declaredCache) => {
     const { request, context } = fixture(100);
+    if (declaredCache)
+      request.model.cacheCapabilities = { scope: "connection", retentionMs: 300000 };
     const policy = createRuntimeContextPolicy(request);
     const prepared = policy.prepareContext(context, {
       ...model,
@@ -121,6 +189,12 @@ describe("runtime context policy", () => {
     context.messages.push(
       call("read", "skill_read"),
       result("read", "skill_read", skill),
+      call("fleet", "list_fleet"),
+      result(
+        "fleet",
+        "list_fleet",
+        JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "x".repeat(20_000) } }),
+      ),
       call("shell-1", "shell"),
       result("shell-1", "shell", shellOutput),
       call("shell-2", "shell"),
@@ -137,6 +211,9 @@ describe("runtime context policy", () => {
       ) as Extract<Message, { role: "toolResult" }>;
       return message.content.map((part) => (part.type === "text" ? part.text : "")).join("");
     };
+    expect(body("fleet")).toBe(
+      JSON.stringify({ bot: { instructionsVersion: "v2", instructions: "x".repeat(20_000) } }),
+    );
     expect(skill.length).toBeGreaterThan(2500);
     expect(body("read")).toBe(skill);
     expect(body("shell-1")).toContain("[Tool result truncated to fit context");
@@ -190,6 +267,58 @@ describe("runtime context policy", () => {
     expect(prepared.messages).toContainEqual(context.messages.at(-2));
     expect(prepared.messages).toContainEqual(context.messages.at(-1));
     expect(prepared.messages.length).toBeLessThan(context.messages.length);
+  });
+  it("keeps the selected prefix byte-identical when a user message arrives mid-run", () => {
+    const { request, context } = fixture();
+    const shellOutput = "synthetic shell output ".repeat(100);
+    context.messages.push(
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "shell-1", name: "shell", arguments: {} }],
+        timestamp: 101,
+      } as unknown as Message,
+      {
+        role: "toolResult",
+        toolCallId: "shell-1",
+        toolName: "shell",
+        content: [{ type: "text", text: shellOutput }],
+        isError: false,
+        timestamp: 102,
+      } as Message,
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "shell-2", name: "shell", arguments: {} }],
+        timestamp: 103,
+      } as unknown as Message,
+      {
+        role: "toolResult",
+        toolCallId: "shell-2",
+        toolName: "shell",
+        content: [{ type: "text", text: "ok" }],
+        isError: false,
+        timestamp: 104,
+      } as Message,
+      { role: "assistant", content: [{ type: "text", text: "Done." }], timestamp: 105 } as Message,
+    );
+    const policy = () => createRuntimeContextPolicy({ ...request, contextStrategy: "retrieval" });
+    const before = policy().prepareContext(context, model);
+    const steered = {
+      ...context,
+      messages: [
+        ...context.messages,
+        { role: "user", content: "Reply from a teammate", timestamp: 200 } as Message,
+      ],
+    };
+    const after = policy().prepareContext(steered, model);
+    // Provider caches match on an exact prefix; a shifted first message rewrites all of it.
+    expect(JSON.stringify(after.messages.slice(0, before.messages.length))).toBe(
+      JSON.stringify(before.messages),
+    );
+    expect(after.messages.at(-1)).toEqual(steered.messages.at(-1));
+    expect(after.messages.length).toBe(before.messages.length + 1);
+    // History is still bounded and old tool evidence is still shortened.
+    expect(after.messages.length).toBeLessThan(steered.messages.length);
+    expect(JSON.stringify(after.messages)).toContain("[Tool result truncated to fit context");
   });
   it.each(["snapshots", "cache-aware"] as const)(
     "retains already-short history without lookup navigation under %s",

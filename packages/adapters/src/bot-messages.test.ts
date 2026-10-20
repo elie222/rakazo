@@ -1,5 +1,5 @@
 import type { PrismaClient } from "@rakazo/db";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   currentBotMessageHop,
   loadBotMessageContext,
@@ -96,6 +96,9 @@ function deps(
 }
 
 describe("messaging another bot", () => {
+  beforeEach(() => vi.stubEnv("BOT_MESSAGE_MAX_HOPS", undefined));
+  afterEach(() => vi.unstubAllEnvs());
+
   it("delivers into the target's own chat without marking either thread unread", async () => {
     const harness = deps();
     const sent = await messageBot(harness.deps, run, sender, {
@@ -404,6 +407,22 @@ describe("messaging another bot", () => {
       { bot_id: "bot-target", message: "still working", intent: "status" },
     );
     expect(sent.ok).toBe(false);
+  });
+
+  it("raises the chain limit from BOT_MESSAGE_MAX_HOPS", async () => {
+    vi.stubEnv("BOT_MESSAGE_MAX_HOPS", "10");
+    const harness = deps({
+      hopBlocks: [
+        { kind: "bot_message_received", fromBotId: "b", fromBotName: "B", text: "hi", hop: 6 },
+      ],
+    });
+    const sent = await messageBot(
+      harness.deps,
+      { ...run, sourceMessageId: "message-source" },
+      sender,
+      { bot_id: "bot-target", message: "again" },
+    );
+    expect(sent.ok).toBe(true);
   });
 
   it("keeps a person-started chain going", async () => {

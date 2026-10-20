@@ -99,6 +99,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       ["botSections/list"],
       ["botSections/create", { botId: "missing-bot", name: "Planning" }],
       ["botSections/update", { sectionId: "missing-section", name: "Planning" }],
+      ["botSections/remove", { sectionId: "missing-section" }],
       ["threads/get", { botId: "missing-bot" }],
       ["threads/get", { groupId: "missing-group" }],
       ["threads/messages", { botId: "missing-bot", before: 1 }],
@@ -1481,11 +1482,17 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await rpc(app, cookie, "bots/update", { ...update, thinkingLevel: "low" }),
     ).toMatchObject({ thinkingLevel: "low" });
     expect(
-      (await raw(app, cookie, "bots/update", { ...update, thinkingLevel: "xhigh" })).status,
-    ).toBe(400);
+      await rpc(app, cookie, "bots/update", { ...update, thinkingLevel: "xhigh" }),
+    ).toMatchObject({ thinkingLevel: "xhigh" });
+    expect(
+      await rpc(app, cookie, "bots/update", { ...update, thinkingLevel: "max" }),
+    ).toMatchObject({ thinkingLevel: "max" });
     await rpc(app, cookie, "models/connect", { ...connection, reasoning: false });
     expect(
       (await raw(app, cookie, "bots/update", { ...update, thinkingLevel: "low" })).status,
+    ).toBe(400);
+    expect(
+      (await raw(app, cookie, "bots/update", { ...update, thinkingLevel: "xhigh" })).status,
     ).toBe(400);
     expect(
       await rpc(app, cookie, "bots/update", { ...update, thinkingLevel: "off" }),
@@ -1700,7 +1707,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
         }),
       });
       expect(closedSignup.status).toBe(400);
-      expect(await closedSignup.text()).toContain("Registration is closed");
+      expect(await closedSignup.json()).toMatchObject({
+        code: "REGISTRATION_CLOSED",
+        message: "Registration is closed",
+      });
 
       const approvedEmail = `approved-${stamp}@example.test`;
       await rpc(app, owner, "deployment/update", {
@@ -1717,7 +1727,10 @@ describeWithDatabase("API authorization and resource isolation", () => {
         }),
       });
       expect(disallowedSignup.status).toBe(400);
-      expect(await disallowedSignup.text()).toContain("Email is not allowed to register");
+      expect(await disallowedSignup.json()).toMatchObject({
+        code: "EMAIL_NOT_ALLOWED",
+        message: "Email is not allowed to register",
+      });
       const unverifiedSignup = await app.request("/api/auth/sign-up/email", {
         method: "POST",
         headers: { "content-type": "application/json" },

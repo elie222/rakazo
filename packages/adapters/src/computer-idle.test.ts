@@ -9,16 +9,20 @@ import {
   CANCEL_COMPUTER_RUN_WORK,
   CANCEL_PRIMARY_BROWSER_WORK,
   computerIdleSleepEnabled,
+  computerMaxActiveMs,
+  DEFAULT_COMPUTER_MAX_ACTIVE_MS,
   DEFAULT_SANDBOX_IDLE_MS,
   sandboxIdleMs,
   scheduleComputerSleep,
   sleepComputerIfIdle,
+  touchRunningComputer,
 } from "./computer-idle.js";
 import { e2bCreateOptions } from "./e2b-sandbox.js";
 
 describe("sandbox idle", () => {
   beforeEach(() => {
     vi.stubEnv("SANDBOX_IDLE_MS", undefined);
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", undefined);
   });
 
   afterEach(() => {
@@ -199,6 +203,7 @@ describe("sandbox idle", () => {
       },
       data: {
         state: "suspended",
+        runningSince: null,
         controlHolder: "none",
         controlLeaseId: null,
         controlLeaseExpiresAt: null,
@@ -221,6 +226,35 @@ describe("sandbox idle", () => {
 
     expect(harness.sandbox.stop).not.toHaveBeenCalled();
     expect(harness.prisma.computer.update).not.toHaveBeenCalled();
+  });
+
+  it("stops a computer whose sandbox is gone instead of retrying the checkpoint", async () => {
+    const gone = Object.assign(new Error("Paused sandbox computer not found"), {
+      name: "SandboxNotFoundError",
+    });
+    const harness = idleHarness({ exportError: gone });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("stopped");
+    expect(harness.computer.providerRef).toBeNull();
+    expect(harness.home.commit).not.toHaveBeenCalled();
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("stops a computer whose sandbox is gone before the background-work probe", async () => {
+    const gone = Object.assign(new Error("Paused sandbox computer not found"), {
+      name: "SandboxNotFoundError",
+    });
+    const harness = idleHarness({ probeError: gone, exportError: gone });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.computer.state).toBe("stopped");
+    expect(harness.computer.providerRef).toBeNull();
+    expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).not.toHaveBeenCalled();
   });
 
   it("retains the saved revision when the database transition after stopping fails", async () => {
@@ -287,6 +321,203 @@ describe("sandbox idle", () => {
       expect(harness.events.append).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("maximum active lifetime", () => {
+  const now = new Date("2026-01-01T12:00:00.000Z").getTime();
+  const longAgo = new Date(now - DEFAULT_COMPUTER_MAX_ACTIVE_MS - 1);
+  const recently = new Date(now - 60_000);
+
+  beforeEach(() => {
+    vi.stubEnv("SANDBOX_IDLE_MS", undefined);
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", undefined);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    [undefined, DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["0", 0],
+    ["garbage", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["-1", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["Infinity", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["NaN", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["59999", DEFAULT_COMPUTER_MAX_ACTIVE_MS],
+    ["60000", 60_000],
+    ["1800000", 30 * 60_000],
+  ])("parses COMPUTER_MAX_ACTIVE_MS=%j", (value, expected) => {
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", value);
+    expect(computerMaxActiveMs()).toBe(expected);
+  });
+
+  it.each([undefined, false])("does not cap a provider reporting %s", async (billing) => {
+    const harness = idleHarness({
+      billsWhileRunning: billing,
+      runningSince: longAgo,
+      backgroundWorkProbeCode: 0,
+    });
+    await touchRunningComputer(harness.deps, harness.computer);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(2);
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledTimes(2);
+    for (const [job] of harness.jobs.enqueue.mock.calls) {
+      expect(job.availableAt).toEqual(new Date(now + DEFAULT_SANDBOX_IDLE_MS));
+    }
+  });
+
+  it("disables the cap on a billing provider with 0", async () => {
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", "0");
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: longAgo,
+      backgroundWorkProbeCode: 0,
+    });
+    await touchRunningComputer(harness.deps, harness.computer);
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(2);
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    for (const [job] of harness.jobs.enqueue.mock.calls) {
+      expect(job.availableAt).toEqual(new Date(now + DEFAULT_SANDBOX_IDLE_MS));
+    }
+  });
+
+  it("honours a custom thirty-minute cap", async () => {
+    vi.stubEnv("COMPUTER_MAX_ACTIVE_MS", "1800000");
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: new Date(now - 30 * 60_000),
+      backgroundWorkProbeCode: 0,
+    });
+    await touchRunningComputer(harness.deps, harness.computer);
+    expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now) }),
+    );
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a viewed computer alive within the limit", async () => {
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: recently });
+
+    await touchRunningComputer(harness.deps, harness.computer);
+
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
+    );
+  });
+
+  it("stops extending a viewed computer past the limit and checks it now", async () => {
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
+
+    await touchRunningComputer(harness.deps, harness.computer);
+
+    expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledOnce();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "computer.sleep", availableAt: new Date(now) }),
+    );
+  });
+
+  it("suspends past the limit even while background work keeps it busy", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: longAgo,
+      backgroundWorkProbeCode: 0,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.keepAlive).not.toHaveBeenCalled();
+    expect(harness.home.commit).toHaveBeenCalledOnce();
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+    expect(harness.computer.state).toBe("suspended");
+    expect(harness.computer.runningSince).toBeNull();
+  });
+
+  it("still waits for background work within the limit", async () => {
+    const harness = idleHarness({
+      billsWhileRunning: true,
+      runningSince: recently,
+      backgroundWorkProbeCode: 0,
+    });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledOnce();
+  });
+
+  it("suspends past the limit under a run that is only waiting", async () => {
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.leaseExpiresAt ? null : { id: "waiting-for-approval" },
+    );
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.sandbox.stop).toHaveBeenCalledOnce();
+  });
+
+  it("leaves a computer the user is controlling to its control lease", async () => {
+    const control = {
+      controlHolder: "user",
+      controlLeaseId: "lease",
+      controlLeaseExpiresAt: new Date(now + 60_000),
+    };
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
+    Object.assign(harness.computer, control);
+    harness.prisma.run.findFirst.mockImplementation(async ({ where }) =>
+      where.status.in.includes("waiting_takeover") ? { id: "waiting-for-user" } : null,
+    );
+
+    for (const elapsed of [0, 60_000, DEFAULT_COMPUTER_MAX_ACTIVE_MS + 60_000]) {
+      vi.setSystemTime(now + elapsed);
+      Object.assign(harness.computer, {
+        controlLeaseExpiresAt: new Date(now + elapsed + 60_000),
+      });
+      await touchRunningComputer(harness.deps, harness.computer);
+      await sleepComputerIfIdle(harness.deps, harness.computer.id);
+      expect(harness.jobs.enqueue).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          availableAt: new Date(now + elapsed + DEFAULT_SANDBOX_IDLE_MS),
+        }),
+      );
+    }
+
+    expect(harness.sandbox.keepAlive).toHaveBeenCalledTimes(3);
+    expect(harness.jobs.enqueue).toHaveBeenCalledTimes(6);
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+  });
+
+  it("does not pull the computer out from under a run that is executing", async () => {
+    const harness = idleHarness({ billsWhileRunning: true, runningSince: longAgo });
+    harness.prisma.run.findFirst.mockResolvedValue({ id: "executing" });
+
+    await sleepComputerIfIdle(harness.deps, harness.computer.id);
+
+    expect(harness.prisma.run.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: ["leased", "running"] },
+          leaseExpiresAt: { gt: new Date(now) },
+        }),
+      }),
+    );
+    expect(harness.sandbox.stop).not.toHaveBeenCalled();
+    expect(harness.jobs.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ availableAt: new Date(now + DEFAULT_SANDBOX_IDLE_MS) }),
+    );
+  });
 });
 
 describe("background work launch and probe", () => {
@@ -509,7 +740,10 @@ function idleHarness(
     backgroundWorkProbeCodes?: number[];
     backgroundWorkProbeFailed?: boolean;
     exportError?: Error;
+    probeError?: Error;
     providerBackgroundWorkStatus?: "active" | "idle" | "unknown";
+    runningSince?: Date | null;
+    billsWhileRunning?: boolean;
   } = {},
 ) {
   const backgroundWorkProbeCodes = [...(options.backgroundWorkProbeCodes ?? [])];
@@ -527,6 +761,7 @@ function idleHarness(
     controlLeaseExpiresAt: null,
     controlBotId: null,
     executionBotId: null,
+    runningSince: options.runningSince ?? null,
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
   const prisma = {
@@ -538,6 +773,8 @@ function idleHarness(
         if (args.data.updatedAt) computer.updatedAt = args.data.updatedAt;
         if (args.data.state) computer.state = args.data.state;
         if (args.data.homeRevision) computer.homeRevision = args.data.homeRevision;
+        if ("providerRef" in args.data)
+          Object.assign(computer, { providerRef: args.data.providerRef });
         return { count: 1 };
       }),
       update: vi.fn(async (args) => {
@@ -554,7 +791,10 @@ function idleHarness(
     },
   };
   const sandbox = {
+    billsWhileRunning:
+      options.billsWhileRunning === undefined ? undefined : vi.fn(() => options.billsWhileRunning),
     execute: vi.fn(async function* () {
+      if (options.probeError) throw options.probeError;
       const code = backgroundWorkProbeCodes.shift() ?? options.backgroundWorkProbeCode ?? 1;
       if (code === 1 && !options.backgroundWorkProbeFailed) {
         yield { type: "stdout", data: "rakazo-background-idle\n" } as const;

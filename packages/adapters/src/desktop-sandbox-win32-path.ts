@@ -7,7 +7,8 @@ import {
   writeFile as writeFileCb,
 } from "node:fs";
 import { promisify } from "node:util";
-import koffi, { type LibraryHandle } from "koffi";
+import type { LibraryHandle } from "koffi";
+import koffi from "koffi";
 
 type KoffiFunction = ReturnType<LibraryHandle["func"]>;
 
@@ -33,7 +34,6 @@ const SYNCHRONIZE = 0x00100000;
 const FILE_SHARE_ALL = 0x00000007;
 const FILE_ATTRIBUTE_NORMAL = 0x00000080;
 const FILE_ATTRIBUTE_DIRECTORY = 0x00000010;
-const O_RDWR_BINARY = 0x8002;
 /** NTSTATUS 0xC0000035 as signed int32 */
 const STATUS_OBJECT_NAME_COLLISION = -1073741771;
 /** NTSTATUS 0xC0000034 as signed int32 */
@@ -74,7 +74,8 @@ function nt(): NtFns {
   if (cached) return cached;
   const ntdll = koffi.load("ntdll.dll");
   const kernel32 = koffi.load("kernel32.dll");
-  const msvcrt = koffi.load("msvcrt.dll");
+  // Convert through the running Node/Electron runtime: a separately loaded CRT owns a different fd table.
+  const runtime = koffi.load(null);
 
   koffi.struct("UNICODE_STRING", {
     Length: "uint16_t",
@@ -101,8 +102,8 @@ function nt(): NtFns {
     RtlInitUnicodeString: ntdll.func(
       "void __stdcall RtlInitUnicodeString(_Out_ UNICODE_STRING *DestinationString, void *SourceString)",
     ),
-    getOsFhandle: msvcrt.func("intptr_t __cdecl _get_osfhandle(int fd)"),
-    openOsFhandle: msvcrt.func("int __cdecl _open_osfhandle(intptr_t handle, int flags)"),
+    getOsFhandle: runtime.func("intptr_t __cdecl uv_get_osfhandle(int fd)"),
+    openOsFhandle: runtime.func("int __cdecl uv_open_osfhandle(intptr_t handle)"),
     CloseHandle: kernel32.func("int __stdcall CloseHandle(void *hObject)"),
     GetFinalPathNameByHandleW: kernel32.func(
       "uint32_t __stdcall GetFinalPathNameByHandleW(void *hFile, void *lpszFilePath, uint32_t cchFilePath, uint32_t dwFlags)",
@@ -188,7 +189,7 @@ function ntCreateRelative(
 
   const handle = handleOut[0];
   if (handle == null) escapeWorkspace();
-  const fd = api.openOsFhandle(handle as number | bigint, O_RDWR_BINARY) as number;
+  const fd = api.openOsFhandle(handle as number | bigint) as number;
   if (fd < 0) {
     api.CloseHandle(handle as number | bigint);
     escapeWorkspace();

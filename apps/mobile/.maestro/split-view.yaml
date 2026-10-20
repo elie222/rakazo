@@ -1,0 +1,73 @@
+appId: com.rakazo.app
+name: Rakazo split view on a wide window
+tags:
+  - screenshots
+---
+# The runner resizes the emulator to an unfolded-foldable window (about 750dp wide) first.
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: deny
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo|Pixel Launcher isn't responding"
+    timeout: 30000
+- runFlow:
+    when:
+      visible: "Pixel Launcher isn't responding"
+    commands:
+      - tapOn: "Close app"
+- extendedWaitUntil:
+    visible: "Sign up for Rakazo"
+    timeout: 30000
+- tapOn: "Sign in"
+- runFlow: helpers/server.yaml
+- tapOn: "Email"
+- inputText: ${RAKAZO_SCREENSHOT_EMAIL}
+- tapOn: "Password"
+- inputText: ${RAKAZO_SCREENSHOT_PASSWORD}
+- hideKeyboard
+- tapOn: "Sign in"
+- tapOn:
+    text: "Don’t allow"
+    optional: true
+- extendedWaitUntil:
+    visible: "Researcher"
+    timeout: 30000
+# Writer and Support are pinned in the fixture, so the list starts with their tiles.
+- takeScreenshot: "30-split-inbox"
+
+- tapOn:
+    text: "Researcher"
+    index: 0
+- extendedWaitUntil:
+    visible: "The fixture workspace is ready."
+    timeout: 15000
+- assertVisible: "Hide chats"
+- waitForAnimationToEnd
+- takeScreenshot: "31-split-thread"
+
+- tapOn:
+    text: "Writer"
+    index: 0
+- waitForAnimationToEnd
+- assertVisible: "Hide chats"
+- takeScreenshot: "32-split-switched"
+
+- tapOn: "Hide chats"
+- waitForAnimationToEnd
+- assertVisible: "Show chats"
+- takeScreenshot: "33-split-list-hidden"
+- tapOn: "Show chats"
+- waitForAnimationToEnd
+
+# A late notification prompt would swallow the drag.
+- tapOn:
+    text: "Don’t allow"
+    optional: true
+# Drag the divider to the right; the list widens.
+- swipe:
+    start: "40%, 50%"
+    end: "60%, 50%"
+    duration: 1500
+- waitForAnimationToEnd
+- takeScreenshot: "34-split-list-widened"

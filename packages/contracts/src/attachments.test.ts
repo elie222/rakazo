@@ -1,27 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { MessageBlock, validateThreadsSendInput } from "./index.js";
+import {
+  ATTACHMENT_AUDIO_MIME_TYPES,
+  isAllowedAttachmentMimeType,
+  isAttachmentAudioMimeType,
+  MessageBlock,
+  validateThreadsSendInput,
+} from "./index.js";
 
 describe("attachment contracts", () => {
-  it("parses image and file message blocks", () => {
+  it.each(ATTACHMENT_AUDIO_MIME_TYPES)("allows %s as an audio file block", (mimeType) => {
+    expect(isAllowedAttachmentMimeType(mimeType)).toBe(true);
+    expect(isAttachmentAudioMimeType(mimeType)).toBe(true);
     expect(
-      MessageBlock.parse({
-        kind: "image",
-        artifactId: "art_1",
-        mimeType: "image/png",
-        name: "shot.png",
-      }),
-    ).toMatchObject({ kind: "image", name: "shot.png" });
-    expect(
-      MessageBlock.parse({
-        kind: "file",
-        artifactId: "art_2",
-        mimeType: "application/pdf",
-        name: "brief.pdf",
-        size: 1234,
-      }),
-    ).toMatchObject({ kind: "file", size: 1234 });
+      MessageBlock.parse({ kind: "file", artifactId: "audio-1", mimeType, name: "clip", size: 42 }),
+    ).toMatchObject({ kind: "file", mimeType });
   });
-
+  it("rejects unknown audio", () => {
+    expect(isAllowedAttachmentMimeType("audio/flac")).toBe(false);
+    expect(isAttachmentAudioMimeType("audio/flac")).toBe(false);
+    expect(isAttachmentAudioMimeType("video/mp4")).toBe(false);
+  });
   it("requires text or attachments for threads.send", () => {
     expect(validateThreadsSendInput({ text: "hello" })).toBe(true);
     expect(validateThreadsSendInput({ artifactIds: ["art_1"] })).toBe(true);

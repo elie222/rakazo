@@ -29,6 +29,17 @@ describe("normalizeUiLocale", () => {
     expect(normalizeUiLocale("fr-CA")).toBe("fr");
     expect(normalizeUiLocale("FR")).toBe("fr");
     expect(normalizeUiLocale("fr_BE")).toBe("fr");
+    expect(normalizeUiLocale("he")).toBe("he");
+    expect(normalizeUiLocale("he-IL")).toBe("he");
+    expect(normalizeUiLocale("HE")).toBe("he");
+    expect(normalizeUiLocale("he_IL")).toBe("he");
+    expect(normalizeUiLocale("nl")).toBe("nl");
+    expect(normalizeUiLocale("nl-NL")).toBe("nl");
+    expect(normalizeUiLocale("nl-BE")).toBe("nl");
+    expect(normalizeUiLocale("NL")).toBe("nl");
+    expect(normalizeUiLocale("nl_nl")).toBe("nl");
+    expect(normalizeUiLocale("iw")).toBe("he");
+    expect(normalizeUiLocale("iw-IL")).toBe("he");
     expect(normalizeUiLocale("zh-CN")).toBe("zh-CN");
     expect(normalizeUiLocale("zh")).toBe("zh-CN");
     expect(normalizeUiLocale("zh-Hans")).toBe("zh-CN");
@@ -51,7 +62,7 @@ describe("normalizeUiLocale", () => {
   });
 
   it("falls back to English for unknown locales", () => {
-    expect(normalizeUiLocale("he-IL")).toBe("en");
+    expect(normalizeUiLocale("sv-SE")).toBe("en");
     expect(normalizeUiLocale("")).toBe("en");
     expect(normalizeUiLocale(null)).toBe("en");
   });
@@ -114,6 +125,13 @@ describe("resolveUiLocale", () => {
         navigatorLanguage: "fr-FR",
       }),
     ).toBe("fr");
+    expect(
+      resolveUiLocale({
+        stored: null,
+        envDefault: null,
+        navigatorLanguage: "nl-NL",
+      }),
+    ).toBe("nl");
     expect(
       resolveUiLocale({
         stored: null,

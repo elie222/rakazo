@@ -4,15 +4,14 @@ import type {
   ThreadMessage,
   ThreadSnapshot,
 } from "@rakazo/contracts";
-import { withLiveStreamingProgress } from "@rakazo/core";
+import { answerableAskMessageIds, withLiveStreamingProgress } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import {
   activeThreadRuns,
   applyThreadSendReceipt,
   clearActiveThreadRuns,
-  computerPanelAutoBoot,
-  computerPanelAutoUsesBoot,
   computerPanelNeedsMaintenance,
+  computerPanelNeedsScreen,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -42,6 +41,24 @@ describe("thread event reduction", () => {
     });
     expect(next?.activeRuns).toEqual([next?.run]);
     expect(next?.messages).toBe(initial.messages);
+  });
+
+  it("keeps a private card answerable through a new send receipt and run start", () => {
+    const paused = { ...threadRun("paused"), status: "waiting_input" as const };
+    const ask = {
+      ...message("ask", [{ kind: "ask", text: "Which city?", status: "pending" }], 1),
+      runId: paused.id,
+    };
+    const initial = { ...snapshot([ask]), run: paused, activeRuns: [paused] };
+    const receipt = applyThreadSendReceipt(initial, {
+      botId: "bot-1",
+      runId: "new",
+      taskId: "task-new",
+    });
+    expect(receipt?.activeRuns?.map((run) => run.id)).toEqual(["paused", "new"]);
+    const started = reduceThreadSnapshot(receipt, event({ type: "run.started", runId: "new" }));
+    expect(answerableAskMessageIds(started)).toEqual(new Set(["ask"]));
+    expect(started?.activeRuns?.map((run) => run.id)).toEqual(["paused", "new"]);
   });
 
   it("does not replace authoritative active or group run state with a send receipt", () => {
@@ -464,6 +481,7 @@ describe("thread event reduction", () => {
     expect(isThreadSnapshotEvent(event({ type: "run.started" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "run.completed" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "computer.takeover.requested" }))).toBe(true);
+    expect(isThreadSnapshotEvent(event({ type: "computer.takeover.released" }))).toBe(true);
     expect(isThreadSnapshotEvent(event({ type: "agent.tool.completed" }))).toBe(true);
   });
 
@@ -570,6 +588,39 @@ describe("thread event reduction", () => {
 
     expect(waiting?.run?.status).toBe("waiting_takeover");
     expect(waiting?.activeRuns?.[0]?.status).toBe("waiting_takeover");
+
+    const other = threadRun("run-2", "bot-2");
+    const released = reduceThreadSnapshot(
+      {
+        ...initial,
+        run: { ...run, status: "waiting_takeover" },
+        activeRuns: [
+          { ...run, status: "waiting_takeover" },
+          { ...other, status: "waiting_takeover" },
+        ],
+      },
+      event({
+        type: "computer.takeover.released",
+        seq: 6,
+        runId: run.id,
+        payload: { holder: "bot", reason: "released" },
+      }),
+    );
+    expect(released?.run?.status).toBe("queued");
+    expect(released?.activeRuns?.map((item) => [item.id, item.status])).toEqual([
+      [run.id, "queued"],
+      [other.id, "waiting_takeover"],
+    ]);
+
+    const running = reduceThreadSnapshot(
+      {
+        ...snapshot([]),
+        run: { ...run, status: "running" },
+        activeRuns: [{ ...run, status: "running" }],
+      },
+      event({ type: "computer.takeover.released", seq: 7, runId: run.id }),
+    );
+    expect(running?.run?.status).toBe("running");
   });
 
   it("inserts a peer takeover run that was absent from the open snapshot", () => {
@@ -629,6 +680,33 @@ describe("thread event reduction", () => {
     expect(computerTakeoverBlocked(reconciled.computer, reconciled.snapshot.run?.status)).toBe(
       false,
     );
+  });
+
+  it("accepts a newer refresh that queued the run after takeover release", () => {
+    const run = threadRun("run-1");
+    const waitingLocal: ThreadSnapshot = {
+      ...snapshot([]),
+      cursor: 10,
+      run: { ...run, status: "waiting_takeover" },
+      activeRuns: [{ ...run, status: "waiting_takeover" }],
+    };
+    const released: ThreadSnapshot = {
+      ...snapshot([]),
+      cursor: 12,
+      run: { ...run, status: "queued" },
+      activeRuns: [{ ...run, status: "queued" }],
+      computer: computer({ state: "running", busyBotName: "Chief", takeoverRequested: false }),
+    };
+
+    const reconciled = reconcileRefreshedThread(
+      waitingLocal,
+      released,
+      computer({ state: "running", takeoverRequested: true }),
+    );
+
+    expect(reconciled.snapshot.run?.status).toBe("queued");
+    expect(reconciled.snapshot.activeRuns?.[0]?.status).toBe("queued");
+    expect(reconciled.computer?.takeoverRequested).toBe(false);
   });
 
   it("ignores a refresh whose cursor is behind the event-sourced snapshot", () => {
@@ -1651,25 +1729,19 @@ describe("computer event reduction", () => {
     });
   });
 
-  it("auto-boots stopped computers and recovers a running screen that has no URL", () => {
-    expect(computerPanelAutoBoot("stopped")).toBe("boot");
-    expect(computerPanelAutoBoot("error")).toBe("boot");
-    expect(computerPanelAutoBoot(undefined)).toBe("boot");
-    expect(computerPanelAutoBoot("running", "https://screen.example")).toBe("wait");
-    expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
-    expect(computerPanelAutoBoot("booting")).toBe("wait");
-    expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  it("only reconnects a running computer whose screen has no URL", () => {
+    expect(computerPanelNeedsScreen("running", null)).toBe(true);
+    expect(computerPanelNeedsScreen("running", "https://screen.example")).toBe(false);
+    expect(computerPanelNeedsScreen("stopped")).toBe(false);
+    expect(computerPanelNeedsScreen("error")).toBe(false);
+    expect(computerPanelNeedsScreen(undefined)).toBe(false);
+    expect(computerPanelNeedsScreen("booting")).toBe(false);
+    expect(computerPanelNeedsScreen("suspended")).toBe(false);
   });
 
-  it("maps recover-screen to computer.boot, not computer.recover", () => {
-    expect(computerPanelAutoUsesBoot("recover-screen")).toBe(true);
-    expect(computerPanelAutoUsesBoot("boot")).toBe(true);
-    expect(computerPanelAutoUsesBoot("wait")).toBe(false);
-  });
-
-  it("shows maintenance only after a stopped or errored computer finishes booting", () => {
+  it("shows maintenance only for an errored computer that is not booting", () => {
     expect(computerPanelNeedsMaintenance("error", false)).toBe(true);
-    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(true);
+    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(false);
     expect(computerPanelNeedsMaintenance("error", true)).toBe(false);
     expect(computerPanelNeedsMaintenance("running", false)).toBe(false);
     expect(computerPanelNeedsMaintenance(undefined, false)).toBe(false);
@@ -1679,7 +1751,7 @@ describe("computer event reduction", () => {
     const panel = "computer";
     const booting = false;
     const showInSidePanel = (computerOpen: boolean) =>
-      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("stopped", booting);
+      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("error", booting);
 
     expect(showInSidePanel(false)).toBe(true);
     expect(showInSidePanel(true)).toBe(false);

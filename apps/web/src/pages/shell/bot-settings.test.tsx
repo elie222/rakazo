@@ -120,7 +120,7 @@ afterEach(() => {
   container.remove();
 });
 
-type SavePatch = { disabledBuiltinTools?: string[] };
+type SavePatch = { disabledBuiltinTools?: string[]; name?: string; title?: string };
 
 function setField(input: HTMLInputElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -426,4 +426,30 @@ describe("BotSettings disabled tools", () => {
     expect(container.textContent).toContain("Network failed");
     expect(container.textContent).not.toContain("Unknown tool");
   });
+});
+
+it("omits projected identity values on unrelated saves but keeps explicit edits", async () => {
+  const onSave = vi.fn<(patch: SavePatch) => Promise<void>>(async () => undefined);
+  await renderSettings(onSave, { ...bot, name: "Бот", title: "" });
+  const save = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Save",
+  )!;
+  await act(async () => save.click());
+  await flush();
+  expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("name");
+  expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty("title");
+  await act(async () => {
+    setField(container.querySelector<HTMLInputElement>('[id$="-name"]')!, "CustomerSupportBot2026");
+    setField(container.querySelector<HTMLInputElement>('[id$="-title"]')!, "Support");
+  });
+  await act(async () => save.click());
+  await flush();
+  expect(onSave.mock.calls[1]?.[0]).toMatchObject({
+    name: "CustomerSupportBot2026",
+    title: "Support",
+  });
+  await act(async () => save.click());
+  await flush();
+  expect(onSave.mock.calls[2]?.[0]).not.toHaveProperty("name");
+  expect(onSave.mock.calls[2]?.[0]).not.toHaveProperty("title");
 });

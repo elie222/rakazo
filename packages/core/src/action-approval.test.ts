@@ -5,6 +5,7 @@ import {
   connectorKindFromToolName,
   connectorToolRequiresApproval,
   isApprovalAskBlock,
+  isOwnerStartedRun,
   isSecretAskBlock,
   planActionGate,
   resolveActionApproval,
@@ -12,6 +13,7 @@ import {
   toolRequiresApproval,
   toolRequiresExplicitApproval,
   unattendedTriggerToolRequiresApproval,
+  watchToolRefusal,
 } from "./action-approval.js";
 
 describe("toolRequiresApproval", () => {
@@ -45,6 +47,27 @@ describe("toolRequiresApproval", () => {
     ]) {
       expect(toolRequiresApproval(name, false)).toBe(false);
     }
+  });
+
+  it("always asks before fleet writes that touch several bots, cost money or rewrite a bot", () => {
+    for (const name of [
+      "create_group",
+      "update_group",
+      "set_child_instructions",
+      "set_child_bot_model",
+      "create_child_routine",
+    ]) {
+      expect(toolRequiresApproval(name, false)).toBe(true);
+      expect(toolRequiresExplicitApproval(name)).toBe(true);
+    }
+  });
+
+  it("never asks before reading the fleet or organizing the sidebar", () => {
+    for (const name of ["list_fleet", "organize_bot", "update_bot"]) {
+      expect(toolRequiresApproval(name, false)).toBe(false);
+      expect(toolRequiresExplicitApproval(name)).toBe(false);
+    }
+    expect(toolRequiresApproval("organize_bot", true)).toBe(false);
   });
 
   it("gates connector executes except obvious reads", () => {
@@ -94,6 +117,25 @@ describe("resolveActionApprovalDetail", () => {
   });
 });
 
+describe("isOwnerStartedRun", () => {
+  it.each([
+    ["user", false, true],
+    ["call_end", false, true],
+    ["follow_up", true, true],
+    ["follow_up", false, false],
+    ["bot_message", true, false],
+    ["messaging", true, false],
+    ["spawn", true, false],
+    ["tickets", true, false],
+    ["webhook", true, false],
+    ["routine", true, false],
+    ["resume", true, false],
+    ["unknown", true, false],
+  ])("treats %s (follow-up from user: %s) as owner-started: %s", (trigger, fromUser, expected) => {
+    expect(isOwnerStartedRun(trigger, fromUser)).toBe(expected);
+  });
+});
+
 describe("unattendedTriggerToolRequiresApproval", () => {
   it("forces approval for webhook-triggered local side effects", () => {
     for (const name of ["shell", "write_file", "browser_act", "computer_act"]) {
@@ -109,6 +151,7 @@ describe("unattendedTriggerToolRequiresApproval", () => {
       "browser_snapshot",
       "request_takeover",
       "run_subagent",
+      "list_fleet",
     ]) {
       expect(unattendedTriggerToolRequiresApproval("webhook", name, false)).toBe(false);
     }
@@ -372,5 +415,39 @@ describe("applyJudgeDecision", () => {
   it("fails closed on consequential checker errors and open on exempt", () => {
     expect(applyJudgeDecision({ decision: "error", consequential: true })).toBe("ask");
     expect(applyJudgeDecision({ decision: "error", consequential: false })).toBe("allow");
+  });
+});
+
+describe("watchToolRefusal", () => {
+  const rule = (matchKind: string, matchValue: string, effect = "require_approval") =>
+    ({ effect, matchKind, matchValue }) as Parameters<typeof watchToolRefusal>[0]["rules"][number];
+
+  it("allows only explicitly declared reads", () => {
+    expect(watchToolRefusal({ toolName: "drive_files", readOnly: true, rules: [] })).toBeNull();
+  });
+
+  it.each(["brain_changed", "gmail_search_threads", "clickbot_tasks", "send_email"])(
+    "refuses missing metadata even for %s",
+    (toolName) => {
+      expect(watchToolRefusal({ toolName, rules: [] })).toMatch(/can change data/);
+      expect(watchToolRefusal({ toolName, readOnly: false, rules: [] })).toMatch(/can change data/);
+    },
+  );
+
+  it("refuses a read the space's rules would ask about", () => {
+    expect(
+      watchToolRefusal({
+        toolName: "brain_search",
+        readOnly: true,
+        rules: [rule("tool", "brain_search")],
+      }),
+    ).toMatch(/approval/);
+    expect(
+      watchToolRefusal({
+        toolName: "brain_search",
+        readOnly: true,
+        rules: [rule("tool", "brain_search", "always_allow")],
+      }),
+    ).toBeNull();
   });
 });

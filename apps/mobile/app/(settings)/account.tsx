@@ -1,4 +1,5 @@
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import { accountDisplay } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -47,7 +48,7 @@ import {
 import { archivedChatCounts, loadArchivedChats } from "../../lib/archived-chats";
 import { replaceWithSignIn } from "../../lib/auth-routing";
 import { promptAccountDeletion } from "../../lib/delete-account-prompt";
-import { setUiLocale, useI18n } from "../../lib/i18n";
+import { useI18n } from "../../lib/i18n";
 import type { LiveNotificationSettings } from "../../lib/live-notifications";
 import {
   canPostPromotedNotifications,
@@ -57,8 +58,7 @@ import {
   openPromotedNotificationSettings,
   setLiveNotificationSettings,
 } from "../../lib/live-notifications";
-import { presentMessageActionSheet } from "../../lib/message-action-sheet";
-import { native, useResolvedAppearance, useThemedStyles } from "../../lib/native";
+import { native, useThemedStyles } from "../../lib/native";
 import { registerPushToken } from "../../lib/push";
 import {
   getCachedRemoteImagesEnabled,
@@ -71,25 +71,22 @@ import {
   subscribeResponseStreaming,
 } from "../../lib/response-streaming";
 import { continueWithSso } from "../../lib/sso";
-import type { AccountUiLocale } from "../../lib/ui-locale";
-import { ACCOUNT_UI_LOCALES, UI_LOCALE_LABELS } from "../../lib/ui-locale";
+import { UI_LOCALE_LABELS } from "../../lib/ui-locale";
 import { errorText } from "../../lib/user-error";
 
 /** Render account settings, including the entry point for voice configuration. */
 export default function Account() {
   const { t, locale } = useI18n();
-  const colorScheme = useResolvedAppearance();
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
+  const account = accountDisplay(me ?? {}, t("Your account"));
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
   const [deletionCodeSent, setDeletionCodeSent] = useState(false);
   const [ssoReauthenticated, setSsoReauthenticated] = useState(false);
   const [deletePassword, setDeletePassword] = useState("");
-  const [localeSaving, setLocaleSaving] = useState(false);
-  const [localeError, setLocaleError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const deletionDisabled =
     pending ||
@@ -289,31 +286,6 @@ export default function Account() {
     }
   }
 
-  function applyLocale(code: AccountUiLocale) {
-    if (code === locale || localeSaving) return;
-    setLocaleSaving(true);
-    setLocaleError(null);
-    void setUiLocale(code)
-      .catch(() => {
-        setLocaleError(t("Could not change language"));
-      })
-      .finally(() => setLocaleSaving(false));
-  }
-
-  function openLanguagePicker() {
-    if (localeSaving) return;
-    presentMessageActionSheet({
-      title: t("Language"),
-      actions: ACCOUNT_UI_LOCALES.map((code) => ({
-        text: UI_LOCALE_LABELS[code],
-        onPress: () => applyLocale(code),
-      })),
-      colorScheme,
-      cancel: t("Cancel"),
-      more: t("More"),
-    });
-  }
-
   async function handleDeletion(password: string, hasPassword = security?.hasPassword === true) {
     if ((!password && !ssoReauthenticated) || pending) return;
     setPending(true);
@@ -347,9 +319,9 @@ export default function Account() {
         <SettingsGroup>
           <SettingsRow
             accessible
-            detail={me?.email || undefined}
+            detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
-            title={me?.name || t("Your account")}
+            title={account.label}
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>
@@ -443,22 +415,17 @@ export default function Account() {
             accessibilityRole="button"
             accessibilityLabel={t("Language")}
             accessibilityValue={{ text: UI_LOCALE_LABELS[locale] }}
-            accessibilityState={{ disabled: localeSaving }}
             chevron="right"
-            dimmed={localeSaving}
-            disabled={localeSaving}
-            onPress={openLanguagePicker}
+            onPress={() => router.push("/language")}
             title={t("Language")}
             value={UI_LOCALE_LABELS[locale]}
           />
-          {localeError ? <Text style={styles.error}>{localeError}</Text> : null}
         </SettingsGroup>
 
         {Platform.OS === "android" ? (
           <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
             <SettingsSwitch
               label={t("Live working status")}
-              detail={t("While agents are working")}
               value={notifications.liveConnection}
               disabled={notificationPending || !notificationsReady}
               onChange={(liveConnection) =>
@@ -474,7 +441,6 @@ export default function Account() {
             />
             <SettingsSwitch
               label={t("Scheduled tasks")}
-              detail={t("Alerts from routines")}
               value={notifications.scheduledTasks}
               disabled={notificationPending || !notificationsReady}
               onChange={(scheduledTasks) =>

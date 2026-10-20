@@ -11,6 +11,8 @@ import Computer from "../app/computer";
 
 const rpc = vi.hoisted(() => vi.fn());
 const textScale = vi.hoisted(() => ({ fontScale: 1 }));
+const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+const screens = vi.hoisted(() => ({ mounts: 0 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
   props: undefined as
@@ -57,6 +59,12 @@ vi.mock("react-native", () => {
   }
 
   return {
+    AppState: {
+      addEventListener: (_type: string, listener: (state: string) => void) => {
+        appState.listeners.add(listener);
+        return { remove: () => appState.listeners.delete(listener) };
+      },
+    },
     Modal: MockModal,
     Pressable: MockPressable,
     ScrollView: MockView,
@@ -79,12 +87,16 @@ vi.mock("react-native-webview", () => {
     WebView: (props: {
       accessibilityElementsHidden?: boolean;
       importantForAccessibility?: string;
-    }) =>
-      createElement("iframe", {
+    }) => {
+      useEffect(() => {
+        screens.mounts += 1;
+      }, []);
+      return createElement("iframe", {
         title: "screen",
         "data-elements-hidden": String(Boolean(props.accessibilityElementsHidden)),
         "data-important": props.importantForAccessibility ?? "auto",
-      }),
+      });
+    },
   };
 });
 
@@ -103,9 +115,8 @@ vi.mock("expo-router", () => ({
   useNavigation: () => ({ setOptions: () => undefined }),
 }));
 
-vi.mock("expo-screen-orientation", () => ({
-  OrientationLock: { DEFAULT: 0, PORTRAIT_UP: 1 },
-  lockAsync: () => Promise.resolve(),
+vi.mock("../lib/orientation", () => ({
+  holdFreeRotation: () => () => undefined,
 }));
 
 vi.mock("../components/native-action-button", () => {
@@ -211,6 +222,8 @@ describe("computer screen", () => {
     textScale.fontScale = 1;
     picker.mounts = 0;
     picker.props = undefined;
+    appState.listeners.clear();
+    screens.mounts = 0;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
 
@@ -395,5 +408,30 @@ describe("computer screen", () => {
     expect(screens).toHaveLength(1);
     expect(screens[0]?.getAttribute("data-elements-hidden")).toBe("false");
     expect(screens[0]?.getAttribute("data-important")).toBe("auto");
+  });
+
+  it("loads the screen again when the app returns from the background", async () => {
+    respond({ ...botWorking, controlHolder: "user", controlBotId: "bot-1", busyBotName: null });
+    const view = await render();
+    await act(async () => preview(view).click());
+    await settle();
+    const opened = screens.mounts;
+
+    const emit = async (state: string) => {
+      await act(async () => {
+        for (const listener of appState.listeners) listener(state);
+      });
+      await settle();
+    };
+    await emit("inactive");
+    await emit("active");
+    expect(screens.mounts).toBe(opened);
+
+    await emit("background");
+    await emit("active");
+    expect(screens.mounts).toBe(opened + 1);
+    expect(view.querySelector("section iframe")?.getAttribute("data-elements-hidden")).toBe(
+      "false",
+    );
   });
 });

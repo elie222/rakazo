@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createScanner, ScriptTarget } from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-localization", () => ({
@@ -27,6 +28,15 @@ function collectSourceFiles(dir: string): string[] {
     else if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".test.ts")) files.push(path);
   }
   return files;
+}
+
+function translationIds(source: string): string[] {
+  const scanner = createScanner(ScriptTarget.Latest, true);
+  return [...source.matchAll(/\bt\(\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g)].map((match) => {
+    scanner.setText(match[1]);
+    scanner.scan();
+    return scanner.getTokenValue();
+  });
 }
 
 describe("mobile i18n", () => {
@@ -67,6 +77,15 @@ describe("mobile i18n", () => {
     );
     expect(t("Delete {name}?", { name: "Scout" })).toBe("Удалить Scout?");
 
+    resetI18nForTests("nl");
+    expect(t("Account")).toBe("Account");
+    expect(t("Sign in to Rakazo")).toBe("Aanmelden bij Rakazo");
+    expect(t("New bot")).toBe("Nieuwe bot");
+    expect(t("{runs} runs · {tokens} tokens", { runs: 3, tokens: 12 })).toBe(
+      "3 uitvoeringen · 12 tokens",
+    );
+    expect(t("Delete {name}?", { name: "Scout" })).toBe("Scout verwijderen?");
+
     resetI18nForTests("de");
     expect(t("Account")).toBe("Konto");
     expect(t("Sign in to Rakazo")).toBe("Bei Rakazo anmelden");
@@ -81,7 +100,8 @@ describe("mobile i18n", () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES]) {
+    const { NL_MESSAGES } = await import("./locales/nl");
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
       const empty = Object.entries(messages).filter(([, value]) => !value.trim());
       const interpolationMismatches = Object.entries(messages).filter(([id, value]) => {
         const tokens = (message: string) =>
@@ -97,13 +117,28 @@ describe("mobile i18n", () => {
     const { ZH_MESSAGES } = await import("./locales/zh");
     const { RU_MESSAGES } = await import("./locales/ru");
     const { DE_MESSAGES } = await import("./locales/de");
-    const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS } = await import("@rakazo/core");
+    const { NL_MESSAGES } = await import("./locales/nl");
+    const { EMPTY_PLUGIN_CATALOG_MESSAGE, SLASH_ACTIONS, RUN_ERROR_LIMIT_MESSAGES } = await import(
+      "@rakazo/core"
+    );
     const { AI_DATA_DISCLOSURES, OPENAI_COMPATIBLE_BASE_URL_HINT } = await import(
       "@rakazo/contracts"
     );
     const mobileRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
     const ids = new Set<string>([
       ...Object.values(AI_DATA_DISCLOSURES),
+      ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "Your OpenRouter",
+      "Your OpenAI",
+      "Your Anthropic",
+      "Your model provider",
+      "The model provider returned an error.",
+      "{provider} is rate limiting requests. Try again shortly.",
+      "{summary} Resets {date}.",
+      "{provider} rejected the API key. Check your connection settings.",
+      "{provider} could not find the requested model.",
+      "{provider} took too long to respond. Try again.",
+
       EMPTY_PLUGIN_CATALOG_MESSAGE,
       OPENAI_COMPATIBLE_BASE_URL_HINT,
       ...SLASH_ACTIONS.map((action) => action.label),
@@ -121,14 +156,32 @@ describe("mobile i18n", () => {
     ]);
     for (const file of collectSourceFiles(mobileRoot)) {
       const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(/\bt\(\s*"((?:\\.|[^"\\])*)"/g)) {
-        ids.add(JSON.parse(`"${match[1]}"`) as string);
-      }
+      for (const id of translationIds(source)) ids.add(id);
     }
-    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES]) {
+    for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
     }
+  });
+
+  it("decodes JavaScript string escapes in scanned translation ids", () => {
+    expect(
+      translationIds(
+        String.raw`t('He said \"hi\"'); t('C:\\temp'); t('It\'s ready'); t("Say \"hi\""); t('\x41\u0042\n')`,
+      ),
+    ).toEqual(['He said "hi"', "C:\\temp", "It's ready", 'Say "hi"', "AB\n"]);
+  });
+
+  it.each([
+    ["de", "Dein Modellanbieter hat zu lange zum Antworten gebraucht. Versuche es erneut."],
+    ["nl", "Jouw modelaanbieder deed er te lang over om te antwoorden. Probeer het opnieuw."],
+    ["ru", "Ваш поставщик моделей не ответил вовремя. Повторите попытку."],
+    ["zh-CN", "你的模型提供商响应超时。请重试。"],
+  ] as const)("renders provider errors in %s", async (locale, expected) => {
+    const { normalizeRunError } = await import("@rakazo/core");
+    const { resetI18nForTests, t, dateLocaleForUi } = await import("./i18n");
+    resetI18nForTests(locale);
+    expect(normalizeRunError("Request timed out", t, dateLocaleForUi()).summary).toBe(expected);
   });
 
   it("prefers the stored locale, then activates and persists a new choice", async () => {

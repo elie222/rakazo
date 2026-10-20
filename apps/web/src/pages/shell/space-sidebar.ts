@@ -24,6 +24,8 @@ function spaceHeaderMenu(space: { canRename?: boolean; canDelete?: boolean }, ho
   return {
     canRenameSpace: hostsMenu && space.canRename === true,
     canDeleteSpace: hostsMenu && space.canDelete === true,
+    // Every member can open a space's settings, so the menu does not depend on rename or delete.
+    canOpenSpaceSettings: hostsMenu,
   };
 }
 
@@ -86,11 +88,14 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ...group,
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
       key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
+      // A header holding the space menu is never blank, even for the only space.
       title: showSpaceNames
         ? group.title
           ? `${space.name} · ${group.title}`
           : space.name
-        : group.title,
+        : index === 0 && !group.title
+          ? space.name
+          : group.title,
       showLock: showSpaceNames,
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
@@ -100,11 +105,30 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     if (sections.length > 0) return sections;
     // Keep empty spaces selectable; chat clicks are the only switch control.
     if (needle && (space.bots.length > 0 || space.groups.length > 0)) return [];
-    if (!showSpaceNames && space.canRename !== true && space.canDelete !== true) return [];
+    // Saved sections stay listed under the placeholder so they can still be
+    // renamed or deleted after their last chat leaves.
+    const emptySections = needle
+      ? []
+      : space.botSections.map((section) => ({
+          key: showSpaceNames ? `space:${space.id}:section:${section.id}` : `section:${section.id}`,
+          title: showSpaceNames ? `${space.name} · ${section.name}` : section.name,
+          bots: [] as (typeof sections)[number]["bots"],
+          sectionId: section.id as string | null,
+          showLock: showSpaceNames,
+          emptySpaceId: undefined as string | undefined,
+          spaceId: space.id,
+          spaceName: space.name,
+          ...spaceHeaderMenu(space, false),
+        }));
+    // A lone space is the selected one, so its settings stay in the account menu too.
+    const lone = !showSpaceNames && !space.canRename && !space.canDelete;
+    if (lone && (needle || emptySections.length > 0)) {
+      return emptySections;
+    }
     return [
       {
         key: showSpaceNames ? `space:${space.id}:empty` : `space:${space.id}:actions`,
-        title: showSpaceNames ? space.name : null,
+        title: space.name,
         bots: [],
         sectionId: null,
         showLock: showSpaceNames,
@@ -113,6 +137,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         spaceName: space.name,
         ...spaceHeaderMenu(space, true),
       },
+      ...emptySections,
     ];
   });
 }

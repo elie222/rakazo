@@ -8,24 +8,31 @@ import type {
   MessageReaction,
   Routine,
 } from "@rakazo/contracts";
-import { canReactToThreadMessage, MESSAGE_REACTIONS } from "@rakazo/contracts";
+import {
+  attachmentMaxBytes,
+  canReactToThreadMessage,
+  isAttachmentAudioMimeType,
+  MESSAGE_REACTIONS,
+} from "@rakazo/contracts";
 import type { SlashActionId, ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
+  answerableAskMessageIds,
   appendNewerThreadPage,
   attachmentsForThread,
   buildComposerMentionOptions,
   cloudAgentHttpsUrl,
+  expandPeerReplies,
+  foldPeerReplies,
   formatFileSize,
-  formatMessageTime,
   forwardProbeAfterPage,
   groupVoiceChats,
   isApprovalAskBlock,
   isPeerReceiptBlocks,
   isRunTerminalEvent,
   isSecretAskBlock,
-  latestAnswerableAskMessageId,
   leaveThreadWindow,
+  normalizeRunError,
   openThreadWindow,
   plainTextFromMarkdown,
   projectMessageReactions,
@@ -33,10 +40,10 @@ import {
   replyAttachment,
   resolveComposerSendPlan,
   resolvePersonaColorDef,
+  displayName as safeDisplayName,
   selectedAskActionLabel,
   threadWindowMessages,
   timeSeparatorIds,
-  userVisibleMessages,
   withLiveStreamingProgress,
 } from "@rakazo/core";
 import * as Clipboard from "expo-clipboard";
@@ -59,6 +66,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import type {
+  GestureResponderEvent,
   LayoutChangeEvent,
   ListRenderItemInfo,
   NativeScrollEvent,
@@ -66,7 +74,6 @@ import type {
   TextProps,
 } from "react-native";
 import {
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   AppState,
@@ -80,7 +87,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import {
@@ -97,6 +103,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppConnectCard } from "../components/AppConnectCard";
 import { AskActions } from "../components/AskActions";
+import { AudioAttachment } from "../components/audio-attachment";
 import { BotAvatar } from "../components/bot-avatar";
 import { ChoiceCard } from "../components/ChoiceCard";
 import { ComputerCard } from "../components/ComputerCard";
@@ -105,23 +112,29 @@ import { FailedSendBubble } from "../components/failed-send-bubble";
 import { GlassSurface } from "../components/glass-surface";
 import type { ImageArtifactPreviewTarget } from "../components/image-artifact-viewer";
 import { InlineImageAttachment } from "../components/inline-image-attachment";
+import { InstructionUndo } from "../components/instruction-undo";
 import { McpApprovalCard } from "../components/McpApprovalCard";
 import type { MarkdownArtifactPreviewTarget } from "../components/markdown-artifact-preview";
 import { MarkdownArtifactPreview } from "../components/markdown-artifact-preview";
+import { presentMessageMenu } from "../components/message-action-menu";
 import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
 import { ReplyDismissButton } from "../components/reply-dismiss-button";
 import { ReplyLine } from "../components/reply-line";
+import { ScrollToBottomButton } from "../components/scroll-to-bottom-button";
+import { SecretAskSheet } from "../components/secret-ask-sheet";
 import { SelectTextSheet } from "../components/select-text-sheet";
 import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
 import { ThreadComposer } from "../components/thread-composer";
+import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { createThreadHeaderStyles } from "../components/thread-header-styles";
 import { TimeSeparator } from "../components/time-separator";
 import { VoiceChatCard } from "../components/VoiceChatCard";
 import { WorkingIndicator } from "../components/WorkingIndicator";
+import { readableGutter } from "../lib/adaptive-layout";
 import type {
   MobileBot,
   MobileGroup,
@@ -146,9 +159,11 @@ import {
   selectSpace,
   subscribeThread,
 } from "../lib/api";
+import { useAppForeground } from "../lib/app-foreground";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
+import { plainAskTitle } from "../lib/ask-title";
 import { nextAutoSpeakAction } from "../lib/auto-speak";
 import { confirmDeleteBot, restoreArchivedBot } from "../lib/bot-lifecycle";
 import { retainUnchangedBotRoster } from "../lib/bot-roster";
@@ -157,9 +172,10 @@ import { setCallProviderTranscribe, startCall, useCallSession } from "../lib/cal
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
-import { dateLocaleForUi, t, useI18n } from "../lib/i18n";
+import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
+import { KeyboardScrollBack } from "../lib/keyboard-scroll-back";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
@@ -176,7 +192,7 @@ import {
   quotableMessageSegments,
   truncateQuoteExcerpt,
 } from "../lib/message-presentation";
-import { native, useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
+import { useMobileTokens, useResolvedAppearance, useThemedStyles } from "../lib/native";
 import { HEADER_TITLE_MAX_FONT_SCALE, iosAtLeast } from "../lib/native-controls";
 import {
   threadRouteSpaceOnFocus,
@@ -200,6 +216,7 @@ import {
   writeSavedThread,
 } from "../lib/saved-chats";
 import { secretDestinationLabel } from "../lib/secret-destination";
+import { secretFieldTraits } from "../lib/secret-field-traits";
 import { selectableTextFromMarkdown } from "../lib/selectable-text";
 import {
   currentReadySessionGeneration,
@@ -207,12 +224,13 @@ import {
   loadVerifiedIntegrationsScope,
   subscribeSessionGeneration,
 } from "../lib/session";
+import { setInboxHidden, useSplitView } from "../lib/split-view";
 import type { SendAttempt } from "../lib/thread-feedback";
-import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
+import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
-import { ThreadScrollBehavior } from "../lib/thread-scroll";
+import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "../lib/thread-snapshot";
 import { prepareUnsentSends } from "../lib/unsent-sends";
 import { errorText } from "../lib/user-error";
@@ -253,7 +271,8 @@ function formatApprovalAnswer(
 function formatAttachmentSkip(item: { name: string; reason: string }): string {
   const name = item.name === "camera" ? t("Camera") : item.name;
   if (item.reason === "permission denied") return t("{name} (permission denied)", { name });
-  if (item.reason === "over 10 MiB") return t("{name} (over 10 MiB)", { name });
+  if (item.reason.startsWith("over "))
+    return t("{name} (over {limit})", { name, limit: item.reason.slice(5) });
   if (item.reason === "unsupported type") return t("{name} (unsupported type)", { name });
   const maxMatch = /^max (\d+) attachments$/.exec(item.reason);
   if (maxMatch) {
@@ -406,11 +425,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const [botActionsOpen, setBotActionsOpen] = useState(false);
   const { t, locale } = useI18n();
   const navigation = useNavigation();
+  const foreground = useAppForeground();
   const router = useRouter();
-  const { width: windowWidth } = useWindowDimensions();
+  // Beside the chat list on a wide window, the chat has only the width the list leaves.
+  const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
   const nativeHeaderHeight = useHeaderHeight();
   const headerHeight = iosAtLeast(26) ? nativeHeaderHeight : 0;
   const insets = useSafeAreaInsets();
+  // An unfolded or tablet window keeps messages and the composer in a centred reading column.
+  const columnInset = readableGutter(windowWidth, Math.max(insets.left, insets.right));
+  const columnWidth = windowWidth - columnInset * 2;
   // Frame by frame, including a swipe that drags the keyboard down.
   const keyboardProgress = useSharedValue(KeyboardController.isVisible() ? 1 : 0);
   useKeyboardHandler(
@@ -430,7 +454,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     },
     [],
   );
-  const composerRestingPadding = Math.max(insets.bottom + 12, 24);
+  const composerRestingPadding =
+    Platform.OS === "ios" ? insets.bottom : Math.max(insets.bottom + 12, 24);
   // Hands the composer from the keyboard to the safe area as the keyboard moves, so it never
   // dips into the home indicator and then jumps back up.
   const composerKeyboardPadding = useAnimatedStyle(() => ({
@@ -461,13 +486,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
-  const userDragging = useRef(false);
+  const liveScrollBack = useRef(new KeyboardScrollBack({ inverted: true }));
+  const pinnedScrollBack = useRef(new KeyboardScrollBack({ inverted: false }));
+  const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const nativeMomentumActive = useRef(false);
   const loadingOlderContent = useRef(false);
   const expandedHistoryThread = useRef<string | null>(null);
   const historyEpoch = useRef(0);
   const jumpGeneration = useRef(0);
   const refreshGeneration = useRef(0);
   const liveSubscribed = useRef(false);
+  const liveCursor = useRef<number | null>(null);
   const liveSubscriptionGeneration = useRef(0);
   const pinnedAroundRef = useRef<{
     botId?: string;
@@ -507,6 +536,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     joinPinnedAfterLayout.current = null;
     loadingOlderContent.current = false;
     publishThreadScrollState(scrollBehavior.current.state());
+    return () => {
+      clearTimeout(scrollIdleTimer.current);
+      nativeMomentumActive.current = false;
+    };
   }, [threadKey, publishThreadScrollState]);
   const reducedMotion = useReducedMotion();
   const artifactTarget: MobileArtifactTarget | undefined = groupId
@@ -539,6 +572,19 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
+  const [uploadConfig, setUploadConfig] = useState<{ maxUploadSizeBytes?: number }>();
+  useEffect(() => {
+    let cancelled = false;
+    void rpc<{ maxUploadSizeBytes?: number }>("me")
+      .then((me) => {
+        if (!cancelled) setUploadConfig(me);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
   // The call outlives renders, so its switch check reads the newest bot list from here.
   const mentionBotsRef = useRef<MobileBot[]>([]);
@@ -560,7 +606,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const preparingSend = useRef(false);
-  const feedback = useThreadFeedback(threadKey, newClientNonce);
+  const echoed = useMemo(
+    () =>
+      snap && (snap.groupId ?? snap.botId) === threadKey
+        ? new Set(
+            snap.messages.flatMap((message) =>
+              message.role === "user" && message.seq !== undefined ? [message.seq] : [],
+            ),
+          )
+        : undefined,
+    [snap, threadKey],
+  );
+  const feedback = useThreadFeedback(threadKey, newClientNonce, echoed);
   const { error, setError } = feedback;
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [selectableText, setSelectableText] = useState<string | null>(null);
@@ -576,10 +633,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const [dismissedChoiceQuestions, setDismissedChoiceQuestions] = useState<
     ReadonlyMap<string, ReadonlySet<string>>
   >(() => new Map());
+  const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const peerTranscript = useMemo(
+    () => foldPeerReplies(snap?.messages ?? [], { includePeerReceipts: true }),
+    [snap?.messages],
+  );
   const reactionView = useMemo(
     () =>
       projectMessageReactions(
-        userVisibleMessages(snap?.messages ?? [], { includePeerReceipts: true })
+        expandPeerReplies(peerTranscript, expandedPeerMarkers)
           .map((message) => {
             const dismissed = dismissedChoiceQuestions.get(message.id);
             if (!dismissed) return message;
@@ -588,10 +652,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           })
           .filter((message) => hasVisibleMessagePresentation(message.blocks)),
       ),
-    [dismissedChoiceQuestions, snap?.messages],
+    [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
   );
   const visibleMessages = reactionView.visibleMessages;
-  const latestMessageId = visibleMessages.at(-1)?.id ?? null;
+  const latestMessageId = latestArrivalMessageId(visibleMessages, peerTranscript.markerOf);
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerRef = useRef<ThreadComposerHandle>(null);
   const composerMentionTargets = useMemo(
@@ -621,7 +685,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     [groupId, inGroup, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
-  const displayName = currentBot?.name ?? name;
+  const displayName = safeDisplayName(currentBot?.name ?? name, inGroup ? t("Group") : t("Bot"));
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
@@ -809,11 +873,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   useLayoutEffect(() => {
     navigation.setOptions({
       title: displayName || t("Thread"),
-      // Messages scroll under the bar. The list is inverted, so iOS would draw the header's scroll
-      // edge effect at its flipped top, above the composer.
+      // Inversion swaps the visual edges; disable both native fades on iOS 26.
       headerTransparent: iosAtLeast(26),
       ...(iosAtLeast(26) ? { headerStyle: { backgroundColor: "transparent" } } : {}),
-      scrollEdgeEffects: { top: "hidden" },
+      scrollEdgeEffects: { top: "hidden", bottom: "hidden" },
       headerTitle: () => (
         <Pressable
           accessibilityRole="button"
@@ -844,21 +907,44 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           </GlassSurface>
         </Pressable>
       ),
-      ...(iosAtLeast(26)
+      ...(Platform.OS === "ios" && !readOnly && (!inGroup || iosAtLeast(26))
         ? {
             unstable_headerRightItems: () => [
-              {
-                type: "button" as const,
-                accessibilityLabel: inGroup ? t("Group settings") : t("Bot actions"),
-                icon: { type: "sfSymbol" as const, name: inGroup ? "gearshape" : "ellipsis" },
-                onPress: inGroup
-                  ? () =>
+              ...(inGroup
+                ? []
+                : [
+                    {
+                      type: "button" as const,
+                      accessibilityLabel: t("Open computer"),
+                      icon: { type: "sfSymbol" as const, name: "desktopcomputer" },
+                      onPress: openBotComputer,
+                    },
+                  ]),
+              inGroup
+                ? {
+                    type: "button" as const,
+                    accessibilityLabel: t("Group settings"),
+                    icon: { type: "sfSymbol" as const, name: "gearshape" },
+                    onPress: () =>
                       router.push({
                         pathname: "/group-settings",
                         params: { groupId: groupId ?? "" },
-                      })
-                  : showBotActions,
-              },
+                      }),
+                  }
+                : {
+                    type: "menu" as const,
+                    accessibilityLabel: t("Bot actions"),
+                    icon: { type: "sfSymbol" as const, name: "ellipsis" },
+                    disabled: !botId,
+                    menu: {
+                      items: botActions.map((action) => ({
+                        type: "action" as const,
+                        label: action.text,
+                        destructive: action.destructive,
+                        onPress: action.onPress,
+                      })),
+                    },
+                  },
             ],
           }
         : {}),
@@ -883,25 +969,65 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             />
           </Pressable>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("Bot actions")}
-            hitSlop={8}
-            onPress={showBotActions}
-          >
-            <NativeSymbol
-              ios="ellipsis"
-              android="ellipsis-horizontal"
-              size={21}
-              color={tokens.foreground}
-            />
-          </Pressable>
+          <View style={styles.headerActions}>
+            {readOnly ? null : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("Open computer")}
+                hitSlop={8}
+                onPress={openBotComputer}
+              >
+                <NativeSymbol
+                  ios="desktopcomputer"
+                  android="desktop-outline"
+                  size={21}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("Bot actions")}
+              hitSlop={8}
+              onPress={showBotActions}
+            >
+              <NativeSymbol
+                ios="ellipsis"
+                android="ellipsis-horizontal"
+                size={21}
+                color={tokens.foreground}
+              />
+            </Pressable>
+          </View>
         ),
+      ...(split
+        ? {
+            headerBackVisible: false,
+            headerLeft: () => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={inboxHidden ? t("Show chats") : t("Hide chats")}
+                hitSlop={8}
+                onPress={() => setInboxHidden(!inboxHidden)}
+              >
+                <NativeSymbol
+                  ios={inboxHidden ? "sidebar.left" : "arrow.up.left.and.arrow.down.right"}
+                  android={inboxHidden ? "contract-outline" : "expand-outline"}
+                  size={21}
+                  color={tokens.foreground}
+                />
+              </Pressable>
+            ),
+          }
+        : // Folding back takes the list away, so the chat gets its back button again.
+          { headerBackVisible: true, headerLeft: undefined }),
       ...(readOnly
         ? trailingHeaderOptions(t("Restore"), () => void restoreConversation(), restoring)
         : {}),
     });
   }, [
+    split,
+    inboxHidden,
     readOnly,
     restoring,
     botId,
@@ -954,21 +1080,28 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       );
   }
 
+  function openBotComputer() {
+    router.push({
+      pathname: "/computer",
+      params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+    });
+  }
+
   const botActions = [
+    {
+      text: t("Profile"),
+      onPress: () =>
+        router.push({
+          pathname: "/bot-profile",
+          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
+        }),
+    },
     {
       text: t("Chat settings"),
       onPress: () =>
         router.push({
           pathname: "/bot-settings",
           params: { botId: botId ?? "" },
-        }),
-    },
-    {
-      text: t("Open computer"),
-      onPress: () =>
-        router.push({
-          pathname: "/computer",
-          params: { botId: botId ?? "", name: displayName ?? t("Bot") },
         }),
     },
     {
@@ -1004,21 +1137,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function showBotActions() {
     if (!botId) return;
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: name || t("Bot"),
-          userInterfaceStyle: colorScheme,
-          options: [...botActions.map((action) => action.text), t("Cancel")],
-          cancelButtonIndex: botActions.length,
-          destructiveButtonIndex: botActions.flatMap((action, index) =>
-            action.destructive ? [index] : [],
-          ),
-        },
-        (index) => botActions[index]?.onPress(),
-      );
-      return;
-    }
     setBotActionsOpen(true);
   }
 
@@ -1143,7 +1261,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     // Publish the jump refs even when the opened snapshot is already visible.
     setThreadScrollState(scrollBehavior.current.state());
     snapshotOrigin.current = scope;
-    commitSnap(opened?.snapshot ?? snap);
+    const next = opened?.snapshot ?? snap;
+    // A reply folded under its peer marker is only drawn once the marker is expanded.
+    const markerId = targetInPage
+      ? foldPeerReplies(next.messages, { includePeerReceipts: true }).markerOf.get(target.messageId)
+      : undefined;
+    if (markerId) {
+      setExpandedPeerMarkers((expanded) =>
+        expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
+      );
+    }
+    commitSnap(next);
     setShowingSaved(false);
   }
 
@@ -1346,7 +1474,12 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, [botId, markReadIfVisible, navigation, notificationThreadId]);
 
   useEffect(() => {
-    if (!botId && !groupId) return;
+    liveCursor.current = null;
+  }, [botId, groupId, sessionEpoch]);
+
+  useEffect(() => {
+    // Resume the same chat from its applied cursor so pinned and expanded windows catch up.
+    if ((!botId && !groupId) || !foreground) return;
     // Invalidate pending history loads while retaining pages already loaded for this chat.
     historyEpoch.current += 1;
     const abort = new AbortController();
@@ -1356,19 +1489,24 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     showSavedThread(abort.signal);
     void (async () => {
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const next = messageId
-        ? await rpc<MobileSnapshot>("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
-            (err: unknown) => {
-              setError(errorText(err));
-              return null;
-            },
-          )
-        : await refresh().catch((err: unknown) => {
-            setError(errorText(err));
-            return null;
-          });
+      const next =
+        liveCursor.current !== null
+          ? null
+          : messageId
+            ? await rpc<MobileSnapshot>(
+                "threads/get",
+                groupId ? { groupId } : { botId: botId! },
+              ).catch((err: unknown) => {
+                setError(errorText(err));
+                return null;
+              })
+            : await refresh().catch((err: unknown) => {
+                setError(errorText(err));
+                return null;
+              });
       if (abort.signal.aborted || readOnly) return;
-      let cursor = next?.cursor ?? -1;
+      let cursor = liveCursor.current ?? next?.cursor ?? -1;
+      liveCursor.current = cursor;
       let retryMs = 250;
       while (!abort.signal.aborted && sessionGeneration === currentSessionGeneration()) {
         try {
@@ -1377,7 +1515,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             groupId ? { groupId } : { botId: botId! },
             cursor,
             (event) => {
-              if (sessionGeneration !== currentSessionGeneration()) return;
+              if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
               if (
@@ -1392,6 +1530,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "thread.cleared" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
+                event.type === "computer.takeover.released" ||
                 isRunTerminalEvent(event)
               ) {
                 if (event.type === "thread.cleared") {
@@ -1403,6 +1542,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 }
                 commitSnap(applyMobileThreadEvent(snapRef.current, event));
               }
+              liveCursor.current = cursor;
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
               }
@@ -1437,7 +1577,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     return () => {
       abort.abort();
     };
-  }, [botId, groupId, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);
+  }, [botId, groupId, foreground, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);
 
   useEffect(() => () => pendingSave.current?.(), [botId, groupId]);
 
@@ -1652,16 +1792,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const afterDeliveredRef = useRef(afterDelivered);
   afterDeliveredRef.current = afterDelivered;
   useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
-  useEffect(() => {
-    if (snap && (snap.groupId ?? snap.botId) === threadKey) {
-      confirmEchoes(
-        threadKey!,
-        snap.messages.flatMap((message) =>
-          message.role === "user" && message.seq !== undefined ? [message.seq] : [],
-        ),
-      );
-    }
-  }, [snap, threadKey]);
 
   async function stop() {
     if (readOnly) return;
@@ -1705,7 +1835,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         answer,
         ...(username ? { username } : {}),
       });
-      if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
+      // The answer is saved once the server accepts it; a failed refresh only delays the card.
+      if (isCurrentTarget(targetBotId, targetGroupId)) await refresh().catch(() => undefined);
     },
     [botId, groupId, readOnly],
   );
@@ -1853,14 +1984,17 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   async function addAttachments(
-    picker: (existingCount: number) => Promise<{
+    picker: (
+      existingCount: number,
+      maxBytes: number,
+    ) => Promise<{
       attachments: PickedAttachment[];
       skipped: Array<{ name: string; reason: string }>;
     }>,
   ) {
     const targetKey = groupId ?? botId;
     if (!targetKey) return;
-    const result = await picker(activePendingAttachments.length);
+    const result = await picker(activePendingAttachments.length, attachmentMaxBytes(uploadConfig));
     if ((groupId ?? botId) !== targetKey) return;
     if (result.attachments.length) {
       setPendingAttachments((current) => [
@@ -1880,7 +2014,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     );
   }
 
-  const answerableAskMessageId = latestAnswerableAskMessageId(snap);
+  const answerableAskIds = useMemo(() => answerableAskMessageIds(snap), [snap]);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
@@ -1908,6 +2042,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   function performScroll(action: ThreadScrollAction) {
     if (!action || showPinnedPage) return;
+    scrollBehavior.current.onProgrammaticScroll();
     scroll.current?.scrollToOffset({
       offset: 0,
       animated: action === "smooth" && !reducedMotion,
@@ -1963,11 +2098,26 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     }
   }
 
+  function scheduleScrollIdle() {
+    clearTimeout(scrollIdleTimer.current);
+    // Every scroll event renews the fallback. Native momentum gets a longer
+    // grace period, but a missing momentum-end must still recover after silence.
+    scrollIdleTimer.current = setTimeout(
+      () => {
+        nativeMomentumActive.current = false;
+        performScroll(scrollBehavior.current.onUserMomentumEnd());
+        publishThreadScrollState(scrollBehavior.current.state());
+      },
+      nativeMomentumActive.current ? 1000 : 200,
+    );
+  }
+
   function updateUserScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     // Inverted FlatList: contentOffset.y is distance from the latest messages.
-    publishThreadScrollState(
-      scrollBehavior.current.onUserScroll(Math.max(0, event.nativeEvent.contentOffset.y)),
-    );
+    scheduleScrollIdle();
+    const previous = scrollBehavior.current.state();
+    const next = scrollBehavior.current.onUserScroll(event.nativeEvent.contentOffset.y);
+    if (reconcileThreadScrollState(previous, next) !== previous) publishThreadScrollState(next);
   }
 
   async function reactToMessage(message: MobileMessage, reaction: MessageReaction) {
@@ -1976,12 +2126,16 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     const targetGroupId = groupId;
     if (!targetBotId && !targetGroupId) return;
     try {
-      await rpc("threads/react", {
+      const result = await rpc<{ ok: true; runIds?: string[] }>("threads/react", {
         ...(targetGroupId ? { groupId: targetGroupId } : { botId: targetBotId! }),
         messageId: message.id,
         reaction,
         clientNonce: newClientNonce(),
       });
+      if (result.runIds?.length && isCurrentTarget(targetBotId, targetGroupId)) {
+        // The reaction is saved; a failed refresh is caught up by live events.
+        await refresh().catch(() => {});
+      }
     } catch (err) {
       if (!isCurrentTarget(targetBotId, targetGroupId)) return;
       Alert.alert(t("Could not update reaction"), errorText(err, t("Try again.")));
@@ -2021,6 +2175,13 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         return next;
       });
     },
+    togglePeerReplies: (markerId) => {
+      setExpandedPeerMarkers((expanded) => {
+        const next = new Set(expanded);
+        if (!next.delete(markerId)) next.add(markerId);
+        return next;
+      });
+    },
     layout: (messageId, y, index) => {
       const offset = jumpAnchor.current.onMessageLayout(messageId, y, index, headerHeight + 24);
       if (offset == null) return;
@@ -2053,6 +2214,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
+      togglePeerReplies: (id) => rowActionsRef.current.togglePeerReplies(id),
       layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
     }),
     [],
@@ -2097,17 +2259,24 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           members={snap?.members}
           readOnly={readOnly}
           onCall={onCall}
-          canAnswer={!readOnly && message.id === answerableAskMessageId}
+          canAnswer={!readOnly && answerableAskIds.has(message.id)}
           highlighted={highlightedMessageId === message.id}
           separator={separatorIds.has(message.id)}
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
+          peerReplies={
+            peerTranscript.folded.has(message.id)
+              ? expandedPeerMarkers.has(message.id)
+                ? "expanded"
+                : "collapsed"
+              : undefined
+          }
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
           activityStatus={activityStatus}
           inGroup={inGroup}
-          windowWidth={windowWidth}
+          columnWidth={columnWidth}
           enableJump={options?.enableJump ?? false}
           index={options?.index ?? 0}
         />
@@ -2121,6 +2290,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       mentionBots,
       displayName,
       reactionView.reactions,
+      peerTranscript,
+      expandedPeerMarkers,
       inGroup,
       botId,
       groupId,
@@ -2129,10 +2300,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       rowActions,
       readOnly,
       onCall,
-      answerableAskMessageId,
+      answerableAskIds,
       highlightedMessageId,
       separatorIds,
-      windowWidth,
+      columnWidth,
       t,
       locale,
     ],
@@ -2243,18 +2414,25 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       behavior="height"
       // Android lays out the screen below the opaque native navigation header.
       keyboardVerticalOffset={Platform.OS === "android" ? nativeHeaderHeight : 0}
-      style={{ flex: 1, backgroundColor: tokens.background, paddingHorizontal: 20 }}
+      style={{
+        flex: 1,
+        backgroundColor: tokens.background,
+        paddingHorizontal: 20 + columnInset,
+      }}
     >
-      {error ? (
-        <Text style={{ color: tokens.mutedForeground, marginTop: headerHeight + 28 }}>
-          {showingSaved ? t("Couldn't refresh — showing the last loaded messages.") : error}
-        </Text>
-      ) : null}
-      {runError ? (
-        <Text style={{ color: tokens.destructive, marginTop: error ? 12 : headerHeight + 28 }}>
-          {runError}
-        </Text>
-      ) : null}
+      <ThreadErrorNotice
+        top={headerHeight + 8}
+        inset={20 + columnInset}
+        error={
+          error
+            ? showingSaved
+              ? t("Couldn't refresh — showing the last loaded messages.")
+              : error
+            : null
+        }
+        summary={runError ? normalizeRunError(runError, t, locale).summary : null}
+        onDetails={() => setSelectableText(runError)}
+      />
       {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
       <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>
         {showPinnedPage ? (
@@ -2295,15 +2473,22 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 viewport: layoutMeasurement.height,
                 content: contentSize.height,
               };
+              if (pinnedScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
+                KeyboardController.dismiss();
+              }
               loadNewerNearEnd();
             }}
-            onScrollBeginDrag={() => {
+            onScrollBeginDrag={(event) => {
+              pinnedScrollBack.current.onDragStart(event.nativeEvent);
               newerLoadFailed.current = false;
               if (!jumpAnchor.current.holds()) return;
               jumpAnchor.current.release();
               jumpScrollTarget.current = null;
             }}
-            onScrollEndDrag={updatePinnedScroll}
+            onScrollEndDrag={(event) => {
+              pinnedScrollBack.current.onDragEnd();
+              updatePinnedScroll(event);
+            }}
             onMomentumScrollEnd={updatePinnedScroll}
           >
             {loadEarlierControl}
@@ -2333,19 +2518,42 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             contentContainerStyle={listContentStyle}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
-            onScrollBeginDrag={() => {
-              userDragging.current = true;
+            onScrollBeginDrag={(event) => {
+              clearTimeout(scrollIdleTimer.current);
+              nativeMomentumActive.current = false;
+              scrollBehavior.current.onUserDragStart();
+              liveScrollBack.current.onDragStart(event.nativeEvent);
             }}
             onScroll={(event) => {
-              if (userDragging.current) updateUserScroll(event);
+              if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
+                KeyboardController.dismiss();
+              }
+              if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
             }}
+            // Keep tracking after release: a fling can cross the threshold mid-momentum.
             onScrollEndDrag={(event) => {
               updateUserScroll(event);
-              userDragging.current = false;
+              scrollBehavior.current.onUserDragEnd();
+              liveScrollBack.current.onDragEnd();
+              scheduleScrollIdle();
             }}
-            onMomentumScrollEnd={updateUserScroll}
-            onLayout={() => performScroll(scrollBehavior.current.onLayout())}
-            onContentSizeChange={() => {
+            onMomentumScrollBegin={() => {
+              nativeMomentumActive.current = true;
+              scheduleScrollIdle();
+            }}
+            onMomentumScrollEnd={(event) => {
+              nativeMomentumActive.current = false;
+              if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
+              clearTimeout(scrollIdleTimer.current);
+              performScroll(scrollBehavior.current.onUserMomentumEnd());
+              publishThreadScrollState(scrollBehavior.current.state());
+            }}
+            onLayout={(event) => {
+              performScroll(scrollBehavior.current.onLayout(event.nativeEvent.layout.height));
+              publishThreadScrollState(scrollBehavior.current.state());
+            }}
+            onContentSizeChange={(_, height) => {
+              publishThreadScrollState(scrollBehavior.current.onContentSizeChanged(height));
               if (loadingOlderContent.current) {
                 loadingOlderContent.current = false;
                 return;
@@ -2372,69 +2580,42 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           />
         )}
         {showPinnedPage || threadScrollState.detached ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
-            }
-            onPress={() => {
-              if (showPinnedPage) {
-                showLatest();
-                return;
+          <View style={{ position: "absolute", end: 0, bottom: 12 }}>
+            <ScrollToBottomButton
+              accessibilityLabel={
+                threadScrollState.unread ? t("Jump to latest, new messages") : t("Jump to latest")
               }
-              performScroll(scrollBehavior.current.jumpToLatest());
-              publishThreadScrollState(scrollBehavior.current.state());
-            }}
-            style={{
-              position: "absolute",
-              left: "50%",
-              marginLeft: -21,
-              bottom: 12,
-              width: 42,
-              height: 42,
-            }}
-          >
-            <GlassSurface
-              shape="circle"
-              style={styles.circleButton}
-              fallbackStyle={{
-                borderWidth: 1,
-                borderColor: native.fillPressed,
-                backgroundColor: native.fill,
+              onPress={() => {
+                if (showPinnedPage) {
+                  showLatest();
+                  return;
+                }
+                performScroll(scrollBehavior.current.jumpToLatest());
+                publishThreadScrollState(scrollBehavior.current.state());
               }}
-            >
-              <NativeSymbol
-                ios="arrow.down"
-                android="arrow-down"
-                size={18}
-                color={tokens.foreground}
+            />
+            {threadScrollState.unread ? (
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  end: 3,
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: tokens.primary,
+                }}
               />
-              {threadScrollState.unread ? (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 3,
-                    right: 3,
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: tokens.primary,
-                  }}
-                />
-              ) : null}
-            </GlassSurface>
-          </Pressable>
+            ) : null}
+          </View>
         ) : null}
       </View>
-      {/* Fades messages out under the transparent header; the alpha stop keeps the page hue. */}
-      {iosAtLeast(26) ? (
-        <View pointerEvents="none" style={[styles.headerFade, { height: headerHeight + 24 }]} />
-      ) : null}
       {/* Shrinks (the suggestion lists scroll) so the input and Send stay above the keyboard. */}
       <Animated.View
         style={[{ display: readOnly ? "none" : "flex", flexShrink: 1 }, composerKeyboardPadding]}
       >
-        {/* Fades messages out above the composer, like the header fade. */}
+        {/* Fades messages out immediately above the composer. */}
         <View pointerEvents="none" style={styles.composerFade} />
         {replyTarget ? (
           <GlassSurface
@@ -2792,6 +2973,7 @@ type MessageRowActions = {
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
+  togglePeerReplies: (markerId: string) => void;
   layout: (messageId: string, y: number, index: number) => void;
 };
 
@@ -2812,11 +2994,13 @@ type MessageRowProps = {
   replyAuthor: string;
   replyFallbackText?: string;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
+  /** Set on a received marker whose peer run has folded replies. */
+  peerReplies?: "collapsed" | "expanded";
   activityBotId?: string;
   activityColor?: string;
   activityStatus?: MobileBot["status"];
   inGroup: boolean;
-  windowWidth: number;
+  columnWidth: number;
   enableJump: boolean;
   index: number;
 };
@@ -2838,11 +3022,12 @@ const MessageRow = memo(function MessageRow({
   replyAuthor,
   replyFallbackText,
   messageReactions,
+  peerReplies,
   activityBotId,
   activityColor,
   activityStatus,
   inGroup,
-  windowWidth,
+  columnWidth,
   enableJump,
   index,
 }: MessageRowProps) {
@@ -2934,15 +3119,59 @@ const MessageRow = memo(function MessageRow({
         select: includeSelect,
       },
     });
-    const openSheet = () =>
-      presentMessageActionSheet({
-        actions: menuActions,
-        title: message.createdAt
-          ? formatMessageTime(message.createdAt, dateLocaleForUi())
-          : undefined,
-        cancel: t("Cancel"),
-        more: t("More"),
-        colorScheme,
+    const openSheet = (event: GestureResponderEvent) =>
+      presentMessageMenu({
+        anchor: { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY },
+        reactions: includeReact
+          ? MESSAGE_REACTIONS.map((emoji) => ({ emoji, onPress: () => react(emoji) }))
+          : [],
+        groups: [
+          [
+            ...(!readOnly
+              ? [
+                  {
+                    name: "reply",
+                    text: t("Reply"),
+                    icon: "arrow-undo-outline" as const,
+                    onPress: reply,
+                  },
+                ]
+              : []),
+            ...(includeQuote
+              ? [
+                  {
+                    name: "quote",
+                    text: t("Quote"),
+                    icon: "chatbox-ellipses-outline" as const,
+                    onPress: quote,
+                  },
+                ]
+              : []),
+          ],
+          [
+            { name: "copy", text: t("Copy"), icon: "copy-outline" as const, onPress: copy },
+            ...(includeSelect
+              ? [
+                  {
+                    name: "select",
+                    text: t("Select text"),
+                    icon: "text-outline" as const,
+                    onPress: select,
+                  },
+                ]
+              : []),
+            ...(includeSpeak
+              ? [
+                  {
+                    name: "speak",
+                    text: t("Speak message"),
+                    icon: "volume-high-outline" as const,
+                    onPress: speakMessage,
+                  },
+                ]
+              : []),
+          ],
+        ],
       });
     return {
       menu,
@@ -3027,10 +3256,10 @@ const MessageRow = memo(function MessageRow({
             actions={menu}
             maxWidth={
               isCenteredAgentEvent(message.blocks)
-                ? windowWidth - 40
+                ? columnWidth - 40
                 : activityBotId
-                  ? windowWidth - 40 - (inGroup ? 28 : 36)
-                  : (windowWidth - 40) * 0.9
+                  ? columnWidth - 40 - (inGroup ? 28 : 36)
+                  : (columnWidth - 40) * 0.9
             }
             colorScheme={colorScheme}
             onAction={onMenuAction}
@@ -3051,6 +3280,8 @@ const MessageRow = memo(function MessageRow({
                 onChoiceDismissed={onChoiceDismissed}
                 onPreviewMarkdown={actions.previewMarkdown}
                 onPreviewImage={actions.previewImage}
+                peerReplies={peerReplies}
+                onTogglePeerReplies={actions.togglePeerReplies}
                 actionProps={actionProps}
               />
             </ThreadReadOnlyContext.Provider>
@@ -3105,6 +3336,8 @@ const MessageBubble = memo(function MessageBubble({
   onChoiceDismissed,
   onPreviewMarkdown,
   onPreviewImage,
+  peerReplies,
+  onTogglePeerReplies,
   actionProps,
 }: {
   botId: string;
@@ -3120,6 +3353,8 @@ const MessageBubble = memo(function MessageBubble({
   onChoiceDismissed?: (question: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
+  peerReplies?: "collapsed" | "expanded";
+  onTogglePeerReplies: (markerId: string) => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
@@ -3137,6 +3372,19 @@ const MessageBubble = memo(function MessageBubble({
     (block): block is Extract<MessageBlock, { kind: "mcp_approval" }> =>
       block.kind === "mcp_approval",
   );
+  const undoBlock = message.blocks.find(
+    (block): block is Extract<MessageBlock, { kind: "ask" }> =>
+      block.kind === "ask" && Boolean(block.instructionUpdate?.undoVersionId),
+  );
+  if (undoBlock?.instructionUpdate?.undoVersionId) {
+    return (
+      <InstructionUndo
+        botId={undoBlock.instructionUpdate.botId}
+        versionId={undoBlock.instructionUpdate.undoVersionId}
+        instructions={undoBlock.instructionUpdate.after}
+      />
+    );
+  }
   const ask = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "ask" }> =>
       block.kind === "ask" && !isApprovalAskBlock(block) && !block.actions?.length,
@@ -3203,13 +3451,23 @@ const MessageBubble = memo(function MessageBubble({
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
       tokens.mutedForeground;
-    // Compact receipt only: peer bodies stay out of the human thread.
-    // Full view-only peer chat is web-first; mobile keeps the chip without expand.
+    // Full view-only peer chat is web-first; on mobile a received chip expands the peer run's
+    // folded replies, which the thread draws as ordinary rows right after it.
+    const replies = sent ? undefined : peerReplies;
     return (
       <Pressable
         {...actionProps}
         accessible
-        accessibilityLabel={label}
+        onPress={replies ? () => onTogglePeerReplies(message.id) : undefined}
+        accessibilityRole={replies ? "button" : undefined}
+        accessibilityState={replies ? { expanded: replies === "expanded" } : undefined}
+        accessibilityLabel={
+          replies === "expanded"
+            ? t("Hide {label}", { label })
+            : replies === "collapsed"
+              ? t("Show {label}", { label })
+              : label
+        }
         style={{
           width: "100%",
           paddingVertical: 4,
@@ -3226,6 +3484,14 @@ const MessageBubble = memo(function MessageBubble({
         >
           {label}
         </Text>
+        {replies ? (
+          <NativeSymbol
+            ios={replies === "expanded" ? "chevron.down" : "chevron.right"}
+            android={replies === "expanded" ? "chevron-down" : "chevron-forward"}
+            size={12}
+            color={tokens.mutedForeground}
+          />
+        ) : null}
       </Pressable>
     );
   }
@@ -3274,7 +3540,7 @@ const MessageBubble = memo(function MessageBubble({
           }}
         >
           <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
-            {special.name || t("subagent")}
+            {safeDisplayName(special.name, t("subagent"))}
           </Text>
           <Text
             style={{
@@ -3452,7 +3718,8 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <View
           style={{
-            width: "90%",
+            // No percentage width: the iOS menu host has no definite width to resolve it against.
+            maxWidth: 576,
             borderRadius: 18,
             borderWidth: 1,
             borderColor: tokens.border,
@@ -3461,58 +3728,74 @@ const MessageBubble = memo(function MessageBubble({
             paddingVertical: 14,
           }}
         >
-          {askBlock.text ? (
-            <Text
-              {...actionProps}
-              style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
-            >
-              {askBlock.text}
-            </Text>
-          ) : null}
-          {askBlock.detail ? (
-            <Text
-              {...(askBlock.text ? {} : actionProps)}
-              style={{
-                color: tokens.mutedForeground,
-                marginTop: askBlock.text ? 8 : 0,
-                fontSize: 12.5,
-                fontFamily: "Menlo",
-                lineHeight: 20,
-              }}
-            >
-              {askBlock.detail}
-            </Text>
-          ) : null}
-          {askBlock.status === "answered" ? (
-            <Text
-              {...actionProps}
-              style={{
-                color: tokens.success,
-                marginTop: 12,
-                fontSize: 13.5,
-                fontWeight: "600",
-              }}
-            >
-              {formatApprovalAnswer(
-                askBlock.answer,
-                askBlock.actions,
-                isApprovalAskBlock(askBlock),
-              )}
-            </Text>
-          ) : canAnswer && onAnswer ? (
-            <AskActions
-              actions={askBlock.actions}
-              accessibilityActions={actionProps.accessibilityActions}
-              onAccessibilityAction={actionProps.onAccessibilityAction}
-              onAnswer={(answer) => onAnswer(message, answer)}
+          {askBlock.instructionUpdate?.undoVersionId ? (
+            <InstructionUndo
+              botId={askBlock.instructionUpdate.botId}
+              versionId={askBlock.instructionUpdate.undoVersionId}
+              instructions={askBlock.instructionUpdate.after}
             />
           ) : (
-            <Text
-              {...actionProps}
-              style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
-            >
-              {t("No longer active")}
-            </Text>
+            <>
+              {askBlock.text ? (
+                <Text
+                  {...actionProps}
+                  style={{ color: tokens.foreground, fontSize: 15.5, lineHeight: 23 }}
+                >
+                  {askBlock.instructionUpdate
+                    ? t("Update instructions?")
+                    : plainAskTitle(askBlock.text)}
+                </Text>
+              ) : null}
+              {askBlock.detail ? (
+                <Text
+                  {...(askBlock.text ? {} : actionProps)}
+                  style={{
+                    color:
+                      askBlock.detailFormat === "text" ? tokens.foreground : tokens.mutedForeground,
+                    marginTop: askBlock.text ? 8 : 0,
+                    fontSize: askBlock.detailFormat === "text" ? 15.5 : 12.5,
+                    fontFamily: askBlock.detailFormat === "text" ? undefined : "Menlo",
+                    lineHeight: askBlock.detailFormat === "text" ? 23 : 20,
+                  }}
+                >
+                  {askBlock.detail}
+                </Text>
+              ) : null}
+              {askBlock.status === "answered" ? (
+                <Text
+                  {...actionProps}
+                  style={{
+                    color: askBlock.answer === "deny" ? tokens.mutedForeground : tokens.success,
+                    marginTop: 12,
+                    fontSize: 13.5,
+                    fontWeight: "600",
+                  }}
+                >
+                  {askBlock.instructionUpdate
+                    ? t(askBlock.answer === "deny" ? "Dismissed" : "Allowed once")
+                    : formatApprovalAnswer(
+                        askBlock.answer,
+                        askBlock.actions,
+                        isApprovalAskBlock(askBlock),
+                      )}
+                </Text>
+              ) : canAnswer && onAnswer ? (
+                <AskActions
+                  actions={askBlock.actions}
+                  instructions={askBlock.instructionUpdate?.after}
+                  accessibilityActions={actionProps.accessibilityActions}
+                  onAccessibilityAction={actionProps.onAccessibilityAction}
+                  onAnswer={(answer) => onAnswer(message, answer)}
+                />
+              ) : (
+                <Text
+                  {...actionProps}
+                  style={{ color: tokens.mutedForeground, marginTop: 12, fontSize: 13.5 }}
+                >
+                  {t("No longer active")}
+                </Text>
+              )}
+            </>
           )}
         </View>
         {appConnectBlocks.map((block, index) => (
@@ -3636,6 +3919,15 @@ const MessageBubble = memo(function MessageBubble({
                 </Text>
               </Pressable>
             )
+          ) : attachment.artifactId && isAttachmentAudioMimeType(attachment.mimeType ?? "") ? (
+            <AudioAttachment
+              pressableProps={actionProps}
+              key={`${attachment.artifactId}-${index}`}
+              target={artifactTarget}
+              artifactId={attachment.artifactId}
+              name={attachment.name ?? t("File")}
+              mimeType={attachment.mimeType!}
+            />
           ) : (
             <Pressable
               {...actionProps}
@@ -3881,16 +4173,18 @@ function AskBlock({
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const [answer, setAnswer] = useState("");
-  const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const answered = ask.status === "answered";
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetSession = useRef(0);
+  const session = sheetSession.current;
+  const [saved, setSaved] = useState(false);
+  const answered = saved || ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
-  const incomplete =
-    (secretInput ? answer.length === 0 : !answer.trim()) || (loginInput && !username.trim());
+  const incomplete = secretInput ? answer.length === 0 : !answer.trim();
   const secretLabel =
-    loginInput || ask.purpose === "password"
+    ask.purpose === "password"
       ? t("Password")
       : ask.purpose === "api_key"
         ? t("API key")
@@ -3901,12 +4195,12 @@ function AskBlock({
     if (submitting) return;
     if (incomplete) return;
     const submitValue = secretInput ? answer : answer.trim();
-    const submitUsername = loginInput ? username.trim() : undefined;
     setSubmitting(true);
     setError(null);
     if (secretInput) setAnswer("");
     try {
-      await onAnswer(submitValue, submitUsername);
+      await onAnswer(submitValue);
+      if (secretInput) setSaved(true);
     } catch (cause) {
       setError(
         secretInput ? t("Could not send answer") : errorText(cause, t("Could not send answer")),
@@ -3931,9 +4225,10 @@ function AskBlock({
     >
       <Text
         {...actionProps}
+        numberOfLines={secretInput ? 2 : undefined}
         style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
       >
-        {ask.text}
+        {plainAskTitle(ask.text)}
       </Text>
       {secretInput && ask.credential ? (
         <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }}>
@@ -3947,25 +4242,18 @@ function AskBlock({
         <Text style={{ color: tokens.success, fontSize: 14 }}>
           {secretInput ? t("Saved") : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
         </Text>
+      ) : canAnswer && loginInput ? (
+        <NativeActionButton
+          label={t("Continue")}
+          fill={false}
+          onPress={() => {
+            sheetSession.current += 1;
+            setSheetOpen(true);
+          }}
+          style={{ alignSelf: "flex-end" }}
+        />
       ) : canAnswer ? (
         <>
-          {loginInput ? (
-            <TextInput
-              accessibilityLabel={t("Username")}
-              value={username}
-              onChangeText={setUsername}
-              placeholder={t("Username")}
-              placeholderTextColor={tokens.mutedForeground}
-              autoComplete="off"
-              autoCorrect={false}
-              autoCapitalize="none"
-              editable={!submitting}
-              style={[
-                askInputStyles.field,
-                { borderColor: tokens.border, color: tokens.foreground },
-              ]}
-            />
-          ) : null}
           <TextInput
             accessibilityLabel={secretInput ? secretLabel : t("Answer")}
             value={answer}
@@ -3974,6 +4262,7 @@ function AskBlock({
             placeholderTextColor={tokens.mutedForeground}
             secureTextEntry={secretInput}
             autoComplete="off"
+            {...(secretInput ? secretFieldTraits(ask.purpose, ask.credential) : {})}
             autoCorrect={secretInput ? false : undefined}
             autoCapitalize={secretInput ? "none" : "sentences"}
             editable={!submitting}
@@ -3995,6 +4284,22 @@ function AskBlock({
         </Text>
       )}
       {error ? <Text style={{ color: tokens.destructive, fontSize: 13 }}>{error}</Text> : null}
+      {sheetOpen && loginInput && ask.credential ? (
+        <SecretAskSheet
+          title={plainAskTitle(ask.text)}
+          destination={secretDestinationLabel(ask.credential)}
+          // Once any save is accepted the open sheet clears its own fields, then closes itself.
+          pending={canAnswer && !answered}
+          onClose={() => {
+            if (session === sheetSession.current) setSheetOpen(false);
+          }}
+          onSave={async (password, username) => {
+            await onAnswer(password, username);
+            setSaved(true);
+            if (session === sheetSession.current) setSheetOpen(false);
+          }}
+        />
+      ) : null}
     </View>
   );
 }
