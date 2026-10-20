@@ -328,30 +328,61 @@ describe("runAutoReviewJudge instructions", () => {
 describe("runAutoReviewJudge timeout", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("reports its own deadline when the runtime waits until aborted", async () => {
+  it.each(["local", "parent"])(
+    "reports the %s deadline when the runtime waits until aborted",
+    async (deadline) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      vi.resetModules();
+      const { runAutoReviewJudge } = await import("./auto-review.js");
+      const runtime = {
+        describe: () => ({ capabilities: { scripted: false } }),
+        run: (_request: unknown, context: { signal: AbortSignal }) =>
+          ({
+            [Symbol.asyncIterator]() {
+              return {
+                async next() {
+                  await new Promise((_, reject) => {
+                    context.signal.addEventListener(
+                      "abort",
+                      () => reject(new DOMException("Aborted", "AbortError")),
+                      { once: true },
+                    );
+                  });
+                  return { done: true, value: undefined };
+                },
+              };
+            },
+          }) as AsyncIterable<never>,
+        abort: async () => {},
+      };
+      await expect(
+        runAutoReviewJudge({
+          runtime: runtime as never,
+          checker: { provider: "openrouter", model: "x" },
+          prompt: "test",
+          runId: "run",
+          spaceId: "ws",
+          userId: "user",
+          botId: "bot",
+          threadId: "thread",
+          timeoutMs: deadline === "local" ? 50 : 5_000,
+          signal: deadline === "parent" ? AbortSignal.timeout(50) : undefined,
+        }),
+      ).resolves.toMatchObject({ decision: "error", reason: "Checker timed out." });
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        `[auto-review] checker openrouter/x timed out (deadline ${deadline === "local" ? 50 : 5_000}ms)`,
+      );
+    },
+  );
+
+  it("reports a runtime TimeoutError without an aborted signal as a failure", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.resetModules();
-    const { runAutoReviewJudge } = await import("./auto-review.js");
     const runtime = {
-      describe: () => ({ capabilities: { scripted: false } }),
-      run: (_request: unknown, context: { signal: AbortSignal }) =>
-        ({
-          [Symbol.asyncIterator]() {
-            return {
-              async next() {
-                await new Promise((_, reject) => {
-                  context.signal.addEventListener(
-                    "abort",
-                    () => reject(new DOMException("Aborted", "AbortError")),
-                    { once: true },
-                  );
-                });
-                return { done: true, value: undefined };
-              },
-            };
-          },
-        }) as AsyncIterable<never>,
-      abort: async () => {},
+      run: () => {
+        const error = new Error("Runtime timed out");
+        error.name = "TimeoutError";
+        throw error;
+      },
     };
     await expect(
       runAutoReviewJudge({
@@ -363,11 +394,10 @@ describe("runAutoReviewJudge timeout", () => {
         userId: "user",
         botId: "bot",
         threadId: "thread",
-        timeoutMs: 50,
       }),
-    ).resolves.toMatchObject({ decision: "error", reason: "Checker timed out." });
+    ).resolves.toMatchObject({ decision: "error", reason: "Checker failed." });
     expect(warn).toHaveBeenCalledExactlyOnceWith(
-      "[auto-review] checker openrouter/x timed out after 50ms",
+      "[auto-review] checker openrouter/x failed: TimeoutError: Runtime timed out",
     );
   });
 
