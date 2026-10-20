@@ -134,6 +134,7 @@ function MemoryDocumentList({
 
   function closeDoc() {
     setOpenId(null);
+    setConflicted(false);
     setConfirmingDelete(false);
   }
 
@@ -171,7 +172,6 @@ function MemoryDocumentList({
     } catch (err) {
       if (err instanceof ORPCError && err.code === "CONFLICT") {
         setConflicted(true);
-        setError(t`Document changed. Reopen to edit the latest version.`);
         try {
           setDocs(await loadRef.current());
         } catch {
@@ -207,6 +207,11 @@ function MemoryDocumentList({
   return (
     <div data-testid={testId}>
       {error ? <div className="px-2.5 pb-2 text-[13px] text-destructive">{error}</div> : null}
+      {conflicted ? (
+        <div className="px-2.5 pb-2 text-[13px] text-destructive">
+          <Trans>Document changed. Reopen to edit the latest version.</Trans>
+        </div>
+      ) : null}
       {loading ? <Skeleton className="h-10 w-full" /> : null}
       {!loading && docs.length === 0 && !error ? (
         <div className="px-2.5 py-1 text-[13.5px] text-muted-foreground">
