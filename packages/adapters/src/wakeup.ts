@@ -25,9 +25,9 @@ export class GraphileJobPublisher implements JobPublisher {
   async enqueue(job: BackgroundJob): Promise<void> {
     const utils = await this.getUtils();
     // replace resets attempts and run_at. unsafe_dedupe leaves both, so an
-    // exhausted row would stay queued forever. Dedupe only an unlocked job with
-    // attempts left: a locked one may belong to a worker that died mid-job, and
-    // Graphile never unlocks it. replace detaches a locked job and inserts a new one.
+    // exhausted row would stay queued forever. Dedupe only while attempts remain,
+    // and not a locked job under replaceLocked: Graphile never unlocks a job whose
+    // worker died, and replace detaches a locked job and inserts a new one.
     const jobKeyMode = await this.keepExistingMode(utils, job);
     await utils.addJob(job.name, wrapJobPayload(job.payload), {
       runAt: job.availableAt,
@@ -73,7 +73,7 @@ export class GraphileJobPublisher implements JobPublisher {
       );
       return found.rows[0];
     });
-    if (!existing || existing.locked_at) return undefined;
+    if (!existing || (job.replaceLocked && existing.locked_at)) return undefined;
     if (Number(existing.attempts) >= Number(existing.max_attempts)) return undefined;
     return "unsafe_dedupe";
   }

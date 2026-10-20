@@ -255,6 +255,7 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
         payload: { runId: "reclaimed" },
         replaceKey: key,
         keepExisting: true,
+        replaceLocked: true,
       });
       const reclaimed = await keyedRow(key);
       expect(reclaimed?.attempts).toBe(0);

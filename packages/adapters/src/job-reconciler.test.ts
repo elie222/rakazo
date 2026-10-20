@@ -23,7 +23,7 @@ function publisher() {
 }
 
 function fakePrisma(
-  runs: Array<{ id: string; updatedAt: Date }> = [],
+  runs: Array<{ id: string; status: string; updatedAt: Date }> = [],
   routines: Array<{ id: string; nextRunAt: Date | null }> = [],
   controls: Array<{
     id: string;
@@ -117,7 +117,7 @@ describe("createJobReconciler", () => {
     const scheduledFor = new Date(Date.now() + 30_000);
     const controlExpiresAt = new Date(Date.now() + 15_000);
     const prisma = fakePrisma(
-      [{ id: "run-1", updatedAt: new Date() }],
+      [{ id: "run-1", status: "queued", updatedAt: new Date() }],
       [{ id: "routine-1", nextRunAt: scheduledFor }],
       [
         {
@@ -168,6 +168,30 @@ describe("createJobReconciler", () => {
         orderBy: [{ controlLeaseExpiresAt: "asc" }, { id: "asc" }],
       }),
     );
+  });
+
+  it("replaces a locked job only for a run whose lease expired", async () => {
+    const prisma = fakePrisma([
+      { id: "run-queued", status: "queued", updatedAt: new Date() },
+      { id: "run-expired", status: "running", updatedAt: new Date() },
+    ]);
+    const { jobs, enqueue } = publisher();
+
+    await createJobReconciler({ prisma, jobs }).reconcileOnce();
+
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "run.continue",
+      payload: { runId: "run-queued" },
+      replaceKey: "run:run-queued",
+      keepExisting: true,
+    });
+    expect(enqueue).toHaveBeenCalledWith({
+      name: "run.continue",
+      payload: { runId: "run-expired" },
+      replaceKey: "run:run-expired",
+      keepExisting: true,
+      replaceLocked: true,
+    });
   });
 
   it("restores expiry for orphaned user-control leases without a control bot", async () => {

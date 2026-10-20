@@ -212,6 +212,24 @@ describe("GraphileJobPublisher.enqueue", () => {
     await publisher.close();
   });
 
+  it("keeps a locked job unless replaceLocked is set", async () => {
+    const runAt = new Date("2030-01-01T00:00:00.000Z");
+    const lockedAt = new Date("2030-01-01T00:00:01.000Z");
+    const jobs = new Map([["run:run-1", { attempts: 1, maxAttempts: 25, runAt, lockedAt }]]);
+    const { publisher, addJob } = publisherOver(jobs);
+    await publisher.enqueue({
+      name: "run.continue",
+      payload: { runId: "retry-pending" },
+      replaceKey: "run:run-1",
+      availableAt: new Date("2030-01-01T00:00:02.000Z"),
+      keepExisting: true,
+    });
+    const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
+    expect(options?.jobKeyMode).toBe("unsafe_dedupe");
+    expect(jobs.get("run:run-1")).toEqual({ attempts: 1, maxAttempts: 25, runAt, lockedAt });
+    await publisher.close();
+  });
+
   it("replaces a locked job so a worker that died mid-job cannot hold the key", async () => {
     const runAt = new Date("2030-01-01T00:00:00.000Z");
     const lockedAt = new Date("2030-01-01T00:00:01.000Z");
@@ -224,6 +242,7 @@ describe("GraphileJobPublisher.enqueue", () => {
       replaceKey: "run:run-1",
       availableAt: reclaimedAt,
       keepExisting: true,
+      replaceLocked: true,
     });
     const options = addJob.mock.calls[0]?.[2] as { jobKeyMode?: string } | undefined;
     expect(options?.jobKeyMode).toBeUndefined();
