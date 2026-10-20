@@ -60,6 +60,9 @@ describe("settings sheet", () => {
 });
 
 describe("settings links", () => {
+  it.each([true, false])("opens the share target for cold/warm arrivals (%s)", (initial) => {
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial })).toBe("/share");
+  });
   it("knows every page in the settings group", () => {
     const pages = readdirSync(resolve(mobileRoot, "app/(settings)"))
       .filter((file) => file !== "_layout.tsx")
@@ -95,7 +98,7 @@ describe("settings links", () => {
       "rakazo:///thread?botId=bot-1",
     );
     expect(close).toHaveBeenCalledTimes(1);
-    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial: true })).toBe("/");
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial: true })).toBe("/share");
     unregister();
   });
 });

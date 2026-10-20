@@ -35,6 +35,10 @@ export function subscribeIncomingShare(listener: () => void) {
   };
 }
 
+export function getIncomingShare() {
+  return pending;
+}
+
 export function hasIncomingShare() {
   return pending !== null;
 }
@@ -63,11 +67,15 @@ export function receiveIncomingShare(isShare: boolean, initial: boolean) {
       .join("\n"),
     files: payloads
       .filter((payload) => !isText(payload))
-      .map((payload) => ({
-        uri: payload.value,
-        name: "file",
-        mimeType: payload.mimeType ?? null,
-      })),
+      .map((payload) => {
+        let name = "file";
+        try {
+          name = new File(payload.value).name || name;
+        } catch {
+          // A broken provider URI must still reach the per-file import error path.
+        }
+        return { uri: payload.value, name, mimeType: payload.mimeType ?? null };
+      }),
     arrivedAt: Date.now(),
     generation: ++generation,
   };

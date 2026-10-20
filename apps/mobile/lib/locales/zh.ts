@@ -1,5 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
-  "Pick a chat to share to": "选择要分享到的聊天",
+  "Share to": "分享到",
+  "{count} files": "{count} 个文件",
   "could not read": "无法读取",
   Close: "关闭",
   Link: "链接",

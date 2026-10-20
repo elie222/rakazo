@@ -1,5 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
-  "Pick a chat to share to": "Wähle einen Chat zum Teilen",
+  "Share to": "Teilen mit",
+  "{count} files": "{count} Dateien",
   "could not read": "konnte nicht gelesen werden",
   Close: "Schließen",
   Link: "Link",

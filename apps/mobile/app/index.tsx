@@ -46,7 +46,6 @@ import { GroupAvatar } from "../components/group-avatar";
 import { HomeErrorState } from "../components/home-error-state";
 import { InboxSwipeRow } from "../components/inbox-swipe-row";
 import { NativeSymbol } from "../components/native-symbol";
-import { ThreadErrorNotice } from "../components/thread-error-notice";
 import { WorkingIndicator } from "../components/WorkingIndicator";
 import {
   activityStatusLabel,
@@ -99,11 +98,6 @@ import {
   inboxRowActionList,
   unreadOverrideKey,
 } from "../lib/inbox-swipe";
-import {
-  cancelIncomingShare,
-  hasIncomingShare,
-  subscribeIncomingShare,
-} from "../lib/incoming-share";
 import { afterChatNotifyChange } from "../lib/live-notifications";
 import { native, useThemedStyles } from "../lib/native";
 import { iosAtLeast } from "../lib/native-controls";
@@ -168,24 +162,33 @@ export default function HomeRoute() {
 }
 
 /** The chat list beside the open chat on a wide window. */
-type InboxPaneProps = { onSelectSpace?: (spaceId: string) => void };
+type InboxPaneProps = {
+  onSelectSpace?: (spaceId: string) => void;
+  onShareSelect?: (href: Href) => void;
+};
 
 export function InboxPane({ onSelectSpace }: InboxPaneProps) {
   return <HomeSession embedded onSelectSpace={onSelectSpace} />;
 }
 
-function HomeSession({ embedded = false, onSelectSpace }: InboxPaneProps & { embedded?: boolean }) {
+export function HomeSession({
+  embedded = false,
+  onSelectSpace,
+  onShareSelect,
+}: InboxPaneProps & { embedded?: boolean }) {
   const generation = useSyncExternalStore(subscribeSessionGeneration, currentSessionGeneration);
   const ready = useSyncExternalStore(subscribeSessionGeneration, currentReadySessionGeneration);
-  return <Home key={`${generation}:${ready}`} embedded={embedded} onSelectSpace={onSelectSpace} />;
+  return (
+    <Home
+      key={`${generation}:${ready}`}
+      embedded={embedded}
+      onSelectSpace={onSelectSpace}
+      onShareSelect={onShareSelect}
+    />
+  );
 }
 
-function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean }) {
-  const shareWaiting = useSyncExternalStore(
-    subscribeIncomingShare,
-    hasIncomingShare,
-    hasIncomingShare,
-  );
+function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { embedded: boolean }) {
   const tokens = mobileTokens();
   const appearance = resolveMobileAppearance();
   const styles = useThemedStyles(createHomeStyles);
@@ -467,6 +470,14 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     if (me) setSearchInbox(inboxSpaces);
   }, [inboxSpaces, me]);
   const listData = useMemo((): InboxItem[] => {
+    // Only bot threads support importing shares; use the same rows for every target.
+    if (onShareSelect)
+      return spaceInboxItems(
+        inboxSpaces
+          .filter((space) => space.bots.length > 0)
+          .map((space) => ({ ...space, groups: [] })),
+        collapsedRosterParents,
+      );
     // Android pins sit above the list; iOS keeps rows with native swipe and context menus.
     const otherSpaces = spaces.filter((space) => space.id !== me?.spaceId);
     const pinned: PinnedChat[] = [
@@ -484,7 +495,15 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsedRosterParents, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [inboxSpaces, collapsedRosterParents, me?.spaceId, spaces, visible, visibleGroups]);
+  }, [
+    inboxSpaces,
+    collapsedRosterParents,
+    me?.spaceId,
+    spaces,
+    visible,
+    visibleGroups,
+    onShareSelect,
+  ]);
   const initials = userInitials(me?.name ?? "");
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId
@@ -507,7 +526,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     : readableGutter(windowWidth, Math.max(insets.left, insets.right));
   // Liquid Glass uses the native bar: glass bar items and a native menu.
   // The list beside a chat has no navigation bar of its own.
-  const nativeHeader = iosAtLeast(26) && !embedded;
+  const nativeHeader = iosAtLeast(26) && !embedded && !onShareSelect;
   const navigation = useNavigation();
   const router = useRouter();
   const pathname = usePathname();
@@ -521,14 +540,15 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   // Beside the list, a chat replaces the open one instead of stacking on it.
   const openChat = useCallback(
     (href: Href) => {
-      if (!embedded) router.push(href);
+      if (onShareSelect) onShareSelect(href);
+      else if (!embedded) router.push(href);
       else if (pathname === "/thread" || pathname === "/group-thread") router.replace(href);
       else {
         if (router.canDismiss()) router.dismissAll();
         router.push(href);
       }
     },
-    [embedded, pathname, router],
+    [embedded, pathname, router, onShareSelect],
   );
   const signInAgain = useCallback(async () => {
     // A rejected session cannot sign out on the server; clearing it here is what matters.
@@ -1039,7 +1059,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
             >
               <Text style={styles.spaceTitle}>{item.title}</Text>
             </Pressable>
-            {canDeleteInboxSpace(item.space) ? (
+            {!onShareSelect && canDeleteInboxSpace(item.space) ? (
               <MenuView
                 actions={[
                   {
@@ -1126,8 +1146,10 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           collapsed={collapsedRosterParents.has(item.bot.id)}
           onToggleChildren={toggleRosterParent}
           onPress={openBot}
-          onLongPress={!SWIPE_ROWS ? organizeBot : undefined}
-          onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
+          onLongPress={!onShareSelect && !SWIPE_ROWS ? organizeBot : undefined}
+          onAction={
+            !onShareSelect && SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined
+          }
           sections={botSections}
           onOrganize={organizeFromMenu}
           onEditSection={editSectionFromMenu}
@@ -1146,6 +1168,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       groupAction,
       me?.spaceId,
       openBot,
+      onShareSelect,
       openGroup,
       organizeBot,
       organizeFromMenu,
@@ -1173,7 +1196,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
 
   return (
     <View style={styles.screen}>
-      {nativeHeader ? null : (
+      {nativeHeader || onShareSelect ? null : (
         <View
           style={[
             styles.header,
@@ -1249,18 +1272,6 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         </View>
       )}
 
-      {shareWaiting ? (
-        <View style={{ height: 56, zIndex: 1 }}>
-          <ThreadErrorNotice
-            top={0}
-            inset={columnInset + 16}
-            error={null}
-            summary={t("Pick a chat to share to")}
-            actionLabel={t("Cancel")}
-            onDetails={cancelIncomingShare}
-          />
-        </View>
-      ) : null}
       <SelectedChatContext.Provider value={embedded ? selectedChatId : null}>
         <CompactRowsContext.Provider value={compactRows}>
           <FlatList<InboxItem>
@@ -1302,7 +1313,9 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                     <Text style={styles.spaceTitle}>{t("Try again.")}</Text>
                   </Pressable>
                 ) : null}
-                {activityMode && (activity.active.length > 0 || activity.recent.length > 0) ? (
+                {!onShareSelect &&
+                activityMode &&
+                (activity.active.length > 0 || activity.recent.length > 0) ? (
                   <ActivitySection activity={activity} bots={bots} />
                 ) : null}
               </>
@@ -1317,11 +1330,13 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
                   onSignIn={() => void signInAgain()}
                 />
               ) : (
-                <Text style={styles.empty}>{me ? t("Tap + to create a bot") : null}</Text>
+                <Text style={styles.empty}>
+                  {me && !onShareSelect ? t("Tap + to create a bot") : null}
+                </Text>
               )
             }
             ListFooterComponent={
-              !showLoadFailure && inboxNeedsCreateHint(listData) ? (
+              !onShareSelect && !showLoadFailure && inboxNeedsCreateHint(listData) ? (
                 <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
               ) : null
             }

@@ -205,6 +205,8 @@ function ChatContentProviders({
   );
 }
 
+export const unstable_settings = { anchor: "index" };
+
 export default function Layout() {
   useEffect(() => {
     // Screen changes include folding; window resizing must not lock a tablet in split-screen.
@@ -315,6 +317,7 @@ export default function Layout() {
                           sheetExpandsWhenScrolledToEdge: false,
                         }}
                       />
+                      <Stack.Screen name="share" options={{ headerShown: false }} />
                       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                       <Stack.Screen
                         name="(settings)"
