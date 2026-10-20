@@ -2630,6 +2630,7 @@ function fallbackAwareModelStream(
   const run = async () => {
     let buffered: AssistantMessageEvent[] = [];
     let retries = 0;
+    const startedAt = Date.now();
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     while (!signalAborted()) {
       const target = state.getActive();
@@ -2694,7 +2695,12 @@ function fallbackAwareModelStream(
                 break;
               }
               firstRetryableError ??= event;
-              const delay = isProviderTimeout(event.error)
+              // A connect timeout can fail well before timeoutMs. Recover those
+              // early failures, but do not repeat an already exhausted request.
+              const timeoutBudgetSpent =
+                isProviderTimeout(event.error) &&
+                Date.now() - startedAt >= (options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS);
+              const delay = timeoutBudgetSpent
                 ? undefined
                 : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
               if (delay !== undefined) {

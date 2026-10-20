@@ -2,6 +2,8 @@ import { DEFAULT_MODEL_MAX_TOKENS } from "@rakazo/contracts";
 
 /** Hung completions must fail before the typical 5-minute run lease. */
 export const MODEL_STREAM_TIMEOUT_MS = 120_000;
+/** Allow slow DNS/TLS handshakes without consuming the entire model request budget. */
+export const MODEL_CONNECT_TIMEOUT_MS = 30_000;
 /**
  * `timeoutMs` bounds only time-to-headers; the SSE body that follows is
  * unbounded. A Codex stream silent this long is a dead connection — reasoning
