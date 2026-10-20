@@ -17,7 +17,7 @@ import { measureCalls, SpendBudget, validatePricing } from "../evals/measurement
 import { emptyTrial, redact, summarize, validateControls } from "../evals/report.js";
 import { SILENCE_EVAL_CASES, SILENCE_FIXTURE_VERSION } from "../evals/silence.js";
 import type { DiagnosticWireObservation } from "../evals/wire-observer.js";
-import { installDiagnosticWireObserver } from "../evals/wire-observer.js";
+import { diagnosticWireFetch } from "../evals/wire-observer.js";
 
 async function main() {
   const { values } = parseArgs({
@@ -339,7 +339,7 @@ async function main() {
     // Import runtime modules only after generation; their barrel exports load Prisma.
     const { createApp } = await import("../../../../apps/api/src/app.ts");
     const { runTrial } = await import("../evals/runner.js");
-    const { PiAgentRuntime } = await import("@rakazo/adapters");
+    const { dispatcherFetch, PiAgentRuntime } = await import("@rakazo/adapters");
     const { EvalSandboxProvider } = await import("../evals/sandbox.js");
     for (let i = 0; i < trials.length; i++) {
       if (stopRequested) {
@@ -358,130 +358,127 @@ async function main() {
         values["wire-diagnostics"] &&
         (scenario.id === "history-1000-long-tool-loop" ||
           scenario.id === "history-10000-long-tool-loop");
-      const restoreFetch = observeWire
-        ? installDiagnosticWireObserver(connection.modelId!, wireDiagnostics)
-        : () => {};
-      try {
-        trials[i] = {
-          ...(await runTrial(scenario, planned.trial, {
-            ...controls,
-            connection,
-            pricing,
-            createApp: async (composio, messaging, witnesses) => {
-              const sandbox = new EvalSandboxProvider();
-              let acceptingCalls = true;
-              const cacheDecisions: CacheDecisionMeasurement[] = [];
-              const runtime = new PiAgentRuntime({
-                onContextDecision: (decision) => {
-                  const measured = measureCalls([{ id: "call", ...decision.usage }], pricing);
-                  cacheDecisions.push({
-                    predictedCache: decision.predictedCache,
-                    observedReuse: decision.observedReuse,
-                    estimatedInputTokens: decision.estimatedInputTokens,
-                    droppedMessages: decision.droppedMessages,
-                    truncatedToolResults: decision.truncatedToolResults,
-                    costUsd: measured.costUsd,
-                    cacheReadTokens: decision.usage.cacheReadTokens ?? null,
-                  });
-                },
-                modelCallObserver: {
-                  beforeCall: ({
+      const modelFetch = observeWire
+        ? diagnosticWireFetch(dispatcherFetch, connection.modelId!, wireDiagnostics)
+        : undefined;
+      trials[i] = {
+        ...(await runTrial(scenario, planned.trial, {
+          ...controls,
+          connection,
+          pricing,
+          createApp: async (composio, messaging, witnesses) => {
+            const sandbox = new EvalSandboxProvider();
+            let acceptingCalls = true;
+            const cacheDecisions: CacheDecisionMeasurement[] = [];
+            const runtime = new PiAgentRuntime({
+              modelFetch,
+              onContextDecision: (decision) => {
+                const measured = measureCalls([{ id: "call", ...decision.usage }], pricing);
+                cacheDecisions.push({
+                  predictedCache: decision.predictedCache,
+                  observedReuse: decision.observedReuse,
+                  estimatedInputTokens: decision.estimatedInputTokens,
+                  droppedMessages: decision.droppedMessages,
+                  truncatedToolResults: decision.truncatedToolResults,
+                  costUsd: measured.costUsd,
+                  cacheReadTokens: decision.usage.cacheReadTokens ?? null,
+                });
+              },
+              modelCallObserver: {
+                beforeCall: ({
+                  inputTokensEstimate,
+                  maxOutputTokens,
+                  provider,
+                  modelId,
+                  cacheWriteRetention,
+                }) => {
+                  if (provider !== connection.provider || modelId !== connection.modelId)
+                    throw new Error("Eval model has no configured pricing");
+                  if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
+                  return liveBudget.reserve(
                     inputTokensEstimate,
                     maxOutputTokens,
-                    provider,
-                    modelId,
                     cacheWriteRetention,
-                  }) => {
-                    if (provider !== connection.provider || modelId !== connection.modelId)
-                      throw new Error("Eval model has no configured pricing");
-                    if (!acceptingCalls) throw new Error("Eval trial stopped scheduling inference");
-                    return liveBudget.reserve(
-                      inputTokensEstimate,
-                      maxOutputTokens,
-                      cacheWriteRetention,
-                    );
-                  },
-                  afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
+                  );
                 },
-              });
-              const historyDiagnostics: HistoryDiagnostic[] = [];
-              const toolLoopDiagnostics: DiagnosticToolObservation[] = [];
-              const observedRuntime = observeSyntheticHistory(
-                runtime,
-                historyDiagnostics,
-                [connection.apiKey ?? "", connection.baseUrl ?? ""],
-                toolLoopDiagnostics,
-              );
-              const handles = await createApp({
-                runtime: observedRuntime,
-                contextStrategy: planned.strategy as
-                  | "current"
-                  | "retrieval"
-                  | "snapshots"
-                  | "cache-aware",
-                sandbox,
-                databaseUrl,
-                realtimeDatabaseUrl: databaseUrl,
-                dataDir: path.join(dataDir, `${scenario.id}-${planned.strategy}-${planned.trial}`),
-                sandboxProvider: "fake",
-                agentRuntime: "pi",
-                wakeupDriver: "memory",
-                composio,
-                messaging,
-                ...(scenario.routine ? witnesses : {}),
-                messagingOpenSignup: false,
-                defaultProvider: connection.provider,
-                defaultModel: connection.modelId!,
-                deploymentModelKey: undefined,
-                composioApiKey: undefined,
-                cursorApiKey: undefined,
-                cloudAgentProvider: "none",
-                signupsEnabled: "true",
-                signupAllowlist: "",
-                emailEmulator: true,
-                pipedreamClientId: undefined,
-                pipedreamClientSecret: undefined,
-                pipedreamProjectId: undefined,
-                smtpUrl: undefined,
-                emailFrom: undefined,
-                sendblueApiKeyId: undefined,
-                sendblueApiSecret: undefined,
-                slackBotToken: undefined,
-                whatsappAccessToken: undefined,
-                telegramBotToken: undefined,
-                larkAppId: undefined,
-                mcpStdioEnabled: false,
-                mcpStdioAllowedCommands: [],
-                updaterUrl: undefined,
-                updaterToken: undefined,
-              });
-              return {
-                ...handles,
-                harnessIssues: sandbox.harnessIssues,
-                cacheDecisions,
-                historyDiagnostics,
-                toolLoopDiagnostics,
-                finalizeBackground: async () => {
-                  acceptingCalls = false;
-                  await handles.jobs.close();
-                },
-                stop: async () => {
-                  acceptingCalls = false;
-                  await handles.stop();
-                },
-                awaitIdle: async () => {
-                  if (!handles.awaitIdle) throw new Error("Eval queue cannot await idle");
-                  await handles.awaitIdle();
-                },
-              };
-            },
-          })),
-          strategy: planned.strategy,
-          ...(observeWire ? { wireDiagnostics } : {}),
-        };
-      } finally {
-        restoreFetch();
-      }
+                afterCall: (id, usage) => liveBudget.settleUsage(id, usage),
+              },
+            });
+            const historyDiagnostics: HistoryDiagnostic[] = [];
+            const toolLoopDiagnostics: DiagnosticToolObservation[] = [];
+            const observedRuntime = observeSyntheticHistory(
+              runtime,
+              historyDiagnostics,
+              [connection.apiKey ?? "", connection.baseUrl ?? ""],
+              toolLoopDiagnostics,
+            );
+            const handles = await createApp({
+              runtime: observedRuntime,
+              contextStrategy: planned.strategy as
+                | "current"
+                | "retrieval"
+                | "snapshots"
+                | "cache-aware",
+              sandbox,
+              databaseUrl,
+              realtimeDatabaseUrl: databaseUrl,
+              dataDir: path.join(dataDir, `${scenario.id}-${planned.strategy}-${planned.trial}`),
+              sandboxProvider: "fake",
+              agentRuntime: "pi",
+              wakeupDriver: "memory",
+              composio,
+              messaging,
+              ...(scenario.routine ? witnesses : {}),
+              messagingOpenSignup: false,
+              defaultProvider: connection.provider,
+              defaultModel: connection.modelId!,
+              deploymentModelKey: undefined,
+              composioApiKey: undefined,
+              cursorApiKey: undefined,
+              cloudAgentProvider: "none",
+              signupsEnabled: "true",
+              signupAllowlist: "",
+              emailEmulator: true,
+              pipedreamClientId: undefined,
+              pipedreamClientSecret: undefined,
+              pipedreamProjectId: undefined,
+              smtpUrl: undefined,
+              emailFrom: undefined,
+              sendblueApiKeyId: undefined,
+              sendblueApiSecret: undefined,
+              slackBotToken: undefined,
+              whatsappAccessToken: undefined,
+              telegramBotToken: undefined,
+              larkAppId: undefined,
+              mcpStdioEnabled: false,
+              mcpStdioAllowedCommands: [],
+              updaterUrl: undefined,
+              updaterToken: undefined,
+            });
+            return {
+              ...handles,
+              harnessIssues: sandbox.harnessIssues,
+              cacheDecisions,
+              historyDiagnostics,
+              toolLoopDiagnostics,
+              finalizeBackground: async () => {
+                acceptingCalls = false;
+                await handles.jobs.close();
+              },
+              stop: async () => {
+                acceptingCalls = false;
+                await handles.stop();
+              },
+              awaitIdle: async () => {
+                if (!handles.awaitIdle) throw new Error("Eval queue cannot await idle");
+                await handles.awaitIdle();
+              },
+            };
+          },
+        })),
+        strategy: planned.strategy,
+        ...(observeWire ? { wireDiagnostics } : {}),
+      };
       save();
       const result = trials[i]!;
       console.log(
