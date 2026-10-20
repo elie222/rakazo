@@ -140,6 +140,40 @@ async function openFoldedPeerReply(page: Page, name: string) {
   return { researcher, composer, transcript, reply };
 }
 
+test("expands sent peer messages with smaller text without opening the peer chat", async ({
+  page,
+}, testInfo) => {
+  const { transcript, reply } = await openFoldedPeerReply(page, "peer-sent-detail");
+  const expand = transcript.getByRole("button", { name: "Expand Messaged Researcher" });
+  const collapse = transcript.getByRole("button", { name: "Collapse Messaged Researcher" });
+  const detail = transcript.getByTestId("peer-message-detail");
+  await expect(expand).toHaveAttribute("aria-expanded", "false");
+  await expect(detail).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sent-peer-collapsed");
+  await expand.click();
+  await expect(detail).toContainText("peer-fold-alpha");
+  await expect(detail.locator(".rk-chat-markdown")).toHaveCSS("font-size", "12.5px");
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await expect(reply).toHaveCount(0);
+  await expect(
+    transcript.getByRole("button", { name: "Expand Message from Researcher" }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByTestId("peer-conversation-view")).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "sent-peer-expanded");
+  await collapse.focus();
+  await collapse.press("Enter");
+  await expect(detail).toHaveCount(0);
+  await expand.press(" ");
+  await expect(detail).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await detail.scrollIntoViewIfNeeded();
+  const box = await detail.boundingBox();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  await captureScreenshot(page, testInfo, "sent-peer-mobile-expanded");
+  await transcript.getByRole("button", { name: "Messaged Researcher", exact: true }).click();
+  await expect(page.getByTestId("peer-conversation-view")).toBeVisible();
+});
+
 test("folds a peer run's reply under its marker and keeps its ask inline", async ({
   page,
 }, testInfo) => {
@@ -150,10 +184,13 @@ test("folds a peer run's reply under its marker and keeps its ask inline", async
   await captureScreenshot(page, testInfo, "peer-replies-folded");
   await toggle.click();
   await expect(reply).toBeVisible();
+  await expect(reply).toHaveCSS("font-size", "12.5px");
+  await expect(transcript.getByText("messaging that bot now.")).toHaveCSS("font-size", "15.5px");
   // The toggle only folds; the label alone opens the peer chat.
   await expect(page.getByTestId("peer-conversation-view")).toHaveCount(0);
   const collapse = transcript.getByRole("button", { name: "Collapse Message from Researcher" });
   await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  await reply.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "peer-replies-expanded");
   await collapse.focus();
   await collapse.press("Enter");

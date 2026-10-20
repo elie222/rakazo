@@ -521,6 +521,7 @@ export function LinkifiedText({ children }: { children: string }) {
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
+  compact = false,
 }: ChatMarkdownProps) {
   const { request, dialog } = useExternalLinkConfirm();
   const source = streaming ? closeUnterminatedFence(children) : children;
@@ -529,6 +530,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
     <ConfirmLinkContext.Provider value={request}>
       <div
         className={streaming ? "rk-chat-markdown rk-chat-markdown-streaming" : "rk-chat-markdown"}
+        data-compact={compact || undefined}
       >
         <LinkFaviconsPausedContext.Provider value={streaming}>
           <StreamingSourceContext.Provider value={streaming ? children : undefined}>

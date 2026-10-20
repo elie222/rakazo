@@ -1108,7 +1108,12 @@ export function selectableMobileMessageText(message: MobileMessage): string {
       if (block.kind === "channel_message") {
         return `${messagingProviderLabel(block.provider, block.transport)} · ${block.fromLabel}: ${block.text}`;
       }
-      if (block.kind === "text" || block.kind === "progress" || block.kind === "ask")
+      if (
+        block.kind === "text" ||
+        block.kind === "progress" ||
+        block.kind === "ask" ||
+        block.kind === "bot_message_sent"
+      )
         return block.text;
       return "";
     })

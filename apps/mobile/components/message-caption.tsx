@@ -8,12 +8,14 @@ export function MessageCaption({
   tokens,
   colorScheme,
   streaming,
+  compact = false,
 }: {
   role: MobileMessage["role"];
   text: string;
   tokens: ColorTokens;
   colorScheme: ResolvedAppearance;
   streaming: boolean;
+  compact?: boolean;
 }) {
   // User messages keep literal Markdown; only explicit URLs and email addresses link.
   return role === "user" ? (
@@ -21,7 +23,12 @@ export function MessageCaption({
       {text}
     </LinkifiedText>
   ) : (
-    <ChatMarkdown palette={tokens} colorScheme={colorScheme} streaming={streaming}>
+    <ChatMarkdown
+      compact={compact}
+      palette={tokens}
+      colorScheme={colorScheme}
+      streaming={streaming}
+    >
       {text}
     </ChatMarkdown>
   );

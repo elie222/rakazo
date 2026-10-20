@@ -104,6 +104,8 @@ vi.mock("react-native", async () => {
 
   return {
     View: mockComponent("rn-view", [
+      "fontSize",
+      "lineHeight",
       "minWidth",
       "width",
       "maxWidth",
@@ -218,6 +220,38 @@ function tableRows(html: string) {
     ),
   }));
 }
+
+describe("compact native markdown", () => {
+  it("reduces body and heading sizes only for explicitly compact messages", () => {
+    const headings = ["One", "Two", "Three", "Four", "Five", "Six"];
+    const content = `${headings.map((heading, i) => `${"#".repeat(i + 1)} ${heading}`).join("\n\n")}\n\nMessage detail`;
+    const render = (compact: boolean) =>
+      new DOMParser().parseFromString(
+        renderToStaticMarkup(<ChatMarkdown compact={compact}>{content}</ChatMarkdown>),
+        "text/html",
+      );
+    const normal = render(false);
+    const compact = render(true);
+    expect(normal.querySelector('[data-font-size="15.5"]')).not.toBeNull();
+    expect(normal.querySelector('[data-font-size="21"]')).not.toBeNull();
+    expect(compact.querySelector('[data-font-size="12.5"]')).not.toBeNull();
+    expect(compact.querySelector('[data-font-size="18"]')).not.toBeNull();
+    const headingSizes = (document: Document) =>
+      headings.map((heading) =>
+        Number(
+          [...document.querySelectorAll("[data-font-size]")]
+            .find((element) => element.textContent === heading)
+            ?.getAttribute("data-font-size"),
+        ),
+      );
+    const regularSizes = headingSizes(normal);
+    const compactSizes = headingSizes(compact);
+    expect(regularSizes).toEqual([21, 19, 17, 16, 13, 11]);
+    expect(compactSizes).toEqual([18, 16, 14, 13, 11, 11]);
+    expect(compactSizes.every((size) => size >= 11)).toBe(true);
+    expect([...compactSizes].sort((a, b) => b - a)).toEqual(compactSizes);
+  });
+});
 
 describe("native markdown tables", () => {
   it("wraps the table in a horizontal scroll view", () => {

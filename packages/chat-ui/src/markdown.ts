@@ -6,6 +6,7 @@ import { createContext, useContext, useEffect, useSyncExternalStore } from "reac
 export type ChatMarkdownProps = {
   children: string;
   streaming?: boolean;
+  compact?: boolean;
 };
 
 type LinkifyRules = {

@@ -3,6 +3,11 @@
   overflow-wrap: anywhere;
 }
 
+.rk-chat-markdown[data-compact] {
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 .rk-chat-markdown > :first-child,
 .rk-chat-markdown > :first-child > :first-child {
   margin-top: 0;

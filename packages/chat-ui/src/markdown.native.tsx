@@ -88,12 +88,12 @@ function contraryDirection(text: string) {
   return rtl ? "rtl" : "ltr";
 }
 
-function markdownStyles(palette: ColorTokens) {
+function markdownStyles(palette: ColorTokens, compact: boolean) {
   return StyleSheet.create({
     body: {
       color: palette.foreground,
-      fontSize: BODY_FONT_SIZE,
-      lineHeight: 23,
+      fontSize: compact ? BODY_FONT_SIZE - 3 : BODY_FONT_SIZE,
+      lineHeight: compact ? 19 : 23,
       width: "100%",
       minWidth: 0,
       flexShrink: 1,
@@ -107,24 +107,33 @@ function markdownStyles(palette: ColorTokens) {
     },
     heading1: {
       color: palette.foreground,
-      fontSize: 21,
-      lineHeight: 27,
+      fontSize: compact ? 21 - 3 : 21,
+      lineHeight: compact ? 27 - 4 : 27,
       marginTop: 0,
       marginBottom: 0,
     },
     heading2: {
       color: palette.foreground,
-      fontSize: 19,
-      lineHeight: 25,
+      fontSize: compact ? 19 - 3 : 19,
+      lineHeight: compact ? 25 - 4 : 25,
       marginTop: 0,
       marginBottom: 0,
     },
     heading3: {
       color: palette.foreground,
-      fontSize: 17,
-      lineHeight: 23,
+      fontSize: compact ? 17 - 3 : 17,
+      lineHeight: compact ? 23 - 4 : 23,
       marginTop: 0,
       marginBottom: 0,
+    },
+    heading4: {
+      fontSize: compact ? 13 : 16,
+    },
+    heading5: {
+      fontSize: compact ? 11 : 13,
+    },
+    heading6: {
+      fontSize: 11,
     },
     strong: {
       color: palette.foreground,
@@ -1188,11 +1197,12 @@ export const LinkifiedText = memo(function LinkifiedText({
 export const ChatMarkdown = memo(function ChatMarkdown({
   children,
   streaming = false,
+  compact = false,
   palette = darkTokens,
   colorScheme = "dark",
 }: ChatMarkdownProps & { palette?: ColorTokens; colorScheme?: ResolvedAppearance }) {
   const openLink = useNativeLinkConfirm();
-  const styles = useMemo(() => markdownStyles(palette), [palette]);
+  const styles = useMemo(() => markdownStyles(palette, compact), [palette, compact]);
   const diagramSurface = useMemo(
     () => ({ streaming, palette, colorScheme }),
     [streaming, palette, colorScheme],

@@ -5620,6 +5620,7 @@ const Transcript = memo(function Transcript({
                             : "collapsed"
                           : undefined
                       }
+                      compact={transcript.markerOf.has(message.id)}
                       onTogglePeerReplies={togglePeerReplies}
                       onAnswer={onAnswer}
                       speakerName={
@@ -7023,6 +7024,7 @@ const MessageView = memo(function MessageView({
   onOpenBot,
   onOpenPeerMessages,
   peerReplies,
+  compact = false,
   onTogglePeerReplies,
   speakerName,
   memberName,
@@ -7046,6 +7048,7 @@ const MessageView = memo(function MessageView({
   onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
   /** Set on a received marker whose peer run has folded replies. */
   peerReplies?: "collapsed" | "expanded";
+  compact?: boolean;
   onTogglePeerReplies: (markerId: string) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
@@ -7151,7 +7154,9 @@ const MessageView = memo(function MessageView({
                     key={i}
                     data-quote-message-id={block.kind === "text" ? quoteMessageId : undefined}
                   >
-                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
+                    <ChatMarkdown compact={compact} streaming={block.kind === "progress"}>
+                      {block.text}
+                    </ChatMarkdown>
                   </div>
                 );
               }
@@ -7216,6 +7221,15 @@ const MessageView = memo(function MessageView({
               identity={peerBotId}
               label={label}
               onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+              detail={
+                sent
+                  ? {
+                      text: block.text,
+                      expandLabel: t`Expand ${label}`,
+                      collapseLabel: t`Collapse ${label}`,
+                    }
+                  : undefined
+              }
               replies={
                 !sent && peerReplies
                   ? {
@@ -7433,7 +7447,7 @@ const MessageView = memo(function MessageView({
                 dir="auto"
               >
                 <div data-quote-message-id={quoteMessageId}>
-                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                  <ChatMarkdown compact={compact}>{block.text}</ChatMarkdown>
                 </div>
                 {voiceReady ? (
                   <button
@@ -7507,7 +7521,7 @@ const MessageView = memo(function MessageView({
                 </span>
               </div>
               <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
-                <ChatMarkdown>{block.text}</ChatMarkdown>
+                <ChatMarkdown compact={compact}>{block.text}</ChatMarkdown>
               </div>
               <Button
                 type="button"

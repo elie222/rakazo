@@ -1,5 +1,9 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ActiveBotGlyph, CollaborationMarker } from "./CollaborationMarker";
 
 describe("collaboration transcript markers", () => {
@@ -54,6 +58,75 @@ describe("collaboration transcript markers", () => {
         onToggle: () => undefined,
       }),
     ).toContain('aria-expanded="true"');
+  });
+
+  it("reveals a sent message independently of opening the peer conversation", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const openConversation = vi.fn();
+    try {
+      await act(async () =>
+        root.render(
+          <CollaborationMarker
+            ariaLabel="Messaged Chief"
+            color="#14B8A6"
+            identity="chief"
+            label="Messaged Chief"
+            onClick={openConversation}
+            detail={{
+              text: "Review **the proposal**",
+              expandLabel: "Expand Messaged Chief",
+              collapseLabel: "Collapse Messaged Chief",
+            }}
+          />,
+        ),
+      );
+      const toggle = () => container.querySelector<HTMLButtonElement>("[aria-expanded]");
+      expect(toggle()?.getAttribute("aria-expanded")).toBe("false");
+      expect(container.textContent).not.toContain("the proposal");
+      await act(async () => toggle()?.click());
+      expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
+      expect(toggle()?.getAttribute("aria-label")).toBe("Collapse Messaged Chief");
+      expect(container.querySelector("[data-testid=peer-message-detail] strong")?.textContent).toBe(
+        "the proposal",
+      );
+      expect(container.querySelector("[data-compact]")).not.toBeNull();
+      expect(openConversation).not.toHaveBeenCalled();
+      await act(async () => toggle()?.click());
+      expect(container.querySelector("[data-testid=peer-message-detail]")).toBeNull();
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>("[data-testid=peer-receipt-chip]")?.click(),
+      );
+      expect(openConversation).toHaveBeenCalledOnce();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not offer an empty sent message disclosure", () => {
+    const html = renderToString(
+      <CollaborationMarker
+        ariaLabel="Messaged Chief"
+        color="#14B8A6"
+        identity="chief"
+        label="Messaged Chief"
+        onClick={() => undefined}
+        detail={{
+          text: "  ",
+          expandLabel: "Expand Messaged Chief",
+          collapseLabel: "Collapse Messaged Chief",
+        }}
+      />,
+    );
+    expect(html).not.toContain("aria-expanded");
   });
 
   it("animates the active bot glyph from its run status", () => {

@@ -2264,6 +2264,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 : "collapsed"
               : undefined
           }
+          compact={peerTranscript.markerOf.has(message.id)}
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
           activityStatus={activityStatus}
@@ -3019,6 +3020,7 @@ type MessageRowProps = {
   messageReactions?: ReadonlyMap<MessageReaction, number>;
   /** Set on a received marker whose peer run has folded replies. */
   peerReplies?: "collapsed" | "expanded";
+  compact?: boolean;
   activityBotId?: string;
   activityColor?: string;
   activityStatus?: MobileBot["status"];
@@ -3046,6 +3048,7 @@ const MessageRow = memo(function MessageRow({
   replyFallbackText,
   messageReactions,
   peerReplies,
+  compact,
   activityBotId,
   activityColor,
   activityStatus,
@@ -3304,6 +3307,7 @@ const MessageRow = memo(function MessageRow({
                 onPreviewMarkdown={actions.previewMarkdown}
                 onPreviewImage={actions.previewImage}
                 peerReplies={peerReplies}
+                compact={compact}
                 onTogglePeerReplies={actions.togglePeerReplies}
                 actionProps={actionProps}
               />
@@ -3360,6 +3364,7 @@ const MessageBubble = memo(function MessageBubble({
   onPreviewMarkdown,
   onPreviewImage,
   peerReplies,
+  compact = false,
   onTogglePeerReplies,
   actionProps,
 }: {
@@ -3377,6 +3382,7 @@ const MessageBubble = memo(function MessageBubble({
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
   peerReplies?: "collapsed" | "expanded";
+  compact?: boolean;
   onTogglePeerReplies: (markerId: string) => void;
   actionProps: MessageActionProps;
 }) {
@@ -3474,48 +3480,75 @@ const MessageBubble = memo(function MessageBubble({
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
       tokens.mutedForeground;
-    // Full view-only peer chat is web-first; on mobile a received chip expands the peer run's
-    // folded replies, which the thread draws as ordinary rows right after it.
+    // Sent receipts reveal their own text; received receipts control the peer run's replies.
     const replies = sent ? undefined : peerReplies;
+    const hasSentDetail = sent && Boolean(peerMessage.text.trim());
+    const expandable = hasSentDetail || replies !== undefined;
+    const expanded = hasSentDetail ? peerExpanded : replies === "expanded";
     return (
-      <Pressable
-        {...actionProps}
-        accessible
-        onPress={replies ? () => onTogglePeerReplies(message.id) : undefined}
-        accessibilityRole={replies ? "button" : undefined}
-        accessibilityState={replies ? { expanded: replies === "expanded" } : undefined}
-        accessibilityLabel={
-          replies === "expanded"
-            ? t("Hide {label}", { label })
-            : replies === "collapsed"
-              ? t("Show {label}", { label })
-              : label
-        }
-        style={{
-          width: "100%",
-          paddingVertical: 4,
-          alignItems: "center",
-          justifyContent: "flex-start",
-          flexDirection: "row",
-          gap: 6,
-        }}
-      >
-        <BotAvatar color={peerColor} identity={peerBotId} size={16} />
-        <Text
-          numberOfLines={1}
-          style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}
+      <View style={{ width: "100%" }}>
+        <Pressable
+          {...actionProps}
+          accessible
+          onPress={
+            hasSentDetail
+              ? () => setPeerExpanded((value) => !value)
+              : replies
+                ? () => onTogglePeerReplies(message.id)
+                : undefined
+          }
+          accessibilityRole={expandable ? "button" : undefined}
+          accessibilityState={expandable ? { expanded } : undefined}
+          accessibilityLabel={
+            expanded
+              ? t("Hide {label}", { label })
+              : expandable
+                ? t("Show {label}", { label })
+                : label
+          }
+          style={{
+            width: "100%",
+            paddingVertical: 4,
+            alignItems: "center",
+            justifyContent: "flex-start",
+            flexDirection: "row",
+            gap: 6,
+          }}
         >
-          {label}
-        </Text>
-        {replies ? (
-          <NativeSymbol
-            ios={replies === "expanded" ? "chevron.down" : "chevron.right"}
-            android={replies === "expanded" ? "chevron-down" : "chevron-forward"}
-            size={12}
-            color={tokens.mutedForeground}
-          />
+          <BotAvatar color={peerColor} identity={peerBotId} size={16} />
+          <Text
+            numberOfLines={1}
+            style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}
+          >
+            {label}
+          </Text>
+          {expandable ? (
+            <NativeSymbol
+              ios={expanded ? "chevron.down" : "chevron.right"}
+              android={expanded ? "chevron-down" : "chevron-forward"}
+              size={12}
+              color={tokens.mutedForeground}
+            />
+          ) : null}
+        </Pressable>
+        {hasSentDetail && expanded ? (
+          <View
+            style={{
+              marginTop: 6,
+              borderRadius: 14,
+              borderWidth: 1,
+              borderColor: tokens.border,
+              backgroundColor: tokens.card,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+            }}
+          >
+            <ChatMarkdown compact palette={tokens} colorScheme={colorScheme}>
+              {peerMessage.text}
+            </ChatMarkdown>
+          </View>
         ) : null}
-      </Pressable>
+      </View>
     );
   }
   const channelMessage = message.blocks.find(
@@ -3892,6 +3925,7 @@ const MessageBubble = memo(function MessageBubble({
             tokens={tokens}
             colorScheme={colorScheme}
             streaming={message.id.startsWith("progress:")}
+            compact={compact}
           />
         ) : null}
         {attachments.map((attachment, index) =>
@@ -4039,6 +4073,7 @@ const MessageBubble = memo(function MessageBubble({
           speaker={index === firstContent ? speaker : undefined}
           speakerColor={index === firstContent ? speakerColor : undefined}
           actionProps={actionProps}
+          compact={compact}
         />
       ))}
       {choiceBlocks.map((block, index) => (
@@ -4076,12 +4111,14 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 function MessageTextCard({
+  compact = false,
   message,
   speaker,
   speakerColor,
   actionProps,
 }: {
   message: MobileMessage;
+  compact?: boolean;
   speaker?: string;
   speakerColor?: string;
   actionProps: MessageActionProps;
@@ -4120,6 +4157,7 @@ function MessageTextCard({
         tokens={tokens}
         colorScheme={colorScheme}
         streaming={message.id.startsWith("progress:")}
+        compact={compact}
       />
     </Pressable>
   );
@@ -4173,7 +4211,7 @@ function AgentEventLabel({
             paddingVertical: 10,
           }}
         >
-          <ChatMarkdown palette={tokens} colorScheme={colorScheme}>
+          <ChatMarkdown compact palette={tokens} colorScheme={colorScheme}>
             {detail}
           </ChatMarkdown>
         </View>

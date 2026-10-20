@@ -3294,6 +3294,19 @@ function mobileMessage(id: string, blocks: MobileMessage["blocks"], seq?: number
 }
 
 describe("mobile clipboard text", () => {
+  it("copies and selects the disclosed text of a sent peer message", async () => {
+    const { copyableMobileMessageText, selectableMobileMessageText } = await import("./api");
+    const message = mobileMessage("sent-peer", [
+      {
+        kind: "bot_message_sent",
+        toBotId: "peer",
+        toBotName: "Researcher",
+        text: "  # Peer detail\n\nSent **Markdown**  ",
+      },
+    ]);
+    expect(selectableMobileMessageText(message)).toBe("  # Peer detail\n\nSent **Markdown**  ");
+    expect(copyableMobileMessageText(message)).toBe("# Peer detail\n\nSent **Markdown**");
+  });
   it("copies message content with transport labels and omits card chrome", async () => {
     const { copyableMobileMessageText } = await import("./api");
     expect(
