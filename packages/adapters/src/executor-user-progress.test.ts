@@ -475,3 +475,79 @@ describe("text from assistant messages with no tool call between them", () => {
     expect(saved).toBe("Done.\nThat's it.");
   });
 });
+
+describe("a stray NO_RESPONSE on runs that must reply", () => {
+  const savedText = (finalizeRun: Awaited<ReturnType<typeof runTurn>>["finalizeRun"]) =>
+    finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+
+  it("drops the sentinel a late follow-up message adds after a user run's final answer", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "Saved the PDF: /tmp/report.pdf" },
+        { type: "turn" },
+        { type: "text", text: "NO_" },
+        { type: "text", text: "RESPONSE" },
+        { type: "done", text: "Saved the PDF: /tmp/report.pdfNO_RESPONSE" },
+      ],
+    });
+    expect(savedText(finalizeRun)).toBe("Saved the PDF: /tmp/report.pdf");
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ markUnread: true }));
+  });
+
+  it("drops repeated sentinels glued onto a user run's final answer", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "The report is ready." },
+        { type: "text", text: "NO_RESPONSENO_RESPONSENO_RESPONSE" },
+        { type: "done", text: "The report is ready.NO_RESPONSENO_RESPONSENO_RESPONSE" },
+      ],
+    });
+    expect(savedText(finalizeRun)).toBe("The report is ready.");
+  });
+
+  it("returns a peer request's result without the sentinel", async () => {
+    vi.mocked(returnBotMessageOutcome).mockClear();
+    const { finalizeRun } = await runTurn("", true, undefined, [], "request", {
+      trigger: "bot_message",
+      runtimeEvents: [
+        { type: "text", text: "Done." },
+        { type: "turn" },
+        { type: "text", text: "NO_RESPONSE" },
+        { type: "done", text: "Done.NO_RESPONSE" },
+      ],
+    });
+    expect(savedText(finalizeRun)).toBe("Done.");
+    expect(returnBotMessageOutcome).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      "Done.",
+      "result",
+    );
+  });
+
+  it.each(["Set the reply token to NO_RESPONSE and restart.", "NO_RESPONSE_POLICY is configured."])(
+    "keeps the sentinel when it is part of the reply: %s",
+    async (reply) => {
+      const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+        runtimeEvents: [
+          { type: "text", text: reply },
+          { type: "done", text: reply },
+        ],
+      });
+      expect(savedText(finalizeRun)).toBe(reply);
+    },
+  );
+
+  it("leaves a sentinel-only user reply as it is today", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "NO_RESPONSE" },
+        { type: "done", text: "NO_RESPONSE" },
+      ],
+    });
+    expect(savedText(finalizeRun)).toBe("NO_RESPONSE");
+  });
+});

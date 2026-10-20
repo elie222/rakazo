@@ -378,7 +378,12 @@ import {
   observeShellCommand,
   SHELL_STILL_RUNNING_NOTICE,
 } from "./shell-command-stream.js";
-import { isExactNoResponse, NO_RESPONSE, stripNoResponseReply } from "./silent-reply.js";
+import {
+  isExactNoResponse,
+  NO_RESPONSE,
+  stripNoResponseReply,
+  stripStrayNoResponse,
+} from "./silent-reply.js";
 import {
   listAgentSkillRecords,
   skillCreateFromTool,
@@ -7871,9 +7876,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
           flushPendingTools();
           // Silent-allowed runs can choose an explicit NO_RESPONSE or finish empty.
+          // Other runs still drop a stray sentinel at the edges of a real reply.
           const silentReply = allowSilentEmptyRun
             ? stripNoResponseReply(assembled, messageSegments)
-            : { assembled, blocks: messageSegments };
+            : stripStrayNoResponse(assembled, messageSegments);
           let completionBlocks = silentReply.blocks;
           if (!silentReply.assembled || isBackgroundRunTrigger(run.trigger)) {
             // Mid-turn progress already posted durable chat messages; skip the empty
@@ -8871,7 +8877,7 @@ export function mayOpenModelStream(
   );
 }
 
-export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply };
+export { isExactNoResponse, NO_RESPONSE, stripNoResponseReply, stripStrayNoResponse };
 
 export function longWorkProgressGuidance(maxLength = messageUserMaxLength()): string {
   return `Send progress updates only when the work will take minutes — long computer tasks or multi-step jobs — never for quick replies and never to announce that you are starting. Even then send at most a few brief updates (a sentence or two each), not one per tool call, and do not narrate routine steps. Thinking stays private. message_user is capped at ${maxLength} characters and will be silently cut off if you exceed it \u2014 never put your final answer, a report, or any long-form deliverable in it. Always put the complete final answer in your normal reply, never split across message_user calls, and never assume a message_user update already delivered your content.`;
