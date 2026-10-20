@@ -16,7 +16,7 @@ import { formatCurrentTimeInstruction } from "./current-time.js";
 import { resolveDeploymentModel } from "./deployment-model.js";
 import { LOCAL_PROVIDER_ID } from "./pi-local-provider.js";
 
-const DEFAULT_TIMEOUT_MS = 1_500;
+const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_TASK_CHARS = 400;
 const MAX_BOT_CHARS = 240;
 const MAX_ARGS_CHARS = 1_200;
@@ -285,9 +285,8 @@ export async function runAutoReviewJudge(input: {
 }): Promise<AutoReviewJudgeResult> {
   const modelLabel = `${input.checker.provider}/${input.checker.model}`;
   const timeoutMs = input.timeoutMs ?? autoReviewTimeoutMs();
-  const signal = input.signal
-    ? AbortSignal.any([input.signal, AbortSignal.timeout(timeoutMs)])
-    : AbortSignal.timeout(timeoutMs);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const signal = input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal;
   let text = "";
   let failed = false;
   try {
@@ -342,8 +341,26 @@ export async function runAutoReviewJudge(input: {
         else text = body;
       }
     }
-  } catch {
-    return { decision: "error", model: modelLabel, reason: "Checker timed out or failed." };
+  } catch (error) {
+    const timedOut =
+      timeoutSignal.aborted || (error instanceof Error && error.name === "TimeoutError");
+    const secrets = input.apiKey ? [input.apiKey] : [];
+    const detail = timedOut
+      ? `timed out after ${timeoutMs}ms`
+      : `failed: ${truncate(
+          redactSecrets(
+            error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+            secrets,
+          ),
+          200,
+        )}`;
+    // biome-ignore lint/suspicious/noConsole: Emit one sanitized checker diagnostic.
+    console.warn(`[auto-review] checker ${redactSecrets(modelLabel, secrets)} ${detail}`);
+    return {
+      decision: "error",
+      model: modelLabel,
+      reason: timedOut ? "Checker timed out." : "Checker failed.",
+    };
   }
 
   if (failed || !text) {
