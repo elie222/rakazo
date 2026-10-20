@@ -164,7 +164,8 @@ test("activity filters keep retry when a refresh fails", async ({ page }) => {
     botId: "bot-agent",
     botName: "Helper",
     trigger: "bot_message",
-    agentMessage: { fromBotName: "Scout", kind: "update" },
+    agentMessage: { fromBotName: "Scout", kind: "update", text: "filter me" },
+    promptSnippet: "Update from Scout: filter me",
   };
 
   await page.route("**/rpc/runs/list", async (route) => {

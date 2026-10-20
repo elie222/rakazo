@@ -53,7 +53,14 @@ export const RunActivityRowSchema = z.object({
   notificationsEnabled: z.boolean(),
   promptSnippet: z.string(),
   agentMessage: z
-    .object({ fromBotName: z.string(), kind: z.enum(["update", "request"]) })
+    .discriminatedUnion("kind", [
+      z.strictObject({
+        fromBotName: z.string(),
+        kind: z.enum(["update", "request"]),
+        text: z.string().max(120),
+      }),
+      z.strictObject({ kind: z.literal("unknown") }),
+    ])
     .nullable(),
   updatedAt: z.string(),
 });

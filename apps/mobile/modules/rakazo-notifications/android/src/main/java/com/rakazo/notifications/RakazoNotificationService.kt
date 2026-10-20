@@ -439,16 +439,6 @@ private object Channels {
   const val ATTENTION = "rakazo_attention"
 }
 
-private fun activityPrompt(row: JSONObject): String {
-  val text = row.optString("promptSnippet")
-  if (row.optString("trigger") != "bot_message") return text
-  val message = row.optJSONObject("agentMessage")
-    ?: return text.ifBlank { "Message from another agent" }
-  val name = message.optString("fromBotName").trim().ifBlank { "Another agent" }
-  val label = if (message.optString("kind") == "update") "Update from $name" else "$name asked"
-  return if (text.isBlank()) label else "$label: $text"
-}
-
 private fun runs(endpoint: String, token: String, spaceId: String, filter: String): List<RunRecord> {
   val root = rpc(endpoint, token, spaceId, "runs/list", JSONObject().put("filter", filter))
   val rows = root.optJSONArray("runs") ?: throw IOException("Invalid activity response")
@@ -463,7 +453,7 @@ private fun runs(endpoint: String, token: String, spaceId: String, filter: Strin
       groupName = row.optionalString("groupName"),
       threadId = row.requiredString("threadId"),
       status = row.requiredString("status"),
-      prompt = activityPrompt(row),
+      prompt = row.optString("promptSnippet"),
       trigger = row.requiredString("trigger"),
       notificationsEnabled = row.optBoolean("notificationsEnabled", true),
     )

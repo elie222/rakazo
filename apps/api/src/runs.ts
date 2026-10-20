@@ -20,15 +20,24 @@ export function activityPreview(
     return { promptSnippet: promptSnippet(input.prompt, max), agentMessage: null };
   const parsed = MessageBlock.array().safeParse(input.sourceBlocks);
   const message = parsed.success ? botMessageContext(parsed.data) : undefined;
-  if (!message) return { promptSnippet: "", agentMessage: null };
+  if (!message) {
+    return {
+      promptSnippet: "Message from another agent",
+      agentMessage: { kind: "unknown" },
+    };
+  }
+  const name = message.fromBotName.trim() || "Another agent";
+  const kind =
+    message.intent === "result" || message.intent === "status" || message.intent === "fyi"
+      ? "update"
+      : "request";
+  const label = kind === "update" ? `Update from ${name}` : `${name} asked`;
   return {
-    promptSnippet: promptSnippet(message.text, max),
+    promptSnippet: promptSnippet(message.text.trim() ? `${label}: ${message.text}` : label, max),
     agentMessage: {
       fromBotName: message.fromBotName.trim(),
-      kind:
-        message.intent === "result" || message.intent === "status" || message.intent === "fyi"
-          ? "update"
-          : "request",
+      kind,
+      text: promptSnippet(message.text, max),
     },
   };
 }

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { RunActivityRow } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { createThreadMessage } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sessionCookieHeader } from "./index.js";
 
@@ -130,6 +131,63 @@ describeRunsList("runs.list activity tracker", () => {
     expect(recent.runs.some((run) => run.botName === "Archived")).toBe(false);
     expect(recent.runs.some((run) => run.botName === "Visible")).toBe(true);
     expect(recent.runs.length).toBe(1);
+  });
+
+  it("returns legacy labels alongside structured agent messages", async () => {
+    const cookie = await signup(app, `runs-message-${stamp}@rakazo.test`, "Runs User");
+    const bot = await rpc<{ id: string }>(app, cookie, "bots/create", {
+      name: "Worker",
+      title: "Worker",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    for (const source of [
+      {
+        name: "Maya",
+        text: " first\n second ",
+        intent: "request",
+        kind: "request",
+        label: "Maya asked: first second",
+      },
+      { name: " ", text: "", intent: "result", kind: "update", label: "Update from Another agent" },
+      null,
+    ]) {
+      const run = await seedRun(prisma, bot.id, "running", "[bot] private internal wake prompt");
+      const message = source
+        ? await createThreadMessage(prisma, {
+            threadId: run.threadId,
+            role: "user",
+            blocks: [
+              {
+                kind: "bot_message_received",
+                fromBotId: "peer",
+                fromBotName: source.name,
+                text: source.text,
+                intent: source.intent as "request" | "result",
+              },
+            ],
+          })
+        : null;
+      await prisma.run.update({
+        where: { id: run.id },
+        data: { trigger: "bot_message", sourceMessageId: message?.id ?? null },
+      });
+      const active = await rpc<{ runs: RunActivityRow[] }>(app, cookie, "runs/list", {
+        filter: "active",
+      });
+      const row = active.runs.find((row) => row.runId === run.id);
+      expect(row?.promptSnippet).toBe(source?.label ?? "Message from another agent");
+      expect(row?.agentMessage).toEqual(
+        source
+          ? {
+              fromBotName: source.name.trim(),
+              kind: source.kind,
+              text: source.text.replace(/\s+/g, " ").trim(),
+            }
+          : { kind: "unknown" },
+      );
+    }
   });
 
   it("returns group runs with groupId for navigation", async () => {
