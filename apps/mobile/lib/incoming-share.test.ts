@@ -5,6 +5,7 @@ const state = vi.hoisted(() => ({
   payloads: [] as Array<{ value: string; shareType: string; mimeType?: string }>,
   clear: vi.fn(),
   copy: vi.fn(),
+  size: 3 as number | undefined,
   remove: vi.fn(),
 }));
 vi.mock("react-native", () => ({
@@ -31,6 +32,9 @@ vi.mock("expo-file-system", () => ({
     constructor(...parts: string[]) {
       this.uri = parts.join("/");
     }
+    info() {
+      return { size: state.size };
+    }
     async copy(to: { uri: string }) {
       state.copy(this.uri, to.uri);
     }
@@ -55,6 +59,7 @@ beforeEach(() => {
   cancelIncomingShare();
   state.payloads = [];
   vi.clearAllMocks();
+  state.size = 3;
 });
 afterEach(() => {
   cancelIncomingShare();
@@ -119,7 +124,7 @@ describe("incoming share", () => {
     expect(takeIncomingShare()).not.toBe(share);
   });
   it("deletes only its cache copy after consumption", async () => {
-    await readIncomingShareFile("content://media/1", async (file) => {
+    await readIncomingShareFile("content://media/1", 1024, async (file) => {
       expect(state.remove).not.toHaveBeenCalled();
       expect(file.uri).toContain("file:///cache/");
     });
@@ -128,12 +133,24 @@ describe("incoming share", () => {
   });
   it("cleans the copy when a read fails or cancellation happens during reading", async () => {
     await expect(
-      readIncomingShareFile("content://media/1", async () => {
+      readIncomingShareFile("content://media/1", 1024, async () => {
         cancelIncomingShare();
         throw new Error("unreadable");
       }),
     ).rejects.toThrow("unreadable");
     expect(state.remove).toHaveBeenCalledTimes(1);
+  });
+  it("rejects known oversized files without copying", async () => {
+    state.size = 2048;
+    expect(await readIncomingShareFile("content://media/1", 1024, vi.fn())).toBeNull();
+    expect(state.copy).not.toHaveBeenCalled();
+  });
+  it("refuses unknown-size copies instead of copying an unbounded stream", async () => {
+    state.size = undefined;
+    await expect(readIncomingShareFile("content://media/1", 1024, vi.fn())).rejects.toThrow(
+      "Shared file size is unavailable",
+    );
+    expect(state.copy).not.toHaveBeenCalled();
   });
   it("does not copy files while waiting, cancelling or expiring", () => {
     state.payloads = [{ value: "content://media/1", shareType: "image" }];

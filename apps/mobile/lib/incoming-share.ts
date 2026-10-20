@@ -95,11 +95,18 @@ export function retryIncomingShare(share: IncomingShare) {
 /** Only this newly allocated cache copy is ever deleted; never the sender's URI. */
 export async function readIncomingShareFile<T>(
   uri: string,
+  maxBytes: number,
   read: (file: File, name: string, mimeType: string) => Promise<T>,
-): Promise<T> {
+): Promise<T | null> {
   const source = new File(uri);
   const name = source.name || "file";
   const mimeType = source.type;
+  const size = source.info().size;
+  // Generic Android content providers do not expose bounded reads through FileHandle.
+  // Require a measured size before copying instead of copying an unbounded stream.
+  if (typeof size !== "number" || !Number.isFinite(size) || size < 0)
+    throw new Error("Shared file size is unavailable");
+  if (size > maxBytes) return null;
   const copy = new File(Paths.cache, `incoming-share-${Date.now()}-${copyId++}`);
   try {
     await source.copy(copy);

@@ -21,7 +21,7 @@ const files = Array.from({ length: 7 }, (_, i) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   state.base64.mockResolvedValue("YWJj");
-  state.read.mockImplementation((uri, read) =>
+  state.read.mockImplementation((uri, _maxBytes, read) =>
     read({ uri: "file:///cache/copy" }, `${uri.split("/").at(-1)}.png`, "image/png"),
   );
 });
@@ -40,6 +40,13 @@ describe("shared files", () => {
     expect(result.skipped).toHaveLength(5);
     expect(state.read).toHaveBeenCalledTimes(2);
     expect(state.base64).toHaveBeenCalledTimes(2);
+  });
+  it("reports oversized sources without retrying", async () => {
+    state.read.mockResolvedValueOnce(null);
+    const result = await readSharedFiles(files.slice(0, 1), 0, 1024 * 1024);
+    expect(result.attachments).toEqual([]);
+    expect(result.failedFiles).toEqual([]);
+    expect(result.skipped[0]?.reason).toBe("over 1 MiB");
   });
   it("reads nothing when the composer is full", async () => {
     expect((await readSharedFiles(files, 4)).skipped).toHaveLength(7);

@@ -2025,6 +2025,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   ];
 
   function attachFrom(source: string) {
+    if (importingShare.current) return;
     if (source === "library") void addAttachments(pickFromLibrary);
     else if (source === "camera") void addAttachments(takePhoto);
     else if (source === "file") void addAttachments(pickDocuments);

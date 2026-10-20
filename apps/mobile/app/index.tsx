@@ -1253,7 +1253,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         <View style={{ height: 56, zIndex: 1 }}>
           <ThreadErrorNotice
             top={0}
-            inset={columnInset}
+            inset={columnInset + 16}
             error={null}
             summary={t("Pick a chat to share to")}
             actionLabel={t("Cancel")}

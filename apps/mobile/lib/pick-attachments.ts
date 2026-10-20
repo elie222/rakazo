@@ -1,4 +1,4 @@
-import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT, attachmentSizeLabel } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
@@ -110,7 +110,7 @@ export async function readSharedFiles(
       continue;
     }
     try {
-      const result = await readIncomingShareFile(file.uri, async (copy, name, type) => {
+      const result = await readIncomingShareFile(file.uri, maxBytes, async (copy, name, type) => {
         const mimeType = inferAttachmentMimeType(name, type || file.mimeType || undefined);
         const { contentBase64, size } = await readUriAsBase64(copy.uri, maxBytes);
         // The cache copy is removed after this read; previews must own their bytes.
@@ -123,6 +123,10 @@ export async function readSharedFiles(
           maxBytes,
         );
       });
+      if (!result) {
+        skipped.push({ name: file.name, reason: `over ${attachmentSizeLabel(maxBytes)}` });
+        continue;
+      }
       attachments.push(...result.attachments);
       skipped.push(...result.skipped);
     } catch {
