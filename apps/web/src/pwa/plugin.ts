@@ -57,8 +57,12 @@ export function shellFiles(bundle: Rolldown.OutputBundle): string[] {
   return [...files].sort();
 }
 
-export function injectShell(code: string, precache: readonly string[]): string {
-  const cacheName = `${CACHE_PREFIX}${createHash("sha256").update(JSON.stringify(precache)).digest("hex").slice(0, 16)}`;
+export function injectShell(
+  code: string,
+  precache: readonly string[],
+  html: string | Uint8Array,
+): string {
+  const cacheName = `${CACHE_PREFIX}${createHash("sha256").update(JSON.stringify(precache)).update(html).digest("hex").slice(0, 16)}`;
   let injected = code;
   for (const [placeholder, value] of [
     [PRECACHE_PLACEHOLDER, precache],
@@ -91,6 +95,7 @@ export function rakazoPwa(): Plugin[] {
     {
       name: "rakazo-pwa-service-worker",
       apply: "build",
+      enforce: "post",
       buildStart() {
         this.emitFile({
           type: "chunk",
@@ -100,13 +105,15 @@ export function rakazoPwa(): Plugin[] {
       },
       generateBundle(_options, bundle) {
         this.emitFile({ type: "asset", fileName: MANIFEST_FILE, source: manifest() });
+        const html = bundle["index.html"];
+        if (html?.type !== "asset") this.error("The index.html shell was not emitted.");
         const worker = bundle[SERVICE_WORKER_FILE];
         if (worker?.type !== "chunk") this.error("The service worker chunk was not emitted.");
         // Registered as a classic script, so it must stay one self-contained file.
         if (worker.imports.length || worker.dynamicImports.length || worker.exports.length) {
           this.error("The service worker must not import or export modules.");
         }
-        worker.code = injectShell(worker.code, shellFiles(bundle));
+        worker.code = injectShell(worker.code, shellFiles(bundle), html.source);
       },
     },
   ];

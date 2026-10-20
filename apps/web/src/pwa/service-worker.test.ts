@@ -121,14 +121,29 @@ describe("service worker", () => {
     expect([...sw.stores.get(CACHE)!.entries.keys()]).toEqual([`${ORIGIN}/assets/lazy.js`]);
   });
 
-  it("drops caches from older versions on activate", async () => {
+  it("keeps only the current and newest previous shell caches on activate", async () => {
     network = async () => new Response("ok");
     const sw = setup();
     await sw.scope.caches.open("rakazo-shell-old");
+    await sw.scope.caches.open("rakazo-shell-previous");
     await sw.scope.caches.open("someone-else");
     await sw.scope.caches.open(CACHE);
     await sw.dispatch("activate", {});
-    expect([...sw.stores.keys()]).toEqual(["someone-else", CACHE]);
+    expect([...sw.stores.keys()]).toEqual(["rakazo-shell-previous", "someone-else", CACHE]);
+  });
+
+  it("serves an old-version asset from the previous cache after activation while offline", async () => {
+    network = vi.fn(async () => {
+      throw new TypeError("offline");
+    });
+    const sw = setup();
+    const previous = await sw.scope.caches.open("rakazo-shell-previous");
+    await previous.put("/assets/old.js", new Response("previous bundle"));
+    await sw.scope.caches.open(CACHE);
+    await sw.dispatch("activate", {});
+
+    expect(await (await sw.fetch("/assets/old.js"))!.text()).toBe("previous bundle");
+    expect(network).not.toHaveBeenCalled();
   });
 
   it("hands over to a waiting version on the next navigation of the last window", async () => {

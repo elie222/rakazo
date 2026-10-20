@@ -36,12 +36,24 @@ describe("PWA build", () => {
 
   it("versions the cache by the precached files", () => {
     const code = "install(self,__RAKAZO_SW_PRECACHE__,__RAKAZO_SW_CACHE__)";
-    const first = injectShell(code, ["/", "/assets/a.js"]);
+    const first = injectShell(code, ["/", "/assets/a.js"], "<html>first</html>");
     expect(first).toMatch(
       /^install\(self,\["\/","\/assets\/a\.js"\],"rakazo-shell-[0-9a-f]{16}"\)$/,
     );
-    expect(injectShell(code, ["/", "/assets/b.js"]).slice(-18)).not.toBe(first.slice(-18));
-    expect(() => injectShell("install(self)", [])).toThrow();
+    expect(injectShell(code, ["/", "/assets/b.js"], "<html>first</html>").slice(-18)).not.toBe(
+      first.slice(-18),
+    );
+    expect(() => injectShell("install(self)", [], "")).toThrow();
+  });
+
+  it("changes the cache name when only the HTML shell changes", () => {
+    const code = "install(self,__RAKAZO_SW_PRECACHE__,__RAKAZO_SW_CACHE__)";
+    const precache = ["/", "/assets/a.js"];
+    const first = injectShell(code, precache, "<html>first</html>");
+    const second = injectShell(code, precache, "<html>second</html>");
+    const cacheName = /rakazo-shell-[0-9a-f]{16}/;
+    expect(first.match(cacheName)?.[0]).toBeDefined();
+    expect(second.match(cacheName)?.[0]).not.toBe(first.match(cacheName)?.[0]);
   });
 
   it("takes the manifest colors from the shared tokens", () => {

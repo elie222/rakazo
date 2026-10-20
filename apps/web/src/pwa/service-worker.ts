@@ -34,7 +34,7 @@ export function bypassesServiceWorker(pathname: string): boolean {
  * Precaches the app shell, serves hashed assets cache-first and falls back to
  * the cached shell for navigations while offline. A new version waits until
  * the next navigation of the last open window, then takes over by reloading
- * that navigation, so a running page never loses the assets it was built with.
+ * that navigation. The previous shell stays cached for tabs still using it.
  */
 export function installServiceWorker(
   scope: ServiceWorkerScope,
@@ -59,15 +59,13 @@ export function installServiceWorker(
 
   scope.addEventListener("activate", (event) => {
     event.waitUntil(
-      scope.caches
-        .keys()
-        .then((names) =>
-          Promise.all(
-            names
-              .filter((name) => name.startsWith(CACHE_PREFIX) && name !== cacheName)
-              .map((name) => scope.caches.delete(name)),
-          ),
-        ),
+      scope.caches.keys().then((names) => {
+        // Keep the newest previous shell for tabs still running its bundle.
+        const previous = names.filter(
+          (name) => name.startsWith(CACHE_PREFIX) && name !== cacheName,
+        );
+        return Promise.all(previous.slice(0, -1).map((name) => scope.caches.delete(name)));
+      }),
     );
   });
 
@@ -122,6 +120,11 @@ export function installServiceWorker(
     const cache = await scope.caches.open(cacheName);
     const cached = await cache.match(event.request);
     if (cached) return cached;
+    for (const name of await scope.caches.keys()) {
+      if (!name.startsWith(CACHE_PREFIX) || name === cacheName) continue;
+      const previous = await (await scope.caches.open(name)).match(event.request);
+      if (previous) return previous;
+    }
     const response = await scope.fetch(event.request);
     // A missing chunk can come back as the SPA's HTML; never store that as an asset.
     const html = response.headers.get("content-type")?.includes("text/html") ?? false;
