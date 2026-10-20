@@ -16,7 +16,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "The model provider returned an error.": "De modelaanbieder heeft een fout teruggegeven.",
   "{provider} is rate limiting requests. Try again shortly.":
     "{provider} beperkt het aantal verzoeken. Probeer het zo nog eens.",
-  "{summary} Resets {date}.": "{summary} wordt op {date} hersteld.",
+  "{summary} Resets {date}.": "{summary} Wordt gereset op {date}.",
   "{provider} rejected the API key. Check your connection settings.":
     "{provider} heeft de API-sleutel geweigerd. Controleer je verbindingsinstellingen.",
   "{provider} could not find the requested model.":
@@ -417,7 +417,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "The final page may not load. Paste its URL or code here.":
     "De laatste pagina wordt mogelijk niet geladen. Plak de URL of code hier.",
   "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider.":
-    "Deze abonneementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik een implementatiegegeven of kies een andere aanbieder.",
+    "Deze abonnementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik een implementatiegegeven of kies een andere aanbieder.",
   "Use a found model": "Een gevonden model gebruiken",
   "Use this model": "Dit model gebruiken",
   "Waiting for sign-in…": "Wachten op aanmelding…",

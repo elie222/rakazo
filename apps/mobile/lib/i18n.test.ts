@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createScanner, ScriptTarget } from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("expo-localization", () => ({
@@ -27,6 +28,15 @@ function collectSourceFiles(dir: string): string[] {
     else if (/\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".test.ts")) files.push(path);
   }
   return files;
+}
+
+function translationIds(source: string): string[] {
+  const scanner = createScanner(ScriptTarget.Latest, true);
+  return [...source.matchAll(/\bt\(\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g)].map((match) => {
+    scanner.setText(match[1]);
+    scanner.scan();
+    return scanner.getTokenValue();
+  });
 }
 
 describe("mobile i18n", () => {
@@ -146,16 +156,20 @@ describe("mobile i18n", () => {
     ]);
     for (const file of collectSourceFiles(mobileRoot)) {
       const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(/\bt\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')/g)) {
-        const value =
-          match[1] ?? match[2]?.replace(/\\'|"/g, (char) => (char === "\\'" ? "'" : '\\"'));
-        ids.add(JSON.parse(`"${value}"`) as string);
-      }
+      for (const id of translationIds(source)) ids.add(id);
     }
     for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
       const missing = [...ids].filter((id) => !messages[id]?.trim()).sort();
       expect(missing).toEqual([]);
     }
+  });
+
+  it("decodes JavaScript string escapes in scanned translation ids", () => {
+    expect(
+      translationIds(
+        String.raw`t('He said \"hi\"'); t('C:\\temp'); t('It\'s ready'); t("Say \"hi\""); t('\x41\u0042\n')`,
+      ),
+    ).toEqual(['He said "hi"', "C:\\temp", "It's ready", 'Say "hi"', "AB\n"]);
   });
 
   it.each([

@@ -258,7 +258,7 @@ msgstr "{stepCount, plural, one {Bezig… · # tool} other {Bezig… · # tools}
 #. js-lingui-explicit-id
 #: src/lib/run-error.ts
 msgid "{summary} Resets {date}."
-msgstr "{summary} wordt op {date} hersteld."
+msgstr "{summary} Wordt gereset op {date}."
 
 #: src/pages/ActivityList.tsx
 msgid "{title}, {label}"
@@ -294,7 +294,7 @@ msgstr "Er is een aanmeldtabblad geopend op <0>{0}</0>. Voer daar deze code in �
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
 msgid "A subscription credential is stored securely."
-msgstr "Een abonneementsgegeven wordt veilig opgeslagen."
+msgstr "Een abonnementsgegeven wordt veilig opgeslagen."
 
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
@@ -384,7 +384,7 @@ msgstr "Voeg een model toe in Instellingen om dit te gebruiken."
 
 #: src/pages/Shell.tsx
 msgid "Add a run time for this one-shot."
-msgstr "Voeg een looptijd toe voor deze eenmalige opdracht."
+msgstr "Voeg een uitvoertijdstip toe voor deze eenmalige opdracht."
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Add a server name."
@@ -573,7 +573,7 @@ msgstr "Altijd toegestaan"
 
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
-msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonneementsaanmelding."
+msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonnementsaanmelding."
 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
@@ -997,7 +997,7 @@ msgstr "Opnieuw controleren"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Check every"
-msgstr "Controleren elke"
+msgstr "Elke"
 
 #: src/components/SoftwareUpdateSection.tsx
 msgid "Check failed"
@@ -2441,7 +2441,7 @@ msgstr "Rond de aanmelding af op <0>{0}</0>. De laatste pagina wordt mogelijk ni
 
 #: src/lib/model-connection-preflight.ts
 msgid "Finish subscription sign-in, then test again."
-msgstr "Rond de abonneementsaanmelding af en test daarna opnieuw."
+msgstr "Rond de abonnementsaanmelding af en test daarna opnieuw."
 
 #: src/components/CloudAgentCard.tsx
 msgid "finished"
@@ -3500,7 +3500,7 @@ msgstr "Shell openen"
 
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
-msgstr "Werk openen"
+msgstr "Openstaand werk"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -4095,7 +4095,7 @@ msgstr "Rungeschiedenis"
 
 #: src/pages/Shell.tsx
 msgid "Run time must be in the future."
-msgstr "De looptijd moet in de toekomst liggen."
+msgstr "Het uitvoertijdstip moet in de toekomst liggen."
 
 #: src/components/CloudAgentCard.tsx
 msgid "running"
@@ -4162,7 +4162,7 @@ msgstr "Opgeslagen."
 
 #: src/pages/RoutineEditor.tsx
 msgid "Saved. Rotate to reveal."
-msgstr "Opgeslagen. Draai om te tonen."
+msgstr "Opgeslagen. Vernieuw de sleutel om deze te tonen."
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Saving your workspace"
@@ -4256,7 +4256,7 @@ msgstr "Verzenden"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Send <0>{linkCode}</0> to the line from your chat app within 10 minutes. You'll get a confirmation reply once linked."
-msgstr "Stuur <0>{linkCode}</0> binnen 10 minuten naar de regel van je chattoepassing. Je krijgt een bevestiging zodra het is gekoppeld."
+msgstr "Stuur <0>{linkCode}</0> binnen 10 minuten naar het gesprek met de bot in je chatapp. Je krijgt een bevestiging zodra de koppeling is gemaakt."
 
 #: src/components/AskCard.tsx
 msgid "Send answer"
@@ -4788,7 +4788,7 @@ msgstr "Deze server is al gekoppeld. Koppel hem eerst los om opnieuw te autorise
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "This subscription sign-in is not available in Rakazo yet. Use a deployment credential or choose another provider."
-msgstr "Deze abonneementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik een implementatiegegeven of kies een andere aanbieder."
+msgstr "Deze abonnementsaanmelding is nog niet beschikbaar in Rakazo. Gebruik een implementatiegegeven of kies een andere aanbieder."
 
 #: src/pages/Artifacts.tsx
 msgid "This week"
@@ -4814,7 +4814,7 @@ msgstr "Aan"
 #. placeholder {0}: filters.dateRange.to
 #: src/pages/ActivityList.tsx
 msgid "To {0}"
-msgstr "Aan {0}"
+msgstr "Tot {0}"
 
 #: src/lib/ticket-status.ts
 msgid "To do"
@@ -4892,7 +4892,7 @@ msgstr "Probeer de test opnieuw."
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Type"
-msgstr "Typen"
+msgstr "Type"
 
 #: src/components/teach/TeachRecordingChrome.tsx
 msgid "Type without recording"
