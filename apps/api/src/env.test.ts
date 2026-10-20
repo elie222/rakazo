@@ -7,6 +7,12 @@ const base = {
 };
 
 describe("loadEnv", () => {
+  it.each(["none", "NONE", " none "])("parses owner-only platform access: %s", (value) => {
+    expect(loadEnv({ ...base, PLATFORM_MODEL_ALLOWLIST: value }).platformModelAllowlist).toBe(
+      "owner_only",
+    );
+  });
+
   it("keeps calls off unless explicitly enabled", () => {
     expect(loadEnv(base).phoneCallsEnabled).toBe(false);
     for (const value of ["false", "1", ""]) {

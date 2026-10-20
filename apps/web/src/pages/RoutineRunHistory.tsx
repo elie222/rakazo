@@ -227,7 +227,7 @@ export function RoutineRunHistory({ routineId }: { routineId: string }) {
                     <details key={run.error} className="mt-1">
                       <summary className="w-fit cursor-pointer">{t`Details`}</summary>
                       <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
-                        {run.error}
+                        {normalizeRunError(run.error).details}
                       </pre>
                     </details>
                   </div>

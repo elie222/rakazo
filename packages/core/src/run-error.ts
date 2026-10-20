@@ -39,7 +39,9 @@ export function normalizeRunError(
   details: string,
   translate: RunErrorTranslator = english,
   locale = "en-US",
-): { summary: string; details: string } {
+): { summary: string; details: string; action?: "add_key" } {
+  const platformKey = details.startsWith("[platform-model-key]");
+  if (platformKey) details = details.slice("[platform-model-key]".length);
   const prefix = details.trim().match(/^(\d{3})\s*:\s*/);
   const body = details.trim().slice(prefix?.[0].length ?? 0);
   let parsed: unknown;
@@ -67,6 +69,7 @@ export function normalizeRunError(
         ? translate("Your Anthropic")
         : translate("Your model provider");
 
+  let addKey = false;
   let summary = translate("The model provider returned an error.");
   if (
     /rate[_ -]limit|too many requests/i.test(signals) &&
@@ -74,10 +77,12 @@ export function normalizeRunError(
   ) {
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
+    (platformKey && status === 402) ||
     /\b(?:quota|insufficient[_ ](?:quota|credits?|funds)|credit[_ ]balance)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
       signals,
     )
   ) {
+    addKey = platformKey;
     const period = /\bweekly\b/i.test(message)
       ? "weekly"
       : /\bmonthly\b/i.test(message)
@@ -114,9 +119,14 @@ export function normalizeRunError(
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 401 ||
+    (platformKey &&
+      /(?:invalid|rejected|expired|revoked)[\s\S]{0,30}key|key[\s\S]{0,30}(?:invalid|rejected|expired|revoked)/i.test(
+        signals,
+      )) ||
     ((status === 403 || /invalid[_ -](?:api[_ -])?key|authentication_error/i.test(signals)) &&
       /auth|unauthorized|forbidden|invalid|key|permission|access denied/i.test(signals))
   ) {
+    addKey = platformKey;
     summary = translate("{provider} rejected the API key. Check your connection settings.", {
       provider,
     });
@@ -134,7 +144,9 @@ export function normalizeRunError(
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
   }
-  return { summary, details };
+  return addKey
+    ? { summary: translate("Add your own API key to keep chatting."), details, action: "add_key" }
+    : { summary, details };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

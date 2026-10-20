@@ -473,6 +473,21 @@ describe("recordHistoryCompactAttemptsExhausted", () => {
 });
 
 describe("compactHistory", () => {
+  it("skips direct deployment compaction for a denied user even with a stored default", async () => {
+    const harness = compactionHarness({ deploymentModelKey: "fixture-key" });
+    Object.assign(harness.prisma, {
+      user: { findUnique: vi.fn().mockResolvedValue({ email: "user@example.test" }) },
+    });
+    vi.mocked(harness.deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+      ownerUserId: "owner",
+      defaultModelProvider: "openrouter",
+      defaultModelId: "fixture-model",
+    } as never);
+    await compactHistory({ ...harness.deps, platformModelAllowlist: ["@other.test"] }, "thread-1");
+    expect(harness.runtime.run).not.toHaveBeenCalled();
+    expect(harness.saveMemory).not.toHaveBeenCalled();
+  });
+
   it("summarizes the next batch, saves it through the provider, and advances the cursor", async () => {
     const harness = compactionHarness({ deploymentModelKey: "openrouter-key" });
 

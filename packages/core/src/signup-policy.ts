@@ -6,6 +6,23 @@ export function parseAllowlist(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** An empty list allows everyone; owner_only explicitly denies all non-owners. */
+export type PlatformModelAllowlist = string[] | "owner_only";
+
+export function parsePlatformModelAllowlist(raw: string | undefined): PlatformModelAllowlist {
+  return raw?.trim().toLowerCase() === "none" ? "owner_only" : parseAllowlist(raw);
+}
+
+export function platformModelAllowed(input: {
+  allowlist?: PlatformModelAllowlist;
+  email: string;
+  isOwner: boolean;
+}): boolean {
+  if (input.isOwner) return true;
+  if (input.allowlist === "owner_only") return false;
+  return emailAllowed(input.email, input.allowlist ?? []);
+}
+
 export function emailAllowed(email: string, allowlist: string[]): boolean {
   if (allowlist.length === 0) return true;
   const normalized = email.trim().toLowerCase();

@@ -161,6 +161,7 @@ import {
   storedPiProviderIds,
   usableModelId,
 } from "@rakazo/contracts";
+import type { PlatformModelAllowlist } from "@rakazo/core";
 import {
   ACTIVE_RUN_STATUSES,
   AttachmentValidationError,
@@ -172,6 +173,7 @@ import {
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  platformModelAllowed,
 } from "@rakazo/core";
 import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -610,6 +612,7 @@ export interface RouterDeps {
     teamChatJudgeModel?: string;
     defaultProvider: string;
     defaultModel: string;
+    platformModelAllowlist?: PlatformModelAllowlist;
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     webOrigin: string;
@@ -6557,7 +6560,14 @@ function partitionBySpace<T extends { spaceId: string }>(rows: T[]): Map<string,
 }
 
 async function loadAutoReviewSettings(deps: RouterDeps, actor: Actor) {
-  const environmentAvailable = isAutoReviewCheckerConfigured({ env: process.env });
+  const environmentAvailable = isAutoReviewCheckerConfigured({
+    env: process.env,
+    platformModelAllowed: platformModelAllowed({
+      allowlist: deps.env.platformModelAllowlist,
+      email: actor.email,
+      isOwner: actor.isDeploymentOwner,
+    }),
+  });
   const checker = environmentAvailable ? null : resolveAutoReviewChecker(process.env);
   const requiredUserProvider = checker?.provider === "scripted" ? null : checker?.provider;
   const [preference, credential] = await Promise.all([
@@ -6603,17 +6613,25 @@ async function meDto(deps: RouterDeps, actor: Actor): Promise<Me> {
     spaceId: actor.spaceId,
     isDeploymentOwner: actor.isDeploymentOwner,
     needsModel: setup.needsModel,
-    defaultProvider: canonicalPiProviderId(
-      setup.credential?.provider ??
-        setup.settings?.defaultModelProvider ??
-        deps.env.defaultProvider,
-    ),
+    defaultProvider:
+      setup.credential || setup.platformAllowed
+        ? canonicalPiProviderId(
+            setup.credential?.provider ??
+              setup.settings?.defaultModelProvider ??
+              deps.env.defaultProvider,
+          )
+        : null,
     defaultModel:
-      setup.credential?.defaultModel ?? setup.settings?.defaultModelId ?? deps.env.defaultModel,
+      setup.credential || setup.platformAllowed
+        ? (setup.credential?.defaultModel ??
+          setup.settings?.defaultModelId ??
+          deps.env.defaultModel)
+        : null,
     // Set only while the active default is the deployment's own, running on host credentials.
     ...hostCredentials(
       !setup.credential &&
         !setup.settings?.defaultModelProvider &&
+        setup.hasDeployment &&
         Boolean(deps.env.deploymentModelHostCredentials),
       deps.env.defaultProvider,
     ),
@@ -6636,10 +6654,17 @@ async function modelSetup(deps: RouterDeps, actor: Actor) {
     findDefaultModelCredential(deps.prisma, actor),
     deps.prisma.deploymentSettings.findUnique({ where: { id: "default" } }),
   ]);
-  const hasDeployment = Boolean(deps.env.deploymentModelConfigured);
+  const platformAllowed = platformModelAllowed({
+    allowlist: deps.env.platformModelAllowlist,
+    email: actor.email,
+    isOwner: actor.isDeploymentOwner,
+  });
+  const hasDeployment = Boolean(deps.env.deploymentModelConfigured) && platformAllowed;
   return {
     credential,
     settings,
+    hasDeployment,
+    platformAllowed,
     needsModel: deps.env.agentRuntime !== "scripted" && !credential && !hasDeployment,
   };
 }

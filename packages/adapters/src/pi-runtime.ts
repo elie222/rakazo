@@ -769,10 +769,7 @@ export function resolveRuntimeModel(modelConfig: AgentRunRequest["model"]): {
     ? undefined
     : modelConfig.provider === OPENAI_COMPATIBLE_PROVIDER_ID
       ? modelConfig.apiKey || "local"
-      : // Only OpenRouter may fall back to the OpenRouter env key. Handing it to
-        // another provider would ship our key to a vendor it was not issued for.
-        (modelConfig.apiKey ??
-        (provider === "openrouter" ? process.env.OPENROUTER_API_KEY : undefined));
+      : modelConfig.apiKey;
   return { provider, modelId, models, model, apiKey, credentials };
 }
 

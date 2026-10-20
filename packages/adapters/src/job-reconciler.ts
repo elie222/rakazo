@@ -1,7 +1,7 @@
 import type { JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { messagingDeliverJob, routineWakeupJob, runContinueJob } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
-import { stuckWorkStatusMessages } from "@rakazo/core";
+import { normalizeRunError, stuckWorkStatusMessages } from "@rakazo/core";
 import type { Pool, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import type { PoolClient } from "pg";
@@ -291,10 +291,15 @@ export function createJobReconciler(
               run.status === "failed" || stuckCancel
                 ? { text: "", progressOnly: false }
                 : await botRunOutcomeText(deps.prisma, run.id);
+            const failure = run.error ? normalizeRunError(run.error) : null;
+            const failureMessage =
+              failure?.action === "add_key"
+                ? failure.summary
+                : (failure?.details ?? "unknown error");
             const text = stuckCancel
               ? (run.error ?? "")
               : run.status === "failed"
-                ? `Could not complete the delegated request: ${run.error ?? "unknown error"}`
+                ? `Could not complete the delegated request: ${failureMessage}`
                 : transcript.text ||
                   "The delegated bot completed its turn without a written summary.";
             // Loop-guard stops complete without an error; their persisted final text

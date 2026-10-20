@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Add your own API key to keep chatting.": "添加你自己的 API 密钥以继续聊天。",
+  "Add API key": "添加 API 密钥",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。",
   "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",

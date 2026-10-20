@@ -407,6 +407,10 @@ msgstr "HTTPS 서버 URL을 입력하세요."
 msgid "Add another"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Add API key"
+msgstr "API 키 추가"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Add connected model"
 msgstr "연결된 모델 추가"
@@ -467,6 +471,11 @@ msgstr "Treg 추가"
 #: src/pages/RoutineEditor.tsx
 msgid "Add trigger"
 msgstr "트리거 추가"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Add your own API key to keep chatting."
+msgstr "계속 채팅하려면 자신의 API 키를 추가하세요."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Added"

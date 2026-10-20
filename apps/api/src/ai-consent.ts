@@ -9,6 +9,7 @@ import {
 } from "@rakazo/adapters";
 import type { Actor, AiConsentQuery, AiConsentStatus, AiRecipient } from "@rakazo/contracts";
 import { AI_DISCLOSURE_VERSION, AI_PRIVACY_URL } from "@rakazo/contracts";
+import { platformModelAllowed } from "@rakazo/core";
 import {
   findDefaultModelCredential,
   findDefaultVoiceCredential,
@@ -103,15 +104,21 @@ export async function aiConsentStatus(
     }),
   ]);
   const allowed = new Set(consents.map((row) => row.recipientKey));
+  const platformAllowed = platformModelAllowed({
+    allowlist: deps.env.platformModelAllowlist,
+    email: actor.email,
+    isOwner: actor.isDeploymentOwner,
+  });
   const recipients = new Map<string, AiRecipient>();
   const add = (recipient: ReturnType<typeof aiRecipient>) => {
     if (recipient)
       recipients.set(recipient.key, { ...recipient, allowed: allowed.has(recipient.key) });
   };
   if (modelsEnabled) {
-    const deployment = deps.env.deploymentModelConfigured
-      ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
-      : null;
+    const deployment =
+      deps.env.deploymentModelConfigured && platformAllowed
+        ? { provider: deps.env.defaultProvider, model: deps.env.defaultModel }
+        : null;
     const selected = await Promise.all(
       (target ? [...bots, ...routines] : [null, ...bots, ...routines]).map(async (override) => {
         const overrideCredential =
@@ -175,7 +182,7 @@ export async function aiConsentStatus(
     const models = [
       ...new Map(
         selected
-          .filter((model) => model.provider)
+          .filter((model) => model.provider && (model.credential || platformAllowed))
           .map((model) => [
             JSON.stringify([model.provider, model.id, model.credential?.secretId]),
             model,

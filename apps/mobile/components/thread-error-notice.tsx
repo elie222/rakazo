@@ -11,12 +11,14 @@ export function ThreadErrorNotice({
   error,
   summary,
   onDetails,
+  onAddKey,
 }: {
   top: number;
   inset: number;
   error: string | null;
   summary: string | null;
   onDetails: () => void;
+  onAddKey?: () => void;
 }) {
   const { t } = useI18n();
   const tokens = useMobileTokens();
@@ -42,7 +44,7 @@ export function ThreadErrorNotice({
           borderWidth: 1,
         }}
       >
-        {error ? <Text style={{ color: tokens.foreground }}>{error}</Text> : null}
+        {error ? <Text style={{ color: tokens.foreground, fontSize: 13.5 }}>{error}</Text> : null}
         {summary ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text style={{ color: tokens.foreground, fontSize: 13.5, flexShrink: 1 }}>
@@ -55,6 +57,14 @@ export function ThreadErrorNotice({
               onPress={onDetails}
             />
           </View>
+        ) : null}
+        {onAddKey ? (
+          <NativeActionButton
+            label={t("Add API key")}
+            prominence="quiet"
+            size="compact"
+            onPress={onAddKey}
+          />
         ) : null}
       </GlassSurface>
     </View>

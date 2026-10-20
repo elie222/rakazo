@@ -138,3 +138,38 @@ test("a covered run error is not remembered until it is presented", async ({ pag
   await expect(page.getByTestId("shell-root")).toHaveAttribute("data-ready", "true");
   await expect(error).toBeHidden();
 });
+
+test("a platform key failure opens Models from the error banner", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `platform-key-${stamp}@rakazo.test`, "password12", "Model connection");
+  await completeOnboarding(page);
+  await page.getByPlaceholder(/^Message /).fill("fail this run");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  const banner = page.getByTestId("composer-error");
+  await expect(banner).toBeVisible();
+  const details =
+    '403: {"message":"Key limit exceeded (weekly limit)","metadata":{"limit_source":"openrouter_key_limit"}}';
+  await page.route("**/rpc/{bootstrap,threads/get}", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const snapshot = body.json.thread ?? body.json;
+    if (snapshot.run?.status === "failed") {
+      snapshot.run.id += "-platform-key";
+      snapshot.run.error = `[platform-model-key]${details}`;
+    }
+    await route.fulfill({ response, json: body });
+  });
+  await page.reload();
+  await expect(banner).toContainText("Add your own API key to keep chatting.");
+  await expect(banner.locator("pre")).toBeHidden();
+  await banner.locator("summary").click();
+  await expect(banner.locator("pre")).toHaveText(details);
+  await banner.locator("summary").click();
+  await captureScreenshot(page, testInfo, "platform-key-add-key");
+  await banner.getByRole("button", { name: "Add API key", exact: true }).click();
+  await expect(page.getByTestId("user-settings")).toHaveAttribute(
+    "data-settings-section",
+    "models",
+  );
+  await expect(page.getByTestId("model-settings")).toBeVisible();
+});

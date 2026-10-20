@@ -563,18 +563,27 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, [streamResponses]);
   const activeThreadId = useRef<string | undefined>(undefined);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
-  const [uploadConfig, setUploadConfig] = useState<{ maxUploadSizeBytes?: number }>();
-  useEffect(() => {
-    let cancelled = false;
-    void rpc<{ maxUploadSizeBytes?: number }>("me")
-      .then((me) => {
-        if (!cancelled) setUploadConfig(me);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [modelRequired, setModelRequired] = useState(false);
+  const [uploadConfig, setUploadConfig] = useState<{
+    maxUploadSizeBytes?: number;
+    needsModel?: boolean;
+  }>();
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void rpc<{ maxUploadSizeBytes?: number; needsModel?: boolean }>("me")
+        .then((me) => {
+          if (!cancelled) {
+            setUploadConfig(me);
+            if (!me.needsModel) setModelRequired(false);
+          }
+        })
+        .catch(() => undefined);
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   const [mentionBots, setMentionBots] = useState<MobileBot[]>([]);
   // The call outlives renders, so its switch check reads the newest bot list from here.
@@ -1669,6 +1678,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
       openBotChat(typedSwitch, false);
       return;
     }
+    if (uploadConfig?.needsModel) {
+      setModelRequired(true);
+      return;
+    }
     preparingSend.current = true;
     try {
       await prepareUnsentSends();
@@ -1721,7 +1734,10 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }
 
   async function deliver(attempt: SendAttempt, force = false) {
-    if (!readOnly) await feedback.send(attempt, force);
+    if (!readOnly) {
+      await feedback.send(attempt, force);
+      if (attempt.error === "Connect a model to start a run.") setModelRequired(true);
+    }
   }
 
   function afterDelivered(attempt: SendAttempt) {
@@ -1994,6 +2010,14 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
 
   const answerableAskMessageId = latestAnswerableAskMessageId(snap);
   const runError = snap?.run?.status === "failed" ? (snap.run.error ?? null) : null;
+  const normalizedError = runError ? normalizeRunError(runError, t, locale) : null;
+  const noModel =
+    modelRequired ||
+    (uploadConfig?.needsModel !== false &&
+      (error === "Connect a model to start a run." ||
+        feedback.unsentSends.some(
+          (attempt) => attempt.error === "Connect a model to start a run.",
+        )));
   const separatorIds = useMemo(() => timeSeparatorIds(visibleMessages), [visibleMessages]);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2402,14 +2426,21 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         top={headerHeight + 8}
         inset={20 + columnInset}
         error={
-          error
-            ? showingSaved
-              ? t("Couldn't refresh — showing the last loaded messages.")
-              : error
-            : null
+          noModel
+            ? t("Add your own API key to keep chatting.")
+            : error
+              ? showingSaved
+                ? t("Couldn't refresh — showing the last loaded messages.")
+                : error
+              : null
         }
-        summary={runError ? normalizeRunError(runError, t, locale).summary : null}
-        onDetails={() => setSelectableText(runError)}
+        summary={noModel ? null : (normalizedError?.summary ?? null)}
+        onAddKey={
+          noModel || normalizedError?.action === "add_key"
+            ? () => router.push("/(settings)/models")
+            : undefined
+        }
+        onDetails={() => setSelectableText(normalizedError?.details ?? null)}
       />
       {/* The floor keeps a tall suggestion list from sliding under the transparent header. */}
       <View style={{ flex: 1, minHeight: headerHeight, position: "relative" }}>

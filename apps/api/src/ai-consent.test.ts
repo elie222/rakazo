@@ -33,6 +33,21 @@ function setup() {
   return { deps, upsert, actor: { userId: "user", spaceId: "space" } as Actor };
 }
 describe("consent grants", () => {
+  it("omits an unavailable deployment model including its stored default", async () => {
+    const { deps, actor } = setup();
+    actor.email = "user@example.test";
+    deps.env.agentRuntime = "pi";
+    deps.env.deploymentModelConfigured = true;
+    deps.env.platformModelAllowlist = ["@other.test"];
+    deps.env.defaultProvider = "openrouter";
+    deps.env.defaultModel = "fixture-model";
+    vi.mocked(deps.prisma.deploymentSettings.findUnique).mockResolvedValue({
+      defaultModelProvider: "openrouter",
+      defaultModelId: "fixture-model",
+    } as never);
+    expect((await aiConsentStatus(deps, actor, { uses: ["model"] })).recipients).toEqual([]);
+  });
+
   it("includes reachable helper models and cloud services for a targeted send", async () => {
     const { deps, actor } = setup();
     deps.env.agentRuntime = "pi";

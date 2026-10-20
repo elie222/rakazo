@@ -340,6 +340,8 @@ describe("model setup gate", () => {
     deploymentModelConfigured?: boolean;
     deploymentModelHostCredentials?: boolean;
     deploymentModelCredentialCipher?: string;
+    platformModelAllowlist?: string[];
+    ownerUserId?: string;
   }) {
     const prisma = {
       user: {
@@ -356,13 +358,14 @@ describe("model setup gate", () => {
           .mockResolvedValue(
             options.deploymentModelCredentialCipher
               ? { deploymentModelCredentialCipher: options.deploymentModelCredentialCipher }
-              : null,
+              : { ownerUserId: options.ownerUserId },
           ),
       },
     } as unknown as PrismaClient;
     const deps = {
       prisma,
       env: {
+        platformModelAllowlist: options.platformModelAllowlist,
         agentRuntime: options.agentRuntime,
         maxUploadSizeBytes: options.maxUploadSizeBytes,
         defaultProvider: "openrouter",
@@ -379,7 +382,7 @@ describe("model setup gate", () => {
       spaceId: "workspace-1",
       userId: "user-1",
       email: "user@rakazo.test",
-      isDeploymentOwner: true,
+      isDeploymentOwner: options.ownerUserId === "user-1",
     } satisfies Actor;
     return { actor, handler: new RPCHandler(createRouter(deps)) };
   }
@@ -435,6 +438,36 @@ describe("model setup gate", () => {
       json: expect.objectContaining({ needsModel: false }),
     });
   });
+
+  it.each([
+    [["@other.test"], undefined, true],
+    [["@rakazo.test"], undefined, false],
+    [["@other.test"], "user-1", false],
+  ])(
+    "applies per-user deployment availability",
+    async (platformModelAllowlist, ownerUserId, needsModel) => {
+      const { actor, handler } = modelGateDeps({
+        agentRuntime: "pi",
+        deploymentModelConfigured: true,
+        platformModelAllowlist,
+        ownerUserId,
+      });
+      const response = await call(handler, actor, "me", null);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        json: {
+          needsModel,
+          ...(needsModel
+            ? { defaultProvider: null, defaultModel: null, hostCredentialProvider: null }
+            : {}),
+        },
+      });
+      if (needsModel) {
+        const send = await call(handler, actor, "threads/send", { botId: "bot-1", text: "hello" });
+        expect(send.status).toBe(400);
+      }
+    },
+  );
 
   it("accepts a configured deployment model as model configuration", async () => {
     const { actor, handler } = modelGateDeps({

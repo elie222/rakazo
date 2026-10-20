@@ -32,6 +32,8 @@ describe("lingui catalogs", () => {
   it("localizes provider error guidance and retains its placeholders", () => {
     const messages = [
       ...Object.values(RUN_ERROR_LIMIT_MESSAGES).flatMap(Object.values),
+      "Add your own API key to keep chatting.",
+      "Add API key",
       "Your OpenRouter",
       "Your OpenAI",
       "Your Anthropic",

@@ -75,7 +75,11 @@ configureUnsentSends({
   scope,
   disk: outboxDisk,
   errorText: (error) => errorText(error, t("Failed to send message")),
-  notDelivered: (attempt) => Alert.alert(t("Failed to send message"), attempt.error),
+  notDelivered: (attempt) => {
+    // The thread shows model setup guidance with a direct Models action.
+    if (attempt.error === "Connect a model to start a run.") return;
+    Alert.alert(t("Failed to send message"), attempt.error);
+  },
 });
 export function startUnsentSends(): () => void {
   let stopped = false;

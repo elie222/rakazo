@@ -53,7 +53,7 @@ import {
   isAttachmentImageMimeType,
   OPENAI_COMPATIBLE_PROVIDER_ID,
 } from "@rakazo/contracts";
-import type { ActionApprovalRule, ToolCallStreak } from "@rakazo/core";
+import type { ActionApprovalRule, PlatformModelAllowlist, ToolCallStreak } from "@rakazo/core";
 import {
   appendTextSegment,
   appendToolCallSegment,
@@ -83,6 +83,7 @@ import {
   messagingDmSurfaceNote,
   nextCronDateAcross,
   nextFence,
+  normalizeRunError,
   planActionGate,
   promptInvokesSkill,
   redactSecrets,
@@ -325,6 +326,7 @@ import {
   serializeModelSecret,
   withModelCredentialLock,
 } from "./pi-oauth.js";
+import { canUsePlatformModel } from "./platform-model-access.js";
 import type { PlotSpec } from "./plot-tool.js";
 import {
   assertPlotDataWithinLimits,
@@ -2700,6 +2702,7 @@ export interface ExecutorDeps {
   connectors?: { managed(id: string): ManagedConnectorProvider | undefined };
   secrets: string[];
   secretStore: SecretStore;
+  platformModelAllowlist?: PlatformModelAllowlist;
   deploymentModelKey?: string;
   /** The deployment default model can run; see resolveDeploymentModel. */
   deploymentModelConfigured?: boolean;
@@ -3109,7 +3112,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         overrideCredential,
         defaultCredential,
         settings,
-        deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+        deployment:
+          deps.deploymentModelConfigured &&
+          (await canUsePlatformModel(deps.prisma, deps.platformModelAllowlist, scope.userId))
+            ? resolveDeploymentModel()
+            : null,
       });
       const { credential, thinkingLevel } = selected;
       let { provider, id } = selected;
@@ -3916,7 +3923,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         }
-        const runDeployment = deps.deploymentModelConfigured ? resolveDeploymentModel() : null;
+        const runDeployment =
+          deps.deploymentModelConfigured &&
+          (await canUsePlatformModel(deps.prisma, deps.platformModelAllowlist, run.userId))
+            ? resolveDeploymentModel()
+            : null;
         const runtimeFallback = runtimeFallbackModel(deps.runtime);
         const pinError = run.modelPinned
           ? pinnedModelCredentialError(modelChoice, overrideCredential)
@@ -4007,6 +4018,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
           );
           return;
         }
+        let platformKeyFailure =
+          resolved.deploymentKey &&
+          !deps.runtime.describe().capabilities.scripted &&
+          settings?.ownerUserId !== run.userId;
         runSecrets.push(...resolved.redact);
         // A pin stays as it was created. Unpinned runs still record the model they
         // used; modelPinned is what keeps that record from becoming the next choice.
@@ -4762,7 +4777,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
             autoReviewPref &&
             (Boolean(injectedReview) ||
               (checker
-                ? isAutoReviewCheckerConfigured({}) ||
+                ? isAutoReviewCheckerConfigured({
+                    platformModelAllowed: await canUsePlatformModel(
+                      deps.prisma,
+                      deps.platformModelAllowlist,
+                      run.userId,
+                    ),
+                  }) ||
                   Boolean(
                     await findConnectedModelCredential(
                       deps.prisma,
@@ -7331,6 +7352,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 if (updated.count !== 1) {
                   throw new Error("Run lease was lost before the backup model could be used");
                 }
+                // Backup models always require a stored user credential.
+                platformKeyFailure = false;
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
               script,
@@ -7974,6 +7997,10 @@ export function createRunExecutor(deps: ExecutorDeps) {
             error instanceof Error ? error.message : String(error),
             runSecrets,
           );
+          const storedError = platformKeyFailure ? `[platform-model-key]${message}` : message;
+          const normalizedError = normalizeRunError(storedError);
+          const visibleMessage =
+            normalizedError.action === "add_key" ? normalizedError.summary : message;
           const failed = await deps.events.finalizeRun({
             spaceId: run.spaceId,
             threadId: thread.id,
@@ -7984,7 +8011,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             leaseOwner: workerId,
             leaseFence: fence,
             outcome: "failed",
-            error: message,
+            error: storedError,
           });
           if (!failed) return;
           if (failed.continuationRunId) {
@@ -7997,7 +8024,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               deps,
               { ...run, sourceMessageId: run.sourceMessageId },
               { id: bot.id, name: bot.name },
-              `Could not complete the delegated request: ${message}`,
+              `Could not complete the delegated request: ${visibleMessage}`,
               "status",
               { forceUnread: true },
             ).catch((returnError) => getLogger().error("bot message failure return", returnError));
@@ -8008,7 +8035,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             await notifyRun(deps, run, {
               kind: "failure",
               title: `${bot.name} failed`,
-              body: message.slice(0, 180),
+              body: visibleMessage.slice(0, 180),
               botId: bot.id,
               threadId: thread.id,
             });
@@ -8294,7 +8321,11 @@ function fleetPrepareDeps(
           overrideCredential: null,
           defaultCredential,
           settings,
-          deployment: deps.deploymentModelConfigured ? resolveDeploymentModel() : null,
+          deployment:
+            deps.deploymentModelConfigured &&
+            (await canUsePlatformModel(deps.prisma, deps.platformModelAllowlist, scope.userId))
+              ? resolveDeploymentModel()
+              : null,
         });
         return { provider: selected.provider ?? null, model: selected.id ?? null };
       },
@@ -9359,7 +9390,17 @@ function uncertainEffectError(toolName: string): Error {
  * only when the provider that won the resolution above is that vendor. A provider named
  * by deployment settings or a bot override gets no key rather than another vendor's.
  */
-function deploymentKeyFor(deps: ExecutorDeps, provider: string): string | undefined {
+async function deploymentKeyFor(
+  deps: ExecutorDeps,
+  provider: string,
+  userId: string,
+): Promise<string | undefined> {
+  // Fail before entering a runtime: provider SDKs can also discover ambient credentials.
+  if (!(await canUsePlatformModel(deps.prisma, deps.platformModelAllowlist, userId))) {
+    // Offline scripted runs need no credential and never enter a provider SDK.
+    if (deps.runtime?.describe().capabilities.scripted) return undefined;
+    throw new UnavailableModelForAuthError(MISSING_MODEL_MESSAGE);
+  }
   if (!deps.deploymentModelKey) return undefined;
   return provider === resolveDeploymentModel().provider ? deps.deploymentModelKey : undefined;
 }
@@ -9403,6 +9444,7 @@ async function resolveModelKey(
   registerSecrets?: (values: string[]) => void,
   { requireStoredSecret = false }: { requireStoredSecret?: boolean } = {},
 ): Promise<{
+  deploymentKey?: boolean;
   apiKey?: string;
   accountId?: string;
   gatewayId?: string;
@@ -9434,7 +9476,11 @@ async function resolveModelKey(
           throw new UnavailableModelForAuthError("Unknown model for that provider");
         }
         cloudflareGatewayProviderEnv({ provider });
-        return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+        return {
+          apiKey: await deploymentKeyFor(deps, provider, userId),
+          deploymentKey: true,
+          redact: [],
+        };
       }
       const plaintext = await deps.secretStore.load(row.ciphertext, row.id);
       registerSecrets?.(secretValuesToRedact(parseModelSecret(plaintext)));
@@ -9562,7 +9608,11 @@ async function resolveModelKey(
   }
   if (requireStoredSecret) throw new Error("Backup model credential is no longer available");
   cloudflareGatewayProviderEnv({ provider });
-  return { apiKey: deploymentKeyFor(deps, provider), redact: [] };
+  return {
+    apiKey: await deploymentKeyFor(deps, provider, userId),
+    deploymentKey: true,
+    redact: [],
+  };
 }
 
 function cloudflareRunFields(resolved: { accountId?: string; gatewayId?: string }): {

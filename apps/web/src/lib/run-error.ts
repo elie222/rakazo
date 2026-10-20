@@ -4,6 +4,12 @@ import type { RunErrorTranslator } from "@rakazo/core";
 /** Static descriptors keep shared run-error messages in Lingui extraction. */
 export const translateRunError: RunErrorTranslator = (message, values) => {
   switch (message) {
+    case "Add your own API key to keep chatting.":
+      return i18n._({
+        id: "Add your own API key to keep chatting.",
+        message: "Add your own API key to keep chatting.",
+        values,
+      });
     case "Your OpenRouter":
       return i18n._({ id: "Your OpenRouter", message: "Your OpenRouter", values });
     case "Your OpenAI":

@@ -15,6 +15,8 @@ const MINUTE = 60_000;
 
 interface Scenario {
   error: Error;
+  platformKeyNonOwner?: boolean;
+  ambientCredentials?: boolean;
   trigger?: string;
   retryOfRunId?: string | null;
   routineNotify?: boolean;
@@ -112,6 +114,7 @@ async function failRun(scenario: Scenario) {
     spaceBackupModel: { findMany: vi.fn(async () => []) },
     deploymentSettings: {
       findUnique: vi.fn(async () => ({
+        ownerUserId: scenario.platformKeyNonOwner ? "owner-1" : "user-1",
         defaultModelProvider: "openrouter",
         defaultModelId: "deepseek/deepseek-v4-flash-0731",
       })),
@@ -131,7 +134,7 @@ async function failRun(scenario: Scenario) {
   const send = vi.fn(async () => undefined);
   const executor = createRunExecutor({
     prisma,
-    deploymentModelKey: "fake-deployment-key",
+    deploymentModelKey: scenario.ambientCredentials ? undefined : "fake-deployment-key",
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
     sandbox: {
       describe: () => ({ capabilities: { graphical: false } }),
@@ -152,7 +155,10 @@ async function failRun(scenario: Scenario) {
 
   await executor.continueRun(run.id, "worker-1");
   expect(finalizeRun).toHaveBeenCalledWith(
-    expect.objectContaining({ outcome: "failed", error: scenario.error.message }),
+    expect.objectContaining({
+      outcome: "failed",
+      error: `${scenario.platformKeyNonOwner ? "[platform-model-key]" : ""}${scenario.error.message}`,
+    }),
   );
   const retries = enqueue.mock.calls
     .map(([job]) => job)
@@ -725,3 +731,18 @@ describe("exhausted routine retry notification", () => {
     },
   );
 });
+
+it.each([false, true])(
+  "marks deployment fallback failures for non-owners (ambient %s)",
+  async (ambientCredentials) => {
+    const { send } = await failRun({
+      ambientCredentials,
+      error: new Error('403: {"message":"Key limit exceeded"}'),
+      platformKeyNonOwner: true,
+    });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ body: "Add your own API key to keep chatting." }),
+      expect.anything(),
+    );
+  },
+);

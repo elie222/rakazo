@@ -83,6 +83,7 @@ bash install-images.sh
 
 The installer downloads the Compose files, creates `.env` with random secrets, and starts Rakazo.
 It preserves an existing `.env` when rerun.
+In `.env`, `PLATFORM_MODEL_ALLOWLIST` unset/blank allows everyone to use the deployment model; `none` allows only the owner, or use comma-separated emails/@domains plus the owner.
 
 Open [http://127.0.0.1:5173](http://127.0.0.1:5173), create an account, and connect a model.
 Local Docker computers are on by default. Optional remote providers: `e2b`, `daytona`, `createos`, `box`, or `railway`

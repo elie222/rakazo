@@ -133,3 +133,29 @@ describe("normalizeRunError", () => {
     ).toBe("Your model provider key hit its limit.");
   });
 });
+
+describe("deployment key failures", () => {
+  it.each([
+    '403: {"message":"Key limit exceeded (weekly limit); resets 2026-10-26T00:00:00.000Z","metadata":{"limit_source":"openrouter_key_limit"}}',
+    '402: {"message":"Insufficient credits"}',
+    '402: {"message":"Payment required"}',
+    "API key is invalid",
+    '429: {"message":"Insufficient quota"}',
+    '401: {"message":"Invalid API key"}',
+    '403: {"message":"Unauthorized API key"}',
+  ])("offers a user connection for %s", (details) => {
+    expect(normalizeRunError(`[platform-model-key]${details}`)).toEqual({
+      summary: "Add your own API key to keep chatting.",
+      details,
+      action: "add_key",
+    });
+    expect(normalizeRunError(details).action).toBeUndefined();
+  });
+  it.each([
+    '429: {"message":"Too many requests"}',
+    '504: {"message":"Timeout"}',
+    '404: {"message":"Model not found"}',
+  ])("keeps other provider errors unchanged", (details) => {
+    expect(normalizeRunError(`[platform-model-key]${details}`)).toEqual(normalizeRunError(details));
+  });
+});

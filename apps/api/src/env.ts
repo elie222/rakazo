@@ -7,7 +7,9 @@ import {
   telegramBotsFromEnv,
 } from "@rakazo/adapters";
 import type { OidcConfig } from "@rakazo/auth";
+import type { PlatformModelAllowlist } from "@rakazo/core";
 import {
+  parsePlatformModelAllowlist,
   phoneCallSettings,
   resolveAuthSecret,
   resolveEncryptionKey,
@@ -50,6 +52,7 @@ export interface AppEnv {
   cloudAgentSpaceId: string | undefined;
   cursorApiKey: string | undefined;
   agentRuntime: string;
+  platformModelAllowlist?: PlatformModelAllowlist;
   deploymentModelKey: string | undefined;
   /** The deployment default model can run; see resolveDeploymentModel. */
   deploymentModelConfigured: boolean;
@@ -198,6 +201,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     cursorApiKey: optional(source.CURSOR_API_KEY),
     agentRuntime: source.AGENT_RUNTIME ?? "pi",
     // Provider, model and key resolve together: see resolveDeploymentModel.
+    platformModelAllowlist: parsePlatformModelAllowlist(source.PLATFORM_MODEL_ALLOWLIST),
     deploymentModelKey: deploymentModel.key,
     deploymentModelConfigured: deploymentModel.configured,
     deploymentModelHostCredentials: deploymentModel.hostCredentials,

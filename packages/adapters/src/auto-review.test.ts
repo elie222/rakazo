@@ -94,6 +94,17 @@ describe("resolveAutoReviewProviderKind", () => {
 });
 
 describe("isAutoReviewCheckerConfigured", () => {
+  it("requires a user credential when deployment access is denied", () => {
+    const input = { env: { OPENROUTER_API_KEY: "fixture-key" }, platformModelAllowed: false };
+    expect(isAutoReviewCheckerConfigured(input)).toBe(false);
+    expect(
+      isAutoReviewCheckerConfigured({
+        ...input,
+        hasUserCredentialForProvider: (provider) => provider === "openrouter",
+      }),
+    ).toBe(true);
+  });
+
   it("requires a runnable checker", () => {
     expect(
       isAutoReviewCheckerConfigured({

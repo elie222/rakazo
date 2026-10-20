@@ -1,4 +1,7 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Add your own API key to keep chatting.":
+    "Füge deinen eigenen API-Schlüssel hinzu, um weiterzuchatten.",
+  "Add API key": "API-Schlüssel hinzufügen",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "Erlaubt diesem Bot, die von ihm erstellten Bots zu organisieren, anzupassen und zu planen. Du genehmigst jede Änderung.",
   "Too many attempts. Try again in a few minutes.":

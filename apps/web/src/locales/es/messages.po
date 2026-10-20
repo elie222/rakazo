@@ -407,6 +407,10 @@ msgstr "Agrega una URL de servidor HTTPS."
 msgid "Add another"
 msgstr ""
 
+#: src/pages/Shell.tsx
+msgid "Add API key"
+msgstr "Añadir clave API"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Add connected model"
 msgstr "Agregar modelo conectado"
@@ -467,6 +471,11 @@ msgstr "Agregar Treg"
 #: src/pages/RoutineEditor.tsx
 msgid "Add trigger"
 msgstr "Agregar disparador"
+
+#. js-lingui-explicit-id
+#: src/lib/run-error.ts
+msgid "Add your own API key to keep chatting."
+msgstr "Añade tu propia clave API para seguir chateando."
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Added"

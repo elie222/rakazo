@@ -4072,6 +4072,7 @@ function SpaceShell() {
             pendingAttachments={activePendingAttachments}
             attachmentNotice={attachmentNotice}
             sendError={sendError}
+            onAddKey={() => openSettings("models")}
             runError={displayedRunError}
             runErrorId={displayedRunErrorId}
             onRunErrorPresented={handleRunErrorPresented}
@@ -5866,6 +5867,7 @@ export const Composer = memo(function Composer({
   sendError,
   runError,
   runErrorId,
+  onAddKey,
   onRunErrorPresented,
   onDismissError,
   sending,
@@ -5895,6 +5897,7 @@ export const Composer = memo(function Composer({
   sendError: string | null;
   runError: string | null;
   runErrorId: string | null;
+  onAddKey?: () => void;
   onRunErrorPresented: (runId: string) => void;
   onDismissError: () => void;
   sending: boolean;
@@ -5980,6 +5983,9 @@ export const Composer = memo(function Composer({
   const replyAnnouncementKind = useRef<"reply" | "cancelled" | null>(null);
   const prevReplyTarget = useRef<ThreadMessage | null>(null);
   const runErrorRef = useRef<HTMLDivElement>(null);
+  const normalizedError = runError
+    ? normalizeRunError(runError, translateRunError, i18n.locale || "en")
+    : null;
   const presentedRunErrorIdRef = useRef<string | null>(null);
   const mentionListboxId = useId();
   const dragDepth = useRef(0);
@@ -6404,14 +6410,20 @@ export const Composer = memo(function Composer({
           className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive"
         >
           <div className="min-w-0 flex-1">
-            {sendError ??
-              (runError
-                ? normalizeRunError(runError, translateRunError, i18n.locale || "en").summary
-                : null)}
+            {sendError ?? normalizedError?.summary}
+            {!sendError && normalizedError?.action === "add_key" ? (
+              <button
+                type="button"
+                onClick={onAddKey}
+                className="ml-2 underline"
+              >{t`Add API key`}</button>
+            ) : null}
             {!sendError && runError ? (
               <details key={runError} className="mt-1">
                 <summary className="w-fit cursor-pointer">{t`Details`}</summary>
-                <pre className="mt-2 whitespace-pre-wrap break-words text-xs">{runError}</pre>
+                <pre className="mt-2 whitespace-pre-wrap break-words text-xs">
+                  {normalizedError?.details}
+                </pre>
               </details>
             ) : null}
           </div>

@@ -29,6 +29,7 @@ describe("signup policy", () => {
   });
 
   it("matches exact addresses and domains case-insensitively", () => {
+    expect(parseAllowlist(" none ")).toEqual(["none"]);
     const list = parseAllowlist("You@Example.com,@company.com");
     expect(emailAllowed("you@example.com", list)).toBe(true);
     expect(emailAllowed("dev@company.com", list)).toBe(true);
