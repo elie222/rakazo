@@ -8,6 +8,7 @@ import {
   createRunExecutor,
   createRunWorkspaceCheckpoint,
   dockerComputerToolInstruction,
+  historyMyChatsAllowed,
   isTerminalModelSetupError,
   loadCurrentTurnImages,
   missingTurnImagesInstruction,
@@ -30,6 +31,27 @@ import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
 describe("bot tool permissions", () => {
+  it("describes bounded cross-chat keyword fanout and authorized reads", () => {
+    const tools = selectBuiltinToolsForRun({
+      historyRetrievalEnabled: true,
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    });
+    const search = tools.find((tool) => tool.name === "search_history")!;
+    expect(search.description).toContain("2–4 keyword variants");
+    expect(search.description).toContain("direct human app run");
+    expect(search.inputSchema).toMatchObject({
+      properties: { queries: { maxItems: 5 }, scope: { enum: ["this_chat", "my_chats"] } },
+      oneOf: [{ required: ["query"] }, { required: ["queries"] }],
+    });
+    expect(tools.find((tool) => tool.name === "read_history")?.inputSchema).toMatchObject({
+      properties: { threadId: { type: "string" } },
+    });
+  });
+
   it("never lets self-edit change disabled tools alongside an allowed field", () => {
     expect(parseUpdateBotPatch({ name: "Scout", disabledBuiltinTools: [] }, "Bot")).toEqual({
       patch: { name: "Scout" },
@@ -3645,4 +3667,27 @@ describe("call_user availability", () => {
     expect(offered({ trigger: "tickets" })).toBe(false);
     expect(offered({ voiceCall: true })).toBe(false);
   });
+});
+
+describe("cross-chat history grant", () => {
+  it.each(["user", "follow_up"])("allows only human %s requests in the app thread", (trigger) => {
+    const run = { trigger, threadId: "thread" };
+    expect(historyMyChatsAllowed(run, { role: "user", threadId: "thread" }, false)).toBe(true);
+    expect(historyMyChatsAllowed(run, { role: "user", threadId: "thread" }, true)).toBe(false);
+    expect(historyMyChatsAllowed(run, { role: "bot", threadId: "thread" }, false)).toBe(false);
+    expect(historyMyChatsAllowed(run, { role: "user", threadId: "other" }, false)).toBe(false);
+    expect(historyMyChatsAllowed(run, null, false)).toBe(false);
+  });
+  it.each(["bot_message", "routine", "schedule", "messaging", "webhook", "created", "call_end"])(
+    "denies %s even with a human-looking source",
+    (trigger) => {
+      expect(
+        historyMyChatsAllowed(
+          { trigger, threadId: "thread" },
+          { role: "user", threadId: "thread" },
+          false,
+        ),
+      ).toBe(false);
+    },
+  );
 });

@@ -100,6 +100,27 @@ describe("local history retrieval", () => {
       expect(message.nextTextOffset).toBe(message.textOffset + message.text.length);
     }
   });
+  it("keeps non-ASCII multi-query attribution and continuation inside the byte budget", async () => {
+    const { mock, prisma } = db();
+    const queries = ["星".repeat(499), `${"界".repeat(498)}xx`];
+    mock.$queryRaw.mockResolvedValue(
+      Array.from({ length: 6 }, (_, i) => ({
+        ...row(i, queries.join(" ") + "界".repeat(1000)),
+        threadId: "thread",
+        chatName: "History",
+        matchedQueryIndexes: [0, 1],
+      })),
+    );
+    const result = await searchHistory(prisma, scope, { queries });
+    expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThanOrEqual(10000);
+    expect(result.nextSearch).toMatchObject({ queries, offset: 5 });
+    expect(result.messages).toHaveLength(5);
+    mock.$queryRaw.mockClear();
+    await expect(
+      searchHistory(prisma, scope, { queries: [`${queries[0]!}x`, queries[1]!] }),
+    ).rejects.toThrow("3000 UTF-8 bytes");
+    expect(mock.$queryRaw).not.toHaveBeenCalled();
+  });
   it("points search excerpts at the matching portion of an oversized message", async () => {
     const { mock, prisma } = db();
     mock.$queryRaw.mockResolvedValue([

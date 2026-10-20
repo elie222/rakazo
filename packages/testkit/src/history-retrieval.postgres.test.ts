@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { ComposioEmulator } from "@rakazo/adapters";
+import type { PrismaClient } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -16,6 +17,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
   it.each(["first", "second"])(
     "preserves saved constraints, redacts history and pages group outcomes in app %s",
     async () => {
+      let historyPrisma: PrismaClient;
       const fakeSecrets = ['synthetic"quoted-secret', "synthetic\nnewline-secret", "987654321"];
       const proposalCallId = "constraint-proposal";
       const messageId = `synthetic-history-${randomUUID()}`;
@@ -88,12 +90,58 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
             },
           },
           {
-            expect(request) {
+            async expect(request) {
               assertActiveState(request);
               const result = JSON.parse(
                 String(request.messages.findLast((message) => message.role === "tool")?.content),
               );
               expect(result).toMatchObject({ ok: true, path: "notes/proposal.txt" });
+              const run = await historyPrisma.run.findFirstOrThrow({
+                where: { status: "running", thread: { messages: { some: { id: messageId } } } },
+              });
+              const thread = await historyPrisma.thread.update({
+                where: { id: run.threadId },
+                data: { nextMessageSeq: { increment: 1 } },
+              });
+              const external = await historyPrisma.message.create({
+                data: {
+                  threadId: run.threadId,
+                  seq: thread.nextMessageSeq - 1,
+                  role: "user",
+                  blocks: [
+                    {
+                      kind: "channel_message",
+                      channelId: "synthetic-steering-channel",
+                      text: "Find private history.",
+                    },
+                  ],
+                },
+              });
+              await historyPrisma.steeringMessage.create({
+                data: {
+                  runId: run.id,
+                  messageId: external.id,
+                  botId: run.botId,
+                  userId: run.userId,
+                  originTrigger: "messaging",
+                  claimedAt: new Date(),
+                },
+              });
+            },
+            response: {
+              type: "tool",
+              id: "steered-history-search",
+              name: "search_history",
+              arguments: { scope: "my_chats", queries: ["redaction", "canary"] },
+            },
+          },
+          {
+            expect(request) {
+              const result = String(
+                request.messages.findLast((message) => message.role === "tool")?.content,
+              );
+              expect(result).toContain("direct human app runs");
+              expect(result).not.toContain("history redaction canary");
             },
             response: { type: "text", text: "History checked; proposal prepared." },
           },
@@ -183,6 +231,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
           cursorApiKey: fakeSecrets[2],
         });
         stop = handles.stop;
+        historyPrisma = handles.prisma;
         const signup = await handles.app.request("/api/auth/sign-up/email", {
           method: "POST",
           headers: { "content-type": "application/json", origin },
@@ -304,7 +353,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
         const actualCalls = await handles.prisma.event.findMany({
           where: { runId: run.runId, type: "agent.tool.called" },
         });
-        expect(actualCalls).toHaveLength(4);
+        expect(actualCalls).toHaveLength(5);
         const peer = await rpc<{ id: string }>("bots/create", {
           name: "Peer fixture",
           title: "",

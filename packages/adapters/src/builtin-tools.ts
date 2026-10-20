@@ -5,6 +5,7 @@ import {
   BotSecretName,
   botSecretDestinationSchema,
   FLEET_TOOL_NAMES,
+  HISTORY_QUERIES_MAX_BYTES,
   SecretAskPurpose,
   SecretHttpRequest,
   TICKET_PRIORITIES,
@@ -722,11 +723,40 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "search_history",
     description:
-      "Search literal keywords in earlier messages in this chat; every query word must match the same message. For paraphrased recollection, start with one distinctive project or topic keyword. Returns at most five matches, newest first. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections.",
+      "Search earlier messages (default this_chat). Provide exactly one of query or queries. To find an earlier conversation, fan out 2–4 keyword variants via queries with scope my_chats; narrow by date or botId when hinted. Each variant requires all its words. Returns up to five hits grouped by chat; matchedQueryIndexes are zero-based indexes into queries. Then read_history around the best hits using their threadId. my_chats requires a direct human app run. When nextSearch is present, call search_history with those arguments to continue. Coverage applies only to the requested literal query and range; an empty narrower query does not exhaust an unfinished broader query. Use read_history to check surrounding messages and corrections.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", minLength: 1, maxLength: 500 },
+        query: {
+          type: "string",
+          minLength: 1,
+          maxLength: 500,
+          description:
+            "Single keyword search. Provide query or queries, never both; one is required.",
+        },
+        queries: {
+          description: `Keyword variants instead of query. Provide query or queries, never both; one is required. Combined normalized JSON must fit within ${HISTORY_QUERIES_MAX_BYTES} UTF-8 bytes.`,
+          type: "array",
+          items: { type: "string", minLength: 1, maxLength: 500 },
+          minItems: 1,
+          maxItems: 5,
+        },
+        scope: { type: "string", enum: ["this_chat", "my_chats"] },
+        botId: { type: "string" },
+        kinds: {
+          description:
+            "OR-combined categories: structured bot exchanges/handoffs, user/channel text, or bot text replies.",
+          type: "array",
+          items: { type: "string", enum: ["bot_messages", "user_messages", "bot_replies"] },
+          minItems: 1,
+          maxItems: 3,
+        },
+        offset: {
+          type: "integer",
+          minimum: 0,
+          maximum: 10000,
+          description: "Ranked search cursor from nextSearch.",
+        },
         before: {
           type: "string",
           description: "Exclusive ISO date upper bound; date-only values mean UTC midnight.",
@@ -742,7 +772,14 @@ export const builtinAgentTools: ConnectorTool[] = [
         },
         limit: { type: "integer", minimum: 1, maximum: 5 },
       },
-      required: ["query"],
+      oneOf: [
+        { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+        {
+          type: "object",
+          properties: { queries: { type: "array", items: { type: "string" } } },
+          required: ["queries"],
+        },
+      ],
     },
   },
   {
@@ -753,6 +790,10 @@ export const builtinAgentTools: ConnectorTool[] = [
       type: "object",
       properties: {
         messageId: { type: "string" },
+        threadId: {
+          type: "string",
+          description: "Chat from a search hit; authorization is rechecked.",
+        },
         linkedRunId: {
           type: "string",
           description: "Inspect a run linked to this authorized message page.",

@@ -5,6 +5,23 @@ import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { jsonSchemaParameters, parametersFor, prepareFleetArguments } from "./pi-runtime.js";
 
 describe("jsonSchemaParameters", () => {
+  it("keeps the history query either/or guidance on the provider wire without a root union", () => {
+    const tool = builtinAgentTools.find((entry) => entry.name === "search_history")!;
+    const wire = JSON.parse(JSON.stringify(parametersFor(tool)));
+    for (const field of ["query", "queries"]) {
+      expect(wire.properties[field].description).toContain("never both; one is required");
+    }
+    expect(wire.properties.queries.description).toContain("3000 UTF-8 bytes");
+    expect(wire).not.toHaveProperty("oneOf");
+    // Root combinators cannot be sent to every provider; original-schema validation remains authoritative.
+    expect(() => parseConnectorToolArgs(tool.inputSchema, {})).toThrow();
+    expect(() =>
+      parseConnectorToolArgs(tool.inputSchema, { query: "a", queries: ["b"] }),
+    ).toThrow();
+    expect(parseConnectorToolArgs(tool.inputSchema, { queries: ["a"] })).toEqual({
+      queries: ["a"],
+    });
+  });
   it("exposes fields from a locally referenced allOf branch", () => {
     const tool = {
       name: "catalog_search",
