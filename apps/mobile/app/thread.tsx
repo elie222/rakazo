@@ -157,6 +157,7 @@ import {
   selectSpace,
   subscribeThread,
 } from "../lib/api";
+import { useAppForeground } from "../lib/app-foreground";
 import { mobileTokens } from "../lib/appearance";
 import type { MobileArtifactTarget } from "../lib/artifact-open";
 import { openMobileArtifact } from "../lib/artifact-open";
@@ -420,6 +421,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const [botActionsOpen, setBotActionsOpen] = useState(false);
   const { t, locale } = useI18n();
   const navigation = useNavigation();
+  const foreground = useAppForeground();
   const router = useRouter();
   // Beside the chat list on a wide window, the chat has only the width the list leaves.
   const { split, inboxHidden, contentWidth: windowWidth } = useSplitView();
@@ -1454,7 +1456,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, [botId, markReadIfVisible, navigation, notificationThreadId]);
 
   useEffect(() => {
-    if (!botId && !groupId) return;
+    // A backgrounded app keeps no live stream; returning resubscribes from a fresh snapshot.
+    if ((!botId && !groupId) || !foreground) return;
     // Invalidate pending history loads while retaining pages already loaded for this chat.
     historyEpoch.current += 1;
     const abort = new AbortController();
@@ -1546,7 +1549,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     return () => {
       abort.abort();
     };
-  }, [botId, groupId, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);
+  }, [botId, groupId, foreground, readOnly, markReadIfVisible, refreshMentionBots, sessionEpoch]);
 
   useEffect(() => () => pendingSave.current?.(), [botId, groupId]);
 

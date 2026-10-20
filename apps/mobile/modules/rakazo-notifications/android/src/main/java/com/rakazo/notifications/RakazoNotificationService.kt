@@ -20,6 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,6 +95,7 @@ class RakazoNotificationService : Service() {
 
   private suspend fun poll(generation: Long) {
     var selectedAvatarStyle: String? = null
+    val startedAt = SystemClock.elapsedRealtime()
     while (scope.isActive) {
       val storage = NotificationStorage(this)
       val settings = storage.settings
@@ -190,7 +192,9 @@ class RakazoNotificationService : Service() {
       } catch (_: IOException) {
       } catch (_: RuntimeException) {
       }
-      delay(POLL_INTERVAL_MS)
+      // Long runs poll slowly so the radio can idle; a reopened app restarts the fast window.
+      val fast = SystemClock.elapsedRealtime() - startedAt < FAST_POLL_WINDOW_MS
+      delay(if (fast) POLL_INTERVAL_MS else SLOW_POLL_INTERVAL_MS)
     }
   }
 
@@ -365,6 +369,8 @@ class RakazoNotificationService : Service() {
     private const val ACTION_THREAD_CHANGED = "com.rakazo.notifications.THREAD_CHANGED"
     private const val PROMOTED_ONGOING_EXTRA = "android.requestPromotedOngoing"
     private const val POLL_INTERVAL_MS = 8_000L
+    private const val SLOW_POLL_INTERVAL_MS = 30_000L
+    private const val FAST_POLL_WINDOW_MS = 60_000L
     private const val STATE_PREFERENCES = "com.rakazo.notification_state"
     private const val SEEN_RUNS = "seen_runs"
     private const val SEEN_RUNS_SEEDED = "seen_runs_seeded"
