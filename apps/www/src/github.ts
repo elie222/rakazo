@@ -19,6 +19,18 @@ export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise
 }
 
 /** Installer URLs from the latest desktop release; empty when GitHub is unavailable. */
+/** Desktop platforms to offer: macOS always, Windows and Linux once a release ships them. */
+export function availableDesktopPlatforms(downloads: DesktopDownloads) {
+  return (["mac", "windows", "linux"] as const).filter(
+    (platform) => platform === "mac" || Boolean(downloads[platform]),
+  );
+}
+
+/** The redirect resolves the newest installer per request, so releases need no site rebuild. */
+export function desktopDownloadHref(platform: keyof DesktopDownloads) {
+  return `/api/download?platform=${platform}`;
+}
+
 export async function fetchDesktopDownloads(
   fetchImpl: typeof fetch = fetch,
 ): Promise<DesktopDownloads> {

@@ -1,6 +1,7 @@
 ---
 import type { HomeCopy } from "../i18n/home";
 import type { DesktopDownloads } from "../github";
+import { availableDesktopPlatforms, desktopDownloadHref } from "../github";
 import {
   ANDROID_APK_URL,
   APP_URL,
@@ -17,14 +18,11 @@ type Props = {
 const { class: className, copy, downloads } = Astro.props;
 
 // `data-show` lists the platforms (set on <html> by the HomePage script) that see each action.
-const desktopDownloads = [
-  { platform: "mac", label: copy.download.mac, available: true },
-  { platform: "windows", label: copy.download.windows, available: Boolean(downloads.windows) },
-  { platform: "linux", label: copy.download.linux, available: Boolean(downloads.linux) },
-]
-  .filter((download) => download.available)
-  // The redirect resolves the newest installer per request, so releases need no site rebuild.
-  .map((download) => ({ ...download, href: `/api/download?platform=${download.platform}` }));
+const desktopDownloads = availableDesktopPlatforms(downloads).map((platform) => ({
+  platform,
+  label: copy.download[platform],
+  href: desktopDownloadHref(platform),
+}));
 const githubPlatforms = ["ios", "android", "web", "windows", "linux"]
   .filter((platform) => !desktopDownloads.some((download) => download.platform === platform))
   .join(" ");

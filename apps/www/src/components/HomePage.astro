@@ -4,6 +4,7 @@ import Footer from "./Footer.astro";
 import GetStartedActions from "./GetStartedActions.astro";
 import Header from "./Header.astro";
 import { LandingBotAvatar } from "./LandingBotAvatar";
+import PhoneMockup from "./PhoneMockup.astro";
 import { ProductDemo } from "./ProductDemo";
 import FeatureIllustration from "./FeatureIllustration.astro";
 import RosterBotAvatar from "./RosterBotAvatar.astro";
@@ -16,12 +17,20 @@ import {
   isLocale,
   localeHomePath,
 } from "../i18n/locales";
-import { fetchDesktopDownloads, fetchGithubStars, formatStarCount } from "../github";
+import {
+  availableDesktopPlatforms,
+  desktopDownloadHref,
+  fetchDesktopDownloads,
+  fetchGithubStars,
+  formatStarCount,
+} from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homeStructuredData } from "../structured-data";
 import {
+  ANDROID_APK_URL,
   APP_URL,
   GITHUB_URL,
+  IOS_APP_URL,
   OPENCLAW_ALTERNATIVE_PATH,
   SELF_HOST_GUIDE_PATH,
   SETUP_PROMPT_URL,
@@ -42,6 +51,8 @@ const homeHref = localeHomePath(locale);
 const [stars, desktopDownloads] = await Promise.all([fetchGithubStars(), fetchDesktopDownloads()]);
 const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
+const desktopPlatforms = availableDesktopPlatforms(desktopDownloads);
+const PLATFORM_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
 
 const structuredData = homeStructuredData({
@@ -228,6 +239,51 @@ const structuredData = homeStructuredData({
             ))
           }
         </div>
+      </section>
+
+      <section id="platforms" class="section platforms">
+        <div class="section-intro">
+          <h2 class="section-heading">{copy.platforms.heading}</h2>
+          <div class="platforms__cards">
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="5" y="9" width="38" height="30" rx="4" />
+                <path d="M5 17h38" />
+                <circle cx="10.5" cy="13" r="1" />
+                <circle cx="14.5" cy="13" r="1" />
+                <circle cx="18.5" cy="13" r="1" />
+              </svg>
+              <h3>{copy.platforms.web}</h3>
+              <div class="platform-card__links">
+                <a href={APP_URL}>{copy.hero.getStarted}</a>
+              </div>
+            </article>
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="9" y="10" width="30" height="21" rx="3" />
+                <path d="M4 36h40l-3 3H7z" />
+              </svg>
+              <h3>{copy.platforms.desktop}</h3>
+              <div class="platform-card__links">
+                {desktopPlatforms.map((platform) => (
+                  <a href={desktopDownloadHref(platform)}>{PLATFORM_NAMES[platform]}</a>
+                ))}
+              </div>
+            </article>
+            <article class="platform-card">
+              <svg class="platform-card__icon" viewBox="0 0 48 48" aria-hidden="true">
+                <rect x="14" y="5" width="20" height="38" rx="5" />
+                <path d="M21 9.5h6" />
+              </svg>
+              <h3>{copy.platforms.mobile}</h3>
+              <div class="platform-card__links">
+                <a href={IOS_APP_URL}>iOS</a>
+                <a href={ANDROID_APK_URL}>Android</a>
+              </div>
+            </article>
+          </div>
+        </div>
+        <PhoneMockup locale={locale} />
       </section>
 
       <section id="open-source" class="section">
