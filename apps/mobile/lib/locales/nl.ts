@@ -553,6 +553,8 @@ export const NL_MESSAGES: Record<string, string> = {
   More: "Meer",
   "Needs attention": "Heeft aandacht nodig",
   "Notification settings": "Meldingsinstellingen",
+  "Get notified when this Bot finishes or needs input":
+    "Ontvang een melding wanneer deze bot klaar is of invoer nodig heeft",
   Notifications: "Meldingen",
   Organic: "Organisch",
   "Questions, approvals, takeover": "Vragen, goedkeuringen, overname",
