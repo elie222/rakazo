@@ -110,7 +110,7 @@ class RakazoNotificationService : Service() {
         return
       }
       val seeded = prepareHistorySpace(generation, storage.spaceId) ?: return
-      var recentPageFull = true
+      var recentPageBusy = true
       try {
         val avatarStyle = selectedAvatarStyle
           ?: avatarStyle(storage.endpoint, storage.token, storage.spaceId)
@@ -118,10 +118,10 @@ class RakazoNotificationService : Service() {
         val active = runs(storage.endpoint, storage.token, storage.spaceId, "active")
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
         val recent = runs(storage.endpoint, storage.token, storage.spaceId, "recent")
-        recentPageFull = recent.size >= RECENT_LIMIT
         val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
         if (!runIfCurrent(generation) {
+            recentPageBusy = recent.size >= RECENT_LIMIT && recent.any { it.runId !in knownCompleted }
             val visibleWorking = working.filterNot(::isOpenThread)
             if (visibleWorking.isEmpty()) clearLive() else showLive(visibleWorking, avatarStyle)
             if (!seeded) {
@@ -195,8 +195,8 @@ class RakazoNotificationService : Service() {
       } catch (_: RuntimeException) {
       }
       // Long runs poll slowly so the radio can idle; a reopened app restarts the fast window.
-      // A full bounded recent page needs the fast cadence to reduce missed completions.
-      val fast = recentPageFull || SystemClock.elapsedRealtime() - startedAt < FAST_POLL_WINDOW_MS
+      // New completions filling the bounded page need the fast cadence; old history does not.
+      val fast = recentPageBusy || SystemClock.elapsedRealtime() - startedAt < FAST_POLL_WINDOW_MS
       delay(if (fast) POLL_INTERVAL_MS else SLOW_POLL_INTERVAL_MS)
     }
   }
