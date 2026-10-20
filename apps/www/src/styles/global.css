@@ -965,11 +965,11 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   width: 300px;
   height: 610px;
   overflow: hidden;
-  border: 9px solid #1e1e20;
+  border: 9px solid var(--panel-line-2);
   border-radius: 52px;
   background: var(--panel);
   box-shadow:
-    0 0 0 1px #2a2a2d,
+    0 0 0 1px var(--panel-line-2),
     var(--shadow-demo);
   user-select: none;
 }
@@ -992,7 +992,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   width: 86px;
   height: 25px;
   border-radius: 999px;
-  background: #000;
+  background: var(--panel-line);
   transform: translateX(-50%);
 }
 
@@ -1024,7 +1024,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   min-height: 0;
   overflow: hidden;
   padding: 12px 14px;
-  mask-image: linear-gradient(transparent, #000 48px);
+  mask-image: linear-gradient(transparent, black 48px);
 }
 
 .phone__thread > * {
@@ -1054,7 +1054,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 
 .phone__bubble--bot {
   align-self: flex-start;
-  background: #1c1c1f;
+  background: var(--panel-line);
   color: var(--panel-copy);
 }
 
@@ -1072,7 +1072,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
 }
 
 .phone__card-line strong {
-  color: #fff;
+  color: var(--surface);
   font-weight: 600;
 }
 
@@ -1087,7 +1087,7 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   margin: 0 12px 18px;
   border: 1px solid var(--panel-line-2);
   border-radius: 999px;
-  background: #131315;
+  background: var(--panel-2);
   padding: 6px 6px 6px 14px;
   color: var(--panel-muted-2);
   font-size: 17px;
