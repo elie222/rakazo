@@ -8,7 +8,6 @@ import {
   MessageBlock as MessageBlockSchema,
 } from "@rakazo/contracts";
 import {
-  analyticsFailure,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
   instructionUpdateDiff,
@@ -1804,7 +1803,6 @@ async function captureRunAnalytics(
       select: {
         userId: true,
         trigger: true,
-        error: true,
         startedAt: true,
         completedAt: true,
         createdAt: true,
@@ -1818,11 +1816,7 @@ async function captureRunAnalytics(
       at: (type === "run.started" ? run.startedAt : run.completedAt) ?? run.createdAt,
     };
     if (type === "run.failed")
-      analytics.capture(
-        run.userId,
-        { name: "run_failed", trigger: trigger.data, failure: analyticsFailure(run.error ?? "") },
-        identity,
-      );
+      analytics.capture(run.userId, { name: "run_failed", trigger: trigger.data }, identity);
     else
       analytics.capture(
         run.userId,

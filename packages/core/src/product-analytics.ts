@@ -1,4 +1,4 @@
-import type { AnalyticsFailure, AnalyticsScreen } from "@rakazo/contracts";
+import type { AnalyticsScreen } from "@rakazo/contracts";
 
 /** Convert navigation to a fixed vocabulary; never return paths, entity ids or search parameters. */
 export function analyticsScreen(pathname: string): AnalyticsScreen | undefined {
@@ -36,14 +36,4 @@ export function analyticsScreen(pathname: string): AnalyticsScreen | undefined {
   )
     return "settings";
   return undefined;
-}
-
-/** Only the category leaves the backend, never the provider error or anything it quotes. */
-export function analyticsFailure(error: string): AnalyticsFailure {
-  if (/rate.?limit|\b429\b/i.test(error)) return "rate_limit";
-  if (/balance|credit|quota|billing|insufficient.funds/i.test(error)) return "quota";
-  if (/credential|api.?key|model.*configured|authentication|unauthorized|\b401\b/i.test(error))
-    return "credentials";
-  if (/timeout|timed out/i.test(error)) return "timeout";
-  return "other";
 }

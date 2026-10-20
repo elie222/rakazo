@@ -24,7 +24,6 @@ export const AnalyticsScreenInput = z
   })
   .strict();
 export const AnalyticsTrigger = RunTriggerSchema;
-export const AnalyticsFailure = z.enum(["credentials", "quota", "rate_limit", "timeout", "other"]);
 export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("account_created") }).strict(),
   z.object({ name: z.literal("signed_in") }).strict(),
@@ -32,11 +31,8 @@ export const AnalyticsEvent = z.discriminatedUnion("name", [
   z.object({ name: z.literal("message_sent"), trigger: AnalyticsTrigger }).strict(),
   z.object({ name: z.literal("run_started"), trigger: AnalyticsTrigger }).strict(),
   z.object({ name: z.literal("run_completed"), trigger: AnalyticsTrigger }).strict(),
-  z
-    .object({ name: z.literal("run_failed"), trigger: AnalyticsTrigger, failure: AnalyticsFailure })
-    .strict(),
+  z.object({ name: z.literal("run_failed"), trigger: AnalyticsTrigger }).strict(),
 ]);
 export type AnalyticsEvent = z.infer<typeof AnalyticsEvent>;
 
 export type AnalyticsScreen = z.infer<typeof AnalyticsScreen>;
-export type AnalyticsFailure = z.infer<typeof AnalyticsFailure>;

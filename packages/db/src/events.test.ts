@@ -3498,7 +3498,7 @@ describe("clearThread", () => {
 });
 
 describe("appendEvent", () => {
-  it("exports only committed run metadata and a fixed failure category", async () => {
+  it("exports only committed run metadata without reading error text", async () => {
     const created = { ...event(4), type: "run.failed", runId: "run-1" };
     const tx = {
       thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 5 }) },
@@ -3534,10 +3534,20 @@ describe("appendEvent", () => {
     );
     expect(analytics.capture).toHaveBeenCalledExactlyOnceWith(
       "user-1",
-      { name: "run_failed", trigger: "user", failure: "credentials" },
+      { name: "run_failed", trigger: "user" },
       { id: "run-1", at },
     );
     expect(JSON.stringify(analytics.capture.mock.calls)).not.toContain("private@example.test");
+    expect(prisma.run.findUnique).toHaveBeenCalledExactlyOnceWith({
+      where: { id: "run-1" },
+      select: {
+        userId: true,
+        trigger: true,
+        startedAt: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
     vi.mocked(prisma.run.findUnique).mockRejectedValueOnce(new Error("db unavailable"));
     await expect(
       appendEvent(

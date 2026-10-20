@@ -348,9 +348,9 @@ secret to the browser or collector. Set `ANALYTICS_PROVIDER=none` to disable it.
 The public website uses its separate `PUBLIC_POSTHOG_KEY` configuration.
 
 The backend sends account creation, session creation, fixed screen names, message
-counts, and run starts/outcomes. Run events include the shared trigger enum and
-failures include only a fixed category: credentials, quota, rate limit, timeout,
-or other. User identifiers are pseudonymized with the server-only secret. No names,
+counts, and run starts/outcomes. Run events include the shared trigger enum;
+analytics does not read or classify error text. User identifiers are pseudonymized
+with the server-only secret. No names,
 emails, prompts, responses, message text, DOM, URLs, search parameters, document
 contents, request metadata, or raw errors are exported. There is no browser or
 mobile analytics SDK, autocapture, session replay, or third-party script.
