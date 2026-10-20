@@ -145,16 +145,3 @@ export function diagnosticWireFetch(
     return upstream(input, init);
   };
 }
-
-/** CLI owns one synthetic workflow at a time; restore even when startup or cleanup throws. */
-export function installDiagnosticWireObserver(
-  modelId: string,
-  observations: DiagnosticWireObservation[],
-) {
-  const prior = globalThis.fetch;
-  const wrapped = diagnosticWireFetch(prior, modelId, observations);
-  globalThis.fetch = wrapped;
-  return () => {
-    if (globalThis.fetch === wrapped) globalThis.fetch = prior;
-  };
-}

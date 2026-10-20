@@ -1015,8 +1015,8 @@ export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 /** Largest completion-token limit exposed by model settings. */
 export const MAX_MODEL_MAX_TOKENS = 131_072;
 
-/** Default context window for an OpenAI-compatible connection. */
-export const DEFAULT_MODEL_CONTEXT_WINDOW = 32_768;
+/** Fallback context window for OpenAI-compatible connections that do not report a size (e.g. Ollama, LM Studio, vLLM). */
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 262_144;
 
 /** Largest context window exposed by model settings. */
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
@@ -1457,7 +1457,16 @@ export const BillingStatusSchema = z.object({
   canManage: z.boolean(),
   trialAvailable: z.boolean(),
   trialDays: z.number().int().nonnegative(),
-  state: z.enum(["none", "trialing", "active", "past_due", "incomplete", "canceled"]),
+  state: z.enum([
+    "none",
+    "trialing",
+    "active",
+    "past_due",
+    "incomplete",
+    "unpaid",
+    "paused",
+    "canceled",
+  ]),
   price: z
     .object({
       amount: z.number().int().nonnegative(),

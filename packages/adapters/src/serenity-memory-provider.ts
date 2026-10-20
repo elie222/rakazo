@@ -196,6 +196,43 @@ function rememberOperationKey(runScope: string, entity: string, fact: string): s
   return `rakazo:${digest}`;
 }
 
+const wordSegmenter = new Intl.Segmenter("en", { granularity: "word" });
+
+function terms(text: string): Set<string> {
+  const words = new Set<string>();
+  for (const segment of wordSegmenter.segment(text.toLowerCase())) {
+    if (segment.isWordLike) words.add(segment.segment);
+  }
+  return words;
+}
+
+/**
+ * Serenity returns facts newest first without regard to the query, so rank them here.
+ * A fact scores the IDF-weighted share of its words that the query mentions (0 to 1), so
+ * words common to every candidate count for almost nothing. Ties keep the newest first.
+ */
+function rankByQuery(query: string, candidates: SemanticMemoryResult[]): SemanticMemoryResult[] {
+  const queryTerms = terms(query);
+  const factTerms = candidates.map((candidate) => terms(candidate.memory));
+  const documentFrequency = new Map<string, number>();
+  for (const words of factTerms) {
+    for (const word of words) documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1);
+  }
+  const weight = (word: string) =>
+    Math.log((candidates.length + 1) / (documentFrequency.get(word) ?? 1));
+  return candidates
+    .map((candidate, index) => {
+      let total = 0;
+      let matched = 0;
+      for (const word of factTerms[index] ?? []) {
+        total += weight(word);
+        if (queryTerms.has(word)) matched += weight(word);
+      }
+      return { ...candidate, score: total > 0 ? matched / total : 0 };
+    })
+    .sort((left, right) => right.score - left.score);
+}
+
 export class SerenityMemoryProvider implements SemanticMemoryProvider {
   constructor(
     private readonly connection: SerenityConnectionConfig & {
@@ -232,11 +269,7 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
     const results = await Promise.all(
       entities.map(async (entity) => ({
         entity,
-        result: await recallSerenity(request.query, this.connection, {
-          limit: request.limit,
-          entity,
-          signal: context.signal,
-        }),
+        result: await recallSerenity(this.connection, { entity, signal: context.signal }),
       })),
     );
     const errors = results.filter((entry) => !entry.result.ok);
@@ -247,22 +280,22 @@ export class SerenityMemoryProvider implements SemanticMemoryProvider {
       };
     }
     const seen = new Set<string>();
-    const merged: SemanticMemoryResult[] = [];
+    const candidates: SemanticMemoryResult[] = [];
     for (const { entity, result } of results) {
       if (!result.ok) continue;
       for (const fact of result.value) {
         if (seen.has(fact.factId)) continue;
         seen.add(fact.factId);
-        merged.push({
+        candidates.push({
           memory: fact.fact,
-          score: 1,
+          score: 0,
           id: fact.factId,
           provenance: fact.provenance,
           entity,
         });
       }
     }
-    return { ok: true, value: merged.slice(0, request.limit) };
+    return { ok: true, value: rankByQuery(request.query, candidates).slice(0, request.limit) };
   }
 
   async save(

@@ -40,7 +40,7 @@ async function collectResults(
 describe("ComposioEmulator", () => {
   it("remains registered when explicitly supplied without a live Composio key", () => {
     const emulator = new ComposioEmulator();
-    const stack = createConnectorStack(false, emulator);
+    const stack = createConnectorStack(emulator);
 
     expect(stack.connector.managed("composio")).toBe(emulator);
   });

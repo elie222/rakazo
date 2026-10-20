@@ -24,6 +24,11 @@ const payloadSchemas = {
   "history.compact": z.object({ threadId: z.string().min(1) }),
   "messaging.deliver": z.object({ runId: z.string().min(1).optional() }),
   "cloud_agent.poll": z.object({ agentId: z.string().min(1) }),
+  "push.receipt": z.object({
+    userId: z.string().min(1),
+    ticketId: z.string().min(1),
+    tokenDigest: z.string().min(1),
+  }),
 } satisfies { [Name in BackgroundJobName]: z.ZodType<BackgroundJobPayloads[Name]> };
 
 export function parseBackgroundJob(name: string, payload: unknown): BackgroundJob {
@@ -160,6 +165,14 @@ export function historyCompactJob(threadId: string): BackgroundJob {
     replaceKey: historyCompactJobKey(threadId),
     maxAttempts: HISTORY_COMPACT_MAX_ATTEMPTS,
   };
+}
+
+/** A few tries ride out an Expo outage well inside the day it keeps receipts. */
+export function pushReceiptJob(
+  payload: BackgroundJobPayloads["push.receipt"],
+  availableAt: Date,
+): BackgroundJob {
+  return { name: "push.receipt", payload, availableAt, maxAttempts: 8 };
 }
 
 export function cloudAgentPollJobKey(agentId: string): string {

@@ -84,7 +84,7 @@ export const SELF_HOST_FAQS: readonly FaqItem[] = [
   {
     question: "Is hosted Rakazo available?",
     answer:
-      "Self-hosting is available now. Hosted Rakazo Cloud is not generally available. Get started includes a waitlist for Cloud.",
+      "Yes. Rakazo Cloud is in beta at app.rakazo.com. Self-hosting is available too.",
   },
   {
     question: "How does this compare with OpenClaw?",
@@ -147,7 +147,7 @@ export const OPENCLAW_FAQS: readonly FaqItem[] = [
   {
     question: "Does either project charge for the software?",
     answer:
-      "Rakazo is free to self-host. Hosted Rakazo Cloud is not generally available. OpenClaw's documentation says the project has no paid tier and no hosted service. You still pay for models, machines, and any optional computer providers you use.",
+      "Rakazo is free to self-host. Hosted Rakazo Cloud is in beta. OpenClaw's documentation says the project has no paid tier and no hosted service. You still pay for models, machines, and any optional computer providers you use.",
   },
 ];
 
@@ -181,7 +181,7 @@ export const COMPARISON_ROWS: readonly ComparisonRow[] = [
   {
     aspect: "Where it runs",
     rakazo:
-      "You self-host with published Docker images or from source. Web, desktop, and mobile apps are clients of that API. Hosted Rakazo Cloud is not generally available.",
+      "You self-host with published Docker images or from source. Web, desktop, and mobile apps are clients of that API. Hosted Rakazo Cloud is in beta.",
     openclaw:
       "You run the Gateway on your own computer or a server. The docs say there is no hosted service in the middle. Interfaces include a browser Control UI, companion apps, and iOS and Android nodes.",
   },
@@ -264,7 +264,7 @@ export const SELF_HOST_MARKDOWN = `# Self-hosted AI agent
 
 Rakazo is an open source AI agent for persistent teammates. Each bot can use a browser and a shell, keep routines as Markdown, and pause for approval when work crosses a boundary you set. Self-hosting means that stack runs on infrastructure you operate.
 
-The software is [Apache-2.0](${GITHUB_URL}/blob/main/LICENSE). Hosted Rakazo Cloud is not generally available. This page is the essential setup. The [full self-hosting guide](${DOCS_URL}) on GitHub covers backups, upgrades, secrets, restricted networks, and production Compose.
+The software is [Apache-2.0](${GITHUB_URL}/blob/main/LICENSE). Hosted Rakazo Cloud is in beta. This page is the essential setup. The [full self-hosting guide](${DOCS_URL}) on GitHub covers backups, upgrades, secrets, restricted networks, and production Compose.
 
 ## What self-hosting gives you
 
@@ -396,7 +396,7 @@ Rakazo is a web, desktop, and mobile app for persistent teammates: a bot has a j
 
 Rakazo runs bot work on a computer. Local Docker is the default. OpenClaw can sandbox tool execution, and its docs say sandboxing is off by default. The Gateway process stays on the host.
 
-Both let you bring a model provider, including a server you run. Neither charges a seat fee for the software. OpenClaw's docs say it has no paid tier and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is not generally available.
+Both let you bring a model provider, including a server you run. Neither charges a seat fee for the software. OpenClaw's docs say it has no paid tier and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is in beta.
 
 Rakazo is Apache-2.0, maintained by Inbox Zero Inc. OpenClaw is MIT, stewarded by the OpenClaw Foundation.
 

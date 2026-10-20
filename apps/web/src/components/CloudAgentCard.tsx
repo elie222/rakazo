@@ -34,6 +34,8 @@ export function CloudAgentCard({
               <Trans>finished</Trans>
             ) : block.status === "cancelled" ? (
               <Trans>cancelled</Trans>
+            ) : block.status === "expired" ? (
+              <Trans>expired</Trans>
             ) : (
               <Trans>failed</Trans>
             )}

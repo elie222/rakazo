@@ -21,8 +21,8 @@ export function authErrorText(error: unknown, fallback: string): string {
   if (code === "EMAIL_VERIFICATION_REQUIRED" || code === "unable_to_link_account")
     return t`Email verification required`;
   if (code === "REAUTHENTICATION_REQUIRED") return t`Sign in again`;
-  if (code === "PASSWORD_AUTH_DISABLED" || code === "EMAIL_DELETION_UNAVAILABLE")
-    return t`Could not continue`;
+  if (code === "PASSWORD_AUTH_DISABLED") return t`Password sign-in is turned off on this server`;
+  if (code === "EMAIL_DELETION_UNAVAILABLE") return t`Could not continue`;
   return authErrorMessage(error, {
     fallback,
     email: credentialIssueText("email"),

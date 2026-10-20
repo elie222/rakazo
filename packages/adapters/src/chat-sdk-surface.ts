@@ -17,10 +17,13 @@ import type {
 import type { Adapter, Message, Thread } from "chat";
 import { Chat, isLinkNode, text, toPlainText, walkAst } from "chat";
 
-/** Per-webhook drain of Chat SDK waitUntil work + inbound sink failures. */
+/**
+ * Per-webhook drain of Chat SDK waitUntil work, plus the Chat dedupe keys of
+ * messages the inbound sink failed on.
+ */
 const webhookDrain = new AsyncLocalStorage<{
   pending: Promise<unknown>[];
-  failed: boolean;
+  failedKeys: string[];
 }>();
 
 /** Inbound webhook bodies larger than this are rejected before parsing. */
@@ -44,8 +47,16 @@ export interface MessagingPlatform {
   adapterName?: string;
   /** Deterministic 1:1 thread id for platforms without openDM (sendblue). */
   directThreadId?: (address: string) => string;
-  /** Delivery-status events the Chat SDK drops (sendblue is_outbound posts). */
-  peekStatus?: (payload: unknown) => MessagingOutboundStatus | null;
+  /** Delivery-status events the Chat SDK drops (sendblue is_outbound posts, WhatsApp statuses). */
+  peekStatuses?: (payload: unknown) => MessagingOutboundStatus[];
+  /**
+   * State keys the adapter writes to drop vendor redeliveries of a webhook
+   * (Slack's per-event marker). Cleared when the inbound sink fails so the
+   * vendor's retry is processed instead of acknowledged and dropped.
+   */
+  redeliveryKeys?: (payload: unknown) => string[];
+  /** Send errors that retrying cannot fix (unknown channel, blocked bot, revoked token). */
+  isPermanentSendError?: (error: unknown) => boolean;
   /** Group roster addresses from the raw inbound payload, excluding our line. */
   participants?: (raw: unknown) => string[];
   /** Group display name from the raw inbound payload. */
@@ -116,8 +127,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
         } catch (error) {
           // processMessage hands waitUntil a swallowed promise, so track sink
           // failures here and turn them into HTTP 5xx after the drain.
-          const drain = webhookDrain.getStore();
-          if (drain) drain.failed = true;
+          webhookDrain.getStore()?.failedKeys.push(chatDedupeKey(platform.adapter, message.id));
           throw error;
         }
       };
@@ -167,11 +177,15 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // Telegram converts Markdown and retries parse errors as plain text. Keep
     // other adapters' existing payloads (Slack markdown_text has a lower limit).
     const message = mounted.adapterName === "telegram" ? { markdown: request.body } : request.body;
-    const sent = await mounted.chat
-      .thread(toAdapterThreadId(mounted, request.threadId))
-      .post(message);
-    const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
-    return { handle };
+    try {
+      const sent = await mounted.chat
+        .thread(toAdapterThreadId(mounted, request.threadId))
+        .post(message);
+      const handle = "id" in sent && typeof sent.id === "string" ? sent.id : "";
+      return { handle };
+    } catch (error) {
+      throw sendError(mounted.platform, error);
+    }
   }
 
   async openDirectThread(
@@ -187,7 +201,11 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     if (!platform.adapter.openDM) {
       throw new Error(`${provider} cannot open direct conversations`);
     }
-    return toProviderThreadId(mounted, await platform.adapter.openDM(address));
+    try {
+      return toProviderThreadId(mounted, await platform.adapter.openDM(address));
+    } catch (error) {
+      throw sendError(platform, error);
+    }
   }
 
   async acknowledge(threadId: string, handle: string, context: AdapterContext): Promise<void> {
@@ -318,7 +336,7 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
     // only register the work via waitUntil. Drain that work before ACKing so
     // a vendor 200 cannot race ahead of provision/enqueue, and surface sink
     // failures as 5xx so the vendor retries.
-    const drain = { pending: [] as Promise<unknown>[], failed: false };
+    const drain = { pending: [] as Promise<unknown>[], failedKeys: [] as string[] };
     const response = await webhookDrain.run(drain, async () => {
       const adapterResponse = await chat.webhooks[adapterName]!(forwarded, {
         waitUntil: (task) => {
@@ -328,14 +346,21 @@ export class ChatSdkMessagingSurface implements MessagingSurface {
       await Promise.all(drain.pending);
       return adapterResponse;
     });
-    if (drain.failed) {
+    const payload = parseJson(body);
+    if (drain.failedKeys.length > 0) {
+      // Chat marks a message seen before our handler runs (and Slack marks the
+      // event delivered), so the vendor's retry would be acknowledged and
+      // dropped. Forget the failed deliveries; the sink's per-message client
+      // nonce still dedupes anything that partly succeeded.
+      const state = chat.getState();
+      const keys = [...drain.failedKeys, ...(platform.redeliveryKeys?.(payload) ?? [])];
+      await Promise.all(keys.map((key) => state.delete(key)));
       return new Response("Inbound processing failed", { status: 500 });
     }
     // Status peeking runs only after the adapter verified and accepted the
     // request — a forged webhook must not be able to flip outbox rows.
-    if (platform.peekStatus && response.status < 300 && body) {
-      const status = parseStatus(platform, body);
-      if (status) await this.sink?.(status);
+    if (platform.peekStatuses && response.status < 300) {
+      for (const status of platform.peekStatuses(payload)) await this.sink?.(status);
     }
     return response;
   }
@@ -480,10 +505,45 @@ async function readBoundedText(request: Request, maxBytes: number): Promise<stri
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function parseStatus(platform: MessagingPlatform, body: string): MessagingOutboundStatus | null {
+function parseJson(body: string): unknown {
   try {
-    return platform.peekStatus?.(JSON.parse(body)) ?? null;
+    return JSON.parse(body);
   } catch {
     return null;
   }
+}
+
+/**
+ * The key Chat.routeIncomingMessage marks a message seen under (chat@4.43,
+ * private concurrencyKey). The replay tests fail if an SDK upgrade moves it.
+ */
+function chatDedupeKey(adapter: Adapter, messageId: string): string {
+  const key = `dedupe:${adapter.name}:${messageId}`;
+  const scope = adapter.getConcurrencyScope?.();
+  return scope === undefined ? key : `concurrency:${JSON.stringify([adapter.name, scope, key])}`;
+}
+
+/**
+ * A failed platform send, classified for the outbox: give up when
+ * `permanent`, otherwise retry no sooner than `retryAfterMs` when set.
+ */
+export class MessagingSendError extends Error {
+  override readonly name = "MessagingSendError";
+  readonly permanent: boolean;
+  readonly retryAfterMs: number | null;
+
+  constructor(cause: unknown, options: { permanent: boolean; retryAfterMs: number | null }) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.permanent = options.permanent;
+    this.retryAfterMs = options.retryAfterMs;
+  }
+}
+
+function sendError(platform: MessagingPlatform, error: unknown): MessagingSendError {
+  // Chat SDK AdapterRateLimitError and Slack's rate-limited error both carry seconds.
+  const seconds = (error as { retryAfter?: unknown } | null)?.retryAfter;
+  return new MessagingSendError(error, {
+    permanent: platform.isPermanentSendError?.(error) ?? false,
+    retryAfterMs: typeof seconds === "number" && seconds > 0 ? seconds * 1000 : null,
+  });
 }

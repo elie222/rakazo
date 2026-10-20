@@ -95,6 +95,8 @@ jobs:
         env:
           DATABASE_URL: postgres://rakazo:rakazo@127.0.0.1:5433/rakazo
       - run: pnpm test
+      - name: Host operations safety tests
+        run: python3 infra/compose/host-safeguards.test.py
 
   native-computer:
     name: Native computer (${{ matrix.os }})

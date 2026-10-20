@@ -29,6 +29,41 @@ export function createBillingAccount(
 }
 
 /**
+ * Points the organization at a new customer after the provider deleted the old one, clearing the
+ * old subscription snapshot but keeping `subscribedAt` so no second trial is offered. When a
+ * concurrent request already swapped it, that swap wins. Returns the stored account.
+ */
+export async function replaceBillingCustomer(
+  prisma: PrismaClient,
+  input: { organizationId: string; previousCustomerId: string; customerId: string },
+): Promise<BillingAccount> {
+  await prisma.billingAccount.updateMany({
+    where: { organizationId: input.organizationId, customerId: input.previousCustomerId },
+    data: {
+      customerId: input.customerId,
+      subscriptionId: null,
+      subscriptionItemId: null,
+      priceId: null,
+      status: null,
+      seats: null,
+      trialEndsAt: null,
+      currentPeriodEndsAt: null,
+      cancelAtPeriodEnd: false,
+      endedAt: null,
+      syncedAt: null,
+    },
+  });
+  return prisma.billingAccount.findUniqueOrThrow({
+    where: { organizationId: input.organizationId },
+  });
+}
+
+/** The subscription exists but has no access until the owner settles it in the billing portal. */
+export function needsBillingPortal(status: string | null): boolean {
+  return status === "unpaid" || status === "paused";
+}
+
+/**
  * Loads the customer's current subscription and overwrites the stored snapshot (`null` clears
  * it). The write only lands if no sync that started later has written first, so an older read
  * never replaces a newer one. Returns false when no account is stored for the customer.

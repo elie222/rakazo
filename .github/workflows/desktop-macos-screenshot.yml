@@ -56,7 +56,7 @@ jobs:
         run: >-
           pnpm --filter @rakazo/desktop exec playwright test
           --config e2e/playwright.config.ts setup.spec.ts
-          --grep "first run asks whether to use a local or existing instance"
+          --grep "first run offers Rakazo Cloud first, with local and existing instances"
       - name: Upload native macOS setup screenshot
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -84,6 +84,9 @@ export function DesktopUpdatesProvider({ children }: { children: ReactNode }) {
   const updates = useDesktopUpdates();
   const [dismissed, setDismissed] = useState<string | null>(null);
   const { state, busy, error, act } = updates;
+  useEffect(() => {
+    if (error) setDismissed(null);
+  }, [error]);
   return (
     <UpdatesContext.Provider value={updates}>
       {children}
@@ -123,6 +126,18 @@ export function DesktopUpdatesProvider({ children }: { children: ReactNode }) {
       ) : null}
     </UpdatesContext.Provider>
   );
+}
+
+/** Reuse the provider's bridge polling and guarded install action. */
+export function useSidebarUpdate() {
+  const updates = useContext(UpdatesContext);
+  return {
+    available: updates?.state?.phase === "ready",
+    busy: updates?.busy ?? false,
+    install: () => {
+      void updates?.act("install");
+    },
+  };
 }
 
 export function DesktopUpdateSection() {

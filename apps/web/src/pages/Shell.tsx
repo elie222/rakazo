@@ -9,8 +9,6 @@ import type {
   ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
-  Connection,
-  ConnectionCatalogItem,
   Group,
   Me,
   MessageReaction,
@@ -36,6 +34,7 @@ import {
 } from "@rakazo/contracts";
 import type { ComposerMention, FoldedTranscript, SlashActionId } from "@rakazo/core";
 import {
+  accountDisplay,
   answerableAskMessageIds,
   attachmentsForThread,
   buildComposerMentionOptions,
@@ -43,13 +42,13 @@ import {
   cronFromPreset,
   expandPeerReplies,
   foldPeerReplies,
-  formatMessageTime,
   groupVoiceChats,
   inferAttachmentMimeType,
   isActive,
   isPeerReceiptBlocks,
   isRunTerminalEvent,
   isToolActivityBlock,
+  MODEL_REQUIRED_SEND_ERROR,
   mentionChipKey,
   nestRosterByParent,
   normalizeRunError,
@@ -97,11 +96,7 @@ import {
   CircleAlert,
   Clock,
   Copy,
-  FolderOpen,
-  Gauge,
-  LayoutGrid,
   Lock,
-  LogOut,
   Maximize2,
   Menu,
   Monitor,
@@ -119,7 +114,6 @@ import {
   SlidersHorizontal,
   Smile,
   Square,
-  SquareKanban,
   TextQuote,
   Trash2,
   X,
@@ -158,9 +152,9 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../components/composer/HoldToTalk";
-import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
+import { SidebarFooter } from "../components/SidebarFooter";
 import {
   LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
@@ -220,7 +214,7 @@ import {
   loadComputerScreen,
   screenIframeSandbox,
 } from "../lib/computer-screen";
-import { publishComputerCommand } from "../lib/computer-workspace";
+import { connectedAppMarks } from "../lib/connected-apps";
 import { desktopBridge } from "../lib/desktop";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
@@ -265,9 +259,8 @@ import {
   activeThreadRuns,
   applyThreadSendReceipt,
   clearActiveThreadRuns,
-  computerPanelAutoBoot,
-  computerPanelAutoUsesBoot,
   computerPanelNeedsMaintenance,
+  computerPanelNeedsScreen,
   computerTakeoverBlocked,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
@@ -576,6 +569,7 @@ function SpaceShell() {
   const [taughtSkillsBotId, setTaughtSkillsBotId] = useState<string | null>(null);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
   const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
+  const [footerLogos, setFooterLogos] = useState<Array<{ name: string; logo: string | null }>>([]);
   const [mentionConnectors, setMentionConnectors] = useState<
     Array<{
       id: string;
@@ -2150,7 +2144,7 @@ function SpaceShell() {
     if (!initialBotsLoaded || bots.length === 0) {
       setMentionRoutines([]);
       setMentionConnectors([]);
-      return;
+      if (!initialBotsLoaded) return;
     }
     let cancelled = false;
     const botNameById = new Map(bots.map((bot) => [bot.id, bot.name]));
@@ -2170,11 +2164,12 @@ function SpaceShell() {
       if (!cancelled) setMentionRoutines(lists.flat());
     });
     void Promise.all([
-      rpc.connections.list().catch(() => [] as Connection[]),
-      rpc.connections.catalog({}).catch(() => [] as ConnectionCatalogItem[]),
+      rpc.connections.list().catch(() => null),
+      rpc.connections.catalog({}).catch(() => null),
     ]).then(([connections, catalog]) => {
       if (cancelled) return;
-      const connected = connections.filter((row) => row.status === "connected");
+      const connected = connections?.filter((row) => row.status === "connected") ?? [];
+      if (catalog && connections) setFooterLogos(connectedAppMarks(catalog, connections));
       const options: Array<{
         id: string;
         name: string;
@@ -2186,7 +2181,7 @@ function SpaceShell() {
         authStatus: "connected" as const,
         connectionId: row.id,
       }));
-      for (const item of catalog) {
+      for (const item of catalog ?? []) {
         if (item.connected || item.noAuth) continue;
         if (
           connected.some(
@@ -2203,7 +2198,7 @@ function SpaceShell() {
           authStatus: "needs_auth",
         });
       }
-      setMentionConnectors(options);
+      setMentionConnectors(bots.length ? options : []);
     });
     return () => {
       cancelled = true;
@@ -2793,18 +2788,12 @@ function SpaceShell() {
       const state = snap?.computer?.state;
       const screen = state === "running" ? await refreshComputerScreen(botId) : null;
       if (cancelled || activeBotId.current !== botId) return;
-      const action = computerPanelAutoBoot(state, screen);
-      if (action === "wait") {
-        if (state === "running") autoBooted.current = botId;
-        return;
-      }
-      if (action === "boot" && autoBooted.current === botId) return;
+      if (!computerPanelNeedsScreen(state, screen) || autoBooted.current === botId) return;
       autoBooted.current = botId;
-      if (!computerPanelAutoUsesBoot(action)) return;
       await bootComputer({
         botId,
         takeControl: false,
-        overlay: action === "boot",
+        overlay: false,
         force: true,
       }).catch(() => undefined);
     })();
@@ -3038,13 +3027,7 @@ function SpaceShell() {
     !computerScreenError &&
     showComputerRecoveryHint;
 
-  const userName = session.data?.user.name ?? t`You`;
-  const initials = userName
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const { label: userName, initial: initials } = accountDisplay(session.data?.user ?? {}, t`You`);
 
   const shell = (
     <div
@@ -3253,7 +3236,7 @@ function SpaceShell() {
             </InputGroupAddon>
           ) : null}
         </InputGroup>
-        <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showSpaceSearch ? (
             <SpaceSearchResults
               hits={searchHits}
@@ -3299,7 +3282,11 @@ function SpaceShell() {
                     : null;
                 const headerDropKey = `header:${group.key}`;
                 return (
-                  <div key={group.key} data-sidebar-group={group.key}>
+                  <div
+                    key={group.key}
+                    data-sidebar-group={group.key}
+                    className="flex flex-col gap-0.5"
+                  >
                     {group.title || hasSpaceActions ? (
                       // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
                       <div
@@ -3789,110 +3776,47 @@ function SpaceShell() {
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
-        >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
-            <LayoutGrid size={15} strokeWidth={1.8} />
-          </span>
-          <span className="text-[14px] font-medium text-foreground/90">
-            <Trans>Integrations</Trans>
-          </span>
-        </button>
-        <Popover
+        <SidebarFooter
+          logos={footerLogos}
+          name={userName}
+          initials={initials}
+          image={session.data?.user.image}
+          email={session.data?.user.email}
           open={menuOpen}
           onOpenChange={(open) => {
             setMenuOpen(open);
             if (!open) setLogOutError(null);
           }}
-        >
-          <PopoverTrigger
-            data-testid="user-menu-trigger"
-            className="flex items-center gap-[11px] px-[18px] py-3.5"
-          >
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[12px] text-foreground/75">
-              {initials}
-            </span>
-            <span className="text-[14.5px] text-foreground/90">{userName}</span>
-          </PopoverTrigger>
-          {menuOpen ? (
-            <PopoverContent
-              side="top"
-              align="start"
-              className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
-            >
-              {bootstrapMe?.ticketBoardEnabled ? (
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start font-normal"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setMobileSidebarOpen(false);
-                    navigate("/app/board");
-                  }}
-                >
-                  <SquareKanban className="text-muted-foreground" strokeWidth={1.75} />
-                  <Trans>Board</Trans>
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={() => {
+          onIntegrations={() => setPluginsOpen(true)}
+          onBoard={
+            bootstrapMe?.ticketBoardEnabled
+              ? () => {
                   setMenuOpen(false);
                   setMobileSidebarOpen(false);
-                  navigate("/app/artifacts");
-                }}
-              >
-                <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Artifacts</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                aria-label={t`Settings`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  openSettings("general");
-                }}
-              >
-                <Settings className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Settings</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                aria-label={t`Usage`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  openSettings("usage");
-                }}
-              >
-                <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Usage</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                disabled={signingOut}
-                onClick={() => {
-                  setLogOutError(null);
-                  void logOut();
-                }}
-              >
-                <LogOut className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Log out</Trans>
-              </Button>
-              {logOutError ? (
-                <p role="alert" className="px-3 pt-1 pb-2 text-[13px] text-destructive">
-                  {logOutError}
-                </p>
-              ) : null}
-            </PopoverContent>
-          ) : null}
-        </Popover>
+                  navigate("/app/board");
+                }
+              : undefined
+          }
+          onArtifacts={() => {
+            setMenuOpen(false);
+            setMobileSidebarOpen(false);
+            navigate("/app/artifacts");
+          }}
+          onSettings={() => {
+            setMenuOpen(false);
+            openSettings("general");
+          }}
+          onUsage={() => {
+            setMenuOpen(false);
+            openSettings("usage");
+          }}
+          onLogOut={() => {
+            setLogOutError(null);
+            void logOut();
+          }}
+          signingOut={signingOut}
+          logOutError={logOutError}
+        />
       </aside>
 
       {/* The full-screen computer covers the sidebar, so its edge must not catch clicks there. */}
@@ -4120,6 +4044,7 @@ function SpaceShell() {
             pendingAttachments={activePendingAttachments}
             attachmentNotice={attachmentNotice}
             sendError={sendError}
+            onOpenModels={() => openSettings("models")}
             runError={displayedRunError}
             runErrorId={displayedRunErrorId}
             onRunErrorPresented={handleRunErrorPresented}
@@ -5012,6 +4937,7 @@ function SpaceShell() {
 
         {pluginsOpen ? (
           <PluginsOverlay
+            onConnectedAppsChange={setFooterLogos}
             activeBotId={activeBotId.current}
             onClose={() => setPluginsOpen(false)}
             onOpenMcp={() => {
@@ -5224,52 +5150,38 @@ function SpaceShell() {
               </div>
             ) : null}
             <div className="relative min-h-0 flex-1 bg-background">
-              <ComputerWorkspace
-                botId={computerBot.id}
-                computer={computer}
-                hasControl={hasControl}
-                dock={!recordingSkill}
-                onTakeControl={
-                  computer?.state === "running" &&
-                  !hasControl &&
-                  !computerTakeoverBlocked(computer, snapshot?.run?.status)
-                    ? () => openComputer(computerBot.id, true)
-                    : undefined
-                }
-              >
-                {computer?.kind === "desktop" ? (
-                  <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
-                ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-                  <>
-                    <iframe
-                      title={t`Bot screen`}
-                      src={embeddedScreenUrl}
-                      sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                      className="h-full w-full border-0 bg-black"
-                      allow="clipboard-read; clipboard-write; fullscreen"
-                      style={{
-                        pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
-                      }}
+              {computer?.kind === "desktop" ? (
+                <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
+              ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
+                <>
+                  <iframe
+                    title={t`Bot screen`}
+                    src={embeddedScreenUrl}
+                    sandbox={screenIframeSandbox(embeddedScreenUrl)}
+                    className="h-full w-full border-0 bg-black"
+                    allow="clipboard-read; clipboard-write; fullscreen"
+                    style={{
+                      pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
+                    }}
+                  />
+                  {computerBot ? (
+                    <TeachCaptureOverlay
+                      botId={computerBot.id}
+                      skill={recordingSkill}
+                      enabled={Boolean(recordingSkill)}
+                      screenWidth={computer?.screenWidth}
+                      screenHeight={computer?.screenHeight}
                     />
-                    {computerBot ? (
-                      <TeachCaptureOverlay
-                        botId={computerBot.id}
-                        skill={recordingSkill}
-                        enabled={Boolean(recordingSkill)}
-                        screenWidth={computer?.screenWidth}
-                        screenHeight={computer?.screenHeight}
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-                    {computerScreenError ??
-                      (computer?.state === "suspended"
-                        ? t`Computer is asleep`
-                        : computerLabel(computer?.mode, computerBot.name))}
-                  </div>
-                )}
-              </ComputerWorkspace>
+                  ) : null}
+                </>
+              ) : (
+                <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+                  {computerScreenError ??
+                    (computer?.state === "suspended"
+                      ? t`Computer is asleep`
+                      : computerLabel(computer?.mode, computerBot.name))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -5734,40 +5646,11 @@ const Transcript = memo(function Transcript({
                       onSpeak={() => onSpeak(message)}
                       onOpenComputer={onOpenComputer}
                       showToolActivity={showToolActivity}
+                      onReply={onReply}
+                      onReact={onReact}
                     />
-                    {peerReceipt ? null : (
-                      <MessageHoverActions
-                        message={message}
-                        side={message.role === "user" ? "start" : "end"}
-                        onReply={onReply}
-                        onReact={onReact}
-                      />
-                    )}
                   </div>
                 </div>
-                {!peerReceipt && !message.id.startsWith("progress:") ? (
-                  <time
-                    dateTime={message.createdAt}
-                    data-testid="message-hover-time"
-                    className={cn(
-                      "pointer-events-none absolute top-1 z-10 text-xs tabular-nums text-muted-foreground opacity-0 transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 group-has-[[aria-expanded=true]]/message:opacity-100 [@media(hover:none)]:transition-none",
-                      // Hover keeps the date in the side margin. Touch leaves that margin for the bubble and drops the revealed time under it.
-                      message.role === "user"
-                        ? "start-0 max-w-[max(8rem,16%)] text-start"
-                        : "end-0 max-w-[max(8rem,12%)] text-end",
-                      "[@media(hover:none)]:group-hover/message:static [@media(hover:none)]:group-focus-within/message:static [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:static",
-                      "[@media(hover:none)]:group-hover/message:block [@media(hover:none)]:group-focus-within/message:block [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:block",
-                      "[@media(hover:none)]:group-hover/message:mt-1 [@media(hover:none)]:group-focus-within/message:mt-1 [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:mt-1",
-                      "[@media(hover:none)]:group-hover/message:w-full [@media(hover:none)]:group-focus-within/message:w-full [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:w-full",
-                      "[@media(hover:none)]:group-hover/message:max-w-none [@media(hover:none)]:group-focus-within/message:max-w-none [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:max-w-none",
-                      message.role === "user"
-                        ? "[@media(hover:none)]:group-hover/message:text-end [@media(hover:none)]:group-focus-within/message:text-end [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-end"
-                        : "[@media(hover:none)]:group-hover/message:text-start [@media(hover:none)]:group-focus-within/message:text-start [@media(hover:none)]:group-has-[[aria-expanded=true]]/message:text-start",
-                    )}
-                  >
-                    {formatMessageTime(message.createdAt, i18n.locale || "en")}
-                  </time>
-                ) : null}
                 {!peerReceipt && messageReactions ? (
                   <div
                     data-testid="message-reactions"
@@ -5912,6 +5795,7 @@ export const Composer = memo(function Composer({
   pendingAttachments,
   attachmentNotice,
   sendError,
+  onOpenModels,
   runError,
   runErrorId,
   onRunErrorPresented,
@@ -5941,6 +5825,7 @@ export const Composer = memo(function Composer({
   pendingAttachments: PendingAttachment[];
   attachmentNotice: string | null;
   sendError: string | null;
+  onOpenModels: () => void;
   runError: string | null;
   runErrorId: string | null;
   onRunErrorPresented: (runId: string) => void;
@@ -6452,10 +6337,21 @@ export const Composer = memo(function Composer({
           className="mb-3 flex items-center gap-2 rounded-[14px] border border-destructive/40 bg-destructive/10 px-4 py-2 text-[13px] text-destructive"
         >
           <div className="min-w-0 flex-1">
-            {sendError ??
+            {sendError === MODEL_REQUIRED_SEND_ERROR ? (
+              <button
+                type="button"
+                data-testid="composer-error-open-models"
+                onClick={onOpenModels}
+                className="text-left underline underline-offset-2 hover:text-foreground"
+              >
+                {sendError}
+              </button>
+            ) : (
+              (sendError ??
               (runError
                 ? normalizeRunError(runError, translateRunError, i18n.locale || "en").summary
-                : null)}
+                : null))
+            )}
             {!sendError && runError ? (
               <details key={runError} className="mt-1">
                 <summary className="w-fit cursor-pointer">{t`Details`}</summary>
@@ -6987,20 +6883,14 @@ function MessageHoverActions({
   }
 
   const iconButtonClass =
-    "grid h-7 w-7 place-items-center text-muted-foreground transition-colors hover:text-foreground";
+    "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
-            <PopoverTrigger
-              aria-label={t`React`}
-              className={cn(
-                iconButtonClass,
-                "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-              )}
-            >
+            <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
               <Smile size={15} strokeWidth={1.7} />
             </PopoverTrigger>
             <PopoverContent
@@ -7029,21 +6919,12 @@ function MessageHoverActions({
           type="button"
           aria-label={t`Reply`}
           onClick={() => onReply(message)}
-          className={cn(
-            iconButtonClass,
-            "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-          )}
+          className={iconButtonClass}
         >
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger
-            aria-label={t`More`}
-            className={cn(
-              iconButtonClass,
-              "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-            )}
-          >
+          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"}>
@@ -7083,7 +6964,6 @@ function applyThreadEvent(
   snapshotRef: MutableRefObject<ThreadSnapshot | null>,
   computerRef: MutableRefObject<ComputerStatus | null>,
 ) {
-  publishComputerCommand(event);
   if (isThreadSnapshotEvent(event)) {
     const next = reduceThreadSnapshot(snapshotRef.current, event);
     commitSnapshot(next);
@@ -7142,6 +7022,8 @@ const MessageView = memo(function MessageView({
   onSpeak,
   onOpenComputer,
   showToolActivity,
+  onReply,
+  onReact,
 }: {
   artifactTarget: ArtifactTarget;
   canAnswer: boolean;
@@ -7165,6 +7047,8 @@ const MessageView = memo(function MessageView({
   onSpeak: () => void;
   onOpenComputer: (botId?: string) => void;
   showToolActivity: boolean;
+  onReply: (message: ThreadMessage) => void;
+  onReact: (message: ThreadMessage, reaction: MessageReaction) => Promise<void>;
 }) {
   const { t } = useLingui();
   const isNarration =
@@ -7214,65 +7098,82 @@ const MessageView = memo(function MessageView({
       />
     </>
   );
+  // Anchored below the speaker and reply line so the rail centers on the bubble itself.
+  const hoverActions = isPeerReceiptBlocks(message.blocks) ? null : (
+    <MessageHoverActions
+      message={message}
+      side={message.role === "user" ? "start" : "end"}
+      onReply={onReply}
+      onReact={onReact}
+    />
+  );
   if (isNarration) {
     if (visibleNarrationBlocks.length === 0) return null;
     if (isToolOnlyNarration(message.blocks, showToolActivity)) {
       return (
         <>
           {messageContext}
-          <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} />
+          <div className="relative">
+            <ToolOnlyNarration blocks={visibleNarrationBlocks} live={isLive} />
+            {hoverActions}
+          </div>
         </>
       );
     }
     return (
       <>
         {messageContext}
-        <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
-          <div
-            data-testid="message-bot-bubble"
-            className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-            dir="auto"
-          >
-            {visibleNarrationBlocks.map((block, i) => {
-              if (block.kind === "steps") {
-                return (
-                  <ToolActivityDisclosure
-                    key={i}
-                    live={isLive}
-                    stepCount={toolStepCount(block.steps)}
-                    durationMs={block.durationMs}
-                  >
-                    <ToolSteps
-                      steps={block.steps}
-                      currentIndex={isLive ? block.steps.length - 1 : undefined}
-                      limit={isLive ? LIVE_TOOL_STEP_WINDOW : undefined}
-                    />
-                  </ToolActivityDisclosure>
-                );
-              }
-              if (block.kind === "text" || block.kind === "progress") {
-                return (
-                  <div
-                    key={i}
-                    data-quote-message-id={block.kind === "text" ? quoteMessageId : undefined}
-                  >
-                    <ChatMarkdown streaming={block.kind === "progress"}>{block.text}</ChatMarkdown>
-                  </div>
-                );
-              }
-              return null;
-            })}
-            {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
-              <button
-                type="button"
-                aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                onClick={onSpeak}
-                className="text-[12px] text-muted-foreground hover:text-foreground"
-              >
-                {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-              </button>
-            ) : null}
+        <div className="relative w-fit max-w-full [@media(hover:none)]:w-full">
+          <div className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full">
+            <div
+              data-testid="message-bot-bubble"
+              className="max-w-full space-y-2.5 rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+              dir="auto"
+            >
+              {visibleNarrationBlocks.map((block, i) => {
+                if (block.kind === "steps") {
+                  return (
+                    <ToolActivityDisclosure
+                      key={i}
+                      live={isLive}
+                      stepCount={toolStepCount(block.steps)}
+                      durationMs={block.durationMs}
+                    >
+                      <ToolSteps
+                        steps={block.steps}
+                        currentIndex={isLive ? block.steps.length - 1 : undefined}
+                        limit={isLive ? LIVE_TOOL_STEP_WINDOW : undefined}
+                      />
+                    </ToolActivityDisclosure>
+                  );
+                }
+                if (block.kind === "text" || block.kind === "progress") {
+                  return (
+                    <div
+                      key={i}
+                      data-quote-message-id={block.kind === "text" ? quoteMessageId : undefined}
+                    >
+                      <ChatMarkdown streaming={block.kind === "progress"}>
+                        {block.text}
+                      </ChatMarkdown>
+                    </div>
+                  );
+                }
+                return null;
+              })}
+              {!isLive && voiceReady && message.blocks.some((block) => block.kind === "text") ? (
+                <button
+                  type="button"
+                  aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                  onClick={onSpeak}
+                  className="text-[12px] text-muted-foreground hover:text-foreground"
+                >
+                  {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
+                </button>
+              ) : null}
+            </div>
           </div>
+          {hoverActions}
         </div>
       </>
     );
@@ -7280,353 +7181,360 @@ const MessageView = memo(function MessageView({
   return (
     <>
       {messageContext}
-      {message.blocks.map((block, i) => {
-        if (block.kind === "steps" && shouldRenderToolCard(block, showToolActivity)) {
-          return (
-            <StandaloneToolActivity
-              key={i}
-              live={isLive}
-              steps={block.steps}
-              stepCount={toolStepCount(block.steps)}
-              durationMs={block.durationMs}
-            />
-          );
-        }
-        if (isToolActivityBlock(block)) return null;
-        if (block.kind === "handoff") {
-          const from = memberName?.(block.fromBotId) ?? t`bot`;
-          const to = memberName?.(block.toBotId) ?? t`bot`;
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
-            >
-              <span>
-                ↪ {to} ← {from}
-              </span>
-              <span>{block.text}</span>
-            </div>
-          );
-        }
-        if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
-          const sent = block.kind === "bot_message_sent";
-          const peer = sent ? block.toBotName : block.fromBotName;
-          const peerBotId = sent ? block.toBotId : block.fromBotId;
-          const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
-          return (
-            <CollaborationMarker
-              key={i}
-              ariaLabel={label}
-              color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
-              identity={peerBotId}
-              label={label}
-              onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
-              replies={
-                !sent && peerReplies
-                  ? {
-                      expanded: peerReplies === "expanded",
-                      label: peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
-                      onToggle: () => onTogglePeerReplies(message.id),
-                    }
-                  : undefined
-              }
-            />
-          );
-        }
-        if (block.kind === "channel_message") {
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
-            >
-              <span>
-                {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
-                {block.text}
-              </span>
-            </div>
-          );
-        }
-        if (block.kind === "meta") {
-          return (
-            <div
-              key={i}
-              className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
-            >
-              <span className="text-warning">◷</span>
-              <span>{block.text}</span>
-            </div>
-          );
-        }
-        if (block.kind === "progress") {
-          return (
-            <div
-              key={i}
-              className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
-            >
-              <div
-                data-testid="message-bot-bubble"
-                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-                dir="auto"
-              >
-                <ChatMarkdown streaming>{block.text}</ChatMarkdown>
-              </div>
-            </div>
-          );
-        }
-        if (block.kind === "subagent") {
-          const running = block.status === "running";
-          const failed = block.status === "failed";
-          return (
-            <div
-              key={i}
-              className="w-[min(420px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[15px] font-medium text-foreground" dir="auto">
-                  {block.name}
-                </span>
-                <span
-                  className={`rounded-full px-[11px] py-1 text-[13px] ${
-                    failed
-                      ? "bg-destructive/15 text-destructive"
-                      : running
-                        ? "bg-warning/15 text-warning"
-                        : "bg-success/15 text-success"
-                  }`}
-                  style={{
-                    animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
-                  }}
-                >
-                  {running ? <Trans>subagent</Trans> : block.status}
-                </span>
-              </div>
-              <div className="mt-2 text-[13.5px] text-muted-foreground">{block.task}</div>
-              {block.progress || block.result ? (
-                <div className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
-                  <ChatMarkdown streaming={running}>
-                    {block.result || block.progress || ""}
-                  </ChatMarkdown>
-                </div>
-              ) : null}
-            </div>
-          );
-        }
-        if (block.kind === "child_bot") {
-          const removed = block.status === "deleted" || block.status === "archived";
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={removed}
-              onClick={() => onOpenBot(block.botId)}
-              className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-foreground" dir="auto">
-                  {block.name}
-                </span>
-                <span
-                  className={`rounded-full px-[11px] py-1 text-[13px] ${
-                    removed ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"
-                  }`}
-                >
-                  {block.status === "archived" ? (
-                    <Trans>archived</Trans>
-                  ) : block.status === "deleted" ? (
-                    <Trans>deleted</Trans>
-                  ) : (
-                    <Trans>bot</Trans>
-                  )}
-                </span>
-              </div>
-              <div className="mt-2 text-[14.5px] leading-[1.5] text-foreground/75" dir="auto">
-                {removed
-                  ? block.status === "archived"
-                    ? t`Archived. Chat, memory, and files kept.`
-                    : t`Removed with chat, computer, and memory.`
-                  : block.title || t`Opened its thread.`}
-              </div>
-            </button>
-          );
-        }
-        if (block.kind === "choice") {
-          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
-          if (!botId) return null;
-          return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
-        }
-        if (block.kind === "app_connect") {
-          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
-          if (!botId) return null;
-          return (
-            <div key={i} className="flex justify-start py-1">
-              <AppConnectCard botId={botId} block={block} />
-            </div>
-          );
-        }
-        if (block.kind === "chart") {
-          return (
-            <div key={i} className="flex justify-start">
-              <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
-            </div>
-          );
-        }
-        if (block.kind === "mcp_approval") {
-          const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
-          if (!botId) return null;
-          return (
-            <div key={i} className="flex justify-start">
-              <McpApprovalCard botId={botId} threadId={message.threadId} block={block} />
-            </div>
-          );
-        }
-        if (block.kind === "image") {
-          return (
-            <div
-              key={i}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <ArtifactImage
-                target={artifactTarget}
-                artifactId={block.artifactId}
-                name={block.name}
+      <div className="relative">
+        {message.blocks.map((block, i) => {
+          if (block.kind === "steps" && shouldRenderToolCard(block, showToolActivity)) {
+            return (
+              <StandaloneToolActivity
+                key={i}
+                live={isLive}
+                steps={block.steps}
+                stepCount={toolStepCount(block.steps)}
+                durationMs={block.durationMs}
               />
-            </div>
-          );
-        }
-        if (block.kind === "file") {
-          return (
-            <div
-              key={i}
-              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <ArtifactFileCard
-                target={artifactTarget}
-                artifactId={block.artifactId}
-                name={block.name}
-                mimeType={block.mimeType}
-                size={block.size}
-              />
-            </div>
-          );
-        }
-        if (block.kind === "text" && message.role === "user") {
-          // User bubbles stay literal text on web and mobile. Only explicit URLs
-          // and email addresses are links, so a sent address is tappable without
-          // formatting bold or headings.
-          return (
-            <div key={i} className="flex w-fit max-w-full justify-end [@media(hover:none)]:w-full">
+            );
+          }
+          if (isToolActivityBlock(block)) return null;
+          if (block.kind === "handoff") {
+            const from = memberName?.(block.fromBotId) ?? t`bot`;
+            const to = memberName?.(block.toBotId) ?? t`bot`;
+            return (
               <div
-                data-testid="message-user-bubble"
-                data-quote-message-id={quoteMessageId}
-                className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
-                dir="auto"
+                key={i}
+                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
               >
-                <LinkifiedText>{block.text}</LinkifiedText>
+                <span>
+                  ↪ {to} ← {from}
+                </span>
+                <span>{block.text}</span>
               </div>
-            </div>
-          );
-        }
-        if (block.kind === "text") {
-          return (
-            <div
-              key={i}
-              className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
-            >
+            );
+          }
+          if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
+            const sent = block.kind === "bot_message_sent";
+            const peer = sent ? block.toBotName : block.fromBotName;
+            const peerBotId = sent ? block.toBotId : block.fromBotId;
+            const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
+            return (
+              <CollaborationMarker
+                key={i}
+                ariaLabel={label}
+                color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
+                identity={peerBotId}
+                label={label}
+                onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
+                replies={
+                  !sent && peerReplies
+                    ? {
+                        expanded: peerReplies === "expanded",
+                        label:
+                          peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
+                        onToggle: () => onTogglePeerReplies(message.id),
+                      }
+                    : undefined
+                }
+              />
+            );
+          }
+          if (block.kind === "channel_message") {
+            return (
               <div
-                data-testid="message-bot-bubble"
-                className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
-                dir="auto"
+                key={i}
+                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
               >
-                <div data-quote-message-id={quoteMessageId}>
-                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                <span>
+                  {messageProviderLabel(block.provider, block.transport)} · {block.fromLabel}:{" "}
+                  {block.text}
+                </span>
+              </div>
+            );
+          }
+          if (block.kind === "meta") {
+            return (
+              <div
+                key={i}
+                className="flex items-center justify-center gap-2 py-1 text-[13.5px] text-muted-foreground"
+              >
+                <span className="text-warning">◷</span>
+                <span>{block.text}</span>
+              </div>
+            );
+          }
+          if (block.kind === "progress") {
+            return (
+              <div
+                key={i}
+                className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
+              >
+                <div
+                  data-testid="message-bot-bubble"
+                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                  dir="auto"
+                >
+                  <ChatMarkdown streaming>{block.text}</ChatMarkdown>
                 </div>
-                {voiceReady ? (
-                  <button
-                    type="button"
-                    aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
-                    onClick={onSpeak}
-                    className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+              </div>
+            );
+          }
+          if (block.kind === "subagent") {
+            const running = block.status === "running";
+            const failed = block.status === "failed";
+            return (
+              <div
+                key={i}
+                className="w-[min(420px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[15px] font-medium text-foreground" dir="auto">
+                    {block.name}
+                  </span>
+                  <span
+                    className={`rounded-full px-[11px] py-1 text-[13px] ${
+                      failed
+                        ? "bg-destructive/15 text-destructive"
+                        : running
+                          ? "bg-warning/15 text-warning"
+                          : "bg-success/15 text-success"
+                    }`}
+                    style={{
+                      animation: running ? "rkPulse 1.2s ease-in-out infinite" : undefined,
+                    }}
                   >
-                    {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
-                  </button>
+                    {running ? <Trans>subagent</Trans> : block.status}
+                  </span>
+                </div>
+                <div className="mt-2 text-[13.5px] text-muted-foreground">{block.task}</div>
+                {block.progress || block.result ? (
+                  <div className="mt-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
+                    <ChatMarkdown streaming={running}>
+                      {block.result || block.progress || ""}
+                    </ChatMarkdown>
+                  </div>
                 ) : null}
               </div>
-            </div>
-          );
-        }
-        if (block.kind === "card") {
-          return (
-            <div key={i} className="flex justify-start">
-              <div className="flex flex-col gap-2 rounded-[20px] bg-muted px-5 py-4">
-                {block.lines.map((line) => (
-                  <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
-                    <span className="text-success">✓</span>
-                    <span className="font-semibold text-white">{line.k}</span>
-                    <span className="text-muted-foreground">→</span>
-                    <span>{line.v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        }
-        if (block.kind === "ask") {
-          return (
-            <AskCard
-              key={i}
-              block={block}
-              canAnswer={canAnswer}
-              onAnswer={(text, username) => onAnswer(message, text, username)}
-            />
-          );
-        }
-        if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
-        if (block.kind === "skill_draft") {
-          return (
-            <div key={i} className="flex justify-start">
-              <SkillDraftCard block={block} onRefresh={onRefresh} onAddRoutine={onAddRoutine} />
-            </div>
-          );
-        }
-        if (block.kind === "computer") {
-          return (
-            <div
-              key={i}
-              data-testid="computer-card"
-              className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[15px] font-medium text-foreground">
-                  <Trans>Computer</Trans>
-                </span>
-                <span
-                  className={
-                    block.state === "Needs you"
-                      ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
-                      : block.state === "Skipped"
-                        ? "rounded-full bg-foreground/10 px-[11px] py-1 text-[13px] text-muted-foreground"
-                        : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
-                  }
-                >
-                  {block.state}
-                </span>
-              </div>
-              <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
-                <ChatMarkdown>{block.text}</ChatMarkdown>
-              </div>
-              <Button
+            );
+          }
+          if (block.kind === "child_bot") {
+            const removed = block.status === "deleted" || block.status === "archived";
+            return (
+              <button
+                key={i}
                 type="button"
-                size="sm"
-                data-testid="computer-card-open"
-                onClick={() => onOpenComputer(message.botId)}
+                disabled={removed}
+                onClick={() => onOpenBot(block.botId)}
+                className="w-[min(340px,90%)] rounded-[18px] border border-border bg-muted px-[18px] py-4 text-start disabled:opacity-60"
               >
-                <Trans>Open</Trans>
-              </Button>
-            </div>
-          );
-        }
-        return null;
-      })}
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-medium text-foreground" dir="auto">
+                    {block.name}
+                  </span>
+                  <span
+                    className={`rounded-full px-[11px] py-1 text-[13px] ${
+                      removed ? "bg-destructive/15 text-destructive" : "bg-success/15 text-success"
+                    }`}
+                  >
+                    {block.status === "archived" ? (
+                      <Trans>archived</Trans>
+                    ) : block.status === "deleted" ? (
+                      <Trans>deleted</Trans>
+                    ) : (
+                      <Trans>bot</Trans>
+                    )}
+                  </span>
+                </div>
+                <div className="mt-2 text-[14.5px] leading-[1.5] text-foreground/75" dir="auto">
+                  {removed
+                    ? block.status === "archived"
+                      ? t`Archived. Chat, memory, and files kept.`
+                      : t`Removed with chat, computer, and memory.`
+                    : block.title || t`Opened its thread.`}
+                </div>
+              </button>
+            );
+          }
+          if (block.kind === "choice") {
+            const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+            if (!botId) return null;
+            return <ChoiceCard key={i} botId={botId} block={block} onBotChanged={onBotChanged} />;
+          }
+          if (block.kind === "app_connect") {
+            const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+            if (!botId) return null;
+            return (
+              <div key={i} className="flex justify-start py-1">
+                <AppConnectCard botId={botId} block={block} />
+              </div>
+            );
+          }
+          if (block.kind === "chart") {
+            return (
+              <div key={i} className="flex justify-start">
+                <ChartBlockView name={block.name} spec={block.spec} data={block.data} />
+              </div>
+            );
+          }
+          if (block.kind === "mcp_approval") {
+            const botId = "botId" in artifactTarget ? artifactTarget.botId : message.botId;
+            if (!botId) return null;
+            return (
+              <div key={i} className="flex justify-start">
+                <McpApprovalCard botId={botId} threadId={message.threadId} block={block} />
+              </div>
+            );
+          }
+          if (block.kind === "image") {
+            return (
+              <div
+                key={i}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <ArtifactImage
+                  target={artifactTarget}
+                  artifactId={block.artifactId}
+                  name={block.name}
+                />
+              </div>
+            );
+          }
+          if (block.kind === "file") {
+            return (
+              <div
+                key={i}
+                className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+              >
+                <ArtifactFileCard
+                  target={artifactTarget}
+                  artifactId={block.artifactId}
+                  name={block.name}
+                  mimeType={block.mimeType}
+                  size={block.size}
+                />
+              </div>
+            );
+          }
+          if (block.kind === "text" && message.role === "user") {
+            // User bubbles stay literal text on web and mobile. Only explicit URLs
+            // and email addresses are links, so a sent address is tappable without
+            // formatting bold or headings.
+            return (
+              <div
+                key={i}
+                className="flex w-fit max-w-full justify-end [@media(hover:none)]:w-full"
+              >
+                <div
+                  data-testid="message-user-bubble"
+                  data-quote-message-id={quoteMessageId}
+                  className="max-w-full whitespace-pre-wrap wrap-anywhere rounded-[20px] bg-chat-user px-[18px] py-3 text-[15.5px] leading-[1.45] text-chat-user-foreground"
+                  dir="auto"
+                >
+                  <LinkifiedText>{block.text}</LinkifiedText>
+                </div>
+              </div>
+            );
+          }
+          if (block.kind === "text") {
+            return (
+              <div
+                key={i}
+                className="flex w-fit max-w-full justify-start [@media(hover:none)]:w-full"
+              >
+                <div
+                  data-testid="message-bot-bubble"
+                  className="max-w-full rounded-[20px] bg-muted px-[18px] py-3 text-[15.5px] leading-[1.5] text-foreground/90"
+                  dir="auto"
+                >
+                  <div data-quote-message-id={quoteMessageId}>
+                    <ChatMarkdown>{block.text}</ChatMarkdown>
+                  </div>
+                  {voiceReady ? (
+                    <button
+                      type="button"
+                      aria-label={speaking ? t`Stop speaking` : t`Speak this reply`}
+                      onClick={onSpeak}
+                      className="mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+                    >
+                      {speaking ? <Trans>Stop</Trans> : <Trans>Speak</Trans>}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            );
+          }
+          if (block.kind === "card") {
+            return (
+              <div key={i} className="flex justify-start">
+                <div className="flex flex-col gap-2 rounded-[20px] bg-muted px-5 py-4">
+                  {block.lines.map((line) => (
+                    <div key={line.k} className="flex items-baseline gap-2.5 text-[15px]">
+                      <span className="text-success">✓</span>
+                      <span className="font-semibold text-white">{line.k}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span>{line.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          }
+          if (block.kind === "ask") {
+            return (
+              <AskCard
+                key={i}
+                block={block}
+                canAnswer={canAnswer}
+                onAnswer={(text, username) => onAnswer(message, text, username)}
+              />
+            );
+          }
+          if (block.kind === "cloud_agent") return <CloudAgentCard key={i} block={block} />;
+          if (block.kind === "skill_draft") {
+            return (
+              <div key={i} className="flex justify-start">
+                <SkillDraftCard block={block} onRefresh={onRefresh} onAddRoutine={onAddRoutine} />
+              </div>
+            );
+          }
+          if (block.kind === "computer") {
+            return (
+              <div
+                key={i}
+                data-testid="computer-card"
+                className="w-[340px] rounded-[18px] border border-border bg-muted px-[18px] py-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-medium text-foreground">
+                    <Trans>Computer</Trans>
+                  </span>
+                  <span
+                    className={
+                      block.state === "Needs you"
+                        ? "rounded-full bg-warning/15 px-[11px] py-1 text-[13px] text-warning"
+                        : block.state === "Skipped"
+                          ? "rounded-full bg-foreground/10 px-[11px] py-1 text-[13px] text-muted-foreground"
+                          : "rounded-full bg-success/15 px-[11px] py-1 text-[13px] text-success"
+                    }
+                  >
+                    {block.state}
+                  </span>
+                </div>
+                <div className="my-2.5 text-[14.5px] leading-[1.5] text-foreground/75">
+                  <ChatMarkdown>{block.text}</ChatMarkdown>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="computer-card-open"
+                  onClick={() => onOpenComputer(message.botId)}
+                >
+                  <Trans>Open</Trans>
+                </Button>
+              </div>
+            );
+          }
+          return null;
+        })}
+        {hoverActions}
+      </div>
     </>
   );
 });

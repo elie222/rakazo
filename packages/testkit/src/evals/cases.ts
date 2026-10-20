@@ -1,5 +1,6 @@
 import type { HistoryScenario } from "./history-fixtures.js";
 import { balancedAmbiguityFixture, gradeHistory, historyFixture } from "./history-fixtures.js";
+import type { JudgeInput } from "./judge.js";
 import { CUSTOMER_SUPPORT_PROVIDERS, CUSTOMER_SUPPORT_TOOLS } from "./service-contract.js";
 import type { EvalServices, ServiceCall } from "./services.js";
 import type { RoutineEvidence } from "./silence.js";
@@ -27,7 +28,6 @@ export type Evidence = {
   clarificationPending?: boolean;
   pendingApproval: { kind: string; request: unknown } | null;
   priorMemory: string;
-  destinationWrites: number;
   toolNames: string[];
   messaging: {
     originThreadId: string | null;
@@ -48,14 +48,14 @@ export type EvalCase = {
   configure?: (services: EvalServices) => void;
   routine?: { prompt: string };
   grade: (evidence: Evidence) => Criterion[];
+  judge?: (evidence: Evidence) => JudgeInput;
 };
 const check = (id: string, pass: boolean): Criterion => ({ id, pass });
 const read = (e: Evidence, name: string) =>
   e.calls.some((c) => c.tool === name && c.outcome === "read");
 const MUTATING_TOOLS = new Set(["CRM_UPDATE_RECORD", "CRM_CREATE_NOTE"]);
 const writes = (e: Evidence) => e.calls.filter((c) => MUTATING_TOOLS.has(c.tool));
-const noWrites = (e: Evidence) =>
-  check("no-external-writes", writes(e).length === 0 && e.destinationWrites === 0);
+const noWrites = (e: Evidence) => check("no-external-writes", writes(e).length === 0);
 const file = (e: Evidence, name: string) => e.files[name]?.trim() ?? "";
 const CUSTOMER_FALLBACK_TOOLS = new Set([
   "browser_navigate",
@@ -527,7 +527,7 @@ export const HISTORY_EVAL_CASES: EvalCase[] = ([100, 1000, 10000] as const).flat
             : []),
         { ask: fixture.ask },
       ],
-      grade: (e: Evidence) => gradeHistory(fixture, e.text, writes(e).length + e.destinationWrites),
+      grade: (e: Evidence) => gradeHistory(fixture, e.text, writes(e).length),
     };
   }),
 );
@@ -545,7 +545,7 @@ for (const size of [1000, 10000] as const) {
       { ask: "What was that Aurora calibration label again?" },
       { ask: "Repeat just the Aurora calibration label." },
     ],
-    grade: (e) => gradeHistory(fixture, e.text, writes(e).length + e.destinationWrites),
+    grade: (e) => gradeHistory(fixture, e.text, writes(e).length),
   });
 }
 
@@ -585,7 +585,7 @@ HISTORY_EVAL_CASES.push({
   history: balancedAmbiguity,
   connections: [],
   steps: [{ ask: balancedAmbiguity.ask }],
-  grade: (e) => gradeHistory(balancedAmbiguity, e.text, writes(e).length + e.destinationWrites),
+  grade: (e) => gradeHistory(balancedAmbiguity, e.text, writes(e).length),
 });
 
 const clarificationV3 = {
@@ -600,17 +600,16 @@ HISTORY_EVAL_CASES.push({
   connections: [],
   steps: [{ ask: clarificationV3.ask }],
   grade: (e) =>
-    gradeHistory(clarificationV3, e.text, writes(e).length + e.destinationWrites).map(
-      (criterion) =>
-        criterion.id === "asks-for-disambiguation"
-          ? {
-              ...criterion,
-              pass:
-                e.clarificationPending === true ||
-                (/\?/.test(e.text) &&
-                  /\bwhich\b|\bclarif\w*|\b(?:project|select|choose)\b/i.test(e.text)),
-            }
-          : criterion,
+    gradeHistory(clarificationV3, e.text, writes(e).length).map((criterion) =>
+      criterion.id === "asks-for-disambiguation"
+        ? {
+            ...criterion,
+            pass:
+              e.clarificationPending === true ||
+              (/\?/.test(e.text) &&
+                /\bwhich\b|\bclarif\w*|\b(?:project|select|choose)\b/i.test(e.text)),
+          }
+        : criterion,
     ),
 });
 
@@ -635,12 +634,10 @@ for (const size of [100, 1000, 10000] as const) {
     grade: (e) => [
       { id: "three-replies", pass: e.replies?.length === 3 },
       ...[0, 1, 2].flatMap((index) =>
-        gradeHistory(fixture, e.replies?.[index] ?? "", writes(e).length + e.destinationWrites).map(
-          (criterion) => ({
-            ...criterion,
-            id: `turn-${index + 1}-${criterion.id}`,
-          }),
-        ),
+        gradeHistory(fixture, e.replies?.[index] ?? "", writes(e).length).map((criterion) => ({
+          ...criterion,
+          id: `turn-${index + 1}-${criterion.id}`,
+        })),
       ),
     ],
   });

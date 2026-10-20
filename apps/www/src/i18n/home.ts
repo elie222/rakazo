@@ -1,7 +1,9 @@
-import { DEMO_ROSTER, type RosterBot } from "../demo";
+import type { RosterBot } from "../demo";
 import { SITE_DESCRIPTION } from "../site";
 import { CLAUDE_CHATGPT_SUBSCRIPTION_FAQ } from "../subscription-faq";
 import type { Locale } from "./locales";
+
+export const HOME_MODEL_PROVIDERS = ["Claude", "ChatGPT", "OpenRouter", "Grok", "Ollama", "LM Studio"];
 
 export type HomeCopy = {
   title: string;
@@ -14,24 +16,17 @@ export type HomeCopy = {
     home: string;
     primary: string;
     menu: string;
-    product: string;
-    bots: string;
-    selfHost: string;
-    openSource: string;
-    grokBot: string;
     docs: string;
     blog: string;
-    alternatives: string;
-    alternativesMenu: string;
-    viewOnGithub: string;
-    iosApp: string;
+    github: string;
+    getStarted: string;
   };
   hero: {
-    badge: string;
-    pill: string;
+    eyebrow: string;
     heading: string;
     lead: string;
     getStarted: string;
+    download: Record<"mac" | "windows" | "linux" | "ios" | "android", string>;
     viewOnGithub: string;
     setupWithAgent: string;
     copiedForAgent: string;
@@ -41,6 +36,8 @@ export type HomeCopy = {
     eyebrow: string;
     heading: string;
     copy: string;
+    worksWith: string;
+    mock: { model: string; weekdays: string; approval: string; approve: string; deny: string };
     features: Array<{ title: string; body: string }>;
   };
   roster: {
@@ -60,53 +57,22 @@ export type HomeCopy = {
     items: Array<{ question: string; answer: string }>;
   };
   openSource: {
-    eyebrow: string;
     heading: string;
     copy: string;
-    selfHostTitle: string;
-    selfHostMeta: string;
-    selfHostItems: string[];
     starOnGithub: string;
     readTheDocs: string;
     openClawAlternative: string;
     cloudTitle: string;
     cloudBadge: string;
     cloudMeta: string;
-    cloudItems: string[];
-    getStarted: string;
+    tryCloud: string;
   };
   cta: {
     heading: string;
     copy: string;
-    getStarted: string;
-    viewOnGithub: string;
     openSourceValue: string;
     selfHostValue: string;
     stats: Array<{ value: "stars" | "license" | "openSource" | "selfHost"; label: string }>;
-  };
-  getStartedDialog: {
-    closeLabel: string;
-    eyebrow: string;
-    title: string;
-    copy: string;
-    selfHostNow: string;
-    selfHostHint: string;
-    cloudWaitlist: string;
-    cloudHint: string;
-    back: string;
-    successTitle: string;
-    successCopy: string;
-    done: string;
-    viewOnGithub: string;
-  };
-  waitlist: {
-    emailLabel: string;
-    placeholder: string;
-    submit: string;
-    joining: string;
-    success: string;
-    added: string;
-    error: string;
   };
   footer: {
     navLabel: string;
@@ -129,56 +95,105 @@ export type HomeCopy = {
   };
 };
 
-const EN_ROSTER = DEMO_ROSTER;
+const EN_ROSTER: RosterBot[] = [
+  {
+    name: "Sales Outbound",
+    color: "#F5A03C",
+    slug: "rakazo/sales-outbound",
+    desc: "Research prospects and draft follow-ups.",
+  },
+  {
+    name: "Inbox Manager",
+    color: "#6A6BF5",
+    slug: "rakazo/inbox-manager",
+    desc: "Sort email and draft replies.",
+  },
+  {
+    name: "Talent Scout",
+    color: "#3B82F6",
+    slug: "rakazo/talent-scout",
+    desc: "Review applications and shortlist candidates.",
+  },
+  {
+    name: "Expense Manager",
+    color: "#F2622A",
+    slug: "rakazo/expense-manager",
+    desc: "Match receipts to payments.",
+  },
+  {
+    name: "Coding Agent",
+    color: "#5B6EE1",
+    slug: "rakazo/coding-agent",
+    desc: "Make code changes on your computer.",
+  },
+  {
+    name: "Account Manager",
+    color: "#9B5CF6",
+    slug: "rakazo/account-manager",
+    desc: "Prepare replies and track renewals.",
+  },
+  {
+    name: "Paid Media",
+    color: "#3EC5A8",
+    slug: "rakazo/paid-media",
+    desc: "Review ad spend and report changes.",
+  },
+  {
+    name: "Chief of Staff",
+    color: "#8B93A8",
+    slug: "rakazo/chief-of-staff",
+    desc: "Prepare briefings and coordinate your bots.",
+  },
+];
 
 const DE_ROSTER: RosterBot[] = [
   {
     name: "Sales Outbound",
     color: "#F5A03C",
     slug: "rakazo/sales-outbound",
-    desc: "Recherchiert nachts Accounts, bewertet Intent, entwirft in deinem Ton und hinterlässt eine Review-Liste.",
+    desc: "Recherchiert Kunden und entwirft Follow-ups.",
   },
   {
     name: "Inbox Manager",
     color: "#6A6BF5",
     slug: "rakazo/inbox-manager",
-    desc: "Archiviert den Lärm, antwortet auf Routine-Threads und parkt Entwürfe, die du lesen solltest.",
+    desc: "Sortiert E-Mails und entwirft Antworten.",
   },
   {
     name: "Talent Scout",
     color: "#3B82F6",
     slug: "rakazo/talent-scout",
-    desc: "Liest jede Bewerbung, shortlistet nach deiner Latte und schreibt die Intro-Mails.",
+    desc: "Prüft Bewerbungen und wählt Kandidaten aus.",
   },
   {
     name: "Expense Manager",
     color: "#F2622A",
     slug: "rakazo/expense-manager",
-    desc: "Ordnet Belege den Buchungen zu, reicht den Report ein und fragt nach, statt zu raten.",
+    desc: "Ordnet Belege den Zahlungen zu.",
   },
   {
     name: "Coding Agent",
     color: "#5B6EE1",
     slug: "rakazo/coding-agent",
-    desc: "Fragt zum Repository und zur Änderung, arbeitet dann auf deiner Maschine und meldet sich, bevor es weitergeht.",
+    desc: "Ändert Code auf deinem Computer.",
   },
   {
     name: "Account Manager",
     color: "#9B5CF6",
     slug: "rakazo/account-manager",
-    desc: "Hält Renewal-Kontext, beantwortet bekannte Fragen und eskaliert den Rest.",
+    desc: "Bereitet Antworten vor und verfolgt Vertragsverlängerungen.",
   },
   {
     name: "Paid Media",
     color: "#3EC5A8",
     slug: "rakazo/paid-media",
-    desc: "Überwacht den Spend täglich, pausiert, was nicht konvertiert, und meldet, was sich geändert hat.",
+    desc: "Prüft Werbeausgaben und meldet Änderungen.",
   },
   {
     name: "Chief of Staff",
     color: "#8B93A8",
     slug: "rakazo/chief-of-staff",
-    desc: "Führt die Woche: Briefings, Buchungen und Übergaben zwischen deinen anderen Bots.",
+    desc: "Erstellt Briefings und koordiniert deine Bots.",
   },
 ];
 
@@ -187,49 +202,49 @@ const KO_ROSTER: RosterBot[] = [
     name: "Sales Outbound",
     color: "#F5A03C",
     slug: "rakazo/sales-outbound",
-    desc: "밤새 계정을 조사하고 의도를 점수한 뒤, 당신 말투로 초안을 써 검토 목록을 남깁니다.",
+    desc: "잠재 고객을 조사하고 후속 메일을 작성합니다.",
   },
   {
     name: "Inbox Manager",
     color: "#6A6BF5",
     slug: "rakazo/inbox-manager",
-    desc: "잡음을 보관처리하고, 루틴 스레드에 답하며, 확인이 필요한 초안은 보류합니다.",
+    desc: "메일을 분류하고 답장 초안을 씁니다.",
   },
   {
     name: "Talent Scout",
     color: "#3B82F6",
     slug: "rakazo/talent-scout",
-    desc: "지원서를 모두 읽고 기준에 맞게 숏리스트한 뒤 소개 메일을 작성합니다.",
+    desc: "지원서를 검토하고 후보를 추립니다.",
   },
   {
     name: "Expense Manager",
     color: "#F2622A",
     slug: "rakazo/expense-manager",
-    desc: "영수증과 결제를 맞추고 리포트를 제출하며, 추측하기 전에 묻습니다.",
+    desc: "영수증과 결제 내역을 맞춥니다.",
   },
   {
     name: "Coding Agent",
     color: "#5B6EE1",
     slug: "rakazo/coding-agent",
-    desc: "저장소와 변경 내용을 물은 뒤, 당신 머신에서 작업하고 더 나가기 전에 확인합니다.",
+    desc: "내 컴퓨터에서 코드를 수정합니다.",
   },
   {
     name: "Account Manager",
     color: "#9B5CF6",
     slug: "rakazo/account-manager",
-    desc: "갱신 맥락을 유지하고 알려진 질문에 답하며, 나머지는 에스컬레이션합니다.",
+    desc: "답변을 준비하고 계약 갱신을 챙깁니다.",
   },
   {
     name: "Paid Media",
     color: "#3EC5A8",
     slug: "rakazo/paid-media",
-    desc: "매일 지출을 지켜보고 전환되지 않는 건 일시정지한 뒤, 바뀐 점을 보고합니다.",
+    desc: "광고 지출을 검토하고 변화를 보고합니다.",
   },
   {
     name: "Chief of Staff",
     color: "#8B93A8",
     slug: "rakazo/chief-of-staff",
-    desc: "한 주를 운영합니다: 브리핑, 예약, 다른 봇 사이의 핸드오프.",
+    desc: "브리핑을 준비하고 봇을 조율합니다.",
   },
 ];
 
@@ -238,49 +253,49 @@ const ZH_ROSTER: RosterBot[] = [
     name: "Sales Outbound",
     color: "#F5A03C",
     slug: "rakazo/sales-outbound",
-    desc: "夜间调研客户、评估意向，用你的语气起草跟进，并留下待审清单。",
+    desc: "调研客户，起草跟进邮件。",
   },
   {
     name: "Inbox Manager",
     color: "#6A6BF5",
     slug: "rakazo/inbox-manager",
-    desc: "归档杂音、回复例行邮件，把需要你过目的草稿先搁置起来。",
+    desc: "整理邮件，起草回复。",
   },
   {
     name: "Talent Scout",
     color: "#3B82F6",
     slug: "rakazo/talent-scout",
-    desc: "通读每份简历，按你的标准筛出候选名单，并写好介绍邮件。",
+    desc: "审核简历，筛选候选人。",
   },
   {
     name: "Expense Manager",
     color: "#F2622A",
     slug: "rakazo/expense-manager",
-    desc: "核对票据与账目、提交报销，拿不准时先问而不是猜。",
+    desc: "核对收据与付款。",
   },
   {
     name: "Coding Agent",
     color: "#5B6EE1",
     slug: "rakazo/coding-agent",
-    desc: "先问清仓库和这次改动，再在你的机器上干活，继续之前会回来确认。",
+    desc: "在你的电脑上修改代码。",
   },
   {
     name: "Account Manager",
     color: "#9B5CF6",
     slug: "rakazo/account-manager",
-    desc: "掌握续约背景，回答常见问题，其余的自动升级给你。",
+    desc: "准备回复，跟进续约。",
   },
   {
     name: "Paid Media",
     color: "#3EC5A8",
     slug: "rakazo/paid-media",
-    desc: "每天盯投放，暂停没有转化的广告，并汇报发生了什么变化。",
+    desc: "检查广告支出，汇报变化。",
   },
   {
     name: "Chief of Staff",
     color: "#8B93A8",
     slug: "rakazo/chief-of-staff",
-    desc: "统筹整周：准备简报、安排日程，并协调其他 Bot 之间的交接。",
+    desc: "准备简报，协调 Bot。",
   },
 ];
 
@@ -329,24 +344,23 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       home: "Rakazo home",
       primary: "Primary",
       menu: "Menu",
-      product: "Product",
-      bots: "Bots",
-      selfHost: "Self-host",
-      openSource: "Open source",
-      grokBot: "Grok Bot",
       docs: "Docs",
       blog: "Blog",
-      alternatives: "Alternatives",
-      alternativesMenu: "Alternative pages",
-      viewOnGithub: "View on GitHub",
-      iosApp: "Download Rakazo for iPhone",
+      github: "GitHub",
+      getStarted: "Get started",
     },
     hero: {
-      badge: "Apache-2.0",
-      pill: "Self-hosted",
+      eyebrow: "Open source",
       heading: "The open source Grok Bot alternative you actually own",
-      lead: "Give a bot real work. It signs in to your tools, uses them the way you do, and comes back when it needs you.",
+      lead: "Give your bots a job. Check in from any device.",
       getStarted: "Get started",
+      download: {
+        mac: "Download for macOS",
+        windows: "Download for Windows",
+        linux: "Download for Linux",
+        ios: "Download for iOS",
+        android: "Download for Android",
+      },
       viewOnGithub: "View on GitHub",
       setupWithAgent: "Set up with your agent",
       copiedForAgent: "Copied for your agent",
@@ -354,27 +368,20 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     selfHost: {
       eyebrow: "Self-hosted",
-      heading: "Self-hosted. The computer is yours.",
-      copy: "Run on your Mac, or any machine you control. The desktop app's This computer option installs Rakazo there. A Mac Mini can stay on. Your keys, your model, your data.",
+      heading: "Run it on your computer",
+      copy: "Your machine, your models, your control.",
+      worksWith: "Works with",
+      mock: { model: "Model", weekdays: "Weekdays at 9:00", approval: "Approval required", approve: "Approve", deny: "Deny" },
       features: [
-        {
-          title: "Your model",
-          body: "Sign in with Claude Pro/Max (Sonnet or Opus) or ChatGPT Plus/Pro, or use an Anthropic or OpenAI API key. OpenRouter, Grok or SuperGrok, and Ollama or LM Studio work too. Swap per bot: the cheap one triages, the smart one writes.",
-        },
-        {
-          title: "Readable routines",
-          body: "Show a bot a workflow once and it saves a routine as plain Markdown you can read, edit, and commit.",
-        },
-        {
-          title: "Approvals that hold",
-          body: "Set what a bot may do alone and what it must ask about. Every action lands in an audit log you own.",
-        },
+        { title: "Your model", body: "Choose a different model for each bot." },
+        { title: "Work on a schedule", body: "Run recurring tasks while your computer stays on." },
+        { title: "You set the limits", body: "Decide which actions need your approval." },
       ],
     },
     roster: {
-      eyebrow: "Bot Templates",
+      eyebrow: "Your bot team",
       heading: "Give each bot a job",
-      copy: "Start a new bot and it interviews you. A few questions about the work, how you write, and where it lives. Then it gets going.",
+      copy: "Start with a template. Make it yours.",
       bots: EN_ROSTER,
     },
     testimonials: {
@@ -400,36 +407,19 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
     },
     openSource: {
-      eyebrow: "Open source",
-      heading: "Open source. Just the repo.",
-      copy: "Rakazo is Apache-2.0 licensed and runs on your own machine with your own model keys. Nothing is gated, nothing phones home.",
-      selfHostTitle: "Self-host",
-      selfHostMeta: "Available today",
-      selfHostItems: [
-        "Docker runner and sandboxed browser",
-        "Bring your own model keys",
-        "Routines, memory, and audit log",
-        "Unlimited bots, no seats, no limits",
-        "Community support on GitHub",
-      ],
+      heading: "Open source",
+      copy: "Apache-2.0. Run it, change it, make it yours.",
       starOnGithub: "Star on GitHub",
       readTheDocs: "Read the docs",
       openClawAlternative: "OpenClaw alternative",
       cloudTitle: "Cloud",
-      cloudBadge: "Coming soon",
+      cloudBadge: "Beta",
       cloudMeta: "Bring your own keys, we run the computers",
-      cloudItems: [
-        "Managed sandboxes, always on",
-        "Your keys, your model spend",
-        "Same bots, same routines, no migration",
-      ],
-      getStarted: "Get started",
+      tryCloud: "Try Rakazo Cloud",
     },
     cta: {
       heading: "Meet your first bot",
-      copy: "Give Rakazo something you have been putting off and let it handle the follow-through.",
-      getStarted: "Get started",
-      viewOnGithub: "View on GitHub",
+      copy: "Hand over your next task.",
       openSourceValue: "Open source",
       selfHostValue: "Self-host",
       stats: [
@@ -438,31 +428,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { value: "openSource", label: "No seats, no gates" },
         { value: "selfHost", label: "Your machine" },
       ],
-    },
-    getStartedDialog: {
-      closeLabel: "Close get started dialog",
-      eyebrow: "Get started",
-      title: "How do you want to start?",
-      copy: "Self-host on your machine, or join the Cloud waitlist.",
-      selfHostNow: "Self-host now",
-      selfHostHint: "Install steps are in the docs.",
-      cloudWaitlist: "Cloud waitlist",
-      cloudHint: "Hosted Rakazo is coming. Leave your email.",
-      back: "Back",
-      successTitle: "You're in.",
-      successCopy:
-        "We'll email you when hosted Rakazo is ready. Want to start today? Jump to Self-host on this page.",
-      done: "Done",
-      viewOnGithub: "View on GitHub",
-    },
-    waitlist: {
-      emailLabel: "Email address",
-      placeholder: "you@company.com",
-      submit: "Continue",
-      joining: "Joining…",
-      success: "You’re in.",
-      added: "Added",
-      error: "Couldn’t add you. Try again.",
     },
     footer: {
       navLabel: "Footer",
@@ -497,24 +462,23 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       home: "Rakazo-Startseite",
       primary: "Hauptnavigation",
       menu: "Menü",
-      product: "Produkt",
-      bots: "Bots",
-      selfHost: "Self-host",
-      openSource: "Open Source",
-      grokBot: "Grok Bot",
       docs: "Docs",
       blog: "Blog",
-      alternatives: "Alternativen",
-      alternativesMenu: "Vergleichsseiten",
-      viewOnGithub: "Auf GitHub ansehen",
-      iosApp: "Rakazo für iPhone laden",
+      github: "GitHub",
+      getStarted: "Loslegen",
     },
     hero: {
-      badge: "Apache-2.0",
-      pill: "Self-hosted",
+      eyebrow: "Open Source",
       heading: "Die Open-Source-Alternative zu Grok Bot, die dir wirklich gehört",
-      lead: "Gib einem Bot echte Arbeit. Er meldet sich in deinen Tools an, nutzt sie wie du. Er kommt zurück, wenn er dich braucht.",
+      lead: "Gib deinen Bots eine Aufgabe. Schau von jedem Gerät nach.",
       getStarted: "Loslegen",
+      download: {
+        mac: "Für macOS laden",
+        windows: "Für Windows laden",
+        linux: "Für Linux laden",
+        ios: "Für iOS laden",
+        android: "Für Android laden",
+      },
       viewOnGithub: "Auf GitHub ansehen",
       setupWithAgent: "Mit deinem Agenten einrichten",
       copiedForAgent: "Für deinen Agenten kopiert",
@@ -522,27 +486,20 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     selfHost: {
       eyebrow: "Self-hosted",
-      heading: "Self-hosted. Der Computer gehört dir.",
-      copy: "Auf deinem Mac oder auf jeder Maschine, die du kontrollierst. In der Desktop-App installiert This computer Rakazo dort. Ein Mac Mini kann an bleiben. Deine Keys, dein Modell, deine Daten.",
+      heading: "Läuft auf deinem Computer",
+      copy: "Deine Maschine, deine Modelle, deine Kontrolle.",
+      worksWith: "Funktioniert mit",
+      mock: { model: "Modell", weekdays: "Mo–Fr um 9:00", approval: "Freigabe erforderlich", approve: "Genehmigen", deny: "Ablehnen" },
       features: [
-        {
-          title: "Dein Modell",
-          body: "Melde dich mit Claude Pro/Max (Sonnet oder Opus) oder ChatGPT Plus/Pro an, oder nutze einen Anthropic- oder OpenAI-API-Key. OpenRouter, Grok oder SuperGrok und Ollama oder LM Studio gehen auch. Pro Bot wechselbar: der günstige triagiert, der smarte schreibt.",
-        },
-        {
-          title: "Lesbare Routinen",
-          body: "Zeig einem Bot einmal einen Workflow. Er speichert eine Routine als Markdown, das du lesen, editieren und committen kannst.",
-        },
-        {
-          title: "Freigaben, die greifen",
-          body: "Lege fest, was ein Bot allein darf und worum er fragen muss. Jede Aktion landet in einem Audit-Log, das dir gehört.",
-        },
+        { title: "Dein Modell", body: "Wähle für jeden Bot ein anderes Modell." },
+        { title: "Arbeitet nach Zeitplan", body: "Wiederkehrende Aufgaben laufen, solange dein Computer an ist." },
+        { title: "Du setzt die Grenzen", body: "Bestimme, welche Aktionen deine Freigabe brauchen." },
       ],
     },
     roster: {
-      eyebrow: "Bot-Vorlagen",
+      eyebrow: "Dein Bot-Team",
       heading: "Gib jedem Bot eine Aufgabe",
-      copy: "Starte einen neuen Bot und er interviewt dich. Ein paar Fragen zur Arbeit, zu deinem Schreibstil und wo sie lebt. Dann legt er los.",
+      copy: "Wähle eine Vorlage und passe sie an.",
       bots: DE_ROSTER,
     },
     testimonials: {
@@ -572,36 +529,19 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
     },
     openSource: {
-      eyebrow: "Open Source",
-      heading: "Open Source. Nur das Repo.",
-      copy: "Rakazo ist Apache-2.0-lizenziert und läuft auf deiner Maschine mit deinen Model-Keys. Nichts ist freigeschaltet, nichts telefoniert nach Hause.",
-      selfHostTitle: "Self-host",
-      selfHostMeta: "Heute verfügbar",
-      selfHostItems: [
-        "Docker-Runner und sandboxierter Browser",
-        "Eigene Model-Keys mitbringen",
-        "Routinen, Memory und Audit-Log",
-        "Unbegrenzte Bots, keine Seats, keine Limits",
-        "Community-Support auf GitHub",
-      ],
+      heading: "Open Source",
+      copy: "Apache-2.0. Selbst betreiben, ändern und anpassen.",
       starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
       openClawAlternative: "OpenClaw-Alternative",
       cloudTitle: "Cloud",
-      cloudBadge: "Demnächst",
+      cloudBadge: "Beta",
       cloudMeta: "Deine Keys, wir betreiben die Computer",
-      cloudItems: [
-        "Managed Sandboxes, immer an",
-        "Deine Keys, dein Model-Spend",
-        "Dieselben Bots, dieselben Routinen, keine Migration",
-      ],
-      getStarted: "Loslegen",
+      tryCloud: "Rakazo Cloud ausprobieren",
     },
     cta: {
       heading: "Triff deinen ersten Bot",
-      copy: "Gib Rakazo etwas, das du aufgeschoben hast. Lass es den Follow-through übernehmen.",
-      getStarted: "Loslegen",
-      viewOnGithub: "Auf GitHub ansehen",
+      copy: "Gib deine nächste Aufgabe ab.",
       openSourceValue: "Open Source",
       selfHostValue: "Self-host",
       stats: [
@@ -610,31 +550,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { value: "openSource", label: "Keine Seats, keine Gates" },
         { value: "selfHost", label: "Deine Maschine" },
       ],
-    },
-    getStartedDialog: {
-      closeLabel: "Loslegen-Dialog schließen",
-      eyebrow: "Loslegen",
-      title: "Wie willst du starten?",
-      copy: "Self-host auf deiner Maschine, oder auf die Cloud-Warteliste.",
-      selfHostNow: "Jetzt self-hosten",
-      selfHostHint: "Installationsschritte stehen in den Docs.",
-      cloudWaitlist: "Cloud-Warteliste",
-      cloudHint: "Gehostetes Rakazo kommt. Hinterlasse deine E-Mail.",
-      back: "Zurück",
-      successTitle: "Du bist dabei.",
-      successCopy:
-        "Wir mailen dir, wenn gehostetes Rakazo bereit ist. Heute starten? Zum Self-host-Abschnitt auf dieser Seite.",
-      done: "Fertig",
-      viewOnGithub: "Auf GitHub ansehen",
-    },
-    waitlist: {
-      emailLabel: "E-Mail-Adresse",
-      placeholder: "du@firma.com",
-      submit: "Weiter",
-      joining: "Wird eingetragen…",
-      success: "Du bist dabei.",
-      added: "Hinzugefügt",
-      error: "Konnte dich nicht eintragen. Bitte erneut versuchen.",
     },
     footer: {
       navLabel: "Fußzeile",
@@ -668,24 +583,23 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       home: "Rakazo 홈",
       primary: "주 메뉴",
       menu: "메뉴",
-      product: "제품",
-      bots: "봇",
-      selfHost: "셀프 호스트",
-      openSource: "오픈소스",
-      grokBot: "Grok Bot",
       docs: "Docs",
       blog: "블로그",
-      alternatives: "대안",
-      alternativesMenu: "대안 페이지",
-      viewOnGithub: "GitHub에서 보기",
-      iosApp: "iPhone용 Rakazo 받기",
+      github: "GitHub",
+      getStarted: "시작하기",
     },
     hero: {
-      badge: "Apache-2.0",
-      pill: "셀프 호스트",
+      eyebrow: "오픈 소스",
       heading: "진짜로 내 것인 오픈소스 Grok Bot 대안",
-      lead: "봇에게 실제 업무를 맡기세요. 봇이 도구에 로그인하고, 당신처럼 사용하며, 필요할 때 돌아와 묻습니다.",
+      lead: "봇에게 일을 맡기세요. 어떤 기기에서든 확인하세요.",
       getStarted: "시작하기",
+      download: {
+        mac: "macOS용 다운로드",
+        windows: "Windows용 다운로드",
+        linux: "Linux용 다운로드",
+        ios: "iOS용 다운로드",
+        android: "Android용 다운로드",
+      },
       viewOnGithub: "GitHub에서 보기",
       setupWithAgent: "에이전트로 설정하기",
       copiedForAgent: "에이전트용으로 복사됨",
@@ -693,27 +607,20 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     selfHost: {
       eyebrow: "셀프 호스트",
-      heading: "셀프 호스트. 컴퓨터는 당신 것",
-      copy: "Mac에서, 또는 당신이 관리하는 머신에서 실행하세요. 데스크톱 앱의 This computer가 Rakazo를 그곳에 설치합니다. Mac Mini는 켜 둔 채 둘 수 있습니다. 키, 모델, 데이터는 모두 당신 것.",
+      heading: "내 컴퓨터에서 실행",
+      copy: "컴퓨터도, 모델도, 제어권도 내 손에.",
+      worksWith: "지원 모델·서비스",
+      mock: { model: "모델", weekdays: "평일 9:00", approval: "승인 필요", approve: "승인", deny: "거부" },
       features: [
-        {
-          title: "당신 모델",
-          body: "Claude Pro/Max(Sonnet 또는 Opus) 또는 ChatGPT Plus/Pro로 로그인하거나 Anthropic·OpenAI API 키를 사용하세요. OpenRouter, Grok 또는 SuperGrok, Ollama나 LM Studio도 됩니다. 봇마다 바꿀 수 있습니다. 저렴한 모델은 분류하고, 똑똑한 모델은 작성합니다.",
-        },
-        {
-          title: "읽을 수 있는 루틴",
-          body: "워크플로를 한 번 보여주면 봇이 읽고 수정하고 커밋할 수 있는 Markdown 루틴으로 저장합니다.",
-        },
-        {
-          title: "지키는 승인",
-          body: "봇이 혼자 해도 되는 일과 물어야 하는 일을 정하세요. 모든 액션은 당신이 소유한 감사 로그에 남습니다.",
-        },
+        { title: "원하는 모델", body: "봇마다 다른 모델을 선택하세요." },
+        { title: "예약한 시간에 실행", body: "컴퓨터를 켜 두면 반복 작업을 실행합니다." },
+        { title: "내가 정하는 권한", body: "승인이 필요한 작업을 정하세요." },
       ],
     },
     roster: {
-      eyebrow: "봇 템플릿",
+      eyebrow: "나만의 봇 팀",
       heading: "봇마다 역할을 주세요",
-      copy: "새 봇을 시작하면 인터뷰합니다. 업무, 글쓰기 방식, 작업이 어디에 있는지 몇 가지 질문. 그다음 바로 시작합니다.",
+      copy: "템플릿을 골라 내 일에 맞추세요.",
       bots: KO_ROSTER,
     },
     testimonials: {
@@ -743,36 +650,19 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
     },
     openSource: {
-      eyebrow: "오픈소스",
-      heading: "오픈소스. 리포만.",
-      copy: "Rakazo는 Apache-2.0 라이선스이며, 당신 머신에서 당신 모델 키로 실행됩니다. 잠긴 기능도, 외부로 연락하는 것도 없습니다.",
-      selfHostTitle: "셀프 호스트",
-      selfHostMeta: "지금 사용 가능",
-      selfHostItems: [
-        "Docker 러너와 샌드박스 브라우저",
-        "모델 키는 직접 가져오기",
-        "루틴, 메모리, 감사 로그",
-        "봇 무제한, 시트·한도 없음",
-        "GitHub 커뮤니티 지원",
-      ],
+      heading: "오픈소스",
+      copy: "Apache-2.0. 직접 실행하고 원하는 대로 수정하세요.",
       starOnGithub: "GitHub에서 Star",
       readTheDocs: "문서 읽기",
       openClawAlternative: "OpenClaw 대안",
       cloudTitle: "Cloud",
-      cloudBadge: "곧 출시",
+      cloudBadge: "베타",
       cloudMeta: "키는 당신 것, 컴퓨터는 우리가 운영",
-      cloudItems: [
-        "상시 가동 관리형 샌드박스",
-        "키와 모델 비용은 당신 것",
-        "같은 봇, 같은 루틴, 마이그레이션 없음",
-      ],
-      getStarted: "시작하기",
+      tryCloud: "Rakazo Cloud 사용해 보기",
     },
     cta: {
       heading: "첫 봇을 만나보세요",
-      copy: "미뤄 두었던 일을 Rakazo에 맡기고, 후속까지 맡기세요.",
-      getStarted: "시작하기",
-      viewOnGithub: "GitHub에서 보기",
+      copy: "다음 할 일을 맡겨 보세요.",
       openSourceValue: "오픈소스",
       selfHostValue: "셀프 호스트",
       stats: [
@@ -781,31 +671,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { value: "openSource", label: "시트·게이트 없음" },
         { value: "selfHost", label: "당신 머신" },
       ],
-    },
-    getStartedDialog: {
-      closeLabel: "시작하기 대화상자 닫기",
-      eyebrow: "시작하기",
-      title: "어떻게 시작할까요?",
-      copy: "당신 머신에서 셀프 호스트하거나, Cloud 대기열에 등록하세요.",
-      selfHostNow: "지금 셀프 호스트",
-      selfHostHint: "설치 단계는 문서에 있습니다.",
-      cloudWaitlist: "Cloud 대기열",
-      cloudHint: "호스팅 Rakazo가 곧 옵니다. 이메일을 남겨 주세요.",
-      back: "뒤로",
-      successTitle: "등록되었습니다.",
-      successCopy:
-        "호스팅 Rakazo가 준비되면 메일로 알려 드립니다. 오늘 시작하려면 이 페이지의 셀프 호스트 섹션으로 이동하세요.",
-      done: "완료",
-      viewOnGithub: "GitHub에서 보기",
-    },
-    waitlist: {
-      emailLabel: "이메일 주소",
-      placeholder: "you@company.com",
-      submit: "계속",
-      joining: "등록 중…",
-      success: "등록되었습니다.",
-      added: "추가됨",
-      error: "등록하지 못했습니다. 다시 시도하세요.",
     },
     footer: {
       navLabel: "푸터",
@@ -839,24 +704,23 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       home: "Rakazo 首页",
       primary: "主导航",
       menu: "菜单",
-      product: "产品",
-      bots: "Bot",
-      selfHost: "自托管",
-      openSource: "开源",
-      grokBot: "Grok Bot",
       docs: "文档",
       blog: "博客",
-      alternatives: "替代方案",
-      alternativesMenu: "替代页面",
-      viewOnGithub: "在 GitHub 上查看",
-      iosApp: "下载 iPhone 版 Rakazo",
+      github: "GitHub",
+      getStarted: "开始使用",
     },
     hero: {
-      badge: "Apache-2.0",
-      pill: "自托管",
+      eyebrow: "开源",
       heading: "真正属于你的开源 Grok Bot 替代品",
-      lead: "把真正的工作交给 Bot：它会登录你的工具，像你一样使用它们，并在需要你时回来询问。",
+      lead: "把工作交给 Bot，随时用任意设备查看。",
       getStarted: "开始使用",
+      download: {
+        mac: "下载 macOS 版",
+        windows: "下载 Windows 版",
+        linux: "下载 Linux 版",
+        ios: "下载 iOS 版",
+        android: "下载 Android 版",
+      },
       viewOnGithub: "在 GitHub 上查看",
       setupWithAgent: "用你的智能体安装",
       copiedForAgent: "已为你的智能体复制",
@@ -864,27 +728,20 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
     },
     selfHost: {
       eyebrow: "自托管",
-      heading: "自托管。电脑归你所有。",
-      copy: "在你的 Mac 上运行，或在你控制的任何机器上运行。桌面应用里，This computer 会把 Rakazo 装在那台机器上。Mac Mini 可以一直开着。密钥、模型、数据，都归你所有。",
+      heading: "在你的电脑上运行",
+      copy: "电脑、模型、控制权，都归你。",
+      worksWith: "支持",
+      mock: { model: "模型", weekdays: "工作日 9:00", approval: "需要审批", approve: "批准", deny: "拒绝" },
       features: [
-        {
-          title: "你的模型",
-          body: "使用 Claude Pro/Max（Sonnet 或 Opus）或 ChatGPT Plus/Pro 登录，或使用 Anthropic、OpenAI 的 API 密钥。OpenRouter、Grok 或 SuperGrok，以及 Ollama、LM Studio 也可以。可按 Bot 切换：用便宜的模型做分流，用聪明的模型写作。",
-        },
-        {
-          title: "可读的例行任务",
-          body: "给 Bot 演示一次工作流程，它就会把例行任务保存为纯 Markdown，你可以阅读、编辑并提交到版本库。",
-        },
-        {
-          title: "可靠的审批",
-          body: "设定 Bot 可以独立做什么、什么必须先请示。每个操作都会写入归你所有的审计日志。",
-        },
+        { title: "自选模型", body: "为每个 Bot 选择不同的模型。" },
+        { title: "按时自动执行", body: "电脑保持开机，重复任务按时执行。" },
+        { title: "由你设定权限", body: "决定哪些操作需要你批准。" },
       ],
     },
     roster: {
-      eyebrow: "Bot 模板",
-      heading: "给每个 Bot 分配一份工作",
-      copy: "新建一个 Bot，它会先面试你：几个关于工作内容、写作风格和运行位置的问题。然后它就开始干活。",
+      eyebrow: "你的 Bot 团队",
+      heading: "给每个 Bot 分配工作",
+      copy: "选个模板，按你的需求调整。",
       bots: ZH_ROSTER,
     },
     testimonials: {
@@ -914,36 +771,19 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       ],
     },
     openSource: {
-      eyebrow: "开源",
-      heading: "开源。只有代码仓库。",
-      copy: "Rakazo 采用 Apache-2.0 许可证，在你自己的机器上用你自己的模型密钥运行。没有功能墙，也不会偷偷外联。",
-      selfHostTitle: "自托管",
-      selfHostMeta: "现已可用",
-      selfHostItems: [
-        "Docker 运行器和沙箱浏览器",
-        "自带模型密钥",
-        "例行任务、记忆和审计日志",
-        "Bot 数量不限，无席位、无额度限制",
-        "GitHub 社区支持",
-      ],
+      heading: "开源",
+      copy: "Apache-2.0。自由运行、修改，按需定制。",
       starOnGithub: "在 GitHub 上点星",
       readTheDocs: "阅读文档",
       openClawAlternative: "OpenClaw 替代方案",
       cloudTitle: "云端",
-      cloudBadge: "即将推出",
+      cloudBadge: "测试版",
       cloudMeta: "密钥归你，电脑由我们运行",
-      cloudItems: [
-        "托管沙箱，始终在线",
-        "密钥归你，模型费用归你",
-        "同样的 Bot 和例行任务，无需迁移",
-      ],
-      getStarted: "开始使用",
+      tryCloud: "试用 Rakazo Cloud",
     },
     cta: {
       heading: "认识你的第一个 Bot",
-      copy: "把一件你一直拖延的事交给 Rakazo，让它负责跟进到底。",
-      getStarted: "开始使用",
-      viewOnGithub: "在 GitHub 上查看",
+      copy: "把下一项任务交给 Bot。",
       openSourceValue: "开源",
       selfHostValue: "自托管",
       stats: [
@@ -952,31 +792,6 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
         { value: "openSource", label: "无席位、无门槛" },
         { value: "selfHost", label: "你的机器" },
       ],
-    },
-    getStartedDialog: {
-      closeLabel: "关闭开始使用对话框",
-      eyebrow: "开始使用",
-      title: "你想如何开始？",
-      copy: "在你的机器上自托管，或加入云端候补名单。",
-      selfHostNow: "立即自托管",
-      selfHostHint: "安装步骤见文档。",
-      cloudWaitlist: "云端候补名单",
-      cloudHint: "托管版 Rakazo 即将推出。留下你的邮箱。",
-      back: "返回",
-      successTitle: "登记成功。",
-      successCopy:
-        "托管版 Rakazo 就绪时我们会邮件通知你。想今天就上手？跳到本页的自托管部分。",
-      done: "完成",
-      viewOnGithub: "在 GitHub 上查看",
-    },
-    waitlist: {
-      emailLabel: "邮箱地址",
-      placeholder: "you@company.com",
-      submit: "继续",
-      joining: "正在登记…",
-      success: "登记成功。",
-      added: "已添加",
-      error: "未能添加你，请重试。",
     },
     footer: {
       navLabel: "页脚",

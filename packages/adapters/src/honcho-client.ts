@@ -7,8 +7,14 @@ const HONCHO_TIMEOUT_MS = 15_000;
 const HONCHO_CHAT_TIMEOUT_MS = 60_000;
 const MAX_HONCHO_RESPONSE_BYTES = 1024 * 1024;
 
-/** Honcho conclusions are capped server-side; keep saves in line with other providers. */
-export const MAX_HONCHO_CONCLUSION_CHARS = 10_000;
+/**
+ * Honcho rejects conclusions over its 8192-token embedding limit. Every o200k token is at least
+ * one UTF-8 byte, so a byte cap stays under it even for CJK text, where a character cap would not.
+ */
+export const MAX_HONCHO_CONCLUSION_BYTES = 8192;
+
+/** Honcho rejects dialectic queries longer than this. */
+const MAX_HONCHO_CHAT_QUERY_CHARS = 10_000;
 
 export const HONCHO_REASONING_LEVELS = ["minimal", "low", "medium", "high", "max"] as const;
 export type HonchoReasoningLevel = (typeof HONCHO_REASONING_LEVELS)[number];
@@ -153,7 +159,7 @@ export async function honchoPeerChat(
     config,
     `${workspacePath(workspaceId)}/peers/${encodeURIComponent(request.peerId)}/chat`,
     {
-      query: request.query,
+      query: truncateChars(request.query, MAX_HONCHO_CHAT_QUERY_CHARS),
       reasoning_level: config.reasoningLevel,
       stream: false,
       ...(request.target ? { target: request.target } : {}),
@@ -162,8 +168,17 @@ export async function honchoPeerChat(
   );
   if (!result.ok) return result;
   const content = (result.value as { content?: unknown } | null)?.content;
+  // `content` is nullable: the dialectic may have no answer.
+  if (content === null) return { ok: true, value: "" };
   if (typeof content !== "string") {
     return { ok: false, error: "Honcho returned an invalid chat response." };
   }
   return { ok: true, value: content.trim() };
+}
+
+/** Python counts code points; UTF-16 length is never smaller, so this stays under the limit. */
+function truncateChars(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  const end = /[\uD800-\uDBFF]/.test(value.charAt(maxChars - 1)) ? maxChars - 1 : maxChars;
+  return value.slice(0, end);
 }

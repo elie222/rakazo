@@ -8,7 +8,7 @@ import type {
   CloudAgentSnapshot,
   CloudAgentStatus,
 } from "@rakazo/adapter-kit";
-import { CloudAgentRequestRejected } from "@rakazo/adapter-kit";
+import { CloudAgentRequestRejected, CloudAgentRetryLater } from "@rakazo/adapter-kit";
 import { z } from "zod";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -21,7 +21,8 @@ const agentSchema = z.object({
 });
 const runSchema = z.object({
   id: z.string().min(1),
-  status: z.enum(["CREATING", "RUNNING", "FINISHED", "ERROR", "CANCELLED", "EXPIRED"]),
+  // Unknown future statuses read as running rather than wedging the poll.
+  status: z.string(),
   git: z
     .object({
       branches: z.array(z.object({ branch: z.string().optional(), prUrl: z.string().optional() })),
@@ -117,6 +118,7 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
   ): Promise<CloudAgentHandle> {
     // Read metadata first: no fallible GET after a successful mutating POST.
     const agent = await this.agent(id, request.signal ?? context.signal);
+    if (agent.status === "ARCHIVED") throw new CloudAgentRequestRejected("expired");
     const parsed = z.object({ run: runSchema }).safeParse(
       await this.request(
         "POST",
@@ -137,11 +139,13 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
   async cancel(id: string, context: AdapterContext, runId?: string): Promise<CloudAgentSnapshot> {
     const snapshot = await this.get(id, context, runId);
     if (snapshot.status !== "running") return snapshot;
+    // 409 means the run already ended; the read below observes how.
     await this.request(
       "POST",
       `/v1/agents/${encodeURIComponent(id)}/runs/${encodeURIComponent(snapshot.latestRunId!)}/cancel`,
       {},
       context.signal,
+      true,
     );
     // Cancellation may still be in progress. Never report success before observing it.
     return this.get(id, context, snapshot.latestRunId);
@@ -164,9 +168,11 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
         ? "finished"
         : run.status === "CANCELLED"
           ? "cancelled"
-          : run.status === "ERROR" || run.status === "EXPIRED"
+          : run.status === "ERROR"
             ? "failed"
-            : "running";
+            : run.status === "EXPIRED" || agent.status === "ARCHIVED"
+              ? "expired"
+              : "running";
     const branch = run.git?.branches[0];
     return {
       id: agent.id,
@@ -201,8 +207,12 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
     if (!response.ok) {
       void response.body?.cancel().catch(() => undefined);
       if (allowConflict && response.status === 409) return null;
-      if ([400, 401, 403, 404, 409, 422].includes(response.status))
-        throw new CloudAgentRequestRejected();
+      if (response.status === 404) throw new CloudAgentRequestRejected("not_found");
+      if ([400, 409, 422].includes(response.status)) throw new CloudAgentRequestRejected();
+      if (response.status === 401 || response.status === 403)
+        throw new CloudAgentRetryLater("credential");
+      if (response.status === 429)
+        throw new CloudAgentRetryLater("rate_limited", retryAfterMs(response.headers));
       throw new Error(`Cloud agent request failed (${response.status})`);
     }
     if (response.status === 204) {
@@ -216,6 +226,14 @@ export class CursorCloudAgentProvider implements CloudAgentProvider {
       throw new Error("Invalid cloud agent response");
     }
   }
+}
+
+/** Retry-After is delta-seconds or an HTTP date. */
+function retryAfterMs(headers: Headers) {
+  const value = headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  const ms = /^\d+$/.test(value) ? Number(value) * 1_000 : Date.parse(value) - Date.now();
+  return Number.isFinite(ms) ? Math.max(0, ms) : undefined;
 }
 
 export function cursorAgentId(key: string) {

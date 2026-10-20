@@ -188,18 +188,59 @@ describe("SerenityMemoryProvider", () => {
       value: [
         {
           memory: "Prefer conventional commits.",
-          score: 1,
+          score: expect.closeTo(1 / 3),
           id: "fact-1",
           provenance: "user told rakazo",
           entity: "rakazo-bot/bot-1",
         },
       ],
     });
+    expect(recallSerenityMock).toHaveBeenCalledOnce();
     expect(recallSerenityMock).toHaveBeenCalledWith(
-      "commits",
       expect.objectContaining({ endpoint: "http://127.0.0.1:8787/mcp" }),
-      expect.objectContaining({ entity: "rakazo-bot/bot-1", limit: 5 }),
+      expect.objectContaining({ entity: "rakazo-bot/bot-1" }),
     );
+  });
+
+  it("ranks facts by relevance to the query instead of recency", async () => {
+    // Serenity returns facts newest first, ignoring the query.
+    const facts = [
+      "The user is reading a novel.",
+      "The user lives in Lisbon.",
+      "The user drinks green tea every morning.",
+      "The user prefers metric units.",
+      "The user has a dog called Rex.",
+      "The user prefers 绿茶 over coffee.",
+    ];
+    recallSerenityMock.mockResolvedValue({
+      ok: true,
+      value: facts.map((fact, index) => ({ factId: `fact-${index}`, fact, provenance: "chat" })),
+    });
+
+    const recall = async (query: string, limit: number) => {
+      const result = await provider().recall(
+        { query, scope: "isolated", botId: "bot-1", limit },
+        context,
+      );
+      if (!result.ok) throw new Error(result.error);
+      return result.value;
+    };
+
+    const tea = await recall("What tea does the user like?", 2);
+    expect(tea[0]).toMatchObject({ id: "fact-2", entity: "rakazo-bot/bot-1" });
+    expect(tea[0]!.score).toBeLessThan(1);
+    // Words every fact shares count for little.
+    expect(tea[1]!.score).toBeLessThan(tea[0]!.score / 2);
+
+    const chinese = await recall("我喜欢绿茶", 1);
+    expect(chinese.map((item) => item.id)).toEqual(["fact-5"]);
+
+    const unrelated = await recall("quarterly revenue", 3);
+    expect(unrelated.map((item) => [item.id, item.score])).toEqual([
+      ["fact-0", 0],
+      ["fact-1", 0],
+      ["fact-2", 0],
+    ]);
   });
 
   it("writes shared durable saves once, to the space entity", async () => {
@@ -383,7 +424,7 @@ describe("SerenityMemoryProvider", () => {
       value: [
         {
           memory: "The team uses metric units.",
-          score: 1,
+          score: expect.closeTo(0.2),
           id: "fact-space-1",
           provenance: "space policy",
           entity: `rakazo-space/${PERSONAL_BRAIN}--workspace-1`,

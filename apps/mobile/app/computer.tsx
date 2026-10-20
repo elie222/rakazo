@@ -1,4 +1,5 @@
 import type { ComputerMode, ComputerReleaseReason } from "@rakazo/contracts";
+import { displayName } from "@rakazo/core";
 import { useLocalSearchParams, useNavigation } from "expo-router";
 import type { RefObject } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -59,7 +60,7 @@ export default function Computer() {
   const navigation = useNavigation();
   const stacked = stacksAtTextScale(useWindowDimensions().fontScale);
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
-  const name = nameParam || t("Bot");
+  const name = displayName(nameParam, t("Bot"));
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);

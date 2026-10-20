@@ -329,7 +329,10 @@ export class McpConnector implements ConnectorProvider {
     const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) {
-      if (existing.ref && server.secretId) {
+      // Every credential write stores a new record without bumping the revision, so a
+      // different record means another process (an API or worker) changed the grant.
+      if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
+      else if (existing.ref && server.secretId) {
         try {
           const plaintext = await this.secrets.load(existing.ref, {
             recordId: existing.recordId ?? server.secretId,

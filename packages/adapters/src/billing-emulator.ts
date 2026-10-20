@@ -5,7 +5,9 @@ import type {
   BillingSubscriptionSnapshot,
   BillingSubscriptionStatus,
 } from "@rakazo/adapter-kit";
+import { BillingCheckoutCompletedError, BillingCustomerNotFoundError } from "@rakazo/adapter-kit";
 import {
+  holdsBillingSubscription,
   parseStripeWebhook,
   pickBillingSubscription,
   signStripeWebhook,
@@ -28,6 +30,7 @@ export class BillingEmulator implements BillingProvider {
   readonly subscriptions: EmulatedSubscription[] = [];
   private readonly now: () => number;
   private sequence = 0;
+  private customerSequence = 0;
 
   constructor(options: BillingEmulatorOptions = {}) {
     this.price = options.price ?? {
@@ -53,15 +56,15 @@ export class BillingEmulator implements BillingProvider {
   }
 
   async createCustomer(input: { email: string; organizationId: string }) {
-    for (const [customerId, customer] of this.customers)
-      if (customer.organizationId === input.organizationId) return { customerId };
-    const customerId = `cus_emulated_${this.customers.size + 1}`;
+    const customerId = `cus_emulated_${++this.customerSequence}`;
     this.customers.set(customerId, { ...input });
     return { customerId };
   }
 
   async createCheckout(input: BillingCheckoutRequest) {
     this.requireCustomer(input.customerId);
+    if (this.forCustomer(input.customerId).some((s) => holdsBillingSubscription(s.status)))
+      throw new BillingCheckoutCompletedError();
     this.checkouts.set(input.customerId, { ...input });
     return { url: `https://billing.emulator.invalid/checkout/${input.customerId}` };
   }
@@ -87,11 +90,7 @@ export class BillingEmulator implements BillingProvider {
   }
 
   async cancelCustomerSubscriptions(customerId: string) {
-    for (const subscription of this.forCustomer(customerId)) {
-      if (subscription.status === "canceled") continue;
-      subscription.status = "canceled";
-      subscription.endedAt = new Date(this.now());
-    }
+    this.cancelAll(customerId);
   }
 
   parseWebhook(rawBody: string, headers: Headers) {
@@ -128,6 +127,13 @@ export class BillingEmulator implements BillingProvider {
     newest.status = status;
   }
 
+  /** Test helper: deleting the customer cancels its subscriptions and blocks further calls. */
+  deleteCustomer(customerId: string) {
+    this.requireCustomer(customerId);
+    this.cancelAll(customerId);
+    this.customers.delete(customerId);
+  }
+
   /** Test helper: a webhook request this emulator's `parseWebhook` accepts. */
   signWebhook(event: object, timestamp = Math.floor(this.now() / 1000)) {
     const body = JSON.stringify(event);
@@ -138,11 +144,21 @@ export class BillingEmulator implements BillingProvider {
     return { body, headers };
   }
 
+  /** An open checkout goes too, so it cannot start a subscription afterwards. */
+  private cancelAll(customerId: string) {
+    this.checkouts.delete(customerId);
+    for (const subscription of this.forCustomer(customerId)) {
+      if (subscription.status === "canceled") continue;
+      subscription.status = "canceled";
+      subscription.endedAt = new Date(this.now());
+    }
+  }
+
   private forCustomer(customerId: string) {
     return this.subscriptions.filter((s) => s.customerId === customerId);
   }
 
   private requireCustomer(customerId: string) {
-    if (!this.customers.has(customerId)) throw new Error(`Unknown customer ${customerId}`);
+    if (!this.customers.has(customerId)) throw new BillingCustomerNotFoundError();
   }
 }

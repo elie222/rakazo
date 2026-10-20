@@ -337,6 +337,10 @@ msgstr "מזהה חשבון"
 msgid "Account label"
 msgstr "תווית חשבון"
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "תפריט החשבון של {name}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr "חשבונות"
@@ -362,7 +366,6 @@ msgstr "פעיל"
 msgid "Active model"
 msgstr "מודל פעיל"
 
-#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "פעילות"
@@ -676,8 +679,8 @@ msgstr "הועבר לארכיון. הצ׳אט, הזיכרון והקבצים נ�
 msgid "Arguments"
 msgstr "ארגומנטים"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr "תוצרים"
 
@@ -729,10 +732,6 @@ msgstr "בשעה {timeSelect}"
 msgid "Attach file"
 msgstr "צירוף קובץ"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Attached {path}"
-msgstr "צורף {path}"
-
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Attachment"
@@ -783,7 +782,6 @@ msgstr "Avatar Studio"
 msgid "Avatars"
 msgstr "אווטארים"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -832,8 +830,8 @@ msgstr "חיוב"
 msgid "Blocked"
 msgstr "חסום"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr "לוח"
 
@@ -850,6 +848,7 @@ msgstr "מפעיל את המחשב של {0}"
 msgid "bot"
 msgstr "בוט"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -896,10 +895,6 @@ msgstr "תווית Brain"
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "עיון בשרתי MCP"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Browser"
-msgstr "דפדפן"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
@@ -1001,6 +996,10 @@ msgstr "אפליקציות צ׳אט"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "הגדרות צ׳אט"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "צ׳אטים"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1111,10 +1110,6 @@ msgstr "Client secret"
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "סגירה"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Close {title}"
-msgstr "סגירת {title}"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1307,6 +1302,10 @@ msgstr "חיבור מודל"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "חיבור מפתח API"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "חיבור אפליקציות"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -1564,17 +1563,9 @@ msgstr "לא ניתן להוריד את {0}. אפשר לנסות שוב."
 msgid "Could not download {name}. Try again."
 msgstr "לא ניתן להוריד את {name}. אפשר לנסות שוב."
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not download file"
-msgstr "לא ניתן להוריד את הקובץ"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "לא ניתן להתקין את החיבור"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not list files"
-msgstr "לא ניתן להציג את רשימת הקבצים"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1604,10 +1595,6 @@ msgstr "לא ניתן לטעון את החיוב"
 #: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
 msgstr "לא ניתן לטעון את הבוטים. יש לטעון מחדש כדי לנסות שוב."
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not load commands"
-msgstr "לא ניתן לטעון את הפקודות"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not load credentials."
@@ -1668,17 +1655,9 @@ msgstr "לא ניתן להתנתק. יש לנסות שוב."
 msgid "Could not open billing"
 msgstr "לא ניתן לפתוח את החיוב"
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not open file"
-msgstr "לא ניתן לפתוח את הקובץ"
-
 #: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr "לא ניתן לפתוח את ההגדרות המקומיות. יש להפעיל את השרת המקומי וליצור את חשבון הבעלים שלו, ואז לנסות שוב."
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not open terminal"
-msgstr "לא ניתן לפתוח את הטרמינל"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1843,10 +1822,6 @@ msgstr "לא ניתן לעדכן את האמוג׳י"
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "לא ניתן לעדכן את היקף הזיכרון המוגדר כברירת מחדל"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not upload file"
-msgstr "לא ניתן להעלות את הקובץ"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -2177,6 +2152,14 @@ msgstr "Docker מוגדר אבל המחשבים לא מגיבים. יש לווד
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker מגביל את הגישה למחשב לאבטחה נוספת. שימוש ב-{hostLabel} מאפשר לבוטים לעבוד עם הקבצים והכלים המקומיים."
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "תיעוד"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Document changed. Reopen to edit the latest version."
+msgstr "המסמך השתנה. יש לפתוח אותו מחדש כדי לערוך את הגרסה העדכנית."
+
 #: src/pages/Auth.tsx
 msgid "Don’t have an account?"
 msgstr "אין חשבון?"
@@ -2187,15 +2170,12 @@ msgstr "אין חשבון?"
 msgid "Done"
 msgstr "הושלם"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr "הורדה"
 
-#. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
-#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "הורדת {0}"
 
@@ -2350,6 +2330,10 @@ msgstr "הרחבת {0}"
 msgid "Expand {label}"
 msgstr "הרחבת {label}"
 
+#: src/components/CloudAgentCard.tsx
+msgid "expired"
+msgstr "פג תוקף"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "ייצוא"
@@ -2405,15 +2389,6 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr ""
-
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
-#: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "הקובץ חורג ממגבלת ההעלאה של {0}."
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Files"
-msgstr "קבצים"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
@@ -2515,6 +2490,10 @@ msgstr "קבלת פרטי גישה"
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "קבלת התראה כשהבוט מסיים או צריך קלט"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "הורדת האפליקציה לנייד"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr "מתכונן"
@@ -2523,6 +2502,7 @@ msgstr "מתכונן"
 msgid "Git event"
 msgstr "אירוע Git"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2674,6 +2654,10 @@ msgstr "ירושה מברירת המחדל"
 msgid "Inputs"
 msgstr "קלטים"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "התקנת עדכון"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "מפתח API של המופע"
@@ -2704,7 +2688,6 @@ msgid "Integration options"
 msgstr "אפשרויות אינטגרציה"
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "אינטגרציות"
 
@@ -2779,10 +2762,6 @@ msgstr ""
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr "מאוחר יותר"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Launched {app}"
-msgstr "{app} הופעלה"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
@@ -2901,8 +2880,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr "הגדרות השרת המקומי"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "התנתקות"
 
@@ -3002,6 +2981,10 @@ msgstr "בינוני"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr "בינוני"
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "חבר"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3287,10 +3270,6 @@ msgstr "ללא אימות"
 msgid "No authentication"
 msgstr "ללא אימות"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "No bot activity yet."
-msgstr "עדיין אין פעילות של בוטים."
-
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr "אין בוטים"
@@ -3511,10 +3490,6 @@ msgstr "פתיחה בחלון מלא"
 msgid "Open navigation"
 msgstr "פתיחת הניווט"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Open shell"
-msgstr "פתיחת shell"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "עבודה פתוחה"
@@ -3523,10 +3498,6 @@ msgstr "עבודה פתוחה"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "כתובת URL של שרת תואם OpenAI"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Opened {path}"
-msgstr "נפתח {path}"
 
 #: src/pages/Shell.tsx
 msgid "Opened its thread."
@@ -3575,6 +3546,7 @@ msgstr "ההודעה המקורית אינה זמינה"
 msgid "Other model…"
 msgstr "מודל אחר…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "בעלים"
@@ -3597,6 +3569,10 @@ msgstr "סיסמה"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "שחזור סיסמה לא הוגדר בשרת הזה"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "התחברות באמצעות סיסמה מושבתת בשרת הזה"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4089,6 +4065,7 @@ msgstr "הנחיות לחדר"
 msgid "Rotate key"
 msgstr "החלפת מפתח"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4326,6 +4303,7 @@ msgid "Server URL"
 msgstr "URL של השרת"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4365,10 +4343,6 @@ msgstr "מסמכים משותפים"
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared skills"
 msgstr "מיומנויות משותפות"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Shell"
-msgstr "Shell"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
@@ -4489,9 +4463,10 @@ msgstr "עדכון תוכנה"
 msgid "Something went wrong. Try again."
 msgstr "משהו השתבש. אפשר לנסות שוב."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "מרחב"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4590,6 +4565,7 @@ msgstr "נשמר מוצפן"
 msgid "Stream replies"
 msgstr "הזרמת תשובות"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "סוכן משנה"
@@ -4660,10 +4636,6 @@ msgstr "הודעת Teams"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr "Teams לא מופעל"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Terminal"
-msgstr "טרמינל"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5020,7 +4992,6 @@ msgstr "מעדכן את מחשב הצוות"
 msgid "Updating…"
 msgstr "מעדכן…"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "העלאה"
@@ -5029,9 +5000,9 @@ msgstr "העלאה"
 msgid "Urgent"
 msgstr "דחוף"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "שימוש"
 
@@ -5211,10 +5182,6 @@ msgstr "עובד…"
 msgid "Workspace"
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Wrote {path}"
-msgstr "נכתב {path}"
-
 #: src/lib/billing.ts
 msgid "year"
 msgstr "שנה"
@@ -5224,6 +5191,7 @@ msgstr "שנה"
 msgid "Yesterday"
 msgstr "אתמול"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "אני"

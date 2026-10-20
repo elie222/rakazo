@@ -197,7 +197,7 @@ export function measureCalls(
 /** Concurrency-safe reservations. This guard estimates spend; it is not a billing guarantee. */
 export class SpendBudget {
   private spent = 0;
-  private reservations = new Map<string, number>();
+  private reservations = new Map<string, { estimate: number; pricing: EvalPricing }>();
   private serial = 0;
   private unavailablePricing = false;
   constructor(
@@ -206,19 +206,24 @@ export class SpendBudget {
   ) {
     if (!Number.isFinite(capUsd) || capUsd <= 0) throw new Error("Spend cap must be positive");
   }
-  reserve(inputTokens: number, maxOutputTokens: number, cacheWriteRetention?: "1h"): string {
+  reserve(
+    inputTokens: number,
+    maxOutputTokens: number,
+    cacheWriteRetention?: "1h",
+    pricing = this.pricing,
+  ): string {
     if (this.unavailablePricing)
       throw new Error("Eval model has no configured pricing for observed cache writes");
-    if (!this.pricing) throw new Error("Live inference requires explicit pricing");
+    if (!pricing) throw new Error("Live inference requires explicit pricing");
     if (![inputTokens, maxOutputTokens].every((v) => Number.isSafeInteger(v) && v >= 0))
       throw new Error("A conservative token estimate is required before inference");
     // The input estimate is an upper bound: actual usage may fall into either tier.
     // Reserve the largest reachable input bucket and output rate, even for cheaper long tiers.
     const tiers: Array<
       Pick<EvalPricing, "input" | "output" | "cacheRead" | "cacheWrite" | "cacheWrite1h">
-    > = [this.pricing];
-    if (this.pricing.longContext && inputTokens >= this.pricing.longContext.thresholdTokens)
-      tiers.push(this.pricing.longContext);
+    > = [pricing];
+    if (pricing.longContext && inputTokens >= pricing.longContext.thresholdTokens)
+      tiers.push(pricing.longContext);
     if (cacheWriteRetention === "1h" && tiers.some((rates) => rates.cacheWrite1h === undefined))
       throw new Error("Eval model has no configured pricing for requested one-hour cache writes");
     const estimate =
@@ -234,25 +239,26 @@ export class SpendBudget {
         maxOutputTokens * Math.max(...tiers.map((rates) => rates.output))) /
       1_000_000;
     if (
-      this.spent + [...this.reservations.values()].reduce((n, v) => n + v, 0) + estimate >
+      this.spent + [...this.reservations.values()].reduce((n, v) => n + v.estimate, 0) + estimate >
       this.capUsd
     )
       throw new Error("Eval spend cap would be exceeded");
     const id = String(++this.serial);
-    this.reservations.set(id, estimate);
+    this.reservations.set(id, { estimate, pricing });
     return id;
   }
   settle(id: string, actualUsd: number | null) {
-    const estimate = this.reservations.get(id);
-    if (estimate === undefined) throw new Error("Unknown spend reservation");
+    const reservation = this.reservations.get(id);
+    if (reservation === undefined) throw new Error("Unknown spend reservation");
     this.reservations.delete(id);
-    this.spent += actualUsd ?? estimate; // Missing usage must not restore potentially incurred spend.
+    this.spent += actualUsd ?? reservation.estimate; // Missing usage must not restore potentially incurred spend.
   }
   settleUsage(
     id: string,
     usage: (Partial<UsageMeasurement> & { costSource?: string | null }) | null,
   ) {
-    const priced = usage ? measureCalls([{ id, ...usage }], this.pricing).costUsd : null;
+    const pricing = this.reservations.get(id)?.pricing;
+    const priced = usage ? measureCalls([{ id, ...usage }], pricing).costUsd : null;
     if (usage && typeof usage.cacheWrite1hTokens === "number" && usage.cacheWrite1hTokens > 0) {
       const inputBuckets = [usage.inputTokens, usage.cacheReadTokens, usage.cacheWriteTokens];
       const promptTokens = inputBuckets.every((value) => typeof value === "number")
@@ -260,11 +266,11 @@ export class SpendBudget {
         : typeof usage.totalTokens === "number" && typeof usage.outputTokens === "number"
           ? Math.max(0, usage.totalTokens - usage.outputTokens)
           : undefined;
-      const longTier = this.pricing?.longContext;
+      const longTier = pricing?.longContext;
       const applicable =
         longTier && promptTokens !== undefined && promptTokens >= longTier.thresholdTokens
           ? longTier
-          : this.pricing;
+          : pricing;
       if (
         applicable?.cacheWrite1h === undefined ||
         (promptTokens === undefined && longTier && longTier.cacheWrite1h === undefined)
@@ -275,7 +281,7 @@ export class SpendBudget {
     if (this.unavailablePricing) return this.settle(id, null);
     if (
       usage &&
-      this.pricing &&
+      pricing &&
       typeof usage.inputTokens === "number" &&
       typeof usage.outputTokens === "number" &&
       typeof usage.totalTokens === "number"
@@ -283,9 +289,9 @@ export class SpendBudget {
       const unknownInput = Math.max(0, usage.totalTokens - usage.inputTokens - usage.outputTokens);
       const promptTokens = usage.inputTokens + unknownInput;
       const rates =
-        this.pricing.longContext && promptTokens >= this.pricing.longContext.thresholdTokens
-          ? this.pricing.longContext
-          : this.pricing;
+        pricing.longContext && promptTokens >= pricing.longContext.thresholdTokens
+          ? pricing.longContext
+          : pricing;
       // Charge an upper bound for unclassified prompt buckets; report cost remains unknown.
       return this.settle(
         id,
@@ -307,7 +313,7 @@ export class SpendBudget {
     return this.spent;
   }
   get reservedUsd() {
-    return [...this.reservations.values()].reduce((n, v) => n + v, 0);
+    return [...this.reservations.values()].reduce((n, v) => n + v.estimate, 0);
   }
 }
 

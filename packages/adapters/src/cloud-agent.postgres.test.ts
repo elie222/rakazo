@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { AdapterContext, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
 import { clearThread, createDb, type PrismaClient } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { CursorCloudAgentEmulator } from "./cloud-agent-emulator.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
 import { pollCloudAgent } from "./cloud-agent-poll.js";
 import { executeCloudAgentTool, reconcileCloudAgents } from "./cloud-agent-service.js";
 import { CursorCloudAgentProvider } from "./cursor-cloud-agent.js";
 import { createJobReconciler } from "./job-reconciler.js";
-import { CursorCloudAgentEmulator } from "./testing/cursor-cloud-agent-emulator.js";
 
 function deferred() {
   let resolve!: () => void;
@@ -183,7 +183,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     });
     await h.poll(id);
     expect((await h.state(id)).remoteId).toBeTruthy();
-    expect(h.wire.ids.size).toBe(1);
+    expect(h.wire.agents.size).toBe(1);
     expect(h.wire.requests.filter((request) => request.path === "/v1/agents")).toHaveLength(2);
   });
 
@@ -419,7 +419,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect((await h.state(id)).remoteId).toBeNull();
     await h.poll(id);
     expect((await h.state(id)).remoteId).toBeTruthy();
-    expect(h.wire.ids.size).toBe(1);
+    expect(h.wire.agents.size).toBe(1);
   });
 
   it("fences concurrent pollers and preserves cancellation during launch", async () => {
@@ -441,7 +441,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     await polling;
     await h.poll(id);
     await h.poll(id);
-    expect(h.wire.ids.size).toBe(1);
+    expect(h.wire.agents.size).toBe(1);
     expect(await h.state(id)).toMatchObject({ status: "cancelled", cancelRequested: false });
   });
 
@@ -468,6 +468,103 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     await h.poll(id);
     expect(await h.state(id)).toMatchObject({ status: "failed", nextPollAt: null });
     expect(await h.wakes()).toHaveLength(1);
-    expect(h.wire.ids.size).toBe(0);
+    expect(h.wire.agents.size).toBe(0);
+  });
+
+  it("stops polling a remote agent or run that no longer exists", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    h.wire.agents.delete((await h.state(id)).remoteId!);
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ status: "failed", nextPollAt: null });
+    expect(await h.wakes()).toHaveLength(1);
+    const cancelled = await setup();
+    const cancelledId = await cancelled.launch();
+    await cancelled.poll(cancelledId);
+    await cancelled.tool("cancel", { id: cancelledId });
+    cancelled.wire.agents.delete((await cancelled.state(cancelledId)).remoteId!);
+    await cancelled.poll(cancelledId);
+    expect(await cancelled.state(cancelledId)).toMatchObject({
+      status: "cancelled",
+      cancelRequested: false,
+      nextPollAt: null,
+    });
+  });
+
+  it("keeps polling through unknown statuses, a rejected key, and rate limits", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    h.wire.apiKey = "revoked-key";
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ status: "running", remoteId: null, errorCount: 1 });
+    h.wire.apiKey = "fake-key";
+    await h.poll(id);
+    const remoteId = (await h.state(id)).remoteId!;
+    expect(remoteId).toBeTruthy();
+    h.wire.setRunStatus(remoteId, "SOME_FUTURE_STATUS");
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ status: "running", errorCount: 0 });
+    h.wire.apiKey = "revoked-key";
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ status: "running", errorCount: 1 });
+    h.wire.apiKey = "fake-key";
+    h.wire.failNextRequest = 429;
+    await h.poll(id);
+    expect((await h.state(id)).nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 29_000);
+    await h.finish(id);
+    expect(await h.state(id)).toMatchObject({ status: "finished", errorCount: 0 });
+  });
+
+  it("reports a follow-up to an expired agent as expired", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    await h.finish(id);
+    h.wire.archive((await h.state(id)).remoteId!);
+    await h.tool("reply", { id, prompt: "Add tests" });
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({
+      status: "expired",
+      followup: null,
+      followupDispatching: false,
+      nextPollAt: null,
+    });
+    expect(await h.wakes()).toHaveLength(2);
+  });
+
+  it("resends a follow-up the provider refused for its key or rate limit", async () => {
+    const h = await setup();
+    const id = await h.launch();
+    await h.poll(id);
+    await h.finish(id);
+    await h.tool("reply", { id, prompt: "Add tests" });
+    h.wire.apiKey = "revoked-key";
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ status: "running", followupDispatching: false });
+    h.wire.apiKey = "fake-key";
+    const replies = () =>
+      h.wire.requests.filter(
+        (request) => request.method === "POST" && request.path.endsWith("/runs"),
+      ).length;
+    h.wire.requests.length = 0;
+    // The pre-read succeeds; the follow-up POST itself is rate limited.
+    let limited = false;
+    h.connection.provider = new CursorCloudAgentProvider({
+      apiKey: "fake-key",
+      fetch: async (input, init) => {
+        if (!limited && init?.method === "POST") {
+          limited = true;
+          h.wire.failNextRequest = 429;
+        }
+        return h.wire.fetch(input, init);
+      },
+    });
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ followupDispatching: false });
+    expect((await h.state(id)).nextPollAt!.getTime()).toBeGreaterThan(Date.now() + 29_000);
+    await h.poll(id);
+    expect(await h.state(id)).toMatchObject({ followup: null, status: "running" });
+    expect(replies()).toBe(2);
   });
 });

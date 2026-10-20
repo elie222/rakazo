@@ -1,16 +1,56 @@
-import { readBoundedJsonResponse } from "@rakazo/core";
+// Relative source path: Vercel functions cannot resolve the TypeScript exports of @rakazo/core.
+import { readBoundedJsonResponse } from "../../../packages/core/src/http-response.js";
 import { GITHUB_API_REPO } from "./site";
 
 export const GITHUB_STARS_TIMEOUT_MS = 5_000;
 export const MAX_GITHUB_STARS_RESPONSE_BYTES = 64 * 1024;
 
+export type DesktopDownloads = Partial<Record<"mac" | "windows" | "linux", string>>;
+
+const DESKTOP_ASSET_SUFFIXES = { mac: ".dmg", windows: ".exe", linux: ".AppImage" } as const;
+export const MAX_GITHUB_RELEASE_RESPONSE_BYTES = 256 * 1024;
+
 export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise<number | null> {
-  if (process.env.RAKAZO_GITHUB_STARS === "offline") return null;
+  const payload = await fetchGithubJson<{ stargazers_count?: unknown }>(
+    GITHUB_API_REPO,
+    MAX_GITHUB_STARS_RESPONSE_BYTES,
+    fetchImpl,
+  );
+  return typeof payload?.stargazers_count === "number" ? payload.stargazers_count : null;
+}
+
+/** Installer URLs from the latest desktop release; empty when GitHub is unavailable. */
+export async function fetchDesktopDownloads(
+  fetchImpl: typeof fetch = fetch,
+): Promise<DesktopDownloads> {
+  const payload = await fetchGithubJson<{ assets?: unknown }>(
+    `${GITHUB_API_REPO}/releases/latest`,
+    MAX_GITHUB_RELEASE_RESPONSE_BYTES,
+    fetchImpl,
+  );
+  const downloads: DesktopDownloads = {};
+  if (!Array.isArray(payload?.assets)) return downloads;
+  for (const asset of payload.assets as Array<{ name?: unknown; browser_download_url?: unknown }>) {
+    const { name, browser_download_url: url } = asset ?? {};
+    if (typeof name !== "string" || typeof url !== "string" || !url.startsWith("https://")) continue;
+    for (const [platform, suffix] of Object.entries(DESKTOP_ASSET_SUFFIXES)) {
+      if (name.endsWith(suffix)) downloads[platform as keyof DesktopDownloads] ??= url;
+    }
+  }
+  return downloads;
+}
+
+async function fetchGithubJson<T>(
+  url: string,
+  maxBytes: number,
+  fetchImpl: typeof fetch,
+): Promise<T | null> {
+  if (process.env.RAKAZO_GITHUB_API === "offline") return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GITHUB_STARS_TIMEOUT_MS);
   try {
     const response = await withAbort(
-      fetchImpl(GITHUB_API_REPO, {
+      fetchImpl(url, {
         headers: {
           Accept: "application/vnd.github+json",
           "User-Agent": "rakazo-www",
@@ -23,10 +63,7 @@ export async function fetchGithubStars(fetchImpl: typeof fetch = fetch): Promise
       cancelResponseBody(response);
       return null;
     }
-    const payload = await readBoundedJsonResponse<{
-      stargazers_count?: unknown;
-    }>(response, MAX_GITHUB_STARS_RESPONSE_BYTES, controller.signal);
-    return typeof payload.stargazers_count === "number" ? payload.stargazers_count : null;
+    return await readBoundedJsonResponse<T>(response, maxBytes, controller.signal);
   } catch {
     return null;
   } finally {

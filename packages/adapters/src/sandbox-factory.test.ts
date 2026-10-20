@@ -24,15 +24,6 @@ describe("createSandboxProvider", () => {
     ).rejects.toThrow(NO_SANDBOX_MESSAGE);
   });
 
-  it("returns provider-specific managed sandbox emulators", () => {
-    expect(createSandboxProvider("e2b-emulator", {}).describe().id).toBe("e2b-emulator");
-    expect(createSandboxProvider("daytona-emulator", {}).describe().id).toBe("daytona-emulator");
-    expect(createSandboxProvider("boat-emulator", {}).describe()).toMatchObject({
-      id: "boat-emulator",
-      capabilities: { multiScreen: true },
-    });
-  });
-
   it("boots without a remote key and keeps computers unavailable", async () => {
     expect(createSandboxProvider("e2b", {}).describe().id).toBe("none");
     expect(createSandboxProvider("daytona", {}).describe().id).toBe("none");
@@ -54,7 +45,7 @@ describe("createSandboxProvider", () => {
 
   it("throws on unknown provider", () => {
     expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | boat | railway | e2b-emulator | daytona-emulator | boat-emulator | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | boat | railway | desktop | fake.',
     );
   });
 });

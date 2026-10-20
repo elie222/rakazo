@@ -5,6 +5,7 @@ import {
   acquireComputerExecutionLease,
   acquireDedicatedScreenLeaseFence,
   ComputerBusyError,
+  DestinationEmulator,
   releaseComputerExecutionLease,
 } from "@rakazo/adapters";
 import { approvalEffectKey } from "@rakazo/core/node/approval-effect-key";
@@ -22,6 +23,7 @@ const describeIntegration = hasDb ? describe : describe.skip;
 
 describeIntegration("run executor lifecycle", () => {
   let handles: Awaited<ReturnType<typeof createApp>>;
+  const destination = new DestinationEmulator();
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-executor-lifecycle-"));
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -35,6 +37,7 @@ describeIntegration("run executor lifecycle", () => {
       wakeupDriver: "memory",
       defaultProvider: "scripted",
       defaultModel: "scripted",
+      connectors: [destination],
     });
   });
 
@@ -86,12 +89,12 @@ describeIntegration("run executor lifecycle", () => {
       status,
       completedAt: new Date(),
     });
-    const recordsBefore = handles.connector.records.length;
+    const recordsBefore = destination.records.length;
 
     await handles.executor.continueRun(seeded.run.id, "late-worker");
 
     expect(await handles.prisma.attempt.count({ where: { runId: seeded.run.id } })).toBe(0);
-    expect(handles.connector.records).toHaveLength(recordsBefore);
+    expect(destination.records).toHaveLength(recordsBefore);
     await expect(
       handles.prisma.run.findUniqueOrThrow({ where: { id: seeded.run.id } }),
     ).resolves.toMatchObject({ status });
@@ -112,7 +115,7 @@ describeIntegration("run executor lifecycle", () => {
         request: args,
       },
     });
-    const recordsBefore = handles.connector.records.length;
+    const recordsBefore = destination.records.length;
 
     await handles.executor.continueRun(seeded.run.id, "retry-worker");
 
@@ -127,7 +130,7 @@ describeIntegration("run executor lifecycle", () => {
       status: "uncertain",
       result: expect.objectContaining({ uncertain: true }),
     });
-    expect(handles.connector.records).toHaveLength(recordsBefore);
+    expect(destination.records).toHaveLength(recordsBefore);
     expect(
       await handles.prisma.event.count({
         where: { runId: seeded.run.id, type: "effect.reconciled" },
@@ -159,7 +162,7 @@ describeIntegration("run executor lifecycle", () => {
         matchValue: "destination.write",
       },
     });
-    const recordsBefore = handles.connector.records.length;
+    const recordsBefore = destination.records.length;
 
     await handles.executor.continueRun(seeded.run.id, "retry-worker");
 
@@ -178,7 +181,7 @@ describeIntegration("run executor lifecycle", () => {
         expect.objectContaining({ kind: "ask", approvalEffectId: effect.id, status: "pending" }),
       ]),
     );
-    expect(handles.connector.records).toHaveLength(recordsBefore);
+    expect(destination.records).toHaveLength(recordsBefore);
   });
 
   it("fences concurrent terminal commits so only one final message is durable", async () => {

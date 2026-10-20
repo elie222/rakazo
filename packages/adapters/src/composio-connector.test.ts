@@ -1,11 +1,17 @@
+import type {
+  ConnectedAccountListParams,
+  ConnectedAccountListResponse,
+  ConnectedAccountStatus,
+  ToolkitConnectionState,
+} from "@composio/core";
 import type { AdapterContext, ConnectorEvent, ConnectorTool } from "@rakazo/adapter-kit";
 import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { composioToolkitDirectory } from "./composio-catalog-cache.js";
 import {
   asConnectorTools,
   ComposioConnector,
-  CompositeConnector,
+  ConnectorRegistry,
   collectLogIds,
   collectPages,
   composioResultError,
@@ -29,6 +35,11 @@ const composioSdkState = vi.hoisted(() => ({
   executeResult: null as null | { data: Record<string, unknown>; error: string | null },
   failTools: null as null | string[],
   logIds: null as null | string[],
+  /** Stateful account store; when set it backs list/delete like the Composio API. */
+  accounts: null as null | Array<{ id: string; toolkit: string; status: ConnectedAccountStatus }>,
+  accountListCalls: [] as ConnectedAccountListParams[],
+  /** Paged `session.toolkits({ isConnected: true })` items for the catalog session. */
+  connectedToolkits: null as null | ToolkitConnectionState[],
   connectedAccounts: {
     list: async (_query?: Record<string, unknown>) => ({ items: [] as Array<{ id: string }> }),
     waitForConnection: async (id: string, _timeout?: number) => ({ id: `resolved-${id}` }),
@@ -39,16 +50,10 @@ const composioSdkState = vi.hoisted(() => ({
     string,
     {
       sessionId: string;
-      toolkits?: () => Promise<{
-        items: Array<{
-          slug: string;
-          name: string;
-          logo: string | null;
-          isNoAuth: boolean;
-          connection?: { isActive?: boolean; connectedAccount?: { id: string } };
-        }>;
+      toolkits?: (options?: {
+        isConnected?: boolean;
         cursor?: string;
-      }>;
+      }) => Promise<{ items: ToolkitConnectionState[]; cursor?: string }>;
       tools?: () => Promise<unknown[]>;
       execute?: (
         tool: string,
@@ -73,11 +78,44 @@ vi.mock("@composio/core", () => ({
     };
 
     readonly connectedAccounts = {
-      list: (query?: Record<string, unknown>) => composioSdkState.connectedAccounts.list(query),
-      waitForConnection: (id: string, timeout?: number) =>
-        composioSdkState.connectedAccounts.waitForConnection(id, timeout),
+      list: async (
+        query?: ConnectedAccountListParams,
+      ): Promise<
+        Pick<ConnectedAccountListResponse, "nextCursor"> & { items: Array<{ id: string }> }
+      > => {
+        const store = composioSdkState.accounts;
+        if (!store) return composioSdkState.connectedAccounts.list(query);
+        composioSdkState.accountListCalls.push(query ?? {});
+        const matches = store.filter(
+          (account) =>
+            (!query?.statuses || query.statuses.includes(account.status)) &&
+            (!query?.toolkitSlugs ||
+              query.toolkitSlugs.some((slug) => slug.toLowerCase() === account.toolkit)),
+        );
+        // One item per page so every caller has to follow nextCursor.
+        const index = Number(query?.cursor ?? 0);
+        const next = index + 1 < matches.length ? String(index + 1) : null;
+        return { items: matches.slice(index, index + 1), nextCursor: next };
+      },
+      waitForConnection: async (id: string, timeout?: number) => {
+        const store = composioSdkState.accounts;
+        if (!store) return composioSdkState.connectedAccounts.waitForConnection(id, timeout);
+        // A connection request id is the connected-account id.
+        const account = store.find((candidate) => candidate.id === id);
+        if (!account)
+          throw Object.assign(new Error("404 Connected account not found"), { status: 404 });
+        return { id: account.id };
+      },
       get: (id: string) => composioSdkState.connectedAccounts.get(id),
-      delete: (id: string) => composioSdkState.connectedAccounts.delete(id),
+      delete: async (id: string) => {
+        const store = composioSdkState.accounts;
+        if (!store) return composioSdkState.connectedAccounts.delete(id);
+        const index = store.findIndex((account) => account.id === id);
+        if (index < 0) {
+          throw Object.assign(new Error("404 Connected account not found"), { status: 404 });
+        }
+        store.splice(index, 1);
+      },
     };
 
     async create(userId: string, config: Record<string, unknown>) {
@@ -86,16 +124,24 @@ vi.mock("@composio/core", () => ({
       if (toolkits.length === 0) {
         const session = {
           sessionId: "catalog-session",
-          toolkits: async () => {
+          toolkits: async (options?: { isConnected?: boolean; cursor?: string }) => {
             if (composioSdkState.directoryFails) throw new Error("directory unavailable");
+            const connected = composioSdkState.connectedToolkits;
+            if (options?.isConnected && connected) {
+              const index = Number(options.cursor ?? 0);
+              const next = index + 1 < connected.length ? String(index + 1) : undefined;
+              return { items: connected.slice(index, index + 1), cursor: next };
+            }
             return {
               items: [
                 {
                   slug: "GITHUB",
                   name: "GitHub",
-                  logo: null,
                   isNoAuth: false,
-                  connection: { isActive: true, connectedAccount: { id: "ca-github" } },
+                  connection: {
+                    isActive: true,
+                    connectedAccount: { id: "ca-github", status: "ACTIVE" },
+                  },
                 },
               ],
             };
@@ -179,7 +225,7 @@ describe("composio tool mapping", () => {
         yield { type: "result", data: { provider: "composio" } } as ConnectorEvent;
       },
     } as never;
-    const connector = new CompositeConnector(destination, [composio]);
+    const connector = new ConnectorRegistry([destination, composio]);
     const context = { userId: "u" } as AdapterContext;
     for await (const event of connector.execute(
       {
@@ -203,7 +249,7 @@ describe("composio tool mapping", () => {
       },
       execute: async function* () {},
     } as never;
-    const connector = new CompositeConnector(destination, [failing]);
+    const connector = new ConnectorRegistry([destination, failing]);
     const sink = createTestSink();
     installLogger(createLogger({ service: "rakazo-api", sinks: [sink] }));
 
@@ -453,44 +499,6 @@ describe("composio tool mapping", () => {
           sandbox: { enable: false },
           toolkits: ["GITHUB"],
           connectedAccounts: { GITHUB: ["ca_current"] },
-        },
-      });
-    } finally {
-      restore();
-    }
-  });
-
-  it("omits stale account ids when the provider lists no ACTIVE accounts", async () => {
-    composioSdkState.created.length = 0;
-    composioSdkState.sessions.clear();
-    composioToolkitDirectory.invalidate();
-    const restore = stubActiveAccounts([]);
-
-    try {
-      const connector = new ComposioConnector();
-      await connector.discoverTools({
-        operationId: "composio-empty-active",
-        traceId: "composio-empty-active",
-        spaceId: "workspace",
-        userId: "user-1",
-        signal: new AbortController().signal,
-        connectedConnections: [
-          {
-            id: "connection-revoked",
-            connectorId: "composio",
-            externalId: "github",
-            displayName: "GitHub",
-            providerRef: "ca_old",
-          },
-        ],
-      });
-
-      expect(composioSdkState.created.at(-1)).toEqual({
-        userId: "user-1",
-        config: {
-          manageConnections: false,
-          sandbox: { enable: false },
-          toolkits: ["GITHUB"],
         },
       });
     } finally {
@@ -1303,5 +1311,177 @@ describe("Composio during pnpm test", () => {
     vi.stubEnv("VITEST", value);
     expect(isComposioEnabled("ck_configured")).toBe(true);
     vi.unstubAllEnvs();
+  });
+});
+
+describe("Composio connected-account lifecycle", () => {
+  const context = (connectedConnections: AdapterContext["connectedConnections"]) =>
+    ({
+      operationId: "composio-lifecycle",
+      traceId: "composio-lifecycle",
+      spaceId: "workspace",
+      userId: "user-1",
+      signal: new AbortController().signal,
+      connectedConnections,
+    }) satisfies AdapterContext;
+  const gmailWork = {
+    id: "connection-work",
+    connectorId: "composio",
+    externalId: "gmail",
+    displayName: "Work",
+    providerRef: "ca-work",
+  };
+  const github = {
+    id: "connection-github",
+    connectorId: "composio",
+    externalId: "github",
+    displayName: "GitHub",
+    providerRef: "ca-github",
+  };
+
+  beforeEach(() => {
+    composioSdkState.created.length = 0;
+    composioSdkState.executions.length = 0;
+    composioSdkState.accountListCalls.length = 0;
+    composioSdkState.sessions.clear();
+    composioToolkitDirectory.invalidate();
+  });
+
+  afterEach(() => {
+    composioSdkState.accounts = null;
+    composioSdkState.connectedToolkits = null;
+  });
+
+  it.each([
+    "INITIALIZING",
+    "INITIATED",
+    "FAILED",
+    "EXPIRED",
+    "INACTIVE",
+    "REVOKED",
+  ] satisfies ConnectedAccountStatus[])(
+    "never lets a %s pinned account fall back to another account",
+    async (status) => {
+      composioSdkState.accounts = [
+        { id: "ca-work", toolkit: "gmail", status },
+        { id: "ca-personal", toolkit: "gmail", status: "ACTIVE" },
+        { id: "ca-github", toolkit: "github", status: "ACTIVE" },
+      ];
+      const connector = new ComposioConnector();
+      const ctx = context([gmailWork, github]);
+
+      await connector.discoverTools(ctx);
+      expect(composioSdkState.created.at(-1)?.config).toEqual({
+        manageConnections: false,
+        sandbox: { enable: false },
+        toolkits: ["GITHUB"],
+        connectedAccounts: { GITHUB: ["ca-github"] },
+      });
+
+      const events: ConnectorEvent[] = [];
+      for await (const event of connector.execute(
+        {
+          tool: "COMPOSIO_MULTI_EXECUTE_TOOL",
+          args: { tools: [{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }] },
+          executionId: "send",
+        },
+        ctx,
+      )) {
+        events.push(event);
+      }
+      expect(events).toEqual([
+        { type: "error", message: expect.stringContaining("reconnect GMAIL") },
+      ]);
+      expect(composioSdkState.executions).toEqual([]);
+    },
+  );
+
+  it("pins an ACTIVE account found past the first page", async () => {
+    composioSdkState.accounts = [
+      { id: "ca-other", toolkit: "gmail", status: "ACTIVE" },
+      { id: "ca-work", toolkit: "gmail", status: "ACTIVE" },
+    ];
+    const connector = new ComposioConnector();
+
+    await connector.discoverTools(context([gmailWork]));
+
+    expect(composioSdkState.created.at(-1)?.config).toMatchObject({
+      toolkits: ["GMAIL"],
+      connectedAccounts: { GMAIL: ["ca-work"] },
+    });
+    expect(composioSdkState.accountListCalls.map((call) => call.cursor ?? null)).toEqual([
+      null,
+      "1",
+    ]);
+  });
+
+  it("creates no session when every pinned toolkit needs reconnect", async () => {
+    composioSdkState.accounts = [{ id: "ca-work", toolkit: "gmail", status: "EXPIRED" }];
+    const connector = new ComposioConnector();
+
+    await expect(connector.discoverTools(context([gmailWork]))).resolves.toEqual([]);
+    expect(composioSdkState.created.filter((entry) => entry.userId === "user-1")).toEqual([]);
+  });
+
+  it("treats an account Composio already deleted as revoked", async () => {
+    composioSdkState.accounts = [];
+    const connector = new ComposioConnector();
+
+    await expect(connector.revoke("ca-gone", context([]))).resolves.toBeUndefined();
+  });
+
+  it("deletes a live account on revoke", async () => {
+    composioSdkState.accounts = [{ id: "ca-work", toolkit: "gmail", status: "ACTIVE" }];
+    const connector = new ComposioConnector();
+
+    await connector.revoke("ca-work", context([]));
+
+    expect(composioSdkState.accounts).toEqual([]);
+  });
+
+  it("lists only toolkits whose connected account is active", async () => {
+    composioSdkState.connectedToolkits = [
+      {
+        slug: "GMAIL",
+        name: "Gmail",
+        isNoAuth: false,
+        connection: { isActive: false, connectedAccount: { id: "ca-old", status: "EXPIRED" } },
+      },
+      {
+        slug: "GITHUB",
+        name: "GitHub",
+        isNoAuth: false,
+        connection: { isActive: true, connectedAccount: { id: "ca-github", status: "ACTIVE" } },
+      },
+      { slug: "HACKERNEWS", name: "Hacker News", isNoAuth: true },
+    ];
+    const connector = new ComposioConnector();
+
+    await expect(connector.listConnectedSlugs("user-1")).resolves.toEqual(["GITHUB", "HACKERNEWS"]);
+  });
+
+  it("falls back to an active toolkit connection on a later page", async () => {
+    composioSdkState.accounts = [];
+    composioSdkState.connectedToolkits = [
+      { slug: "HACKERNEWS", name: "Hacker News", isNoAuth: true },
+      {
+        slug: "GMAIL",
+        name: "Gmail",
+        isNoAuth: false,
+        connection: { isActive: true, connectedAccount: { id: "ca-work", status: "ACTIVE" } },
+      },
+    ];
+    const connector = new ComposioConnector();
+    await expect(connector.connectedAccountId("user-1", "gmail")).resolves.toBe("ca-work");
+
+    composioSdkState.connectedToolkits = [
+      {
+        slug: "GMAIL",
+        name: "Gmail",
+        isNoAuth: false,
+        connection: { isActive: false, connectedAccount: { id: "ca-old", status: "EXPIRED" } },
+      },
+    ];
+    await expect(connector.connectedAccountId("user-1", "gmail")).resolves.toBeUndefined();
   });
 });

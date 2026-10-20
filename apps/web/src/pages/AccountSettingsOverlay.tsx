@@ -1,5 +1,6 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import { accountDisplay } from "@rakazo/core";
 import {
   BotAvatar,
   Button,
@@ -77,6 +78,7 @@ export function GeneralSettingsPanels({
   isDeploymentOwner = false,
 }: SettingsGeneralProps) {
   const { t } = useLingui();
+  const account = accountDisplay({ name, email }, t`You`);
   const [accountSecurity, setAccountSecurity] = useState<AccountSecurity | null>(null);
   const [locale, setLocale] = useState<UiLocale>(() => getActiveUiLocale());
   const localeRequestRef = useRef(0);
@@ -156,9 +158,10 @@ export function GeneralSettingsPanels({
         <h3 className="text-[15px] font-medium text-foreground">
           <Trans>Account</Trans>
         </h3>
-        <p className="mt-3 text-[14px] text-foreground/75">{name}</p>
-        {email ? <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p> : null}
-        <AccountAccess onSecurity={setAccountSecurity} />
+        <p className="mt-3 text-[14px] text-foreground/75">{account.label}</p>
+        {email && account.label !== email ? (
+          <p className="mt-1 text-[13px] text-muted-foreground/70">{email}</p>
+        ) : null}
       </section>
 
       {accountSecurity?.hasPassword && accountSecurity.passwordChangeEnabled !== false ? (
@@ -383,6 +386,8 @@ export function GeneralSettingsPanels({
           </div>
         </div>
       </details>
+
+      <AccountAccess onSecurity={setAccountSecurity} />
     </div>
   );
 }

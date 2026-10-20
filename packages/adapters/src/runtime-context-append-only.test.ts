@@ -119,6 +119,8 @@ function extendsPrevious(previous: Context, next: Context): boolean {
     previous.systemPrompt === next.systemPrompt &&
     JSON.stringify(previous.tools ?? []) === JSON.stringify(next.tools ?? []) &&
     next.messages.length >= previous.messages.length &&
+    JSON.stringify(next.messages.slice(0, previous.messages.length)) ===
+      JSON.stringify(previous.messages) &&
     JSON.stringify(
       providerContextPrefix("", [], next.messages.slice(0, previous.messages.length)),
     ) === JSON.stringify(providerContextPrefix("", [], previous.messages))
@@ -481,13 +483,45 @@ describe("append-only run transcript boundaries", () => {
         ...first,
         messages: [...first.messages, ...run.messages.slice(-2)],
       });
-      const tight = { ...model, contextWindow: appendedSize + model.maxTokens + headroom };
+      // Keep the output reserve below the quarter-window clamp so this isolates input fit.
+      const tight = { ...model, maxTokens: 1024, contextWindow: appendedSize + 1024 + headroom };
       const next = run.send(undefined, tight as Model<Api>);
       expect(staleThinking(next)).toEqual([]);
       return extendsPrevious(first, next);
     };
     expect(outcome(0)).toBe(true);
     expect(outcome(-1)).toBe(false);
+  });
+
+  it("adds the after-use note only on rebuild, then preserves it exactly once", () => {
+    const run = driver(request({ contextStrategy: "retrieval" }, 0));
+    run.act(run.send(), "a", `old ${"x".repeat(5_000)}`);
+    const first = run.send();
+    run.act(first, "b", "ok");
+    const second = run.send();
+    expect(extendsPrevious(first, second)).toBe(true);
+    expect(JSON.stringify(second)).not.toContain("Earlier result shortened after you read it");
+
+    // Force a rebuild by changing instructions after the result has been read.
+    run.state.systemPrompt = "Changed instructions";
+    const rebuilt = run.send();
+    const result = rebuilt.messages.find(
+      (message) => message.role === "toolResult" && message.toolCallId === "a",
+    );
+    const serialized = JSON.stringify(result);
+    expect(serialized.split("Earlier result shortened after you read it")).toHaveLength(2);
+    expect(serialized).not.toContain("unavailable");
+    expect(staleThinking(rebuilt)).toEqual([]);
+    run.act(rebuilt, "c", "ok");
+    const next = run.send();
+    expect(extendsPrevious(rebuilt, next)).toBe(true);
+    expect(
+      JSON.stringify(
+        next.messages.find(
+          (message) => message.role === "toolResult" && message.toolCallId === "a",
+        ),
+      ),
+    ).toBe(serialized);
   });
 
   it("keeps screenshots within the image limit while text alone overflows the window", () => {

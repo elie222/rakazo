@@ -3,10 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PortableFile, SandboxProvider } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { BoatSandboxEmulator } from "./boat-emulator.js";
-import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
+import { fakeBoatProvider as fakeBoat } from "./boat-sandbox.test-support.js";
 import { DesktopSandboxProvider } from "./desktop-sandbox.js";
-import { ManagedSandboxEmulator } from "./e2b-emulator.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
 import { HostComputerSandbox } from "./host-computer-sandbox.js";
 import { startHostComputerServer } from "./host-computer-server.js";
@@ -48,9 +46,7 @@ describe.each([
     },
   ],
   ["fake", () => Promise.resolve(new FakeSandboxProvider())],
-  ["managed emulator", () => Promise.resolve(new ManagedSandboxEmulator())],
-  ["Daytona emulator", () => Promise.resolve(new DaytonaSandboxEmulator())],
-  ["Boat emulator", () => Promise.resolve(new BoatSandboxEmulator())],
+  ["Boat over a fake API", () => Promise.resolve(fakeBoat())],
   [
     "desktop",
     async () => {
@@ -160,7 +156,8 @@ describe.each([
 
     await provider.stop(first, context);
     await provider.stop(first, context);
-    const resumed = await provisionPrepared(provider, request, context);
+    const reconnect = { ...request, providerRef: first.providerRef, providerKind: first.kind };
+    const resumed = await provisionPrepared(provider, reconnect, context);
     expect(resumed).toMatchObject({
       id: first.id,
       providerRef: first.providerRef,
@@ -172,7 +169,7 @@ describe.each([
 
     await provider.destroy(resumed, context);
     await provider.destroy(resumed, context);
-    const replacement = await provisionPrepared(provider, request, context);
+    const replacement = await provisionPrepared(provider, reconnect, context);
     if (provider instanceof DesktopSandboxProvider || provider instanceof HostComputerSandbox) {
       // A configured desktop root retains its workspace through destroy.
       expect(replacement.fresh).toBe(false);
@@ -304,9 +301,7 @@ async function providerSet(label: string): Promise<Array<[string, SandboxProvide
   temporaryRoots.push(root);
   return [
     ["fake", new FakeSandboxProvider()],
-    ["managed", new ManagedSandboxEmulator()],
-    ["daytona", new DaytonaSandboxEmulator()],
-    ["boat", new BoatSandboxEmulator()],
+    ["boat", fakeBoat()],
     ["desktop", new DesktopSandboxProvider({ root: await realpath(root) })],
   ];
 }

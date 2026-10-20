@@ -744,6 +744,7 @@ export async function sendThreadMessage(
             runId: primary.id,
             payload: {
               messageId: message.id,
+              seq: message.seq,
               role: "user",
               blocks,
               callId,
@@ -777,6 +778,7 @@ export async function sendThreadMessage(
             runId: active.id,
             payload: {
               messageId: message.id,
+              seq: message.seq,
               role: "user",
               blocks,
               callId,
@@ -824,6 +826,7 @@ export async function sendThreadMessage(
           runId: run.id,
           payload: {
             messageId: message.id,
+            seq: message.seq,
             role: "user",
             blocks,
             callId,
@@ -968,6 +971,7 @@ export async function sendThreadMessage(
         runId: firstRun?.id ?? activeRuns[0]?.id,
         payload: {
           messageId: message.id,
+          seq: message.seq,
           role: "user",
           blocks,
           callId,

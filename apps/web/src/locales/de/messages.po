@@ -337,6 +337,10 @@ msgstr "Konto-ID"
 msgid "Account label"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "Kontomenü für {name}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr ""
@@ -362,7 +366,6 @@ msgstr ""
 msgid "Active model"
 msgstr "Aktives Modell"
 
-#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Aktivität"
@@ -676,8 +679,8 @@ msgstr "Archiviert. Chat, Erinnerungen und Dateien bleiben erhalten."
 msgid "Arguments"
 msgstr "Argumente"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr ""
 
@@ -729,10 +732,6 @@ msgstr "um {timeSelect}"
 msgid "Attach file"
 msgstr "Datei anhängen"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Attached {path}"
-msgstr "{path} angehängt"
-
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Attachment"
@@ -783,7 +782,6 @@ msgstr "Avatar-Studio"
 msgid "Avatars"
 msgstr ""
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -832,8 +830,8 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr ""
 
@@ -850,6 +848,7 @@ msgstr "Computer von {0} wird gestartet"
 msgid "bot"
 msgstr "Bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -896,10 +895,6 @@ msgstr ""
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr ""
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Browser"
-msgstr "Browser"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
@@ -1001,6 +996,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Chat-Einstellungen"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "Chats"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1111,10 +1110,6 @@ msgstr ""
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Schließen"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Close {title}"
-msgstr "{title} schließen"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1307,6 +1302,10 @@ msgstr "Modell verbinden"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "API-Schlüssel verbinden"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "Apps verbinden"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -1564,17 +1563,9 @@ msgstr "{0} konnte nicht heruntergeladen werden. Versuche es erneut."
 msgid "Could not download {name}. Try again."
 msgstr "{name} konnte nicht heruntergeladen werden. Versuche es erneut."
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not download file"
-msgstr "Datei konnte nicht heruntergeladen werden"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Connector konnte nicht installiert werden"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not list files"
-msgstr "Dateien konnten nicht geladen werden"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1604,10 +1595,6 @@ msgstr ""
 #: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
 msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not load commands"
-msgstr "Befehle konnten nicht geladen werden"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not load credentials."
@@ -1668,17 +1655,9 @@ msgstr "Abmelden fehlgeschlagen. Bitte erneut versuchen."
 msgid "Could not open billing"
 msgstr ""
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not open file"
-msgstr "Datei konnte nicht geöffnet werden"
-
 #: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not open terminal"
-msgstr "Terminal konnte nicht geöffnet werden"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1843,10 +1822,6 @@ msgstr ""
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "Standardbereich für Erinnerungen konnte nicht aktualisiert werden"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not upload file"
-msgstr "Datei konnte nicht hochgeladen werden"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -2177,6 +2152,14 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker begrenzt für mehr Sicherheit den Zugriff auf deinen Computer. Wenn {hostLabel} verwendet wird, können Bots mit deinen lokalen Dateien und Werkzeugen arbeiten."
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "Dokumentation"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Document changed. Reopen to edit the latest version."
+msgstr "Das Dokument wurde geändert. Öffne es erneut, um die neueste Version zu bearbeiten."
+
 #: src/pages/Auth.tsx
 msgid "Don’t have an account?"
 msgstr "Du hast noch kein Konto?"
@@ -2187,15 +2170,12 @@ msgstr "Du hast noch kein Konto?"
 msgid "Done"
 msgstr "Fertig"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr ""
 
-#. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
-#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "{0} herunterladen"
 
@@ -2350,6 +2330,10 @@ msgstr ""
 msgid "Expand {label}"
 msgstr "{label} erweitern"
 
+#: src/components/CloudAgentCard.tsx
+msgid "expired"
+msgstr "abgelaufen"
+
 #: src/pages/shell/bot-panel.tsx
 msgid "Export"
 msgstr "Exportieren"
@@ -2405,15 +2389,6 @@ msgstr "Felder, die eine Änderung kennzeichnen"
 #: src/pages/RoutineEditor.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Zu vergleichende Felder, z. B. id, modifiedTime (optional)"
-
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
-#: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "Datei überschreitet das Upload-Limit von {0}."
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Files"
-msgstr "Dateien"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
@@ -2515,6 +2490,10 @@ msgstr ""
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "Mobile App herunterladen"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr ""
@@ -2523,6 +2502,7 @@ msgstr ""
 msgid "Git event"
 msgstr ""
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2674,6 +2654,10 @@ msgstr "Standard übernehmen"
 msgid "Inputs"
 msgstr "Eingaben"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "Update installieren"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "Instanz-API-Schlüssel"
@@ -2704,7 +2688,6 @@ msgid "Integration options"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Integrationen"
 
@@ -2779,10 +2762,6 @@ msgstr "Letzte Prüfung {0}: keine Änderungen"
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
 msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Launched {app}"
-msgstr "{app} gestartet"
 
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
@@ -2901,8 +2880,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "Abmelden"
 
@@ -3002,6 +2981,10 @@ msgstr "Mittel"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr ""
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "Mitglied"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3287,10 +3270,6 @@ msgstr "keine Authentifizierung"
 msgid "No authentication"
 msgstr "Keine Authentifizierung"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "No bot activity yet."
-msgstr "Noch keine Bot-Aktivität."
-
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""
@@ -3511,10 +3490,6 @@ msgstr "In vollständigem Fenster öffnen"
 msgid "Open navigation"
 msgstr "Navigation öffnen"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Open shell"
-msgstr "Shell öffnen"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Offene Arbeit"
@@ -3523,10 +3498,6 @@ msgstr "Offene Arbeit"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "URL eines OpenAI-kompatiblen Servers"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Opened {path}"
-msgstr "{path} geöffnet"
 
 #: src/pages/Shell.tsx
 msgid "Opened its thread."
@@ -3575,9 +3546,10 @@ msgstr "Originalnachricht nicht verfügbar"
 msgid "Other model…"
 msgstr "Anderes Modell…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Inhaber"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -3597,6 +3569,10 @@ msgstr "Passwort"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Die Passwortwiederherstellung ist für diesen Server nicht konfiguriert"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "Die Anmeldung mit Passwort ist auf diesem Server deaktiviert"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4089,6 +4065,7 @@ msgstr ""
 msgid "Rotate key"
 msgstr ""
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4326,6 +4303,7 @@ msgid "Server URL"
 msgstr "Server-URL"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4365,10 +4343,6 @@ msgstr "Geteilte Dokumente"
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared skills"
 msgstr "Geteilte Skills"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Shell"
-msgstr "Shell"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
@@ -4489,9 +4463,10 @@ msgstr ""
 msgid "Something went wrong. Try again."
 msgstr "Etwas ist schiefgelaufen. Versuche es erneut."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "Bereich"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4590,6 +4565,7 @@ msgstr "Verschlüsselt gespeichert"
 msgid "Stream replies"
 msgstr "Antworten streamen"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "Subagent"
@@ -4660,10 +4636,6 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr ""
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Terminal"
-msgstr "Terminal"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -5020,7 +4992,6 @@ msgstr ""
 msgid "Updating…"
 msgstr ""
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "Hochladen"
@@ -5029,9 +5000,9 @@ msgstr "Hochladen"
 msgid "Urgent"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "Nutzung"
 
@@ -5211,10 +5182,6 @@ msgstr "Wird verarbeitet…"
 msgid "Workspace"
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Wrote {path}"
-msgstr "{path} geschrieben"
-
 #: src/lib/billing.ts
 msgid "year"
 msgstr ""
@@ -5224,6 +5191,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "Gestern"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "Du"

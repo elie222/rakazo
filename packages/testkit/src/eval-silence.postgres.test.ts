@@ -1,8 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Evidence } from "./evals/cases.js";
+import { createEvalJudge } from "./evals/judge.js";
 import { runTrial } from "./evals/runner.js";
 import { EvalSandboxProvider } from "./evals/sandbox.js";
 import { SILENCE_EVAL_CASES } from "./evals/silence.js";
@@ -40,9 +41,40 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
       pass: false,
     },
     { id: "silence-failed-check", replies: ["NO_RESPONSE"], pass: false },
+    {
+      id: "silence-failed-check",
+      replies: ["The source did not respond, but you are on the newest version."],
+      pass: false,
+      semanticPass: false,
+    },
+    {
+      id: "silence-repeat-after-new-release",
+      replies: ["v2.2.0 adds a calendar integration.", "NO_RESPONSE"],
+      pass: false,
+      semanticPass: false,
+    },
+    {
+      id: "silence-failed-check",
+      replies: ["The release source did not respond."],
+      pass: false,
+      judgeFailure: "missing",
+    },
+    {
+      id: "silence-failed-check",
+      replies: ["The release source did not respond."],
+      pass: false,
+      judgeFailure: "unavailable",
+    },
   ])(
     "$id with replies $replies passes=$pass",
-    async ({ id, replies, pass, tool }) => {
+    async ({ id, replies, pass, tool, semanticPass, judgeFailure }) => {
+      const judge = vi.fn(async () => {
+        if (judgeFailure === "unavailable") throw new Error("Synthetic judge unavailable");
+        return {
+          pass: semanticPass ?? true,
+          reason: "Offline fixture verdict",
+        };
+      });
       const scenario = SILENCE_EVAL_CASES.find((c) => c.id === id)!;
       const steps: ModelEmulatorStep[] = replies.flatMap((reply, index) => [
         {
@@ -122,6 +154,7 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
             },
             timeoutMs: 25_000,
             maxToolCalls: 8,
+            judge: judgeFailure === "missing" ? undefined : judge,
             createApp: (composio, messaging, witnesses) =>
               createApp({
                 ...witnesses,
@@ -142,7 +175,20 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
           },
         );
         model.assertComplete();
-        expect(result.reason, JSON.stringify(result)).toBe(pass ? null : "Outcome criteria failed");
+        if (semanticPass === false) {
+          expect(judge).toHaveBeenCalledOnce();
+          expect(result.criteria).toContainEqual({ id: "semantic-outcome", pass: false });
+        }
+
+        if (judgeFailure) {
+          expect(result.category).toBe("incomplete");
+          expect(result.reason).toContain(
+            judgeFailure === "missing" ? "requires a judge" : "Judge unavailable",
+          );
+        } else
+          expect(result.reason, JSON.stringify(result)).toBe(
+            pass ? null : "Outcome criteria failed",
+          );
         expect(result.status).toBe(pass ? "passed" : "failed");
         expect(result.cleanupFailed).toBe(false);
         expect(evidence?.routineRuns).toHaveLength(replies.length);
@@ -159,4 +205,41 @@ describe.skipIf(!databaseAvailable)("routine silence eval through the product", 
     },
     35_000,
   );
+});
+
+describe.skipIf(!databaseAvailable)("offline judge model protocol", () => {
+  it("runs the semantic judge through the actual provider-neutral runtime", async () => {
+    const model = await startModelEmulator({
+      apiKey: "offline-judge-key",
+      steps: [
+        {
+          expect(request) {
+            expect(JSON.stringify(request.messages)).toContain("untrusted data");
+            expect(JSON.stringify(request.messages)).toContain("release status unknown");
+            expect(request.tools ?? []).toEqual([]);
+          },
+          response: { type: "text", text: '{"pass":true,"reason":"Acknowledges uncertainty"}' },
+        },
+      ],
+    });
+    const { PiAgentRuntime } = await import("@rakazo/adapters");
+    try {
+      const judge = createEvalJudge(new PiAgentRuntime(), {
+        provider: model.model.provider,
+        id: model.model.id,
+        apiKey: "offline-judge-key",
+        baseUrl: model.baseUrl,
+        maxTokens: 256,
+      });
+      expect(
+        await judge(
+          { rubric: "Report an unsuccessful check honestly", evidence: "release status unknown" },
+          AbortSignal.timeout(15_000),
+        ),
+      ).toEqual({ pass: true, reason: "Acknowledges uncertainty" });
+      model.assertComplete();
+    } finally {
+      await model.close();
+    }
+  });
 });

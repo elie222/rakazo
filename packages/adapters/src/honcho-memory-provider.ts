@@ -15,9 +15,10 @@ import {
   HONCHO_REASONING_LEVELS,
   honchoPeerChat,
   honchoResourceId,
-  MAX_HONCHO_CONCLUSION_CHARS,
+  MAX_HONCHO_CONCLUSION_BYTES,
   probeHonchoAdminKey,
 } from "./honcho-client.js";
+import { truncateUtf8 } from "./utf8.js";
 
 export const HONCHO_PROVIDER_ID = "honcho";
 
@@ -212,7 +213,7 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
       // Compaction summaries stay in Rakazo; Honcho holds durable facts only.
       return { ok: true, value: undefined };
     }
-    const content = request.content.trim().slice(0, MAX_HONCHO_CONCLUSION_CHARS);
+    const content = truncateUtf8(request.content.trim(), MAX_HONCHO_CONCLUSION_BYTES);
     if (!content) return { ok: false, error: "Honcho save skipped: memory content is empty." };
     const workspaceId = honchoWorkspaceId(this.settings, context.spaceId);
     const bot = honchoBotPeerId(request.botId);

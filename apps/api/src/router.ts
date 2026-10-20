@@ -7,12 +7,14 @@ import type {
   ConnectorCatalogItem,
   JobPublisher,
   MemoryStore,
+  ProductAnalytics,
   SandboxProvider,
   SecretStore,
   UsageOperationKind,
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
+  MEMORY_REVISION_CONFLICT_ERROR,
   messagingDeliverJob,
   routineJobKey,
   routineWakeupJob,
@@ -168,9 +170,11 @@ import {
   callClientNonce,
   clampCatalogThinkingLevel,
   containsSecret,
+  displayName,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  MODEL_REQUIRED_SEND_ERROR,
   nextCronDateAcrossStrict,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
@@ -562,6 +566,7 @@ function mcpAssignmentDto(row: {
 }
 
 export interface RouterDeps {
+  analytics?: ProductAnalytics;
   cloudAgent?: CloudAgentConnection | null;
   prisma: PrismaClient;
   events: ThreadEvents;
@@ -846,6 +851,12 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         return aiConsentStatus(deps, context.actor);
+      }),
+    },
+    analytics: {
+      screen: authed.analytics.screen.handler(async ({ context, input }) => {
+        deps.analytics?.capture(context.actor.userId, { name: "screen_viewed", ...input });
+        return { ok: true as const };
       }),
     },
     health: os.health.handler(async () => ({ ok: true as const, version: "0.1.0" })),
@@ -2260,7 +2271,7 @@ export function createRouter(deps: RouterDeps) {
       }),
       send: authed.threads.send.handler(async ({ context, input }) => {
         if ((await modelSetup(deps, context.actor)).needsModel) {
-          throw new ORPCError("BAD_REQUEST", { message: "Connect a model to start a run." });
+          throw new ORPCError("BAD_REQUEST", { message: MODEL_REQUIRED_SEND_ERROR });
         }
         const target = await resolveThreadTarget(deps.prisma, context.actor, input);
         if (target.kind === "bot") {
@@ -3383,21 +3394,29 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         if (!doc) throw new IsolationError();
-        const updated = await deps.memory.commit(
-          {
-            scope: doc.scope as "bot" | "user",
-            botId: doc.botId ?? undefined,
-            path: doc.path,
-            content: input.content,
-          },
-          {
-            operationId: "mem",
-            traceId: "mem",
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-            signal: new AbortController().signal,
-          },
-        );
+        const updated = await deps.memory
+          .commit(
+            {
+              scope: doc.scope as "bot" | "user",
+              botId: doc.botId ?? undefined,
+              path: doc.path,
+              content: input.content,
+              expectedRevision: input.expectedRevision,
+            },
+            {
+              operationId: "mem",
+              traceId: "mem",
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              signal: new AbortController().signal,
+            },
+          )
+          .catch((error: unknown) => {
+            if (error instanceof Error && error.message === MEMORY_REVISION_CONFLICT_ERROR) {
+              throw new ORPCError("CONFLICT", { message: error.message });
+            }
+            throw error;
+          });
         return {
           id: updated.id,
           scope: doc.scope as "bot" | "user",
@@ -7343,7 +7362,8 @@ function exportFile(path: string, content: Uint8Array): ExportManifest["files"][
 }
 
 function duplicateBotName(name: string) {
-  return `${name.slice(0, 75)} copy`;
+  const label = displayName(name, "");
+  return label ? `${label.slice(0, 75)} copy` : "";
 }
 
 const ACTIVE_CHANNEL_MEMBERS = {
@@ -7381,7 +7401,7 @@ async function messagingIdentityDto(
     provider: identity.provider,
     address: identity.address,
     botId: identity.botId,
-    botName: bot?.name ?? "Assistant",
+    botName: bot?.name ?? "",
   };
 }
 
@@ -7451,8 +7471,8 @@ async function messagingConnectionDto(
     : null;
   return {
     id: connection.id,
-    peerBotName: peerBot?.name ?? "agent",
-    peerOwnerLabel: peerOwner?.name.trim().split(/\s+/)[0] || "owner",
+    peerBotName: peerBot?.name ?? "",
+    peerOwnerLabel: displayName(peerOwner?.name, "").split(/\s+/)[0] ?? "",
     status: connection.status as "pending" | "approved" | "declined" | "revoked",
     incoming,
   };

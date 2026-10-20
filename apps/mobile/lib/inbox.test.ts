@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { botTag, filterBots, formatThreadTime, userInitials } from "./inbox.js";
+import { botTag, filterBots, formatThreadTime } from "./inbox.js";
 
 const now = new Date(2026, 7, 13, 21, 53, 0);
 
@@ -53,14 +53,6 @@ describe("botTag", () => {
     expect(botTag("Chief", "Chief")).toBe("");
     expect(botTag("Lets me know whats happening in my inbox", "Slack bot")).toBe("");
     expect(botTag(undefined, "Chief")).toBe("");
-  });
-});
-
-describe("userInitials", () => {
-  it("uses the first letter of each word", () => {
-    expect(userInitials("Elie Steinbock")).toBe("ES");
-    expect(userInitials("Ada")).toBe("A");
-    expect(userInitials("")).toBe("?");
   });
 });
 

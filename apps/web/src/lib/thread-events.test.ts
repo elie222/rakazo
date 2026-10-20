@@ -10,9 +10,8 @@ import {
   activeThreadRuns,
   applyThreadSendReceipt,
   clearActiveThreadRuns,
-  computerPanelAutoBoot,
-  computerPanelAutoUsesBoot,
   computerPanelNeedsMaintenance,
+  computerPanelNeedsScreen,
   computerTakeoverBlocked,
   isThreadSnapshotEvent,
   mergeThreadSnapshot,
@@ -1730,25 +1729,19 @@ describe("computer event reduction", () => {
     });
   });
 
-  it("auto-boots stopped computers and recovers a running screen that has no URL", () => {
-    expect(computerPanelAutoBoot("stopped")).toBe("boot");
-    expect(computerPanelAutoBoot("error")).toBe("boot");
-    expect(computerPanelAutoBoot(undefined)).toBe("boot");
-    expect(computerPanelAutoBoot("running", "https://screen.example")).toBe("wait");
-    expect(computerPanelAutoBoot("running", null)).toBe("recover-screen");
-    expect(computerPanelAutoBoot("booting")).toBe("wait");
-    expect(computerPanelAutoBoot("suspended")).toBe("wait");
+  it("only reconnects a running computer whose screen has no URL", () => {
+    expect(computerPanelNeedsScreen("running", null)).toBe(true);
+    expect(computerPanelNeedsScreen("running", "https://screen.example")).toBe(false);
+    expect(computerPanelNeedsScreen("stopped")).toBe(false);
+    expect(computerPanelNeedsScreen("error")).toBe(false);
+    expect(computerPanelNeedsScreen(undefined)).toBe(false);
+    expect(computerPanelNeedsScreen("booting")).toBe(false);
+    expect(computerPanelNeedsScreen("suspended")).toBe(false);
   });
 
-  it("maps recover-screen to computer.boot, not computer.recover", () => {
-    expect(computerPanelAutoUsesBoot("recover-screen")).toBe(true);
-    expect(computerPanelAutoUsesBoot("boot")).toBe(true);
-    expect(computerPanelAutoUsesBoot("wait")).toBe(false);
-  });
-
-  it("shows maintenance only after a stopped or errored computer finishes booting", () => {
+  it("shows maintenance only for an errored computer that is not booting", () => {
     expect(computerPanelNeedsMaintenance("error", false)).toBe(true);
-    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(true);
+    expect(computerPanelNeedsMaintenance("stopped", false)).toBe(false);
     expect(computerPanelNeedsMaintenance("error", true)).toBe(false);
     expect(computerPanelNeedsMaintenance("running", false)).toBe(false);
     expect(computerPanelNeedsMaintenance(undefined, false)).toBe(false);
@@ -1758,7 +1751,7 @@ describe("computer event reduction", () => {
     const panel = "computer";
     const booting = false;
     const showInSidePanel = (computerOpen: boolean) =>
-      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("stopped", booting);
+      panel === "computer" && !computerOpen && computerPanelNeedsMaintenance("error", booting);
 
     expect(showInSidePanel(false)).toBe(true);
     expect(showInSidePanel(true)).toBe(false);

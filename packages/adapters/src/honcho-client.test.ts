@@ -55,6 +55,27 @@ describe("Honcho client boundaries", () => {
     },
   );
 
+  it("treats a null dialectic answer as empty", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ content: null })));
+    expect(await honchoPeerChat({ ...config, fetch }, "team", chat)).toEqual({
+      ok: true,
+      value: "",
+    });
+  });
+
+  it("truncates the dialectic query to Honcho's limit without splitting a character", async () => {
+    const fetch = vi.fn(
+      async (_url: string | URL | Request, _init?: RequestInit) =>
+        new Response(JSON.stringify({ content: "A fact" })),
+    );
+    await honchoPeerChat({ ...config, fetch }, "team", {
+      ...chat,
+      query: `a${"😀".repeat(6_000)}`,
+    });
+    const body = JSON.parse(String(fetch.mock.calls[0]![1]?.body)) as { query: string };
+    expect(body.query).toBe(`a${"😀".repeat(4_999)}`);
+  });
+
   it.each(["not JSON hch-test-key", JSON.stringify({ content: "x".repeat(1024 * 1024) })])(
     "rejects unreadable or oversized chat bodies",
     async (body) => {

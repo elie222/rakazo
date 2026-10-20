@@ -1,4 +1,20 @@
 export const NL_MESSAGES: Record<string, string> = {
+  Resets: "Resetdatum",
+  Limit: "Limiet",
+  "Provider message": "Bericht van aanbieder",
+  Status: "Status",
+  "Set your own key": "Eigen sleutel instellen",
+  "Add your own key or pick another model.": "Voeg je eigen sleutel toe of kies een ander model.",
+  "Choose another model to keep chatting.": "Kies een ander model om verder te chatten.",
+  "Resets {date}.": "Wordt gereset op {date}.",
+
+  "Model provider": "Modelprovider",
+  "Change model": "Model wijzigen",
+  "Technical details": "Technische details",
+  Member: "Lid",
+  Owner: "Eigenaar",
+  Chats: "Chats",
+  Space: "Space",
   "Message from another agent": "Bericht van een andere agent",
   "Another agent": "Een andere agent",
   "Update from {name}: {text}": "Update van {name}: {text}",
@@ -264,6 +280,7 @@ export const NL_MESSAGES: Record<string, string> = {
   bot: "bot",
   cancelled: "geannuleerd",
   deleted: "verwijderd",
+  expired: "verlopen",
   failed: "mislukt",
   finished: "voltooid",
   running: "draait",
@@ -838,4 +855,28 @@ export const NL_MESSAGES: Record<string, string> = {
   "Try again": "Opnieuw proberen",
   "Your session expired": "Je sessie is verlopen",
   "The server had a problem": "Er is een probleem met de server",
+  "The bot couldn't reply because its provider's daily limit was reached.":
+    "De bot kon niet antwoorden omdat de daglimiet van zijn provider is bereikt.",
+  "The bot couldn't reply because its provider's weekly limit was reached.":
+    "De bot kon niet antwoorden omdat de weeklimiet van zijn provider is bereikt.",
+  "The bot couldn't reply because its provider's monthly limit was reached.":
+    "De bot kon niet antwoorden omdat de maandlimiet van zijn provider is bereikt.",
+  "The bot couldn't reply because its provider's usage limit was reached.":
+    "De bot kon niet antwoorden omdat de gebruikslimiet van zijn provider is bereikt.",
+  "The provider received too many requests to answer this bot.":
+    "De provider heeft te veel verzoeken ontvangen om deze bot te antwoorden.",
+  "The provider refused the key this bot used for its reply.":
+    "De provider heeft de sleutel geweigerd die deze bot voor zijn antwoord gebruikte.",
+  "The provider couldn't serve the model selected for this bot.":
+    "De provider kon het voor deze bot gekozen model niet aanbieden.",
+  "The bot couldn't finish its reply. Technical details includes the reported error.":
+    "De bot kon zijn antwoord niet afronden. De technische details bevatten de gemelde fout.",
+  "This bot's reply stopped at its key's daily limit. Your own key has its own limits.":
+    "Het antwoord van deze bot stopte bij de daglimiet van zijn sleutel. Je eigen sleutel heeft eigen limieten.",
+  "This bot's reply stopped at its key's weekly limit. Your own key has its own limits.":
+    "Het antwoord van deze bot stopte bij de weeklimiet van zijn sleutel. Je eigen sleutel heeft eigen limieten.",
+  "This bot's reply stopped at its key's monthly limit. Your own key has its own limits.":
+    "Het antwoord van deze bot stopte bij de maandlimiet van zijn sleutel. Je eigen sleutel heeft eigen limieten.",
+  "This bot's reply stopped at its key's usage limit. Your own key has its own limits.":
+    "Het antwoord van deze bot stopte bij de gebruikslimiet van zijn sleutel. Je eigen sleutel heeft eigen limieten.",
 };

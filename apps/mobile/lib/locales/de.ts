@@ -1,4 +1,21 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Resets: "Zurückgesetzt",
+  Limit: "Limit",
+  "Provider message": "Anbieternachricht",
+  Status: "Status",
+  "Set your own key": "Eigenen Schlüssel hinterlegen",
+  "Add your own key or pick another model.":
+    "Füge deinen eigenen Schlüssel hinzu oder wähle ein anderes Modell.",
+  "Choose another model to keep chatting.": "Wähle ein anderes Modell, um weiterzuchatten.",
+  "Resets {date}.": "Wird am {date} zurückgesetzt.",
+
+  "Model provider": "Modellanbieter",
+  "Change model": "Modell wechseln",
+  "Technical details": "Technische Details",
+  Member: "Mitglied",
+  Owner: "Inhaber",
+  Chats: "Chats",
+  Space: "Space",
   "Message from another agent": "Nachricht von einem anderen Agenten",
   "Another agent": "Ein anderer Agent",
   "Update from {name}: {text}": "Update von {name}: {text}",
@@ -269,6 +286,7 @@ export const DE_MESSAGES: Record<string, string> = {
   bot: "Bot",
   cancelled: "abgebrochen",
   deleted: "gelöscht",
+  expired: "abgelaufen",
   failed: "fehlgeschlagen",
   finished: "abgeschlossen",
   running: "läuft",
@@ -881,4 +899,28 @@ export const DE_MESSAGES: Record<string, string> = {
   "Try again": "Erneut versuchen",
   "Your session expired": "Deine Sitzung ist abgelaufen",
   "The server had a problem": "Auf dem Server ist ein Problem aufgetreten",
+  "The bot couldn't reply because its provider's daily limit was reached.":
+    "Der Bot konnte nicht antworten, weil das Tageslimit seines Anbieters erreicht wurde.",
+  "The bot couldn't reply because its provider's weekly limit was reached.":
+    "Der Bot konnte nicht antworten, weil das Wochenlimit seines Anbieters erreicht wurde.",
+  "The bot couldn't reply because its provider's monthly limit was reached.":
+    "Der Bot konnte nicht antworten, weil das Monatslimit seines Anbieters erreicht wurde.",
+  "The bot couldn't reply because its provider's usage limit was reached.":
+    "Der Bot konnte nicht antworten, weil das Nutzungslimit seines Anbieters erreicht wurde.",
+  "The provider received too many requests to answer this bot.":
+    "Der Anbieter hat zu viele Anfragen erhalten, um diesem Bot zu antworten.",
+  "The provider refused the key this bot used for its reply.":
+    "Der Anbieter hat den Schlüssel abgelehnt, den dieser Bot für seine Antwort verwendet hat.",
+  "The provider couldn't serve the model selected for this bot.":
+    "Der Anbieter konnte das für diesen Bot ausgewählte Modell nicht bereitstellen.",
+  "The bot couldn't finish its reply. Technical details includes the reported error.":
+    "Der Bot konnte seine Antwort nicht abschließen. Die technischen Details enthalten den gemeldeten Fehler.",
+  "This bot's reply stopped at its key's daily limit. Your own key has its own limits.":
+    "Die Antwort dieses Bots stoppte am Tageslimit seines Schlüssels. Dein eigener Schlüssel hat eigene Limits.",
+  "This bot's reply stopped at its key's weekly limit. Your own key has its own limits.":
+    "Die Antwort dieses Bots stoppte am Wochenlimit seines Schlüssels. Dein eigener Schlüssel hat eigene Limits.",
+  "This bot's reply stopped at its key's monthly limit. Your own key has its own limits.":
+    "Die Antwort dieses Bots stoppte am Monatslimit seines Schlüssels. Dein eigener Schlüssel hat eigene Limits.",
+  "This bot's reply stopped at its key's usage limit. Your own key has its own limits.":
+    "Die Antwort dieses Bots stoppte am Nutzungslimit seines Schlüssels. Dein eigener Schlüssel hat eigene Limits.",
 };

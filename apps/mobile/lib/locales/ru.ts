@@ -1,4 +1,19 @@
 export const RU_MESSAGES: Record<string, string> = {
+  Resets: "Сброс",
+  Limit: "Лимит",
+  "Provider message": "Сообщение провайдера",
+  Status: "Статус",
+  "Set your own key": "Добавить свой ключ",
+  "Add your own key or pick another model.": "Добавьте свой ключ или выберите другую модель.",
+  "Choose another model to keep chatting.": "Выберите другую модель, чтобы продолжить общение.",
+  "Resets {date}.": "Сброс {date}.",
+
+  "Model provider": "Провайдер модели",
+  "Change model": "Сменить модель",
+  "Technical details": "Технические сведения",
+  Member: "Участник",
+  Owner: "Владелец",
+  Chats: "Чаты",
   "Message from another agent": "Сообщение от другого агента",
   "Another agent": "Другой агент",
   "Update from {name}: {text}": "Обновление от {name}: {text}",
@@ -124,6 +139,7 @@ export const RU_MESSAGES: Record<string, string> = {
   finished: "завершено",
   failed: "ошибка",
   cancelled: "отменено",
+  expired: "истёк срок",
   Saved: "Сохранено",
   " (unread)": " (непрочитано)",
   Appearance: "Внешний вид",
@@ -879,4 +895,28 @@ export const RU_MESSAGES: Record<string, string> = {
   "Try again": "Повторить",
   "Your session expired": "Сеанс истёк",
   "The server had a problem": "На сервере произошла ошибка",
+  "The bot couldn't reply because its provider's daily limit was reached.":
+    "Бот не смог ответить, потому что достигнут дневной лимит его провайдера.",
+  "The bot couldn't reply because its provider's weekly limit was reached.":
+    "Бот не смог ответить, потому что достигнут недельный лимит его провайдера.",
+  "The bot couldn't reply because its provider's monthly limit was reached.":
+    "Бот не смог ответить, потому что достигнут месячный лимит его провайдера.",
+  "The bot couldn't reply because its provider's usage limit was reached.":
+    "Бот не смог ответить, потому что достигнут лимит использования его провайдера.",
+  "The provider received too many requests to answer this bot.":
+    "Провайдер получил слишком много запросов и не смог ответить этому боту.",
+  "The provider refused the key this bot used for its reply.":
+    "Провайдер отклонил ключ, который бот использовал для ответа.",
+  "The provider couldn't serve the model selected for this bot.":
+    "Провайдер не смог предоставить модель, выбранную для этого бота.",
+  "The bot couldn't finish its reply. Technical details includes the reported error.":
+    "Бот не смог завершить ответ. В технических деталях указана полученная ошибка.",
+  "This bot's reply stopped at its key's daily limit. Your own key has its own limits.":
+    "Ответ бота остановился из-за дневного лимита его ключа. У вашего ключа свои лимиты.",
+  "This bot's reply stopped at its key's weekly limit. Your own key has its own limits.":
+    "Ответ бота остановился из-за недельного лимита его ключа. У вашего ключа свои лимиты.",
+  "This bot's reply stopped at its key's monthly limit. Your own key has its own limits.":
+    "Ответ бота остановился из-за месячного лимита его ключа. У вашего ключа свои лимиты.",
+  "This bot's reply stopped at its key's usage limit. Your own key has its own limits.":
+    "Ответ бота остановился из-за лимита использования его ключа. У вашего ключа свои лимиты.",
 };

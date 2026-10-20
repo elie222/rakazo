@@ -221,7 +221,7 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     kind: z.literal("cloud_agent"),
     agentId: z.string(),
     title: z.string(),
-    status: z.enum(["running", "finished", "failed", "cancelled"]),
+    status: z.enum(["running", "finished", "failed", "cancelled", "expired"]),
     url: z.string(),
     branch: z.string().optional(),
     prUrl: z.string().optional(),

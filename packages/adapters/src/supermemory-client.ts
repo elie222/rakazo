@@ -304,7 +304,13 @@ export async function searchSupermemoryContainers(
   };
 }
 
-/** Deletes every memory in a container, e.g. after the conversation they summarize is cleared. */
+export const SUPERMEMORY_DELETE_FORBIDDEN_ERROR =
+  "Supermemory needs an owner or admin API key to delete memory from cleared conversations.";
+
+/**
+ * Deletes every memory in a container, e.g. after the conversation they summarize is cleared.
+ * A missing container has nothing to delete.
+ */
 export async function deleteSupermemoryContainer(
   containerTag: string,
   config: SupermemoryConnectionConfig,
@@ -322,10 +328,9 @@ export async function deleteSupermemoryContainer(
       },
     );
     try {
-      if (!response.ok) {
-        return { ok: false, error: `Supermemory container delete failed: ${response.status}` };
-      }
-      return { ok: true };
+      if (response.ok || response.status === 404) return { ok: true };
+      if (response.status === 403) return { ok: false, error: SUPERMEMORY_DELETE_FORBIDDEN_ERROR };
+      return { ok: false, error: `Supermemory container delete failed: ${response.status}` };
     } finally {
       await releaseUnreadBody(response);
     }

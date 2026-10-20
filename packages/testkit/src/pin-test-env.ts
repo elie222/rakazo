@@ -29,3 +29,6 @@ delete process.env.SENTRY_BROWSER_DSN;
 if (!process.env.VERIFY_LOGGING) {
   process.env.LOG_LEVEL = "off";
 }
+
+// Tests must never export product analytics to a configured collector.
+process.env.ANALYTICS_PROVIDER = "none";

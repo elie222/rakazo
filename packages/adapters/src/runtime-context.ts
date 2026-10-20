@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AdapterContext, AgentRunRequest, AgentUsage } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import { imagePartCount, normalizedImageLimit, pruneForRebuild } from "./context-pruning.js";
 import type { CacheRequest, ContextBudget } from "./context-selection.js";
 import {
@@ -12,6 +13,7 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
+import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 
 const accountSalt = randomBytes(32);
@@ -148,6 +150,26 @@ export function createRuntimeContextPolicy(
   let pendingProjection: { scope: string; entries: ProjectionEntry[] } | undefined;
   let decision: RuntimeContextDecision | undefined;
   let metadataPresent = false;
+  let warnedOutputClamp = false;
+  function outputReserve(model: Model<Api>): number {
+    const contextWindow = request.model.contextWindow ?? model.contextWindow;
+    const configuredMaxTokens = resolveCompletionMaxTokens(
+      model.maxTokens,
+      request.model.maxTokens,
+      undefined,
+      model.reasoning,
+    );
+    const reserve = effectiveOutputReserve(contextWindow, configuredMaxTokens);
+    if (reserve < configuredMaxTokens && !warnedOutputClamp) {
+      warnedOutputClamp = true;
+      getLogger().warn("Model output limit clamped to preserve context room", {
+        configuredMaxTokens: request.model.maxTokens ?? configuredMaxTokens,
+        effectiveMaxTokens: reserve,
+        contextWindow,
+      });
+    }
+    return reserve;
+  }
   let sent: SentTranscript | undefined;
   const hashes = new WeakMap<Message, string>();
   function hash(message: Message): string {
@@ -309,7 +331,7 @@ export function createRuntimeContextPolicy(
         ? [index]
         : [],
     );
-    const outputReserve = request.model.maxTokens ?? model.maxTokens;
+    const reserve = outputReserve(model);
     const fixed =
       estimateContextTokens(ctx.systemPrompt ?? "") + estimateContextTokens(ctx.tools ?? []);
     // Recent history and navigation have their own bounds. Active tool progress
@@ -319,7 +341,7 @@ export function createRuntimeContextPolicy(
     let catalogIds = projected?.catalogIds ?? [];
     const budget = {
       contextWindow,
-      outputReserve,
+      outputReserve: reserve,
       systemPrompt: ctx.systemPrompt ?? "",
       tools: ctx.tools ?? [],
       imageTokens: options.imageTokens,
@@ -330,7 +352,7 @@ export function createRuntimeContextPolicy(
     const historicalContent = historical.filter((message) => message.role !== "system");
     const shortHistoryAllowance = Math.min(
       16384,
-      Math.max(0, Math.floor((contextWindow - outputReserve - fixed) / 4)),
+      Math.max(0, Math.floor((contextWindow - reserve - fixed) / 4)),
     );
     // Short originals can cost less than another lookup. Retain them when their
     // complete estimated payload fits a bounded share of the resolved window.
@@ -345,7 +367,7 @@ export function createRuntimeContextPolicy(
       let catalog = "";
       const maximum = Math.min(
         8192,
-        Math.max(0, Math.floor((contextWindow - outputReserve - fixed) / 4)),
+        Math.max(0, Math.floor((contextWindow - reserve - fixed) / 4)),
       );
       catalogIds = [];
       for (const message of old.slice(-64).reverse()) {
@@ -381,7 +403,7 @@ export function createRuntimeContextPolicy(
           fixed +
             estimateContextTokens(required, options.imageTokens) +
             estimateContextTokens(catalogMessage) <
-          contextWindow - outputReserve
+          contextWindow - reserve
         ) {
           const insertIndex = messages[0]?.role === "system" ? 1 : 0;
           messages.splice(insertIndex, 0, catalogMessage);
@@ -408,7 +430,7 @@ export function createRuntimeContextPolicy(
         fixed +
           estimateContextTokens(required, options.imageTokens) +
           estimateContextTokens(summary, options.imageTokens) >=
-        contextWindow - outputReserve
+        contextWindow - reserve
       )
         continue;
       if (!messages.includes(summary)) {
@@ -434,7 +456,13 @@ export function createRuntimeContextPolicy(
         return message;
       const source = text(message);
       if (source.length <= 1024) return message;
-      const shortened = shortenToolResultText(source, 1024, { name: message.toolName });
+      // The model read this result on an earlier step, so mark it as shortened after use.
+      const shortened = shortenToolResultText(
+        source,
+        1024,
+        { name: message.toolName },
+        { afterUse: true },
+      );
       if (shortened.length >= source.length) return message;
       return {
         ...message,
@@ -518,7 +546,7 @@ export function createRuntimeContextPolicy(
   /** A rebuild that leaves part of the window free, or none when the run needs all of it. */
   function rebuildWithHeadroom(ctx: Context, model: Model<Api>): Prepared | undefined {
     const window = request.model.contextWindow ?? model.contextWindow;
-    const reserve = request.model.maxTokens ?? model.maxTokens;
+    const reserve = outputReserve(model);
     try {
       return rebuild(ctx, model, reserve + Math.floor((window - reserve) * (1 - REBUILD_HEADROOM)));
     } catch (error) {
@@ -558,8 +586,7 @@ export function createRuntimeContextPolicy(
       let append = false;
       if (previous && appended) {
         const available =
-          (request.model.contextWindow ?? model.contextWindow) -
-          (request.model.maxTokens ?? model.maxTokens);
+          (request.model.contextWindow ?? model.contextWindow) - outputReserve(model);
         const imageLimit = normalizedImageLimit(request.model.maxImagesPerPrompt);
         const overTokens = (size: Size) => size.tokens > available;
         const overImages = (size: Size) => imageLimit !== undefined && size.images > imageLimit;

@@ -13,7 +13,7 @@ test("a failed overlay chunk keeps the shell and the draft, and Refresh loads it
 
   const pluginsChunk = /\/pages\/PluginsOverlay\.tsx/;
   await page.route(pluginsChunk, (route) => route.fulfill({ status: 404 }));
-  await page.getByText("Integrations", { exact: true }).click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
 
   const failed = page.getByRole("alertdialog", { name: "Could not load" });
   await expect(failed).toBeVisible();
@@ -24,9 +24,9 @@ test("a failed overlay chunk keeps the shell and the draft, and Refresh loads it
   await expect(composer).toHaveValue("Keep this draft");
 
   await page.unroute(pluginsChunk);
-  await page.getByText("Integrations", { exact: true }).click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await failed.getByRole("button", { name: "Refresh", exact: true }).click();
-  await page.getByText("Integrations", { exact: true }).click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
 });
 
@@ -111,7 +111,7 @@ for (const overlay of ["settings", "integrations"] as const) {
     if (overlay === "settings") await page.getByTestId("user-menu-trigger").click();
     await page
       .getByRole("button", {
-        name: overlay === "settings" ? "Settings" : "Integrations",
+        name: overlay === "settings" ? "Settings" : "Connect apps",
         exact: true,
       })
       .click();

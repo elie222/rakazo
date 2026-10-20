@@ -336,6 +336,28 @@ describe("openai-compatible provider", () => {
     }
   });
 
+  it("cancels a pending connection without waiting for the connect timeout", async () => {
+    const controller = new AbortController();
+    let markLookupStarted: () => void = () => {};
+    const lookupStarted = new Promise<void>((resolve) => {
+      markLookupStarted = resolve;
+    });
+    const safeFetch = createOpenAiCompatibleFetch(undefined, async () => {
+      markLookupStarted();
+      return new Promise(() => {});
+    });
+    const outcome = safeFetch("https://localhost:8000/v1/models", {
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    try {
+      await lookupStarted;
+      controller.abort();
+      await expect(outcome).resolves.toMatchObject({ name: "AbortError" });
+    } finally {
+      controller.abort();
+    }
+  });
+
   it("carries a Request's method, headers and body through as init", async () => {
     let seen: { url: string; init?: RequestInit } | undefined;
     const safeFetch = createOpenAiCompatibleFetch(async (input, init) => {
@@ -402,6 +424,16 @@ describe("openai-compatible provider", () => {
     const provider = openAiCompatibleCatalogProvider();
     expect(provider.id).toBe(OPENAI_COMPATIBLE_PROVIDER_ID);
     expect(provider.getModels()[0]?.id).toBe(OPENAI_COMPATIBLE_CATALOG_MODEL_ID);
+  });
+
+  it("defaults an unreported compatible context window to 256k", () => {
+    const models = registerOpenAiCompatibleRuntime(builtinModels(), {
+      modelId: "synthetic-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+    });
+    expect(models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "synthetic-model")?.contextWindow).toBe(
+      262_144,
+    );
   });
 
   it("registers runtime models at the stored base URL", () => {

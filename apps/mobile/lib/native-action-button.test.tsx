@@ -15,6 +15,8 @@ const swiftHost = vi.hoisted(() => vi.fn());
 const swiftText = vi.hoisted(() => vi.fn());
 
 vi.mock("react-native", () => ({
+  useWindowDimensions: () => ({ fontScale: 1 }),
+  StyleSheet: { flatten: (style: unknown) => style },
   Platform: platform,
   ActivityIndicator: () => null,
   Pressable: ({

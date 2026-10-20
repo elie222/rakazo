@@ -88,11 +88,14 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
       ...group,
       sectionId: group.key.startsWith("section:") ? group.key.slice("section:".length) : null,
       key: showSpaceNames ? `space:${space.id}:${group.key}` : group.key,
+      // A header holding the space menu is never blank, even for the only space.
       title: showSpaceNames
         ? group.title
           ? `${space.name} · ${group.title}`
           : space.name
-        : group.title,
+        : index === 0 && !group.title
+          ? space.name
+          : group.title,
       showLock: showSpaceNames,
       emptySpaceId: undefined as string | undefined,
       spaceId: space.id,
@@ -125,7 +128,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
     return [
       {
         key: showSpaceNames ? `space:${space.id}:empty` : `space:${space.id}:actions`,
-        title: showSpaceNames ? space.name : null,
+        title: space.name,
         bots: [],
         sectionId: null,
         showLock: showSpaceNames,

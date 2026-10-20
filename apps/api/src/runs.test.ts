@@ -91,3 +91,24 @@ describe("run activity notification preference", () => {
     expect(activityNotificationsEnabled("group-1", false)).toBe(true);
   });
 });
+
+it("hides opaque sender names in Activity previews", () => {
+  expect(
+    activityPreview({
+      trigger: "bot_message",
+      prompt: "internal",
+      sourceBlocks: [
+        {
+          kind: "bot_message_received",
+          fromBotId: "peer",
+          fromBotName: "__TestTok1__",
+          text: "Ready",
+          intent: "result",
+        },
+      ],
+    }),
+  ).toEqual({
+    promptSnippet: "Update from Another agent: Ready",
+    agentMessage: { fromBotName: "", kind: "update", text: "Ready" },
+  });
+});

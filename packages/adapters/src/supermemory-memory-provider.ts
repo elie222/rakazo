@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import type {
@@ -153,14 +154,22 @@ export async function prepareSupermemoryConnection(
   const { mode, baseUrl, apiKey } = parseSupermemoryConnection(settings, credentials);
   const pinnedAddresses =
     mode === "local" ? await pinSupermemoryPrivateHost(baseUrl, options) : undefined;
-  const probe = await probeSupermemory({
+  const connection: SupermemoryConnectionConfig = {
     baseUrl,
     apiKey,
     resolveHostname: options?.resolveHostname,
     fetch: options?.fetch,
     ...(pinnedAddresses ? { pinnedAddresses } : {}),
-  });
+  };
+  const probe = await probeSupermemory(connection);
   if (!probe.ok) throw new Error(probe.error);
+  // Clearing a conversation deletes its memory, which only owner and admin keys may do.
+  // Deleting a fresh random tag checks that without touching anyone's data.
+  const deletable = await deleteSupermemoryContainer(
+    `rakazo:delete-probe:${randomUUID()}`,
+    connection,
+  );
+  if (!deletable.ok) throw new Error(deletable.error);
   return { settings: { mode, baseUrl }, credentials: { apiKey } };
 }
 
@@ -250,6 +259,8 @@ export class SupermemoryMemoryProvider implements SemanticMemoryProvider {
     request: SemanticMemoryRecallRequest,
     context: AdapterContext,
   ): Promise<SemanticMemoryResponse<SemanticMemoryResult[]>> {
+    // Supermemory rejects an empty search query.
+    if (!request.query.trim()) return { ok: true, value: [] };
     const blocked = await this.localBaseUrlBlock();
     if (blocked) return { ok: false, error: blocked };
     const result = await searchSupermemoryContainers(

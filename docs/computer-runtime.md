@@ -81,7 +81,7 @@ The database stores the provider kind and opaque `providerRef`. That reference i
 
 The Boat adapter uses Boat's official TypeScript SDK for lifecycle, command, and file operations. It creates and resumes sandboxes with `noEnv: true`, as required when a third party supplies the API key, and keeps a two-hour TTL refreshed while the computer is active. The shared runtime creates each bot's display and noVNC transports, exposed through protected Boat port hosting. Rakazo's encrypted screen capability proxy binds the view/control policy and keeps the provider credentials out of browser-visible URLs. Observations and actions target the assigned bot display.
 
-Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. The Boat emulator uses the same multi-screen contract as the other managed-provider emulators.
+Boat stop archives the machine and resume reconnects the same opaque sandbox id. Each bot’s Chrome profile lives under the portable workspace and is included in checkpoint/export. Boat states the API cannot recover from (deleted, cancelled, snapshot data expired, or an `error` that recover cannot fix) are reported as gone, so the computer is replaced and restored from its last checkpoint.
 
 ## Persistence
 
@@ -102,7 +102,7 @@ contacts-export replay through real Pi, with either a stateful fake computer or
 real Docker Chromium. It requires no inference and complements the vision
 acceptance test below.
 
-Offline tests cover tool-result images, action parsing, provider conformance (including the page-browser adapter and computer_act fallback), workspace checkpoint/restore, provider SDK translation, lifecycle integration, and multi-screen managed-provider emulators. They never call a model or live sandbox.
+Offline tests cover tool-result images, action parsing, provider conformance (including the page-browser adapter and computer_act fallback), workspace checkpoint/restore, provider SDK translation, lifecycle integration, and the real Boat adapter against an in-memory Boat API. They never call a model or live sandbox.
 
 The explicit acceptance test requires Docker (for temporary Postgres), `E2B_API_KEY`, `OPENROUTER_API_KEY`, and a vision-capable OpenRouter model id:
 

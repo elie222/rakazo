@@ -77,6 +77,73 @@ describe("MCP transport seam", () => {
     await expect(session.callTool("echo")).rejects.toThrow("not connected");
   });
 
+  it.each([
+    [
+      "follows every cursor",
+      3,
+      2,
+      ["page0-tool0", "page0-tool1", "page1-tool0", "page1-tool1", "page2-tool0", "page2-tool1"],
+      3,
+    ],
+    ["stops at the tool cap", 3, 100, 250, 3],
+    ["stops at the page cap of a server that never ends", Number.POSITIVE_INFINITY, 1, 20, 20],
+  ] as const)(
+    "lists paginated tools: %s",
+    async (_name, pages, perPage, expected, requestedPages) => {
+      const cursors: Array<string | undefined> = [];
+      const session = new McpSession();
+      try {
+        await session.connectRemote({
+          url: "https://mcp.example.test/mcp",
+          network: {
+            ...TEST_NETWORK,
+            fetch: vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+              const request = new Request(input, init);
+              if (request.method !== "POST") return new Response(null, { status: 405 });
+              const message = await request.json();
+              if (message.method === "initialize") {
+                return Response.json({
+                  jsonrpc: "2.0",
+                  id: message.id,
+                  result: {
+                    protocolVersion: "2025-11-25",
+                    capabilities: { tools: {} },
+                    serverInfo: { name: "paginated", version: "1" },
+                  },
+                });
+              }
+              if (message.method !== "tools/list") return new Response(null, { status: 202 });
+              const cursor: string | undefined = message.params?.cursor;
+              cursors.push(cursor);
+              const page = cursor ? Number(cursor.replace("page-", "")) : 0;
+              return Response.json({
+                jsonrpc: "2.0",
+                id: message.id,
+                result: {
+                  tools: Array.from({ length: perPage }, (_, index) => ({
+                    name: `page${page}-tool${index}`,
+                    inputSchema: { type: "object" },
+                  })),
+                  ...(page + 1 < pages ? { nextCursor: `page-${page + 1}` } : {}),
+                },
+              });
+            }),
+          },
+        });
+
+        const names = (await session.listTools()).tools.map((tool) => tool.name);
+
+        if (typeof expected === "number") expect(names).toHaveLength(expected);
+        else expect(names).toEqual(expected);
+        expect(cursors).toHaveLength(requestedPages);
+        expect(cursors[0]).toBeUndefined();
+        expect(cursors[1]).toBe("page-1");
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
   it("preserves SDK session and protocol headers after stateful initialization", async () => {
     const requests: Request[] = [];
     const session = new McpSession();

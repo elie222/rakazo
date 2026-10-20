@@ -229,6 +229,9 @@ describe("Pi runtime transcript sent to a provider that binds thinking to its co
       expect(current.systemPrompt).toBe(previous.systemPrompt);
       expect(current.tools).toEqual(previous.tools);
       expect(current.messages.length).toBeGreaterThan(previous.messages.length);
+      expect(JSON.stringify(current.messages.slice(0, previous.messages.length))).toBe(
+        JSON.stringify(previous.messages),
+      );
       for (const [index, message] of previous.messages.entries()) {
         expect(providerContextPrefix("", [], [current.messages[index]!])).toEqual(
           providerContextPrefix("", [], [message]),

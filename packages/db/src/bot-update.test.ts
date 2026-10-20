@@ -221,3 +221,37 @@ describe("commitBotUpdate", () => {
     expect(update).toHaveBeenCalledOnce();
   });
 });
+
+it("normalizes generated name tokens before updating a bot", async () => {
+  const update = vi
+    .fn()
+    .mockResolvedValue({ id: "bot-1", name: "Bot", title: "", description: "" });
+  await commitBotUpdate({
+    prisma: { bot: { update } } as never,
+    notify: vi.fn(),
+    spaceId: "space-1",
+    threadId: "thread-1",
+    botId: "bot-1",
+    data: { name: "__TestTok1__" },
+    emitBotUpdated: false,
+  });
+  expect(update).toHaveBeenCalledWith(expect.objectContaining({ data: { name: "" } }));
+});
+
+it("preserves readable numbered bot names on writes", async () => {
+  const update = vi
+    .fn()
+    .mockResolvedValue({ id: "bot-1", name: "CustomerSupportBot2026", title: "", description: "" });
+  await commitBotUpdate({
+    prisma: { bot: { update } } as never,
+    notify: vi.fn(),
+    spaceId: "space-1",
+    threadId: "thread-1",
+    botId: "bot-1",
+    data: { name: "CustomerSupportBot2026" },
+    emitBotUpdated: false,
+  });
+  expect(update).toHaveBeenCalledWith(
+    expect.objectContaining({ data: { name: "CustomerSupportBot2026" } }),
+  );
+});

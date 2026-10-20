@@ -553,6 +553,8 @@ export interface ModelCallObserver {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
+  /** A new assistant message starts; its text does not continue the previous text. */
+  | { type: "turn" }
   | {
       type: "progress";
       text: string;
@@ -655,6 +657,8 @@ export interface BackgroundJobPayloads {
   "messaging.deliver": { runId?: string };
   /** Reconcile durable remote-agent intent; scope is loaded from the database. */
   "cloud_agent.poll": { agentId: string };
+  /** Read an Expo push receipt; the token is identified by its digest, never stored. */
+  "push.receipt": { userId: string; ticketId: string; tokenDigest: string };
 }
 
 export type BackgroundJobName = keyof BackgroundJobPayloads;
@@ -671,6 +675,11 @@ export type BackgroundJob = {
      * replaced. Omit to replace, which is what an explicit continue does.
      */
     keepExisting?: boolean;
+    /**
+     * With `keepExisting`, still replace a job a worker locked at or before this
+     * time. A worker that died never unlocks its job, so it would never run again.
+     */
+    replaceLockedBefore?: Date;
     /** Cap retried executions; omit to use the job queue's default. */
     maxAttempts?: number;
   };
@@ -964,7 +973,7 @@ export type PageBrowserCommand =
 export type PageBrowserResult = Partial<BrowserSnapshotResult & BrowserActResult> & { ok: boolean };
 
 /** Vendor-neutral status for a remote cloud coding agent. */
-export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled";
+export type CloudAgentStatus = "running" | "finished" | "failed" | "cancelled" | "expired";
 
 export interface CloudAgentCapabilities {
   launch: boolean;
@@ -1052,6 +1061,9 @@ export type BillingSubscriptionStatus =
   | "active"
   | "past_due"
   | "incomplete"
+  /** No access; the subscription resumes from the billing portal, so a new checkout would double-bill. */
+  | "unpaid"
+  | "paused"
   | "canceled";
 
 export interface BillingPrice {

@@ -31,6 +31,11 @@ export type CatalogSearchHit = {
 
 export type CatalogSearchResult =
   | { tools: CatalogSearchHit[] }
+  | {
+      tools: CatalogSearchHit[];
+      groups: Array<{ group: string; count: number }>;
+      hint: string;
+    }
   | { index: Array<{ group: string; names: string[] }> }
   | { groups: Array<{ group: string; count: number }>; hint: string }
   | { group: string; names: string[]; error?: string }
@@ -48,11 +53,11 @@ export function lazyCatalogTools(
   label: string,
   entries: CatalogEntry[] = [],
 ): ConnectorTool[] {
-  const indexText = formatNameIndexText(groupedNames(entries));
-  const embedIndex = indexText.length > 0 && fitsNameIndexBudget(groupedNames(entries));
-  const searchDescription = embedIndex
-    ? `Search connected ${label} tools. Empty query lists names by source. Pass group to expand one source.\n${indexText}`
-    : `Search connected ${label} tools. Empty query lists sources. Pass group to list names in one source, or query to search.`;
+  const grouped = groupedNames(entries);
+  const searchDescription =
+    grouped.length > 0 && fitsNameIndexBudget(grouped)
+      ? `Search connected ${label} tools. Empty query lists names by source. Pass group to expand one source.\n${formatNameIndexText(grouped)}`
+      : `Search connected ${label} tools. Empty query lists sources. Pass group to list names in one source, or query to search.${sourceSummaryText(grouped)}`;
   return [
     {
       name: `${prefix}_search_tools`,
@@ -149,14 +154,23 @@ export function searchCatalog(
   entries: CatalogEntry[],
   args: Record<string, unknown>,
 ): CatalogSearchResult {
-  const query = String(args.query ?? "")
+  // Source labels can differ only by case, so pick a source from the query as typed.
+  const typedQuery = String(args.query ?? "")
     .slice(0, MAX_QUERY_LENGTH)
-    .trim()
-    .toLowerCase();
-  const groupFilter = String(args.group ?? "")
+    .trim();
+  let query = typedQuery.toLowerCase();
+  let groupFilter = String(args.group ?? "")
     .slice(0, MAX_GROUP_LENGTH)
     .trim();
-  const scoped = groupFilter ? entries.filter((entry) => entry.group === groupFilter) : entries;
+  // A query that is only a source name asks for that source's tools, which word search
+  // would cap before the names that sort late.
+  if (!groupFilter && query && !entries.some((entry) => isExactName(entry, query))) {
+    if (entriesInGroup(entries, typedQuery).length > 0) {
+      groupFilter = typedQuery;
+      query = "";
+    }
+  }
+  const scoped = groupFilter ? entriesInGroup(entries, groupFilter) : entries;
 
   if (!query) {
     if (groupFilter) {
@@ -192,24 +206,48 @@ export function searchCatalog(
   const limit = Number.isFinite(requested)
     ? Math.max(1, Math.min(TOOL_SEARCH_LIMIT, Math.trunc(requested)))
     : TOOL_SEARCH_LIMIT;
+  const words = searchWords(query);
+  const score = (inside: boolean) =>
+    scoped.map((entry) => ({ entry, ...catalogScore(entry, query, words, inside) }));
+  let scored = score(false);
+  // Rank on the words that matched before the cap, so a tool that matches every word is
+  // not pushed out by tools that match one word and sort earlier by name.
+  let bestMatched = Math.max(0, ...scored.map(({ matched }) => matched));
+  // Matches inside a word ("mail" in gmail) count only when nothing matches every word at a
+  // word start; otherwise "tool_0" would also find tool_10.
+  if (bestMatched < words.length) {
+    scored = score(true);
+    bestMatched = Math.max(0, ...scored.map(({ matched }) => matched));
+  }
+  const hits = scored
+    .filter(({ matched }) => matched > 0 && matched === bestMatched)
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.entry.tool.name.localeCompare(right.entry.tool.name) ||
+        left.entry.id.localeCompare(right.entry.id),
+    )
+    .slice(0, limit)
+    .map(({ entry }) => ({
+      id: entry.id,
+      name: entry.tool.name,
+      description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
+      readOnly: entry.tool.readOnly === true,
+    }));
+  if (hits.length > 0 && bestMatched === words.length) return { tools: hits };
   return {
-    tools: scoped
-      .map((entry) => ({ entry, score: catalogScore(entry, query) }))
-      .filter(({ score }) => score < 4)
-      .sort(
-        (left, right) =>
-          left.score - right.score ||
-          left.entry.tool.name.localeCompare(right.entry.tool.name) ||
-          left.entry.id.localeCompare(right.entry.id),
-      )
-      .slice(0, limit)
-      .map(({ entry }) => ({
-        id: entry.id,
-        name: entry.tool.name,
-        description: entry.tool.description.slice(0, MAX_DESCRIPTION_LENGTH),
-        readOnly: entry.tool.readOnly === true,
-      })),
+    tools: hits,
+    groups: groupedNames(entries).map(({ group, names }) => ({ group, count: names.length })),
+    hint: "No tool matches every word. Try other words or pass group. Built-in tools are called directly, not found here.",
   };
+}
+
+/** Exact label first; a model often capitalizes a source name ("Linear" for "linear"). */
+function entriesInGroup(entries: CatalogEntry[], group: string): CatalogEntry[] {
+  const exact = entries.filter((entry) => entry.group === group);
+  if (exact.length > 0) return exact;
+  const lower = group.toLowerCase();
+  return entries.filter((entry) => entry.group.toLowerCase() === lower);
 }
 
 export function loadCatalogEntry(
@@ -416,15 +454,64 @@ function listNames(entries: CatalogEntry[]): string[] {
   );
 }
 
-function catalogScore(entry: CatalogEntry, query: string): number {
-  if (!query) return 0;
-  const name = entry.tool.name.toLowerCase();
-  const shortName = catalogShortName(entry).toLowerCase();
-  const description = entry.tool.description.toLowerCase();
-  const group = entry.group.toLowerCase();
-  if (name === query || shortName === query) return 0;
-  if (name.startsWith(query) || shortName.startsWith(query)) return 1;
-  if (name.includes(query) || shortName.includes(query) || group.includes(query)) return 2;
-  if (description.includes(query)) return 3;
-  return 4;
+/** Overflowing sources still appear by name and count, with names for those that fit. */
+function sourceSummaryText(groups: Array<{ group: string; names: string[] }>): string {
+  if (groups.length === 0) return "";
+  const sources = groups.map(({ group, names }) => `${group} (${names.length})`).join(", ");
+  const listed: Array<{ group: string; names: string[] }> = [];
+  for (const group of groups) {
+    if (fitsNameIndexBudget([...listed, group])) listed.push(group);
+  }
+  return listed.length > 0
+    ? `\nSources: ${sources}\n${formatNameIndexText(listed)}`
+    : `\nSources: ${sources}`;
+}
+
+function searchWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+function isExactName(entry: CatalogEntry, query: string): boolean {
+  return entry.tool.name.toLowerCase() === query || catalogShortName(entry).toLowerCase() === query;
+}
+
+/**
+ * Score each query word on its best field: a name word outranks the source, which outranks
+ * the description. A word matches the start of a word in that field, so "project" finds
+ * list_projects, or with inside set anywhere in one. An exact tool name ranks above everything.
+ */
+function catalogScore(
+  entry: CatalogEntry,
+  query: string,
+  words: string[],
+  inside: boolean,
+): { matched: number; score: number } {
+  if (isExactName(entry, query)) return { matched: words.length, score: Number.MAX_SAFE_INTEGER };
+  const fields = [
+    { words: searchWords(`${entry.tool.name} ${catalogShortName(entry)}`), weight: 3 },
+    { words: searchWords(entry.group), weight: 2 },
+    { words: searchWords(entry.tool.description), weight: 1 },
+  ];
+  let matched = 0;
+  let score = 0;
+  for (const word of words) {
+    const weight = Math.max(
+      0,
+      ...fields
+        .filter((field) =>
+          field.words.some((candidate) =>
+            inside ? candidate.includes(word) : candidate.startsWith(word),
+          ),
+        )
+        .map((field) => field.weight),
+    );
+    if (weight > 0) {
+      matched += 1;
+      score += weight;
+    }
+  }
+  return { matched, score };
 }

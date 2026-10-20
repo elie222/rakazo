@@ -52,6 +52,13 @@ test("billing paywall holds the app until the subscription is active", async ({
   await expect(paywall.getByRole("button", { name: "Log out" })).toBeVisible();
   await captureScreenshot(page, testInfo, "billing-paywall");
 
+  // An unpaid subscription resumes in the portal rather than starting a second checkout.
+  status = billingStatus({ trialAvailable: false, state: "unpaid", hasCustomer: true });
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(paywall.getByRole("button", { name: "Manage billing" })).toBeVisible();
+  await expect(paywall.getByRole("button", { name: "Subscribe" })).toHaveCount(0);
+  await captureScreenshot(page, testInfo, "billing-paywall-unpaid");
+
   status = billingStatus({
     access: true,
     trialAvailable: false,

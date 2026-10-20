@@ -451,6 +451,29 @@ describe("ChatSdkMessagingSurface webhook waitUntil drain", () => {
 
     expect(response?.status).toBe(500);
   });
+
+  it("processes the vendor's retry of a message the sink failed on, exactly once", async () => {
+    const { platform } = createPlatform();
+    const surface = new ChatSdkMessagingSurface([platform]);
+    const processed: string[] = [];
+    let failNext = true;
+    surface.onInbound(async (event) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("provision failed");
+      }
+      if (event.type === "message") processed.push(event.handle);
+    });
+    const delivery = { threadId: "mock:Duser:1", id: "m-retry", text: "hello" };
+
+    // Chat marks the message seen before the sink runs; without clearing
+    // that mark the retry would ACK 200 and the message would be lost.
+    expect((await surface.handleWebhook("mock", webhookRequest(delivery)))?.status).toBe(500);
+    expect((await surface.handleWebhook("mock", webhookRequest(delivery)))?.status).toBe(200);
+    expect((await surface.handleWebhook("mock", webhookRequest(delivery)))?.status).toBe(200);
+
+    expect(processed).toEqual(["m-retry"]);
+  });
 });
 
 describe("ChatSdkMessagingSurface webhook plumbing", () => {
@@ -474,11 +497,12 @@ describe("ChatSdkMessagingSurface webhook plumbing", () => {
   });
 
   it("peeks status payloads only after the adapter accepted the request", async () => {
-    const peekStatus = () =>
-      ({ type: "status", provider: "mock", handle: "h-1", status: "SENT" }) as const;
+    const peekStatuses = () => [
+      { type: "status", provider: "mock", handle: "h-1", status: "SENT" } as const,
+    ];
 
     const accepted = createSurface(
-      { peekStatus },
+      { peekStatuses },
       { handleWebhook: vi.fn(async () => new Response("ok")) },
     );
     await accepted.surface.handleWebhook("mock", webhookRequest({ is_outbound: true }));
@@ -488,7 +512,7 @@ describe("ChatSdkMessagingSurface webhook plumbing", () => {
 
     // A forged webhook the adapter rejects must not flip outbox rows.
     const rejected = createSurface(
-      { peekStatus },
+      { peekStatuses },
       { handleWebhook: vi.fn(async () => new Response("no", { status: 401 })) },
     );
     const response = await rejected.surface.handleWebhook(
@@ -534,6 +558,32 @@ describe("ChatSdkMessagingSurface outbound", () => {
     expect((adapter.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toBe("mock:C1:9");
   });
 
+  it.each([
+    ["a transient failure", new Error("socket hang up"), false, null],
+    [
+      "a rate limit",
+      Object.assign(new Error("rate limited"), { name: "AdapterRateLimitError", retryAfter: 30 }),
+      false,
+      30_000,
+    ],
+    ["a permanent failure", new Error("channel_not_found"), true, null],
+  ] as const)("classifies %s for the outbox", async (_label, error, permanent, retryAfterMs) => {
+    const { surface } = createSurface(
+      { isPermanentSendError: (candidate) => candidate === error && permanent },
+      { postMessage: vi.fn(async () => Promise.reject(error)) },
+    );
+
+    await expect(
+      surface.sendToThread({ threadId: "mock:C1:9", body: "hi" }, context),
+    ).rejects.toMatchObject({
+      name: "MessagingSendError",
+      message: error.message,
+      cause: error,
+      permanent,
+      retryAfterMs,
+    });
+  });
+
   it("prefers the platform's deterministic direct thread id", async () => {
     const { surface, adapter } = createSurface({
       directThreadId: (address) => `mock:D${address}:pinned`,
@@ -550,6 +600,18 @@ describe("ChatSdkMessagingSurface outbound", () => {
       "mock:D+15551234567:",
     );
     expect(adapter.openDM).toHaveBeenCalledWith("+15551234567");
+  });
+
+  it("classifies a failed openDM like a failed send", async () => {
+    const error = new Error("invalid_auth");
+    const { surface } = createSurface(
+      { isPermanentSendError: (candidate) => candidate === error },
+      { openDM: vi.fn(async () => Promise.reject(error)) },
+    );
+    await expect(surface.openDirectThread("mock", "U1", context)).rejects.toMatchObject({
+      name: "MessagingSendError",
+      permanent: true,
+    });
   });
 
   it("throws when the platform cannot open direct conversations", async () => {

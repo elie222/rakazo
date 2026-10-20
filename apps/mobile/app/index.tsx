@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
+import { ACTIVE_RUN_STATUSES, accountDisplay } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
 import {
@@ -38,6 +38,13 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Animated, {
+  Easing,
+  ReduceMotion,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BotAvatar } from "../components/bot-avatar";
 import type { BotOrganizationUpdate } from "../components/bot-organize-modal";
@@ -76,14 +83,17 @@ import {
 } from "../lib/api";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
+import type { CollapsedSections } from "../lib/collapsed-sections";
+import { loadCollapsedSections, saveCollapsedSections } from "../lib/collapsed-sections";
 import { confirmDeleteSection } from "../lib/confirm-delete-section";
 import { allowFocusPrompt, scheduleFocusPrompt } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
-import { botTag, formatThreadTime, userInitials } from "../lib/inbox";
+import { botTag, formatThreadTime } from "../lib/inbox";
 import { retainInboxValue } from "../lib/inbox-retention";
 import type { InboxSpace, InboxSpaceItem } from "../lib/inbox-spaces";
 import {
   canDeleteInboxSpace,
+  inboxHasNoChats,
   inboxNeedsCreateHint,
   removeInboxSpace,
   retryInboxSpaceFallback,
@@ -242,15 +252,32 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   });
   const [spaceBusy, setSpaceBusy] = useState(false);
   const [spaceRecoveryId, setSpaceRecoveryId] = useState<string | null>(null);
-  const [collapsedRosterParents, setCollapsedRosterParents] = useState(() => new Set<string>());
-  const toggleRosterParent = useCallback((botId: string) => {
-    setCollapsedRosterParents((previous) => {
-      const next = new Set(previous);
-      if (next.has(botId)) next.delete(botId);
-      else next.add(botId);
-      return next;
-    });
-  }, []);
+  // Roster parent bot ids and section heading keys, kept on this device for the last account
+  // that changed them. Loaded before the inbox first renders, so sections don't fold on launch.
+  const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>(() => ({
+    keys: new Set(),
+  }));
+  const userId = me?.userId;
+  const collapsed = useMemo(
+    () => (collapsedSections.userId === userId ? collapsedSections.keys : new Set<string>()),
+    [collapsedSections, userId],
+  );
+  const toggleCollapsed = useCallback(
+    (key: string) => {
+      setCollapsedSections((previous) => {
+        const next = new Set(previous.userId === userId ? previous.keys : []);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return { userId, keys: next };
+      });
+    },
+    [userId],
+  );
+  useEffect(() => {
+    if (collapsedSections.userId) {
+      saveCollapsedSections(collapsedSections.userId, collapsedSections.keys);
+    }
+  }, [collapsedSections]);
 
   useEffect(() => {
     void loadActivityMode().then(setActivityMode);
@@ -336,7 +363,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   }, [loadBots]);
 
   useEffect(() => {
-    void loadSessionToken().then((token) => {
+    void Promise.all([loadSessionToken(), loadCollapsedSections()]).then(([token, stored]) => {
+      if (stored) setCollapsedSections(stored);
       setHasSession(Boolean(token));
       setReady(true);
     });
@@ -472,10 +500,10 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       bots: space.bots.filter((bot) => SWIPE_ROWS || !bot.pinned),
       groups: space.groups.filter((group) => SWIPE_ROWS || !group.pinned),
     }));
-    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsedRosterParents, me?.spaceId);
+    const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [inboxSpaces, collapsedRosterParents, me?.spaceId, spaces, visible, visibleGroups]);
-  const initials = userInitials(me?.name ?? "");
+  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups]);
+  const initials = accountDisplay(me ?? {}, t("You")).initial ?? "?";
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId
       ? { bots, groups, botSections }
@@ -1056,7 +1084,22 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           </View>
         ) : (
           <View style={styles.sectionHeadingRow}>
-            <Text style={[styles.sectionHeading, { flex: 1 }]}>{item.title}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                item.collapsed
+                  ? t("Expand {name}", { name: item.title })
+                  : t("Collapse {name}", { name: item.title })
+              }
+              accessibilityState={{ expanded: !item.collapsed }}
+              accessibilityValue={item.collapsed ? { text: String(item.count ?? 0) } : undefined}
+              onPress={() => toggleCollapsed(item.key)}
+              style={({ pressed }) => [styles.sectionToggle, pressed && styles.rowPressed]}
+            >
+              <Text style={styles.sectionTitle}>{item.title}</Text>
+              {item.collapsed ? <Text style={styles.sectionCount}>{item.count ?? 0}</Text> : null}
+              <SectionChevron collapsed={item.collapsed === true} />
+            </Pressable>
             {item.sectionId && Platform.OS === "android" ? (
               // A plain button, like the create control: the Android menu trigger can collapse to
               // zero width on an older binary, which would hide the only way to delete an empty section.
@@ -1113,8 +1156,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
           day={day}
           depth={item.depth}
           hasChildren={item.hasChildren}
-          collapsed={collapsedRosterParents.has(item.bot.id)}
-          onToggleChildren={toggleRosterParent}
+          collapsed={collapsed.has(item.bot.id)}
+          onToggleChildren={toggleCollapsed}
           onPress={openBot}
           onLongPress={!SWIPE_ROWS ? organizeBot : undefined}
           onAction={SWIPE_ROWS && item.bot.spaceId === me?.spaceId ? botAction : undefined}
@@ -1128,7 +1171,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       botAction,
       botSections,
       chooseInboxSpace,
-      collapsedRosterParents,
+      collapsed,
       confirmDeleteSpace,
       deleteSection,
       day,
@@ -1144,7 +1187,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       spaceRecoveryId,
       styles,
       t,
-      toggleRosterParent,
+      toggleCollapsed,
     ],
   );
 
@@ -1158,7 +1201,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   if (!hasSession) return <Redirect href="/sign-in" />;
   // With nothing to show, the failure takes the screen; over saved chats it stays one line.
   // Headings of empty saved Spaces are not chats, so they do not hide the failure.
-  const showLoadFailure = Boolean(loadFailure) && listData.every((item) => item.type === "heading");
+  const showLoadFailure = Boolean(loadFailure) && inboxHasNoChats(listData);
   const inlineError = error ?? (showLoadFailure ? null : (loadFailure?.message ?? null));
 
   return (
@@ -1568,6 +1611,29 @@ function HeaderButton({
     >
       {children}
     </Pressable>
+  );
+}
+
+/** Points right while a section is collapsed and turns down as it opens. */
+function SectionChevron({ collapsed }: { collapsed: boolean }) {
+  const rotation = useSharedValue(collapsed ? 0 : 90);
+  useEffect(() => {
+    rotation.value = withTiming(collapsed ? 0 : 90, {
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      reduceMotion: ReduceMotion.System,
+    });
+  }, [collapsed, rotation]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <NativeSymbol
+        ios="chevron.right"
+        android="chevron-forward"
+        size={12}
+        color={native.tertiaryLabel}
+      />
+    </Animated.View>
   );
 }
 
@@ -2044,6 +2110,28 @@ function createHomeStyles() {
       justifyContent: "center",
     },
     sectionHeadingRow: { flexDirection: "row", alignItems: "center", paddingRight: 16 },
+    sectionToggle: {
+      flex: 1,
+      alignSelf: "stretch",
+      minHeight: 44,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 4,
+    },
+    sectionTitle: {
+      flexShrink: 1,
+      color: native.secondaryLabel,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    sectionCount: {
+      color: native.tertiaryLabel,
+      fontSize: 13,
+      fontVariant: ["tabular-nums"],
+    },
     sectionHeading: {
       color: native.secondaryLabel,
       fontSize: 14,

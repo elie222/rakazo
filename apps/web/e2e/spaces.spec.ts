@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { captureScreenshot, completeOnboarding, openNewSpace, rpc, signup } from "./helpers";
 
-test("spaces stay invisible by default and chat creation requires approval", async ({
+test("the only space is named in the sidebar and chat creation requires approval", async ({
   page,
 }, testInfo) => {
   const stamp = Date.now();
@@ -9,7 +9,7 @@ test("spaces stay invisible by default and chat creation requires approval", asy
   await completeOnboarding(page);
 
   const sidebar = page.locator("aside").first();
-  await expect(sidebar.getByText("Personal", { exact: true })).toHaveCount(0);
+  await expect(sidebar.getByText("Personal", { exact: true })).toBeVisible();
   await expect(sidebar.getByRole("button", { name: /^Chief/ })).toHaveCount(1);
   await sidebar.getByRole("button", { name: "Actions for Personal" }).click();
   await expect(page.getByRole("menuitem", { name: "Rename space" })).toBeVisible();

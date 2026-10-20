@@ -1,5 +1,6 @@
 import type { AdapterContext } from "@rakazo/adapter-kit";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_HONCHO_CONCLUSION_BYTES } from "./honcho-client.js";
 import {
   HonchoMemoryProvider,
   honchoWorkspaceId,
@@ -15,7 +16,13 @@ const context: AdapterContext = {
   signal: new AbortController().signal,
 };
 
-function honchoFetch(chatAnswers?: Record<string, string>, workspaces = ["rakazo-space-1"]) {
+/** Honcho's DialecticResponse.content is `str | None`. */
+type DialecticContent = string | null;
+
+function honchoFetch(
+  chatAnswers?: Record<string, DialecticContent>,
+  workspaces = ["rakazo-space-1"],
+) {
   const facts = new Map<string, string[]>();
   const peers = new Set(["rakazo-shared", "bot-bot-1", "bot-bot-2"]);
   return vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -29,8 +36,10 @@ function honchoFetch(chatAnswers?: Record<string, string>, workspaces = ["rakazo
     const workspace = route?.[1];
     if (workspace) expect(workspaces).toContain(workspace);
     const peer = route?.[3];
-    let content: string | undefined;
+    let content: DialecticContent | undefined;
     if (peer) {
+      // DialecticOptions.query: max_length=10000 code points, else 422.
+      if ([...body.query].length > 10_000) return new Response("{}", { status: 422 });
       expect(peers.has(peer)).toBe(true);
       expect(body).toEqual({
         query: expect.any(String),
@@ -239,6 +248,41 @@ describe("HonchoMemoryProvider", () => {
       ).toEqual(configured ? ["team-notes", "team-notes"] : workspaces);
     },
   );
+
+  it("recalls with a prompt longer than Honcho's query limit", async () => {
+    const fetchMock = honchoFetch({ "bot-bot-1": "Use metric units." });
+    const result = await provider(fetchMock).recall(
+      { query: "😀".repeat(20_000), scope: "isolated", botId: "bot-1", limit: 5 },
+      context,
+    );
+    expect(result).toMatchObject({ ok: true, value: [{ memory: "Use metric units." }] });
+    const [chat] = calls(fetchMock).filter((call) => call.path.endsWith("/chat"));
+    expect(chat!.body.query).toContain("Request: 😀");
+    expect(chat!.body.query).not.toMatch(/[\uD800-\uDBFF]$/);
+  });
+
+  it("treats a dialectic with no answer as no memory", async () => {
+    const result = await provider(honchoFetch({ "bot-bot-1": null })).recall(
+      { query: "anything", scope: "isolated", botId: "bot-1", limit: 5 },
+      context,
+    );
+    expect(result).toEqual({ ok: true, value: [] });
+  });
+
+  it("caps saved conclusions by bytes so CJK text stays within the embedding limit", async () => {
+    const fetchMock = honchoFetch({});
+    const content = "记".repeat(MAX_HONCHO_CONCLUSION_BYTES);
+    await expect(
+      provider(fetchMock).save(
+        { content, scope: "isolated", botId: "bot-1", source: { kind: "durable" } },
+        context,
+      ),
+    ).resolves.toEqual({ ok: true, value: undefined });
+    const saved = calls(fetchMock).find((call) => call.path.endsWith("/conclusions"));
+    const conclusion: string = saved!.body.conclusions[0].content;
+    expect(Buffer.byteLength(conclusion)).toBeLessThanOrEqual(MAX_HONCHO_CONCLUSION_BYTES);
+    expect(content.startsWith(conclusion)).toBe(true);
+  });
 
   it("keeps compaction summaries out of Honcho", async () => {
     const fetchMock = honchoFetch({});

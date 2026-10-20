@@ -11,6 +11,7 @@ import type { EvalCase, Evidence } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
+import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
@@ -29,7 +30,6 @@ export type EvalApp = {
   runtime: AgentRuntime;
   notifications?: NotificationProvider;
   harnessIssues?: readonly string[];
-  connector?: { records: readonly unknown[] };
   awaitIdle?: () => Promise<void>;
   finalizeBackground?: () => Promise<void>;
   cacheDecisions?: readonly CacheDecisionMeasurement[];
@@ -48,6 +48,7 @@ export type TrialOptions = {
   pricing?: EvalPricing;
   connection: ModelConnectInput;
   timeoutMs: number;
+  judge?: EvalJudge;
   maxToolCalls: number;
   createApp: (
     services: EvalServices,
@@ -629,7 +630,6 @@ export async function runTrial(
       clarificationPending,
       pendingApproval,
       priorMemory,
-      destinationWrites: handles.connector?.records.length ?? 0,
       toolNames: [...seenTools.values()].map((event) => event.name),
       messaging: {
         originThreadId: messagingOriginThreadId,
@@ -638,14 +638,6 @@ export async function runTrial(
     };
     phase = "harness";
     result.criteria = scenario.grade(evidence);
-    result.status =
-      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
-    result.category = result.status === "passed" ? null : "agent";
-    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
-    if (result.status === "failed" && handles.harnessIssues?.length) {
-      result.category = "harness";
-      result.reason = handles.harnessIssues.join(" ");
-    }
     result.artifacts = Object.fromEntries(
       Object.entries({
         ...files,
@@ -657,6 +649,33 @@ export async function runTrial(
         "memory-snapshot": evidence.memory,
       }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
     );
+    if (scenario.judge && result.criteria.every((c) => c.pass)) {
+      if (!options.judge) throw new EvalFailure("incomplete", "Semantic grading requires a judge");
+      try {
+        const judgment = await withinDeadline(
+          options.judge(
+            scenario.judge(evidence),
+            AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+          ),
+          deadline,
+        );
+        result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
+        result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
+      } catch (error) {
+        throw new EvalFailure(
+          "incomplete",
+          `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
+        );
+      }
+    }
+    result.status =
+      result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
+    result.category = result.status === "passed" ? null : "agent";
+    result.reason = result.status === "passed" ? null : "Outcome criteria failed";
+    if (result.status === "failed" && handles.harnessIssues?.length) {
+      result.category = "harness";
+      result.reason = handles.harnessIssues.join(" ");
+    }
   } catch (error) {
     result.status = "failed";
     result.category = error instanceof EvalFailure ? error.category : phase;

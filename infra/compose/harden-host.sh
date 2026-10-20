@@ -4,10 +4,14 @@ set -Eeuo pipefail
 
 DEPLOY_USER="${DEPLOY_USER:-deploy}"
 SSH_PORT="${SSH_PORT:-22}"
+[[ "${SSH_PORT}" =~ ^[0-9]+$ ]] && ((SSH_PORT > 0 && SSH_PORT <= 65535)) || { echo "Invalid SSH_PORT" >&2; exit 1; }
 
 if [[ "${EUID}" -ne 0 ]]; then
-  exec sudo --preserve-env=DEPLOY_USER,SSH_PORT bash "$0" "$@"
+  exec sudo --preserve-env=DEPLOY_USER,SSH_PORT,SSH_CONNECTION bash "$0" "$@"
 fi
+
+# Validate the guard's session identity before installing packages or writing host settings.
+[[ -n "${SSH_CONNECTION:-}" ]] || { echo "SSH_CONNECTION is required; use sudo --preserve-env=SSH_CONNECTION" >&2; exit 1; }
 
 if ! id "${DEPLOY_USER}" >/dev/null 2>&1; then
   echo "Deploy user ${DEPLOY_USER} does not exist" >&2
@@ -127,17 +131,20 @@ cat >/etc/audit/rules.d/50-rakazo.rules <<'EOF'
 EOF
 augenrules --load >/dev/null
 
-ufw --force reset >/dev/null
-ufw default deny incoming
-ufw default allow outgoing
-ufw limit "${SSH_PORT}/tcp" comment 'Rate-limited SSH'
-ufw allow 80/tcp comment 'HTTP for ACME redirect'
-ufw allow 443/tcp comment 'HTTPS'
-ufw allow 443/udp comment 'HTTP/3'
-ufw --force enable
+# Keep existing private-network rules. Roll back unless a fresh SSH session confirms.
+install -m 0755 "$(dirname "$0")/firewall-change.sh" /usr/local/sbin/rakazo-firewall-change
+/usr/local/sbin/rakazo-firewall-change apply bash -euc '
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw limit "$1/tcp" comment "Rate-limited SSH"
+  ufw allow 80/tcp comment "HTTP for ACME redirect"
+  ufw allow 443/tcp comment "HTTPS"
+  ufw allow 443/udp comment "HTTP/3"
+  ufw --force enable
+' _ "${SSH_PORT}"
 
 systemctl enable --now apparmor auditd fail2ban unattended-upgrades
 systemctl restart fail2ban
 systemctl reload ssh
 
-echo "Rakazo host hardening applied. Verify a fresh SSH session before closing the current one."
+echo "Host hardening applied. Confirm the firewall token from a fresh SSH session within three minutes."
