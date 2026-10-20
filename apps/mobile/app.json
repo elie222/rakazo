@@ -64,7 +64,14 @@
               "application/json",
               "application/zip"
             ],
-            "multipleShareMimeTypes": ["image/*", "audio/*", "video/mp4", "application/pdf"]
+            "multipleShareMimeTypes": [
+              "image/*",
+              "audio/*",
+              "video/mp4",
+              "application/pdf",
+              "application/json",
+              "application/zip"
+            ]
           }
         }
       ],

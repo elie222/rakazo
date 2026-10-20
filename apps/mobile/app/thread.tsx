@@ -1673,6 +1673,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
           attachmentMaxBytes(uploadConfig),
         );
         if (!active || !isIncomingShareCurrent(share)) {
+          retryIncomingShare(share);
           return;
         }
         if (result.failedFiles.length)
