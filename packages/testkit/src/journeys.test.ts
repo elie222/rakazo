@@ -2043,11 +2043,12 @@ describeJourneys("required product journeys", () => {
       ),
     ).toBe(true);
 
-    await rpc(app, cookie, "threads/send", {
+    const reply = await rpc<{ runId: string }>(app, cookie, "threads/send", {
       botId: bot.id,
       text: "Paris",
       clientNonce: `ask-freetext-${stamp}`,
     });
+    expect(reply.runId).toBe(asked.runId);
     const answered = await waitFor(app, cookie, bot.id, (snap) =>
       snap.messages.some((message) =>
         message.blocks.some(

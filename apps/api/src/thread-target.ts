@@ -33,6 +33,7 @@ import {
   expireComputerExecutionLeases,
   IsolationError,
   lockOwnedGroup,
+  retireWaitingQuestionInTransaction,
   touchGroupUpdatedAt,
 } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -731,6 +732,14 @@ export async function sendThreadMessage(
             })
           )
             answered.push({ ...run, status: "queued" });
+          else
+            await retireWaitingQuestionInTransaction(tx, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              botId: target.botId,
+              runId: run.id,
+              answer: input.text ?? "",
+            });
         }
         if (answered.length) {
           const primary = answered[0];
@@ -892,6 +901,14 @@ export async function sendThreadMessage(
             const queuedForBot = answeredByBotId.get(run.botId) ?? [];
             queuedForBot.push({ ...run, status: "queued" });
             answeredByBotId.set(run.botId, queuedForBot);
+          } else {
+            await retireWaitingQuestionInTransaction(tx, {
+              spaceId: actor.spaceId,
+              threadId: target.threadId,
+              botId: run.botId,
+              runId: run.id,
+              answer: input.text ?? "",
+            });
           }
           continue;
         }

@@ -8,6 +8,7 @@ import {
   MessageBlock as MessageBlockSchema,
 } from "@rakazo/contracts";
 import {
+  ACTIVE_RUN_STATUSES,
   blocksToAgentHistoryText,
   callIdFromClientNonce,
   instructionUpdateDiff,
@@ -926,6 +927,83 @@ export async function answerRunInput(
 
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
+  return true;
+}
+
+/** The caller holds the thread row lock acquired while accepting the new user message. */
+export async function retireWaitingQuestionInTransaction(
+  tx: Prisma.TransactionClient,
+  input: { spaceId: string; threadId: string; botId: string; runId: string; answer: string },
+): Promise<boolean> {
+  const answer = input.answer.trim();
+  if (!answer) return false;
+  const where = {
+    id: input.runId,
+    spaceId: input.spaceId,
+    threadId: input.threadId,
+    botId: input.botId,
+    status: "waiting_input",
+  };
+  const run = await tx.run.findFirst({ where, select: { taskId: true } });
+  if (!run) return false;
+  const messages = await tx.message.findMany({
+    where: { threadId: input.threadId, runId: input.runId, role: "bot" },
+    select: { id: true, blocks: true },
+  });
+  const questions = [];
+  for (const message of messages) {
+    const parsed = MessageBlockSchema.array().safeParse(message.blocks);
+    if (!parsed.success) return false;
+    const pending = parsed.data.filter(
+      (block) => block.kind === "ask" && block.status !== "answered",
+    );
+    // Never implicitly dismiss credentials or authorize an external effect, even on a mixed card.
+    if (
+      pending.some(
+        (block) => block.kind === "ask" && (block.input === "secret" || block.approvalEffectId),
+      )
+    )
+      return false;
+    if (pending.length) {
+      questions.push({
+        id: message.id,
+        blocks: parsed.data.map((block) =>
+          pending.includes(block) ? { ...block, status: "answered" as const, answer } : block,
+        ),
+      });
+    }
+  }
+  if (!questions.length) return false;
+  const now = new Date();
+  const retired = await tx.run.updateMany({
+    where,
+    data: {
+      status: "cancelled",
+      completedAt: now,
+      checkpoint: null,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    },
+  });
+  if (retired.count !== 1) return false;
+  await tx.attempt.updateMany({
+    where: { runId: input.runId, status: "waiting_input" },
+    data: { status: "cancelled", finishedAt: now },
+  });
+  await tx.task.updateMany({
+    where: { id: run.taskId, runs: { none: { status: { in: [...ACTIVE_RUN_STATUSES] } } } },
+    data: { status: "cancelled" },
+  });
+  for (const question of questions) {
+    await tx.message.update({ where: { id: question.id }, data: { blocks: question.blocks } });
+    await appendEventInTransaction(tx, {
+      ...input,
+      type: "thread.message.updated",
+      allowCancelledRun: true,
+      payload: { messageId: question.id, role: "bot", blocks: question.blocks },
+    });
+  }
+  await appendEventInTransaction(tx, { ...input, type: "run.cancelled", payload: {} });
   return true;
 }
 
