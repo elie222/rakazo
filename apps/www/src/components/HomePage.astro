@@ -6,6 +6,7 @@ import Header from "./Header.astro";
 import { LandingBotAvatar } from "./LandingBotAvatar";
 import { ProductDemo } from "./ProductDemo";
 import FeatureIllustration from "./FeatureIllustration.astro";
+import RepoCard from "./RepoCard.astro";
 import RosterBotAvatar from "./RosterBotAvatar.astro";
 import type { Locale } from "../i18n/locales";
 import { HOME_MODEL_PROVIDERS, getHomeCopy } from "../i18n/home";
@@ -16,13 +17,16 @@ import {
   isLocale,
   localeHomePath,
 } from "../i18n/locales";
-import { fetchDesktopDownloads, fetchGithubStars, formatStarCount } from "../github";
+import {
+  fetchDesktopDownloads,
+  fetchGithubStars,
+  fetchRecentChanges,
+  formatStarCount,
+} from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homeStructuredData } from "../structured-data";
 import {
-  APP_URL,
   GITHUB_URL,
-  OPENCLAW_ALTERNATIVE_PATH,
   SELF_HOST_GUIDE_PATH,
   SETUP_PROMPT_URL,
   SITE_URL,
@@ -39,7 +43,11 @@ const availableLanguages = LOCALES.map((supportedLocale) =>
   getHomeCopy(supportedLocale).availableLanguage
 );
 const homeHref = localeHomePath(locale);
-const [stars, desktopDownloads] = await Promise.all([fetchGithubStars(), fetchDesktopDownloads()]);
+const [stars, desktopDownloads, recentChanges] = await Promise.all([
+  fetchGithubStars(),
+  fetchDesktopDownloads(),
+  fetchRecentChanges(5),
+]);
 const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
@@ -102,7 +110,7 @@ const structuredData = homeStructuredData({
         <p class="lead">
           {copy.hero.lead}
         </p>
-        <GetStartedActions class="hero__actions" copy={copy.hero} downloads={desktopDownloads} />
+        <GetStartedActions class="hero__actions" copy={copy.hero} placement="hero" />
         <div class="hero__agent-setup">
           <button
             class="setup-copy"
@@ -215,7 +223,9 @@ const structuredData = homeStructuredData({
         </div>
         <div class="selfhost-cta">
           <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
+          <Button href={GITHUB_URL} variant="secondary" external data-attr="selfhost-github">
+            {copy.hero.viewOnGithub}
+          </Button>
         </div>
         <div class="card-grid-3">
           {
@@ -230,26 +240,23 @@ const structuredData = homeStructuredData({
         </div>
       </section>
 
-      <section id="open-source" class="section">
-        <div class="section-intro">
+      <section id="open-source" class:list={["section", recentChanges.length > 0 && "open-source"]}>
+        <div>
           <h2 class="section-heading">{copy.openSource.heading}</h2>
           <p class="section-copy">
             {copy.openSource.copy}
           </p>
+          <div class="source-links">
+            <Button href={GITHUB_URL} external data-attr="open-source-github">
+              {copy.openSource.starOnGithub}
+            </Button>
+          </div>
         </div>
-        <div class="source-links">
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.openSource.starOnGithub}</Button>
-          <Button href={SELF_HOST_GUIDE_PATH} variant="secondary">{copy.openSource.readTheDocs}</Button>
-          <Button href={OPENCLAW_ALTERNATIVE_PATH} variant="secondary">{copy.openSource.openClawAlternative}</Button>
-        </div>
-        <div class="cloud-preview">
-          <span class="cloud-label">
-            {copy.openSource.cloudTitle}
-            <span class="cloud-badge">{copy.openSource.cloudBadge}</span>
-          </span>
-          <span>{copy.openSource.cloudMeta}</span>
-          <a class="cloud-link" href={APP_URL}>{copy.openSource.tryCloud} <span aria-hidden="true">→</span></a>
-        </div>
+        {
+          recentChanges.length > 0 && (
+            <RepoCard locale={locale} starsLabel={stars === null ? null : starsLabel} changes={recentChanges} />
+          )
+        }
       </section>
 
       <section id="faq" class="section" aria-labelledby="faq-heading">
@@ -272,7 +279,12 @@ const structuredData = homeStructuredData({
         <div>
           <h2>{copy.cta.heading}</h2>
           <p>{copy.cta.copy}</p>
-          <GetStartedActions class="cta-actions" copy={copy.hero} downloads={desktopDownloads} />
+          <GetStartedActions
+            class="cta-actions"
+            copy={copy.hero}
+            downloads={desktopDownloads}
+            placement="cta"
+          />
         </div>
         <div class="stats-grid">
           {

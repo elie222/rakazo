@@ -11,21 +11,27 @@ import {
 type Props = {
   class: string;
   copy: HomeCopy["hero"];
-  downloads: DesktopDownloads;
+  /** Omitted where the GitHub link should stay on every platform. */
+  downloads?: DesktopDownloads;
+  /** PostHog `data-attr` prefix that tells this placement apart from others. */
+  placement: string;
 };
 
-const { class: className, copy, downloads } = Astro.props;
+const { class: className, copy, downloads, placement } = Astro.props;
 
 // `data-show` lists the platforms (set on <html> by the HomePage script) that see each action.
-const desktopDownloads = [
-  { platform: "mac", label: copy.download.mac, available: true },
-  { platform: "windows", label: copy.download.windows, available: Boolean(downloads.windows) },
-  { platform: "linux", label: copy.download.linux, available: Boolean(downloads.linux) },
-]
+const desktopDownloads = (downloads
+  ? [
+      { platform: "mac", label: copy.download.mac, available: true },
+      { platform: "windows", label: copy.download.windows, available: Boolean(downloads.windows) },
+      { platform: "linux", label: copy.download.linux, available: Boolean(downloads.linux) },
+    ]
+  : []
+)
   .filter((download) => download.available)
   // The redirect resolves the newest installer per request, so releases need no site rebuild.
   .map((download) => ({ ...download, href: `/api/download?platform=${download.platform}` }));
-const githubPlatforms = ["ios", "android", "web", "windows", "linux"]
+const githubPlatforms = ["ios", "android", "web", "mac", "windows", "linux"]
   .filter((platform) => !desktopDownloads.some((download) => download.platform === platform))
   .join(" ");
 ---
@@ -51,6 +57,7 @@ const githubPlatforms = ["ios", "android", "web", "windows", "linux"]
     target="_blank"
     rel="noreferrer"
     data-show={githubPlatforms}
+    data-attr={`${placement}-github`}
   >
     {copy.viewOnGithub}
   </a>

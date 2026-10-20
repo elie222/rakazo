@@ -1,7 +1,7 @@
 import type { Page, TestInfo } from "@playwright/test";
 import { devices, test } from "@playwright/test";
 
-// The hero picks its download for the visitor's platform; record the macOS and iPhone variants.
+// The hero and closing call to action pick actions for the visitor's platform; record the macOS and iPhone variants.
 const { defaultBrowserType: _, ...iPhone } = devices["iPhone 15"];
 test.use({
   userAgent:
