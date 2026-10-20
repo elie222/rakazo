@@ -548,6 +548,47 @@ describeJourneys("required product journeys", () => {
     expect(bobBot.id).not.toBe(chief.id);
   });
 
+  it("guards memory edits by revision while preserving legacy clients", async () => {
+    const cookie = await signup(app, `memory-revision-${stamp}@rakazo.test`, "Memory revisions");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", {
+      name: "Keeper",
+      title: "Memory",
+      description: "",
+      instructions: "",
+      notifyOnFinish: true,
+    });
+    const [doc] = await rpc<Array<{ id: string; revision: number }>>(app, cookie, "memory/list", {
+      botId: bot.id,
+    });
+    if (!doc) throw new Error("Missing seeded memory");
+    await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "A\nB" });
+    const revisionCount = await prisma.memoryRevision.count({ where: { documentId: doc.id } });
+    const stale = await raw(app, cookie, "memory/update", {
+      documentId: doc.id,
+      content: "A'",
+      expectedRevision: doc.revision,
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ json: { code: "CONFLICT" } });
+    expect(await prisma.memoryRevision.count({ where: { documentId: doc.id } })).toBe(
+      revisionCount,
+    );
+    expect(await prisma.memoryDocument.findUniqueOrThrow({ where: { id: doc.id } })).toMatchObject({
+      content: "A\nB",
+      revision: doc.revision + 1,
+    });
+    expect(
+      await rpc(app, cookie, "memory/update", {
+        documentId: doc.id,
+        content: "current",
+        expectedRevision: doc.revision + 1,
+      }),
+    ).toMatchObject({ content: "current", revision: doc.revision + 2 });
+    expect(
+      await rpc(app, cookie, "memory/update", { documentId: doc.id, content: "legacy" }),
+    ).toMatchObject({ content: "legacy", revision: doc.revision + 3 });
+  });
+
   it("clears a conversation without removing the bot, computer, memory, or routines", async () => {
     const cookie = await signup(app, `clear-j-${stamp}@rakazo.test`, "Clear Journey");
     const bot = await rpc<Bot>(app, cookie, "bots/create", {

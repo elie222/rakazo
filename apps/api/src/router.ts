@@ -13,6 +13,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   computerControlExpireJobKey,
+  MEMORY_REVISION_CONFLICT_ERROR,
   messagingDeliverJob,
   routineJobKey,
   routineWakeupJob,
@@ -3383,21 +3384,29 @@ export function createRouter(deps: RouterDeps) {
           },
         });
         if (!doc) throw new IsolationError();
-        const updated = await deps.memory.commit(
-          {
-            scope: doc.scope as "bot" | "user",
-            botId: doc.botId ?? undefined,
-            path: doc.path,
-            content: input.content,
-          },
-          {
-            operationId: "mem",
-            traceId: "mem",
-            spaceId: context.actor.spaceId,
-            userId: context.actor.userId,
-            signal: new AbortController().signal,
-          },
-        );
+        const updated = await deps.memory
+          .commit(
+            {
+              scope: doc.scope as "bot" | "user",
+              botId: doc.botId ?? undefined,
+              path: doc.path,
+              content: input.content,
+              expectedRevision: input.expectedRevision,
+            },
+            {
+              operationId: "mem",
+              traceId: "mem",
+              spaceId: context.actor.spaceId,
+              userId: context.actor.userId,
+              signal: new AbortController().signal,
+            },
+          )
+          .catch((error: unknown) => {
+            if (error instanceof Error && error.message === MEMORY_REVISION_CONFLICT_ERROR) {
+              throw new ORPCError("CONFLICT", { message: error.message });
+            }
+            throw error;
+          });
         return {
           id: updated.id,
           scope: doc.scope as "bot" | "user",

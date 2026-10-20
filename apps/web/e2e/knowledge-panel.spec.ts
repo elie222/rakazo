@@ -79,6 +79,21 @@ test("memory and skills are readable and editable in the app", async ({ page }, 
   const sharedDocument = sharedDocuments.find((doc) => doc.path === "MEMORY.md")!;
   const latestMarker = `Latest shared memory ${stamp}`;
   await rpc(page, "memory/update", { documentId: sharedDocument.id, content: latestMarker });
+  // A concurrent writer must not be overwritten by this open editor.
+  await docEditor.fill("Unsaved draft");
+  await spaceDocs.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    spaceDocs.getByText("Document changed. Reopen to edit the latest version.", { exact: true }),
+  ).toBeVisible();
+  await expect(docEditor).toHaveValue("Unsaved draft");
+  await expect(spaceDocs.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  expect(await rpc<MemoryDocument[]>(page, "memory/list", { scope: "user" })).toContainEqual(
+    expect.objectContaining({ id: sharedDocument.id, content: latestMarker, revision: 3 }),
+  );
+  await captureScreenshot(page, testInfo, "84-space-memory-conflict");
+  await spaceDocs.getByRole("button", { name: "Cancel", exact: true }).click();
+  await memoryRow.click();
+  await expect(docEditor).toHaveValue(latestMarker);
   const downloadPromise = page.waitForEvent("download");
   await spaceDocs.getByRole("button", { name: "Download as markdown" }).click();
   const download = await downloadPromise;

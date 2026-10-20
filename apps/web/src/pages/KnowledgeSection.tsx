@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { ORPCError } from "@orpc/client";
 import type { AgentSkill, AgentSkillCatalogEntry, MemoryDocument } from "@rakazo/contracts";
 import { isDeletableMemoryDocument } from "@rakazo/contracts";
 import {
@@ -93,6 +94,8 @@ function MemoryDocumentList({
   const [docs, setDocs] = useState<MemoryDocument[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [loadedRevision, setLoadedRevision] = useState<number | undefined>();
+  const [conflicted, setConflicted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -121,6 +124,8 @@ function MemoryDocumentList({
   }, [t]);
 
   function openDoc(doc: MemoryDocument) {
+    setLoadedRevision(doc.revision);
+    setConflicted(false);
     setOpenId(doc.id);
     setDraft(doc.content);
     setError(null);
@@ -152,15 +157,29 @@ function MemoryDocumentList({
   }
 
   async function save(doc: MemoryDocument) {
-    if (busy) return;
+    if (busy || conflicted) return;
     setBusy(true);
     setError(null);
     try {
-      const updated = await rpc.memory.update({ documentId: doc.id, content: draft });
+      const updated = await rpc.memory.update({
+        documentId: doc.id,
+        content: draft,
+        expectedRevision: loadedRevision,
+      });
       setDocs((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
       closeDoc();
-    } catch {
-      setError(t`Could not save`);
+    } catch (err) {
+      if (err instanceof ORPCError && err.code === "CONFLICT") {
+        setConflicted(true);
+        setError(t`Document changed. Reopen to edit the latest version.`);
+        try {
+          setDocs(await loadRef.current());
+        } catch {
+          // Keep the draft and conflict state even if refreshing fails.
+        }
+      } else {
+        setError(t`Could not save`);
+      }
     } finally {
       setBusy(false);
     }
@@ -227,7 +246,7 @@ function MemoryDocumentList({
                 <Button
                   variant="ghost"
                   type="button"
-                  disabled={busy || draft === doc.content}
+                  disabled={busy || conflicted || draft === doc.content}
                   onClick={() => void save(doc)}
                   className="rounded-lg bg-muted px-3 py-1.5 text-[13px] text-foreground disabled:opacity-50"
                 >

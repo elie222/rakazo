@@ -2139,6 +2139,10 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker limite l'accès à votre ordinateur pour une sécurité renforcée. Utiliser {hostLabel} permet aux bots de travailler avec vos fichiers et outils locaux."
 
+#: src/pages/KnowledgeSection.tsx
+msgid "Document changed. Reopen to edit the latest version."
+msgstr "Le document a changé. Rouvrez-le pour modifier la dernière version."
+
 #: src/pages/Auth.tsx
 msgid "Don’t have an account?"
 msgstr "Vous n'avez pas de compte ?"
