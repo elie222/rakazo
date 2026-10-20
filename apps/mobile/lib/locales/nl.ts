@@ -241,6 +241,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "No preview for this file type.": "Geen voorbeeld voor dit bestandstype.",
   "Search artifacts…": "Artefacten zoeken…",
   Share: "Delen",
+  'Delete "{name}"?': "„{name}“ verwijderen?",
   "This can't be undone.": "Dit kan niet ongedaan worden gemaakt.",
   "This deletes all {count} versions of this artifact. This can't be undone.":
     "Hiermee worden alle {count} versies van dit artefact verwijderd. Dit kan niet ongedaan worden gemaakt.",

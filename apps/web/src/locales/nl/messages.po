@@ -5178,7 +5178,7 @@ msgstr "Waar moeten bots draaien?"
 
 #: src/lib/ticket-status.ts
 msgid "Won't do"
-msgstr "Doet niet"
+msgstr "Wordt niet gedaan"
 
 #: src/lib/roster-status.ts
 #: src/pages/Auth.tsx

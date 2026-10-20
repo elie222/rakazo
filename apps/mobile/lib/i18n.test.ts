@@ -146,8 +146,10 @@ describe("mobile i18n", () => {
     ]);
     for (const file of collectSourceFiles(mobileRoot)) {
       const source = readFileSync(file, "utf8");
-      for (const match of source.matchAll(/\bt\(\s*"((?:\\.|[^"\\])*)"/g)) {
-        ids.add(JSON.parse(`"${match[1]}"`) as string);
+      for (const match of source.matchAll(/\bt\(\s*(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')/g)) {
+        const value =
+          match[1] ?? match[2]?.replace(/\\'|"/g, (char) => (char === "\\'" ? "'" : '\\"'));
+        ids.add(JSON.parse(`"${value}"`) as string);
       }
     }
     for (const messages of [ZH_MESSAGES, RU_MESSAGES, DE_MESSAGES, NL_MESSAGES]) {
