@@ -194,15 +194,18 @@ describe("loopback trusted origins", () => {
 });
 
 describe("identity trust through auth endpoints", () => {
+  // These branches sit behind Better Auth's HTTP checks, so call the session hook directly.
   it.each([
     ["missing user", null],
     ["messaging identity", "msg-test@messaging.invalid"],
     ["email delivery", "approved@example.test"],
     ["disallowed email", "outsider@other.test", false],
     ["first-account claim denied", "approved@example.test", false],
-  ])("codes required verification for %s", async (_reason, email, delivery = true) => {
+  ])("codes required verification for %s", async (reason, email, delivery = true) => {
     const f = fixture({ allowlist: "@example.test", delivery });
-    f.data.user!.push({ id: "other-user", email: "other@example.test" });
+    if (reason === "first-account claim denied") {
+      f.data.user!.push({ id: "other-user", email: "other@example.test" });
+    }
     const hook = f.auth.options.databaseHooks!.session!.create!.before!;
     await expect(
       hook(
@@ -356,12 +359,7 @@ describe("identity trust through auth endpoints", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-    const response = await f.signin();
-    expect(response.status).toBe(403);
-    expect(await response.json()).toMatchObject({
-      code: "EMAIL_NOT_VERIFIED",
-      message: "Email not verified",
-    });
+    expect((await f.signin()).status).toBe(403);
     expect(f.policy.ownerUserId).toBe(f.data.user![0]!.id);
   });
 

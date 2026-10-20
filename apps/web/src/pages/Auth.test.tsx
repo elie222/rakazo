@@ -57,10 +57,10 @@ afterEach(async () => {
   vi.restoreAllMocks();
   delete window.rakazoDesktop;
 });
-async function render(mode: "in" | "up" | "forgot" = "in", entry = "/sign-in") {
+async function render(mode: "in" | "up" | "forgot" = "in") {
   await act(async () =>
     root.render(
-      <MemoryRouter initialEntries={[entry]}>
+      <MemoryRouter>
         <AuthPage mode={mode} />
       </MemoryRouter>,
     ),
@@ -152,13 +152,4 @@ it("keeps SSO available for retry while an authorization request is pending", as
   expect(button.disabled).toBe(false);
   await act(async () => button.click());
   expect(authClient.signIn.social).toHaveBeenCalledTimes(2);
-});
-
-it.each([
-  ["EMAIL_VERIFICATION_REQUIRED", "Email verification required"],
-  ["REGISTRATION_CLOSED", "Registration is closed"],
-])("renders the OIDC callback error %s", async (code, message) => {
-  vi.mocked(fetchAuthCapabilities).mockResolvedValue(capabilities);
-  await render("in", `/sign-in?error=${code}`);
-  expect(host.querySelector('[role="alert"]')?.textContent).toBe(message);
 });

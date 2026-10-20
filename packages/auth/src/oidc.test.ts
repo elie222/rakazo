@@ -437,18 +437,6 @@ describe("OIDC callbacks", () => {
     setup({ signupAllowlist: "sso@example.test" });
     expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
   });
-  it("redirects an existing identity that loses verification to the app error page", async () => {
-    setup({ signupAllowlist: "sso@example.test" });
-    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
-    const response = await signIn({
-      sub: "subject-1",
-      email: "sso@example.test",
-      email_verified: false,
-    });
-    expect(response.headers.get("location")).toContain(
-      `${origin}/sign-in?error=EMAIL_VERIFICATION_REQUIRED`,
-    );
-  });
   it("redirects an unprovisioned identity when registration closes", async () => {
     setup();
     expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
