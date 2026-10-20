@@ -48,6 +48,18 @@ describe("Boat API errors", () => {
     expect(call).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves structured readiness codes after consuming the error body", async () => {
+    const response = Response.json({ code: "box_not_ready" }, { status: 409 });
+    const call = wrapBoatCall(async () => {
+      throw new ResponseError(response);
+    }, "fake-key");
+    const error = await call().catch((failure: unknown) => failure);
+
+    expect(error).toBeInstanceOf(ResponseError);
+    expect(error).toMatchObject({ code: "box_not_ready", response: { status: 409 } });
+    expect(response.bodyUsed).toBe(true);
+  });
+
   it("does not replace cancellation and network errors", async () => {
     const cancelled = new DOMException("Cancelled", "AbortError");
     const call = wrapBoatCall(async () => {

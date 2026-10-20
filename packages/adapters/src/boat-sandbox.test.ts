@@ -1,6 +1,8 @@
 import type { Command200Response } from "@boatdev/sdk";
+import type { ComputerRef, ProcessEvent } from "@rakazo/adapter-kit";
 import { parse } from "shell-quote";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { boatResponseError } from "./boat-errors.js";
 import type { BoatSandboxSdk } from "./boat-sandbox.js";
 import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
 import { desktopCommandResponder } from "./linux-desktop.test-support.js";
@@ -121,6 +123,151 @@ describe("BoatSandboxProvider", () => {
       context,
     );
     expect(replacement).toMatchObject({ providerRef: "bx_testbox2", fresh: true });
+  });
+
+  it.each(["box_not_ready", "boat_starting"])(
+    "waits through an update and retries a rejected command (%s) after preparation",
+    async (code) => {
+      const fixture = boatFixture();
+      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+      await provider.prepare(computer, context);
+      fixture.command.mockClear();
+      fixture.get.mockClear();
+      fixture.command.mockRejectedValueOnce(
+        await boatResponseError(Response.json({ code }, { status: 409 }), "test-key"),
+      );
+      fixture.get
+        .mockResolvedValueOnce(infoResponse(computer.id, "updating"))
+        .mockResolvedValueOnce(infoResponse(computer.id, "ready"));
+
+      expect(await executeTestCommand(provider, computer)).toEqual([{ type: "exit", code: 0 }]);
+      expect(fixture.get).toHaveBeenCalledTimes(2);
+      expect(fixture.command).toHaveBeenCalledTimes(2);
+      expect(fixture.command.mock.calls[1]).toEqual(fixture.command.mock.calls[0]);
+      expect(fixture.resume).not.toHaveBeenCalled();
+      expect(fixture.create).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["read", "write"])(
+    "retries a %s rejected while the box is updating",
+    async (operation) => {
+      const fixture = boatFixture();
+      const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+      const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+      const endpoint = operation === "read" ? fixture.artifactRaw : fixture.writeFile;
+      endpoint.mockRejectedValueOnce(
+        await boatResponseError(
+          Response.json({ code: "box_not_ready" }, { status: 409 }),
+          "test-key",
+        ),
+      );
+
+      if (operation === "read") await provider.readFile(computer, "test.txt", context);
+      else
+        await provider.writeFile(
+          computer,
+          { path: "test.txt", content: new Uint8Array() },
+          context,
+        );
+
+      expect(endpoint).toHaveBeenCalledTimes(2);
+      expect(fixture.get).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    [502, "boat_direct_failed"],
+    [409, "another_conflict"],
+    [409, undefined],
+    [503, "box_not_ready"],
+  ])("does not replay ambiguous HTTP %s failures (%s)", async (status, code) => {
+    const fixture = boatFixture();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const error = await boatResponseError(Response.json({ code }, { status }), "test-key");
+    fixture.command.mockRejectedValueOnce(error);
+
+    await expect(executeTestCommand(provider, computer)).rejects.toBe(error);
+    expect(fixture.command).toHaveBeenCalledOnce();
+    expect(fixture.get).not.toHaveBeenCalled();
+  });
+
+  it("does not replay a command after a lost response", async () => {
+    const fixture = boatFixture();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const error = new TypeError("fetch failed");
+    fixture.command.mockRejectedValueOnce(error);
+
+    await expect(executeTestCommand(provider, computer)).rejects.toBe(error);
+    expect(fixture.command).toHaveBeenCalledOnce();
+  });
+
+  it("bounds retries when the command is rejected again after readiness", async () => {
+    const fixture = boatFixture();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const error = await boatResponseError(
+      Response.json({ code: "box_not_ready" }, { status: 409 }),
+      "test-key",
+    );
+    fixture.command.mockRejectedValue(error);
+
+    await expect(executeTestCommand(provider, computer)).rejects.toBe(error);
+    expect(fixture.command).toHaveBeenCalledTimes(2);
+    expect(fixture.get).toHaveBeenCalledOnce();
+  });
+
+  it("bounds readiness waiting without resubmitting a rejected command", async () => {
+    const fixture = boatFixture();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    fixture.command.mockRejectedValueOnce(
+      await boatResponseError(
+        Response.json({ code: "box_not_ready" }, { status: 409 }),
+        "test-key",
+      ),
+    );
+    fixture.get.mockResolvedValue(infoResponse(computer.id, "updating"));
+    vi.spyOn(Date, "now")
+      .mockReturnValueOnce(0)
+      .mockReturnValue(5 * 60_000);
+
+    await expect(executeTestCommand(provider, computer)).rejects.toThrow("did not become ready");
+    expect(fixture.command).toHaveBeenCalledOnce();
+  });
+
+  it("cancels readiness waiting without resubmitting the command", async () => {
+    const fixture = boatFixture();
+    const provider = new BoatSandboxProvider({ apiKey: "test-key" }, fixture.client);
+    const computer = await provider.provision({ botId: "bot-a", homePath: "/unused" }, context);
+    const controller = new AbortController();
+    fixture.command.mockRejectedValueOnce(
+      await boatResponseError(
+        Response.json({ code: "box_not_ready" }, { status: 409 }),
+        "test-key",
+      ),
+    );
+    fixture.get.mockImplementationOnce(async () => {
+      controller.abort();
+      return infoResponse(computer.id, "updating");
+    });
+
+    expect(
+      await executeTestCommand(provider, computer, { ...context, signal: controller.signal }),
+    ).toEqual([
+      { type: "stderr", data: "command aborted\n" },
+      { type: "exit", code: 130 },
+    ]);
+    // Cancellation may send a separate cleanup command, but never the original command again.
+    const original = fixture.command.mock.calls[0]?.[0];
+    expect(
+      fixture.command.mock.calls.filter(
+        ([request]) => request.commandRequest.command === original?.commandRequest.command,
+      ),
+    ).toHaveLength(1);
   });
 
   it("downloads binary files over the JSON endpoint limit through the SDK artifact route", async () => {
@@ -372,6 +519,18 @@ describe("BoatSandboxProvider", () => {
     expect(isUnrecoverableBoatError(new Error("temporary Boat outage"))).toBe(false);
   });
 });
+
+async function executeTestCommand(
+  provider: BoatSandboxProvider,
+  computer: ComputerRef,
+  commandContext = context,
+): Promise<ProcessEvent[]> {
+  const events: ProcessEvent[] = [];
+  for await (const event of provider.execute(computer, { argv: ["true"] }, commandContext)) {
+    events.push(event);
+  }
+  return events;
+}
 
 function boatFixture(options: { state?: string } = {}) {
   const files = new Map<string, Uint8Array>();

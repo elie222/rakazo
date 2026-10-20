@@ -20,7 +20,7 @@ import type {
   TerminalRequest,
 } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
-import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
+import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
   PORTABLE_TRANSFER_BATCH_BYTES,
@@ -92,9 +92,14 @@ export class BoatSandboxProvider implements SandboxProvider {
       };
     },
     screenUrl: async (computer, port, context) => {
-      const hosted = await this.client.hostPort(
-        { sandboxId: this.id(computer), hostPortRequest: { port, _public: false } },
-        { signal: context.signal },
+      const hosted = await this.withReadyRetry(
+        this.id(computer),
+        () =>
+          this.client.hostPort(
+            { sandboxId: this.id(computer), hostPortRequest: { port, _public: false } },
+            { signal: context.signal },
+          ),
+        context.signal,
       );
       if (!hosted.url) throw new Error("Boat did not return a desktop URL");
       const url = new URL(hosted.url);
@@ -209,7 +214,7 @@ export class BoatSandboxProvider implements SandboxProvider {
     if (pending) return pending;
     let preparation!: Promise<void>;
     preparation = (async () => {
-      await this.ensureRunnable(id, context);
+      await this.ensureRunnable(id, context.signal);
       const result = await this.runCommand(
         id,
         configureBoatWorkspaceCommand(),
@@ -451,28 +456,51 @@ export class BoatSandboxProvider implements SandboxProvider {
     }
   }
 
-  private async ensureRunnable(id: string, context: AdapterContext): Promise<BoatMachine> {
+  private async ensureRunnable(id: string, signal?: AbortSignal): Promise<BoatMachine> {
     const deadline = Date.now() + BOAT_READY_TIMEOUT_MS;
     let resumed = false;
     while (true) {
-      if (context.signal.aborted) {
-        throw context.signal.reason ?? new Error("Boat preparation aborted");
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("Boat preparation aborted");
       }
-      const response = await this.client.get({ sandboxId: id }, { signal: context.signal });
+      const response = await this.client.get({ sandboxId: id }, { signal });
       const sandbox = response.sandbox;
       if (sandbox.state === "ready" || sandbox.state === "idle" || sandbox.state === "running")
         return sandbox;
       if (sandbox.state === "archived" && !resumed) {
         await this.client.resume(
           { sandboxId: id, resumeRequest: { noEnv: true, ttlSeconds: BOAT_TTL_SECONDS } },
-          { signal: context.signal },
+          { signal },
         );
         resumed = true;
       } else if (sandbox.state === "error") {
         throw new Error(`Boat ${id} entered the error state`);
       }
       if (Date.now() >= deadline) throw new Error(`Boat ${id} did not become ready`);
-      await delay(1_000, undefined, { signal: context.signal });
+      await delay(1_000, undefined, { signal });
+    }
+  }
+
+  private async withReadyRetry<T>(
+    id: string,
+    call: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      // These conflicts reject the request before execution. Other failures can
+      // mean a command already ran, so replaying them could duplicate side effects.
+      if (
+        !(error instanceof BoatApiError) ||
+        error.response.status !== 409 ||
+        (error.code !== "box_not_ready" && error.code !== "boat_starting")
+      ) {
+        throw error;
+      }
+      await this.ensureRunnable(id, signal);
+      signal?.throwIfAborted();
+      return call();
     }
   }
 
@@ -501,16 +529,21 @@ export class BoatSandboxProvider implements SandboxProvider {
     if (!files.length) return;
     await Promise.all(
       files.map((file) =>
-        this.client.writeFile(
-          {
-            sandboxId: id,
-            fileWriteRequest: {
-              path: workspacePath(BOAT_WORKSPACE, file.path),
-              content: Buffer.from(file.content).toString("base64"),
-              encoding: "base64",
-            },
-          },
-          { signal: context.signal },
+        this.withReadyRetry(
+          id,
+          () =>
+            this.client.writeFile(
+              {
+                sandboxId: id,
+                fileWriteRequest: {
+                  path: workspacePath(BOAT_WORKSPACE, file.path),
+                  content: Buffer.from(file.content).toString("base64"),
+                  encoding: "base64",
+                },
+              },
+              { signal: context.signal },
+            ),
+          context.signal,
         ),
       ),
     );
@@ -556,9 +589,11 @@ export class BoatSandboxProvider implements SandboxProvider {
     maxBytes?: number,
   ): Promise<Uint8Array> {
     // The JSON/base64 file endpoint rejects files over 5 MiB, including browser profiles.
-    const { raw: response } = await this.client.artifactRaw(
-      { sandboxId: id, path: filePath },
-      signal ? { signal } : undefined,
+    const { raw: response } = await this.withReadyRetry(
+      id,
+      () =>
+        this.client.artifactRaw({ sandboxId: id, path: filePath }, signal ? { signal } : undefined),
+      signal,
     );
     const reader = response.body?.getReader();
     const chunks: Uint8Array[] = [];
@@ -604,18 +639,28 @@ export class BoatSandboxProvider implements SandboxProvider {
     const timeoutSeconds = Math.ceil(timeoutMs / 1_000);
     const detached = timeoutSeconds + 5 > BOAT_API_COMMAND_TIMEOUT_SECONDS;
     try {
-      const response = await this.client.command(
-        {
-          sandboxId: id,
-          commandRequest: {
-            command: wrapped,
-            cwd,
-            ...(detached
-              ? { detached: true }
-              : { timeoutSeconds: Math.min(timeoutSeconds + 5, BOAT_API_COMMAND_TIMEOUT_SECONDS) }),
-          },
-        },
-        signal ? { signal } : undefined,
+      const response = await this.withReadyRetry(
+        id,
+        () =>
+          this.client.command(
+            {
+              sandboxId: id,
+              commandRequest: {
+                command: wrapped,
+                cwd,
+                ...(detached
+                  ? { detached: true }
+                  : {
+                      timeoutSeconds: Math.min(
+                        timeoutSeconds + 5,
+                        BOAT_API_COMMAND_TIMEOUT_SECONDS,
+                      ),
+                    }),
+              },
+            },
+            signal ? { signal } : undefined,
+          ),
+        signal,
       );
       const result = isFinishedCommand(response)
         ? commandResponse(response)
