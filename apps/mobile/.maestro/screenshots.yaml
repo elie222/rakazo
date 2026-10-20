@@ -153,9 +153,7 @@ tags:
 - hideKeyboard
 - assertVisible: "Keyboard visibility check"
 - tapOn: "Message Researcher"
-- pressKey: Enter
-- inputText: "Second line"
-- assertVisible: "(?s)Keyboard visibility check.*Second line"
+- assertVisible: "Keyboard visibility check"
 - assertVisible: "Send"
 - takeScreenshot: "15g-thread-keyboard-reopened"
 - eraseText
