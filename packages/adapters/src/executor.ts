@@ -2670,7 +2670,11 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
 }
 
 export function desktopProtectionGuardMessage(reason: string): string {
-  return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available. Do not stop or restart browser or desktop processes.`;
+  const recovery =
+    reason === "heredoc"
+      ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
+      : "";
+  return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }
 
 /** Cap the roster so a large Space cannot flood the prompt. */
@@ -8514,6 +8518,11 @@ export function dockerComputerToolInstruction(
   const parts = [
     "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets.",
   ];
+  if (builtinOffered(disabled, "shell")) {
+    parts.push(
+      "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
+    );
+  }
   if (navigate && act) {
     parts.push(
       'To authenticate `gh`, run `LOG=$(mktemp /tmp/gh-login.XXXXXX); nohup script -qec \'gh auth login --hostname github.com --web --git-protocol https\' "$LOG" >/dev/null 2>&1 & echo "$LOG"` — keep that printed path, read the one-time code from it, browser_navigate to https://github.com/login/device, and browser_act the code. Completing that page authorizes the CLI OAuth app and stores the credential under the persistent home; it does not by itself create a Chromium github.com session.',

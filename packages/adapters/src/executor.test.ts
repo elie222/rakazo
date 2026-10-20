@@ -1564,6 +1564,10 @@ describe("dockerComputerToolInstruction", () => {
   it("documents rootless Python tool installation only for Docker images", () => {
     expect(dockerComputerToolInstruction("docker")).toContain("uv tool install <package>");
     expect(dockerComputerToolInstruction("docker")).toContain("without sudo");
+    expect(dockerComputerToolInstruction("docker")).toContain("`python3 -c`");
+    expect(dockerComputerToolInstruction("docker", new Set(["shell"]))).not.toContain(
+      "`python3 -c`",
+    );
     expect(dockerComputerToolInstruction("desktop")).toBeUndefined();
     expect(dockerComputerToolInstruction("e2b")).toBeUndefined();
   });
