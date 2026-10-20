@@ -150,13 +150,19 @@ tags:
 - assertVisible: "Keyboard visibility check"
 - assertVisible: "Send"
 - takeScreenshot: "15d-thread-keyboard"
+- pressKey: Enter
+- inputText: "Second line"
+- assertVisible: "(?s)Keyboard visibility check.*Second line"
 - hideKeyboard
-- assertVisible: "Keyboard visibility check"
+- assertVisible: "(?s)Keyboard visibility check.*Second line"
 - tapOn: "Message Researcher"
-- assertVisible: "Keyboard visibility check"
+- assertVisible: "(?s)Keyboard visibility check.*Second line"
 - assertVisible: "Send"
 - takeScreenshot: "15g-thread-keyboard-reopened"
-- eraseText
+- longPressOn: "Message Researcher"
+- tapOn: "Select all"
+- eraseText: 1
+- assertNotVisible: "(?s)Keyboard visibility check.*Second line"
 - hideKeyboard
 # Holding a message opens the reaction row and grouped actions next to it.
 - longPressOn: "The fixture workspace is ready."
