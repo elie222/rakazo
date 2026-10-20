@@ -1,4 +1,5 @@
 import { ResponseError } from "@boatdev/sdk";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { redactSecrets } from "@rakazo/core";
 import { readBodyCapped } from "./web-ssrf.js";
 
@@ -14,8 +15,10 @@ export function wrapBoatCall<Args extends unknown[], Result>(
     try {
       return await call(...args);
     } catch (error) {
-      if (error instanceof ResponseError) throw await boatResponseError(error.response, apiKey);
-      throw error;
+      if (!(error instanceof ResponseError)) throw error;
+      const wrapped = await boatResponseError(error.response, apiKey);
+      if (error.response.status === 429) throw new SandboxRateLimitError({ cause: wrapped });
+      throw wrapped;
     }
   };
 }

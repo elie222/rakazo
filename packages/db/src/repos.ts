@@ -2,6 +2,7 @@ import type { Actor, Bot, BotSection, MessageBlock, SpaceBot } from "@rakazo/con
 import { BOT_COLORS, canonicalPiProviderId, InstructionVersionSchema } from "@rakazo/contracts";
 import {
   BACKGROUND_RUN_TRIGGERS,
+  displayName,
   isBackgroundRunTrigger,
   phoneCallSettings,
   ringingCall,
@@ -97,7 +98,7 @@ function mapBot(
     id: bot.id,
     spaceId: bot.spaceId,
     name: bot.name,
-    title: bot.title,
+    title: displayName(bot.title, ""),
     description: bot.description,
     instructions: bot.instructions,
     selfUpdateInstructions: bot.selfUpdateInstructions ?? false,
@@ -195,7 +196,7 @@ export function createRepos(
         id: bot.id,
         spaceId: bot.spaceId,
         name: bot.name,
-        title: bot.title,
+        title: displayName(bot.title, ""),
         color: bot.color,
         notifyOnFinish: bot.notifyOnFinish,
         pinned: bot.pinned,
@@ -556,8 +557,8 @@ export function createRepos(
             data: {
               spaceId: actor.spaceId,
               userId: actor.userId,
-              name: input.name,
-              title: input.title,
+              name: displayName(input.name, ""),
+              title: displayName(input.title, ""),
               description: input.description,
               instructions: input.instructions,
               notifyOnFinish: input.notifyOnFinish,

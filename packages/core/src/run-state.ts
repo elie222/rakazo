@@ -7,6 +7,10 @@ export const ACTIVE_RUN_STATUSES = [
   "waiting_input",
   "waiting_takeover",
 ] as const satisfies readonly RunStatus[];
+/** Runs that hold new work in the queue. A pending card holds no compute. */
+export const QUEUE_HOLDING_RUN_STATUSES = ACTIVE_RUN_STATUSES.filter(
+  (status) => status !== "waiting_input",
+);
 const TERMINAL: RunStatus[] = ["completed", "failed", "cancelled"];
 /**
  * These turns carry their own prompt and must not take a user message as steering.

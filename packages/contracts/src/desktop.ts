@@ -82,6 +82,8 @@ export interface DesktopSetup {
 
 export interface DesktopSetupState {
   defaultLocalUrl: string;
+  /** Hosted Rakazo origin, saved as an `existing` server when chosen. */
+  cloudUrl: string;
   saved: DesktopSetup | null;
   /** Present when a saved or newly selected server could not be reopened. */
   error?: string;

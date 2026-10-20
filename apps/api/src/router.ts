@@ -168,10 +168,12 @@ import {
   callClientNonce,
   clampCatalogThinkingLevel,
   containsSecret,
+  displayName,
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
   nextCronDateAcrossStrict,
+  QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
 import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
@@ -2407,7 +2409,7 @@ export function createRouter(deps: RouterDeps) {
             where: {
               threadId: target.threadId,
               botId,
-              status: { in: [...ACTIVE_RUN_STATUSES] },
+              status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
             },
             select: { id: true },
           });
@@ -7342,7 +7344,8 @@ function exportFile(path: string, content: Uint8Array): ExportManifest["files"][
 }
 
 function duplicateBotName(name: string) {
-  return `${name.slice(0, 75)} copy`;
+  const label = displayName(name, "");
+  return label ? `${label.slice(0, 75)} copy` : "";
 }
 
 const ACTIVE_CHANNEL_MEMBERS = {
@@ -7380,7 +7383,7 @@ async function messagingIdentityDto(
     provider: identity.provider,
     address: identity.address,
     botId: identity.botId,
-    botName: bot?.name ?? "Assistant",
+    botName: bot?.name ?? "",
   };
 }
 
@@ -7450,8 +7453,8 @@ async function messagingConnectionDto(
     : null;
   return {
     id: connection.id,
-    peerBotName: peerBot?.name ?? "agent",
-    peerOwnerLabel: peerOwner?.name.trim().split(/\s+/)[0] || "owner",
+    peerBotName: peerBot?.name ?? "",
+    peerOwnerLabel: displayName(peerOwner?.name, "").split(/\s+/)[0] ?? "",
     status: connection.status as "pending" | "approved" | "declined" | "revoked",
     incoming,
   };

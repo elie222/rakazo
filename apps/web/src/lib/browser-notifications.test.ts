@@ -160,3 +160,7 @@ describe("browser notifications", () => {
     expect(requestPermission).toHaveBeenCalledTimes(2);
   });
 });
+
+it("uses a readable fallback for opaque notification names", () => {
+  expect(browserNotificationMessage(event(), "__TestTok1__").title).toBe("Bot");
+});

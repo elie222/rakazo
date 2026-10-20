@@ -1,4 +1,14 @@
 export const DE_MESSAGES: Record<string, string> = {
+  Member: "Mitglied",
+  Owner: "Inhaber",
+  Chats: "Chats",
+  Space: "Space",
+  "Message from another agent": "Nachricht von einem anderen Agenten",
+  "Another agent": "Ein anderer Agent",
+  "Update from {name}: {text}": "Update von {name}: {text}",
+  "Update from {name}": "Update von {name}",
+  "{name} asked: {text}": "{name} fragt: {text}",
+  "{name} asked": "{name} fragt",
   Close: "Schließen",
   Link: "Link",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":

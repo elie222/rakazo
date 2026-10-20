@@ -140,6 +140,14 @@ msgstr "{hours}시간 전"
 msgid "{minutes}m ago"
 msgstr "{minutes}분 전"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name}의 질문"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name}의 질문: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -354,7 +362,6 @@ msgstr "활성"
 msgid "Active model"
 msgstr "현재 모델"
 
-#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "활동"
@@ -579,6 +586,10 @@ msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되�
 msgid "An integration tool"
 msgstr "연동 도구"
 
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "다른 Agent"
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "답변"
@@ -717,10 +728,6 @@ msgstr "{timeSelect}에"
 msgid "Attach file"
 msgstr "파일 첨부"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Attached {path}"
-msgstr ""
-
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Attachment"
@@ -771,7 +778,6 @@ msgstr "아바타 스튜디오"
 msgid "Avatars"
 msgstr "아바타"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -838,6 +844,7 @@ msgstr "{0}의 컴퓨터를 켜는 중"
 msgid "bot"
 msgstr "Bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -883,10 +890,6 @@ msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
-msgstr ""
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Browser"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -989,6 +992,10 @@ msgstr "채팅 앱"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "채팅 설정"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "채팅"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1099,10 +1106,6 @@ msgstr ""
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "닫기"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Close {title}"
-msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1552,17 +1555,9 @@ msgstr "{0}을 다운로드하지 못했습니다. 다시 시도해 주세요."
 msgid "Could not download {name}. Try again."
 msgstr "{name}을 다운로드하지 못했습니다. 다시 시도해 주세요."
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not download file"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "도구 연결을 추가하지 못했습니다."
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not list files"
-msgstr ""
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1591,10 +1586,6 @@ msgstr ""
 
 #: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
-msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not load commands"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
@@ -1656,17 +1647,9 @@ msgstr "로그아웃하지 못했습니다. 다시 시도해 주세요."
 msgid "Could not open billing"
 msgstr ""
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not open file"
-msgstr ""
-
 #: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not open terminal"
-msgstr "터미널을 열 수 없습니다"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1831,10 +1814,6 @@ msgstr "반응을 업데이트할 수 없습니다"
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "기본 기억 범위를 변경하지 못했습니다."
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not upload file"
-msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -2175,15 +2154,12 @@ msgstr "계정이 없나요?"
 msgid "Done"
 msgstr "완료"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr ""
 
-#. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
-#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "{0} 다운로드"
 
@@ -2394,15 +2370,6 @@ msgstr "변경을 나타내는 필드"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "비교할 필드, 예: id, modifiedTime (선택 사항)"
 
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
-#: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "파일이 업로드 한도 {0}을(를) 초과합니다."
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Files"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "컴퓨터의 파일 또는 폴더"
@@ -2420,8 +2387,9 @@ msgid "Filter by date"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Shell.tsx
 msgid "Filters"
-msgstr ""
+msgstr "필터"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -2510,6 +2478,7 @@ msgstr ""
 msgid "Git event"
 msgstr "Git 이벤트"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2767,10 +2736,6 @@ msgstr "마지막 확인 {0}: 변경 없음"
 msgid "Later"
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Launched {app}"
-msgstr ""
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "나가기"
@@ -2990,6 +2955,10 @@ msgstr "보통"
 msgid "Medium"
 msgstr ""
 
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "멤버"
+
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
@@ -3037,6 +3006,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Message from {peer}"
 msgstr "{peer}의 메시지"
+
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "다른 Agent의 메시지"
 
 #: src/pages/Shell.tsx
 msgid "Message…"
@@ -3270,10 +3243,6 @@ msgstr "인증 없음"
 msgid "No authentication"
 msgstr "인증 없음"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "No bot activity yet."
-msgstr "아직 봇 활동이 없습니다."
-
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""
@@ -3494,10 +3463,6 @@ msgstr "전체 창으로 열기"
 msgid "Open navigation"
 msgstr "메뉴 열기"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Open shell"
-msgstr "셸 열기"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "진행 중인 작업"
@@ -3506,10 +3471,6 @@ msgstr "진행 중인 작업"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 호환 서버 주소"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Opened {path}"
-msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Opened its thread."
@@ -3558,9 +3519,10 @@ msgstr "원본 메시지를 사용할 수 없습니다"
 msgid "Other model…"
 msgstr "다른 모델 직접 입력…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "소유자"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -3580,6 +3542,10 @@ msgstr "비밀번호"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "이 서버에는 비밀번호 복구가 설정되어 있지 않습니다"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "이 서버에서는 비밀번호 로그인이 비활성화되어 있습니다"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4072,6 +4038,7 @@ msgstr ""
 msgid "Rotate key"
 msgstr "key 교체"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4195,10 +4162,6 @@ msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
 msgid "Search"
 msgstr "검색"
 
-#: src/pages/ActivityList.tsx
-msgid "Search activity"
-msgstr ""
-
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
@@ -4228,9 +4191,9 @@ msgstr "모델 검색"
 msgid "Search providers"
 msgstr "AI 서비스 검색"
 
-#: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Search runs"
-msgstr ""
+msgstr "실행 검색"
 
 #. placeholder {0}: filters.query.trim()
 #: src/pages/ActivityList.tsx
@@ -4353,10 +4316,6 @@ msgstr "공유 문서"
 msgid "Shared skills"
 msgstr "공유 스킬"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Shell"
-msgstr "셸"
-
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr ""
@@ -4476,9 +4435,10 @@ msgstr "소프트웨어 업데이트"
 msgid "Something went wrong. Try again."
 msgstr "문제가 발생했습니다. 다시 시도하세요."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "스페이스"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4577,6 +4537,7 @@ msgstr "암호화해 저장"
 msgid "Stream replies"
 msgstr "답변 스트리밍"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "보조 에이전트"
@@ -4646,10 +4607,6 @@ msgstr "Teams 메시지"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
-msgstr ""
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Terminal"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -4965,6 +4922,14 @@ msgstr "업데이트 실패"
 msgid "Update finished with errors"
 msgstr "오류와 함께 업데이트가 완료되었습니다"
 
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "{name}의 업데이트"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "{name}의 업데이트: {text}"
+
 #: src/components/AskCard.tsx
 msgid "Update instructions?"
 msgstr "지침을 업데이트할까요?"
@@ -4999,7 +4964,6 @@ msgstr ""
 msgid "Updating…"
 msgstr "업데이트 중…"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "업로드"
@@ -5190,10 +5154,6 @@ msgstr "처리 중…"
 msgid "Workspace"
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Wrote {path}"
-msgstr ""
-
 #: src/lib/billing.ts
 msgid "year"
 msgstr ""
@@ -5203,6 +5163,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "어제"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "나"

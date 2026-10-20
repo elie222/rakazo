@@ -1,0 +1,96 @@
+import { expect, test } from "@playwright/test";
+import { createDb } from "../../../packages/db/src/index";
+import { captureScreenshot, completeOnboarding, openUserSettings, rpc, signup } from "./helpers";
+import { expectReadableNames } from "./visible-name-guard";
+
+test("legacy opaque names never appear in navigation, account, chats or Activity", async ({
+  page,
+}, testInfo) => {
+  const email = `names-${Date.now()}@example.test`;
+  await signup(page, email, "password12", "Demo");
+  await completeOnboarding(page);
+  const bot = await rpc<{ id: string }>(page, "bots/create", {
+    name: "Helper",
+    title: "",
+    description: "",
+    computerMode: "team",
+  });
+  const bots = await rpc<Array<{ id: string }>>(page, "bots/list", {});
+  const group = await rpc<{ id: string }>(page, "groups/create", {
+    name: "Team",
+    botIds: bots.map((item) => item.id),
+  });
+  const me = await rpc<{ spaceId: string }>(page, "me", {});
+  // Reproduce old stored data directly. New writes normalize these values.
+  const { prisma: db, pool } = createDb(process.env.DATABASE_URL!);
+  try {
+    await db.user.update({ where: { email }, data: { name: "__TestTok1__" } });
+    await db.bot.update({
+      where: { id: bot.id },
+      data: { name: "550e8400-e29b-41d4-a716-446655440000" },
+    });
+    await db.chatGroup.update({
+      where: { id: group.id },
+      data: { name: "c123456789012345678901234" },
+    });
+    await db.space.update({ where: { id: me.spaceId }, data: { name: "__SpaceTok1__" } });
+    await page.goto(`/app/${bot.id}`);
+    await expect(page.getByPlaceholder("Message Bot")).toBeVisible();
+    await expect(page.getByTestId("user-menu-trigger")).toContainText(email);
+    await expectReadableNames(page.locator("body"));
+    await captureScreenshot(page, testInfo, "readable-names-sidebar-chat");
+    await openUserSettings(page);
+    await expect(page.getByTestId("user-settings")).toContainText(email);
+    await expectReadableNames(page.locator("body"));
+    await captureScreenshot(page, testInfo, "readable-names-account");
+    await page.keyboard.press("Escape");
+    await page.goto(`/app/g/${group.id}`);
+    await expect(page.getByPlaceholder("Message Group")).toBeVisible();
+    await expectReadableNames(page.locator("body"));
+    await captureScreenshot(page, testInfo, "readable-names-group-members");
+    await page.evaluate(() => localStorage.setItem("rakazo.uiLocale", "ru"));
+    await page.reload();
+    await expect(page.getByTestId("bots-sidebar")).toContainText("Группа");
+    await expect(page.getByTestId("bots-sidebar")).toContainText("Бот");
+    await expectReadableNames(page.locator("body"));
+    await captureScreenshot(page, testInfo, "readable-names-localized");
+    await page.evaluate(() => localStorage.setItem("rakazo.uiLocale", "en"));
+    await page.goto(`/app/${bot.id}`);
+    await rpc(page, "threads/send", { botId: bot.id, text: "keep working until I stop you" });
+    await page.getByRole("button", { name: "Activity", exact: true }).click();
+    await page.reload();
+    await expect(page.getByText("Loading activity…")).toBeHidden();
+    await expect(page.locator("aside").getByRole("button", { name: /^Bot, / })).toBeVisible();
+    await expectReadableNames(page.locator("body"));
+    await captureScreenshot(page, testInfo, "readable-names-activity");
+  } finally {
+    await rpc(page, "threads/stop", { botId: bot.id }).catch(() => undefined);
+    try {
+      await db.$disconnect();
+    } finally {
+      await pool.end();
+    }
+  }
+});
+
+test("visible-name scanner catches tokens and translation keys while keeping literal names", async ({
+  page,
+}) => {
+  await page.setContent(
+    "<main>Ada 李雷 dev_bot demo@example.com monthly_sales_report.csv account.json</main>",
+  );
+  await expectReadableNames(page.locator("main"));
+  for (const text of [
+    "__TestTok1__",
+    "550e8400-e29b-41d4-a716-446655440000",
+    "c123456789012345678901234",
+    "settings.account.title",
+    "account.name",
+    "{{missing}}",
+  ]) {
+    await page.locator("main").evaluate((element, value) => {
+      element.textContent = value;
+    }, text);
+    await expect(expectReadableNames(page.locator("main"))).rejects.toThrow();
+  }
+});

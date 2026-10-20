@@ -13,7 +13,9 @@ import {
   isApprovalAskBlock,
   isConversationalRun,
   isSecretAskBlock,
+  messageReaction,
   messagingChannelId,
+  QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
   sanitizeJsonValue,
@@ -56,7 +58,7 @@ export interface ThreadEvents {
   ): Promise<FinalizeComputerControlReleaseResult | false>;
   finalizeRun(input: FinalizeRunInput): Promise<FinalizeRunResult | false>;
   notify(threadId: string, seq: number): Promise<void>;
-  pauseRunForInput(input: PauseRunForInput): Promise<boolean>;
+  pauseRunForInput(input: PauseRunForInput): Promise<FinalizeRunResult | false>;
   pauseRunForTakeover(input: PauseRunForTakeover): Promise<boolean>;
   sendUserMessage(input: SendUserMessageInput): Promise<SendUserMessageResult>;
   follow(threadId: string, cursor: number, signal?: AbortSignal): AsyncGenerator<ProductEvent>;
@@ -427,7 +429,7 @@ export async function sendUserMessage(
                 threadId: input.threadId,
                 botId: input.botId,
                 status: {
-                  in: ["running", "queued", "leased", "waiting_input", "waiting_takeover"],
+                  in: [...QUEUE_HOLDING_RUN_STATUSES],
                 },
               },
               select: { id: true, taskId: true, trigger: true },
@@ -925,6 +927,9 @@ export async function answerWaitingRunWithTextInTransaction(
     runId: string;
     answeredByUserId: string;
     answer: string;
+    beforeMessageSeq?: number;
+    /** Explicit reaction target; composer replies must pass the latest-message check. */
+    messageId?: string;
   },
 ): Promise<{ threadId: string; seq: number } | null> {
   const answer = input.answer.trim();
@@ -932,6 +937,28 @@ export async function answerWaitingRunWithTextInTransaction(
   const found = await findPendingAsk(tx, input);
   if (!found) return null;
   if (isApprovalAskBlock(found.pendingAsk) || isSecretAskBlock(found.pendingAsk)) return null;
+  if (input.messageId !== undefined) {
+    if (input.messageId !== found.messageId) return null;
+  } else {
+    // Reactions are projected beneath their target, not new transcript messages.
+    let beforeSeq = input.beforeMessageSeq;
+    while (true) {
+      const latest = await tx.message.findFirst({
+        where: {
+          threadId: input.threadId,
+          ...(beforeSeq === undefined ? {} : { seq: { lt: beforeSeq } }),
+        },
+        orderBy: { seq: "desc" },
+        select: { id: true, seq: true, role: true, blocks: true, replyToMessageId: true },
+      });
+      if (!latest) return null;
+      if (!messageReaction({ ...latest, blocks: latest.blocks as MessageBlock[] })) {
+        if (latest.id !== found.messageId) return null;
+        break;
+      }
+      beforeSeq = latest.seq;
+    }
+  }
   return commitAnswerRunInput(tx, { ...input, messageId: found.messageId, answer });
 }
 
@@ -939,7 +966,7 @@ export async function pauseRunForInput(
   prisma: PrismaClient,
   input: PauseRunForInput,
   realtime?: RealtimeFanout,
-): Promise<boolean> {
+): Promise<FinalizeRunResult | false> {
   const committed = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Thread row first, then run rows — the same order as clearThread and finalizeRun, so a
     // concurrent clear cannot deadlock against this transaction.
@@ -964,6 +991,7 @@ export async function pauseRunForInput(
       },
     });
     if (paused.count !== 1) return null;
+    await expireComputerExecutionLeases(tx, { runId: input.runId });
 
     const attempt = await tx.attempt.updateMany({
       where: {
@@ -1000,12 +1028,13 @@ export async function pauseRunForInput(
       payload: {},
     });
     await tx.event.deleteMany({ where: { runId: input.runId, type: "thread.progress" } });
-    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq };
+    const continuationRunId = await createPendingSteeringRun(tx, input);
+    return { threadId: waitingEvent.threadId, seq: waitingEvent.seq, continuationRunId };
   });
 
   if (!committed) return false;
   await notifyRealtime(realtime, committed.threadId, committed.seq);
-  return true;
+  return { continuationRunId: committed.continuationRunId };
 }
 
 export async function pauseRunForTakeover(
@@ -1494,7 +1523,7 @@ export async function createPendingSteeringRun(
     where: {
       threadId: input.threadId,
       botId: input.botId,
-      status: { in: ["queued", "leased", "running", "waiting_input", "waiting_takeover"] },
+      status: { in: [...QUEUE_HOLDING_RUN_STATUSES] },
     },
     select: { id: true },
   });

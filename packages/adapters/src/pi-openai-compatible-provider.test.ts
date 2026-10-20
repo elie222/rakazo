@@ -336,6 +336,28 @@ describe("openai-compatible provider", () => {
     }
   });
 
+  it("cancels a pending connection without waiting for the connect timeout", async () => {
+    const controller = new AbortController();
+    let markLookupStarted: () => void = () => {};
+    const lookupStarted = new Promise<void>((resolve) => {
+      markLookupStarted = resolve;
+    });
+    const safeFetch = createOpenAiCompatibleFetch(undefined, async () => {
+      markLookupStarted();
+      return new Promise(() => {});
+    });
+    const outcome = safeFetch("https://localhost:8000/v1/models", {
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    try {
+      await lookupStarted;
+      controller.abort();
+      await expect(outcome).resolves.toMatchObject({ name: "AbortError" });
+    } finally {
+      controller.abort();
+    }
+  });
+
   it("carries a Request's method, headers and body through as init", async () => {
     let seen: { url: string; init?: RequestInit } | undefined;
     const safeFetch = createOpenAiCompatibleFetch(async (input, init) => {

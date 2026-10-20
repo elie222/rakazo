@@ -36,6 +36,8 @@ import {
 } from "@rakazo/contracts";
 import type { ComposerMention, FoldedTranscript, SlashActionId } from "@rakazo/core";
 import {
+  accountDisplay,
+  answerableAskMessageIds,
   attachmentsForThread,
   buildComposerMentionOptions,
   clampMentionHighlightIndex,
@@ -49,7 +51,6 @@ import {
   isPeerReceiptBlocks,
   isRunTerminalEvent,
   isToolActivityBlock,
-  latestAnswerableAskMessageId,
   mentionChipKey,
   nestRosterByParent,
   normalizeRunError,
@@ -81,6 +82,7 @@ import {
   GroupAvatar,
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
   Popover,
   PopoverContent,
@@ -115,6 +117,7 @@ import {
   Reply,
   Search,
   Settings,
+  SlidersHorizontal,
   Smile,
   Square,
   SquareKanban,
@@ -156,7 +159,6 @@ import {
   HoldToTalkStrip,
   useHoldToTalk,
 } from "../components/composer/HoldToTalk";
-import { ComputerWorkspace } from "../components/computer/ComputerWorkspace";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
 import {
@@ -170,6 +172,8 @@ import { SkillDraftCard } from "../components/teach/SkillDraftCard";
 import { TeachCaptureOverlay } from "../components/teach/TeachCaptureOverlay";
 import { TeachComputerOverlayControl } from "../components/teach/TeachComputerOverlay";
 import { TeachRecordingChrome, TeachStopButton } from "../components/teach/TeachRecordingChrome";
+import type { ActivityListFilters } from "../lib/activity-list-filters";
+import { emptyActivityFilters } from "../lib/activity-list-filters";
 import { readActivityMode, writeActivityMode } from "../lib/activity-mode";
 import type { ArtifactTarget } from "../lib/artifact-open";
 import { authClient } from "../lib/auth";
@@ -216,7 +220,6 @@ import {
   loadComputerScreen,
   screenIframeSandbox,
 } from "../lib/computer-screen";
-import { publishComputerCommand } from "../lib/computer-workspace";
 import { desktopBridge } from "../lib/desktop";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
@@ -261,9 +264,8 @@ import {
   activeThreadRuns,
   applyThreadSendReceipt,
   clearActiveThreadRuns,
-  computerPanelAutoBoot,
-  computerPanelAutoUsesBoot,
   computerPanelNeedsMaintenance,
+  computerPanelNeedsScreen,
   computerTakeoverBlocked,
   isComputerStatusEvent,
   isThreadSnapshotEvent,
@@ -697,7 +699,17 @@ function SpaceShell() {
     return () => desktop.removeEventListener("change", closeMobileSidebar);
   }, []);
   const [activityMode, setActivityMode] = useState(readActivityMode);
+  const [activityFilters, setActivityFilters] = useState<ActivityListFilters>(emptyActivityFilters);
+  const [activityFiltersExpanded, setActivityFiltersExpanded] = useState(false);
+  const activityFiltersId = useId();
+  const activityFilterCount =
+    Number(activityFilters.status !== "all") +
+    Number(Boolean(activityFilters.dateRange.from)) +
+    Number(Boolean(activityFilters.dateRange.to));
   const toggleActivityMode = useCallback(() => {
+    setQuery("");
+    setActivityFilters(emptyActivityFilters());
+    setActivityFiltersExpanded(false);
     setActivityMode((on) => {
       const next = !on;
       writeActivityMode(next);
@@ -1869,7 +1881,7 @@ function SpaceShell() {
     [userId],
   );
   const spaceQuery = query.trim();
-  const showSpaceSearch = spaceQuery.length > 0;
+  const showSpaceSearch = !activityMode && spaceQuery.length > 0;
 
   useEffect(() => {
     if (!showSpaceSearch) {
@@ -2040,7 +2052,7 @@ function SpaceShell() {
     setReplyQuote(null);
   }, []);
   const currentRuns = activeThreadRuns(activeSnapshot);
-  const answerableAskMessageId = latestAnswerableAskMessageId(activeSnapshot);
+  const answerableAskIds = useMemo(() => answerableAskMessageIds(activeSnapshot), [activeSnapshot]);
   const workingRuns = currentRuns.filter((run) =>
     ["running", "queued", "leased"].includes(run.status),
   );
@@ -2779,18 +2791,12 @@ function SpaceShell() {
       const state = snap?.computer?.state;
       const screen = state === "running" ? await refreshComputerScreen(botId) : null;
       if (cancelled || activeBotId.current !== botId) return;
-      const action = computerPanelAutoBoot(state, screen);
-      if (action === "wait") {
-        if (state === "running") autoBooted.current = botId;
-        return;
-      }
-      if (action === "boot" && autoBooted.current === botId) return;
+      if (!computerPanelNeedsScreen(state, screen) || autoBooted.current === botId) return;
       autoBooted.current = botId;
-      if (!computerPanelAutoUsesBoot(action)) return;
       await bootComputer({
         botId,
         takeControl: false,
-        overlay: action === "boot",
+        overlay: false,
         force: true,
       }).catch(() => undefined);
     })();
@@ -3024,13 +3030,7 @@ function SpaceShell() {
     !computerScreenError &&
     showComputerRecoveryHint;
 
-  const userName = session.data?.user.name ?? t`You`;
-  const initials = userName
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const { label: userName, initial: initials } = accountDisplay(session.data?.user ?? {}, t`You`);
 
   const shell = (
     <div
@@ -3202,12 +3202,42 @@ function SpaceShell() {
             <Search size={16} strokeWidth={1.8} aria-hidden="true" />
           </InputGroupAddon>
           <InputGroupInput
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t`Search`}
+            value={activityMode ? activityFilters.query : query}
+            onChange={(e) => {
+              if (activityMode) setActivityFilters({ ...activityFilters, query: e.target.value });
+              else setQuery(e.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (activityMode && event.key === "Escape") {
+                setActivityFilters({ ...activityFilters, query: "" });
+              }
+            }}
+            placeholder={activityMode ? t`Search runs` : t`Search`}
+            aria-label={activityMode ? t`Search runs` : t`Search`}
             autoComplete="off"
             name="sidebar-search"
           />
+          {activityMode ? (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-sm"
+                aria-label={t`Filters`}
+                aria-expanded={activityFiltersExpanded}
+                aria-controls={activityFiltersId}
+                onClick={() => setActivityFiltersExpanded((expanded) => !expanded)}
+                className="relative rounded-lg"
+              >
+                <SlidersHorizontal size={16} aria-hidden="true" />
+                {activityFilterCount > 0 ? (
+                  <span
+                    data-testid="activity-filter-indicator"
+                    aria-hidden="true"
+                    className="absolute end-1 top-1 size-1.5 rounded-full bg-primary"
+                  />
+                ) : null}
+              </InputGroupButton>
+            </InputGroupAddon>
+          ) : null}
         </InputGroup>
         <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showSpaceSearch ? (
@@ -3220,6 +3250,10 @@ function SpaceShell() {
             <>
               {activityMode ? (
                 <ActivityList
+                  filters={activityFilters}
+                  onFiltersChange={setActivityFilters}
+                  filtersExpanded={activityFiltersExpanded}
+                  filtersId={activityFiltersId}
                   onOpenRun={(run) => {
                     setMobileSidebarOpen(false);
                     if (run.groupId) navigate(`/app/g/${run.groupId}`);
@@ -3251,7 +3285,11 @@ function SpaceShell() {
                     : null;
                 const headerDropKey = `header:${group.key}`;
                 return (
-                  <div key={group.key} data-sidebar-group={group.key}>
+                  <div
+                    key={group.key}
+                    data-sidebar-group={group.key}
+                    className="flex flex-col gap-0.5"
+                  >
                     {group.title || hasSpaceActions ? (
                       // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
                       <div
@@ -4021,7 +4059,7 @@ function SpaceShell() {
             showToolActivity={showToolActivity}
             olderCursor={activeSnapshot?.olderCursor ?? null}
             loadingOlder={loadingOlder}
-            answerableAskMessageId={answerableAskMessageId}
+            answerableAskIds={answerableAskIds}
             running={transcriptRunning}
             workingBots={workingBots}
             onCallBack={
@@ -5176,52 +5214,38 @@ function SpaceShell() {
               </div>
             ) : null}
             <div className="relative min-h-0 flex-1 bg-background">
-              <ComputerWorkspace
-                botId={computerBot.id}
-                computer={computer}
-                hasControl={hasControl}
-                dock={!recordingSkill}
-                onTakeControl={
-                  computer?.state === "running" &&
-                  !hasControl &&
-                  !computerTakeoverBlocked(computer, snapshot?.run?.status)
-                    ? () => openComputer(computerBot.id, true)
-                    : undefined
-                }
-              >
-                {computer?.kind === "desktop" ? (
-                  <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
-                ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
-                  <>
-                    <iframe
-                      title={t`Bot screen`}
-                      src={embeddedScreenUrl}
-                      sandbox={screenIframeSandbox(embeddedScreenUrl)}
-                      className="h-full w-full border-0 bg-black"
-                      allow="clipboard-read; clipboard-write; fullscreen"
-                      style={{
-                        pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
-                      }}
+              {computer?.kind === "desktop" ? (
+                <DesktopKindEmptyState className="grid h-full place-items-center px-8 text-center text-sm text-muted-foreground/80" />
+              ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
+                <>
+                  <iframe
+                    title={t`Bot screen`}
+                    src={embeddedScreenUrl}
+                    sandbox={screenIframeSandbox(embeddedScreenUrl)}
+                    className="h-full w-full border-0 bg-black"
+                    allow="clipboard-read; clipboard-write; fullscreen"
+                    style={{
+                      pointerEvents: recordingSkill || !hasControl ? "none" : "auto",
+                    }}
+                  />
+                  {computerBot ? (
+                    <TeachCaptureOverlay
+                      botId={computerBot.id}
+                      skill={recordingSkill}
+                      enabled={Boolean(recordingSkill)}
+                      screenWidth={computer?.screenWidth}
+                      screenHeight={computer?.screenHeight}
                     />
-                    {computerBot ? (
-                      <TeachCaptureOverlay
-                        botId={computerBot.id}
-                        skill={recordingSkill}
-                        enabled={Boolean(recordingSkill)}
-                        screenWidth={computer?.screenWidth}
-                        screenHeight={computer?.screenHeight}
-                      />
-                    ) : null}
-                  </>
-                ) : (
-                  <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
-                    {computerScreenError ??
-                      (computer?.state === "suspended"
-                        ? t`Computer is asleep`
-                        : computerLabel(computer?.mode, computerBot.name))}
-                  </div>
-                )}
-              </ComputerWorkspace>
+                  ) : null}
+                </>
+              ) : (
+                <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
+                  {computerScreenError ??
+                    (computer?.state === "suspended"
+                      ? t`Computer is asleep`
+                      : computerLabel(computer?.mode, computerBot.name))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -5243,7 +5267,7 @@ const Transcript = memo(function Transcript({
   showToolActivity,
   olderCursor,
   loadingOlder,
-  answerableAskMessageId,
+  answerableAskIds,
   running,
   workingBots,
   onCallBack,
@@ -5273,7 +5297,7 @@ const Transcript = memo(function Transcript({
   showToolActivity: boolean;
   olderCursor: number | null;
   loadingOlder: boolean;
-  answerableAskMessageId: string | null;
+  answerableAskIds: Set<string>;
   running: boolean;
   workingBots: GroupAvatarMember[];
   /** Calls the bot back from a missed call in the transcript. */
@@ -5651,7 +5675,7 @@ const Transcript = memo(function Transcript({
                     <MessageView
                       artifactTarget={artifactTarget}
                       message={message}
-                      canAnswer={message.id === answerableAskMessageId}
+                      canAnswer={answerableAskIds.has(message.id)}
                       onOpenBot={onOpenBot}
                       onOpenPeerMessages={onOpenPeerMessages}
                       peerReplies={
@@ -6939,20 +6963,14 @@ function MessageHoverActions({
   }
 
   const iconButtonClass =
-    "grid h-7 w-7 place-items-center text-muted-foreground transition-colors hover:text-foreground";
+    "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
-            <PopoverTrigger
-              aria-label={t`React`}
-              className={cn(
-                iconButtonClass,
-                "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-              )}
-            >
+            <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
               <Smile size={15} strokeWidth={1.7} />
             </PopoverTrigger>
             <PopoverContent
@@ -6981,21 +6999,12 @@ function MessageHoverActions({
           type="button"
           aria-label={t`Reply`}
           onClick={() => onReply(message)}
-          className={cn(
-            iconButtonClass,
-            "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-          )}
+          className={iconButtonClass}
         >
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger
-            aria-label={t`More`}
-            className={cn(
-              iconButtonClass,
-              "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-            )}
-          >
+          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"}>
@@ -7035,7 +7044,6 @@ function applyThreadEvent(
   snapshotRef: MutableRefObject<ThreadSnapshot | null>,
   computerRef: MutableRefObject<ComputerStatus | null>,
 ) {
-  publishComputerCommand(event);
   if (isThreadSnapshotEvent(event)) {
     const next = reduceThreadSnapshot(snapshotRef.current, event);
     commitSnapshot(next);

@@ -63,6 +63,10 @@ test("settings shell is two-pane and deep-links Models Memory Voice Usage", asyn
   await expect
     .poll(() => page.evaluate(() => window.localStorage.getItem("rakazo.responseStreaming")))
     .toBe("on");
+  const deleteAccount = settings.getByRole("button", { name: "Delete account", exact: true });
+  await deleteAccount.scrollIntoViewIfNeeded();
+  await expect(deleteAccount).toBeVisible();
+  await captureScreenshot(page, testInfo, "settings-general-delete-account");
 
   await settings.getByTestId("settings-nav-models").click();
   await expect(settings).toHaveAttribute("data-settings-section", "models");

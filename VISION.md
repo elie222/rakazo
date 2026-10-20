@@ -56,6 +56,7 @@ Important effects are verified independently, recovery preserves known-good user
 ## Current decisions
 
 This file records current product truth rather than an append-only decision log, and Git history preserves decisions that are later replaced.
+A pending question or approval card never blocks a chat: the user can always keep chatting and new work still runs, and the card stays answerable until someone replies.
 One bot has one continuous visible thread because continuity is part of its identity, while internal runs and attempts remain implementation detail.
 Team Computers share a persisted browser identity and isolate simultaneous live desktops when supported because shared login state and safe concurrency are both required.
 Private Computers isolate the entire working home because some trust boundaries must be stronger than collaboration convenience.

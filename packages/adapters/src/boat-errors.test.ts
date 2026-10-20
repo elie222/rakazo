@@ -1,7 +1,9 @@
 import { ResponseError } from "@boatdev/sdk";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
+import { isSandboxGoneError } from "./e2b-sandbox.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -38,6 +40,57 @@ describe("Boat API errors", () => {
     );
   });
 
+  it("reports a sandbox that no longer exists as gone, but not a missing file", async () => {
+    const notFound = () =>
+      Response.json({ code: "not_found", message: "not_found" }, { status: 404 });
+    const context = {
+      operationId: "test",
+      traceId: "test",
+      spaceId: "test",
+      userId: "test",
+      signal: new AbortController().signal,
+    };
+    const computer = { id: "gone", providerRef: "gone", botId: "bot-test", kind: "boat" as const };
+    const provider = new BoatSandboxProvider({ apiKey: "fake-boat-key" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => notFound()),
+    );
+    const gone = await provider.keepAlive(computer).catch((error: unknown) => error);
+    expect(isSandboxGoneError(gone)).toBe(true);
+    expect(isUnrecoverableBoatError(gone)).toBe(true);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) =>
+        new URL(String(input)).pathname.endsWith("/sandboxes/gone")
+          ? Response.json({ ok: true, type: "sandbox.info", sandbox: { id: "gone" } })
+          : notFound(),
+      ),
+    );
+    const missingFile = await provider
+      .readFile(computer, "missing.txt", context)
+      .catch((error: unknown) => error);
+    expect(isSandboxGoneError(missingFile)).toBe(false);
+
+    const cancel = new AbortController();
+    const lookups: (AbortSignal | null | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        if (!new URL(String(input)).pathname.endsWith("/sandboxes/gone")) return notFound();
+        lookups.push(init?.signal);
+        cancel.abort(new Error("cancelled"));
+        throw init?.signal?.reason;
+      }),
+    );
+    await expect(
+      provider.readFile(computer, "missing.txt", { ...context, signal: cancel.signal }),
+    ).rejects.toThrow();
+    expect(lookups[0]?.aborted).toBe(true);
+  });
+
   it("preserves 404 recovery and does not retry failed commands", async () => {
     const call = vi.fn(async () => {
       throw new ResponseError(Response.json({ message: "Boat not found" }, { status: 404 }));
@@ -46,6 +99,21 @@ describe("Boat API errors", () => {
     expect(error).toBeInstanceOf(ResponseError);
     expect(isUnrecoverableBoatError(error)).toBe(true);
     expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
+    const call = wrapBoatCall(async () => {
+      throw new ResponseError(
+        Response.json(
+          { code: "rate_limited", message: "Rate limit hit: 200 sandbox starts per day" },
+          { status: 429 },
+        ),
+      );
+    }, "fake-key");
+    const error = await call().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+    expect((error as Error).cause).toBeInstanceOf(ResponseError);
+    expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
   });
 
   it("does not replace cancellation and network errors", async () => {

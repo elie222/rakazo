@@ -6,6 +6,7 @@ import {
   type GroupMember,
   type SpaceGroup,
 } from "@rakazo/contracts";
+import { displayName } from "@rakazo/core";
 import { cancelRunsInTransaction } from "./cancel-runs.js";
 import type { Prisma, PrismaClient } from "./client.js";
 import { expireComputerExecutionLeases } from "./computers.js";
@@ -351,7 +352,7 @@ export function createGroupRepos(prisma: PrismaClient) {
           data: {
             spaceId: actor.spaceId,
             userId: actor.userId,
-            name: input.name.trim(),
+            name: displayName(input.name, ""),
           },
         });
         await tx.chatGroupMember.createMany({
@@ -445,7 +446,7 @@ export function createGroupRepos(prisma: PrismaClient) {
         if (input.name !== undefined) {
           await tx.chatGroup.update({
             where: { id: input.groupId },
-            data: { name: input.name.trim() },
+            data: { name: displayName(input.name, "") },
           });
         }
         if (members) {

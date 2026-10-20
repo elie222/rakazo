@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from "node:fs";
-import type { ComponentType, ReactElement } from "react";
+import type { ComponentType, ReactElement, ReactNode } from "react";
 import * as React from "react";
-import { act, memo, useCallback, useEffect, useState } from "react";
+import { act, memo, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ts from "typescript";
 import { expect, it, vi } from "vitest";
 import type { MobileBot } from "./api";
 import { botTag, formatThreadTime } from "./inbox";
 import { retainInboxValue } from "./inbox-retention";
+import { spaceInboxItems } from "./inbox-spaces";
 import { inboxRowActionList } from "./inbox-swipe";
+
+// Section headings use the real item builder; its space actions stay unused here.
+vi.mock("./api", () => ({}));
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
@@ -72,7 +76,7 @@ function measure(before: boolean) {
     SWIPE_ROWS: true,
     day: new Date(2026, 9, 10).getTime(),
     chooseInboxSpace: action,
-    collapsedRosterParents: new Set(),
+    collapsed: new Set(),
     confirmDeleteSpace: action,
     deleteSection: action,
     me: { spaceId: "space-1" },
@@ -85,7 +89,7 @@ function measure(before: boolean) {
     spaceRecoveryId: null,
     styles: {},
     t: action,
-    toggleRosterParent: action,
+    toggleCollapsed: action,
   };
   const useRenderItem = new Function(
     ...Object.keys(dependencies),
@@ -205,7 +209,7 @@ it.each(["midnight", "focus", "foreground"])(
       organizeFromMenu: action,
       SWIPE_ROWS: true,
       chooseInboxSpace: action,
-      collapsedRosterParents: new Set(),
+      collapsed: new Set(),
       confirmDeleteSpace: action,
       deleteSection: action,
       me: { spaceId: "space-1" },
@@ -217,7 +221,7 @@ it.each(["midnight", "focus", "foreground"])(
       spaceRecoveryId: null,
       styles: {},
       t: action,
-      toggleRosterParent: action,
+      toggleCollapsed: action,
     };
     const rowSource = source.slice(
       source.indexOf("const BotRow = memo("),
@@ -353,6 +357,209 @@ it("renders saved bot rows without a title or notification setting", () => {
     ]);
   } finally {
     act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("collapses a section from its heading and keeps the choice for the account", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const action = vi.fn();
+  const loadCollapsedSections = vi.fn(
+    async (): Promise<{ userId: string; keys: Set<string> } | null> => null,
+  );
+  const saveCollapsedSections = vi.fn();
+  const renderedRows: string[] = [];
+  const chevrons: boolean[] = [];
+  const scope = {
+    React,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState,
+    spaceInboxItems,
+    loadSessionToken: async () => "token",
+    loadCollapsedSections,
+    saveCollapsedSections,
+    Platform: { OS: "ios" },
+    View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    Text: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    Pressable: ({
+      children,
+      accessibilityLabel,
+      accessibilityState,
+      accessibilityValue,
+      onPress,
+      style,
+    }: {
+      children: ReactNode;
+      accessibilityLabel?: string;
+      accessibilityState?: { expanded?: boolean };
+      accessibilityValue?: { text?: string };
+      onPress?: () => void;
+      style?: (state: { pressed: boolean }) => ({ minHeight?: number } | false)[];
+    }) => (
+      <button
+        type="button"
+        aria-label={accessibilityLabel}
+        aria-expanded={accessibilityState?.expanded}
+        data-value={accessibilityValue?.text}
+        data-min-height={Object.assign({}, ...(style?.({ pressed: false }) ?? [])).minHeight}
+        onClick={onPress}
+      >
+        {children}
+      </button>
+    ),
+    MenuView: ({ children }: { children: ReactNode }) => children,
+    NativeSymbol: () => null,
+    SectionChevron: ({ collapsed }: { collapsed: boolean }) => {
+      chevrons.push(collapsed);
+      return <i data-collapsed={String(collapsed)} />;
+    },
+    BotRow: ({ bot }: { bot: MobileBot }) => {
+      renderedRows.push(bot.name);
+      return <p>{bot.name}</p>;
+    },
+    GroupRow: () => null,
+    appearance: "light",
+    botAction: action,
+    botSections: [],
+    chooseInboxSpace: action,
+    confirmDeleteSpace: action,
+    deleteSection: action,
+    day: 0,
+    editSectionFromMenu: action,
+    groupAction: action,
+    openBot: action,
+    openGroup: action,
+    organizeBot: action,
+    organizeFromMenu: action,
+    organizeGroup: action,
+    spaceBusy: false,
+    spaceRecoveryId: null,
+    // The heading's own style, so its tap target is checked against the real value.
+    styles: new Function(
+      `return {${source.slice(source.indexOf("    sectionToggle: {"), source.indexOf("    sectionTitle: {"))}};`,
+    )(),
+    t: (text: string, values?: { name?: string }) => text.replace("{name}", values?.name ?? ""),
+    SWIPE_ROWS: true,
+  };
+  const slice = (from: string, to: string) =>
+    source.slice(source.indexOf(from), source.indexOf(to));
+  const stateSource = slice(
+    "  // Roster parent bot ids and section heading keys",
+    "  useEffect(() => {\n    void loadActivityMode()",
+  );
+  const sessionSource = slice(
+    "  useEffect(() => {\n    void Promise.all([loadSessionToken(), loadCollapsedSections()])",
+    "  useEffect(() => {\n    if (!hasSession) return;\n    void registerPushToken",
+  );
+  const listSource = slice("  const renderItem = useCallback(", "  if (!ready) {");
+  const compiled = ts.transpileModule(
+    `return function List({ spaces, me }) {
+      const [ready, setReady] = useState(false);
+      const [, setHasSession] = useState(false);
+      ${stateSource}\n${sessionSource}\n${listSource}
+      if (!ready) return null;
+      return spaceInboxItems(spaces, collapsed, me.spaceId).map((item, index) =>
+        React.cloneElement(renderItem({ item }), { key: index }),
+      );
+    };`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const List = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const work = {
+    id: "work",
+    name: "Work",
+    position: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const spaces = [
+    {
+      id: "space-1",
+      name: "Personal",
+      isDefault: true,
+      hasContent: true,
+      botSections: [work],
+      groups: [],
+      bots: [
+        { id: "bot-a", name: "Alpha", preview: "", sectionId: "work" },
+        { id: "bot-b", name: "Beta", preview: "", sectionId: "work" },
+        { id: "bot-c", name: "Gamma", preview: "", sectionId: null },
+      ],
+    },
+  ];
+  const userOne = { userId: "user-1", spaceId: "space-1" };
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const heading = () => container.querySelector("button")!;
+  const names = () => Array.from(container.querySelectorAll("p"), (row) => row.textContent);
+  try {
+    await act(async () => root.render(<List spaces={spaces} me={userOne} />));
+    expect(loadCollapsedSections).toHaveBeenCalledTimes(1);
+    expect(heading().getAttribute("aria-label")).toBe("Collapse Work");
+    expect(heading().getAttribute("aria-expanded")).toBe("true");
+    expect(heading().hasAttribute("data-value")).toBe(false);
+    expect(heading().textContent).toBe("Work");
+    // Every heading is a full tap target, with or without the section "…" menu beside it.
+    expect(heading().dataset.minHeight).toBe("44");
+    expect(names()).toEqual(["Alpha", "Beta", "Gamma"]);
+
+    act(() => heading().click());
+    expect(heading().getAttribute("aria-label")).toBe("Expand Work");
+    expect(heading().getAttribute("aria-expanded")).toBe("false");
+    expect(heading().getAttribute("data-value")).toBe("2");
+    expect(heading().textContent).toBe("Work2");
+    expect(heading().querySelector("i")?.dataset.collapsed).toBe("true");
+    expect(names()).toEqual(["Gamma"]);
+    expect(saveCollapsedSections).toHaveBeenLastCalledWith(
+      "user-1",
+      new Set(["space-1:section:work"]),
+    );
+
+    act(() => heading().click());
+    expect(heading().getAttribute("aria-label")).toBe("Collapse Work");
+    expect(names()).toEqual(["Alpha", "Beta", "Gamma"]);
+    expect(saveCollapsedSections).toHaveBeenLastCalledWith("user-1", new Set());
+
+    // Quick taps save once per committed state, the final one last.
+    act(() => {
+      heading().click();
+      heading().click();
+      heading().click();
+    });
+    expect(heading().getAttribute("aria-label")).toBe("Expand Work");
+    expect(saveCollapsedSections).toHaveBeenLastCalledWith(
+      "user-1",
+      new Set(["space-1:section:work"]),
+    );
+  } finally {
+    act(() => root.unmount());
+  }
+
+  // A relaunch draws the account's collapsed sections folded from the first frame.
+  loadCollapsedSections.mockResolvedValueOnce({
+    userId: "user-1",
+    keys: new Set(["space-1:section:work"]),
+  });
+  renderedRows.length = 0;
+  chevrons.length = 0;
+  const relaunched = createRoot(container);
+  try {
+    await act(async () => relaunched.render(<List spaces={spaces} me={userOne} />));
+    expect(heading().getAttribute("aria-label")).toBe("Expand Work");
+    expect(names()).toEqual(["Gamma"]);
+    expect(renderedRows).not.toContain("Alpha");
+    // Work's chevron mounts collapsed (no fold animation); Unassigned's mounts expanded.
+    expect(chevrons.slice(0, 2)).toEqual([true, false]);
+
+    // Another account on this device starts expanded; the saved account keeps its choice.
+    act(() => relaunched.render(<List spaces={spaces} me={{ ...userOne, userId: "user-2" }} />));
+    expect(names()).toEqual(["Alpha", "Beta", "Gamma"]);
+    act(() => relaunched.render(<List spaces={spaces} me={userOne} />));
+    expect(names()).toEqual(["Gamma"]);
+  } finally {
+    act(() => relaunched.unmount());
     vi.unstubAllGlobals();
   }
 });

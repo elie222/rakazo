@@ -38,11 +38,11 @@ describe("featuredModelProviders", () => {
     ];
 
     expect(featuredModelProviders(providers, "openrouter").map((entry) => entry.provider)).toEqual([
-      "openrouter",
+      "openai",
       "openai-codex",
       "anthropic",
-      "openai",
       "google",
+      "openrouter",
       "vercel-ai-gateway",
     ]);
   });
@@ -56,8 +56,8 @@ describe("featuredModelProviders", () => {
     ];
 
     expect(featuredModelProviders(providers, "openrouter").map((entry) => entry.provider)).toEqual([
-      "openrouter",
       "anthropic",
+      "openrouter",
       "azure",
       "bedrock",
     ]);
@@ -75,11 +75,11 @@ describe("featuredModelProviders", () => {
     ];
 
     expect(featuredModelProviders(providers, "local").map((entry) => entry.provider)).toEqual([
-      "openrouter",
+      "openai",
       "openai-codex",
       "anthropic",
-      "openai",
       "google",
+      "openrouter",
       "local",
     ]);
   });

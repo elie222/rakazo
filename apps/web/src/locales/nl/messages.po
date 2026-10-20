@@ -140,6 +140,14 @@ msgstr "{hours}u geleden"
 msgid "{minutes}m ago"
 msgstr "{minutes}m geleden"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} vraagt"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} vraagt: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -354,7 +362,6 @@ msgstr "Actief"
 msgid "Active model"
 msgstr "Actief model"
 
-#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Activiteit"
@@ -579,6 +586,10 @@ msgstr "Voor deze aanbieder is een API-sleutel opgeslagen, geen abonnementsaanme
 msgid "An integration tool"
 msgstr "Een integratietool"
 
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Een andere agent"
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "Antwoorden"
@@ -717,10 +728,6 @@ msgstr "om {timeSelect}"
 msgid "Attach file"
 msgstr "Bestand bijvoegen"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Attached {path}"
-msgstr "{path} bijgevoegd"
-
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Attachment"
@@ -771,7 +778,6 @@ msgstr "Avatarstudio"
 msgid "Avatars"
 msgstr "Avatars"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -838,6 +844,7 @@ msgstr "De computer van {0} opstarten"
 msgid "bot"
 msgstr "bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -884,10 +891,6 @@ msgstr "Breinlabel"
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "MCP-servers doorzoeken"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Browser"
-msgstr "Browser"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
@@ -989,6 +992,10 @@ msgstr "Chattoepassingen"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Chatinstellingen"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "Chats"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1099,10 +1106,6 @@ msgstr "Clientsecret"
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Sluiten"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Close {title}"
-msgstr "{title} sluiten"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1552,17 +1555,9 @@ msgstr "{0} downloaden mislukt. Probeer het opnieuw."
 msgid "Could not download {name}. Try again."
 msgstr "{name} downloaden mislukt. Probeer het opnieuw."
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not download file"
-msgstr "Bestand downloaden mislukt"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Connector installeren mislukt"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not list files"
-msgstr "Bestanden tonen mislukt"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1592,10 +1587,6 @@ msgstr "Facturatie laden mislukt"
 #: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
 msgstr "Bots laden mislukt. Herlaad om het opnieuw te proberen."
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not load commands"
-msgstr "Commando's laden mislukt"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not load credentials."
@@ -1656,17 +1647,9 @@ msgstr "Uitloggen mislukt. Probeer het opnieuw."
 msgid "Could not open billing"
 msgstr "Facturatie openen mislukt"
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not open file"
-msgstr "Bestand openen mislukt"
-
 #: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr "Lokale instellingen openen mislukt. Start de lokale server en maak het eigenaarsaccount aan, en probeer het daarna opnieuw."
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not open terminal"
-msgstr "Terminal openen mislukt"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1831,10 +1814,6 @@ msgstr "Reactie bijwerken mislukt"
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "Het standaardgeheugenbereik bijwerken mislukt"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not upload file"
-msgstr "Bestand uploaden mislukt"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -2175,15 +2154,12 @@ msgstr "Heb je geen account?"
 msgid "Done"
 msgstr "Klaar"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr "Downloaden"
 
-#. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
-#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "{0} downloaden"
 
@@ -2394,15 +2370,6 @@ msgstr "Velden die een wijziging markeren"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Te vergelijken velden, bijv. id, modifiedTime (optioneel)"
 
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
-#: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "Het bestand overschrijdt de uploadlimiet van {0}."
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Files"
-msgstr "Bestanden"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "Bestanden of mappen op de computer"
@@ -2420,6 +2387,7 @@ msgid "Filter by date"
 msgstr "Filteren op datum"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Shell.tsx
 msgid "Filters"
 msgstr "Filters"
 
@@ -2510,6 +2478,7 @@ msgstr "Aan het voorbereiden"
 msgid "Git event"
 msgstr "Git-gebeurtenis"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2767,10 +2736,6 @@ msgstr "Laatste controle {0}: geen wijzigingen"
 msgid "Later"
 msgstr "Later"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Launched {app}"
-msgstr "{app} gestart"
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "Verlaten"
@@ -2990,6 +2955,10 @@ msgstr "Gemiddeld"
 msgid "Medium"
 msgstr "Gemiddeld"
 
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "Lid"
+
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
@@ -3037,6 +3006,10 @@ msgstr "Berichtgebeurtenis"
 #: src/pages/Shell.tsx
 msgid "Message from {peer}"
 msgstr "Bericht van {peer}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Bericht van een andere agent"
 
 #: src/pages/Shell.tsx
 msgid "Message…"
@@ -3270,10 +3243,6 @@ msgstr "geen auth"
 msgid "No authentication"
 msgstr "Geen authenticatie"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "No bot activity yet."
-msgstr "Nog geen botactiviteit."
-
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr "Geen bots"
@@ -3494,10 +3463,6 @@ msgstr "In volledig venster openen"
 msgid "Open navigation"
 msgstr "Navigatie openen"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Open shell"
-msgstr "Shell openen"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Openstaand werk"
@@ -3506,10 +3471,6 @@ msgstr "Openstaand werk"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatibele server-URL"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Opened {path}"
-msgstr "{path} geopend"
 
 #: src/pages/Shell.tsx
 msgid "Opened its thread."
@@ -3558,6 +3519,7 @@ msgstr "Oorspronkelijk bericht niet beschikbaar"
 msgid "Other model…"
 msgstr "Ander model…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "Eigenaar"
@@ -3580,6 +3542,10 @@ msgstr "Wachtwoord"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Wachtwoordherstel is niet geconfigureerd voor deze server"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "Aanmelden met wachtwoord is uitgeschakeld op deze server"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4072,6 +4038,7 @@ msgstr "Ruimte-instructies"
 msgid "Rotate key"
 msgstr "Sleutel roteren"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4195,10 +4162,6 @@ msgstr "Zeg ja of nee, of antwoord in een zin."
 msgid "Search"
 msgstr "Zoeken"
 
-#: src/pages/ActivityList.tsx
-msgid "Search activity"
-msgstr "Activiteit zoeken"
-
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
@@ -4228,7 +4191,7 @@ msgstr "Modellen zoeken"
 msgid "Search providers"
 msgstr "Aanbieders zoeken"
 
-#: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Search runs"
 msgstr "Runs zoeken"
 
@@ -4353,10 +4316,6 @@ msgstr "Gedeelde documenten"
 msgid "Shared skills"
 msgstr "Gedeelde skills"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Shell"
-msgstr "Shell"
-
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Alles tonen"
@@ -4476,6 +4435,7 @@ msgstr "Software-update"
 msgid "Something went wrong. Try again."
 msgstr "Er is iets misgegaan. Probeer het opnieuw."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
 msgstr "Space"
@@ -4577,6 +4537,7 @@ msgstr "Versleuteld opgeslagen"
 msgid "Stream replies"
 msgstr "Antwoorden streamen"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "subagent"
@@ -4647,10 +4608,6 @@ msgstr "Teams-bericht"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr "Teams is niet ingeschakeld"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Terminal"
-msgstr "Terminal"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -4965,6 +4922,14 @@ msgstr "Bijwerken mislukt"
 msgid "Update finished with errors"
 msgstr "Update voltooid met fouten"
 
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "Update van {name}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "Update van {name}: {text}"
+
 #: src/components/AskCard.tsx
 msgid "Update instructions?"
 msgstr "Instructies bijwerken?"
@@ -4999,7 +4964,6 @@ msgstr "Teamcomputer bijwerken"
 msgid "Updating…"
 msgstr "Bezig met bijwerken…"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "Uploaden"
@@ -5190,10 +5154,6 @@ msgstr "Bezig…"
 msgid "Workspace"
 msgstr "Werkruimte"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Wrote {path}"
-msgstr "{path} geschreven"
-
 #: src/lib/billing.ts
 msgid "year"
 msgstr "jaar"
@@ -5203,6 +5163,7 @@ msgstr "jaar"
 msgid "Yesterday"
 msgstr "Gisteren"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "Jij"

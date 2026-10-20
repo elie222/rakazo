@@ -140,6 +140,14 @@ msgstr "{hours}h ago"
 msgid "{minutes}m ago"
 msgstr "{minutes}m ago"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} asked"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} asked: {text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -354,7 +362,6 @@ msgstr "Active"
 msgid "Active model"
 msgstr "Active model"
 
-#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "Activity"
@@ -579,6 +586,10 @@ msgstr "An API key is stored for this provider, not a subscription sign-in."
 msgid "An integration tool"
 msgstr "An integration tool"
 
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "Another agent"
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "Answer"
@@ -717,10 +728,6 @@ msgstr "at {timeSelect}"
 msgid "Attach file"
 msgstr "Attach file"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Attached {path}"
-msgstr "Attached {path}"
-
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Attachment"
@@ -771,7 +778,6 @@ msgstr "Avatar Studio"
 msgid "Avatars"
 msgstr "Avatars"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -838,6 +844,7 @@ msgstr "Booting up {0}’s computer"
 msgid "bot"
 msgstr "bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -884,10 +891,6 @@ msgstr "Brain label"
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
 msgstr "Browse MCP servers"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Browser"
-msgstr "Browser"
 
 #: src/pages/KnowledgeSection.tsx
 msgid "Built-in"
@@ -989,6 +992,10 @@ msgstr "Chat apps"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Chat Settings"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "Chats"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1099,10 +1106,6 @@ msgstr "Client secret"
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "Close"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Close {title}"
-msgstr "Close {title}"
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1552,17 +1555,9 @@ msgstr "Could not download {0}. Try again."
 msgid "Could not download {name}. Try again."
 msgstr "Could not download {name}. Try again."
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not download file"
-msgstr "Could not download file"
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "Could not install connector"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not list files"
-msgstr "Could not list files"
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1592,10 +1587,6 @@ msgstr "Could not load billing"
 #: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
 msgstr "Could not load bots. Reload to try again."
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not load commands"
-msgstr "Could not load commands"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Could not load credentials."
@@ -1656,17 +1647,9 @@ msgstr "Could not log out. Try again."
 msgid "Could not open billing"
 msgstr "Could not open billing"
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not open file"
-msgstr "Could not open file"
-
 #: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr "Could not open local settings. Start the local server and create its owner account, then try again."
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not open terminal"
-msgstr "Could not open terminal"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1831,10 +1814,6 @@ msgstr "Could not update reaction"
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "Could not update the default memory scope"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not upload file"
-msgstr "Could not upload file"
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -2175,15 +2154,12 @@ msgstr "Don’t have an account?"
 msgid "Done"
 msgstr "Done"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr "Download"
 
-#. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
-#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "Download {0}"
 
@@ -2394,15 +2370,6 @@ msgstr "Fields that mark a change"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Fields to compare, e.g. id, modifiedTime (optional)"
 
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
-#: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "File exceeds the {0} upload limit."
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Files"
-msgstr "Files"
-
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "Files or folders on the computer"
@@ -2420,6 +2387,7 @@ msgid "Filter by date"
 msgstr "Filter by date"
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Shell.tsx
 msgid "Filters"
 msgstr "Filters"
 
@@ -2510,6 +2478,7 @@ msgstr "Getting ready"
 msgid "Git event"
 msgstr "Git event"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2767,10 +2736,6 @@ msgstr "Last check {0}: no changes"
 msgid "Later"
 msgstr "Later"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Launched {app}"
-msgstr "Launched {app}"
-
 #: src/pages/MessagingSettingsOverlay.tsx
 msgid "Leave"
 msgstr "Leave"
@@ -2990,6 +2955,10 @@ msgstr "Medium"
 msgid "Medium"
 msgstr "Medium"
 
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "Member"
+
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
@@ -3037,6 +3006,10 @@ msgstr "Message event"
 #: src/pages/Shell.tsx
 msgid "Message from {peer}"
 msgstr "Message from {peer}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "Message from another agent"
 
 #: src/pages/Shell.tsx
 msgid "Message…"
@@ -3270,10 +3243,6 @@ msgstr "no auth"
 msgid "No authentication"
 msgstr "No authentication"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "No bot activity yet."
-msgstr "No bot activity yet."
-
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr "No bots"
@@ -3494,10 +3463,6 @@ msgstr "Open in full window"
 msgid "Open navigation"
 msgstr "Open navigation"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Open shell"
-msgstr "Open shell"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "Open work"
@@ -3506,10 +3471,6 @@ msgstr "Open work"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI-compatible server URL"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Opened {path}"
-msgstr "Opened {path}"
 
 #: src/pages/Shell.tsx
 msgid "Opened its thread."
@@ -3558,6 +3519,7 @@ msgstr "Original message unavailable"
 msgid "Other model…"
 msgstr "Other model…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "Owner"
@@ -3580,6 +3542,10 @@ msgstr "Password"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Password recovery is not configured for this server"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "Password sign-in is turned off on this server"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4072,6 +4038,7 @@ msgstr "Room guidance"
 msgid "Rotate key"
 msgstr "Rotate key"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4195,10 +4162,6 @@ msgstr "Say yes or no, or answer in a sentence."
 msgid "Search"
 msgstr "Search"
 
-#: src/pages/ActivityList.tsx
-msgid "Search activity"
-msgstr "Search activity"
-
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
@@ -4228,7 +4191,7 @@ msgstr "Search models"
 msgid "Search providers"
 msgstr "Search providers"
 
-#: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Search runs"
 msgstr "Search runs"
 
@@ -4353,10 +4316,6 @@ msgstr "Shared documents"
 msgid "Shared skills"
 msgstr "Shared skills"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Shell"
-msgstr "Shell"
-
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
 msgstr "Show all"
@@ -4476,6 +4435,7 @@ msgstr "Software update"
 msgid "Something went wrong. Try again."
 msgstr "Something went wrong. Try again."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
 msgstr "Space"
@@ -4577,6 +4537,7 @@ msgstr "Stored encrypted"
 msgid "Stream replies"
 msgstr "Stream replies"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "subagent"
@@ -4647,10 +4608,6 @@ msgstr "Teams message"
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
 msgstr "Teams not enabled"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Terminal"
-msgstr "Terminal"
 
 #: src/components/teach/SkillDraftCard.tsx
 msgid "Test"
@@ -4965,6 +4922,14 @@ msgstr "Update failed"
 msgid "Update finished with errors"
 msgstr "Update finished with errors"
 
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "Update from {name}"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "Update from {name}: {text}"
+
 #: src/components/AskCard.tsx
 msgid "Update instructions?"
 msgstr "Update instructions?"
@@ -4999,7 +4964,6 @@ msgstr "Updating Team Computer"
 msgid "Updating…"
 msgstr "Updating…"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "Upload"
@@ -5190,10 +5154,6 @@ msgstr "Working…"
 msgid "Workspace"
 msgstr "Workspace"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Wrote {path}"
-msgstr "Wrote {path}"
-
 #: src/lib/billing.ts
 msgid "year"
 msgstr "year"
@@ -5203,6 +5163,7 @@ msgstr "year"
 msgid "Yesterday"
 msgstr "Yesterday"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "You"

@@ -78,7 +78,7 @@ function launch(extraEnv: Record<string, string> = {}) {
   });
 }
 
-test("first run asks whether to use a local or existing instance", async () => {
+test("first run offers Rakazo Cloud first, with local and existing instances", async () => {
   app = await launch();
   if (process.env.RAKAZO_E2E_EXECUTABLE) {
     expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(true);
@@ -87,12 +87,23 @@ test("first run asks whether to use a local or existing instance", async () => {
 
   await expect(setup.getByRole("heading", { name: "Welcome to Rakazo" })).toBeVisible();
   await expect(setup.getByText("Choose which server this app should use.")).toBeVisible();
+  await expect(setup.getByText("Rakazo Cloud")).toBeVisible();
   await expect(setup.getByText("This computer")).toBeVisible();
   await expect(setup.getByText("Existing instance")).toBeVisible();
   await expect(setup.locator(".card")).toHaveCount(0);
 
-  // A new instance is the default: the app runs the stack itself at the local address.
-  await expect(setup.getByRole("radio", { name: /This computer/ })).toBeChecked();
+  // Cloud is the default: one click opens the hosted app, with nothing to fill in.
+  await expect(setup.getByRole("radio", { name: /Rakazo Cloud/ })).toBeChecked();
+  await expect(setup.locator("#panel-new")).toBeHidden();
+  await expect(setup.locator("#panel-existing")).toBeHidden();
+  await expect(setup.getByRole("button", { name: "Check connection" })).toBeHidden();
+  await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
+  await setup.screenshot({
+    path: path.join(import.meta.dirname, "screenshots", "00-setup-cloud.png"),
+  });
+
+  // This computer runs the stack itself at the local address.
+  await setup.getByRole("radio", { name: /This computer/ }).check();
   // The panel is empty until a start begins, so check the attribute rather than the box.
   await expect(setup.locator("#panel-new")).toHaveJSProperty("hidden", false);
   await expect(setup.locator("#stack")).toBeHidden();
@@ -130,6 +141,51 @@ test("first run asks whether to use a local or existing instance", async () => {
       path.join(import.meta.dirname, "screenshots", "08-setup-macos-native-controls.png"),
     ]);
   }
+});
+
+test("Rakazo Cloud saves the hosted address and is reselected when saved", async () => {
+  app = await launch();
+  const setup = await app.firstWindow();
+  await expect(setup.getByRole("radio", { name: /Rakazo Cloud/ })).toBeChecked();
+  await expect(setup.getByRole("button", { name: "Continue" })).toBeEnabled();
+
+  // Capture the request instead of reaching the hosted server, so CI stays offline.
+  const { cloudUrl } = await setup.evaluate(() =>
+    (
+      window as typeof window & { rakazoSetup: { state: () => Promise<{ cloudUrl: string }> } }
+    ).rakazoSetup.state(),
+  );
+  expect(cloudUrl).toMatch(/^https:\/\//);
+  await app.evaluate(({ ipcMain }) => {
+    const state = globalThis as typeof globalThis & { cloudSaves?: unknown[] };
+    state.cloudSaves = [];
+    ipcMain.removeHandler("desktop.setup.save");
+    ipcMain.handle("desktop.setup.save", (_event, payload: unknown) => {
+      state.cloudSaves?.push(payload);
+      return { ok: false, error: "Captured." };
+    });
+  });
+  await setup.getByRole("button", { name: "Continue" }).click();
+  await expect(setup.locator("#status")).toHaveText("Captured.");
+  expect(
+    await app.evaluate(
+      () => (globalThis as typeof globalThis & { cloudSaves?: unknown[] }).cloudSaves,
+    ),
+  ).toEqual([{ mode: "existing", serverUrl: cloudUrl }]);
+  expect(await readFile(path.join(userData, "setup.json"), "utf8").catch(() => null)).toBeNull();
+
+  // A saved Cloud setup reopens with Cloud chosen, not as a typed existing address.
+  await app.evaluate(({ ipcMain }, url) => {
+    ipcMain.removeHandler("desktop.setup.state");
+    ipcMain.handle("desktop.setup.state", () => ({
+      defaultLocalUrl: "http://127.0.0.1:45173",
+      cloudUrl: url,
+      saved: { mode: "existing", serverUrl: url },
+    }));
+  }, cloudUrl);
+  await setup.reload();
+  await expect(setup.getByRole("radio", { name: /Rakazo Cloud/ })).toBeChecked();
+  await expect(setup.locator("#panel-existing")).toBeHidden();
 });
 
 test("connecting to an existing instance verifies, saves, and opens it", async () => {

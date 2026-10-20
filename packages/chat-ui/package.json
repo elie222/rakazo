@@ -19,6 +19,7 @@
     "@ronradtke/react-native-markdown-display": "9.0.3",
     "linkify-it": "5.0.2",
     "mermaid": "11.17.2",
+    "prism-react-renderer": "2.4.1",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1"
   },

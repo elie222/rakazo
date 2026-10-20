@@ -29,6 +29,21 @@ test("a group a bot creates after approval appears in the sidebar without a relo
   await expect(sidebar.getByRole("button", { name: /^Crew/ })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "fleet-create-group-approval");
 
+  // A new question can run beside the approval, and both cards stay answerable.
+  await composer.fill("ask me which city to use");
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByTestId("transcript").getByText("Which city should I use?", { exact: true }),
+  ).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Send it", exact: true })).toBeEnabled();
+  await captureScreenshot(page, testInfo, "pending-cards-never-block-chat");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Allow once", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Send it", exact: true })).toBeEnabled();
+
   await page.getByRole("button", { name: "Allow once", exact: true }).click();
   await expect(sidebar.getByRole("button", { name: /^Crew/ })).toBeVisible({ timeout: 30_000 });
 });

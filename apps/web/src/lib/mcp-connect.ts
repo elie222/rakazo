@@ -1,6 +1,8 @@
+import { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
 import { rpc } from "./rpc";
 
-export const MCP_OAUTH_CHANNEL = "rakazo-mcp-oauth";
+export { MCP_OAUTH_CHANNEL } from "./mcp-oauth-channel";
+
 const MCP_OAUTH_TIMEOUT_MS = 2 * 60 * 1000;
 
 export type McpOauthResult =

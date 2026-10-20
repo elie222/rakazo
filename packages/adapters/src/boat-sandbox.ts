@@ -37,6 +37,7 @@ const BOAT_READY_TIMEOUT_MS = 5 * 60_000;
 const BOAT_API_COMMAND_TIMEOUT_SECONDS = 600;
 const BOAT_TTL_SECONDS = 2 * 60 * 60;
 const BOAT_DELETE_TIMEOUT_MS = 60_000;
+const BOAT_GONE_CHECK_TIMEOUT_MS = 10_000;
 const BOAT_EXPORT_CONCURRENCY = 16;
 
 export type BoatSandboxSdk = Pick<
@@ -721,18 +722,43 @@ function createBoatSdk(config: { apiKey: string; apiUrl?: string }): BoatSandbox
       fetchApi: (input, init) => fetch(input, init),
     }),
   );
+  const get = wrapBoatCall(api.get.bind(api), config.apiKey);
+  // A 404 can mean a missing file in a live sandbox. Only a missing sandbox counts as gone, and
+  // the shared idle and recovery code recognizes it by this message.
+  const sandboxCall =
+    <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
+      call: (...args: Args) => Promise<Result>,
+    ) =>
+    async (...args: Args): Promise<Result> => {
+      try {
+        return await call(...args);
+      } catch (error) {
+        const { sandboxId } = args[0];
+        if (
+          error instanceof ResponseError &&
+          error.response.status === 404 &&
+          (await sandboxMissing(get, sandboxId, callerSignal(args[1])))
+        ) {
+          throw new ResponseError(error.response, `Boat sandbox ${sandboxId} not found`);
+        }
+        throw error;
+      }
+    };
+  const wrap = <Args extends [{ sandboxId: string }, ...unknown[]], Result>(
+    call: (...args: Args) => Promise<Result>,
+  ) => sandboxCall(wrapBoatCall(call, config.apiKey));
   return {
-    artifactRaw: wrapBoatCall(api.artifactRaw.bind(api), config.apiKey),
-    command: wrapBoatCall(api.command.bind(api), config.apiKey),
-    commandStatus: wrapBoatCall(api.commandStatus.bind(api), config.apiKey),
+    artifactRaw: wrap(api.artifactRaw.bind(api)),
+    command: wrap(api.command.bind(api)),
+    commandStatus: wrap(api.commandStatus.bind(api)),
     create: wrapBoatCall(api.create.bind(api), config.apiKey),
-    desktop: wrapBoatCall(api.desktop.bind(api), config.apiKey),
-    get: wrapBoatCall(api.get.bind(api), config.apiKey),
-    hostPort: wrapBoatCall(api.hostPort.bind(api), config.apiKey),
-    resume: wrapBoatCall(api.resume.bind(api), config.apiKey),
-    stop: wrapBoatCall(api.stop.bind(api), config.apiKey),
-    update: wrapBoatCall(api.update.bind(api), config.apiKey),
-    writeFile: wrapBoatCall(api.writeFile.bind(api), config.apiKey),
+    desktop: wrap(api.desktop.bind(api)),
+    get: sandboxCall(get),
+    hostPort: wrap(api.hostPort.bind(api)),
+    resume: wrap(api.resume.bind(api)),
+    stop: wrap(api.stop.bind(api)),
+    update: wrap(api.update.bind(api)),
+    writeFile: wrap(api.writeFile.bind(api)),
     deleteSandbox: async (sandboxId: string) => {
       const url = `${apiUrl}/sandboxes/${encodeURIComponent(sandboxId)}`;
       const headers = { Authorization: `Bearer ${config.apiKey}` };
@@ -764,6 +790,25 @@ function createBoatSdk(config: { apiKey: string; apiUrl?: string }): BoatSandbox
       throw new Error(`Boat ${sandboxId} was not deleted within 60 seconds`);
     },
   };
+}
+
+async function sandboxMissing(
+  get: (request: { sandboxId: string }, init: RequestInit) => Promise<unknown>,
+  sandboxId: string,
+  signal: AbortSignal | undefined,
+): Promise<boolean> {
+  const timeout = AbortSignal.timeout(BOAT_GONE_CHECK_TIMEOUT_MS);
+  try {
+    await get({ sandboxId }, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
+    return false;
+  } catch (error) {
+    return error instanceof ResponseError && error.response.status === 404;
+  }
+}
+
+function callerSignal(init: unknown): AbortSignal | undefined {
+  const signal = (init as RequestInit | undefined)?.signal;
+  return signal instanceof AbortSignal ? signal : undefined;
 }
 
 function timeoutCommand(command: string, timeoutMs: number, marker: string): string {

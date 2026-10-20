@@ -66,6 +66,7 @@ import {
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
+  displayName,
   endsSentence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -2670,7 +2671,11 @@ export function isProtectedComputerLifecycleCommand(command: string): boolean {
 }
 
 export function desktopProtectionGuardMessage(reason: string): string {
-  return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available. Do not stop or restart browser or desktop processes.`;
+  const recovery =
+    reason === "heredoc"
+      ? " For ordinary file edits, use the file tools or python3 -c with a quoted script instead of an interpreter heredoc. This refusal does not indicate a filesystem permission error."
+      : "";
+  return `This command was not run: desktop-protection guard: ${reason}. Shell access is still available.${recovery} Do not stop or restart browser or desktop processes.`;
 }
 
 /** Cap the roster so a large Space cannot flood the prompt. */
@@ -3575,7 +3580,6 @@ export function createRunExecutor(deps: ExecutorDeps) {
         );
       }
       let computerLease: ComputerExecutionLease | null = null;
-      let computerScreenLease: ComputerExecutionLease | null = null;
       try {
         computerLease = await acquireComputerExecutionLease(deps.prisma, {
           computerId: leaseTarget.computerId,
@@ -3583,9 +3587,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
           botId: run.botId,
           resumeHeldLease,
         });
-        computerScreenLease = computerLease;
-        if (!computerScreenLease && leaseTarget.computer?.scope === "dedicated") {
-          computerScreenLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
+        if (!computerLease && leaseTarget.computer?.scope === "dedicated") {
+          computerLease = await acquireDedicatedScreenLeaseFence(deps.prisma, {
             computerId: leaseTarget.computerId,
             runId,
             botId: run.botId,
@@ -3774,7 +3777,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           userId: run.userId,
           botId: bot.id,
           runId,
-          screenLeaseId: screenLeaseIdForRun(computerScreenLease, runId, fence),
+          screenLeaseId: screenLeaseIdForRun(computerLease, runId, fence),
           signal: runAbortController.signal,
           ...connectedContext(connectedPlugins),
           connectedProviders: connectedComposio.map((row) => row.provider),
@@ -3963,7 +3966,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!failed.continuationRunId) {
             await notifyRun(deps, run, {
               kind: "failure",
-              title: `${bot.name} failed`,
+              title: `${displayName(bot.name, "Bot")} failed`,
               body: message,
               botId: bot.id,
               threadId: thread.id,
@@ -5107,9 +5110,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!paused) {
               throw new Error("Could not pause this run for approval; try sending again.");
             }
+            if (paused.continuationRunId) {
+              await deps.jobs
+                .enqueue(runContinueJob(paused.continuationRunId))
+                .catch((error) => getLogger().error("steering continuation enqueue", error));
+            }
             await notifyRun(deps, run, {
               kind: "help",
-              title: `${bot.name} needs approval`,
+              title: `${displayName(bot.name, "Bot")} needs approval`,
               body: `Review before ${name}`,
               botId: bot.id,
               threadId: thread.id,
@@ -6611,9 +6619,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (!paused) {
               throw new Error("Could not pause this run for protected input; try sending again.");
             }
+            if (paused.continuationRunId) {
+              await deps.jobs
+                .enqueue(runContinueJob(paused.continuationRunId))
+                .catch((error) => getLogger().error("steering continuation enqueue", error));
+            }
             await notifyRun(deps, run, {
               kind: "help",
-              title: `${bot.name} needs a code`,
+              title: `${displayName(bot.name, "Bot")} needs a code`,
               body: String(args.label ?? "Code"),
               botId: bot.id,
               threadId: thread.id,
@@ -7535,9 +7548,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 offeredActions: event.actions,
               });
               if (!paused) return;
+              if (paused.continuationRunId) {
+                await deps.jobs
+                  .enqueue(runContinueJob(paused.continuationRunId))
+                  .catch((error) => getLogger().error("steering continuation enqueue", error));
+              }
               await notifyRun(deps, run, {
                 kind: "help",
-                title: `${bot.name} needs an answer`,
+                title: `${displayName(bot.name, "Bot")} needs an answer`,
                 body: safeText,
                 botId: bot.id,
                 threadId: thread.id,
@@ -7598,7 +7616,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               retainComputerLease = true;
               await notifyRun(deps, run, {
                 kind: "takeover",
-                title: `${bot.name} needs you on the screen`,
+                title: `${displayName(bot.name, "Bot")} needs you on the screen`,
                 body: safeReason,
                 botId: bot.id,
                 threadId: thread.id,
@@ -7941,7 +7959,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ) {
             await notifyRun(deps, run, {
               kind: "completion",
-              title: `${bot.name} finished`,
+              title: `${displayName(bot.name, "Bot")} finished`,
               body: notifyBody,
               botId: bot.id,
               threadId: thread.id,
@@ -8015,7 +8033,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {
             await notifyRun(deps, run, {
               kind: "failure",
-              title: `${bot.name} failed`,
+              title: `${displayName(bot.name, "Bot")} failed`,
               body: message.slice(0, 180),
               botId: bot.id,
               threadId: thread.id,
@@ -8201,7 +8219,7 @@ async function notifyFailedRoutineRun(
     failed,
     {
       kind: "failure",
-      title: `${bot.name} failed`,
+      title: `${displayName(bot.name, "Bot")} failed`,
       body: (failed.error ?? "").slice(0, 180),
       botId: failed.botId,
       threadId: failed.threadId,
@@ -8514,6 +8532,11 @@ export function dockerComputerToolInstruction(
   const parts = [
     "For Python CLI tools, use `uv tool install <package>`; it installs without sudo and keeps tools under this computer's persistent home. GitHub's `gh` CLI is installed. `pdftotext`, `pandoc`, and `openpyxl` are available to extract text from PDFs, documents, and spreadsheets.",
   ];
+  if (builtinOffered(disabled, "shell")) {
+    parts.push(
+      "Python 3 is installed as `python3`. For ordinary file processing, use `python3 -c` with a quoted script; interpreter heredocs are blocked by the desktop guard. If `python` is not found, retry with `python3`. A command-syntax refusal is not a filesystem permission error; continue ordinary file work with supported tools.",
+    );
+  }
   if (navigate && act) {
     parts.push(
       'To authenticate `gh`, run `LOG=$(mktemp /tmp/gh-login.XXXXXX); nohup script -qec \'gh auth login --hostname github.com --web --git-protocol https\' "$LOG" >/dev/null 2>&1 & echo "$LOG"` — keep that printed path, read the one-time code from it, browser_navigate to https://github.com/login/device, and browser_act the code. Completing that page authorizes the CLI OAuth app and stores the credential under the persistent home; it does not by itself create a Chromium github.com session.',

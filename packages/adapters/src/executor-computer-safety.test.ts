@@ -143,6 +143,30 @@ describe("computer lifecycle command guard", () => {
     }
   });
 
+  it("offers a usable recovery for ordinary file updates refused as an interpreter heredoc", () => {
+    const script = `import json, os
+from pathlib import Path
+state = Path("reports/state.json")
+data = json.loads(state.read_text())
+data["pending"] = False
+temporary = state.with_suffix(".tmp")
+temporary.write_text(json.dumps(data))
+os.replace(temporary, state)
+with Path("reports/history.jsonl").open("a") as log:
+    log.write(json.dumps({"count": 3}) + "\\n")`;
+    expect(protectedComputerLifecycleRefusal(`python <<'EOF'\n${script}\nEOF`)).toBe("heredoc");
+    expect(desktopProtectionGuardMessage("heredoc")).toContain("python3 -c");
+    expect(desktopProtectionGuardMessage("heredoc")).toContain(
+      "does not indicate a filesystem permission error",
+    );
+    expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'`)).toBeUndefined();
+    expect(protectedComputerLifecycleRefusal(`python -c '${script}'`)).toBeUndefined();
+    expect(protectedComputerLifecycleRefusal(`python3 -c '${script}'; pkill chromium`)).toBe(
+      "protected command pkill",
+    );
+    expect(desktopProtectionGuardMessage("protected command pkill")).not.toContain("python3 -c");
+  });
+
   it("keeps computed variables, variable source paths, and interpreter heredocs closed", () => {
     expect(protectedComputerLifecycleRefusal('dir=/tmp/$USER; ls "$dir"')).toBe(
       "unresolved variable $dir",

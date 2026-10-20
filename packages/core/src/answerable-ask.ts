@@ -8,21 +8,21 @@ type AskSnapshot = {
   activeRuns?: readonly { id: string; status: string }[];
 };
 
-export function latestAnswerableAskMessageId(snapshot: AskSnapshot | null): string | null {
-  if (!snapshot) return null;
+export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<string> {
+  const answerable = new Set<string>();
+  if (!snapshot) return answerable;
   const waitingRunIds = new Set(
     (snapshot.activeRuns ?? (snapshot.run ? [snapshot.run] : []))
       .filter((run) => run.status === "waiting_input")
       .map((run) => run.id),
   );
-  for (let index = snapshot.messages.length - 1; index >= 0; index -= 1) {
-    const message = snapshot.messages[index];
-    if (!message?.runId || !waitingRunIds.has(message.runId)) continue;
+  for (const message of snapshot.messages) {
+    if (!message.runId || !waitingRunIds.has(message.runId)) continue;
     if (message.blocks.some((block) => block.kind === "ask" && block.status !== "answered")) {
-      return message.id;
+      answerable.add(message.id);
     }
   }
-  return null;
+  return answerable;
 }
 
 export function selectedAskActionLabel(
