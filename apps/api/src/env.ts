@@ -17,6 +17,7 @@ import {
   resolveSupervisorToken,
   uploadSizeFromEnv,
 } from "@rakazo/core";
+import { DEFAULT_VOICE_SUMMARY_MIN_CHARS } from "./speech-summary.js";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
@@ -44,6 +45,8 @@ export interface AppEnv {
   phoneCallRingSeconds: number;
   phoneCallCooldownMinutes: number;
   maxUploadSizeBytes: number;
+  /** Bot replies longer than this are read aloud as a summary; 0 reads every reply in full. */
+  voiceSummaryMinChars: number;
   sandboxSupervisorUrl: string;
   sandboxSupervisorToken: string | undefined;
   screenProxySecret: string;
@@ -190,6 +193,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     ticketBoardEnabled: source.TICKET_BOARD_ENABLED === "true",
     ...phoneCallSettings(source),
     maxUploadSizeBytes: uploadSizeFromEnv(source),
+    voiceSummaryMinChars: voiceSummaryMinCharsFromEnv(source.VOICE_SUMMARY_MIN_CHARS),
     sandboxSupervisorUrl: source.SANDBOX_SUPERVISOR_URL ?? "http://127.0.0.1:7091",
     sandboxSupervisorToken:
       sandboxProvider === "docker" ? resolveSupervisorToken(source) : undefined,
@@ -277,6 +281,17 @@ function browserMonitoringFromEnv(source: NodeJS.ProcessEnv): AppEnv["browserMon
     environment: optional(source.SENTRY_ENVIRONMENT),
     release: optional(source.SENTRY_RELEASE) ?? (sha === "unknown" ? undefined : sha),
   };
+}
+
+function voiceSummaryMinCharsFromEnv(value: string | undefined): number {
+  const raw = value?.trim();
+  if (!raw) return DEFAULT_VOICE_SUMMARY_MIN_CHARS;
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) {
+    throw new Error(
+      "VOICE_SUMMARY_MIN_CHARS must be a whole number of characters (0 turns it off)",
+    );
+  }
+  return Number(raw);
 }
 
 function optional(value: string | undefined): string | undefined {

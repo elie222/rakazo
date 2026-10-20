@@ -14,7 +14,7 @@ import {
   voiceCatalogEntry,
 } from "@rakazo/adapters";
 import type { Actor, VoiceCredential, VoiceStatus } from "@rakazo/contracts";
-import { toUtterances } from "@rakazo/core";
+import { speakable, toUtterances } from "@rakazo/core";
 import {
   deleteUnreferencedCredentialSecret,
   findDefaultVoiceCredential,
@@ -29,10 +29,13 @@ import { getLogger } from "@rakazo/logging";
 import type { Context, Hono } from "hono";
 import { readBoundedBody } from "./http-body.js";
 import { withSerializableRetry } from "./serializable-retry.js";
+import type { SpeechSummarizer } from "./speech-summary.js";
 
 export interface VoiceDeps {
   prisma: PrismaClient;
   secrets: SecretStore;
+  /** Long bot replies are read as a summary from the bot's own model. */
+  speechSummary?: { summarize: SpeechSummarizer; minChars: number };
 }
 
 export { listVoiceCatalog };
@@ -435,7 +438,7 @@ export async function updateVoiceSpeechModel(
 export async function prepareVoice(
   deps: VoiceDeps,
   actor: Actor,
-  input: { text: string; voiceId?: string; botId?: string },
+  input: { text: string; voiceId?: string; botId?: string; signal?: AbortSignal },
 ) {
   try {
     await resolveVoiceTarget(deps, actor, input);
@@ -445,7 +448,18 @@ export async function prepareVoice(
     }
     throw error;
   }
-  return { ready: true, utterances: toUtterances(input.text) };
+  return { ready: true, utterances: toUtterances(await spokenText(deps, actor, input)) };
+}
+
+async function spokenText(
+  deps: VoiceDeps,
+  actor: Actor,
+  input: { text: string; botId?: string; signal?: AbortSignal },
+): Promise<string> {
+  const summary = deps.speechSummary;
+  if (!input.botId || !summary || summary.minChars <= 0) return input.text;
+  if (speakable(input.text).length <= summary.minChars) return input.text;
+  return (await summary.summarize(actor, input.botId, input.text, input.signal)) ?? input.text;
 }
 
 export async function synthesizeVoice(

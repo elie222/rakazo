@@ -1019,6 +1019,10 @@ native file flow on mobile. No new mobile player or settings screen is required.
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.
 
+## Spoken summaries
+
+When a voice reads a bot reply aloud, a reply longer than `VOICE_SUMMARY_MIN_CHARS` characters (default `600`) is read as a short summary written by that bot's own model. The chat keeps the full reply. Set it to `0` to always read replies in full. If the summary call fails, the full reply is read.
+
 ## Upload size
 
 `MAX_UPLOAD_SIZE_MB` sets the per-file chat attachment and computer file transfer limit

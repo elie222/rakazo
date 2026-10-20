@@ -304,6 +304,7 @@ import {
   threadHead,
   threadSnapshot,
 } from "./thread-target.js";
+import type { VoiceDeps } from "./voice.js";
 import {
   disconnectVoiceCredential,
   listVoiceCatalog,
@@ -602,6 +603,7 @@ export interface RouterDeps {
   messaging?: { enabled: boolean; providers: string[]; openSignup: boolean };
   /** Present only when the deployment bills; self-hosted installs leave it unset. */
   billing?: BillingService;
+  speechSummary?: VoiceDeps["speechSummary"];
   env: {
     ticketBoardEnabled?: boolean;
     phoneCallsEnabled?: boolean;
@@ -6390,7 +6392,7 @@ export function createRouter(deps: RouterDeps) {
         );
       }),
       prepare: authed.voice.prepare.handler(async ({ context, input }) =>
-        prepareVoice(deps, context.actor, input),
+        prepareVoice(deps, context.actor, { ...input, signal: context.signal }),
       ),
     },
   });
