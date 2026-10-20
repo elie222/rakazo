@@ -14,6 +14,7 @@ export {
 export * from "./components/ui/alert-dialog.js";
 export * from "./components/ui/badge.js";
 export * from "./components/ui/button.js";
+export * from "./components/ui/button-group.js";
 export * from "./components/ui/card.js";
 export * from "./components/ui/checkbox.js";
 export * from "./components/ui/command.js";
@@ -32,6 +33,7 @@ export * from "./components/ui/select.js";
 export * from "./components/ui/separator.js";
 export * from "./components/ui/skeleton.js";
 export * from "./components/ui/spinner.js";
+export * from "./components/ui/stepper.js";
 export * from "./components/ui/switch.js";
 export * from "./components/ui/tabs.js";
 export * from "./components/ui/textarea.js";

@@ -1,4 +1,5 @@
 import { ResponseError } from "@boatdev/sdk";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { BoatSandboxProvider, isUnrecoverableBoatError } from "./boat-sandbox.js";
@@ -98,6 +99,21 @@ describe("Boat API errors", () => {
     expect(error).toBeInstanceOf(ResponseError);
     expect(isUnrecoverableBoatError(error)).toBe(true);
     expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a rate limit as a provider-neutral error that keeps the upstream detail", async () => {
+    const call = wrapBoatCall(async () => {
+      throw new ResponseError(
+        Response.json(
+          { code: "rate_limited", message: "Rate limit hit: 200 sandbox starts per day" },
+          { status: 429 },
+        ),
+      );
+    }, "fake-key");
+    const error = await call().catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(SandboxRateLimitError);
+    expect((error as Error).cause).toBeInstanceOf(ResponseError);
+    expect(((error as Error).cause as Error).message).toContain("HTTP 429, rate_limited");
   });
 
   it("does not replace cancellation and network errors", async () => {

@@ -52,13 +52,15 @@ function jwt(claims: Record<string, unknown>) {
   return `${data}.${sign("RSA-SHA256", Buffer.from(corruptSignature ? `${data}tampered` : data), privateKey).toString("base64url")}`;
 }
 
-function setup(options: Partial<AuthEnv> = {}) {
+function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
   const prisma: Record<string, unknown> = {
     deploymentSettings: {
       findUnique: vi.fn(async () => null),
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
-    spaceMember: { findFirst: vi.fn(async () => ({ id: "existing-space" })) },
+    spaceMember: {
+      findFirst: vi.fn(async () => (hasMembership ? { id: "existing-space" } : null)),
+    },
     member: { findMany: vi.fn(async () => []) },
     messagingIdentity: { deleteMany: vi.fn(async () => ({})) },
     organization: { deleteMany: vi.fn(async () => ({})) },
@@ -434,6 +436,16 @@ describe("OIDC callbacks", () => {
   it("admits allowlisted verified identities", async () => {
     setup({ signupAllowlist: "sso@example.test" });
     expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+  });
+  it("redirects an unprovisioned identity when registration closes", async () => {
+    setup();
+    expect((await signIn()).headers.get("location")).toBe(`${origin}/app`);
+    auth.disposeOidcDiscovery();
+    setup({ signupsEnabled: "false" }, false);
+    const response = await signIn();
+    expect(response.headers.get("location")).toContain(
+      `${origin}/sign-in?error=REGISTRATION_CLOSED`,
+    );
   });
   it("never upgrades an unverified allowlisted identity", async () => {
     setup({ signupAllowlist: "sso@example.test" });

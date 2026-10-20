@@ -337,6 +337,10 @@ msgstr "Hesap kimliği"
 msgid "Account label"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "{name} için hesap menüsü"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr ""
@@ -675,8 +679,8 @@ msgstr "Arşivlendi. Sohbet, hafıza ve dosyalar korundu."
 msgid "Arguments"
 msgstr "Argümanlar"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr ""
 
@@ -826,8 +830,8 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr ""
 
@@ -844,6 +848,7 @@ msgstr "{0} adlı botun bilgisayarı başlatılıyor"
 msgid "bot"
 msgstr "bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -991,6 +996,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Sohbet Ayarları"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "Sohbetler"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1293,6 +1302,10 @@ msgstr "Model bağla"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "API anahtarıyla bağlan"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "Uygulamaları bağla"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -2139,6 +2152,10 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker, ek güvenlik için bilgisayarına erişimi sınırlar. {hostLabel} kullanıldığında botlar yerel dosyaların ve araçlarınla çalışabilir."
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "Belgeler"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "Belge değişti. Son sürümü düzenlemek için yeniden açın."
@@ -2469,6 +2486,10 @@ msgstr ""
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "Bu Bot bittiğinde veya girdi gerektiğinde bildirim al"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "Mobil uygulamayı indir"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr ""
@@ -2477,6 +2498,7 @@ msgstr ""
 msgid "Git event"
 msgstr ""
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2628,6 +2650,10 @@ msgstr "Varsayılanı devral"
 msgid "Inputs"
 msgstr "Girdiler"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "Güncellemeyi yükle"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "Instance API anahtarı"
@@ -2658,7 +2684,6 @@ msgid "Integration options"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Entegrasyonlar"
 
@@ -2851,8 +2876,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "Çıkış yap"
 
@@ -2952,6 +2977,10 @@ msgstr "Orta"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr ""
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "Üye"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3513,9 +3542,10 @@ msgstr "Orijinal mesaj kullanılamıyor"
 msgid "Other model…"
 msgstr "Başka model…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Sahip"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -3535,6 +3565,10 @@ msgstr "Parola"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Bu sunucu için parola kurtarma yapılandırılmamış"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "Bu sunucuda parolayla oturum açma devre dışı"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4027,6 +4061,7 @@ msgstr ""
 msgid "Rotate key"
 msgstr ""
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4264,6 +4299,7 @@ msgid "Server URL"
 msgstr "Sunucu URL'si"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4423,9 +4459,10 @@ msgstr ""
 msgid "Something went wrong. Try again."
 msgstr "Bir şeyler ters gitti. Tekrar deneyin."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "Alan"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4524,6 +4561,7 @@ msgstr "Şifreli saklanıyor"
 msgid "Stream replies"
 msgstr "Yanıtları akışla göster"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "alt ajan"
@@ -4958,9 +4996,9 @@ msgstr "Yükle"
 msgid "Urgent"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "Kullanım"
 
@@ -5149,6 +5187,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "Dün"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "Sen"

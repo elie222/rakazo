@@ -1,4 +1,7 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Member: "成员",
+  Owner: "所有者",
+  Chats: "聊天",
   "Message from another agent": "来自其他智能体的消息",
   "Another agent": "其他智能体",
   "Update from {name}: {text}": "来自 {name} 的更新：{text}",

@@ -337,6 +337,10 @@ msgstr "ID аккаунта"
 msgid "Account label"
 msgstr "Ярлык аккаунта"
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "Меню аккаунта {name}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr "Аккаунты"
@@ -675,8 +679,8 @@ msgstr "В архиве. Чат, память и файлы сохраняютс
 msgid "Arguments"
 msgstr "Аргументы"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr ""
 
@@ -826,8 +830,8 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr ""
 
@@ -844,6 +848,7 @@ msgstr "Загрузка компьютера {0}"
 msgid "bot"
 msgstr "бот"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -991,6 +996,10 @@ msgstr "Приложения для чата"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Настройки чата"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "Чаты"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1293,6 +1302,10 @@ msgstr "Подключить модель"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "Подключить API-ключ"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "Подключить приложения"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -2139,6 +2152,10 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker ограничивает доступ к вашему компьютеру для дополнительной безопасности. С помощью {hostLabel} боты могут работать с локальными файлами и инструментами."
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "Документация"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "Документ изменился. Откройте его снова, чтобы редактировать последнюю версию."
@@ -2469,6 +2486,10 @@ msgstr "Получить учетные данные"
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "Получать уведомления, когда этот бот завершает работу или ждёт ввода"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "Скачать мобильное приложение"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr "Подготовка"
@@ -2477,6 +2498,7 @@ msgstr "Подготовка"
 msgid "Git event"
 msgstr "Git-событие"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2628,6 +2650,10 @@ msgstr "Наследовать значение по умолчанию"
 msgid "Inputs"
 msgstr "Входы"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "Установить обновление"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "Ключ API экземпляра"
@@ -2658,7 +2684,6 @@ msgid "Integration options"
 msgstr "Параметры интеграции"
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Интеграции"
 
@@ -2851,8 +2876,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr "Настройки локального сервера"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "Выйти"
 
@@ -2952,6 +2977,10 @@ msgstr "Средний"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr ""
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "Участник"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3513,9 +3542,10 @@ msgstr "Исходное сообщение недоступно"
 msgid "Other model…"
 msgstr "Другая модель…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "Владелец"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -3535,6 +3565,10 @@ msgstr "Пароль"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Восстановление пароля не настроено для этого сервера"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "Вход по паролю на этом сервере отключён"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4027,6 +4061,7 @@ msgstr "Инструкции для комнаты"
 msgid "Rotate key"
 msgstr "Сменить ключ"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4264,6 +4299,7 @@ msgid "Server URL"
 msgstr "URL-адрес сервера"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4423,9 +4459,10 @@ msgstr "Обновление программного обеспечения"
 msgid "Something went wrong. Try again."
 msgstr "Что-то пошло не так. Попробуйте ещё раз."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "Пространство"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4524,6 +4561,7 @@ msgstr "Хранится в зашифрованном виде"
 msgid "Stream replies"
 msgstr "Потоковые ответы"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "субагент"
@@ -4958,9 +4996,9 @@ msgstr "Загрузить"
 msgid "Urgent"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "Использование"
 
@@ -5149,6 +5187,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "Вчера"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "Вы"

@@ -23,9 +23,9 @@
     "@rakazo/core": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
     "@rakazo/ui-web": "workspace:*",
-    "@sentry/react": "11.5.0",
-    "better-auth": "1.7.10",
-    "lucide-react": "1.59.0",
+    "@sentry/react": "11.8.0",
+    "better-auth": "1.7.11",
+    "lucide-react": "1.60.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-router-dom": "7.18.4"

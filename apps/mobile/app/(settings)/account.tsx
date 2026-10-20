@@ -1,4 +1,5 @@
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
+import { accountDisplay } from "@rakazo/core";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -79,6 +80,7 @@ export default function Account() {
   const router = useRouter();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const [me, setMe] = useState<MobileMe | null>(null);
+  const account = accountDisplay(me ?? {}, t("Your account"));
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [security, setSecurity] = useState<AccountSecurity | null>(null);
   const canChangePassword = security?.hasPassword && security.passwordChangeEnabled !== false;
@@ -317,9 +319,9 @@ export default function Account() {
         <SettingsGroup>
           <SettingsRow
             accessible
-            detail={me?.email || undefined}
+            detail={me?.email && account.label !== me.email ? me.email : undefined}
             prominent
-            title={me?.name || t("Your account")}
+            title={account.label}
           />
           {focus !== "usage" ? usageBlock : null}
         </SettingsGroup>

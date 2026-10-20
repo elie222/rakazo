@@ -235,6 +235,8 @@ export function BotSettings({
   const ids = useId();
   const [name, setName] = useState(bot.name);
   const [title, setTitle] = useState(bot.title);
+  const savedNameRef = useRef(bot.name);
+  const savedTitleRef = useRef(bot.title);
   const [description, setDescription] = useState(bot.description);
   // A roster refresh can skip replacing bots while a reorder is in flight, so
   // this prop keeps the description from when the panel opened. Later saves
@@ -369,8 +371,8 @@ export function BotSettings({
       setTitle(nextTitle);
       setDescription(nextDescription);
       const patch = {
-        name: nextName || bot.name,
-        title: nextTitle,
+        ...(nextName && nextName !== savedNameRef.current.trim() ? { name: nextName } : {}),
+        ...(nextTitle !== savedTitleRef.current.trim() ? { title: nextTitle } : {}),
         // Keep untouched profile fields off the wire.
         ...botProfilePatch(savedDescriptionRef.current, nextDescription),
         // Unchanged color stays off the wire so a legacy named value cannot fail a name save.
@@ -425,6 +427,8 @@ export function BotSettings({
         persistedDisabledToolsRef.current = nextTools;
         break;
       }
+      if (nextName) savedNameRef.current = nextName;
+      savedTitleRef.current = nextTitle;
       savedDescriptionRef.current = nextDescription;
     } catch (err) {
       if (patchOverrides?.fleetManagement !== undefined)

@@ -66,6 +66,7 @@ import {
   connectorKindFromToolName,
   containsSecret,
   createStreamingRedactor,
+  displayName,
   endsSentence,
   expandSkillReferencesInPrompt,
   formatSkillRunPrompt,
@@ -3965,7 +3966,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!failed.continuationRunId) {
             await notifyRun(deps, run, {
               kind: "failure",
-              title: `${bot.name} failed`,
+              title: `${displayName(bot.name, "Bot")} failed`,
               body: message,
               botId: bot.id,
               threadId: thread.id,
@@ -5116,7 +5117,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             await notifyRun(deps, run, {
               kind: "help",
-              title: `${bot.name} needs approval`,
+              title: `${displayName(bot.name, "Bot")} needs approval`,
               body: `Review before ${name}`,
               botId: bot.id,
               threadId: thread.id,
@@ -6625,7 +6626,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }
             await notifyRun(deps, run, {
               kind: "help",
-              title: `${bot.name} needs a code`,
+              title: `${displayName(bot.name, "Bot")} needs a code`,
               body: String(args.label ?? "Code"),
               botId: bot.id,
               threadId: thread.id,
@@ -7554,7 +7555,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               }
               await notifyRun(deps, run, {
                 kind: "help",
-                title: `${bot.name} needs an answer`,
+                title: `${displayName(bot.name, "Bot")} needs an answer`,
                 body: safeText,
                 botId: bot.id,
                 threadId: thread.id,
@@ -7615,7 +7616,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               retainComputerLease = true;
               await notifyRun(deps, run, {
                 kind: "takeover",
-                title: `${bot.name} needs you on the screen`,
+                title: `${displayName(bot.name, "Bot")} needs you on the screen`,
                 body: safeReason,
                 botId: bot.id,
                 threadId: thread.id,
@@ -7958,7 +7959,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           ) {
             await notifyRun(deps, run, {
               kind: "completion",
-              title: `${bot.name} finished`,
+              title: `${displayName(bot.name, "Bot")} finished`,
               body: notifyBody,
               botId: bot.id,
               threadId: thread.id,
@@ -8032,7 +8033,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (runSendsFinishNotification(run.trigger) && !failed.continuationRunId && !retrying) {
             await notifyRun(deps, run, {
               kind: "failure",
-              title: `${bot.name} failed`,
+              title: `${displayName(bot.name, "Bot")} failed`,
               body: message.slice(0, 180),
               botId: bot.id,
               threadId: thread.id,
@@ -8218,7 +8219,7 @@ async function notifyFailedRoutineRun(
     failed,
     {
       kind: "failure",
-      title: `${bot.name} failed`,
+      title: `${displayName(bot.name, "Bot")} failed`,
       body: (failed.error ?? "").slice(0, 180),
       botId: failed.botId,
       threadId: failed.threadId,

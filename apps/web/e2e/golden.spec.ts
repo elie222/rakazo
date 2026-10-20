@@ -146,7 +146,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByText("Monday briefing")).toBeVisible();
   await captureScreenshot(page, testInfo, "10-routine-created");
 
-  await page.getByText("Integrations").click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
   const featured = page.getByTestId("featured-connectors");
   await expect(featured).toContainText(
@@ -191,7 +191,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
-  await page.getByText("Integrations").click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
   const gmailTileAgain = page.getByTestId("connection-tile-gmail");
   await expect(gmailTileAgain.getByRole("button", { name: "Added", exact: true })).toBeVisible();

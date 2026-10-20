@@ -1,6 +1,11 @@
 import type { Actor, RunActivityRow } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, botMessageContext } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  BACKGROUND_RUN_TRIGGERS,
+  botMessageContext,
+  displayName,
+} from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
@@ -26,7 +31,7 @@ export function activityPreview(
       agentMessage: { kind: "unknown" },
     };
   }
-  const name = message.fromBotName.trim() || "Another agent";
+  const name = displayName(message.fromBotName, "Another agent");
   const kind =
     message.intent === "result" || message.intent === "status" || message.intent === "fyi"
       ? "update"
@@ -35,7 +40,7 @@ export function activityPreview(
   return {
     promptSnippet: promptSnippet(message.text.trim() ? `${label}: ${message.text}` : label, max),
     agentMessage: {
-      fromBotName: message.fromBotName.trim(),
+      fromBotName: displayName(message.fromBotName, ""),
       kind,
       text: promptSnippet(message.text, max),
     },
@@ -88,7 +93,7 @@ export async function listSpaceRuns(
     botId: row.botId,
     botName: row.bot.name,
     groupId: row.thread.groupId,
-    groupName: row.thread.group?.name ?? null,
+    groupName: row.thread.group ? row.thread.group.name : null,
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],

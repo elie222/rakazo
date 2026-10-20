@@ -12,6 +12,7 @@ import type {
   SandboxProvider,
   TransactionalEmailProvider,
 } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import type {
   ComposioProvider,
   ConnectorRegistry,
@@ -601,7 +602,7 @@ export async function createApp(
     },
   });
   const rpc = new RPCHandler(router, {
-    clientInterceptors: [onError((error, { path }) => logUnexpectedRpcError(error, path))],
+    clientInterceptors: [onError((error, { path }) => handleRpcError(error, path))],
   });
   const app = new Hono();
   app.use("*", requestLogging(logger));
@@ -1127,6 +1128,14 @@ function sessionHeaders(request: Request) {
  * The cause chain matters as much as the message: undici and most SDKs report a bare
  * "fetch failed" and keep the host and errno one level down.
  */
+/** Log the failure, then give a provider rate limit its own status instead of a generic 500. */
+export function handleRpcError(error: unknown, path: readonly string[]): void {
+  logUnexpectedRpcError(error, path);
+  if (error instanceof SandboxRateLimitError) {
+    throw new ORPCError("TOO_MANY_REQUESTS", { message: error.message, cause: error });
+  }
+}
+
 export function logUnexpectedRpcError(error: unknown, path: readonly string[]): void {
   if (error instanceof ORPCError) return;
   const where = `rpc ${path.join("/")} failed`;

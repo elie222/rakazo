@@ -9,8 +9,6 @@ import type {
   ComputerMode,
   ComputerReleaseReason,
   ComputerStatus,
-  Connection,
-  ConnectionCatalogItem,
   Group,
   Me,
   MessageReaction,
@@ -36,6 +34,7 @@ import {
 } from "@rakazo/contracts";
 import type { ComposerMention, FoldedTranscript, SlashActionId } from "@rakazo/core";
 import {
+  accountDisplay,
   answerableAskMessageIds,
   attachmentsForThread,
   buildComposerMentionOptions,
@@ -97,11 +96,7 @@ import {
   CircleAlert,
   Clock,
   Copy,
-  FolderOpen,
-  Gauge,
-  LayoutGrid,
   Lock,
-  LogOut,
   Maximize2,
   Menu,
   Monitor,
@@ -119,7 +114,6 @@ import {
   SlidersHorizontal,
   Smile,
   Square,
-  SquareKanban,
   TextQuote,
   Trash2,
   X,
@@ -160,6 +154,7 @@ import {
 } from "../components/composer/HoldToTalk";
 import { lazyOverlay } from "../components/ErrorBoundary";
 import { MessageHoverMetadata } from "../components/MessageHoverMetadata";
+import { SidebarFooter } from "../components/SidebarFooter";
 import {
   LIVE_TOOL_STEP_WINDOW,
   StandaloneToolActivity,
@@ -219,6 +214,7 @@ import {
   loadComputerScreen,
   screenIframeSandbox,
 } from "../lib/computer-screen";
+import { connectedAppMarks } from "../lib/connected-apps";
 import { desktopBridge } from "../lib/desktop";
 import { scheduleFocusPrompt } from "../lib/focus-prompt";
 import { localTimezone } from "../lib/local-timezone";
@@ -573,6 +569,7 @@ function SpaceShell() {
   const [taughtSkillsBotId, setTaughtSkillsBotId] = useState<string | null>(null);
   const [agentSkills, setAgentSkills] = useState<AgentSkillCatalogEntry[]>([]);
   const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
+  const [footerLogos, setFooterLogos] = useState<Array<{ name: string; logo: string | null }>>([]);
   const [mentionConnectors, setMentionConnectors] = useState<
     Array<{
       id: string;
@@ -2147,7 +2144,7 @@ function SpaceShell() {
     if (!initialBotsLoaded || bots.length === 0) {
       setMentionRoutines([]);
       setMentionConnectors([]);
-      return;
+      if (!initialBotsLoaded) return;
     }
     let cancelled = false;
     const botNameById = new Map(bots.map((bot) => [bot.id, bot.name]));
@@ -2167,11 +2164,12 @@ function SpaceShell() {
       if (!cancelled) setMentionRoutines(lists.flat());
     });
     void Promise.all([
-      rpc.connections.list().catch(() => [] as Connection[]),
-      rpc.connections.catalog({}).catch(() => [] as ConnectionCatalogItem[]),
+      rpc.connections.list().catch(() => null),
+      rpc.connections.catalog({}).catch(() => null),
     ]).then(([connections, catalog]) => {
       if (cancelled) return;
-      const connected = connections.filter((row) => row.status === "connected");
+      const connected = connections?.filter((row) => row.status === "connected") ?? [];
+      if (catalog && connections) setFooterLogos(connectedAppMarks(catalog, connections));
       const options: Array<{
         id: string;
         name: string;
@@ -2183,7 +2181,7 @@ function SpaceShell() {
         authStatus: "connected" as const,
         connectionId: row.id,
       }));
-      for (const item of catalog) {
+      for (const item of catalog ?? []) {
         if (item.connected || item.noAuth) continue;
         if (
           connected.some(
@@ -2200,7 +2198,7 @@ function SpaceShell() {
           authStatus: "needs_auth",
         });
       }
-      setMentionConnectors(options);
+      setMentionConnectors(bots.length ? options : []);
     });
     return () => {
       cancelled = true;
@@ -3029,13 +3027,7 @@ function SpaceShell() {
     !computerScreenError &&
     showComputerRecoveryHint;
 
-  const userName = session.data?.user.name ?? t`You`;
-  const initials = userName
-    .split(" ")
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const { label: userName, initial: initials } = accountDisplay(session.data?.user ?? {}, t`You`);
 
   const shell = (
     <div
@@ -3244,7 +3236,7 @@ function SpaceShell() {
             </InputGroupAddon>
           ) : null}
         </InputGroup>
-        <div className="rk-scroll flex flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
+        <div className="rk-scroll scroll-fade-y scroll-fade-12 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2.5 pb-2.5">
           {showSpaceSearch ? (
             <SpaceSearchResults
               hits={searchHits}
@@ -3290,7 +3282,11 @@ function SpaceShell() {
                     : null;
                 const headerDropKey = `header:${group.key}`;
                 return (
-                  <div key={group.key} data-sidebar-group={group.key}>
+                  <div
+                    key={group.key}
+                    data-sidebar-group={group.key}
+                    className="flex flex-col gap-0.5"
+                  >
                     {group.title || hasSpaceActions ? (
                       // biome-ignore lint/a11y/useSemanticElements: groups sidebar controls, not form fields; Move to remains the keyboard alternative.
                       <div
@@ -3780,110 +3776,47 @@ function SpaceShell() {
             </div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => setPluginsOpen(true)}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-xl px-2.5 py-2 hover:bg-sidebar-accent"
-        >
-          <span className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-accent text-foreground/80">
-            <LayoutGrid size={15} strokeWidth={1.8} />
-          </span>
-          <span className="text-[14px] font-medium text-foreground/90">
-            <Trans>Integrations</Trans>
-          </span>
-        </button>
-        <Popover
+        <SidebarFooter
+          logos={footerLogos}
+          name={userName}
+          initials={initials}
+          image={session.data?.user.image}
+          email={session.data?.user.email}
           open={menuOpen}
           onOpenChange={(open) => {
             setMenuOpen(open);
             if (!open) setLogOutError(null);
           }}
-        >
-          <PopoverTrigger
-            data-testid="user-menu-trigger"
-            className="flex items-center gap-[11px] px-[18px] py-3.5"
-          >
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-accent text-[12px] text-foreground/75">
-              {initials}
-            </span>
-            <span className="text-[14.5px] text-foreground/90">{userName}</span>
-          </PopoverTrigger>
-          {menuOpen ? (
-            <PopoverContent
-              side="top"
-              align="start"
-              className="w-[calc(316px-1.5rem)] max-w-[calc(100vw-3rem)] gap-0 p-1 data-closed:animate-none"
-            >
-              {bootstrapMe?.ticketBoardEnabled ? (
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start font-normal"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setMobileSidebarOpen(false);
-                    navigate("/app/board");
-                  }}
-                >
-                  <SquareKanban className="text-muted-foreground" strokeWidth={1.75} />
-                  <Trans>Board</Trans>
-                </Button>
-              ) : null}
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                onClick={() => {
+          onIntegrations={() => setPluginsOpen(true)}
+          onBoard={
+            bootstrapMe?.ticketBoardEnabled
+              ? () => {
                   setMenuOpen(false);
                   setMobileSidebarOpen(false);
-                  navigate("/app/artifacts");
-                }}
-              >
-                <FolderOpen className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Artifacts</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                aria-label={t`Settings`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  openSettings("general");
-                }}
-              >
-                <Settings className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Settings</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                aria-label={t`Usage`}
-                onClick={() => {
-                  setMenuOpen(false);
-                  openSettings("usage");
-                }}
-              >
-                <Gauge className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Usage</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full justify-start font-normal"
-                disabled={signingOut}
-                onClick={() => {
-                  setLogOutError(null);
-                  void logOut();
-                }}
-              >
-                <LogOut className="text-muted-foreground" strokeWidth={1.75} />
-                <Trans>Log out</Trans>
-              </Button>
-              {logOutError ? (
-                <p role="alert" className="px-3 pt-1 pb-2 text-[13px] text-destructive">
-                  {logOutError}
-                </p>
-              ) : null}
-            </PopoverContent>
-          ) : null}
-        </Popover>
+                  navigate("/app/board");
+                }
+              : undefined
+          }
+          onArtifacts={() => {
+            setMenuOpen(false);
+            setMobileSidebarOpen(false);
+            navigate("/app/artifacts");
+          }}
+          onSettings={() => {
+            setMenuOpen(false);
+            openSettings("general");
+          }}
+          onUsage={() => {
+            setMenuOpen(false);
+            openSettings("usage");
+          }}
+          onLogOut={() => {
+            setLogOutError(null);
+            void logOut();
+          }}
+          signingOut={signingOut}
+          logOutError={logOutError}
+        />
       </aside>
 
       {/* The full-screen computer covers the sidebar, so its edge must not catch clicks there. */}
@@ -5003,6 +4936,7 @@ function SpaceShell() {
 
         {pluginsOpen ? (
           <PluginsOverlay
+            onConnectedAppsChange={setFooterLogos}
             activeBotId={activeBotId.current}
             onClose={() => setPluginsOpen(false)}
             onOpenMcp={() => {
@@ -6964,20 +6898,14 @@ function MessageHoverActions({
   }
 
   const iconButtonClass =
-    "grid h-7 w-7 place-items-center text-muted-foreground transition-colors hover:text-foreground";
+    "grid h-11 w-11 place-items-center text-muted-foreground transition-colors hover:text-foreground [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7";
 
   return (
     <MessageHoverMetadata pinned={moreOpen || reactionsOpen} side={side}>
       <div data-testid="message-hover-actions" className="flex items-center gap-0.5">
         {canReactToThreadMessage(message) ? (
           <Popover open={reactionsOpen} onOpenChange={setReactionsOpen}>
-            <PopoverTrigger
-              aria-label={t`React`}
-              className={cn(
-                iconButtonClass,
-                "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-              )}
-            >
+            <PopoverTrigger aria-label={t`React`} className={iconButtonClass}>
               <Smile size={15} strokeWidth={1.7} />
             </PopoverTrigger>
             <PopoverContent
@@ -7006,21 +6934,12 @@ function MessageHoverActions({
           type="button"
           aria-label={t`Reply`}
           onClick={() => onReply(message)}
-          className={cn(
-            iconButtonClass,
-            "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-          )}
+          className={iconButtonClass}
         >
           <Reply size={15} strokeWidth={1.7} />
         </button>
         <DropdownMenu open={moreOpen} onOpenChange={setMoreOpen}>
-          <DropdownMenuTrigger
-            aria-label={t`More`}
-            className={cn(
-              iconButtonClass,
-              "h-11 w-11 [@media(hover:hover)_and_(pointer:fine)]:h-7 [@media(hover:hover)_and_(pointer:fine)]:w-7",
-            )}
-          >
+          <DropdownMenuTrigger aria-label={t`More`} className={iconButtonClass}>
             <MoreHorizontal size={15} strokeWidth={1.7} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align={side === "end" ? "start" : "end"}>

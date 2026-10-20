@@ -1,0 +1,57 @@
+---
+import type { HomeCopy } from "../i18n/home";
+import type { DesktopDownloads } from "../github";
+import {
+  ANDROID_APK_URL,
+  APP_URL,
+  GITHUB_URL,
+  IOS_APP_URL,
+} from "../site";
+
+type Props = {
+  class: string;
+  copy: HomeCopy["hero"];
+  downloads: DesktopDownloads;
+};
+
+const { class: className, copy, downloads } = Astro.props;
+
+// `data-show` lists the platforms (set on <html> by the HomePage script) that see each action.
+const desktopDownloads = [
+  { platform: "mac", label: copy.download.mac, available: true },
+  { platform: "windows", label: copy.download.windows, available: Boolean(downloads.windows) },
+  { platform: "linux", label: copy.download.linux, available: Boolean(downloads.linux) },
+]
+  .filter((download) => download.available)
+  // The redirect resolves the newest installer per request, so releases need no site rebuild.
+  .map((download) => ({ ...download, href: `/api/download?platform=${download.platform}` }));
+const githubPlatforms = ["ios", "android", "web", "windows", "linux"]
+  .filter((platform) => !desktopDownloads.some((download) => download.platform === platform))
+  .join(" ");
+---
+
+<div class={className}>
+  <a class="button button--primary" href={APP_URL} data-show="mac windows linux web">
+    {copy.getStarted}
+  </a>
+  <a class="button button--primary" href={IOS_APP_URL} data-show="ios">{copy.download.ios}</a>
+  <a class="button button--primary" href={ANDROID_APK_URL} data-show="android">
+    {copy.download.android}
+  </a>
+  {
+    desktopDownloads.map((download) => (
+      <a class="button button--secondary" href={download.href} data-show={download.platform}>
+        {download.label}
+      </a>
+    ))
+  }
+  <a
+    class="button button--secondary"
+    href={GITHUB_URL}
+    target="_blank"
+    rel="noreferrer"
+    data-show={githubPlatforms}
+  >
+    {copy.viewOnGithub}
+  </a>
+</div>

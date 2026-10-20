@@ -337,6 +337,10 @@ msgstr "Account ID"
 msgid "Account label"
 msgstr "Account label"
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "Account menu for {name}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr "Accounts"
@@ -675,8 +679,8 @@ msgstr "Archived. Chat, memory, and files kept."
 msgid "Arguments"
 msgstr "Arguments"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr "Artifacts"
 
@@ -826,8 +830,8 @@ msgstr "Billing"
 msgid "Blocked"
 msgstr "Blocked"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr "Board"
 
@@ -844,6 +848,7 @@ msgstr "Booting up {0}’s computer"
 msgid "bot"
 msgstr "bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -991,6 +996,10 @@ msgstr "Chat apps"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "Chat Settings"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "Chats"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1293,6 +1302,10 @@ msgstr "Connect a model"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "Connect API key"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "Connect apps"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -2139,6 +2152,10 @@ msgstr "Docker is configured but computers are not responding. Confirm the sandb
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "Docs"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "Document changed. Reopen to edit the latest version."
@@ -2469,6 +2486,10 @@ msgstr "Get credentials"
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "Get notified when this Bot finishes or needs input"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "Get the mobile app"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr "Getting ready"
@@ -2477,6 +2498,7 @@ msgstr "Getting ready"
 msgid "Git event"
 msgstr "Git event"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2628,6 +2650,10 @@ msgstr "Inherit default"
 msgid "Inputs"
 msgstr "Inputs"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "Install update"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "Instance API key"
@@ -2658,7 +2684,6 @@ msgid "Integration options"
 msgstr "Integration options"
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "Integrations"
 
@@ -2851,8 +2876,8 @@ msgstr "Local computer access requires the latest desktop app."
 msgid "Local Server Settings"
 msgstr "Local Server Settings"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "Log out"
 
@@ -2952,6 +2977,10 @@ msgstr "Medium"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr "Medium"
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "Member"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3513,6 +3542,7 @@ msgstr "Original message unavailable"
 msgid "Other model…"
 msgstr "Other model…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "Owner"
@@ -3535,6 +3565,10 @@ msgstr "Password"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "Password recovery is not configured for this server"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "Password sign-in is turned off on this server"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4027,6 +4061,7 @@ msgstr "Room guidance"
 msgid "Rotate key"
 msgstr "Rotate key"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4264,6 +4299,7 @@ msgid "Server URL"
 msgstr "Server URL"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4423,6 +4459,7 @@ msgstr "Software update"
 msgid "Something went wrong. Try again."
 msgstr "Something went wrong. Try again."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
 msgstr "Space"
@@ -4524,6 +4561,7 @@ msgstr "Stored encrypted"
 msgid "Stream replies"
 msgstr "Stream replies"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "subagent"
@@ -4958,9 +4996,9 @@ msgstr "Upload"
 msgid "Urgent"
 msgstr "Urgent"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "Usage"
 
@@ -5149,6 +5187,7 @@ msgstr "year"
 msgid "Yesterday"
 msgstr "Yesterday"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "You"

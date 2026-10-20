@@ -17,7 +17,7 @@ describe("mobile credential destination label", () => {
     expect(label).not.toBe("");
   });
 
-  it("shows the site origin for every other credential type", () => {
+  it("shows the site origin for non-login credential types", () => {
     expect(
       secretDestinationLabel({
         name: "example_api",
@@ -39,4 +39,13 @@ describe("mobile credential destination label", () => {
     expect(label).toBe(`${localized} · $API_TOKEN`);
     expect(label).not.toContain("Command variable");
   });
+});
+
+it.each([
+  ["https://billing.example.com", "billing.example.com"],
+  ["https://example.com:8443", "example.com:8443"],
+  ["https://example.com:443", "example.com"],
+  ["invalid origin", "invalid origin"],
+])("formats login destination %s as %s", (origin, expected) => {
+  expect(secretDestinationLabel({ name: "login", origin, auth: { type: "login" } })).toBe(expected);
 });

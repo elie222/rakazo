@@ -109,7 +109,7 @@ Hosted products with no source you can run are outside this list. The [alternati
 
 ## Rakazo
 
-Rakazo is an open source platform for persistent AI teammates, licensed Apache-2.0. You run published Docker images or a source checkout. The web app, the Electron desktop app, and the Expo mobile app are clients of the same API. Hosted Rakazo Cloud is not generally available.
+Rakazo is an open source platform for persistent AI teammates, licensed Apache-2.0. You run published Docker images or a source checkout. The web app, the Electron desktop app, and the Expo mobile app are clients of the same API. Hosted Rakazo Cloud is in beta.
 
 A bot has conversations, memory, routines, and history. Routines are readable Markdown and can run on a schedule. Browser, terminal, files, and a graphical desktop are available. The default computer is local Docker. E2B, Daytona, CreateOS, and Boat are optional remote computers. You bring model credentials: OpenAI, Anthropic, Google, OpenRouter, Vercel AI Gateway, an OpenAI-compatible endpoint, or a local server such as Ollama, LM Studio, llama.cpp, or MLX. Each bot can use a different model.
 

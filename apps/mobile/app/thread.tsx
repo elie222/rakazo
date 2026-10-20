@@ -40,6 +40,7 @@ import {
   replyAttachment,
   resolveComposerSendPlan,
   resolvePersonaColorDef,
+  displayName as safeDisplayName,
   selectedAskActionLabel,
   threadWindowMessages,
   timeSeparatorIds,
@@ -123,6 +124,7 @@ import { NativeSymbol } from "../components/native-symbol";
 import { ReplyDismissButton } from "../components/reply-dismiss-button";
 import { ReplyLine } from "../components/reply-line";
 import { ScrollToBottomButton } from "../components/scroll-to-bottom-button";
+import { SecretAskSheet } from "../components/secret-ask-sheet";
 import { SelectTextSheet } from "../components/select-text-sheet";
 import { trailingHeaderOptions } from "../components/sheet-header";
 import type { ThreadComposerHandle } from "../components/thread-composer";
@@ -173,6 +175,7 @@ import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt"
 import { t, useI18n } from "../lib/i18n";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
+import { KeyboardScrollBack } from "../lib/keyboard-scroll-back";
 import { saveLastBotId } from "../lib/last-bot";
 import {
   dismissThreadNotifications,
@@ -213,6 +216,7 @@ import {
   writeSavedThread,
 } from "../lib/saved-chats";
 import { secretDestinationLabel } from "../lib/secret-destination";
+import { secretFieldTraits } from "../lib/secret-field-traits";
 import { selectableTextFromMarkdown } from "../lib/selectable-text";
 import {
   currentReadySessionGeneration,
@@ -222,7 +226,7 @@ import {
 } from "../lib/session";
 import { setInboxHidden, useSplitView } from "../lib/split-view";
 import type { SendAttempt } from "../lib/thread-feedback";
-import { confirmEchoes, subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
+import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
@@ -482,6 +486,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const scroll = useRef<FlatList<ThreadItem<MobileMessage>>>(null);
   const pinnedScroll = useRef<ScrollView>(null);
   const scrollBehavior = useRef(new ThreadScrollBehavior());
+  const liveScrollBack = useRef(new KeyboardScrollBack({ inverted: true }));
+  const pinnedScrollBack = useRef(new KeyboardScrollBack({ inverted: false }));
   const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const nativeMomentumActive = useRef(false);
   const loadingOlderContent = useRef(false);
@@ -600,7 +606,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const preparingSend = useRef(false);
-  const feedback = useThreadFeedback(threadKey, newClientNonce);
+  const echoed = useMemo(
+    () =>
+      snap && (snap.groupId ?? snap.botId) === threadKey
+        ? new Set(
+            snap.messages.flatMap((message) =>
+              message.role === "user" && message.seq !== undefined ? [message.seq] : [],
+            ),
+          )
+        : undefined,
+    [snap, threadKey],
+  );
+  const feedback = useThreadFeedback(threadKey, newClientNonce, echoed);
   const { error, setError } = feedback;
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [selectableText, setSelectableText] = useState<string | null>(null);
@@ -668,7 +685,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     [groupId, inGroup, mentionBots, mentionConnectors, mentionGroups, mentionRoutines],
   );
   const currentBot = botId ? mentionBots.find((bot) => bot.id === botId) : undefined;
-  const displayName = currentBot?.name ?? name;
+  const displayName = safeDisplayName(currentBot?.name ?? name, inGroup ? t("Group") : t("Bot"));
   const composerPrompt = displayName ? t("Message {name}", { name: displayName }) : t("Message…");
   const notificationThreadId = snap?.threadId ?? requestedThreadId ?? currentBot?.threadId;
   activeThreadId.current = notificationThreadId;
@@ -1775,16 +1792,6 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const afterDeliveredRef = useRef(afterDelivered);
   afterDeliveredRef.current = afterDelivered;
   useEffect(() => subscribeDelivered((attempt) => afterDeliveredRef.current(attempt)), []);
-  useEffect(() => {
-    if (snap && (snap.groupId ?? snap.botId) === threadKey) {
-      confirmEchoes(
-        threadKey!,
-        snap.messages.flatMap((message) =>
-          message.role === "user" && message.seq !== undefined ? [message.seq] : [],
-        ),
-      );
-    }
-  }, [snap, threadKey]);
 
   async function stop() {
     if (readOnly) return;
@@ -1828,7 +1835,8 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
         answer,
         ...(username ? { username } : {}),
       });
-      if (isCurrentTarget(targetBotId, targetGroupId)) await refresh();
+      // The answer is saved once the server accepts it; a failed refresh only delays the card.
+      if (isCurrentTarget(targetBotId, targetGroupId)) await refresh().catch(() => undefined);
     },
     [botId, groupId, readOnly],
   );
@@ -2465,15 +2473,22 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 viewport: layoutMeasurement.height,
                 content: contentSize.height,
               };
+              if (pinnedScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
+                KeyboardController.dismiss();
+              }
               loadNewerNearEnd();
             }}
-            onScrollBeginDrag={() => {
+            onScrollBeginDrag={(event) => {
+              pinnedScrollBack.current.onDragStart(event.nativeEvent);
               newerLoadFailed.current = false;
               if (!jumpAnchor.current.holds()) return;
               jumpAnchor.current.release();
               jumpScrollTarget.current = null;
             }}
-            onScrollEndDrag={updatePinnedScroll}
+            onScrollEndDrag={(event) => {
+              pinnedScrollBack.current.onDragEnd();
+              updatePinnedScroll(event);
+            }}
             onMomentumScrollEnd={updatePinnedScroll}
           >
             {loadEarlierControl}
@@ -2503,18 +2518,23 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             contentContainerStyle={listContentStyle}
             maintainVisibleContentPosition={messageListPosition}
             scrollEventThrottle={16}
-            onScrollBeginDrag={() => {
+            onScrollBeginDrag={(event) => {
               clearTimeout(scrollIdleTimer.current);
               nativeMomentumActive.current = false;
               scrollBehavior.current.onUserDragStart();
+              liveScrollBack.current.onDragStart(event.nativeEvent);
             }}
             onScroll={(event) => {
+              if (liveScrollBack.current.onScroll(event.nativeEvent) && Platform.OS === "ios") {
+                KeyboardController.dismiss();
+              }
               if (scrollBehavior.current.isTrackingUserScroll()) updateUserScroll(event);
             }}
             // Keep tracking after release: a fling can cross the threshold mid-momentum.
             onScrollEndDrag={(event) => {
               updateUserScroll(event);
               scrollBehavior.current.onUserDragEnd();
+              liveScrollBack.current.onDragEnd();
               scheduleScrollIdle();
             }}
             onMomentumScrollBegin={() => {
@@ -3520,7 +3540,7 @@ const MessageBubble = memo(function MessageBubble({
           }}
         >
           <Text style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}>
-            {special.name || t("subagent")}
+            {safeDisplayName(special.name, t("subagent"))}
           </Text>
           <Text
             style={{
@@ -3698,7 +3718,7 @@ const MessageBubble = memo(function MessageBubble({
       <View style={{ gap: 8, width: "100%" }}>
         <View
           style={{
-            width: "100%",
+            // No percentage width: the iOS menu host has no definite width to resolve it against.
             maxWidth: 576,
             borderRadius: 18,
             borderWidth: 1,
@@ -4153,16 +4173,18 @@ function AskBlock({
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const [answer, setAnswer] = useState("");
-  const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const answered = ask.status === "answered";
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetSession = useRef(0);
+  const session = sheetSession.current;
+  const [saved, setSaved] = useState(false);
+  const answered = saved || ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
-  const incomplete =
-    (secretInput ? answer.length === 0 : !answer.trim()) || (loginInput && !username.trim());
+  const incomplete = secretInput ? answer.length === 0 : !answer.trim();
   const secretLabel =
-    loginInput || ask.purpose === "password"
+    ask.purpose === "password"
       ? t("Password")
       : ask.purpose === "api_key"
         ? t("API key")
@@ -4173,12 +4195,12 @@ function AskBlock({
     if (submitting) return;
     if (incomplete) return;
     const submitValue = secretInput ? answer : answer.trim();
-    const submitUsername = loginInput ? username.trim() : undefined;
     setSubmitting(true);
     setError(null);
     if (secretInput) setAnswer("");
     try {
-      await onAnswer(submitValue, submitUsername);
+      await onAnswer(submitValue);
+      if (secretInput) setSaved(true);
     } catch (cause) {
       setError(
         secretInput ? t("Could not send answer") : errorText(cause, t("Could not send answer")),
@@ -4203,6 +4225,7 @@ function AskBlock({
     >
       <Text
         {...actionProps}
+        numberOfLines={secretInput ? 2 : undefined}
         style={{ color: tokens.foreground, fontSize: 15.5, fontWeight: "600" }}
       >
         {plainAskTitle(ask.text)}
@@ -4219,25 +4242,18 @@ function AskBlock({
         <Text style={{ color: tokens.success, fontSize: 14 }}>
           {secretInput ? t("Saved") : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
         </Text>
+      ) : canAnswer && loginInput ? (
+        <NativeActionButton
+          label={t("Continue")}
+          fill={false}
+          onPress={() => {
+            sheetSession.current += 1;
+            setSheetOpen(true);
+          }}
+          style={{ alignSelf: "flex-end" }}
+        />
       ) : canAnswer ? (
         <>
-          {loginInput ? (
-            <TextInput
-              accessibilityLabel={t("Username")}
-              value={username}
-              onChangeText={setUsername}
-              placeholder={t("Username")}
-              placeholderTextColor={tokens.mutedForeground}
-              autoComplete="off"
-              autoCorrect={false}
-              autoCapitalize="none"
-              editable={!submitting}
-              style={[
-                askInputStyles.field,
-                { borderColor: tokens.border, color: tokens.foreground },
-              ]}
-            />
-          ) : null}
           <TextInput
             accessibilityLabel={secretInput ? secretLabel : t("Answer")}
             value={answer}
@@ -4246,6 +4262,7 @@ function AskBlock({
             placeholderTextColor={tokens.mutedForeground}
             secureTextEntry={secretInput}
             autoComplete="off"
+            {...(secretInput ? secretFieldTraits(ask.purpose, ask.credential) : {})}
             autoCorrect={secretInput ? false : undefined}
             autoCapitalize={secretInput ? "none" : "sentences"}
             editable={!submitting}
@@ -4267,6 +4284,22 @@ function AskBlock({
         </Text>
       )}
       {error ? <Text style={{ color: tokens.destructive, fontSize: 13 }}>{error}</Text> : null}
+      {sheetOpen && loginInput && ask.credential ? (
+        <SecretAskSheet
+          title={plainAskTitle(ask.text)}
+          destination={secretDestinationLabel(ask.credential)}
+          // Once any save is accepted the open sheet clears its own fields, then closes itself.
+          pending={canAnswer && !answered}
+          onClose={() => {
+            if (session === sheetSession.current) setSheetOpen(false);
+          }}
+          onSave={async (password, username) => {
+            await onAnswer(password, username);
+            setSaved(true);
+            if (session === sheetSession.current) setSheetOpen(false);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

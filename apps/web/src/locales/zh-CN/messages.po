@@ -337,6 +337,10 @@ msgstr "账户 ID"
 msgid "Account label"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "{name} 的账户菜单"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr ""
@@ -675,8 +679,8 @@ msgstr "已归档。对话、记忆和文件保留。"
 msgid "Arguments"
 msgstr "参数"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr ""
 
@@ -826,8 +830,8 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr ""
 
@@ -844,6 +848,7 @@ msgstr "正在启动 {0} 的电脑"
 msgid "bot"
 msgstr "Bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -991,6 +996,10 @@ msgstr "聊天应用"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "聊天设置"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "聊天"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1293,6 +1302,10 @@ msgstr "连接模型"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "连接 API 密钥"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "连接应用"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -2139,6 +2152,10 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker 限制对你电脑的访问，以提高安全性。使用{hostLabel}时，Bot 可以处理你的本地文件并使用本地工具。"
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "文档"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "文档已更改。请重新打开以编辑最新版本。"
@@ -2469,6 +2486,10 @@ msgstr ""
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "在此机器人完成或需要输入时收到通知"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "获取移动应用"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr ""
@@ -2477,6 +2498,7 @@ msgstr ""
 msgid "Git event"
 msgstr "Git 事件"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2628,6 +2650,10 @@ msgstr "沿用默认"
 msgid "Inputs"
 msgstr "输入"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "安装更新"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "实例 API 密钥"
@@ -2658,7 +2684,6 @@ msgid "Integration options"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "集成"
 
@@ -2851,8 +2876,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "退出登录"
 
@@ -2952,6 +2977,10 @@ msgstr "中"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr ""
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "成员"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3513,9 +3542,10 @@ msgstr "原消息不可用"
 msgid "Other model…"
 msgstr "其他模型…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "所有者"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -3535,6 +3565,10 @@ msgstr "密码"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "此服务器未配置密码恢复"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "此服务器已关闭密码登录"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4027,6 +4061,7 @@ msgstr ""
 msgid "Rotate key"
 msgstr "轮换密钥"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4264,6 +4299,7 @@ msgid "Server URL"
 msgstr "服务器 URL"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4423,9 +4459,10 @@ msgstr "软件更新"
 msgid "Something went wrong. Try again."
 msgstr "出了点问题。请重试。"
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "工作区"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4524,6 +4561,7 @@ msgstr "已加密存储"
 msgid "Stream replies"
 msgstr "流式回复"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "子 Agent"
@@ -4958,9 +4996,9 @@ msgstr "上传"
 msgid "Urgent"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "用量"
 
@@ -5149,6 +5187,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "你"

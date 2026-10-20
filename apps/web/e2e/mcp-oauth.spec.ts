@@ -1,6 +1,6 @@
 import { expect, type Route, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
-import { MCP_OAUTH_CHANNEL } from "../src/lib/mcp-connect";
+import { MCP_OAUTH_CHANNEL } from "../src/lib/mcp-oauth-channel";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
 test("connects an MCP server through the OAuth popup callback", async ({ page }, testInfo) => {
@@ -83,7 +83,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
     });
   });
 
-  await page.getByText("Integrations", { exact: true }).click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await page.getByTestId("integrations-advanced").evaluate((element) => {
     (element as HTMLDetailsElement).open = true;
   });

@@ -337,6 +337,10 @@ msgstr "מזהה חשבון"
 msgid "Account label"
 msgstr "תווית חשבון"
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "תפריט החשבון של {name}"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr "חשבונות"
@@ -675,8 +679,8 @@ msgstr "הועבר לארכיון. הצ׳אט, הזיכרון והקבצים נ�
 msgid "Arguments"
 msgstr "ארגומנטים"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr "תוצרים"
 
@@ -826,8 +830,8 @@ msgstr "חיוב"
 msgid "Blocked"
 msgstr "חסום"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr "לוח"
 
@@ -844,6 +848,7 @@ msgstr "מפעיל את המחשב של {0}"
 msgid "bot"
 msgstr "בוט"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -991,6 +996,10 @@ msgstr "אפליקציות צ׳אט"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "הגדרות צ׳אט"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "צ׳אטים"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1293,6 +1302,10 @@ msgstr "חיבור מודל"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "חיבור מפתח API"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "חיבור אפליקציות"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -2139,6 +2152,10 @@ msgstr "Docker מוגדר אבל המחשבים לא מגיבים. יש לווד
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker מגביל את הגישה למחשב לאבטחה נוספת. שימוש ב-{hostLabel} מאפשר לבוטים לעבוד עם הקבצים והכלים המקומיים."
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "תיעוד"
+
 #: src/pages/KnowledgeSection.tsx
 msgid "Document changed. Reopen to edit the latest version."
 msgstr "המסמך השתנה. יש לפתוח אותו מחדש כדי לערוך את הגרסה העדכנית."
@@ -2469,6 +2486,10 @@ msgstr "קבלת פרטי גישה"
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "קבלת התראה כשהבוט מסיים או צריך קלט"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "הורדת האפליקציה לנייד"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr "מתכונן"
@@ -2477,6 +2498,7 @@ msgstr "מתכונן"
 msgid "Git event"
 msgstr "אירוע Git"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2628,6 +2650,10 @@ msgstr "ירושה מברירת המחדל"
 msgid "Inputs"
 msgstr "קלטים"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "התקנת עדכון"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "מפתח API של המופע"
@@ -2658,7 +2684,6 @@ msgid "Integration options"
 msgstr "אפשרויות אינטגרציה"
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "אינטגרציות"
 
@@ -2851,8 +2876,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr "הגדרות השרת המקומי"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "התנתקות"
 
@@ -2952,6 +2977,10 @@ msgstr "בינוני"
 #: src/lib/model-catalog.ts
 msgid "Medium"
 msgstr "בינוני"
+
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "חבר"
 
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
@@ -3513,6 +3542,7 @@ msgstr "ההודעה המקורית אינה זמינה"
 msgid "Other model…"
 msgstr "מודל אחר…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
 msgstr "בעלים"
@@ -3535,6 +3565,10 @@ msgstr "סיסמה"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "שחזור סיסמה לא הוגדר בשרת הזה"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "התחברות באמצעות סיסמה מושבתת בשרת הזה"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4027,6 +4061,7 @@ msgstr "הנחיות לחדר"
 msgid "Rotate key"
 msgstr "החלפת מפתח"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4264,6 +4299,7 @@ msgid "Server URL"
 msgstr "URL של השרת"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4423,9 +4459,10 @@ msgstr "עדכון תוכנה"
 msgid "Something went wrong. Try again."
 msgstr "משהו השתבש. אפשר לנסות שוב."
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "מרחב"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4524,6 +4561,7 @@ msgstr "נשמר מוצפן"
 msgid "Stream replies"
 msgstr "הזרמת תשובות"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "סוכן משנה"
@@ -4958,9 +4996,9 @@ msgstr "העלאה"
 msgid "Urgent"
 msgstr "דחוף"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "שימוש"
 
@@ -5149,6 +5187,7 @@ msgstr "שנה"
 msgid "Yesterday"
 msgstr "אתמול"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "אני"

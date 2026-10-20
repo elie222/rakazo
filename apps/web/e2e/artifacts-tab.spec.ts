@@ -17,7 +17,7 @@ test("opens Artifacts from the account menu and lists created files", async ({
   expect((await sidebar.boundingBox())?.x).toBe(0);
   await expect(sidebar.getByRole("link", { name: "Artifacts" })).toHaveCount(0);
   await expect(sidebar.getByRole("button", { name: "Artifacts", exact: true })).toHaveCount(0);
-  await expect(sidebar.getByRole("button", { name: "Integrations" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Connect apps" })).toBeVisible();
   await page.getByTestId("user-menu-trigger").click();
   const artifactsItem = page.getByRole("button", { name: "Artifacts", exact: true });
   const settingsItem = page.getByRole("button", { name: "Settings", exact: true });

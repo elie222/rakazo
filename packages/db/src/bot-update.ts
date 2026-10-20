@@ -1,3 +1,4 @@
+import { displayName } from "@rakazo/core";
 import { getLogger } from "@rakazo/logging";
 import { writeBotInstructions } from "./bot-instructions.js";
 import type { Prisma, PrismaClient } from "./client.js";
@@ -30,6 +31,12 @@ export async function commitBotUpdate(
   },
   appendEvent: AppendEvent = appendEventInTransaction,
 ): Promise<{ id: string; name: string; title: string; description: string }> {
+  if (typeof options.data.name === "string") {
+    options = {
+      ...options,
+      data: { ...options.data, name: displayName(options.data.name, "") },
+    };
+  }
   if (
     !options.emitBotUpdated &&
     options.data.instructions === undefined &&

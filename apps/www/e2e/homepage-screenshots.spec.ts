@@ -1,5 +1,12 @@
 import type { Page, TestInfo } from "@playwright/test";
-import { test } from "@playwright/test";
+import { devices, test } from "@playwright/test";
+
+// The hero picks its download for the visitor's platform; record the macOS and iPhone variants.
+const { defaultBrowserType: _, ...iPhone } = devices["iPhone 15"];
+test.use({
+  userAgent:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+});
 
 async function openHomepage(page: Page, path = "/") {
   await page.goto(path);
@@ -25,9 +32,6 @@ test("homepage screenshots", async ({ page }, testInfo) => {
   await openHomepage(page);
   await captureScreenshot(page, testInfo, "01-marketing-homepage");
 
-  await page.locator("[data-get-started-open]").first().click();
-  await page.locator("dialog[data-get-started-dialog]").waitFor({ state: "visible" });
-  await captureScreenshot(page, testInfo, "02-marketing-get-started");
 
   await openHomepage(page, "/zh/");
   await captureScreenshot(page, testInfo, "03-marketing-homepage-zh");
@@ -39,4 +43,13 @@ test("homepage screenshots", async ({ page }, testInfo) => {
   await page.locator(".product-demo__computer-shot").first().click();
   await page.locator(".product-demo__takeover").waitFor({ state: "visible" });
   await captureScreenshot(page, testInfo, "04-marketing-demo-computer");
+});
+
+test.describe("on an iPhone", () => {
+  test.use(iPhone);
+
+  test("homepage screenshot", async ({ page }, testInfo) => {
+    await openHomepage(page);
+    await captureScreenshot(page, testInfo, "02-marketing-homepage-iphone");
+  });
 });

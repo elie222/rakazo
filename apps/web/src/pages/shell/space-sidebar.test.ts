@@ -77,11 +77,11 @@ describe("sidebarGroupsForSpaces", () => {
     ]);
   });
 
-  it("keeps rename on the only space without showing its name", () => {
+  it("names the only space on the header that holds its menu", () => {
     const [group] = sidebarGroupsForSpaces([space("space-1", "Personal", { canRename: true })], "");
 
     expect(group).toMatchObject({
-      title: null,
+      title: "Personal",
       spaceName: "Personal",
       canRenameSpace: true,
       canDeleteSpace: false,
@@ -125,7 +125,7 @@ describe("sidebarGroupsForSpaces", () => {
   it("keeps settings reachable in a member's only empty space", () => {
     expect(sidebarGroupsForSpaces([space("space-1", "Shared", { bots: [] })], "")).toEqual([
       expect.objectContaining({
-        title: null,
+        title: "Shared",
         spaceName: "Shared",
         canRenameSpace: false,
         canDeleteSpace: false,

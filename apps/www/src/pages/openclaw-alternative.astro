@@ -3,7 +3,6 @@ import Button from "../components/Button.astro";
 import FaqSection from "../components/FaqSection.astro";
 import InlineCode from "../components/InlineCode.astro";
 import Footer from "../components/Footer.astro";
-import GetStartedDialog from "../components/GetStartedDialog.astro";
 import Header from "../components/Header.astro";
 import SetupSteps from "../components/SetupSteps.astro";
 import VsCard from "../components/VsCard.astro";
@@ -25,13 +24,11 @@ import {
   OPENCLAW_UPDATED,
 } from "../guide";
 import { fetchGithubStars, formatStarCount } from "../github";
-import { getHomeCopy } from "../i18n/home";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { ogPublicPath } from "../og-pages";
-import { GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
+import { APP_URL, GITHUB_URL, SELF_HOST_GUIDE_PATH } from "../site";
 import { vsCard } from "../vs-points";
 
-const home = getHomeCopy("en");
 const stars = await fetchGithubStars();
 const starsLabel = stars === null ? "Star" : formatStarCount(stars);
 const structuredData = faqPageStructuredData(OPENCLAW_FAQS);
@@ -47,7 +44,6 @@ const card = vsCard("openclaw-alternative");
 >
   <div class="container">
     <Header starsLabel={starsLabel} />
-    <GetStartedDialog copy={home.getStartedDialog} waitlist={home.waitlist} />
     <main id="main" class="privacy-copy guide">
       <h1>{OPENCLAW_H1}</h1>
       <p class="alt-note">Updated {OPENCLAW_UPDATED}.</p>
@@ -143,8 +139,8 @@ const card = vsCard("openclaw-alternative");
       </p>
       <p>
         Neither project charges a seat fee for the software. OpenClaw's docs say it has no paid tier
-        and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is not generally
-        available. You pay for the models, machines, and optional computer providers you use.
+        and no hosted service. Rakazo is free to self-host. Hosted Rakazo Cloud is in
+        beta. You pay for the models, machines, and optional computer providers you use.
       </p>
       <h3>License</h3>
       <p>
@@ -189,10 +185,10 @@ const card = vsCard("openclaw-alternative");
       </ul>
 
       <h2 id="selfhost">Get started</h2>
-      <p>Self-host Rakazo on your machine, or leave an email for hosted Rakazo Cloud.</p>
+      <p>Self-host Rakazo on your machine, or start on Rakazo Cloud.</p>
       <div class="cta-actions">
         <Button href={SELF_HOST_GUIDE_PATH}>Self-host guide</Button>
-        <button class="button button--primary" type="button" data-get-started-open>Get started</button>
+        <Button href={APP_URL} variant="secondary">Rakazo Cloud</Button>
         <Button href={GITHUB_URL} variant="secondary" external>View on GitHub</Button>
       </div>
     </main>
