@@ -933,6 +933,8 @@ const renderRules: RenderRules = {
       </CopyableFence>
     );
     if (!isMermaidFence(info)) return codeBlock;
+    return <MermaidFence key={node.key} source={source} fallback={codeBlock} />;
+  },
   code_block: (node, children, parents, styleMap, ...extra) => (
     <SidewaysScrollView key={node.key}>
       {libraryRules.code_block?.(node, children, parents, styleMap, ...extra)}

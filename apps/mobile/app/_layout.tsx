@@ -186,6 +186,7 @@ function ChatContentProviders({
   children: ReactNode;
 }) {
   const { t } = useI18n();
+  const tokens = useMobileTokens();
   const endpoint = useSyncExternalStore(subscribeApiBase, currentApiBase, currentApiBase);
   const linkFavicons = useMemo<LinkFavicons>(
     () => ({ endpoint, load: (origin) => loadLinkFavicon(origin, endpoint), globe: <LinkGlobe /> }),
@@ -194,12 +195,12 @@ function ChatContentProviders({
   const codeCopy = useMemo<CodeCopy>(
     () => ({
       label: t("Copy"),
-      color: mobileTokens().mutedForeground,
+      color: tokens.mutedForeground,
       onCopy: (text) => {
         void Clipboard.setStringAsync(text).catch(() => undefined);
       },
     }),
-    [t],
+    [t, tokens.mutedForeground],
   );
   return (
     <MarkdownLinkPromptProvider
