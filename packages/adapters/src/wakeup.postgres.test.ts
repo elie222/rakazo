@@ -235,6 +235,44 @@ describePostgres("Graphile background jobs (PostgreSQL contract)", () => {
     }
   });
 
+  it("replaces a job still locked by a worker that died mid-job", async () => {
+    const publisher = new GraphileJobPublisher(testPool());
+    const key = `contract:keep-locked:${Date.now()}`;
+    const deadWorker = `contract-dead-worker-${Date.now()}`;
+    try {
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "abandoned" },
+        replaceKey: key,
+      });
+      await testPool().query(
+        `update graphile_worker._private_jobs
+         set attempts = 1, locked_at = now(), locked_by = $2 where key = $1`,
+        [key, deadWorker],
+      );
+      await publisher.enqueue({
+        name: "run.continue",
+        payload: { runId: "reclaimed" },
+        replaceKey: key,
+        keepExisting: true,
+      });
+      const reclaimed = await keyedRow(key);
+      expect(reclaimed?.attempts).toBe(0);
+      expect(reclaimed?.payload).toContain("reclaimed");
+      const detached = await testPool().query<{ key: string | null }>(
+        "select key from graphile_worker._private_jobs where locked_by = $1",
+        [deadWorker],
+      );
+      expect(detached.rows).toEqual([{ key: null }]);
+    } finally {
+      await testPool()
+        .query("delete from graphile_worker._private_jobs where locked_by = $1", [deadWorker])
+        .catch(() => undefined);
+      await publisher.cancel(key).catch(() => undefined);
+      await publisher.close();
+    }
+  });
+
   it("enqueues a keepExisting job when the key is missing", async () => {
     const publisher = new GraphileJobPublisher(testPool());
     const key = `contract:keep-missing:${Date.now()}`;

@@ -667,8 +667,8 @@ export type BackgroundJob = {
     replaceKey?: string;
     /**
      * Leave an existing job with `replaceKey` alone while it still has attempts
-     * left, including one waiting out backoff. An exhausted or missing job is
-     * replaced. Omit to replace, which is what an explicit continue does.
+     * left, including one waiting out backoff. An exhausted, missing or running
+     * (locked) job is replaced. Omit to replace, which is what an explicit continue does.
      */
     keepExisting?: boolean;
     /** Cap retried executions; omit to use the job queue's default. */
