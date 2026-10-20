@@ -490,6 +490,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   const jumpGeneration = useRef(0);
   const refreshGeneration = useRef(0);
   const liveSubscribed = useRef(false);
+  const liveCursor = useRef<number | null>(null);
   const liveSubscriptionGeneration = useRef(0);
   const pinnedAroundRef = useRef<{
     botId?: string;
@@ -1456,7 +1457,11 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
   }, [botId, markReadIfVisible, navigation, notificationThreadId]);
 
   useEffect(() => {
-    // A backgrounded app keeps no live stream; returning resubscribes from a fresh snapshot.
+    liveCursor.current = null;
+  }, [botId, groupId, sessionEpoch]);
+
+  useEffect(() => {
+    // Resume the same chat from its applied cursor so pinned and expanded windows catch up.
     if ((!botId && !groupId) || !foreground) return;
     // Invalidate pending history loads while retaining pages already loaded for this chat.
     historyEpoch.current += 1;
@@ -1467,19 +1472,24 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     showSavedThread(abort.signal);
     void (async () => {
       // Pending search jumps load the around-page separately; avoid replacing it with latest.
-      const next = messageId
-        ? await rpc<MobileSnapshot>("threads/get", groupId ? { groupId } : { botId: botId! }).catch(
-            (err: unknown) => {
-              setError(errorText(err));
-              return null;
-            },
-          )
-        : await refresh().catch((err: unknown) => {
-            setError(errorText(err));
-            return null;
-          });
+      const next =
+        liveCursor.current !== null
+          ? null
+          : messageId
+            ? await rpc<MobileSnapshot>(
+                "threads/get",
+                groupId ? { groupId } : { botId: botId! },
+              ).catch((err: unknown) => {
+                setError(errorText(err));
+                return null;
+              })
+            : await refresh().catch((err: unknown) => {
+                setError(errorText(err));
+                return null;
+              });
       if (abort.signal.aborted || readOnly) return;
-      let cursor = next?.cursor ?? -1;
+      let cursor = liveCursor.current ?? next?.cursor ?? -1;
+      liveCursor.current = cursor;
       let retryMs = 250;
       while (!abort.signal.aborted && sessionGeneration === currentSessionGeneration()) {
         try {
@@ -1488,7 +1498,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
             groupId ? { groupId } : { botId: botId! },
             cursor,
             (event) => {
-              if (sessionGeneration !== currentSessionGeneration()) return;
+              if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
               if (
@@ -1515,6 +1525,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 }
                 commitSnap(applyMobileThreadEvent(snapRef.current, event));
               }
+              liveCursor.current = cursor;
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
               }
