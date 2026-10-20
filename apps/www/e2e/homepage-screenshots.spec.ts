@@ -23,6 +23,7 @@ async function captureScreenshot(page: Page, testInfo: TestInfo, name: string) {
     animations: "disabled",
     caret: "hide",
     fullPage: true,
+    scale: "css",
     path: screenshotPath,
   });
   await testInfo.attach(name, { contentType: "image/png", path: screenshotPath });
