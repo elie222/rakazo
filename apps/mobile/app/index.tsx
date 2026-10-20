@@ -164,7 +164,7 @@ export default function HomeRoute() {
 /** The chat list beside the open chat on a wide window. */
 type InboxPaneProps = {
   onSelectSpace?: (spaceId: string) => void;
-  onShareSelect?: (href: Href) => void;
+  onShareSelect?: (bot: MobileBot | SpaceBot) => void;
 };
 
 export function InboxPane({ onSelectSpace }: InboxPaneProps) {
@@ -356,9 +356,9 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   }, []);
 
   useEffect(() => {
-    if (!hasSession) return;
+    if (!hasSession || onShareSelect) return;
     void registerPushToken().catch(() => undefined);
-  }, [hasSession]);
+  }, [hasSession, onShareSelect]);
 
   // Show the inbox saved on this device until the first live load replaces it.
   useEffect(() => {
@@ -540,15 +540,14 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   // Beside the list, a chat replaces the open one instead of stacking on it.
   const openChat = useCallback(
     (href: Href) => {
-      if (onShareSelect) onShareSelect(href);
-      else if (!embedded) router.push(href);
+      if (!embedded) router.push(href);
       else if (pathname === "/thread" || pathname === "/group-thread") router.replace(href);
       else {
         if (router.canDismiss()) router.dismissAll();
         router.push(href);
       }
     },
-    [embedded, pathname, router, onShareSelect],
+    [embedded, pathname, router],
   );
   const signInAgain = useCallback(async () => {
     // A rejected session cannot sign out on the server; clearing it here is what matters.
@@ -787,11 +786,12 @@ function Home({ embedded, onSelectSpace, onShareSelect }: InboxPaneProps & { emb
   const openBot = useCallback(
     (bot: MobileBot | SpaceBot) => {
       if (spaceActionRef.current.busy || spaceActionRef.current.recoveryId) return;
-      void openMobileSpace(bot.spaceId, () =>
-        openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } }),
-      );
+      void openMobileSpace(bot.spaceId, () => {
+        if (onShareSelect) onShareSelect(bot);
+        else openChat({ pathname: "/thread", params: { botId: bot.id, name: bot.name } });
+      });
     },
-    [openChat],
+    [openChat, onShareSelect],
   );
   const openGroup = useCallback(
     (group: MobileGroup | SpaceGroup) => {

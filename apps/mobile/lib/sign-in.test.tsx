@@ -6,14 +6,24 @@ import type { Root } from "react-dom/client";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import SignIn from "../app/sign-in";
-import { passwordResetCapabilities } from "./api";
+import { loadSessionToken, passwordResetCapabilities, rpc, signUp } from "./api";
 import type { NativeActionButtonProps } from "./native-controls";
+import { continueWithSso } from "./sso";
 
-const route = vi.hoisted(() => ({ mode: "in" }));
+const route = vi.hoisted(() => ({
+  mode: "in",
+  waiting: false,
+  replace: vi.fn(),
+  redirect: vi.fn(),
+}));
+vi.mock("./incoming-share", () => ({ hasIncomingShare: () => route.waiting }));
 
 vi.mock("expo-router", () => ({
-  Redirect: () => null,
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  Redirect: ({ href }: { href: string }) => {
+    route.redirect(href);
+    return null;
+  },
+  useRouter: () => ({ push: vi.fn(), replace: route.replace }),
   useLocalSearchParams: () => route,
   useFocusEffect: () => undefined,
 }));
@@ -31,10 +41,18 @@ vi.mock("react-native", () => {
     TextInput: ({
       placeholder,
       secureTextEntry,
+      onChangeText,
     }: {
       placeholder: string;
       secureTextEntry?: boolean;
-    }) => <input aria-label={placeholder} type={secureTextEntry ? "password" : "text"} />,
+      onChangeText: (text: string) => void;
+    }) => (
+      <input
+        aria-label={placeholder}
+        type={secureTextEntry ? "password" : "text"}
+        onInput={(event) => onChangeText(event.currentTarget.value)}
+      />
+    ),
     Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
       <button type="button" onClick={onPress}>
         {children}
@@ -83,7 +101,10 @@ let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   route.mode = "in";
+  route.waiting = false;
+  vi.mocked(loadSessionToken).mockResolvedValue("");
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.mocked(passwordResetCapabilities).mockResolvedValue(capabilities);
   host = document.createElement("div");
@@ -159,4 +180,44 @@ it("hides SSO when switching to password recovery", async () => {
   expect(host.querySelector('button[data-prominence="primary"]')?.textContent).toBe(
     "Send reset link",
   );
+});
+
+it.each(["in", "up"])(
+  "returns to the pending share after password authentication (%s)",
+  async (mode) => {
+    route.mode = mode;
+    route.waiting = true;
+    vi.mocked(signUp).mockResolvedValue({ verificationRequired: false });
+    vi.mocked(rpc).mockResolvedValue({ needsSetup: true });
+    await render();
+    await act(async () => {
+      for (const [label, value] of [
+        ["Email", "share@example.test"],
+        ["Password", "test-password-123"],
+      ]) {
+        const input = host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+        input.value = value!;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[data-prominence="primary"]')!.click(),
+    );
+    expect(route.replace).toHaveBeenCalledWith("/share");
+  },
+);
+
+it("returns to the pending share after SSO", async () => {
+  route.waiting = true;
+  vi.mocked(continueWithSso).mockResolvedValue(true);
+  await render();
+  await act(async () => ssoButtons()[0]!.click());
+  expect(route.replace).toHaveBeenCalledWith("/share");
+});
+
+it("returns an existing session to the pending share", async () => {
+  route.waiting = true;
+  vi.mocked(loadSessionToken).mockResolvedValue("fake-session");
+  await render();
+  expect(route.redirect).toHaveBeenCalledWith("/share");
 });

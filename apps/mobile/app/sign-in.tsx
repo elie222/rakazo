@@ -31,6 +31,7 @@ import {
 import type { AuthMode } from "../lib/auth-routing";
 import { initialAuthMode } from "../lib/auth-routing";
 import { useI18n } from "../lib/i18n";
+import { hasIncomingShare } from "../lib/incoming-share";
 import { useMobileTokens } from "../lib/native";
 import { continueWithSso } from "../lib/sso";
 import { credentialIssueText, errorText } from "../lib/user-error";
@@ -101,7 +102,7 @@ export default function SignIn() {
       </View>
     );
   }
-  if (hasSession) return <Redirect href="/" />;
+  if (hasSession) return <Redirect href={hasIncomingShare() ? "/share" : "/"} />;
 
   async function submit() {
     if (pending || !reset?.passwordAuth) return;
@@ -139,7 +140,9 @@ export default function SignIn() {
         mode === "up"
           ? await rpc<IntegrationSetupState>("integrationSetup/get").catch(() => null)
           : null;
-      router.replace(setup?.needsSetup ? "/integration-setup" : "/");
+      router.replace(
+        hasIncomingShare() ? "/share" : setup?.needsSetup ? "/integration-setup" : "/",
+      );
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {
@@ -151,7 +154,7 @@ export default function SignIn() {
     setPending(true);
     setError(null);
     try {
-      if (await continueWithSso()) router.replace("/");
+      if (await continueWithSso()) router.replace(hasIncomingShare() ? "/share" : "/");
     } catch (err) {
       setError(errorText(err, t("Could not continue")));
     } finally {

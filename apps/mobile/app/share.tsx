@@ -1,10 +1,10 @@
-import type { Href } from "expo-router";
 import { useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { Image, Platform, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeSymbol } from "../components/native-symbol";
+import type { MobileBot } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import {
   cancelIncomingShare,
@@ -33,6 +33,9 @@ export default function ShareRoute() {
   useEffect(
     () =>
       navigation.addListener("beforeRemove", (event) => {
+        const payload = event.data.action.payload;
+        // Authentication temporarily replaces the picker; sign-in returns here with the share.
+        if (payload && "name" in payload && payload.name === "sign-in") return;
         if (selected.current || closing.current) return;
         event.preventDefault();
         close();
@@ -44,14 +47,22 @@ export default function ShareRoute() {
   }, [share, close]);
 
   const open = useCallback(
-    (href: Href) => {
+    (bot: Pick<MobileBot, "id" | "name">) => {
       // Removal must preserve the share for thread.tsx to claim it.
       if (!getIncomingShare()) return;
       selected.current = true;
-      router.dismissTo("/");
-      router.push(href);
+      navigation.dispatch({
+        type: "RESET",
+        payload: {
+          index: 1,
+          routes: [
+            { name: "index" },
+            { name: "thread", params: { botId: bot.id, name: bot.name } },
+          ],
+        },
+      });
     },
-    [router],
+    [navigation],
   );
   const preview = share ? sharePreview(share) : null;
 
