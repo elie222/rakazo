@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import type { ProductAnalytics } from "@rakazo/adapter-kit";
 import { AnalyticsEvent } from "@rakazo/contracts";
 import { getLogger } from "@rakazo/logging";
@@ -10,12 +10,14 @@ export function createProductAnalytics(
 ): ProductAnalytics | undefined {
   if (!env.ANALYTICS_PROVIDER || env.ANALYTICS_PROVIDER === "none") return undefined;
   const key = env.ANALYTICS_KEY?.trim();
+  const pseudonymSecret = env.ANALYTICS_PSEUDONYM_SECRET?.trim();
   let host: URL;
   try {
     host = new URL(env.ANALYTICS_HOST?.trim() || "https://us.i.posthog.com");
     if (
       env.ANALYTICS_PROVIDER !== "posthog" ||
       !key ||
+      !pseudonymSecret ||
       host.protocol !== "https:" ||
       host.username ||
       host.password ||
@@ -25,7 +27,7 @@ export function createProductAnalytics(
       throw new Error();
   } catch {
     getLogger().warn(
-      "Product analytics disabled: check ANALYTICS_PROVIDER, ANALYTICS_KEY and ANALYTICS_HOST.",
+      "Product analytics disabled: check ANALYTICS_PROVIDER, ANALYTICS_KEY, ANALYTICS_HOST and ANALYTICS_PSEUDONYM_SECRET.",
     );
     return undefined;
   }
@@ -67,11 +69,11 @@ export function createProductAnalytics(
         return;
       const { name, ...properties } = parsed.data;
       const hash = identity
-        ? createHash("sha256").update(`${name}:${identity.id}`).digest("hex")
+        ? createHmac("sha256", pseudonymSecret!).update(`${name}:${identity.id}`).digest("hex")
         : undefined;
       pending.push({
         event: name,
-        distinct_id: `product:${createHmac("sha256", key!).update(userId).digest("hex")}`,
+        distinct_id: `product:${createHmac("sha256", pseudonymSecret!).update(`user:${userId}`).digest("hex")}`,
         uuid: hash
           ? `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`
           : randomUUID(),

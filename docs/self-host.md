@@ -341,13 +341,16 @@ best effort, and flushed when the worker shuts down; collector failures do not f
 Product analytics is off by default. To enable the PostHog adapter, set
 `ANALYTICS_PROVIDER=posthog`, `ANALYTICS_KEY` to a project capture token, and
 `ANALYTICS_HOST` to the HTTPS ingestion host (default `https://us.i.posthog.com`)
-on API and worker. Set `ANALYTICS_PROVIDER=none` to disable it. The public website
-uses its separate `PUBLIC_POSTHOG_KEY` configuration.
+on API and worker. Also set `ANALYTICS_PSEUDONYM_SECRET` to a server-only random
+value (`openssl rand -hex 32`), identical on API and worker. Retain it when rotating
+the public capture token so user and event identities stay stable. Never send this
+secret to the browser or collector. Set `ANALYTICS_PROVIDER=none` to disable it.
+The public website uses its separate `PUBLIC_POSTHOG_KEY` configuration.
 
 The backend sends account creation, session creation, fixed screen names, message
 counts, and run starts/outcomes. Run events include the shared trigger enum and
 failures include only a fixed category: credentials, quota, rate limit, timeout,
-or other. User identifiers are pseudonymized with the project token. No names,
+or other. User identifiers are pseudonymized with the server-only secret. No names,
 emails, prompts, responses, message text, DOM, URLs, search parameters, document
 contents, request metadata, or raw errors are exported. There is no browser or
 mobile analytics SDK, autocapture, session replay, or third-party script.

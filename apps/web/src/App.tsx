@@ -112,8 +112,8 @@ function SessionApp() {
     const key = `${analyticsUserId}:${screen}`;
     if (lastScreen.current === key) return;
     lastScreen.current = key;
-    void rpc.analytics
-      .screen({ screen, surface: desktopBridge() ? "desktop" : "web" })
+    void Promise.resolve()
+      .then(() => rpc.analytics.screen({ screen, surface: desktopBridge() ? "desktop" : "web" }))
       .catch(() => undefined);
   }, [analyticsUserId, screen]);
   const gate = sessionGate(session);
