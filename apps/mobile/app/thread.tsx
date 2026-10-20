@@ -170,6 +170,7 @@ import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { available as dictationAvailable } from "../lib/dictation";
 import { cancelFocusPrompt, focusPromptThreadActive } from "../lib/focus-prompt";
 import { t, useI18n } from "../lib/i18n";
+import { takeIncomingShare } from "../lib/incoming-share";
 import { isInlineImageMimeType } from "../lib/inline-image";
 import { integrationsCacheScope, isIntegrationsScopeCurrent } from "../lib/integrations-cache";
 import { saveLastBotId } from "../lib/last-bot";
@@ -196,7 +197,12 @@ import {
   threadSpaceSwitchResult,
 } from "../lib/notification-open";
 import type { PickedAttachment } from "../lib/pick-attachments";
-import { pickDocuments, pickFromLibrary, takePhoto } from "../lib/pick-attachments";
+import {
+  pickDocuments,
+  pickFromLibrary,
+  readSharedFiles,
+  takePhoto,
+} from "../lib/pick-attachments";
 import { threadRefreshDelayMs } from "../lib/refresh";
 import {
   getCachedResponseStreamingEnabled,
@@ -1630,6 +1636,18 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     setAttachmentNotice(null);
     setError(null);
   }, [threadKey]);
+
+  // Something shared from another app lands in the composer of the chat picked for it.
+  useEffect(() => {
+    if (!threadKey || readOnly) return;
+    void takeIncomingShare().then((share) => {
+      if (!share) return;
+      if (share.text) composerRef.current?.insert(share.text);
+      if (share.files.length) {
+        void addAttachments((count, maxBytes) => readSharedFiles(share.files, count, maxBytes));
+      }
+    });
+  }, [threadKey, readOnly]);
 
   function runSlashAction(action: SlashActionId) {
     if (action === "chat-settings") {

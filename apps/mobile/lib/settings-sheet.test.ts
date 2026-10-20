@@ -93,6 +93,7 @@ describe("settings links", () => {
       "rakazo:///thread?botId=bot-1",
     );
     expect(close).toHaveBeenCalledTimes(1);
+    expect(redirectSystemPath({ path: "rakazo://expo-sharing", initial: true })).toBe("/");
     unregister();
   });
 });

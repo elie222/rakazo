@@ -94,3 +94,22 @@ export async function pickDocuments(
   );
   return filterPickedAttachments(existingCount, candidates, maxBytes);
 }
+
+export async function readSharedFiles(
+  files: Array<{ uri: string; name: string; mimeType: string | null }>,
+  existingCount = 0,
+  maxBytes = ATTACHMENT_MAX_BYTES,
+): Promise<{
+  attachments: PickedAttachment[];
+  skipped: PickSkip[];
+}> {
+  const candidates = await Promise.all(
+    files.map(async (file) => {
+      const mimeType = inferAttachmentMimeType(file.name, file.mimeType ?? undefined);
+      const { contentBase64, size } = await readUriAsBase64(file.uri, maxBytes);
+      const previewUri = mimeType?.startsWith("image/") ? file.uri : undefined;
+      return { name: file.name, mimeType, size, contentBase64, previewUri };
+    }),
+  );
+  return filterPickedAttachments(existingCount, candidates, maxBytes);
+}
