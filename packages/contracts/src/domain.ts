@@ -1015,8 +1015,22 @@ export const DEFAULT_MODEL_MAX_TOKENS = 4_096;
 /** Largest completion-token limit exposed by model settings. */
 export const MAX_MODEL_MAX_TOKENS = 131_072;
 
-/** Default context window for an OpenAI-compatible connection. */
-export const DEFAULT_MODEL_CONTEXT_WINDOW = 32_768;
+/**
+ * Default context window for an OpenAI-compatible connection.
+ *
+ * 1M rather than 32k. The runtime budgets history as
+ * `contextWindow - outputReserve`, so a window barely larger than the
+ * output cap leaves an agent almost no history to work with: it spends
+ * its turn re-reading files it already read and re-deriving facts it
+ * already has, and reports progress instead of finishing the work.
+ *
+ * A generous default is the safe direction. A prompt that turns out to
+ * be too long is the provider's to reject, with an error that says so;
+ * too little history is the agent's to work around badly, and it fails
+ * quietly. The per-connection setting in model settings overrides this
+ * for anyone who needs a different figure.
+ */
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 1_000_000;
 
 /** Largest context window exposed by model settings. */
 export const MAX_MODEL_CONTEXT_WINDOW = 2_147_483_647;
