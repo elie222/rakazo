@@ -1,6 +1,6 @@
 import type { SandboxProvider } from "@rakazo/adapter-kit";
-import { BoxSandboxEmulator } from "./box-emulator.js";
-import { BoxSandboxProvider } from "./box-sandbox.js";
+import { BoatSandboxEmulator } from "./boat-emulator.js";
+import { BoatSandboxProvider } from "./boat-sandbox.js";
 import { CreateOSSandboxProvider } from "./createos-sandbox.js";
 import { DaytonaSandboxEmulator } from "./daytona-emulator.js";
 import { DaytonaSandboxProvider } from "./daytona-sandbox.js";
@@ -29,13 +29,13 @@ export interface SandboxProviderOptions {
   railwayEnvironmentId?: string;
   railwayMaxWorkspaceFileBytes?: string;
   railwaySandboxRegion?: string;
-  boxApiKey?: string;
-  boxApiUrl?: string;
+  boatApiKey?: string;
+  boatApiUrl?: string;
   dataDir?: string;
 }
 
 function missingRemoteKey(
-  provider: "e2b" | "daytona" | "createos" | "box" | "railway",
+  provider: "e2b" | "daytona" | "createos" | "boat" | "railway",
   envName: string,
 ): SandboxProvider {
   return new NoneSandboxProvider(
@@ -67,9 +67,9 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
         shape: opts.createosShape,
         rootfs: opts.createosRootfs,
       });
-    case "box":
-      if (!opts.boxApiKey?.trim()) return missingRemoteKey("box", "BOX_API_KEY");
-      return new BoxSandboxProvider({ apiKey: opts.boxApiKey, apiUrl: opts.boxApiUrl });
+    case "boat":
+      if (!opts.boatApiKey?.trim()) return missingRemoteKey("boat", "BOAT_API_KEY");
+      return new BoatSandboxProvider({ apiKey: opts.boatApiKey, apiUrl: opts.boatApiUrl });
     case "railway":
       if (!opts.railwayApiToken?.trim()) return missingRemoteKey("railway", "RAILWAY_API_TOKEN");
       if (!opts.railwayEnvironmentId?.trim())
@@ -89,8 +89,8 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new ManagedSandboxEmulator();
     case "daytona-emulator":
       return new DaytonaSandboxEmulator();
-    case "box-emulator":
-      return new BoxSandboxEmulator();
+    case "boat-emulator":
+      return new BoatSandboxEmulator();
     case "desktop":
       return new DesktopSandboxProvider({
         root: opts.dataDir,
@@ -99,7 +99,7 @@ export function createSandboxProvider(kind: string, opts: SandboxProviderOptions
       return new FakeSandboxProvider();
     default:
       throw new Error(
-        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | box | railway | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.`,
+        `Unknown SANDBOX_PROVIDER "${kind}". Use none | docker | e2b | daytona | createos | boat | railway | e2b-emulator | daytona-emulator | boat-emulator | desktop | fake.`,
       );
   }
 }

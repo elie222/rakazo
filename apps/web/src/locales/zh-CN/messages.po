@@ -140,6 +140,14 @@ msgstr "{hours} 小时前"
 msgid "{minutes}m ago"
 msgstr "{minutes} 分钟前"
 
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked"
+msgstr "{name} 问"
+
+#: src/lib/activity-list-filters.ts
+msgid "{name} asked: {text}"
+msgstr "{name} 问：{text}"
+
 #. js-lingui-explicit-id
 #: src/lib/browser-notifications.ts
 msgid "{name} failed"
@@ -329,6 +337,10 @@ msgstr "账户 ID"
 msgid "Account label"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
+msgid "Account menu for {name}"
+msgstr "{name} 的账户菜单"
+
 #: src/pages/PluginsOverlay.tsx
 msgid "Accounts"
 msgstr ""
@@ -354,7 +366,6 @@ msgstr "启用"
 msgid "Active model"
 msgstr "当前模型"
 
-#: src/components/computer/TerminalApp.tsx
 #: src/pages/Shell.tsx
 msgid "Activity"
 msgstr "动态"
@@ -579,6 +590,10 @@ msgstr "此提供方存储的是 API 密钥，不是订阅登录。"
 msgid "An integration tool"
 msgstr "集成工具"
 
+#: src/lib/activity-list-filters.ts
+msgid "Another agent"
+msgstr "其他 Agent"
+
 #: src/components/AskCard.tsx
 msgid "Answer"
 msgstr "回答"
@@ -664,8 +679,8 @@ msgstr "已归档。对话、记忆和文件保留。"
 msgid "Arguments"
 msgstr "参数"
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Artifacts.tsx
-#: src/pages/Shell.tsx
 msgid "Artifacts"
 msgstr ""
 
@@ -717,10 +732,6 @@ msgstr "{timeSelect}"
 msgid "Attach file"
 msgstr "附加文件"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Attached {path}"
-msgstr ""
-
 #: src/pages/Shell.tsx
 #: src/pages/shell/chat-context.tsx
 msgid "Attachment"
@@ -771,7 +782,6 @@ msgstr "头像工作室"
 msgid "Avatars"
 msgstr "头像"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Board.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/RoutineEditor.tsx
@@ -820,8 +830,8 @@ msgstr ""
 msgid "Blocked"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Board.tsx
-#: src/pages/Shell.tsx
 msgid "Board"
 msgstr ""
 
@@ -838,6 +848,7 @@ msgstr "正在启动 {0} 的电脑"
 msgid "bot"
 msgstr "Bot"
 
+#: src/lib/identity-display.ts
 #: src/pages/IntegrationSetup.tsx
 #: src/pages/Shell.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
@@ -883,10 +894,6 @@ msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Browse MCP servers"
-msgstr ""
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Browser"
 msgstr ""
 
 #: src/pages/KnowledgeSection.tsx
@@ -989,6 +996,10 @@ msgstr "聊天应用"
 #: src/pages/Shell.tsx
 msgid "Chat Settings"
 msgstr "聊天设置"
+
+#: src/lib/identity-display.ts
+msgid "Chats"
+msgstr "聊天"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/pages/HostComputerPrompt.tsx
@@ -1099,10 +1110,6 @@ msgstr ""
 #: src/pages/WindowChrome.tsx
 msgid "Close"
 msgstr "关闭"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Close {title}"
-msgstr ""
 
 #: src/pages/shell/message-cards.tsx
 msgid "Close chart"
@@ -1247,8 +1254,8 @@ msgid "Computers are available. Reload or open a bot to continue."
 msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
-msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or box with its API key. Recreate the stack after changing .env."
-msgstr "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SUPERVISOR_TOKEN，或将 SANDBOX_PROVIDER 设为 e2b、daytona 或 box 并提供对应 API 密钥。更改 .env 后请重建环境。"
+msgid "Computers are off. Set SANDBOX_PROVIDER=docker with SANDBOX_SUPERVISOR_TOKEN, or set SANDBOX_PROVIDER to e2b, daytona, or boat with its API key. Recreate the stack after changing .env."
+msgstr "电脑未开启。请设置 SANDBOX_PROVIDER=docker 并提供 SANDBOX_SUPERVISOR_TOKEN，或将 SANDBOX_PROVIDER 设为 e2b、daytona 或 boat 并提供对应 API 密钥。更改 .env 后请重建环境。"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Configure a plugin catalog on the server to connect apps."
@@ -1295,6 +1302,10 @@ msgstr "连接模型"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Connect API key"
 msgstr "连接 API 密钥"
+
+#: src/components/SidebarFooter.tsx
+msgid "Connect apps"
+msgstr "连接应用"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Connect Executor"
@@ -1552,17 +1563,9 @@ msgstr "无法下载 {0}。请重试。"
 msgid "Could not download {name}. Try again."
 msgstr "无法下载 {name}。请重试。"
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not download file"
-msgstr ""
-
 #: src/pages/PluginsOverlay.tsx
 msgid "Could not install connector"
 msgstr "无法安装连接器"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not list files"
-msgstr ""
 
 #: src/components/ErrorBoundary.tsx
 #: src/pages/KnowledgeSection.tsx
@@ -1591,10 +1594,6 @@ msgstr ""
 
 #: src/pages/IntegrationSetup.tsx
 msgid "Could not load bots. Reload to try again."
-msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not load commands"
 msgstr ""
 
 #: src/pages/shell/bot-credentials.tsx
@@ -1656,17 +1655,9 @@ msgstr "无法退出登录。请重试。"
 msgid "Could not open billing"
 msgstr ""
 
-#: src/components/computer/FilesApp.tsx
-msgid "Could not open file"
-msgstr ""
-
 #: src/pages/LocalSettings.tsx
 msgid "Could not open local settings. Start the local server and create its owner account, then try again."
 msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Could not open terminal"
-msgstr "无法打开终端"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Could not play a test clip"
@@ -1831,10 +1822,6 @@ msgstr "无法更新反应"
 #: src/pages/MemorySettingsOverlay.tsx
 msgid "Could not update the default memory scope"
 msgstr "无法更新默认记忆范围"
-
-#: src/components/computer/FilesApp.tsx
-msgid "Could not upload file"
-msgstr ""
 
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Could not verify computer setup ({failureMessage}). Fix the connection, then check again."
@@ -2165,6 +2152,14 @@ msgstr ""
 msgid "Docker limits access to your computer for added security. Using {hostLabel} lets bots work with your local files and tools."
 msgstr "Docker 限制对你电脑的访问，以提高安全性。使用{hostLabel}时，Bot 可以处理你的本地文件并使用本地工具。"
 
+#: src/components/SidebarFooter.tsx
+msgid "Docs"
+msgstr "文档"
+
+#: src/pages/KnowledgeSection.tsx
+msgid "Document changed. Reopen to edit the latest version."
+msgstr "文档已更改。请重新打开以编辑最新版本。"
+
 #: src/pages/Auth.tsx
 msgid "Don’t have an account?"
 msgstr "还没有账户？"
@@ -2175,15 +2170,12 @@ msgstr "还没有账户？"
 msgid "Done"
 msgstr "完成"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/Artifacts.tsx
 msgid "Download"
 msgstr ""
 
-#. placeholder {0}: basename(entry.path)
 #. placeholder {0}: props.name
 #: src/components/ArtifactFileCard.tsx
-#: src/components/computer/FilesApp.tsx
 msgid "Download {0}"
 msgstr "下载 {0}"
 
@@ -2394,15 +2386,6 @@ msgstr "标记变化的字段"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "要比较的字段，例如 id, modifiedTime（可选）"
 
-#. placeholder {0}: attachmentSizeLabel(getMaxUploadSizeBytes())
-#: src/components/computer/FilesApp.tsx
-msgid "File exceeds the {0} upload limit."
-msgstr "文件超过 {0} 的上传限制。"
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Files"
-msgstr ""
-
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "计算机上的文件或文件夹"
@@ -2420,8 +2403,9 @@ msgid "Filter by date"
 msgstr ""
 
 #: src/pages/Artifacts.tsx
+#: src/pages/Shell.tsx
 msgid "Filters"
-msgstr ""
+msgstr "筛选器"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -2502,6 +2486,10 @@ msgstr ""
 msgid "Get notified when this Bot finishes or needs input"
 msgstr "在此机器人完成或需要输入时收到通知"
 
+#: src/components/SidebarFooter.tsx
+msgid "Get the mobile app"
+msgstr "获取移动应用"
+
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Getting ready"
 msgstr ""
@@ -2510,6 +2498,7 @@ msgstr ""
 msgid "Git event"
 msgstr "Git 事件"
 
+#: src/lib/identity-display.ts
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "Group"
@@ -2661,6 +2650,10 @@ msgstr "沿用默认"
 msgid "Inputs"
 msgstr "输入"
 
+#: src/components/SidebarFooter.tsx
+msgid "Install update"
+msgstr "安装更新"
+
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
 msgstr "实例 API 密钥"
@@ -2691,7 +2684,6 @@ msgid "Integration options"
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Integrations"
 msgstr "集成"
 
@@ -2765,10 +2757,6 @@ msgstr "上次检查 {0}：无变化"
 
 #: src/components/DesktopUpdates.tsx
 msgid "Later"
-msgstr ""
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Launched {app}"
 msgstr ""
 
 #: src/pages/MessagingSettingsOverlay.tsx
@@ -2888,8 +2876,8 @@ msgstr ""
 msgid "Local Server Settings"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/Paywall.tsx
-#: src/pages/Shell.tsx
 msgid "Log out"
 msgstr "退出登录"
 
@@ -2990,6 +2978,10 @@ msgstr "中"
 msgid "Medium"
 msgstr ""
 
+#: src/lib/identity-display.ts
+msgid "Member"
+msgstr "成员"
+
 #. placeholder {0}: selected.length
 #: src/pages/GroupPanel.tsx
 msgid "Members ({0})"
@@ -3037,6 +3029,10 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Message from {peer}"
 msgstr "来自 {peer} 的消息"
+
+#: src/lib/activity-list-filters.ts
+msgid "Message from another agent"
+msgstr "来自其他 Agent 的消息"
 
 #: src/pages/Shell.tsx
 msgid "Message…"
@@ -3270,10 +3266,6 @@ msgstr "无认证"
 msgid "No authentication"
 msgstr "无认证"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "No bot activity yet."
-msgstr "还没有机器人活动。"
-
 #: src/pages/shell/command-palette.tsx
 msgid "No bots"
 msgstr ""
@@ -3494,10 +3486,6 @@ msgstr "在完整窗口中打开"
 msgid "Open navigation"
 msgstr "打开导航"
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Open shell"
-msgstr "打开 Shell"
-
 #: src/pages/ScratchpadSection.tsx
 msgid "Open work"
 msgstr "待办"
@@ -3506,10 +3494,6 @@ msgstr "待办"
 #: src/pages/Onboarding.tsx
 msgid "OpenAI-compatible server URL"
 msgstr "OpenAI 兼容服务器 URL"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Opened {path}"
-msgstr ""
 
 #: src/pages/Shell.tsx
 msgid "Opened its thread."
@@ -3558,9 +3542,10 @@ msgstr "原消息不可用"
 msgid "Other model…"
 msgstr "其他模型…"
 
+#: src/lib/identity-display.ts
 #: src/pages/Board.tsx
 msgid "Owner"
-msgstr ""
+msgstr "所有者"
 
 #: src/pages/RoutineEditor.tsx
 msgid "PagerDuty incident"
@@ -3580,6 +3565,10 @@ msgstr "密码"
 #: src/pages/Auth.tsx
 msgid "Password recovery is not configured for this server"
 msgstr "此服务器未配置密码恢复"
+
+#: src/lib/user-error.ts
+msgid "Password sign-in is turned off on this server"
+msgstr "此服务器已关闭密码登录"
 
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Auth.tsx
@@ -4072,6 +4061,7 @@ msgstr ""
 msgid "Rotate key"
 msgstr "轮换密钥"
 
+#: src/lib/identity-display.ts
 #: src/pages/RoutineEditor.tsx
 #: src/pages/Shell.tsx
 msgid "Routine"
@@ -4195,10 +4185,6 @@ msgstr "回答是或否，或一句话说明。"
 msgid "Search"
 msgstr "搜索"
 
-#: src/pages/ActivityList.tsx
-msgid "Search activity"
-msgstr ""
-
 #: src/components/integrations/IntegrationSetup.tsx
 #: src/pages/PluginsOverlay.tsx
 msgid "Search apps"
@@ -4228,9 +4214,9 @@ msgstr "搜索模型"
 msgid "Search providers"
 msgstr "搜索提供方"
 
-#: src/pages/ActivityList.tsx
+#: src/pages/Shell.tsx
 msgid "Search runs"
-msgstr ""
+msgstr "搜索运行记录"
 
 #. placeholder {0}: filters.query.trim()
 #: src/pages/ActivityList.tsx
@@ -4313,6 +4299,7 @@ msgid "Server URL"
 msgstr "服务器 URL"
 
 #: src/components/call/CallCard.tsx
+#: src/components/SidebarFooter.tsx
 #: src/pages/MessagingSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -4352,10 +4339,6 @@ msgstr "共享文档"
 #: src/pages/KnowledgeSection.tsx
 msgid "Shared skills"
 msgstr "共享技能"
-
-#: src/components/computer/TerminalApp.tsx
-msgid "Shell"
-msgstr "Shell"
 
 #: src/pages/GroupPanel.tsx
 msgid "Show all"
@@ -4476,9 +4459,10 @@ msgstr "软件更新"
 msgid "Something went wrong. Try again."
 msgstr "出了点问题。请重试。"
 
+#: src/lib/identity-display.ts
 #: src/pages/SettingsOverlay.tsx
 msgid "Space"
-msgstr ""
+msgstr "工作区"
 
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Space changed. Reopen Models to load its backup list."
@@ -4577,6 +4561,7 @@ msgstr "已加密存储"
 msgid "Stream replies"
 msgstr "流式回复"
 
+#: src/lib/identity-display.ts
 #: src/pages/Shell.tsx
 msgid "subagent"
 msgstr "子 Agent"
@@ -4646,10 +4631,6 @@ msgstr "Teams 消息"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Teams not enabled"
-msgstr ""
-
-#: src/components/computer/ComputerWorkspace.tsx
-msgid "Terminal"
 msgstr ""
 
 #: src/components/teach/SkillDraftCard.tsx
@@ -4965,6 +4946,14 @@ msgstr "更新失败"
 msgid "Update finished with errors"
 msgstr "更新完成但有错误"
 
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}"
+msgstr "来自 {name} 的更新"
+
+#: src/lib/activity-list-filters.ts
+msgid "Update from {name}: {text}"
+msgstr "来自 {name} 的更新：{text}"
+
 #: src/components/AskCard.tsx
 msgid "Update instructions?"
 msgstr "更新指令？"
@@ -4999,7 +4988,6 @@ msgstr ""
 msgid "Updating…"
 msgstr "正在更新…"
 
-#: src/components/computer/FilesApp.tsx
 #: src/pages/shell/avatar-studio-popover.tsx
 msgid "Upload"
 msgstr "上传"
@@ -5008,9 +4996,9 @@ msgstr "上传"
 msgid "Urgent"
 msgstr ""
 
+#: src/components/SidebarFooter.tsx
 #: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
-#: src/pages/Shell.tsx
 msgid "Usage"
 msgstr "用量"
 
@@ -5190,10 +5178,6 @@ msgstr "处理中…"
 msgid "Workspace"
 msgstr ""
 
-#: src/components/computer/TerminalApp.tsx
-msgid "Wrote {path}"
-msgstr ""
-
 #: src/lib/billing.ts
 msgid "year"
 msgstr ""
@@ -5203,6 +5187,7 @@ msgstr ""
 msgid "Yesterday"
 msgstr "昨天"
 
+#: src/pages/AccountSettingsOverlay.tsx
 #: src/pages/Shell.tsx
 msgid "You"
 msgstr "你"

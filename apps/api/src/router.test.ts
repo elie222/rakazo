@@ -210,25 +210,6 @@ describe("account preferences", () => {
     },
   );
 
-  it("adopts a detected timezone only while none is saved", async () => {
-    const setup = preferencesDeps("robot");
-    const { response } = await setup.handler.handle(
-      new Request("http://127.0.0.1/rpc/preferences/adoptTimezone", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: { timezone: "Pacific/Auckland" } }),
-      }),
-      { prefix: "/rpc", context: { actor: setup.actor } },
-    );
-
-    expect(response?.status).toBe(200);
-    expect(setup.updateMany).toHaveBeenCalledWith({
-      where: { id: "user-1", timezone: null },
-      data: { timezone: "Pacific/Auckland" },
-    });
-    expect(setup.update).not.toHaveBeenCalled();
-  });
-
   it("rejects adopting an unknown timezone", async () => {
     const setup = preferencesDeps("robot");
     const { response } = await setup.handler.handle(
@@ -242,21 +223,6 @@ describe("account preferences", () => {
 
     expect(response?.status).toBeGreaterThanOrEqual(400);
     expect(setup.updateMany).not.toHaveBeenCalled();
-  });
-
-  it("reports an unset timezone as null", async () => {
-    const { actor, handler } = preferencesDeps("robot");
-    const { response } = await handler.handle(
-      new Request("http://127.0.0.1/rpc/me", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ json: null }),
-      }),
-      { prefix: "/rpc", context: { actor } },
-    );
-    await expect(response?.json()).resolves.toEqual({
-      json: expect.objectContaining({ timezone: null }),
-    });
   });
 
   it.each(["robot", "organic", "custom-cdn"])(

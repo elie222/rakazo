@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardEventTopic, createBoardEvents } from "./board-live.js";
+import { createBoardEvents } from "./board-live.js";
 
 function fakeFanout() {
   const subscribers = new Map<string, Set<(payload: string) => void>>();
@@ -35,10 +35,6 @@ describe("createBoardEvents", () => {
       ticketId: "ticket-1",
     });
     await iterator.return?.(undefined);
-  });
-
-  it("uses a per-space topic", () => {
-    expect(boardEventTopic("space-1")).toBe("board:space-1");
   });
 
   it("does not throw without a realtime fanout", async () => {

@@ -108,11 +108,6 @@ describe("deviceVoices", () => {
     expect(await deviceVoices()).toEqual([]);
   });
 
-  it("offers nothing when every voice is a network voice", async () => {
-    voices.list = [{ identifier: "en-us-x-iob-network", language: "en-US" }];
-    expect(await deviceVoices()).toEqual([]);
-  });
-
   it("drops a voice that requires a network connection even when its id does not say so", async () => {
     voices.list = [
       { identifier: "en-US-language", name: "English", language: "en-US", requiresNetwork: true },

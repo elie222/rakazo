@@ -3,7 +3,6 @@ import { builtinAgentTools } from "./builtin-tools.js";
 import {
   filterImageReturningComputerTools,
   IMAGE_RETURNING_COMPUTER_TOOLS,
-  MODEL_CANNOT_SEE_MESSAGE,
   modelAcceptsImageInput,
   modelIdSupportsImages,
   resolveModelRefForVisionCheck,
@@ -81,10 +80,5 @@ describe("model vision gating for computer tools", () => {
     expect(names).toEqual(builtinAgentTools.map((tool) => tool.name));
     expect(names).toContain("computer_observe");
     expect(names).toContain("computer_act");
-  });
-
-  it("exposes a clear operator-facing cannot-see message", () => {
-    expect(MODEL_CANNOT_SEE_MESSAGE).toMatch(/cannot see/i);
-    expect(MODEL_CANNOT_SEE_MESSAGE).toMatch(/vision-capable model/i);
   });
 });

@@ -303,7 +303,7 @@ function fixture({
   });
   const pauseRunForInput = vi.fn(async () => {
     run.status = "waiting_input";
-    return true;
+    return { continuationRunId: null as string | null };
   });
   const finalizeRun = vi.fn(async () => ({ continuationRunId: null }));
   const execute = vi.fn(async function* (call: ConnectorCall) {
@@ -333,6 +333,7 @@ function fixture({
     }
     yield { type: "done" as const, text: "Done" };
   });
+  const enqueue = vi.fn(async (_job: unknown) => undefined);
   const executor = createRunExecutor({
     prisma: transactionalPrisma,
     runtime: { describe: () => ({ capabilities: { scripted: false } }), run: runtimeRun },
@@ -386,7 +387,7 @@ function fixture({
       pauseRunForInput,
       finalizeRun,
     },
-    jobs: { enqueue: vi.fn(async () => undefined) },
+    jobs: { enqueue },
     secrets,
     autoReview: autoReviewProvider,
     shutdownSignal,
@@ -411,6 +412,7 @@ function fixture({
     commit,
     sharedMemoryState,
     pauseRunForInput,
+    enqueue,
     async deliverInbound(promptText: string, busyTrigger?: string) {
       const pending: Array<Record<string, unknown>> = [];
       const inboundMessage = {
@@ -485,6 +487,15 @@ function fixture({
     },
   };
 }
+
+it("enqueues pending work when an approval pauses its current run", async () => {
+  const f = fixture({ name: "shell", trigger: "webhook" });
+  f.pauseRunForInput.mockResolvedValueOnce({ continuationRunId: "pending-run" });
+  await f.run();
+  expect(f.enqueue).toHaveBeenCalledWith(
+    expect.objectContaining({ payload: { runId: "pending-run" } }),
+  );
+});
 
 describe("disabled builtins", () => {
   it("refuses a direct call before any effect or memory write", async () => {

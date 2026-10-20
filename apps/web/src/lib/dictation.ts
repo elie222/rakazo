@@ -105,6 +105,7 @@ const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
   he: "he-IL",
   hi: "hi-IN",
   ko: "ko-KR",
+  nl: "nl-NL",
   "pt-BR": "pt-BR",
   ru: "ru-RU",
   tr: "tr-TR",
@@ -114,6 +115,20 @@ const SPEECH_LOCALE_TAGS: Record<UiLocale, string> = {
 /** The tag the recognizer needs for a UI locale, when we know one. */
 export function speechLocaleTag(locale: UiLocale): string | undefined {
   return SPEECH_LOCALE_TAGS[locale];
+}
+
+/**
+ * The language the recognizer listens in: the app's own language when the UI is
+ * in another one, and the browser's otherwise.
+ *
+ * English is also the app's fallback for a browser language it ships no catalog
+ * for, so an Italian browser would lose its Italian recognition by following the
+ * app. The browser's language stays in that case.
+ */
+export function recognitionLanguage(): string {
+  const browser = navigator.language || "en-US";
+  const tag = speechLocaleTag(getActiveUiLocale());
+  return tag && tag !== "en-US" ? tag : browser;
 }
 
 /**
@@ -294,7 +309,7 @@ export class Dictation {
     let live = true;
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = navigator.language || "en-US";
+    rec.lang = recognitionLanguage();
     // Chrome numbers results per session, so a restart starts over: keep the earlier text.
     let carried = "";
     let sessionStartedAt = Date.now();

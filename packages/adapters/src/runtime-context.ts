@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { Api, Context, Message, Model } from "@earendil-works/pi-ai";
 import type { AdapterContext, AgentRunRequest, AgentUsage } from "@rakazo/adapter-kit";
 import { DEFAULT_CONTEXT_STRATEGY } from "@rakazo/adapter-kit";
+import { getLogger } from "@rakazo/logging";
 import type { CacheRequest, ContextBudget } from "./context-selection.js";
 import {
   ContextCacheTracker,
@@ -10,6 +11,7 @@ import {
   selectContext,
   shortenToolResultText,
 } from "./context-selection.js";
+import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
 
 const accountSalt = randomBytes(32);
 const sharedCacheTracker = new ContextCacheTracker();
@@ -97,6 +99,7 @@ export function createRuntimeContextPolicy(
   let pendingProjection: { scope: string; entries: ProjectionEntry[] } | undefined;
   let decision: RuntimeContextDecision | undefined;
   let metadataPresent = false;
+  let warnedOutputClamp = false;
   const historyById = new Map(
     request.history.filter((message) => message.id).map((message) => [message.id!, message]),
   );
@@ -156,6 +159,22 @@ export function createRuntimeContextPolicy(
   }
   return {
     prepareContext(ctx: Context, model: Model<Api>): Context {
+      const contextWindow = request.model.contextWindow ?? model.contextWindow;
+      const configuredMaxTokens = resolveCompletionMaxTokens(
+        model.maxTokens,
+        request.model.maxTokens,
+        undefined,
+        model.reasoning,
+      );
+      const outputReserve = effectiveOutputReserve(contextWindow, configuredMaxTokens);
+      if (outputReserve < configuredMaxTokens && !warnedOutputClamp) {
+        warnedOutputClamp = true;
+        getLogger().warn("Model output limit clamped to preserve context room", {
+          configuredMaxTokens: request.model.maxTokens ?? configuredMaxTokens,
+          effectiveMaxTokens: outputReserve,
+          contextWindow,
+        });
+      }
       const standaloneHistoryFallback =
         request.contextStrategy === undefined &&
         (!request.executeTool ||
@@ -249,13 +268,10 @@ export function createRuntimeContextPolicy(
           ? [index]
           : [],
       );
-      const modelWindow = request.model.contextWindow ?? model.contextWindow;
-      const outputReserve = request.model.maxTokens ?? model.maxTokens;
       const fixed =
         estimateContextTokens(ctx.systemPrompt ?? "") + estimateContextTokens(ctx.tools ?? []);
       // Recent history and navigation have their own bounds. Active tool progress
       // uses the actual model budget rather than an artificial smaller window.
-      const contextWindow = modelWindow;
       let navigationMessage = projected?.navigation;
       let catalogIds = projected?.catalogIds ?? [];
       const budget = {
@@ -377,7 +393,13 @@ export function createRuntimeContextPolicy(
           return message;
         const source = text(message);
         if (source.length <= 1024) return message;
-        const shortened = shortenToolResultText(source, 1024, { name: message.toolName });
+        // The model read this result on an earlier step, so mark it as shortened after use.
+        const shortened = shortenToolResultText(
+          source,
+          1024,
+          { name: message.toolName },
+          { afterUse: true },
+        );
         if (shortened.length >= source.length) return message;
         return {
           ...message,

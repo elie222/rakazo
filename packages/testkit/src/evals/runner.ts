@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { AgentRuntime, JobPublisher } from "@rakazo/adapter-kit";
+import type { AgentRuntime, JobPublisher, NotificationProvider } from "@rakazo/adapter-kit";
 import { runJobKey } from "@rakazo/adapter-kit";
-import { MessagingTeamChatEmulator } from "@rakazo/adapters";
+import { CapturingNotificationProvider, MessagingTeamChatEmulator } from "@rakazo/adapters";
 import type { ModelConnectInput, RunStatus } from "@rakazo/contracts";
 import { ACTIVE_RUN_STATUSES, isTerminal } from "@rakazo/core";
 import type { createDb } from "@rakazo/db";
@@ -11,11 +11,14 @@ import type { EvalCase, Evidence } from "./cases.js";
 import type { ClarificationBlock } from "./clarification.js";
 import { expectedClarificationText } from "./clarification.js";
 import type { DiagnosticToolObservation, HistoryDiagnostic } from "./history-observer.js";
+import type { EvalJudge } from "./judge.js";
 import type { CacheDecisionMeasurement, EvalPricing } from "./measurement.js";
 import { measureCalls } from "./measurement.js";
 import type { FailureCategory, TrialResult } from "./report.js";
 import { emptyTrial, redact } from "./report.js";
 import { EvalServices } from "./services.js";
+import type { RoutineEvidence } from "./silence.js";
+import { SilenceObserver } from "./silence-observer.js";
 import type { LedgerCall } from "./step-accounting.js";
 import { measureWorkflowSteps } from "./step-accounting.js";
 
@@ -25,6 +28,7 @@ export type EvalApp = {
   prisma: ReturnType<typeof createDb>["prisma"];
   jobs: JobPublisher;
   runtime: AgentRuntime;
+  notifications?: NotificationProvider;
   harnessIssues?: readonly string[];
   connector?: { records: readonly unknown[] };
   awaitIdle?: () => Promise<void>;
@@ -45,8 +49,13 @@ export type TrialOptions = {
   pricing?: EvalPricing;
   connection: ModelConnectInput;
   timeoutMs: number;
+  judge?: EvalJudge;
   maxToolCalls: number;
-  createApp: (services: EvalServices, messaging: MessagingTeamChatEmulator) => Promise<EvalApp>;
+  createApp: (
+    services: EvalServices,
+    messaging: MessagingTeamChatEmulator,
+    witnesses: { notifications: CapturingNotificationProvider; realtime: SilenceObserver },
+  ) => Promise<EvalApp>;
 };
 class EvalFailure extends Error {
   constructor(
@@ -72,6 +81,9 @@ export async function runTrial(
     capabilities: { groups: false },
   });
   scenario.configure?.(services);
+  const notifications = new CapturingNotificationProvider();
+  const realtime = new SilenceObserver();
+  const routineRuns: RoutineEvidence[] = [];
   let handles: EvalApp | undefined;
   let cookie = "";
   let botId = "";
@@ -129,7 +141,10 @@ export async function runTrial(
       });
   };
   try {
-    handles = await options.createApp(services, messaging);
+    handles = await options.createApp(services, messaging, { notifications, realtime });
+    realtime.attach(handles.prisma);
+    if (scenario.routine && handles.notifications !== notifications)
+      throw new EvalFailure("harness", "Silence eval requires the capturing notification provider");
     const trial = handles;
     const { app, prisma } = trial;
     const setupActor = async () => {
@@ -156,7 +171,7 @@ export async function runTrial(
         title: "",
         description: "",
         instructions: "",
-        notifyOnFinish: false,
+        notifyOnFinish: Boolean(scenario.routine),
       });
       botId = bot.id;
       const persistedBot = await prisma.bot.findUniqueOrThrow({
@@ -182,6 +197,17 @@ export async function runTrial(
         });
     };
     await setupActor();
+    if (scenario.routine) {
+      await rpc(app, cookie, "routines/create", {
+        botId,
+        name: "Release watch",
+        prompt: scenario.routine.prompt,
+        crons: ["0 9 * * *"],
+        timezone: "UTC",
+        active: true,
+        notify: true,
+      });
+    }
     if (scenario.history) {
       const thread = await prisma.thread.findUniqueOrThrow({
         where: { botId },
@@ -321,6 +347,8 @@ export async function runTrial(
         clearedToolCount = seenTools.size - (await countCurrentTools());
         continue;
       }
+      if (scenario.routine) await rpc(app, cookie, "threads/markRead", { botId });
+      const notificationOffset = notifications.sent.length;
       let runId: string;
       if ("ask" in step) {
         runId = (
@@ -373,18 +401,20 @@ export async function runTrial(
           throw new EvalFailure("agent", "Authored routine was not scheduled");
         // Force the scheduler's clock edge, not the agent's work. Attribution starts after setup.
         services.calls.length = 0;
-        services.seedGithubReleases([
-          {
-            owner: "example",
-            repo: "widget",
-            tag: "v2.2.0",
-            name: "Widget 2.2",
-            body: "Adds CSV import validation.",
-            publishedAt: "2026-01-03T09:00:00Z",
-            htmlUrl: "https://example.test/widget/releases/v2.2.0",
-          },
-          ...services.listGithubReleases(),
-        ]);
+        if (step.releases === "empty") services.seedGithubReleases([]);
+        if (step.releases === undefined || step.releases === "new")
+          services.seedGithubReleases([
+            {
+              owner: "example",
+              repo: "widget",
+              tag: "v2.2.0",
+              name: "Widget 2.2",
+              body: "Adds CSV import validation.",
+              publishedAt: "2026-01-03T09:00:00Z",
+              htmlUrl: "https://example.test/widget/releases/v2.2.0",
+            },
+            ...services.listGithubReleases(),
+          ]);
         const scheduledFor = new Date(Date.now() - 1_000);
         await prisma.routine.update({
           where: { id: routine.id },
@@ -488,6 +518,9 @@ export async function runTrial(
       if ("slack" in step && terminal.status === "completed") {
         await waitForMessagingDelivery(prisma, runId, deadline);
       }
+      // Completion is committed before notification delivery. Drain the executor before observing.
+      if (scenario.routine && handles.awaitIdle)
+        await withinDeadline(handles.awaitIdle(), deadline);
       const snap = await rpc<{
         messages: Array<{
           role: string;
@@ -536,6 +569,27 @@ export async function runTrial(
         lastText = [lastText, clarification].filter(Boolean).join("\n");
       }
       replies.push(lastText);
+      if (scenario.routine && "wakeRoutine" in step) {
+        const messages = await prisma.message.findMany({
+          where: { runId, role: "bot" },
+          select: { blocks: true },
+        });
+        const observed = realtime.events.filter((event) => event.runId === runId);
+        routineRuns.push({
+          text: lastText,
+          unread: (
+            await prisma.thread.findUniqueOrThrow({ where: { botId }, select: { unread: true } })
+          ).unread,
+          messages: messages.map((m) => m.blocks as RoutineEvidence["messages"][number]),
+          progress: observed
+            .filter((event) => event.type === "thread.progress")
+            .map((event) => event.payload),
+          notifications: structuredClone(notifications.sent.slice(notificationOffset)),
+          calls: structuredClone(services.calls),
+          observedCompletion:
+            !realtime.failed && observed.some((event) => event.type === "run.completed"),
+        });
+      }
       if (/Eval spend cap|stopped scheduling inference|no configured pricing/i.test(lastText))
         throw new EvalFailure("incomplete", lastText);
       if (
@@ -566,6 +620,7 @@ export async function runTrial(
     const evidence: Evidence = {
       text: lastText,
       replies,
+      routineRuns,
       files,
       records: services.records,
       notes: services.notes,
@@ -585,6 +640,36 @@ export async function runTrial(
     };
     phase = "harness";
     result.criteria = scenario.grade(evidence);
+    result.artifacts = Object.fromEntries(
+      Object.entries({
+        ...files,
+        "final-response": lastText,
+        ...(scenario.history && replies.length > 1
+          ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
+          : {}),
+        ...(scenario.routine ? { "routine-observations": JSON.stringify(routineRuns) } : {}),
+        "memory-snapshot": evidence.memory,
+      }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
+    );
+    if (scenario.judge && result.criteria.every((c) => c.pass)) {
+      if (!options.judge) throw new EvalFailure("incomplete", "Semantic grading requires a judge");
+      try {
+        const judgment = await withinDeadline(
+          options.judge(
+            scenario.judge(evidence),
+            AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+          ),
+          deadline,
+        );
+        result.judgment = { pass: judgment.pass, reason: redact(judgment.reason, secrets) };
+        result.criteria.push({ id: "semantic-outcome", pass: judgment.pass });
+      } catch (error) {
+        throw new EvalFailure(
+          "incomplete",
+          `Judge unavailable: ${error instanceof Error ? error.message : "Unknown judge failure"}`,
+        );
+      }
+    }
     result.status =
       result.criteria.length > 0 && result.criteria.every((c) => c.pass) ? "passed" : "failed";
     result.category = result.status === "passed" ? null : "agent";
@@ -593,16 +678,6 @@ export async function runTrial(
       result.category = "harness";
       result.reason = handles.harnessIssues.join(" ");
     }
-    result.artifacts = Object.fromEntries(
-      Object.entries({
-        ...files,
-        "final-response": lastText,
-        ...(scenario.history && replies.length > 1
-          ? Object.fromEntries(replies.map((reply, index) => [`turn-${index + 1}-response`, reply]))
-          : {}),
-        "memory-snapshot": evidence.memory,
-      }).map(([key, value]) => [key, value === null ? null : redact(value, secrets)]),
-    );
   } catch (error) {
     result.status = "failed";
     result.category = error instanceof EvalFailure ? error.category : phase;

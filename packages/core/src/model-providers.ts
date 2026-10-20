@@ -49,16 +49,28 @@ export function clampCatalogThinkingLevel(
 }
 
 export const POPULAR_MODEL_PROVIDER_IDS = [
-  "openrouter",
+  "openai",
   "openai-codex",
   "anthropic",
-  "openai",
   "google",
+  "openrouter",
   "vercel-ai-gateway",
 ] as const;
 
 const DEFAULT_PROVIDER_COUNT = POPULAR_MODEL_PROVIDER_IDS.length;
-const POPULAR_MODEL_PROVIDER_ID_SET = new Set<string>(POPULAR_MODEL_PROVIDER_IDS);
+const POPULAR_MODEL_PROVIDER_IDS_LIST: readonly string[] = POPULAR_MODEL_PROVIDER_IDS;
+
+/** Popular providers in curated order, then the rest in their original order. */
+export function popularModelProvidersFirst<T>(
+  items: readonly T[],
+  providerId: (item: T) => string,
+): T[] {
+  const rank = (item: T) => {
+    const index = POPULAR_MODEL_PROVIDER_IDS_LIST.indexOf(providerId(item));
+    return index === -1 ? DEFAULT_PROVIDER_COUNT : index;
+  };
+  return [...items].sort((a, b) => rank(a) - rank(b));
+}
 
 /** Keep provider selection short while ensuring a deployment's current default is never hidden. */
 export function featuredModelProviders(
@@ -66,12 +78,7 @@ export function featuredModelProviders(
   selectedProvider: string,
 ): ModelCatalogEntry[] {
   const byId = new Map(providers.map((entry) => [entry.provider, entry]));
-  const ordered = [
-    ...POPULAR_MODEL_PROVIDER_IDS.map((id) => byId.get(id)).filter(
-      (entry): entry is ModelCatalogEntry => entry !== undefined,
-    ),
-    ...providers.filter((entry) => !POPULAR_MODEL_PROVIDER_ID_SET.has(entry.provider)),
-  ];
+  const ordered = popularModelProvidersFirst(providers, (entry) => entry.provider);
   const featured = ordered.slice(0, DEFAULT_PROVIDER_COUNT);
   const selected = byId.get(canonicalPiProviderId(selectedProvider));
 

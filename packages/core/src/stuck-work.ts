@@ -1,3 +1,4 @@
+import { displayName } from "./display-name.js";
 /** Remind once a queued run or a human wait has been sitting this long.
  *  Long enough that a short queue or stepping away stays quiet; short enough
  *  that a forgotten takeover is not silent until the next day. */
@@ -107,6 +108,5 @@ export function stuckWorkStoppedNotification(
 }
 
 function botLabel(name: string): string {
-  const trimmed = name.trim();
-  return trimmed || "Bot";
+  return displayName(name, "Bot");
 }

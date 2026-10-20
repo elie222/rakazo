@@ -843,8 +843,8 @@ describe("destroyBot", () => {
       const team = {
         id: "team-computer",
         homeKey: "team-workspace-1",
-        kind: "box",
-        providerRef: "box-1",
+        kind: "boat",
+        providerRef: "boat-1",
         scope: "team",
         state: "running",
       };
@@ -1355,8 +1355,8 @@ describe("destroyBot", () => {
       const team = {
         id: "team-computer",
         homeKey: "team-workspace-1",
-        kind: "box",
-        providerRef: "box-1",
+        kind: "boat",
+        providerRef: "boat-1",
         scope: "team",
         state: "running",
       };

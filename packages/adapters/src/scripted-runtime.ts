@@ -141,6 +141,15 @@ export function inferScript(
   resumeFromCheckpoint?: string,
 ): NonNullable<AgentRunRequest["script"]> {
   const lower = prompt.toLowerCase();
+  if (lower.includes("silent routine fixture")) {
+    return [
+      {
+        assistant: "Checking for changes.",
+        toolCalls: [{ name: "list_files", args: { path: "" } }],
+      },
+      { assistant: "NO_RESPONSE", complete: true },
+    ];
+  }
   if (resumeFromCheckpoint === "takeover-skipped") {
     return [
       {

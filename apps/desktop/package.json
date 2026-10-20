@@ -27,7 +27,7 @@
     "@playwright/test": "1.64.1",
     "@rakazo/adapters": "workspace:*",
     "@rakazo/ui-tokens": "workspace:*",
-    "electron": "44.9.0",
+    "electron": "44.9.1",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "7.0.2",
@@ -65,6 +65,11 @@
       "icon": "../../packages/ui-tokens/assets/Rakazo.icon",
       "category": "public.app-category.productivity",
       "x64ArchFiles": "**/node_modules/@koromix/koffi-darwin-*/darwin_*/koffi.node",
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Rakazo uses the microphone for dictation and voice calls with your bots."
+      },
       "target": [
         "dmg",
         "zip"

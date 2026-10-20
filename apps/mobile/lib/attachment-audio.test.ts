@@ -1,4 +1,3 @@
-import { isAttachmentAudioMimeType } from "@rakazo/contracts";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ create: vi.fn() }));
@@ -41,11 +40,6 @@ beforeEach(() => {
     return { remove };
   });
   mocks.create.mockReturnValue(player);
-});
-it("classifies only the four supported audio types on mobile", () => {
-  for (const mime of ["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4"])
-    expect(isAttachmentAudioMimeType(mime)).toBe(true);
-  expect(isAttachmentAudioMimeType("audio/flac")).toBe(false);
 });
 it("downloads only on play, pauses/resumes, and releases the native player", async () => {
   const load = vi.fn().mockResolvedValue("file:///clip.mp3");

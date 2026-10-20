@@ -87,6 +87,37 @@ describe("user-visible messages", () => {
     ]);
   });
 
+  it("folds peer-run file replies under their received marker", () => {
+    const messages = [
+      ...peerExchange,
+      message("file_reply", "run-peer", [
+        {
+          kind: "file",
+          artifactId: "file1",
+          mimeType: "application/pdf",
+          name: "test.pdf",
+          size: 100,
+        },
+      ]),
+      message("image_reply", "run-peer", [
+        { kind: "image", artifactId: "img1", mimeType: "image/png", name: "test.png" },
+      ]),
+    ];
+    const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+
+    expect(transcript.messages.map((item) => item.id)).toEqual([
+      "user",
+      "sent",
+      "received",
+      "answer",
+    ]);
+    expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual([
+      "reply",
+      "file_reply",
+      "image_reply",
+    ]);
+  });
+
   it("keeps peer-run user-input cards inline while folding the reply", () => {
     const messages = [
       ...peerExchange,

@@ -15,6 +15,7 @@ export function NativeActionButton({
   disabled = false,
   busy = false,
   prominence = "primary",
+  variant,
   fill,
   style,
   size = "default",
@@ -27,7 +28,16 @@ export function NativeActionButton({
   const small = size === "compact";
   const effectiveProminence = actionProminence(prominence, selected);
   const compact = prominence === "plain" || prominence === "quiet";
-  const colors = buttonColors(effectiveProminence, stretches, tokens);
+  const colors =
+    variant === "text"
+      ? { background: "transparent", label: tokens.link, border: undefined }
+      : variant === "rectangular"
+        ? {
+            background: effectiveProminence === "primary" ? tokens.primary : tokens.card,
+            label: effectiveProminence === "primary" ? tokens.primaryForeground : tokens.foreground,
+            border: effectiveProminence === "primary" ? tokens.primary : tokens.foreground,
+          }
+        : buttonColors(effectiveProminence, stretches, tokens);
   return (
     <Pressable
       accessibilityActions={accessibilityActions}
@@ -42,13 +52,20 @@ export function NativeActionButton({
         {
           flexDirection: "row",
           gap: icon && label ? 6 : undefined,
-          minHeight: small || compact ? undefined : 48,
-          borderRadius: 12,
+          minHeight:
+            variant === "rectangular"
+              ? 44
+              : variant === "text" || small || compact
+                ? undefined
+                : 48,
+          borderRadius: variant === "rectangular" ? 9 : 12,
           alignItems: "center",
           justifyContent: "center",
           alignSelf: stretches ? "stretch" : "flex-start",
-          paddingHorizontal: small ? 6 : compact ? 0 : 16,
-          paddingVertical: small ? 6 : compact ? 8 : 12,
+          paddingHorizontal:
+            variant === "rectangular" ? 16 : variant === "text" ? 0 : small ? 6 : compact ? 0 : 16,
+          paddingVertical:
+            variant === "rectangular" ? 12 : variant === "text" ? 8 : small ? 6 : compact ? 8 : 12,
           backgroundColor: colors.background,
           borderWidth: colors.border ? 1 : 0,
           borderColor: colors.border,
@@ -68,14 +85,26 @@ export function NativeActionButton({
             <Text
               style={{
                 color: colors.label,
-                fontSize: small
-                  ? 13
-                  : prominence === "quiet"
+                fontSize:
+                  variant === "rectangular"
                     ? 15
-                    : prominence === "plain"
-                      ? 17
-                      : 16,
-                fontWeight: compact ? "400" : "600",
+                    : variant === "text"
+                      ? 16
+                      : small
+                        ? 13
+                        : prominence === "quiet"
+                          ? 15
+                          : prominence === "plain"
+                            ? 17
+                            : 16,
+                fontWeight:
+                  variant === "rectangular"
+                    ? "600"
+                    : variant === "text"
+                      ? "500"
+                      : compact
+                        ? "400"
+                        : "600",
               }}
             >
               {label}

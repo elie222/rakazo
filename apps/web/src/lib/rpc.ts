@@ -1,9 +1,12 @@
 import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { ContractRouterClient } from "@orpc/contract";
-import type { AppContract } from "@rakazo/contracts";
+import type { AppContract, ProductEvent } from "@rakazo/contracts";
 import { LOCAL_SETTINGS_PAGE, LOCAL_SETTINGS_RPC } from "@rakazo/contracts";
+import { displayIdentityEvent, displayIdentityResult } from "@rakazo/core";
 import { desktopBridge } from "./desktop";
+import { i18n } from "./i18n";
+import { identityLabels } from "./identity-display";
 
 const SPACE_STORAGE_KEY = "rakazo:space-id";
 
@@ -72,19 +75,37 @@ const link = new RPCLink<RpcClientContext>({
     return fetch(request, {
       headers: withSpaceHeaders(request.headers, spaceId),
       credentials: "include",
+      // Keep cancellation attached directly to fetch rather than only a cloned Request.
+      signal: options.signal,
     });
   },
 });
 
 export type RpcClient = ContractRouterClient<AppContract, RpcClientContext>;
 
-export const rpc: RpcClient = createORPCClient(link);
+const displayLink = {
+  call: async (...args: Parameters<typeof link.call>) => {
+    const [path, input, options] = args;
+    const result = await link.call(path, input, options);
+    if (path.join("/") === "threads/subscribe") {
+      return (async function* () {
+        for await (const event of result as AsyncIterable<ProductEvent>) {
+          yield displayIdentityEvent(event, identityLabels());
+        }
+      })();
+    }
+    // Bootstrap can be prefetched before the locale catalog is ready. Its consumer projects it.
+    return i18n.locale ? displayIdentityResult(path, result, identityLabels()) : result;
+  },
+};
+
+export const rpc: RpcClient = createORPCClient(displayLink);
 
 /** Keep late async follow-up requests in the shell's original auth boundary. */
 export function createSpaceRpc(spaceId: string | null): typeof rpc {
   return createORPCClient({
     call: (path, input, options) =>
-      link.call(path, input, {
+      displayLink.call(path, input, {
         ...options,
         // A call that names its own space (e.g. renaming another space's section) keeps it.
         context: {

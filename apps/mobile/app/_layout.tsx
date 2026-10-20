@@ -305,6 +305,16 @@ export default function Layout() {
                         name="index"
                         options={{ headerShown: false, title: "Rakazo" }}
                       />
+                      <Stack.Screen
+                        name="search"
+                        options={{
+                          headerShown: false,
+                          presentation: Platform.OS === "ios" ? "formSheet" : "card",
+                          sheetAllowedDetents: [1],
+                          sheetGrabberVisible: false,
+                          sheetExpandsWhenScrolledToEdge: false,
+                        }}
+                      />
                       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
                       <Stack.Screen
                         name="(settings)"

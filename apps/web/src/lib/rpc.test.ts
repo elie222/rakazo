@@ -58,6 +58,25 @@ describe("space selection storage", () => {
 });
 
 describe("shell RPC space isolation", () => {
+  it.each([rpc, createSpaceRpc("space-a")])(
+    "passes the caller's cancellation signal directly to fetch",
+    async (client) => {
+      const controller = new AbortController();
+      const fetch = vi.fn(async (_request: Request, _init: RequestInit) =>
+        Response.json({ json: {} }),
+      );
+      vi.stubGlobal("fetch", fetch);
+
+      await client.me(undefined, { signal: controller.signal });
+
+      const signal = fetch.mock.calls[0]?.[1].signal;
+      expect(signal).toBe(controller.signal);
+      controller.abort("thread retired");
+      expect(signal?.aborted).toBe(true);
+      expect(signal?.reason).toBe("thread retired");
+    },
+  );
+
   it.each(["space-a", null])(
     "keeps async follow-up requests in the original space %s after selection changes",
     async (originalSpace) => {

@@ -1,23 +1,26 @@
 ---
 import Button from "./Button.astro";
 import Footer from "./Footer.astro";
-import GetStartedDialog from "./GetStartedDialog.astro";
+import GetStartedActions from "./GetStartedActions.astro";
 import Header from "./Header.astro";
+import { LandingBotAvatar } from "./LandingBotAvatar";
 import { ProductDemo } from "./ProductDemo";
+import FeatureIllustration from "./FeatureIllustration.astro";
 import RosterBotAvatar from "./RosterBotAvatar.astro";
-import { getHomeCopy } from "../i18n/home";
+import type { Locale } from "../i18n/locales";
+import { HOME_MODEL_PROVIDERS, getHomeCopy } from "../i18n/home";
 import {
   DEFAULT_LOCALE,
   LOCALES,
   LOCALE_HTML_LANG,
   isLocale,
   localeHomePath,
-  type Locale,
 } from "../i18n/locales";
-import { fetchGithubStars, formatStarCount } from "../github";
+import { fetchDesktopDownloads, fetchGithubStars, formatStarCount } from "../github";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { homeStructuredData } from "../structured-data";
 import {
+  APP_URL,
   GITHUB_URL,
   OPENCLAW_ALTERNATIVE_PATH,
   SELF_HOST_GUIDE_PATH,
@@ -25,11 +28,6 @@ import {
   SITE_URL,
 } from "../site";
 
-function testimonialInitials(attribution: string): string {
-  const name = attribution.startsWith("@") ? attribution.slice(1) : attribution;
-  const letters = name.replace(/[^a-z]/gi, "");
-  return (letters.slice(0, 2) || name.slice(0, 2)).toUpperCase();
-}
 
 const locale: Locale = isLocale(Astro.currentLocale)
   ? Astro.currentLocale
@@ -41,7 +39,7 @@ const availableLanguages = LOCALES.map((supportedLocale) =>
   getHomeCopy(supportedLocale).availableLanguage
 );
 const homeHref = localeHomePath(locale);
-const stars = await fetchGithubStars();
+const [stars, desktopDownloads] = await Promise.all([fetchGithubStars(), fetchDesktopDownloads()]);
 const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
@@ -71,23 +69,40 @@ const structuredData = homeStructuredData({
     <Header locale={locale} copy={copy.nav} starsLabel={starsLabel} homeHref={homeHref} />
 
     <main id="main">
-      <GetStartedDialog copy={copy.getStartedDialog} waitlist={copy.waitlist} />
+      <script is:inline>
+        (() => {
+          const ua = navigator.userAgent;
+          document.documentElement.dataset.platform =
+            /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+              ? "ios"
+              : /Android/.test(ua)
+                ? "android"
+                : /Windows/.test(ua)
+                  ? "windows"
+                  : /Linux|X11/.test(ua) && !/CrOS|aarch64|arm/i.test(ua)
+                    ? "linux"
+                    : /Macintosh/.test(ua)
+                      ? "mac"
+                      : "web";
+          // Chromium freezes the Linux UA at x86_64; the AppImage is x64-only.
+          if (document.documentElement.dataset.platform === "linux") {
+            navigator.userAgentData
+              ?.getHighEntropyValues(["architecture"])
+              .then(({ architecture }) => {
+                if (architecture !== "x86") document.documentElement.dataset.platform = "web";
+              })
+              .catch(() => undefined);
+          }
+        })();
+      </script>
 
       <section class="hero">
-        <a class="hero__pill" href="#selfhost">
-          <span class="hero__badge">{copy.hero.badge}</span>
-          <span>{copy.hero.pill}</span>
-        </a>
+        <div class="eyebrow hero__eyebrow">{copy.hero.eyebrow}</div>
         <h1>{copy.hero.heading}</h1>
         <p class="lead">
           {copy.hero.lead}
         </p>
-        <div class="hero__actions">
-          <button class="button button--primary" type="button" data-get-started-open>
-            {copy.hero.getStarted}
-          </button>
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
-        </div>
+        <GetStartedActions class="hero__actions" copy={copy.hero} downloads={desktopDownloads} />
         <div class="hero__agent-setup">
           <button
             class="setup-copy"
@@ -109,49 +124,6 @@ const structuredData = homeStructuredData({
 
       <section id="demo">
         <ProductDemo locale={locale} client:load />
-      </section>
-
-      <section id="selfhost" class="section">
-        <div class="section-intro">
-          <div class="eyebrow">{copy.selfHost.eyebrow}</div>
-          <h2 class="section-heading">{copy.selfHost.heading}</h2>
-          <p class="section-copy">
-            {copy.selfHost.copy}
-          </p>
-        </div>
-        <div class="selfhost-cta">
-          <button class="button button--primary" type="button" data-get-started-open>
-            {copy.hero.getStarted}
-          </button>
-          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
-          <Button href={SELF_HOST_GUIDE_PATH} variant="secondary">{copy.openSource.readTheDocs}</Button>
-        </div>
-        <div class="card-grid-3">
-          {
-            copy.selfHost.features.map((feature) => (
-              <article class="feature-card">
-                <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
-              </article>
-            ))
-          }
-        </div>
-      </section>
-
-      <section id="faq" class="section" aria-labelledby="faq-heading">
-        <div class="section-intro">
-          <h2 id="faq-heading" class="section-heading">{copy.faq.heading}</h2>
-        </div>
-        <div class="home-faq">
-          {
-            copy.faq.items.map((item) => (
-              <article>
-                <h3>{item.question}</h3>
-                <p>{item.answer}</p>
-              </article>
-            ))
-          }
-        </div>
       </section>
 
       <section id="roster" class="section">
@@ -181,11 +153,14 @@ const structuredData = homeStructuredData({
           <button
             class="testimonial-pause"
             type="button"
+            aria-label={copy.testimonials.pause}
+            title={copy.testimonials.pause}
             data-testimonial-pause
             data-pause-label={copy.testimonials.pause}
             data-play-label={copy.testimonials.play}
           >
-            {copy.testimonials.pause}
+            <svg class="testimonial-pause__pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="3" width="2.5" height="10" rx="1" /><rect x="9.5" y="3" width="2.5" height="10" rx="1" /></svg>
+            <svg class="testimonial-pause__play" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.4v9.2a.8.8 0 0 0 1.2.7l7.4-4.6a.8.8 0 0 0 0-1.4L6.2 2.7A.8.8 0 0 0 5 3.4Z" /></svg>
           </button>
         </div>
         <div
@@ -204,15 +179,19 @@ const structuredData = homeStructuredData({
                   inert={clone ? true : undefined}
                   data-testimonial-clone={clone ? "" : undefined}
                 >
-                  {copy.testimonials.items.map((item) => (
+                  {copy.testimonials.items.map((item, index) => (
                     <figure class="testimonial-card" lang="en">
-                      <figcaption>
-                        <span class="testimonial-avatar" aria-hidden="true">{testimonialInitials(item.attribution)}</span>
-                        <span>{item.attribution}</span>
-                      </figcaption>
                       <blockquote>
                         <p>{item.quote}</p>
                       </blockquote>
+                      <figcaption>
+                        <LandingBotAvatar
+                          color={copy.roster.bots[index % copy.roster.bots.length].color}
+                          size={32}
+                          className="testimonial-avatar"
+                        />
+                        <span>{item.attribution}</span>
+                      </figcaption>
                     </figure>
                   ))}
                 </div>
@@ -222,46 +201,70 @@ const structuredData = homeStructuredData({
         </div>
       </section>
 
+      <section id="selfhost" class="section">
+        <div class="section-intro">
+          <div class="eyebrow">{copy.selfHost.eyebrow}</div>
+          <h2 class="section-heading">{copy.selfHost.heading}</h2>
+          <p class="section-copy">
+            {copy.selfHost.copy}
+          </p>
+        </div>
+        <div class="works-with">
+          <span>{copy.selfHost.worksWith}</span>
+          {HOME_MODEL_PROVIDERS.map((name) => <span class="provider-chip">{name}</span>)}
+        </div>
+        <div class="selfhost-cta">
+          <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
+          <Button href={GITHUB_URL} variant="secondary" external>{copy.hero.viewOnGithub}</Button>
+        </div>
+        <div class="card-grid-3">
+          {
+            copy.selfHost.features.map((feature, index) => (
+              <article class="feature-card">
+                <FeatureIllustration kind={index === 0 ? "model" : index === 1 ? "schedule" : "approval"} labels={copy.selfHost.mock} />
+                <h3>{feature.title}</h3>
+                <p>{feature.body}</p>
+              </article>
+            ))
+          }
+        </div>
+      </section>
+
       <section id="open-source" class="section">
         <div class="section-intro">
-          <div class="eyebrow">{copy.openSource.eyebrow}</div>
           <h2 class="section-heading">{copy.openSource.heading}</h2>
           <p class="section-copy">
             {copy.openSource.copy}
           </p>
         </div>
-        <div class="comparison-grid">
-          <article class="comparison-card">
-            <h3>{copy.openSource.selfHostTitle}</h3>
-            <p class="comparison-meta">{copy.openSource.selfHostMeta}</p>
-            <div class="comparison-list">
-              {copy.openSource.selfHostItems.map((item) => <div>{item}</div>)}
-            </div>
-            <div class="comparison-actions">
-              <Button href={GITHUB_URL} size="sm" external>{copy.openSource.starOnGithub}</Button>
-              <Button href={SELF_HOST_GUIDE_PATH} variant="secondary" size="sm">
-                {copy.openSource.readTheDocs}
-              </Button>
-              <Button href={OPENCLAW_ALTERNATIVE_PATH} variant="secondary" size="sm">
-                {copy.openSource.openClawAlternative}
-              </Button>
-            </div>
-          </article>
-          <article class="comparison-card comparison-card--muted">
-            <div class="comparison-kicker">
-              <h3>{copy.openSource.cloudTitle}</h3>
-              <span class="comparison-badge">{copy.openSource.cloudBadge}</span>
-            </div>
-            <p class="comparison-meta">{copy.openSource.cloudMeta}</p>
-            <div class="comparison-list comparison-list--muted">
-              {copy.openSource.cloudItems.map((item) => <div>{item}</div>)}
-            </div>
-            <div class="comparison-actions">
-              <button class="button button--primary button--small" type="button" data-get-started-open>
-                {copy.openSource.getStarted}
-              </button>
-            </div>
-          </article>
+        <div class="source-links">
+          <Button href={GITHUB_URL} variant="secondary" external>{copy.openSource.starOnGithub}</Button>
+          <Button href={SELF_HOST_GUIDE_PATH} variant="secondary">{copy.openSource.readTheDocs}</Button>
+          <Button href={OPENCLAW_ALTERNATIVE_PATH} variant="secondary">{copy.openSource.openClawAlternative}</Button>
+        </div>
+        <div class="cloud-preview">
+          <span class="cloud-label">
+            {copy.openSource.cloudTitle}
+            <span class="cloud-badge">{copy.openSource.cloudBadge}</span>
+          </span>
+          <span>{copy.openSource.cloudMeta}</span>
+          <a class="cloud-link" href={APP_URL}>{copy.openSource.tryCloud} <span aria-hidden="true">→</span></a>
+        </div>
+      </section>
+
+      <section id="faq" class="section" aria-labelledby="faq-heading">
+        <div class="section-intro">
+          <h2 id="faq-heading" class="section-heading">{copy.faq.heading}</h2>
+        </div>
+        <div class="home-faq">
+          {
+            copy.faq.items.map((item) => (
+              <article>
+                <h3>{item.question}</h3>
+                <p>{item.answer}</p>
+              </article>
+            ))
+          }
         </div>
       </section>
 
@@ -269,12 +272,7 @@ const structuredData = homeStructuredData({
         <div>
           <h2>{copy.cta.heading}</h2>
           <p>{copy.cta.copy}</p>
-          <div class="cta-actions">
-            <button class="button button--primary" type="button" data-get-started-open>
-              {copy.cta.getStarted}
-            </button>
-            <Button href={GITHUB_URL} variant="secondary" external>{copy.cta.viewOnGithub}</Button>
-          </div>
+          <GetStartedActions class="cta-actions" copy={copy.hero} downloads={desktopDownloads} />
         </div>
         <div class="stats-grid">
           {
@@ -436,7 +434,8 @@ const structuredData = homeStructuredData({
     pauseButton?.addEventListener("click", () => {
       held = !held;
       pauseButton.classList.toggle("is-paused", held);
-      pauseButton.textContent = held ? playLabel : pauseLabel;
+      pauseButton.setAttribute("aria-label", held ? playLabel : pauseLabel);
+      pauseButton.title = held ? playLabel : pauseLabel;
       if (held) stop();
       else resume();
     });

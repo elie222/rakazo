@@ -56,6 +56,21 @@ through the over-the-air updates below without a new APK. A Google Play install
 is signed with Play's key, so switching from the APK to Play means uninstalling
 the APK first.
 
+## Android push
+
+For Android push notifications, create a Firebase project and register the app's
+Android package. Download `google-services.json` and, from `apps/mobile`, store
+it as an EAS file environment variable:
+
+```sh
+eas env:create --environment production --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --visibility secret
+```
+
+Keep the file and credentials out of Git. Upload an FCM V1 service account key
+with `eas credentials` under Android > Google Service Account > FCM V1. Then
+rebuild the APK: Firebase configuration is native, so an OTA update cannot add
+it to an existing binary. Builds without the variable remain supported.
+
 ## Over-the-air updates
 
 Production and preview builds include `expo-updates` and use the corresponding

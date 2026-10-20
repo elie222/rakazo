@@ -25,6 +25,8 @@ import {
   aiConsentTarget,
   aiDataUsesForProcedure,
   cancelResponseBody,
+  displayIdentityEvent,
+  displayIdentityResult,
   ensureAiDataConsent,
   isRunTerminalEvent,
   isServerUnreachable,
@@ -48,6 +50,7 @@ import { getCachedAvatarStyle, saveAvatarStyle } from "./avatar-style";
 import type { EndpointResult } from "./endpoint";
 import { defaultApiBase, normalizeApiBase } from "./endpoint";
 import { t } from "./i18n";
+import { identityLabels } from "./identity-display";
 import { resumeLiveNotifications } from "./live-notifications";
 import {
   clearSessionToken,
@@ -99,6 +102,11 @@ let spaceSelectionGeneration = 0;
 /** Counts selectSpace attempts so one still cleaning up a rollback record
  * cannot claim the selection after a newer attempt has started. */
 let spaceSelectionRequestGeneration = 0;
+
+/** Includes pending selections that have not claimed the in-memory space yet. */
+export function spaceSelectionSeq(): number {
+  return spaceSelectionRequestGeneration;
+}
 
 function bumpSpaceSelectionGeneration(): void {
   spaceSelectionGeneration += 1;
@@ -923,7 +931,7 @@ export async function rpc<T>(
         selectionId: requestSpaceId ?? null,
       });
     }
-    return parsed.json as T;
+    return displayIdentityResult(proc.split("/"), parsed.json, identityLabels()) as T;
   } catch (error) {
     if (
       requestSessionGeneration === currentSessionGeneration() &&
@@ -1215,7 +1223,8 @@ export async function subscribeThread(
       try {
         const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
         // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
-        if (parsed.json?.type && parsed.json.type !== "heartbeat") onEvent(parsed.json);
+        if (parsed.json?.type && parsed.json.type !== "heartbeat")
+          onEvent(displayIdentityEvent(parsed.json, identityLabels()));
       } catch {
         // ignore keepalives and partial frames
       }
@@ -1426,8 +1435,11 @@ export function applyMobileThreadEvent(
     const { remaining } = takeLiveMessage(prev.messages, progressMessageId(event));
     const id = String(event.payload?.messageId ?? event.id ?? `msg:${event.seq ?? 0}`);
     const known = prev.messages.find((message) => message.id === id);
+    const seq = typeof event.payload?.seq === "number" ? event.payload.seq : known?.seq;
     const next: MobileMessage = {
       id,
+      // The seq lets a send that is still on screen as "Sending…" recognize its echo.
+      ...(seq === undefined ? {} : { seq }),
       createdAt: known?.createdAt ?? event.createdAt,
       runId: event.runId ? String(event.runId) : undefined,
       role: (event.payload?.role as MobileMessage["role"]) ?? "bot",

@@ -1,5 +1,5 @@
 import { ONCE_ROUTINE_CRON } from "@rakazo/core";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelScheduleFromTool,
   commandWatchFromTool,
@@ -14,6 +14,9 @@ import {
 } from "./schedule-tools.js";
 
 describe("resolveScheduleTiming", () => {
+  beforeEach(() => vi.useFakeTimers({ now: new Date("2026-10-20T00:11:59.999Z") }));
+  afterEach(() => vi.useRealTimers());
+
   it("rejects repeating intervals under one minute", () => {
     expect(resolveScheduleTiming({ every: 2, unit: "seconds" })).toEqual({
       ok: false,

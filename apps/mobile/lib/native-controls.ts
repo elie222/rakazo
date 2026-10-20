@@ -26,6 +26,8 @@ export type NativeActionButtonProps = {
   /** Disables the control. Android shows a spinner; iOS keeps the label on a disabled native button. */
   busy?: boolean;
   prominence?: ActionProminence;
+  /** Flat recovery controls and text actions, without native glass styling. */
+  variant?: "rectangular" | "text";
   /** Small native control, without the default filled button minimum height. */
   size?: "default" | "compact";
   /** Optional latched state; false is regular, true is prominent. */

@@ -206,3 +206,45 @@ describe("resolveSignupPolicy", () => {
     ).resolves.toEqual({ enabled: false, allowlist: ["approved@example.com"] });
   });
 });
+
+describe("stored account names", () => {
+  const auth = createAuth({} as never, {
+    secret: "offline-auth-secret-at-least-32-characters",
+    baseURL: "https://api.example.test",
+    webOrigin: "https://app.example.test",
+    signupsEnabled: "true",
+    signupAllowlist: "",
+  });
+  it.each(["", " ", "__TestTok1__", "550e8400-e29b-41d4-a716-446655440000"])(
+    "normalizes unusable names on creation and updates: %s",
+    async (name) => {
+      const hooks = auth.options.databaseHooks!.user!;
+      expect(
+        await hooks.create!.before!({ name, email: "demo@example.com" } as never),
+      ).toMatchObject({ data: { name: "" } });
+      expect(await hooks.update!.before!({ name })).toMatchObject({ data: { name: "" } });
+    },
+  );
+  it("preserves real names and does not change names during unrelated updates", async () => {
+    const hook = auth.options.databaseHooks!.user!.update!.before!;
+    expect(await hook({ name: " 李雷 " })).toMatchObject({ data: { name: "李雷" } });
+    const result = await hook({ emailVerified: true });
+    expect(result).toEqual({ data: { emailVerified: true } });
+  });
+});
+
+it("preserves readable numbered account names on writes", async () => {
+  const auth = createAuth({} as never, {
+    secret: "offline-auth-secret-at-least-32-characters",
+    baseURL: "https://api.example.test",
+    webOrigin: "https://app.example.test",
+    signupsEnabled: "true",
+    signupAllowlist: "",
+  });
+  expect(
+    await auth.options.databaseHooks!.user!.create!.before!({
+      name: "CustomerSupportBot2026",
+      email: "demo@example.com",
+    } as never),
+  ).toMatchObject({ data: { name: "CustomerSupportBot2026" } });
+});

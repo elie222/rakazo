@@ -53,6 +53,7 @@ import {
   normalizeServerUrl,
   parseSetupInput,
   probeFailureMessage,
+  RAKAZO_CLOUD_URL,
   readProbeJson,
   resolveStartupTarget,
   safeExternalUrl,
@@ -732,7 +733,17 @@ function installApplicationMenu() {
             ],
           },
           { role: "editMenu" },
-          { role: "windowMenu" },
+          {
+            label: "Window",
+            role: "window",
+            submenu: [
+              { role: "minimize" },
+              { role: "zoom" },
+              { role: "close" },
+              { type: "separator" },
+              { role: "front" },
+            ],
+          },
         ]
       : [
           {
@@ -1229,6 +1240,7 @@ app.whenReady().then(async () => {
     if (!fromSetupWindow(event)) return null;
     return {
       defaultLocalUrl: localStack.webUrl(),
+      cloudUrl: RAKAZO_CLOUD_URL,
       saved: currentSetup,
       error: setupError ?? undefined,
     };

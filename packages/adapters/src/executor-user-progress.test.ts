@@ -1,4 +1,4 @@
-import type { AgentRunRequest } from "@rakazo/adapter-kit";
+import type { AgentRunRequest, AgentRuntimeEvent } from "@rakazo/adapter-kit";
 import type { MessageBlock } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import { loadBotMessageContext, returnBotMessageOutcome } from "./bot-messages.js";
@@ -36,6 +36,7 @@ async function runTurn(
     doneText?: string;
     splitText?: boolean;
     priorProgressText?: string;
+    runtimeEvents?: AgentRuntimeEvent[];
   } = {},
 ) {
   vi.mocked(loadBotMessageContext).mockResolvedValue({
@@ -60,6 +61,10 @@ async function runTurn(
     leaseFence: 0,
   };
   const runtimeRun = vi.fn(async function* (_request: AgentRunRequest) {
+    if (options.runtimeEvents) {
+      yield* options.runtimeEvents;
+      return;
+    }
     const narrations = Array.isArray(narration) ? narration : [narration];
     for (const [index, text] of narrations.entries()) {
       for (const chunk of options.splitText ? [...text] : [text]) {
@@ -425,5 +430,48 @@ describe("text from separate assistant turns", () => {
       })
       .join("");
     expect(text).toBe(`${narration}\n\n${finalText}`);
+  });
+});
+
+describe("text from assistant messages with no tool call between them", () => {
+  it("keeps a paragraph break and leaves each message's deltas as streamed", async () => {
+    const { finalizeRun, append } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "Do" },
+        { type: "text", text: "ne." },
+        { type: "turn" },
+        { type: "text", text: "That" },
+        { type: "text", text: "'s it." },
+        { type: "done", text: "Done.That's it." },
+      ],
+    });
+    const saved = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+    const streamed = append.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === "thread.progress")
+      .map((event) => {
+        const payload = event.payload as { text?: string; delta?: string };
+        return payload.text ?? payload.delta ?? "";
+      })
+      .join("");
+    expect(saved).toBe("Done.\n\nThat's it.");
+    expect(streamed).toBe("Done.\n\nThat's it.");
+  });
+
+  it("adds nothing when the next message already starts on a new line", async () => {
+    const { finalizeRun } = await runTurn("", false, undefined, [], "fyi", {
+      runtimeEvents: [
+        { type: "text", text: "Done." },
+        { type: "turn" },
+        { type: "text", text: "\nThat's it." },
+        { type: "done", text: "Done.\nThat's it." },
+      ],
+    });
+    const saved = finalizeRun.mock.calls[0]![0].blocks.filter((block) => block.kind === "text")
+      .map((block) => block.text)
+      .join("");
+    expect(saved).toBe("Done.\nThat's it.");
   });
 });

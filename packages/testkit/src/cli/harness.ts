@@ -22,8 +22,8 @@ const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 if (Number(integration) + Number(e2e) !== 1) {
   throw new Error("Pass exactly one of --integration or --e2e");
 }
-if (!["fake", "e2b", "daytona", "box"].includes(sandboxProvider)) {
-  throw new Error('Sandbox must be "fake", "e2b", "daytona", or "box"');
+if (!["fake", "e2b", "daytona", "boat"].includes(sandboxProvider)) {
+  throw new Error('Sandbox must be "fake", "e2b", "daytona", or "boat"');
 }
 if (integration && sandboxProvider !== "fake") {
   throw new Error("Integration tests only support the fake sandbox");
@@ -37,8 +37,8 @@ if (sandboxProvider === "e2b" && !process.env.E2B_API_KEY) {
 if (sandboxProvider === "daytona" && !process.env.DAYTONA_API_KEY) {
   throw new Error("DAYTONA_API_KEY is required when --sandbox=daytona");
 }
-if (sandboxProvider === "box" && !process.env.BOX_API_KEY) {
-  throw new Error("BOX_API_KEY is required when --sandbox=box");
+if (sandboxProvider === "boat" && !process.env.BOAT_API_KEY) {
+  throw new Error("BOAT_API_KEY is required when --sandbox=boat");
 }
 
 async function main() {
@@ -103,6 +103,7 @@ async function main() {
         "packages/testkit/src/computer-approval.postgres.test.ts",
         "packages/testkit/src/eval-history.postgres.test.ts",
         "packages/testkit/src/eval-customer-support.postgres.test.ts",
+        "packages/testkit/src/eval-silence.postgres.test.ts",
         "packages/testkit/src/journeys.test.ts",
         "packages/testkit/src/authorization.test.ts",
         "packages/testkit/src/attachments.test.ts",
@@ -273,7 +274,7 @@ async function main() {
               {
                 id: computer.providerRef!,
                 botId: computer.homeKey,
-                kind: computer.kind as "e2b" | "daytona" | "box",
+                kind: computer.kind as "e2b" | "daytona" | "boat",
                 providerRef: computer.providerRef!,
               },
               {
@@ -305,7 +306,7 @@ async function main() {
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
 
 async function managedComputers(handles: AppHandles) {
-  if (!["e2b", "daytona", "box"].includes(sandboxProvider)) return [];
+  if (!["e2b", "daytona", "boat"].includes(sandboxProvider)) return [];
   return handles.prisma.computer.findMany({
     where: { providerRef: { not: null } },
     select: { homeKey: true, kind: true, providerRef: true, userId: true, spaceId: true },

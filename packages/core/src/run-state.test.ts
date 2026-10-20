@@ -3,11 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
   assertTransition,
   canTransition,
+  isActive,
   isBackgroundRunTrigger,
   isConversationalRun,
+  QUEUE_HOLDING_RUN_STATUSES,
 } from "./run-state.js";
 
 describe("run state machine", () => {
+  it("keeps paused cards active without holding admission, while takeover still holds it", () => {
+    expect(isActive("waiting_input")).toBe(true);
+    expect(QUEUE_HOLDING_RUN_STATUSES).toEqual(["queued", "leased", "running", "waiting_takeover"]);
+  });
+
   it("allows takeover resume onto a lease", () => {
     expect(canTransition("waiting_takeover", "leased")).toBe(true);
     expect(canTransition("waiting_takeover", "running")).toBe(false);

@@ -42,6 +42,21 @@ export function createThreadHeaderStyles() {
       borderColor: tokens.border,
       backgroundColor: tokens.card,
     },
+    headerFade: {
+      position: "absolute",
+      top: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: tokens.background,
+    },
+    headerFadeEdge: {
+      position: "absolute",
+      top: "100%",
+      left: 0,
+      right: 0,
+      height: 16,
+      experimental_backgroundImage: `linear-gradient(to bottom, ${tokens.background} 0%, ${transparentBackground} 100%)`,
+    },
     composerFade: {
       position: "absolute",
       bottom: "100%",

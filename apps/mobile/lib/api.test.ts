@@ -36,6 +36,7 @@ import {
   signIn,
   signOut,
   signUp,
+  spaceSelectionSeq,
   subscribeServerReachable,
   subscribeSessionRejected,
   subscribeThread,
@@ -2014,14 +2015,19 @@ describe("mobile API authentication", () => {
     await loadApiBase();
     expect(selectedSpaceId()).toBe("space-current");
 
+    const previousSeq = spaceSelectionSeq();
     const pendingOlder = selectSpace("space-older");
+    expect(spaceSelectionSeq()).toBe(previousSeq + 1);
+    expect(selectedSpaceId()).toBe("space-current");
     await vi.waitFor(() => expect(heldOlderCleanup).toBe(true));
     await expect(selectSpace("space-newer")).resolves.toBe(true);
+    expect(spaceSelectionSeq()).toBe(previousSeq + 2);
     expect(selectedSpaceId()).toBe("space-newer");
     expect(storage.get("rakazo.space_id")).toBe("space-newer");
 
     releaseOlderCleanup();
     await expect(pendingOlder).resolves.toBe(false);
+    expect(spaceSelectionSeq()).toBe(previousSeq + 2);
     expect(selectedSpaceId()).toBe("space-newer");
     expect(storage.get("rakazo.space_id")).toBe("space-newer");
   });

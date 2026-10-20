@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeRunError } from "./run-error.js";
 
 describe("normalizeRunError", () => {
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-10-01T00:00:00Z"));
+  });
   it("summarizes the weekly OpenRouter key limit without exposing diagnostics", () => {
     const details =
       '403: {"message":"Key limit exceeded (weekly limit). Manage it using https://openrouter.ai/workspaces/default/keys/<long hash> $20.05 of $20.00 used; resets 2026-10-12T00:00:00.000Z.","code":403,"metadata":{"limit_source":"openrouter_key_limit"}}';
-    expect(normalizeRunError(details)).toEqual({
+    expect(normalizeRunError(details)).toMatchObject({
       summary: "Your OpenRouter key hit its weekly limit. Resets Oct 12.",
       details,
     });
@@ -70,7 +73,7 @@ describe("normalizeRunError", () => {
     ],
     ["", "The model provider returned an error."],
   ])("normalizes %s", (details, summary) => {
-    expect(normalizeRunError(details)).toEqual({ summary, details });
+    expect(normalizeRunError(details)).toMatchObject({ summary, details });
   });
 
   it.each([
@@ -87,7 +90,7 @@ describe("normalizeRunError", () => {
     "The tools finished, but the model did not write a final answer. Rephrase the request and try again.",
     "Stopped. This stayed queued without starting.",
   ])("preserves app-authored recovery advice: %s", (details) => {
-    expect(normalizeRunError(details)).toEqual({ summary: details, details });
+    expect(normalizeRunError(details)).toMatchObject({ summary: details, details });
   });
 
   it("keeps quota exhaustion distinct from 429 rate limits", () => {
@@ -132,4 +135,90 @@ describe("normalizeRunError", () => {
       normalizeRunError('403: {"message":"Key limit exceeded; resets not-a-date"}').summary,
     ).toBe("Your model provider key hit its limit.");
   });
+});
+
+it.each(["2026-10-19T00:00:00Z", "2026-10-20T00:00:00Z", "not-a-date"])(
+  "does not promise a past or invalid reset: %s",
+  (reset) => {
+    expect(
+      normalizeRunError(
+        `403: {"message":"OpenRouter weekly key limit exceeded", "metadata":{"reset_at":"${reset}"}}`,
+        undefined,
+        "en",
+        Date.parse("2026-10-20T00:00:00Z"),
+      ).summary,
+    ).toBe("Your OpenRouter key hit its weekly limit.");
+  },
+);
+it("keeps a future reset and identifies recovery", () => {
+  expect(
+    normalizeRunError(
+      '403: {"message":"OpenRouter weekly key limit exceeded; resets 2026-10-21T00:00:00Z"}',
+      undefined,
+      "en",
+      Date.parse("2026-10-20T00:00:00Z"),
+    ),
+  ).toMatchObject({
+    summary: "Your OpenRouter key hit its weekly limit. Resets Oct 21.",
+    recovery: "connection",
+  });
+  expect(normalizeRunError('401: {"message":"Invalid API key"}').recovery).toBe("connection");
+  expect(normalizeRunError('429: {"message":"Too many requests"}').recovery).toBe("connection");
+  expect(normalizeRunError('500: {"message":"Internal error"}').recovery).toBeUndefined();
+});
+
+it.each([
+  "Daily request limit exceeded",
+  "Weekly request limit exceeded",
+  "Per-minute quota exceeded",
+])("keeps request quotas as rate limits: %s", (message) => {
+  expect(normalizeRunError(`429: ${JSON.stringify({ message })}`)).toMatchObject({
+    summary: "Your model provider is rate limiting requests. Try again shortly.",
+    recovery: "connection",
+  });
+});
+it.each(["Insufficient credit balance", "Monthly spending limit exceeded"])(
+  "keeps financial 429 failures as quota errors: %s",
+  (message) => {
+    expect(normalizeRunError(`429: ${JSON.stringify({ message })}`).summary).not.toContain(
+      "rate limiting",
+    );
+  },
+);
+
+it.each(["2026-02-29", "2026-02-30", "2026-04-31", "2026-02-30T12:00:00Z"])(
+  "does not roll an invalid calendar reset forward: %s",
+  (reset) => {
+    expect(
+      normalizeRunError(
+        `403: ${JSON.stringify({ message: "OpenRouter weekly key limit exceeded", metadata: { reset_at: reset } })}`,
+        undefined,
+        "en",
+        Date.parse("2026-01-01T00:00:00Z"),
+      ).summary,
+    ).toBe("Your OpenRouter key hit its weekly limit.");
+  },
+);
+it("retains a valid future leap-day reset", () => {
+  expect(
+    normalizeRunError(
+      '403: {"message":"OpenRouter weekly key limit exceeded; resets 2028-02-29"}',
+      undefined,
+      "en",
+      Date.parse("2028-02-28T00:00:00Z"),
+    ).summary,
+  ).toBe("Your OpenRouter key hit its weekly limit. Resets Feb 29.");
+});
+
+it.each([
+  ["403: OpenRouter weekly key limit exceeded", "key", "weekly"],
+  ["402: Monthly spending limit exceeded", "spending", "monthly"],
+  ["429: insufficient_quota", "credit", "none"],
+  ["429: Too many requests", "rate", undefined],
+  ["401: Invalid API key", "auth", undefined],
+  ["404: Model unavailable", "model", undefined],
+])("exposes shared cause metadata for %s", (details, kind, period) => {
+  const error = normalizeRunError(details);
+  expect(error.kind).toBe(kind);
+  expect(error.period).toBe(period);
 });

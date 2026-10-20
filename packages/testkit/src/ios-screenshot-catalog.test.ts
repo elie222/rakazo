@@ -17,6 +17,7 @@ describe("iOS screenshot catalog", () => {
       "onboarding",
       "inbox",
       "thread",
+      "thread-errors",
       "search",
       "compose",
       "settings",

@@ -562,7 +562,9 @@ it.each([true, false])(
       ),
     ).toMatchObject({
       reasoning,
-      thinkingLevels: reasoning ? ["off", "minimal", "low", "medium", "high"] : ["off"],
+      thinkingLevels: reasoning
+        ? ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+        : ["off"],
     });
   },
 );

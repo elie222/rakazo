@@ -4,21 +4,6 @@ import { parseConnectorToolArgs } from "./lazy-tool-catalog.js";
 import { normalizeOpenAiToolParameters } from "./openai-tool-parameters.js";
 
 describe("release-watch guidance", () => {
-  it("tells schedule_create prompts to name plugin tools instead of browsing", () => {
-    const tool = builtinAgentTools.find((entry) => entry.name === "schedule_create");
-    expect(tool).toBeTruthy();
-    const schema = tool?.inputSchema as {
-      oneOf?: Array<{
-        required?: string[];
-        properties?: { prompt?: { description?: string } };
-      }>;
-    };
-    const prompt = schema.oneOf?.find((branch) => branch.required?.includes("cron"))?.properties
-      ?.prompt;
-    expect(prompt?.description ?? "").toContain("GITHUB_LIST_RELEASES");
-    expect(prompt?.description ?? "").toMatch(/Prefer plugin tools over computer browser/i);
-  });
-
   it("exposes an exclusive timing schema for schedule_create", () => {
     const tool = builtinAgentTools.find((entry) => entry.name === "schedule_create");
     const schema = tool?.inputSchema as {

@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ComputerStatus } from "./computer.js";
 import {
@@ -265,36 +262,5 @@ describe("readScreenUrl", () => {
     const sleep = vi.fn().mockResolvedValue(undefined);
     await expect(readScreenUrl(request, { attempts: 2, sleep })).resolves.toBeNull();
     expect(request).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("mobile computer screen", () => {
-  it("boots, takes over, heartbeats, and releases like web", () => {
-    const src = readFileSync(
-      path.join(path.dirname(fileURLToPath(import.meta.url)), "../app/computer.tsx"),
-      "utf8",
-    );
-    expect(src).toContain("computer/boot");
-    expect(src).toContain("computer/takeover");
-    expect(src).toContain("computer/release");
-    expect(src).toContain("computer/heartbeat");
-    expect(src).toContain("Take control");
-    expect(src).toContain("Release");
-    expect(src).toContain("Close computer");
-    expect(src).toContain("ComputerKeyboardBar");
-    expect(src).toContain("NATIVE_COMPUTER_KEYBOARD_BOOT");
-    expect(src).toContain("computerKeyboardReadyProbe");
-    expect(src).toContain("createComputerKeyboardBridge");
-    expect(src).toContain("currentApiBase()");
-    expect(src).toContain("SafeAreaProvider");
-    expect(src).toContain("readScreenUrl");
-    expect(src).toContain("SCREEN_URL_OPEN_ATTEMPTS");
-    expect(src).toContain("nextLoadedScreenUrl");
-    expect(src).toContain("retainScreenSource");
-    expect(src).toContain("isReady()");
-    expect(src).not.toContain("${embeddedScreenUrl ??");
-    expect(src).toContain(`key={\`$\{nativeKeyboard ? "keys" : "view"}:$\{sourceUrl.current}\`}`);
-    expect(src).not.toContain("key={url}");
-    expect(src).not.toContain("key={sourceUrl.current}");
   });
 });

@@ -276,7 +276,7 @@ function watchThread(botId: string) {
     loadHead: () => rpc.threads.head({ botId }, { signal: controller.signal }),
     refresh: load,
     currentSnapshot: () => thread,
-    subscribe: (cursor) => rpc.threads.subscribe({ botId, cursor }, { signal: controller.signal }),
+    subscribe: (cursor, signal) => rpc.threads.subscribe({ botId, cursor }, { signal }),
     applyEvent: (event) => {
       if (isThreadSnapshotEvent(event)) commit(reduceThreadSnapshot(thread, event));
     },

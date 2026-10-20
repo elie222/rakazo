@@ -1,15 +1,22 @@
-import { type Model, Type } from "@earendil-works/pi-ai";
+import {
+  clampThinkingLevel,
+  getSupportedThinkingLevels,
+  type Model,
+  Type,
+} from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
-import { registerOpenAiCompatibleRuntime } from "./pi-openai-compatible-provider.js";
+import {
+  openAiCompatibleModel,
+  registerOpenAiCompatibleRuntime,
+} from "./pi-openai-compatible-provider.js";
 
 const modelId = "arbitrary-model";
 const baseUrl = "http://127.0.0.1:8090/v1";
 
 afterEach(() => {
   vi.unstubAllEnvs();
-  vi.unstubAllGlobals();
 });
 
 it("keeps the existing keyless connection format", () => {
@@ -62,8 +69,21 @@ function fixtureResponse(): Response {
 
 describe("OpenAI-compatible standard thinking transport", () => {
   const provider = "openai-compatible";
+
+  it.each([true, false])("exposes thinking levels for reasoning support %s", (reasoning) => {
+    const model = openAiCompatibleModel(modelId, baseUrl, reasoning);
+    expect(getSupportedThinkingLevels(model)).toEqual(
+      reasoning ? ["off", "minimal", "low", "medium", "high", "xhigh", "max"] : ["off"],
+    );
+  });
+
+  it.each(["xhigh", "max"] as const)("preserves %s only when reasoning is enabled", (level) => {
+    expect(clampThinkingLevel(openAiCompatibleModel(modelId, baseUrl, true), level)).toBe(level);
+    expect(clampThinkingLevel(openAiCompatibleModel(modelId, baseUrl), level)).toBe("off");
+  });
+
   async function capture(
-    reasoning?: "minimal" | "low" | "medium" | "high",
+    reasoning?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max",
     supportsThinking = true,
     maxTokens?: number,
   ) {
@@ -73,7 +93,6 @@ describe("OpenAI-compatible standard thinking transport", () => {
       payload = JSON.parse(String(init?.body)) as Payload;
       return fixtureResponse();
     });
-    vi.stubGlobal("fetch", mockFetch);
     const models = registerOpenAiCompatibleRuntime(builtinModels(), {
       modelId,
       baseUrl,
@@ -104,7 +123,7 @@ describe("OpenAI-compatible standard thinking transport", () => {
     return { payload: payload!, result, events };
   }
 
-  it.each(["minimal", "low", "medium", "high"] as const)(
+  it.each(["minimal", "low", "medium", "high", "xhigh", "max"] as const)(
     "sends standard effort %s unchanged",
     async (level) => {
       const { payload } = await capture(level);
@@ -124,12 +143,15 @@ describe("OpenAI-compatible standard thinking transport", () => {
     expect(payload.chat_template_kwargs).toBeUndefined();
   });
 
-  it("does not send reasoning fields on a connection without support, even for the same model ID", async () => {
-    await capture("high");
-    const { payload } = await capture("high", false);
-    expect(payload.reasoning_effort).toBeUndefined();
-    expect(payload.chat_template_kwargs).toBeUndefined();
-  });
+  it.each([undefined, "high", "xhigh", "max"] as const)(
+    "does not send reasoning fields without support for %s, even for the same model ID",
+    async (level) => {
+      await capture(level);
+      const { payload } = await capture(level, false);
+      expect(payload).not.toHaveProperty("reasoning_effort");
+      expect(payload.chat_template_kwargs).toBeUndefined();
+    },
+  );
 
   it("streams system-role requests, reasoning, text and fragmented tool arguments", async () => {
     const { payload, result, events } = await capture("medium");

@@ -1,4 +1,27 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Resets: "重置时间",
+  Limit: "限额",
+  "Provider message": "提供商消息",
+  Status: "状态",
+  "Set your own key": "设置自己的密钥",
+  "Add your own key or pick another model.": "添加自己的密钥或选择其他模型。",
+  "Choose another model to keep chatting.": "选择其他模型以继续聊天。",
+  "Resets {date}.": "将于 {date} 重置。",
+
+  "Model provider": "模型提供商",
+  "Change model": "更换模型",
+  "Technical details": "技术详情",
+  Member: "成员",
+  Owner: "所有者",
+  Chats: "聊天",
+  "Message from another agent": "来自其他智能体的消息",
+  "Another agent": "其他智能体",
+  "Update from {name}: {text}": "来自 {name} 的更新：{text}",
+  "Update from {name}": "来自 {name} 的更新",
+  "{name} asked: {text}": "{name} 问：{text}",
+  "{name} asked": "{name} 问",
+  Close: "关闭",
+  Link: "链接",
   "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
     "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。",
   "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",
@@ -838,4 +861,28 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Try again": "重试",
   "Your session expired": "会话已过期",
   "The server had a problem": "服务器出现问题",
+  "The bot couldn't reply because its provider's daily limit was reached.":
+    "机器人无法回复，因为已达到其提供商的每日限额。",
+  "The bot couldn't reply because its provider's weekly limit was reached.":
+    "机器人无法回复，因为已达到其提供商的每周限额。",
+  "The bot couldn't reply because its provider's monthly limit was reached.":
+    "机器人无法回复，因为已达到其提供商的每月限额。",
+  "The bot couldn't reply because its provider's usage limit was reached.":
+    "机器人无法回复，因为已达到其提供商的使用限额。",
+  "The provider received too many requests to answer this bot.":
+    "提供商收到的请求过多，无法为此机器人提供回复。",
+  "The provider refused the key this bot used for its reply.":
+    "提供商拒绝了此机器人用于回复的密钥。",
+  "The provider couldn't serve the model selected for this bot.":
+    "提供商无法提供为此机器人选择的模型。",
+  "The bot couldn't finish its reply. Technical details includes the reported error.":
+    "机器人未能完成回复。技术详情包含报告的错误。",
+  "This bot's reply stopped at its key's daily limit. Your own key has its own limits.":
+    "此机器人的回复因其密钥达到每日限额而停止。你自己的密钥有独立的限额。",
+  "This bot's reply stopped at its key's weekly limit. Your own key has its own limits.":
+    "此机器人的回复因其密钥达到每周限额而停止。你自己的密钥有独立的限额。",
+  "This bot's reply stopped at its key's monthly limit. Your own key has its own limits.":
+    "此机器人的回复因其密钥达到每月限额而停止。你自己的密钥有独立的限额。",
+  "This bot's reply stopped at its key's usage limit. Your own key has its own limits.":
+    "此机器人的回复因其密钥达到使用限额而停止。你自己的密钥有独立的限额。",
 };

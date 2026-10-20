@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  BoxSandboxProvider,
+  BoatSandboxProvider,
   CreateOSSandboxProvider,
   E2BSandboxProvider,
   PiAgentRuntime,
@@ -16,13 +16,13 @@ import { sessionCookieHeader } from "./index.js";
 if (process.env.VERIFY_PROVIDERS) loadRootEnv({ allowInTests: true });
 
 const liveE2b = Boolean(process.env.VERIFY_PROVIDERS && process.env.E2B_API_KEY);
-const liveBox = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOX_API_KEY);
+const liveBoat = Boolean(process.env.VERIFY_PROVIDERS && process.env.BOAT_API_KEY);
 const liveCreateos = Boolean(process.env.VERIFY_PROVIDERS && process.env.CREATEOS_SANDBOX_API_KEY);
 const livePi = Boolean(process.env.VERIFY_PROVIDERS && process.env.OPENROUTER_API_KEY);
 const livePiApp = Boolean(livePi && process.env.DATABASE_URL);
 
 const describeE2b = liveE2b ? describe : describe.skip;
-const describeBox = liveBox ? describe : describe.skip;
+const describeBoat = liveBoat ? describe : describe.skip;
 const describeCreateos = liveCreateos ? describe : describe.skip;
 const describePi = livePi ? describe : describe.skip;
 const describePiApp = livePiApp ? describe : describe.skip;
@@ -55,29 +55,29 @@ describeE2b("live E2B canary", () => {
   }, 120_000);
 });
 
-describeBox("live Box canary", () => {
+describeBoat("live Boat canary", () => {
   it("provisions a desktop, observes it, preserves a file across stop/resume, and destroys it", async () => {
-    const sandbox = new BoxSandboxProvider({
-      apiKey: process.env.BOX_API_KEY!,
-      apiUrl: process.env.BOX_API_URL ?? process.env.BOX_BASE_URL,
+    const sandbox = new BoatSandboxProvider({
+      apiKey: process.env.BOAT_API_KEY!,
+      apiUrl: process.env.BOAT_API_URL,
     });
     const ctx = {
-      operationId: "box-canary",
-      traceId: "box-canary",
-      spaceId: "box-canary",
-      userId: "box-canary",
+      operationId: "boat-canary",
+      traceId: "boat-canary",
+      spaceId: "boat-canary",
+      userId: "boat-canary",
       signal: new AbortController().signal,
     };
-    const request = { botId: "box-canary", homePath: "/home/user/rakazo-home" };
+    const request = { botId: "boat-canary", homePath: "/home/user/rakazo-home" };
     let computer = await sandbox.provision(request, ctx);
     try {
       await sandbox.prepare(computer, ctx);
       let stdout = "";
-      for await (const event of sandbox.execute(computer, { argv: ["echo", "box-ok"] }, ctx)) {
+      for await (const event of sandbox.execute(computer, { argv: ["echo", "boat-ok"] }, ctx)) {
         if (event.type === "stdout") stdout += event.data;
         if (event.type === "exit") expect(event.code).toBe(0);
       }
-      expect(stdout).toContain("box-ok");
+      expect(stdout).toContain("boat-ok");
       await sandbox.writeFile(
         computer,
         { path: "canary.txt", content: new TextEncoder().encode("preserved") },

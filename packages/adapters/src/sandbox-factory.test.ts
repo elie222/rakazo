@@ -27,8 +27,8 @@ describe("createSandboxProvider", () => {
   it("returns provider-specific managed sandbox emulators", () => {
     expect(createSandboxProvider("e2b-emulator", {}).describe().id).toBe("e2b-emulator");
     expect(createSandboxProvider("daytona-emulator", {}).describe().id).toBe("daytona-emulator");
-    expect(createSandboxProvider("box-emulator", {}).describe()).toMatchObject({
-      id: "box-emulator",
+    expect(createSandboxProvider("boat-emulator", {}).describe()).toMatchObject({
+      id: "boat-emulator",
       capabilities: { multiScreen: true },
     });
   });
@@ -37,7 +37,7 @@ describe("createSandboxProvider", () => {
     expect(createSandboxProvider("e2b", {}).describe().id).toBe("none");
     expect(createSandboxProvider("daytona", {}).describe().id).toBe("none");
     expect(createSandboxProvider("createos", {}).describe().id).toBe("none");
-    expect(createSandboxProvider("box", {}).describe().id).toBe("none");
+    expect(createSandboxProvider("boat", {}).describe().id).toBe("none");
     await expect(
       createSandboxProvider("e2b", {}).provision({ botId: "b", homePath: "/tmp" }, ctx),
     ).rejects.toThrow(/E2B_API_KEY/);
@@ -47,12 +47,14 @@ describe("createSandboxProvider", () => {
     expect(
       createSandboxProvider("createos", { createosApiKey: "test-createos-key" }).describe().id,
     ).toBe("createos");
-    expect(createSandboxProvider("box", { boxApiKey: "test-box-key" }).describe().id).toBe("box");
+    expect(createSandboxProvider("boat", { boatApiKey: "test-boat-key" }).describe().id).toBe(
+      "boat",
+    );
   });
 
   it("throws on unknown provider", () => {
     expect(() => createSandboxProvider("bogus", {})).toThrow(
-      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | box | railway | e2b-emulator | daytona-emulator | box-emulator | desktop | fake.',
+      'Unknown SANDBOX_PROVIDER "bogus". Use none | docker | e2b | daytona | createos | boat | railway | e2b-emulator | daytona-emulator | boat-emulator | desktop | fake.',
     );
   });
 });

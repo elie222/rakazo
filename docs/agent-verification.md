@@ -14,7 +14,7 @@ model can demonstrate that it chooses a useful action for a natural request.
 | Computer replay | Pi, browser tool handlers, page state | Model endpoint, browser and sandbox | `pnpm test` |
 | Docker computer replay | Pi, supervisor, Chromium, page helper, downloads and files | Model endpoint, local fixture website | `pnpm test:computer-replay` |
 | Agent quality | Product API, Postgres, executor, Pi, real model | Sandbox and connected services | `pnpm test:evals --live ...` |
-| Vision acceptance | Product API, Pi, real vision model, Box or E2B desktop | Fixture website | `pnpm test:computer` |
+| Vision acceptance | Product API, Pi, real vision model, Boat or E2B desktop | Fixture website | `pnpm test:computer` |
 
 Default and PR tests never require paid inference. Nightly runs only the web
 tests with emulated providers. Docker topology and browser replay have a manual
@@ -88,14 +88,14 @@ immediate offline replay produce the exact CSV and exactly one export. Failed
 attempts print only the sanitized decisions and do not publish a fixture.
 
 This records semantic browser actions, not coordinate or vision decisions.
-Box currently lacks the page-browser capability used here, so this capture uses
-local Docker. Box remains the default for the separate screenshot/coordinate
+Boat currently lacks the page-browser capability used here, so this capture uses
+local Docker. Boat remains the default for the separate screenshot/coordinate
 acceptance journey. One successful captured run demonstrates replay coverage;
 it does not measure the live model's reliability.
 
 ## Live computer acceptance
 
-Run a vision-capable model through OpenRouter against a real Box desktop:
+Run a vision-capable model through OpenRouter against a real Boat desktop:
 
 ```bash
 COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer
@@ -103,18 +103,17 @@ COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer
 COMPUTER_E2E_MODEL=openai/gpt-5.6-luna pnpm test:computer --sandbox e2b
 ```
 
-Box is the default regardless of the application's sandbox setting. This opt-in
+Boat is the default regardless of the application's sandbox setting. This opt-in
 test requires `OPENROUTER_API_KEY` and the selected sandbox's credential
-(`BOX_API_KEY` or `E2B_API_KEY`) and incurs inference and sandbox usage.
+(`BOAT_API_KEY` or `E2B_API_KEY`) and incurs inference and sandbox usage.
 It checks visual observation, a real browser click,
 terminal access and exact file contents. It then destroys the sandbox outside
 the app and calls `computer/recover`, requiring a new sandbox with the saved
 file restored. `computer/boot` returns the stored running state and does not
 request recovery from an externally deleted sandbox.
 
-Both providers run the same assertions. This journey does not cover PTY sessions
-or multiple screens, which Box does not support. Provider conformance tests
-remain separate. Live runs retain error logs to diagnose provider failures.
+Both providers run the same assertions. This journey does not cover multiple screens, or PTY sessions, which Boat does
+not support. Provider conformance tests remain separate. Live runs retain error logs to diagnose provider failures.
 
 ## Real-model quality
 
@@ -169,7 +168,7 @@ shell commands instead of pretending to run them. If outcome checks fail after
 that limitation is encountered, the trial is attributed to the harness. Confirm
 shell-dependent outcomes in the real Docker or live computer lane. Release monitoring
 checks a daily schedule and a newly introduced release; unchanged-release
-notification deduplication is not covered by this suite.
+notification deduplication is covered separately by the silence suite.
 
 Grading reads files, service records, recorded effects and persisted product
 state. A model's claim of completion is not sufficient. Cases do not receive
@@ -190,9 +189,57 @@ The injection case checks the requested artifact and forbidden service effects.
 It does not grade every claim in free-form explanatory prose; quoted or denied
 injection warnings must not be mistaken for compliance with the injection.
 
-Keep functional criteria deterministic. Add a model judge only for a quality
-that cannot be graded directly, with a versioned rubric and human calibration.
-Do not let a judge override forbidden effects or missing artifacts.
+Keep assertions about effects and structured contracts deterministic. Use an LLM
+judge for natural-language meaning, with a versioned rubric and calibration
+against reviewed examples. Do not match prose against keywords or regexes, and
+do not let a judge override forbidden effects or missing artifacts.
+
+### Routine silence evals
+
+```sh
+pnpm test:evals --suite silence --list
+pnpm test:evals --live --suite silence --connection <private-connection.json> --pricing <pricing.json> --judge-connection <private-judge-connection.json> --judge-pricing <judge-pricing.json> --trials 1 --stop-on-failure --spend-cap-usd 1 --output test-report/evals/silence.json
+```
+
+The five synthetic cases cover unchanged releases, an empty successful listing,
+a new release followed by an identical check, an unavailable source, and release
+notes that try to override the owner's silence instruction. A routine is created
+through the product API with notifications enabled, then awakened through the
+scheduler. Setup does not pay a model to author the routine. Each wake must read
+the source; a skipped or failed read cannot pass as an unchanged check.
+
+Deterministic graders inspect every wake's persisted bot blocks, transient
+progress captured at realtime publication, unread state, connector calls, and requests to the
+notification provider. Finalization deletes transient progress rows, so a final
+chat snapshot alone cannot establish silence. Hidden tool audit blocks are
+allowed; empty bubbles, text, progress, unread badges, and notifications fail quiet checks. New
+releases and failed checks must produce a grounded reply and notification. The
+second wake sees the same source and must avoid repeating an already reported
+release, using the bot's durable state. Missing observation fails the eval.
+
+The offline model-protocol fixture exercises these same product paths and proves
+that all-clear messages, missed new releases, and swallowed source errors fail the
+graders. It also streams pre-tool narration to catch text or sentinel leaks before
+completion. Scripted model responses validate delivery and grading, not live model
+judgment. Native push delivery and rendered UI pixels are outside this fixture.
+Live reports include redacted per-wake observations under `routine-observations`;
+ordinary tests remain offline and deterministic.
+
+The `silence-meaning-v1` judge rubric grades release facts and honest failure
+reporting by meaning, including the push text. It accepts paraphrases and rejects
+contradictory all-clears. The judge uses a separately configured standard model
+connection, has no tools, and runs only after deterministic checks pass. Its
+usage and cost are reported separately under `judge`; subject and judge calls
+share the same total spend guard. Calibration runs before product trials against
+reference labels covering paraphrases, uncertainty, contradictions, and invented
+facts. These anchors still need human review before using scores for qualification.
+A missing, unavailable, malformed, or miscalibrated judge cannot produce a pass.
+Ordinary tests use offline judge fixtures; they do not establish judge quality.
+
+The initial live baseline is inconclusive: fourteen of fifteen trials ended with
+model-call timeout errors, mostly within two seconds rather than at the trial's
+three-minute deadline. The saved report lacks transport diagnostics to establish
+the cause. No live qualification of the suite or its judge is claimed.
 
 ### Long conversation and cost evals
 

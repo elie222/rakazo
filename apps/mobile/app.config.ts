@@ -22,5 +22,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     }
   }
 
+  const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
+  if (googleServicesFile) {
+    return {
+      ...config,
+      android: { ...config.android, googleServicesFile },
+    } as ExpoConfig;
+  }
+
   return config as ExpoConfig;
 };

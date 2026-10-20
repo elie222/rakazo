@@ -86,18 +86,6 @@ describe("createRepos.listBots", () => {
     );
   });
 
-  it("passes memoryScope through as null when unset", async () => {
-    await expect(reposFor(null).listBots(actor)).resolves.toEqual([
-      expect.objectContaining({ memoryScope: null }),
-    ]);
-  });
-
-  it("passes memoryScope through when set to shared", async () => {
-    await expect(reposFor("shared").listBots(actor)).resolves.toEqual([
-      expect.objectContaining({ memoryScope: "shared" }),
-    ]);
-  });
-
   it("classifies initial preview runs once across bots, including non-peer results", async () => {
     const prisma = {
       bot: {

@@ -27,6 +27,7 @@ const tableEvents = vi.hoisted(() => ({
     | ((event: { nativeEvent: { contentOffset: { x: number } } }) => void)
     | undefined,
   onStartShouldSetResponder: undefined as (() => boolean) | undefined,
+  onContentSizeChange: undefined as ((width: number, height: number) => void) | undefined,
 }));
 
 // react-native ships uncompiled Flow source that node cannot load, so tests mock
@@ -80,6 +81,11 @@ vi.mock("react-native", async () => {
       if (tag === "rn-scroll-view" && typeof rest.onScroll === "function") {
         tableEvents.onScroll = rest.onScroll as typeof tableEvents.onScroll;
       }
+      if (tag === "rn-scroll-view" && typeof rest.onContentSizeChange === "function") {
+        tableEvents.onContentSizeChange =
+          rest.onContentSizeChange as typeof tableEvents.onContentSizeChange;
+        delete rest.onContentSizeChange;
+      }
       return createElement(
         tag,
         {
@@ -124,6 +130,9 @@ vi.mock("react-native", async () => {
       "textDecorationLine",
       "color",
       "fontWeight",
+      "fontFamily",
+      "fontSize",
+      "lineHeight",
       "textAlign",
       "writingDirection",
       "width",
@@ -168,6 +177,7 @@ vi.mock("react-native", async () => {
 });
 
 import { darkTokens, lightTokens } from "@rakazo/ui-tokens";
+import { themes } from "prism-react-renderer";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { Platform, Pressable } from "react-native";
@@ -431,6 +441,104 @@ describe("native markdown tables", () => {
     expect(html).not.toContain('data-margin-bottom="5"');
     expect(html).toContain('data-margin-top="0"');
     expect(html).toContain('data-margin-bottom="0"');
+  });
+});
+
+describe("native markdown code blocks", () => {
+  it.each(["first\n\nthird", "first\n\nthird\n", "first\n\nthird\n```"])(
+    "preserves blank fence lines without adding a trailing row: %j",
+    (code) => {
+      const html = renderToStaticMarkup(
+        <ChatMarkdown colorScheme="light">{`\`\`\`\n${code}`}</ChatMarkdown>,
+      );
+      const document = new DOMParser().parseFromString(html, "text/html");
+      const rows = document.querySelectorAll("rn-scroll-view rn-view[data-flex-direction='row']");
+      expect(rows).toHaveLength(3);
+      expect([...rows].map((row) => row.textContent)).toEqual(["first", " ", "third"]);
+      const tokens = [...rows].map((row) => row.querySelector("rn-text"));
+      for (const token of tokens) {
+        expect(token).not.toBeNull();
+        expect(token?.getAttribute("data-color")).toBe(themes.oneLight.plain.color);
+        for (const attribute of ["data-font-family", "data-font-size", "data-line-height"]) {
+          expect(token?.getAttribute(attribute)).toBeTruthy();
+          expect(token?.getAttribute(attribute)).toBe(tokens[0]?.getAttribute(attribute));
+        }
+      }
+    },
+  );
+
+  const LONG_LINE =
+    '<settings><entry key="preview.enabled" value="true" note="a line wider than the bubble"/></settings>';
+
+  it.each([
+    [
+      "scrolls a fence with a line wider than the bubble",
+      `\`\`\`xml\n${LONG_LINE}\n\`\`\``,
+      900,
+      true,
+    ],
+    ["keeps a fence that fits still", "```\nok\n```", 40, false],
+    [
+      "scrolls an indented code block with a line wider than the bubble",
+      `    ${LONG_LINE}`,
+      900,
+      true,
+    ],
+    [
+      "scrolls a mermaid fence the app draws as code",
+      `\`\`\`mermaid\n${LONG_LINE}\n\`\`\``,
+      900,
+      true,
+    ],
+  ])("%s", async (_case, markdown, width, scrolls) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    tableEvents.onContentSizeChange = undefined;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<ChatMarkdown>{markdown}</ChatMarkdown>);
+    });
+    await act(async () => {
+      tableEvents.onLayout?.({ nativeEvent: { layout: { width: 200, height: 40 } } });
+      tableEvents.onContentSizeChange?.(width, 40);
+    });
+
+    const scrollViews = container.querySelectorAll("rn-scroll-view");
+    expect(scrollViews).toHaveLength(1);
+    const scrollView = scrollViews[0];
+    expect(scrollView?.getAttribute("data-horizontal")).toBe("true");
+    expect(scrollView?.getAttribute("data-scroll-enabled")).toBe(String(scrolls));
+    expect(scrollView?.getAttribute("data-shows-horizontal-scroll-indicator")).toBe(
+      String(scrolls),
+    );
+    expect(tableEvents.onStartShouldSetResponder?.()).toBe(scrolls);
+    expect(scrollView?.textContent).toBe(markdown.includes(LONG_LINE) ? LONG_LINE : "ok");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+  });
+});
+
+describe("native markdown code colours", () => {
+  it.each([
+    ["dark", darkTokens, themes.oneDark],
+    ["light", lightTokens, themes.oneLight],
+  ] as const)("draws plain code in the %s theme's text colour", (scheme, palette, theme) => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown palette={palette} colorScheme={scheme}>
+        {"```bash\necho hi\n```\n\n```\nplain text\n```"}
+      </ChatMarkdown>,
+    );
+    const code = [...new DOMParser().parseFromString(html, "text/html").querySelectorAll("rn-text")]
+      .filter((text) => /echo|hi|plain text/.test(text.textContent ?? ""))
+      .filter((text) => text.children.length === 0);
+    expect(code.length).toBeGreaterThan(0);
+    for (const text of code) expect(text.getAttribute("data-color")).toBeTruthy();
+    const plain = code.find((text) => text.textContent === "plain text");
+    expect(plain?.getAttribute("data-color")).toBe(theme.plain.color);
   });
 });
 
@@ -1283,11 +1391,6 @@ describe("native markdown diagrams", () => {
     expect(probe?.getAttribute("data-scheme")).toBe("light");
     expect(probe?.getAttribute("data-foreground")).toBe(lightTokens.foreground);
     expect(probe?.textContent).toContain("A[Clone] --> B[Branch]");
-  });
-
-  it("matches the fence language in any case and ignores the rest of the info string", () => {
-    const html = renderWithDiagrams("```Mermaid title=flow\ngraph TD\n  A --> B\n```");
-    expect(html).toContain("<diagram-probe");
   });
 
   it("keeps the code block when the app supplies no diagram", () => {

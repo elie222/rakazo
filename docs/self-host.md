@@ -1,6 +1,6 @@
 # Self-hosting Rakazo
 
-The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Box). It is not a static site. The marketing site in `apps/www` can be hosted separately.
+The signed-in product is a long-running API, a Graphile Worker, Postgres, and a computer provider (Docker supervisor, E2B, Daytona, CreateOS, or Boat). It is not a static site. The marketing site in `apps/www` can be hosted separately.
 
 ## Local (source checkout)
 
@@ -31,7 +31,7 @@ run `bash install-images.sh`. Flags may be combined in either order: `--prepare-
 `SANDBOX_PROVIDER` defaults to `docker`. The images Compose file runs a sandbox supervisor
 (from the app image, on the internal network only) and pulls `ghcr.io/elie222/rakazo/computer`.
 Signup and local Docker computers work without an E2B account. Optional remote providers: set
-`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `box` and add the matching API key. The published-images
+`SANDBOX_PROVIDER` to `e2b`, `daytona`, `createos`, or `boat` and add the matching API key. The published-images
 Compose stack requires `SANDBOX_SUPERVISOR_TOKEN` for every provider; leave it empty and `compose up` fails closed.
 
 Optional: set `OPENROUTER_API_KEY` or connect a model in the UI after signup.
@@ -367,12 +367,12 @@ Optional:
 ```env
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=you@example.com,@company.com
-SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, box. Keep fake only for pnpm test.
+SANDBOX_PROVIDER=docker   # or none, e2b, daytona, createos, boat. Keep fake only for pnpm test.
 AGENT_RUNTIME=pi          # Keep scripted only for pnpm test.
 WAKEUP_DRIVER=graphile
 SANDBOX_IDLE_MS=600000    # pause or stop after 10 minutes idle; 0 disables idle sleep
 # Set 0 when self-hosting with Docker, where an idle computer costs nothing, to keep long-running apps and sessions up.
-# E2B, CreateOS and Box still apply their own timeouts.
+# E2B, CreateOS and Boat still apply their own timeouts.
 COMPUTER_MAX_ACTIVE_MS=7200000 # uptime cap for providers that bill while running; minimum 60000; 0 disables
 SANDBOX_COMMAND_TIMEOUT_MS=300000 # stop a shell command after 5 minutes
 MAX_TOOL_CALLS_PER_TURN=  # optional Pi turn tool-call fuse; unset/0 = unlimited
@@ -381,7 +381,7 @@ BOT_MESSAGE_MAX_HOPS=6    # bot-to-bot messages one chain may carry before the n
 E2B_API_KEY=              # when SANDBOX_PROVIDER=e2b
 DAYTONA_API_KEY=          # when SANDBOX_PROVIDER=daytona
 CREATEOS_SANDBOX_API_KEY= # when SANDBOX_PROVIDER=createos
-BOX_API_KEY=              # when SANDBOX_PROVIDER=box
+BOAT_API_KEY=             # when SANDBOX_PROVIDER=boat
 ```
 
 To use an operator-controlled OpenAI-compatible server such as Ollama, LM Studio, llama.cpp, or
@@ -451,6 +451,14 @@ encryption-key fallback also applies here. Anonymous access has service limits; 
 to the bot without switching providers. Per-bot disabled web tools remain disabled. Set
 `WEB_PROVIDER=keyless-http` (or remove the setting) to return to the default.
 
+To choose [Keenable](https://docs.keenable.ai) instead, set `WEB_PROVIDER=keenable` and restart
+both the API and worker. The same bot tools then return search snippets and extracted page
+markdown through HTTPS MCP at `https://api.keenable.ai/mcp`, without an account or API key. This
+option sends search queries and requested page URLs to Keenable, which retrieves pages on its
+servers. Anonymous access is rate limited per IP address; set `KEENABLE_API_KEY` on the API and
+worker to send a key and lift those limits. Errors, per-bot disabled tools and the way back to
+the default work as described for Parallel.
+
 Remote MCP servers and installed API / GraphQL connectors default to public HTTPS. The deployment
 owner can attach one on localhost, the same LAN, or a Docker network. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud
@@ -479,7 +487,7 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
 
 - **Published images** (`docker-compose.images.yml`) default to `SANDBOX_PROVIDER=docker` with a
   local supervisor and published `ghcr.io/elie222/rakazo/computer` image. No E2B account required.
-  Optional: set `e2b`, `daytona`, `createos`, or `box` plus the matching API key for remote computers.
+  Optional: set `e2b`, `daytona`, `createos`, or `boat` plus the matching API key for remote computers.
 - **Docker** is the quick-start default for published images and for a source checkout / full local
   Compose stack. Workspace bots share a persistent Team Computer by default; Private computers are
   optional. Keep the supervisor private, as the included Compose files do.
@@ -492,9 +500,9 @@ Native file reads and workspace exports are limited to 8 MiB per file. A larger 
   Configure `CREATEOS_SANDBOX_API_KEY` and optionally `CREATEOS_SANDBOX_BASE_URL`,
   `CREATEOS_SANDBOX_SHAPE`, or `CREATEOS_SANDBOX_ROOTFS`. Rakazo defaults to
   `https://api.sb.createos.sh`, `s-2vcpu-2gb`, and `desktop:1`.
-- **Box by ASCII** provides a managed Linux desktop through `BOX_API_KEY` and optionally
-  `BOX_API_URL`. Rakazo always creates or resumes boxes with `noEnv: true`, keeps the portable
-  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Box uses the shared Linux
+- **Boat** provides a managed Linux desktop through `BOAT_API_KEY` and optionally
+  `BOAT_API_URL`. Rakazo always creates or resumes sandboxes with `noEnv: true`, keeps the portable
+  workspace under `/home/user/rakazo-home`, and refreshes a two-hour TTL. Boat uses the shared Linux
   desktop runtime and protected port routes for concurrent bot desktops. Each bot has its own
   persistent Chrome profile; logins are not shared between bots.
 - **Local computer access** in the app-managed Electron instance runs commands on Windows, macOS,
@@ -539,7 +547,7 @@ and conservative kernel/network protections. Keep the provider console open unti
 succeeds after the script reloads SSH.
 
 ```bash
-sudo DEPLOY_USER=deploy bash infra/compose/harden-host.sh
+sudo --preserve-env=SSH_CONNECTION DEPLOY_USER=deploy bash infra/compose/harden-host.sh
 ```
 
 The production host also uses `infra/compose/docker-daemon.json` to enable live restore, bounded local
@@ -571,7 +579,7 @@ WEB_ORIGIN=https://app.example.com
 API_URL=https://app.example.com
 SIGNUPS_ENABLED=true
 SIGNUP_ALLOWLIST=owner@example.com,reviewer@example.com
-# e2b, daytona, or box
+# e2b, daytona, or boat
 SANDBOX_PROVIDER=e2b
 AGENT_RUNTIME=pi
 WAKEUP_DRIVER=graphile
@@ -626,19 +634,53 @@ content while a digest is present.
 For the single-VM production layout, install `infra/compose/backup-prod.sh` as
 `/usr/local/sbin/rakazo-backup` and enable the supplied `rakazo-backup.timer`. It creates a verified
 Postgres custom-format dump plus an application-data archive under `/var/backups/rakazo`, with mode
-`0600`. It keeps the newest `RAKAZO_BACKUP_KEEP` verified snapshots (default `3`) and removes
-older ones only after a new snapshot verifies. It fails before writing if the disk has less free
-space than the last snapshot used, and a failed run removes its partial snapshot. These local
-snapshots help with operator mistakes but are not a substitute for an encrypted off-host backup or
+`0600`. It keeps up to `RAKAZO_BACKUP_KEEP` verified snapshots (default `3`), bounded by
+`RAKAZO_BACKUP_MAX_GB` (default `50` GiB), and reserves `RAKAZO_BACKUP_MIN_FREE_GB` (default `5`
+GiB) of free disk space. Before starting, it removes abandoned partial snapshots and excess history,
+then checks capacity by scaling only the previous appdata archive by appdata source growth,
+plus the previous database dump size. Snapshots without source-size
+metadata use the raw source size for their initial estimate. It preserves the newest
+verified snapshot when capacity is insufficient, caps output file sizes, and removes a failed run's
+partial snapshot. These local snapshots are not a substitute for an encrypted off-host backup or
 provider snapshot.
 
 The scheduled backup uses `/srv/rakazo` by default. For another deployment directory, set
 `RAKAZO_DEPLOY_DIR=/absolute/path/to/checkout` in a root-owned `/etc/rakazo/backup.env`
 (mode `0600`). The service reads this optional file on each run; the script uses the selected
 checkout's `.env` and production Compose file. If the stack was started with a custom `-p`,
-set the same `COMPOSE_PROJECT_NAME` in that file. For a manual run, export these variables instead.
-Set `RAKAZO_BACKUP_KEEP` in the same file. When updating an existing backup installation, reinstall
-both the script and service unit, then run `systemctl daemon-reload`.
+set the same `COMPOSE_PROJECT_NAME` in that file. Set the retention and space settings there too.
+When updating an existing installation, reinstall the script and units, then run
+`systemctl daemon-reload`; pulling the repository does not update `/usr/local/sbin` copies.
+
+For a dedicated backup disk, mount it persistently and bind its `backups` directory onto
+`/var/backups` in `/etc/fstab`. Add `x-systemd.requires-mounts-for=/mnt/your-backup-volume` to the bind
+mount options. Set `RAKAZO_BACKUP_REQUIRE_VOLUME=1` and add a service drop-in containing
+`RequiresMountsFor=/var/backups` and `AssertPathIsMountPoint=/var/backups` under `[Unit]`. The script
+then refuses to fall back to root storage if the mount is missing or points at the root filesystem.
+
+Monitoring is opt-in. Install `host-alert.py` as `/usr/local/sbin/rakazo-host-alert` and
+`check-host.sh` as `/usr/local/sbin/rakazo-host-check`, then install the supplied host-check service
+and timer and enable `rakazo-host-check.timer`. Checks run every five minutes and report low disk
+space, failed backups, a verified backup older than 36 hours, or missing configured IPv4 SSH rules.
+The dedicated-volume check is enabled only by `RAKAZO_BACKUP_REQUIRE_VOLUME=1` in `backup.env`.
+Identical alerts are suppressed for a day; recovery sends a separate notification.
+
+Alerts go to the system journal by default; no external service is required. For optional Slack
+delivery, create a root-only `/etc/rakazo/alerts.json` containing
+`{"slack_webhook":"https://hooks.slack.com/services/REPLACE/ME/SECRET"}`. Never commit this file.
+To notify immediately on backup failure, also install `rakazo-backup-alert.service` and copy
+`infra/systemd/rakazo-backup-alerts.conf.example` to
+`/etc/systemd/system/rakazo-backup.service.d/alerts.conf`. Run `systemctl daemon-reload` after
+installing units or drop-ins. The base backup service does not require the monitoring tools.
+
+Host hardening preserves existing firewall rules and installs `firewall-change.sh` as
+`/usr/local/sbin/rakazo-firewall-change`. For subsequent firewall edits, use
+`sudo --preserve-env=SSH_CONNECTION /usr/local/sbin/rakazo-firewall-change apply COMMAND...`.
+This requires `SSH_CONNECTION` to be preserved, saves both `/etc/ufw` and `/etc/default/ufw`,
+and arms a three-minute rollback before running the command.
+Open a **new SSH connection** and run the printed `confirm TOKEN` command; confirmation from the
+original connection is rejected. An unconfirmed change restores the saved rules and default policies.
+The guard does not protect arbitrary direct `ufw` commands or SSH daemon configuration changes.
 
 To deploy from CI, install `infra/compose/deploy-main.sh` as `/usr/local/sbin/rakazo-deploy-main`
 and give CI a key restricted to it in the deploy user's `authorized_keys`

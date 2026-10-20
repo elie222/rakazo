@@ -1,4 +1,5 @@
 import type { Routine } from "@rakazo/contracts";
+import { displayName } from "@rakazo/core";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -28,7 +29,7 @@ export default function BotProfile() {
   const [routines, setRoutines] = useState<Routine[] | null>(null);
   const [routinesError, setRoutinesError] = useState<string | null>(null);
   const [notificationsPending, setNotificationsPending] = useState(false);
-  const name = bot?.name || nameParam || t("Bot");
+  const name = displayName(bot?.name ?? nameParam, t("Bot"));
   const timeZone = deviceTimeZone();
   // Counts switch saves as they start and end, so a reload can tell it overlapped one.
   const notifySaves = useRef(0);

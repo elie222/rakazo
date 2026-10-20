@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isRetryableProviderUnavailable,
-  isTransientModelError,
-  TransientModelError,
-} from "./model-errors.js";
+import { isRetryableProviderUnavailable, isTransientModelError } from "./model-errors.js";
 
 describe("transient model errors", () => {
   it.each([
@@ -20,11 +16,24 @@ describe("transient model errors", () => {
       "per-minute quota",
       { status: 429, message: "Quota exceeded for quota metric 'requests' per minute" },
     ],
+    ...[
+      "You have hit your usage limit for requests per minute; retry after 1 second.",
+      "You have hit your usage limit for tokens per minute.",
+      "You have hit your usage limit per-second.",
+      "Rate limit per second.",
+      "Usage limit: requests-per-minute.",
+      "Usage limit: tokens-per-minute.",
+      "Usage limit: RPM.",
+      "Usage limit: TPM.",
+      "Usage limit; retry-after: 1 second.",
+    ].map((message): [string, unknown] => [message, { status: 429, message }]),
     ["service unavailable", { status: 503, message: "service unavailable" }],
     ["bad gateway", new Error("502 Bad Gateway")],
     ["empty truncated stream", new Error("Stream ended without finish_reason")],
     ["dropped fetch body", new TypeError("terminated")],
     ["fetch failure", new TypeError("fetch failed")],
+    ["SDK connection failure", new Error("Connection error.")],
+    ["SDK connection timeout", new Error("Request timed out.")],
     ["connection reset", new Error("read ECONNRESET")],
     ["socket hang up", new Error("socket hang up")],
     ["closed websocket", "WebSocket closed 1006"],
@@ -45,10 +54,21 @@ describe("transient model errors", () => {
     ],
     ["billing", { status: 402, message: "provider quota exhausted" }],
     ["credit balance", "Your credit balance is too low to access the API."],
+    ...[
+      "You have hit your ChatGPT usage limit.",
+      "insufficient_quota",
+      "You exceeded your current quota.",
+      "Quota exhausted.",
+      "Billing limit reached.",
+      "Payment required.",
+      "Out of budget.",
+      "You've reached your monthly usage limit; retry after 1 second.",
+    ].map((message): [string, unknown] => [message, { status: 429, message }]),
     ["invalid key", { status: 401, message: "invalid_api_key: Incorrect API key provided" }],
     ["forbidden", "403 Forbidden"],
     ["context overflow", "context_length_exceeded: maximum context length is 128000 tokens"],
     ["bad request", { status: 400, message: "Unsupported parameter: temperature" }],
+    ["auth failure mentioning a connection error", { status: 401, message: "Connection error." }],
     ["cancellation", new Error("Request was aborted")],
     ["unknown", new Error("Model stream ended without a terminal event")],
   ])("treats %s as permanent", (_label, error) => {
@@ -63,13 +83,6 @@ describe("transient model errors", () => {
     "You've reached your usage limit for this billing cycle.",
   ])("treats the exhausted usage window as permanent: %s", (message) => {
     expect(isTransientModelError({ status: 403, type: "permission_error", message })).toBe(false);
-  });
-
-  it("names its error class", () => {
-    const error = new TransientModelError("overloaded");
-    expect(error).toBeInstanceOf(Error);
-    expect(error.name).toBe("TransientModelError");
-    expect(error.message).toBe("overloaded");
   });
 });
 
@@ -194,6 +207,17 @@ describe("provider availability classification", () => {
     [
       "generic 403 permission_error",
       { status: 403, type: "permission_error", message: "permission denied" },
+      false,
+    ],
+    [
+      "ChatGPT usage limit",
+      new Error("You have hit your ChatGPT usage limit (plus plan). Try again in ~158 min."),
+      true,
+    ],
+    ["ChatGPT usage limit without a plan", "You have hit your ChatGPT usage limit.", true],
+    [
+      "HTTP 401 with ChatGPT usage limit text",
+      { status: 401, message: "You have hit your ChatGPT usage limit." },
       false,
     ],
     ["quota exhaustion", { status: 402, message: "provider quota exhausted" }, true],

@@ -39,7 +39,15 @@ export function normalizeRunError(
   details: string,
   translate: RunErrorTranslator = english,
   locale = "en-US",
-): { summary: string; details: string } {
+  now = Date.now(),
+): {
+  summary: string;
+  details: string;
+  recovery?: "connection" | "model";
+  resetAt?: number;
+  kind?: "key" | "credit" | "spending" | "rate" | "auth" | "model";
+  period?: "none" | "daily" | "weekly" | "monthly";
+} {
   const prefix = details.trim().match(/^(\d{3})\s*:\s*/);
   const body = details.trim().slice(prefix?.[0].length ?? 0);
   let parsed: unknown;
@@ -67,25 +75,32 @@ export function normalizeRunError(
         ? translate("Your Anthropic")
         : translate("Your model provider");
 
+  let resetAt: number | undefined;
+  let kind: "key" | "credit" | "spending" | "rate" | "auth" | "model" | undefined;
+  let period: "none" | "daily" | "weekly" | "monthly" | undefined;
+  let recovery: "connection" | "model" | undefined;
   let summary = translate("The model provider returned an error.");
-  if (
-    /rate[_ -]limit|too many requests/i.test(signals) &&
-    !/insufficient[_ ]quota/i.test(signals)
-  ) {
+  const financialQuota =
+    /insufficient[_ ]quota|credits?|funds|spend|budget|billing|openrouter_key_limit/i.test(signals);
+  if ((status === 429 || /rate[_ -]limit|too many requests/i.test(signals)) && !financialQuota) {
+    recovery = "connection";
+    kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
-    /\b(?:quota|insufficient[_ ](?:quota|credits?|funds)|credit[_ ]balance)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
+    status === 402 ||
+    /\b(?:daily|weekly|monthly|usage)[\s\S]{0,30}limit|\b(?:quota|insufficient[_ ](?:quota|credits?|funds)|credit[_ ]balance)\b|(?:key|credit|spend|spending|budget|billing)[\s\S]{0,40}(?:limit|exceed|exhaust|insufficient)|(?:limit|insufficient)[\s\S]{0,30}(?:credit|spend|budget)/i.test(
       signals,
     )
   ) {
-    const period = /\bweekly\b/i.test(message)
+    recovery = "connection";
+    period = /\bweekly\b/i.test(message)
       ? "weekly"
       : /\bmonthly\b/i.test(message)
         ? "monthly"
         : /\bdaily\b/i.test(message)
           ? "daily"
           : "none";
-    const kind = /\bkey\b|key_limit/i.test(signals)
+    kind = /\bkey\b|key_limit/i.test(signals)
       ? "key"
       : /credit|insufficient_quota/i.test(signals)
         ? "credit"
@@ -99,7 +114,13 @@ export function normalizeRunError(
       metadata.reset;
     if (typeof reset === "string" && /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?$/.test(reset)) {
       const date = new Date(reset);
-      if (!Number.isNaN(date.getTime())) {
+      if (
+        date.getUTCFullYear() === Number(reset.slice(0, 4)) &&
+        date.getUTCMonth() + 1 === Number(reset.slice(5, 7)) &&
+        date.getUTCDate() === Number(reset.slice(8, 10)) &&
+        date.getTime() > now
+      ) {
+        resetAt = date.getTime();
         summary = translate("{summary} Resets {date}.", {
           summary,
           date: new Intl.DateTimeFormat(locale, {
@@ -111,12 +132,16 @@ export function normalizeRunError(
       }
     }
   } else if (status === 429) {
+    recovery = "connection";
+    kind = "rate";
     summary = translate("{provider} is rate limiting requests. Try again shortly.", { provider });
   } else if (
     status === 401 ||
     ((status === 403 || /invalid[_ -](?:api[_ -])?key|authentication_error/i.test(signals)) &&
       /auth|unauthorized|forbidden|invalid|key|permission|access denied/i.test(signals))
   ) {
+    recovery = "connection";
+    kind = "auth";
     summary = translate("{provider} rejected the API key. Check your connection settings.", {
       provider,
     });
@@ -126,6 +151,8 @@ export function normalizeRunError(
       signals,
     )
   ) {
+    recovery = "model";
+    kind = "model";
     summary = translate("{provider} could not find the requested model.", { provider });
   } else if (
     status === 408 ||
@@ -134,7 +161,14 @@ export function normalizeRunError(
   ) {
     summary = translate("{provider} took too long to respond. Try again.", { provider });
   }
-  return { summary, details };
+  return {
+    summary,
+    details,
+    ...(kind ? { kind } : {}),
+    ...(period ? { period } : {}),
+    ...(recovery ? { recovery } : {}),
+    ...(resetAt ? { resetAt } : {}),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

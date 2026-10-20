@@ -1,3 +1,4 @@
+import { accountDisplay } from "@rakazo/core";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
@@ -44,7 +45,7 @@ export function CallCard() {
     if (!onCall || cachedInitial !== null) return;
     void rpc<MobileMe>("me")
       .then((me) => {
-        cachedInitial = (me.name ?? me.email ?? "").trim().slice(0, 1).toUpperCase();
+        cachedInitial = accountDisplay(me, t("You")).initial ?? "";
         setInitial(cachedInitial);
       })
       .catch(() => undefined);

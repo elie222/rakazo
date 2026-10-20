@@ -553,6 +553,8 @@ export interface ModelCallObserver {
 
 export type AgentRuntimeEvent =
   | { type: "text"; text: string }
+  /** A new assistant message starts; its text does not continue the previous text. */
+  | { type: "turn" }
   | {
       type: "progress";
       text: string;

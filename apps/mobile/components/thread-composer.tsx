@@ -321,7 +321,7 @@ export function ThreadComposer({
             flexDirection: "row",
             alignItems: "flex-end",
             paddingStart: 16,
-            paddingEnd: 4,
+            paddingEnd: 8,
           }}
           fallbackStyle={styles.composerFill}
         >

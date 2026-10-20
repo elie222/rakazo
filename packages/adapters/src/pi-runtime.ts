@@ -30,7 +30,6 @@ import type {
 } from "@rakazo/adapter-kit";
 import {
   DEFAULT_CONTEXT_STRATEGY,
-  isProviderTimeout,
   isRetryableProviderUnavailable,
   isTransientModelError,
   TransientModelError,
@@ -159,6 +158,8 @@ export function maxToolCallsPerTurn(env: NodeJS.ProcessEnv = process.env): numbe
 export interface PiAgentRuntimeOptions {
   /** Directory where Pi JSONL sessions are written. Omit to disable recording. */
   sessionRoot?: string;
+  /** Explicit transport for tests and synthetic wire diagnostics. */
+  modelFetch?: typeof globalThis.fetch;
   modelCallObserver?: ModelCallObserver;
   /** Sanitized per-call selection telemetry; never includes prompt or credentials. */
   onContextDecision?: (
@@ -172,10 +173,12 @@ export interface PiAgentRuntimeOptions {
 
 export class PiAgentRuntime implements AgentRuntime {
   private readonly sessionRecorder?: PiSessionRecorder;
+  private readonly modelFetch?: typeof globalThis.fetch;
   private readonly modelCallObserver?: ModelCallObserver;
   private readonly onContextDecision?: PiAgentRuntimeOptions["onContextDecision"];
 
   constructor(options: PiAgentRuntimeOptions = {}) {
+    this.modelFetch = options.modelFetch;
     this.modelCallObserver = options.modelCallObserver;
     this.onContextDecision = options.onContextDecision;
     this.sessionRecorder = options.sessionRoot
@@ -265,6 +268,7 @@ export class PiAgentRuntime implements AgentRuntime {
         const host: ToolHost = {
           queue,
           context,
+          modelFetch: this.modelFetch,
           onContextDecision: this.onContextDecision,
           modelCallObserver: this.modelCallObserver,
           request,
@@ -415,7 +419,11 @@ export class PiAgentRuntime implements AgentRuntime {
           sessionId: conversationSessionId(request.threadId, request.botId),
           steeringMode: "all",
           streamFn: (_m, ctx, options) =>
-            fallbackAwareModelStream(fallbackState, ctx, withAutomatedLabels(options)),
+            fallbackAwareModelStream(
+              fallbackState,
+              ctx,
+              withAutomatedLabels({ ...options, fetch: this.modelFetch ?? options?.fetch }),
+            ),
           getApiKey: hasBackups
             ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
             : async () => apiKey,
@@ -502,6 +510,9 @@ export class PiAgentRuntime implements AgentRuntime {
           }
           if (event.type === "message_start" && event.message.role === "assistant") {
             currentMessageStreamed = "";
+            // A later message (after a finished shell or steering, not only a tool call)
+            // must not run its text straight on from the previous one.
+            if (streamed) queue.push({ type: "turn" });
           }
           if (
             event.type === "message_update" &&
@@ -1519,7 +1530,11 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
     },
     sessionId: conversationSessionId(host.request.threadId, host.request.botId, agentId),
     streamFn: (_m, ctx, options) =>
-      fallbackAwareModelStream(retryState, ctx, withAutomatedLabels(options)),
+      fallbackAwareModelStream(
+        retryState,
+        ctx,
+        withAutomatedLabels({ ...options, fetch: host.modelFetch ?? options?.fetch }),
+      ),
     getApiKey: async () =>
       hasBackups
         ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
@@ -2322,6 +2337,7 @@ interface EventQueue {
 
 interface ToolHost {
   context?: Partial<AdapterContext>;
+  modelFetch?: typeof globalThis.fetch;
   onContextDecision?: PiAgentRuntimeOptions["onContextDecision"];
   modelCallObserver?: ModelCallObserver;
   queue: EventQueue;
@@ -2500,6 +2516,7 @@ function fallbackSupportsContext(
     candidate.config.maxTokens,
     options?.maxTokens,
     candidate.model.reasoning,
+    candidate.model.contextWindow,
   );
   // Token counts are estimates and can differ by provider/tokenizer. Reserve a
   // small input-relative margin, not a fixed 4096 tokens that would exclude
@@ -2630,8 +2647,19 @@ function fallbackAwareModelStream(
   const run = async () => {
     let buffered: AssistantMessageEvent[] = [];
     let retries = 0;
+    // Bound same-model retries. Explicit backups retain their per-model header
+    // timeout: a post-header idle watchdog can already exceed that timeout.
+    const startedAt = Date.now();
+    const timeoutMs = options?.timeoutMs ?? MODEL_STREAM_TIMEOUT_MS;
     let firstRetryableError: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
     while (!signalAborted()) {
+      const remainingMs = timeoutMs - (Date.now() - startedAt);
+      if (retries > 0 && firstRetryableError && remainingMs <= 0) {
+        output.push(firstRetryableError);
+        output.end(firstRetryableError.error);
+        return;
+      }
+      const attemptOptions = retries > 0 ? { ...options, timeoutMs: remainingMs } : options;
       const target = state.getActive();
       lastPartial = undefined;
       let sawPartialOutput = false;
@@ -2651,7 +2679,9 @@ function fallbackAwareModelStream(
         stream = state.stream(
           target,
           requestContext(),
-          state.request.fallbackModels?.length ? { ...options, apiKey, reasoning } : options,
+          state.request.fallbackModels?.length
+            ? { ...attemptOptions, apiKey, reasoning }
+            : attemptOptions,
         );
       } catch (error) {
         finishWithThrownError(target, error);
@@ -2693,19 +2723,24 @@ function fallbackAwareModelStream(
                 restart = true;
                 break;
               }
-              firstRetryableError ??= event;
-              const delay = isProviderTimeout(event.error)
-                ? undefined
-                : MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
-              if (delay !== undefined) {
-                retries += 1;
-                await abortableDelay(delay, signal);
-                if (failIfAborted(target)) return;
-                buffered = [];
-                restart = true;
-                break;
+              // An exhausted quota or usage window can move to a backup but will not clear
+              // within the retry budget, so only transient failures retry the same model.
+              if (isTransientModelError(event.error)) {
+                firstRetryableError ??= event;
+                // Every retry, including its backoff, shares the original budget.
+                const delay = MODEL_PROVIDER_RETRY_DELAYS_MS[retries];
+                if (delay !== undefined && Date.now() - startedAt + delay < timeoutMs) {
+                  retries += 1;
+                  await abortableDelay(delay, signal);
+                  if (failIfAborted(target)) return;
+                  if (Date.now() - startedAt < timeoutMs) {
+                    buffered = [];
+                    restart = true;
+                    break;
+                  }
+                }
+                terminalEvent = firstRetryableError;
               }
-              terminalEvent = firstRetryableError;
             }
             for (const pending of buffered) output.push(pending);
             buffered = [];
@@ -3039,7 +3074,8 @@ function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean 
 }
 
 export function reliableStreamOptions(
-  model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning">,
+  model: Pick<Model<Api>, "api" | "provider" | "maxTokens" | "reasoning"> &
+    Partial<Pick<Model<Api>, "contextWindow">>,
   options?: ModelsSimpleStreamOptions,
   configuredMaxTokens?: number,
   accessToken?: string | (() => string | undefined),
@@ -3055,6 +3091,7 @@ export function reliableStreamOptions(
       configuredMaxTokens,
       options?.maxTokens,
       model.reasoning,
+      model.contextWindow,
     ),
   };
 

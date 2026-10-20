@@ -73,3 +73,19 @@ describe("artifact search batching", () => {
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
   });
 });
+
+it("guards name-derived snippets while preserving descriptions", async () => {
+  const { prisma } = fixture(0);
+  prisma.bot.findMany.mockResolvedValue([
+    { id: "bot-1", name: "__TestTok1__", title: "", description: "" },
+    { id: "bot-2", name: "__TestTok2__", title: "", description: "Keep __TestTok2__ literal" },
+  ] as never);
+  prisma.chatGroup.findMany.mockResolvedValue([{ id: "group-1", name: "__TestTok1__" }] as never);
+  const hits = await querySpaceSearch(prisma as never, actor, "TestTok");
+  expect(
+    hits
+      .filter((hit) => hit.botId === "bot-1" || hit.groupId === "group-1")
+      .map((hit) => hit.snippet),
+  ).toEqual(["", ""]);
+  expect(hits.find((hit) => hit.botId === "bot-2")?.snippet).toBe("Keep __TestTok2__ literal");
+});

@@ -79,7 +79,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Skip", exact: true }).last()).toBeVisible();
   await expect(page.getByRole("button", { name: "I’m done", exact: true }).last()).toBeVisible();
-  if (process.env.SANDBOX_PROVIDER === "box") await waitForBoxFramebuffer(page);
+  if (process.env.SANDBOX_PROVIDER === "boat") await waitForBoatFramebuffer(page);
   await captureScreenshot(page, testInfo, "09-computer-takeover-outcomes");
   await page.getByRole("button", { name: "I’m done", exact: true }).last().click();
   await expect(page.getByRole("button", { name: "Close computer" })).toBeVisible();
@@ -154,7 +154,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
     await catalogGate;
     await route.continue();
   });
-  await page.getByText("Integrations").click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   const catalogSpinner = page.getByRole("status", { name: "Loading integrations…" });
   const featured = page.getByTestId("featured-connectors");
   try {
@@ -210,7 +210,7 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
   await page.getByRole("button", { name: "Close integrations" }).click();
-  await page.getByText("Integrations").click();
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();
   const gmailTileAgain = page.getByTestId("connection-tile-gmail");
   await expect(gmailTileAgain.getByRole("button", { name: "Added", exact: true })).toBeVisible();
@@ -508,7 +508,7 @@ async function threadRunStatus(page: Page) {
   return result.run?.status ?? "idle";
 }
 
-async function waitForBoxFramebuffer(page: Page) {
+async function waitForBoatFramebuffer(page: Page) {
   await expect
     .poll(
       async () => {
@@ -526,7 +526,7 @@ async function waitForBoxFramebuffer(page: Page) {
         }
         return false;
       },
-      { timeout: 60_000, message: "the Box noVNC framebuffer must be ready" },
+      { timeout: 60_000, message: "the Boat noVNC framebuffer must be ready" },
     )
     .toBe(true);
 }

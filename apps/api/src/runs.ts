@@ -1,6 +1,11 @@
 import type { Actor, RunActivityRow } from "@rakazo/contracts";
 import { MessageBlock } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, BACKGROUND_RUN_TRIGGERS, botMessageContext } from "@rakazo/core";
+import {
+  ACTIVE_RUN_STATUSES,
+  BACKGROUND_RUN_TRIGGERS,
+  botMessageContext,
+  displayName,
+} from "@rakazo/core";
 import type { PrismaClient } from "@rakazo/db";
 
 const RECENT_LIMIT = 20;
@@ -12,20 +17,34 @@ function promptSnippet(prompt: string, max = 120): string {
   return `${oneLine.slice(0, max - 1)}…`;
 }
 
-export function activityPromptSnippet(
+export function activityPreview(
   input: { trigger: string; prompt: string; sourceBlocks?: unknown },
   max = 120,
-): string {
-  if (input.trigger !== "bot_message") return promptSnippet(input.prompt, max);
+): Pick<RunActivityRow, "promptSnippet" | "agentMessage"> {
+  if (input.trigger !== "bot_message")
+    return { promptSnippet: promptSnippet(input.prompt, max), agentMessage: null };
   const parsed = MessageBlock.array().safeParse(input.sourceBlocks);
   const message = parsed.success ? botMessageContext(parsed.data) : undefined;
-  if (!message) return "Message from another agent";
-  const name = message.fromBotName.trim() || "Another agent";
-  const label =
+  if (!message) {
+    return {
+      promptSnippet: "Message from another agent",
+      agentMessage: { kind: "unknown" },
+    };
+  }
+  const name = displayName(message.fromBotName, "Another agent");
+  const kind =
     message.intent === "result" || message.intent === "status" || message.intent === "fyi"
-      ? `Update from ${name}`
-      : `${name} asked`;
-  return promptSnippet(message.text.trim() ? `${label}: ${message.text}` : label, max);
+      ? "update"
+      : "request";
+  const label = kind === "update" ? `Update from ${name}` : `${name} asked`;
+  return {
+    promptSnippet: promptSnippet(message.text.trim() ? `${label}: ${message.text}` : label, max),
+    agentMessage: {
+      fromBotName: displayName(message.fromBotName, ""),
+      kind,
+      text: promptSnippet(message.text, max),
+    },
+  };
 }
 
 export function activityNotificationsEnabled(
@@ -74,12 +93,12 @@ export async function listSpaceRuns(
     botId: row.botId,
     botName: row.bot.name,
     groupId: row.thread.groupId,
-    groupName: row.thread.group?.name ?? null,
+    groupName: row.thread.group ? row.thread.group.name : null,
     threadId: row.threadId,
     status: row.status as RunActivityRow["status"],
     trigger: row.trigger as RunActivityRow["trigger"],
     notificationsEnabled: activityNotificationsEnabled(row.thread.groupId, row.bot.notifyOnFinish),
-    promptSnippet: activityPromptSnippet({
+    ...activityPreview({
       trigger: row.trigger,
       prompt: row.task.prompt,
       sourceBlocks: row.sourceMessage?.blocks,
