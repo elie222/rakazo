@@ -184,6 +184,7 @@ import { Platform, Pressable } from "react-native";
 import type { LinkFavicons, MermaidDiagramProps } from "./markdown.native";
 import {
   ChatMarkdown,
+  CodeCopyContext,
   LinkFaviconsContext,
   LinkifiedText,
   MarkdownLinkPromptProvider,
@@ -267,6 +268,35 @@ describe("native markdown tables", () => {
     expect(notes).toBeLessThan(400);
     expect(html.match(/data-font-weight="600"/g)).toHaveLength(3);
     expect(html).toContain('data-flex-shrink="0"');
+  });
+
+  it("shows a copy button under a code block and copies its text", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const onCopy = vi.fn();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <CodeCopyContext.Provider value={{ label: "Copy", color: "#888", onCopy }}>
+          <ChatMarkdown>{"Before\n\n```\nconst x = 1;\n```"}</ChatMarkdown>
+        </CodeCopyContext.Provider>,
+      );
+    });
+
+    const copy = [...container.querySelectorAll("rn-text")].find(
+      (text) => text.textContent === "Copy",
+    );
+    expect(copy).toBeDefined();
+    await act(async () => {
+      copy?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onCopy).toHaveBeenCalledWith("const x = 1;");
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
   });
 
   it("keeps an offscreen column from stretching the row, and lets it back in when scrolled", async () => {

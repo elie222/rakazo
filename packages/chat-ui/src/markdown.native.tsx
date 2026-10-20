@@ -13,7 +13,16 @@ import Markdown, {
 } from "@ronradtke/react-native-markdown-display";
 import { Highlight, themes } from "prism-react-renderer";
 import type { ComponentType, ReactNode } from "react";
-import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type {
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -847,6 +856,65 @@ function listItemRule(
   );
 }
 
+/** Copy action for code blocks. The app supplies it, so this package stays free of clipboard code. */
+export type CodeCopy = { label: string; color: string; onCopy: (text: string) => void };
+
+export const CodeCopyContext = createContext<CodeCopy | null>(null);
+
+const CODE_COPY_FEEDBACK_MS = 1500;
+
+function CodeFenceCopy({
+  text,
+  copy,
+  children,
+}: {
+  text: string;
+  copy: CodeCopy;
+  children: ReactNode;
+}) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => clearTimeout(resetTimerRef.current), []);
+
+  const press = useCallback(() => {
+    copy.onCopy(text);
+    setCopied(true);
+    clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => setCopied(false), CODE_COPY_FEEDBACK_MS);
+  }, [copy, text]);
+
+  return (
+    <View>
+      {children}
+      <View style={codeCopyLayout.row}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={copy.label}
+          hitSlop={8}
+          onPress={press}
+          style={codeCopyLayout.button}
+        >
+          <Text style={[codeCopyLayout.label, { color: copy.color }]}>
+            {copied ? "✓" : copy.label}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// Reads the copy action here, so the fence rule itself stays a plain function.
+function CopyableFence({ text, children }: { text: string; children: ReactNode }) {
+  const copy = useContext(CodeCopyContext);
+  if (!copy) return <>{children}</>;
+  return (
+    <CodeFenceCopy text={text} copy={copy}>
+      {children}
+    </CodeFenceCopy>
+  );
+}
+
 // Keep links as Text so they stay inside textgroup; Pressable (a View) is laid out
 // outside the text flow and collapses the bubble height, overlapping later messages.
 const renderRules: RenderRules = {
@@ -855,17 +923,16 @@ const renderRules: RenderRules = {
     const info = typeof node.sourceInfo === "string" ? node.sourceInfo : "";
     const source = node.content.replace(/\n$/, "");
     const codeBlock = (
-      <CodeFence
-        key={node.key}
-        code={source}
-        language={info.trim().split(/\s+/)[0] ?? ""}
-        colorScheme={colorScheme === "dark" ? "dark" : "light"}
-        styleMap={styleMap}
-      />
+      <CopyableFence key={node.key} text={source}>
+        <CodeFence
+          code={source}
+          language={info.trim().split(/\s+/)[0] ?? ""}
+          colorScheme={colorScheme === "dark" ? "dark" : "light"}
+          styleMap={styleMap}
+        />
+      </CopyableFence>
     );
     if (!isMermaidFence(info)) return codeBlock;
-    return <MermaidFence key={node.key} source={source} fallback={codeBlock} />;
-  },
   code_block: (node, children, parents, styleMap, ...extra) => (
     <SidewaysScrollView key={node.key}>
       {libraryRules.code_block?.(node, children, parents, styleMap, ...extra)}
@@ -1225,6 +1292,23 @@ export const ChatMarkdown = memo(function ChatMarkdown({
       </View>
     </OpenLinkContext.Provider>
   );
+});
+
+const codeCopyLayout = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 4,
+  },
+  button: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
 });
 
 const layout = StyleSheet.create({

@@ -1,10 +1,12 @@
-import type { LinkFavicons } from "@rakazo/chat-ui/native";
+import type { CodeCopy, LinkFavicons } from "@rakazo/chat-ui/native";
 import {
+  CodeCopyContext,
   LinkFaviconsContext,
   MarkdownLinkPromptProvider,
   MermaidDiagramContext,
   RemoteImagesContext,
 } from "@rakazo/chat-ui/native";
+import * as Clipboard from "expo-clipboard";
 import {
   DarkTheme,
   Stack,
@@ -189,6 +191,16 @@ function ChatContentProviders({
     () => ({ endpoint, load: (origin) => loadLinkFavicon(origin, endpoint), globe: <LinkGlobe /> }),
     [endpoint],
   );
+  const codeCopy = useMemo<CodeCopy>(
+    () => ({
+      label: t("Copy"),
+      color: mobileTokens().mutedForeground,
+      onCopy: (text) => {
+        void Clipboard.setStringAsync(text).catch(() => undefined);
+      },
+    }),
+    [t],
+  );
   return (
     <MarkdownLinkPromptProvider
       appOrigin={endpoint}
@@ -197,7 +209,7 @@ function ChatContentProviders({
       <RemoteImagesContext.Provider value={loadRemoteImages}>
         <LinkFaviconsContext.Provider value={linkFavicons}>
           <MermaidDiagramContext.Provider value={MermaidDiagram}>
-            {children}
+            <CodeCopyContext.Provider value={codeCopy}>{children}</CodeCopyContext.Provider>
           </MermaidDiagramContext.Provider>
         </LinkFaviconsContext.Provider>
       </RemoteImagesContext.Provider>
