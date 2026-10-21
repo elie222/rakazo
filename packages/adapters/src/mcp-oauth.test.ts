@@ -1843,6 +1843,32 @@ describe("MCP OAuth", () => {
       });
     });
 
+    it.each([
+      ["scope", { scope: "calendar.readonly" }, { scope: "gmail.readonly" }],
+      [
+        "authorization server",
+        { authorization_server: "https://auth.example.test/" },
+        { authorization_server: "https://other-auth.example.test/" },
+      ],
+    ])(
+      "refuses tokens from an authorization started before the client's %s changed",
+      async (_name, before, after) => {
+        const shared = sharedCredentials({
+          oauthClient: { ...oauthClient, ...before },
+          oauth: { redirectUri: "https://app/cb" },
+        });
+        const { provider } = await shared.startProcess(rotatingAuthServer().fetch);
+        const replacement = { oauthClient: { ...oauthClient, ...after } };
+        await shared.replaceStored(replacement);
+
+        await expect(
+          provider.saveTokens({ access_token: "for-old-settings", token_type: "Bearer" }),
+        ).rejects.toThrow("OAuth client changed");
+
+        expect(await shared.stored()).toEqual(replacement);
+      },
+    );
+
     it("treats the client secret as a credential that must never be shown", () => {
       expect(oauthMaterialSecrets({ oauthClient })).toContain("registered-secret");
       expect(oauthMaterialSecrets({ oauthClient })).not.toContain("registered-client");

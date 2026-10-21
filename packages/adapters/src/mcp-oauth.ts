@@ -772,11 +772,18 @@ async function requestRefresh(
   });
 }
 
+/** A first-use binding may be missing on one side; two different bindings are not the same client. */
 function sameOAuthClient(
   left: PreRegisteredClient | undefined,
   right: PreRegisteredClient | undefined,
 ): boolean {
-  return left?.client_id === right?.client_id && left?.client_secret === right?.client_secret;
+  const bound = left?.authorization_server && right?.authorization_server;
+  return (
+    left?.client_id === right?.client_id &&
+    left?.client_secret === right?.client_secret &&
+    left?.scope === right?.scope &&
+    (!bound || left?.authorization_server === right?.authorization_server)
+  );
 }
 
 /** What the settings UI may know about a server's OAuth setup; never a credential. */
