@@ -7,7 +7,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import { isLocalMcpHost, mcpOAuthEnvReferences, resolveMcpOAuthEnv } from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
@@ -24,7 +24,12 @@ import {
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
-import { oauthMaterialSecrets } from "./mcp-oauth.js";
+import {
+  accessTokenExpiresAt,
+  McpReauthorizationRequiredError,
+  oauthMaterialSecrets,
+  TOKEN_REFRESH_SKEW_MS,
+} from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -36,6 +41,8 @@ type SessionEntry = {
   digest?: string;
   ref?: string;
   recordId?: string;
+  /** For a process holding a renewable access token: when to replace it. */
+  accessTokenExpiresAt?: number;
 };
 type PendingSession = {
   revision: number;
@@ -329,9 +336,16 @@ export class McpConnector implements ConnectorProvider {
     const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) {
+      // A stdio process reads its access token once at launch; relaunch it before the
+      // token lapses so it starts with the renewed one.
+      if (
+        existing.accessTokenExpiresAt !== undefined &&
+        Date.now() >= existing.accessTokenExpiresAt - TOKEN_REFRESH_SKEW_MS
+      )
+        await this.evict(sessionKey);
       // Every credential write stores a new record without bumping the revision, so a
       // different record means another process (an API or worker) changed the grant.
-      if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
+      else if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
       else if (existing.ref && server.secretId) {
         try {
           const plaintext = await this.secrets.load(existing.ref, {
@@ -373,7 +387,7 @@ export class McpConnector implements ConnectorProvider {
         live.recordId = recordId;
         live.digest = digest;
       }
-    }).then(async ({ session, material, ref, digest, recordId }) => {
+    }).then(async ({ session, material, ref, digest, recordId, accessTokenExpiresAt }) => {
       if (this.connecting.get(sessionKey)?.invalidated) {
         await session.close();
         throw new Error("Secret changed during MCP connection; retry");
@@ -385,6 +399,7 @@ export class McpConnector implements ConnectorProvider {
         ref,
         digest,
         recordId,
+        accessTokenExpiresAt,
       };
       this.sessions.set(sessionKey, connected);
       return session;
@@ -407,6 +422,7 @@ export class McpConnector implements ConnectorProvider {
     ref?: string;
     digest?: string;
     recordId?: string;
+    accessTokenExpiresAt?: number;
   }> {
     const session = new McpSession({ name: `rakazo-${server.slug}` });
     // Hoisted so a throw after the secret is decoded can still hand the material out.
@@ -435,12 +451,35 @@ export class McpConnector implements ConnectorProvider {
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
       const env = { ...(material.env ?? {}) };
+      const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
+        ref = record.ref;
+        recordId = record.id;
+        digest = credentialDigest(JSON.stringify(record.material));
+        onRef(ref, recordId, digest);
+      };
+      let accessTokenExpiresAtMs: number | undefined;
       if (server.transport === "stdio") {
         if (!this.options.stdioEnabled) throw new Error("MCP stdio is disabled");
+        let launchEnv = env;
+        const references = Object.values(env).map((value) => mcpOAuthEnvReferences(value).fields);
+        if (references.some((fields) => fields.length > 0)) {
+          // The host holds the OAuth grant; the process only sees the values it asks for.
+          const provider = await this.oauth?.providerFor(server, context, loaded, onPersisted);
+          const tokens = await provider?.tokens();
+          if (!tokens) throw new McpReauthorizationRequiredError(server.id);
+          launchEnv = resolveMcpOAuthEnv(env, {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            client_id: material.oauthClient?.client_id,
+            client_secret: material.oauthClient?.client_secret,
+          });
+          if (tokens.refresh_token && references.some((fields) => fields.includes("access_token")))
+            accessTokenExpiresAtMs = accessTokenExpiresAt(material.oauth);
+        }
         await session.connectStdio({
           command: String(server.command ?? ""),
           args,
-          env,
+          env: launchEnv,
           allowedCommands: this.options.allowedCommands ?? [],
           signal: context.signal,
         });
@@ -455,12 +494,7 @@ export class McpConnector implements ConnectorProvider {
         );
         const authProvider =
           !localHttp && this.oauth
-            ? await this.oauth.providerFor(server, context, loaded, (record) => {
-                ref = record.ref;
-                recordId = record.id;
-                digest = credentialDigest(JSON.stringify(record.material));
-                onRef(ref, recordId, digest);
-              })
+            ? await this.oauth.providerFor(server, context, loaded, onPersisted)
             : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
@@ -487,7 +521,14 @@ export class McpConnector implements ConnectorProvider {
           signal: context.signal,
         });
       }
-      return { session, material, ref, digest, recordId };
+      return {
+        session,
+        material,
+        ref,
+        digest,
+        recordId,
+        accessTokenExpiresAt: accessTokenExpiresAtMs,
+      };
     } catch (error) {
       await session.close().catch(() => undefined);
       // Redact here, while the material is still in hand. This one rejection is handed

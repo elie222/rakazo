@@ -2,7 +2,8 @@ import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
-import { type McpOAuthBroker, StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import { type McpOAuthBroker, type OAuthMaterial, StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import { McpSession } from "./mcp-transport.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import { migrateSecrets } from "./secret-migration.js";
 import { ComposedSecretStore } from "./secret-store-factory.js";
@@ -1129,6 +1130,287 @@ describe("MCP connector session cache", () => {
     await connector.discoverTools(contextFor("w1", "u1"));
     expect(state.initializations).toBe(3);
 
+    await connector.close();
+  });
+});
+
+describe("MCP connector stdio OAuth", () => {
+  const STDIO_SERVER = {
+    id: "server-1",
+    slug: "mail",
+    transport: "stdio",
+    command: "mail-mcp",
+    endpoint: null,
+    secretId: "secret-1",
+    args: [],
+    revision: 1,
+  };
+  const context = {
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    runId: undefined,
+    signal: new AbortController().signal,
+  } as never;
+
+  /** Stored as one fixed value, as in the database: a changing value reads as a credential write. */
+  function stored(overrides: Partial<OAuthMaterial> = {}, mutate?: (value: OAuthMaterial) => void) {
+    const value = material(overrides);
+    mutate?.(value);
+    const json = JSON.stringify(value);
+    return () => JSON.parse(json) as OAuthMaterial;
+  }
+
+  function material(
+    overrides: Partial<OAuthMaterial> = {},
+    obtainedAt = Date.now(),
+  ): OAuthMaterial {
+    return {
+      env: {
+        MAIL_TOKEN: "Bearer {{oauth.access_token}}",
+        MAIL_CLIENT_ID: "{{oauth.client_id}}",
+        MAIL_REGION: "eu",
+      },
+      oauthClient: {
+        client_id: "client-1",
+        client_secret: "client-secret",
+        authorization_server: "https://auth.example.test/",
+      },
+      oauth: {
+        tokens: {
+          access_token: "access-1",
+          refresh_token: "refresh-1",
+          token_type: "Bearer",
+          expires_in: 3600,
+        },
+        obtainedAt,
+      },
+      ...overrides,
+    };
+  }
+
+  function stdioConnector(
+    load: () => OAuthMaterial,
+    oauth: Pick<McpOAuthBroker, "providerFor"> | undefined,
+  ) {
+    const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })) },
+    };
+    const secrets = { load: vi.fn(async () => JSON.stringify(load())) };
+    const connector = new McpConnector(
+      prisma as never,
+      secrets as never,
+      { stdioEnabled: true, allowedCommands: ["mail-mcp"] },
+      oauth as McpOAuthBroker | undefined,
+    );
+    return connector;
+  }
+
+  /** A broker whose provider holds whatever the stored material says. */
+  function brokerFor() {
+    return {
+      providerFor: vi.fn<McpOAuthBroker["providerFor"]>(async (_server, _context, loaded) =>
+        loaded?.material.oauth
+          ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined)
+          : undefined,
+      ),
+    };
+  }
+
+  function stubSession() {
+    const launches: Array<Record<string, string> | undefined> = [];
+    vi.spyOn(McpSession.prototype, "connectStdio").mockImplementation(async (options) => {
+      launches.push(options.env);
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
+    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    return launches;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("launches the process with the OAuth references resolved", async () => {
+    const launches = stubSession();
+    const load = stored();
+    const connector = stdioConnector(load, brokerFor());
+
+    await connector.discoverTools(context);
+
+    expect(launches).toEqual([
+      { MAIL_TOKEN: "Bearer access-1", MAIL_CLIENT_ID: "client-1", MAIL_REGION: "eu" },
+    ]);
+    await connector.close();
+  });
+
+  it("resolves the client secret and refresh token too", async () => {
+    const launches = stubSession();
+    const load = stored({
+      env: { ID: "{{oauth.client_id}}:{{oauth.client_secret}}", RT: "{{oauth.refresh_token}}" },
+    });
+    const connector = stdioConnector(load, brokerFor());
+
+    await connector.discoverTools(context);
+
+    expect(launches).toEqual([{ ID: "client-1:client-secret", RT: "refresh-1" }]);
+    await connector.close();
+  });
+
+  it("does not involve OAuth for an env without references", async () => {
+    const launches = stubSession();
+    const load = stored({ env: { MAIL_REGION: "eu" }, oauth: undefined });
+    const oauth = brokerFor();
+    const connector = stdioConnector(load, oauth);
+
+    await connector.discoverTools(context);
+
+    expect(launches).toEqual([{ MAIL_REGION: "eu" }]);
+    expect(oauth.providerFor).not.toHaveBeenCalled();
+    await connector.close();
+  });
+
+  it.each([
+    ["has not connected", stored({ oauth: undefined })],
+    ["has no tokens", stored({ oauth: {} })],
+  ])("asks the user to connect when the server %s", async (_name, load) => {
+    const launches = stubSession();
+    const connector = stdioConnector(load, brokerFor());
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([
+      { type: "error", message: expect.stringContaining("Reconnect") },
+    ]);
+    expect(launches).toEqual([]);
+    await connector.close();
+  });
+
+  it("asks the user to connect when no OAuth broker is configured", async () => {
+    const launches = stubSession();
+    const connector = stdioConnector(stored(), undefined);
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([
+      { type: "error", message: expect.stringContaining("Reconnect") },
+    ]);
+    expect(launches).toEqual([]);
+    await connector.close();
+  });
+
+  it("keeps the credential values out of the error when a reference cannot be resolved", async () => {
+    const launches = stubSession();
+    const load = stored(
+      { env: { RT: "{{oauth.refresh_token}}", TOKEN: "{{oauth.access_token}}" } },
+      (value) => delete value.oauth?.tokens?.refresh_token,
+    );
+    const connector = stdioConnector(load, brokerFor());
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([{ type: "error" }]);
+    expect(JSON.stringify(events)).not.toContain("access-1");
+    expect(launches).toEqual([]);
+    await connector.close();
+  });
+
+  it("restarts the process before its access token expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const oauth = brokerFor();
+    const connector = stdioConnector(stored(), oauth);
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 3600_000 - 120_000);
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(1);
+
+    // The provider renews the grant when asked for tokens inside the last minute.
+    oauth.providerFor.mockImplementationOnce(async (_server, _context, loaded) => {
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        loaded?.material ?? {},
+        async () => undefined,
+      );
+      vi.spyOn(provider, "tokens").mockImplementation(async () => {
+        const renewed = {
+          access_token: "access-2",
+          refresh_token: "refresh-2",
+          token_type: "Bearer",
+          expires_in: 3600,
+        };
+        if (loaded?.material.oauth) {
+          loaded.material.oauth.tokens = renewed;
+          loaded.material.oauth.obtainedAt = Date.now();
+        }
+        return renewed;
+      });
+      return provider;
+    });
+    vi.setSystemTime(Date.now() + 90_000);
+    await connector.discoverTools(context);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(2);
+    expect(launches[1]?.MAIL_TOKEN).toBe("Bearer access-2");
+    await connector.close();
+  });
+
+  it("keeps a process whose env does not use the access token", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = stdioConnector(
+      stored({ env: { MAIL_CLIENT_ID: "{{oauth.client_id}}" } }),
+      brokerFor(),
+    );
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(1);
+    await connector.close();
+  });
+
+  it("keeps a process whose access token cannot be renewed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const load = stored({}, (value) => delete value.oauth?.tokens?.refresh_token);
+    const connector = stdioConnector(load, brokerFor());
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(1);
     await connector.close();
   });
 });

@@ -247,12 +247,22 @@ type ProviderOptions = {
 };
 
 /** Refresh before expiry to cover clock skew and request time. */
-const TOKEN_REFRESH_SKEW_MS = 60_000;
+export const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+/** When the access token lapses, if the grant says. */
+export function accessTokenExpiresAt(oauth: OAuthState | undefined): number | undefined {
+  const lifetimeSeconds = oauth?.tokens?.expires_in;
+  if (!oauth?.obtainedAt || !lifetimeSeconds) return undefined;
+  return oauth.obtainedAt + lifetimeSeconds * 1000;
+}
 
 function accessTokenExpired(oauth: OAuthState | undefined): boolean {
-  const lifetimeSeconds = oauth?.tokens?.expires_in;
-  if (!oauth?.tokens?.refresh_token || !oauth.obtainedAt || !lifetimeSeconds) return false;
-  return Date.now() >= oauth.obtainedAt + lifetimeSeconds * 1000 - TOKEN_REFRESH_SKEW_MS;
+  const expiresAt = accessTokenExpiresAt(oauth);
+  return (
+    Boolean(oauth?.tokens?.refresh_token) &&
+    expiresAt !== undefined &&
+    Date.now() >= expiresAt - TOKEN_REFRESH_SKEW_MS
+  );
 }
 
 // RFC 8707 resource binding: only accept a self-declared canonical resource
