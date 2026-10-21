@@ -23,7 +23,6 @@ const skippedBrowserProfileDirectories = new Set([
   "Cache",
   "Code Cache",
   "CacheStorage",
-  "ScriptCache",
   "GPUCache",
   "GrShaderCache",
   "ShaderCache",

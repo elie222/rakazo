@@ -39,6 +39,7 @@ describe("provider-neutral computer workspace", () => {
       "Default/Login Data",
       "Default/Extensions/abc/1.0/manifest.json",
       "Default/Service Worker/Database/CURRENT",
+      "Default/Service Worker/ScriptCache/index",
       "HistorySearch/embeddings.db",
     ]) {
       expect(shouldSkipPortableWorkspaceFile(`${profile}/${kept}`)).toBe(false);
