@@ -1514,6 +1514,85 @@ describe("MCP OAuth", () => {
       ).toBe(false);
     });
 
+    it("refuses tokens from an overlapping flow that discovered a different server", async () => {
+      // Two flows load the same unbound client; the other one is saved first and binds it.
+      const discovery = {
+        authorizationServerUrl: "https://auth.example.test",
+        authorizationServerMetadata: {
+          issuer: "https://auth.example.test",
+          authorization_endpoint: "https://auth.example.test/authorize",
+          token_endpoint: "https://auth.example.test/token",
+          response_types_supported: ["code"],
+        },
+      };
+      const shared = sharedCredentials({
+        oauthClient,
+        oauth: { redirectUri: "https://app/cb", discoveryState: discovery },
+      });
+      const { provider } = await shared.startProcess(rotatingAuthServer().fetch);
+      const boundElsewhere = {
+        oauthClient: { ...oauthClient, authorization_server: "https://trusted-auth.example.test/" },
+        oauth: { redirectUri: "https://app/cb" },
+      };
+      await shared.replaceStored(boundElsewhere);
+
+      await expect(
+        provider.saveTokens({ access_token: "from-other-server", token_type: "Bearer" }),
+      ).rejects.toThrow("authorization server");
+
+      expect(await shared.stored()).toEqual(boundElsewhere);
+    });
+
+    it("checks the code exchange against the binding stored after the flow began", async () => {
+      const requested = nonRegisteringAuthServer(() => undefined);
+      const sessionId = "6c1d7f0e-2a4b-4c8d-9e3f-5a6b7c8d9e0f";
+      const { broker, prisma, secrets } = brokerWithMaterial({});
+      // The flow began with the client unbound and discovered auth.example.test; an
+      // overlapping flow has since bound the stored client to another server.
+      const flow: OAuthMaterial = {
+        oauthClient,
+        oauth: {
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+          codeVerifier: "verifier",
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              response_types_supported: ["code"],
+            },
+          },
+        },
+      };
+      const stored: OAuthMaterial = {
+        oauthClient: { ...oauthClient, authorization_server: "https://trusted-auth.example.test/" },
+      };
+      (secrets.load as ReturnType<typeof vi.fn>).mockImplementation(async (ciphertext: string) =>
+        JSON.stringify(ciphertext === "session-encrypted" ? flow : stored),
+      );
+      prisma.mcpOAuthSession.findFirst.mockResolvedValue({
+        id: sessionId,
+        serverId: "server-1",
+        endpoint: "https://mcp.example.test/mcp",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+        oauthCiphertext: "session-encrypted",
+        createdAt: new Date(),
+      });
+
+      await expect(
+        broker.complete({
+          sessionId,
+          code: "authorization-code",
+          state: sessionId,
+          spaceId: "workspace-1",
+          userId: "user-1",
+        }),
+      ).rejects.toThrow("authorization server");
+
+      expect(requested.some((request) => request.includes("/token"))).toBe(false);
+    });
+
     it("does not refresh against an authorization server the client is not bound to", async () => {
       const server = rotatingAuthServer();
       const { clientInformation: _registered, ...oauth } = expiringMaterial(EXPIRED()).oauth;
