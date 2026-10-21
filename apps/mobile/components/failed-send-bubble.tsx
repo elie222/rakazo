@@ -1,3 +1,4 @@
+import { typeScale } from "@rakazo/ui-tokens";
 import { ActionSheetIOS, Alert, Image, Platform, Pressable, Text, View } from "react-native";
 import { useI18n } from "../lib/i18n";
 import { useMobileTokens } from "../lib/native";
@@ -91,7 +92,7 @@ export function FailedSendBubble({
           </Text>
         ) : null}
         {payload.displayText ? (
-          <Text style={{ color: tokens.secondaryForeground, fontSize: 15.5, lineHeight: 23 }}>
+          <Text style={{ color: tokens.secondaryForeground, ...typeScale.body }}>
             {payload.displayText}
           </Text>
         ) : null}

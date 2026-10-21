@@ -1,3 +1,4 @@
+import { typeScale } from "@rakazo/ui-tokens";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { mobileTokens } from "../lib/appearance";
@@ -65,7 +66,7 @@ function createStyles() {
     sheet: { flex: 1, backgroundColor: tokens.background },
     header: { flexDirection: "row", justifyContent: "flex-end", padding: 16 },
     content: { paddingHorizontal: 20, paddingBottom: 40 },
-    text: { color: tokens.foreground, fontSize: 16, lineHeight: 24 },
+    text: { color: tokens.foreground, ...typeScale.body },
     iosTextInput: { paddingTop: 0, paddingBottom: 0 },
   });
 }
