@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import Module from "node:module";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { pickFromLibrary as PickFromLibrary } from "./pick-attachments";
 
 const state = vi.hoisted(() => ({
   asset: {
@@ -13,6 +15,8 @@ const state = vi.hoisted(() => ({
   render: vi.fn(),
   save: vi.fn(),
   base64: vi.fn(),
+  optionalNativeModule: vi.fn(),
+  loadManipulator: vi.fn(),
 }));
 
 vi.mock("expo-file-system", () => ({
@@ -29,12 +33,17 @@ vi.mock("expo-document-picker", () => ({}));
 vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn(async () => ({ canceled: false, assets: [state.asset] })),
 }));
-vi.mock("expo-image-manipulator", () => ({
-  ImageManipulator: { manipulate: state.manipulate },
-  SaveFormat: { JPEG: "jpeg", PNG: "png" },
+vi.mock("expo-modules-core", () => ({
+  requireOptionalNativeModule: state.optionalNativeModule,
 }));
 
-import { pickFromLibrary } from "./pick-attachments";
+// Vitest's ESM mocks do not intercept Metro's CommonJS require.
+const nodeModule = Module as unknown as {
+  _load: (id: string, ...args: unknown[]) => unknown;
+};
+const originalLoad = nodeModule._load;
+
+let pickFromLibrary: typeof PickFromLibrary;
 
 function asset(overrides: Partial<typeof state.asset> = {}) {
   state.asset = {
@@ -47,7 +56,19 @@ function asset(overrides: Partial<typeof state.asset> = {}) {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
+  state.optionalNativeModule.mockReset().mockReturnValue({});
+  state.loadManipulator.mockReset().mockImplementation(() => ({
+    ImageManipulator: { manipulate: state.manipulate },
+    SaveFormat: { JPEG: "jpeg", PNG: "png" },
+  }));
+  vi.spyOn(nodeModule, "_load").mockImplementation((id, ...args) =>
+    id === "expo-image-manipulator"
+      ? state.loadManipulator(id)
+      : originalLoad.call(Module, id, ...args),
+  );
+  ({ pickFromLibrary } = await import("./pick-attachments"));
   asset();
   state.manipulate.mockReset();
   state.resize.mockReset();
@@ -60,7 +81,44 @@ beforeEach(() => {
   state.base64.mockResolvedValue("aGVsbG8=");
 });
 
+afterEach(() => vi.restoreAllMocks());
+
 describe("image attachment preparation", () => {
+  it("keeps the original when the native module is absent", async () => {
+    state.optionalNativeModule.mockReturnValue(null);
+
+    const result = await pickFromLibrary();
+    await pickFromLibrary();
+
+    expect(state.optionalNativeModule).toHaveBeenCalledExactlyOnceWith("ExpoImageManipulator");
+    expect(state.loadManipulator).not.toHaveBeenCalled();
+    expect(state.manipulate).not.toHaveBeenCalled();
+    expect(result.attachments[0]).toMatchObject({
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      previewUri: "file:///fake/photo.jpg",
+      contentBase64: "aGVsbG8=",
+    });
+  });
+
+  it("keeps the original when loading the manipulator throws", async () => {
+    state.loadManipulator.mockImplementation(() => {
+      throw new Error("native module unavailable");
+    });
+
+    const result = await pickFromLibrary();
+    await pickFromLibrary();
+
+    expect(state.loadManipulator).toHaveBeenCalledExactlyOnceWith("expo-image-manipulator");
+    expect(state.manipulate).not.toHaveBeenCalled();
+    expect(result.attachments[0]).toMatchObject({
+      name: "photo.jpg",
+      mimeType: "image/jpeg",
+      previewUri: "file:///fake/photo.jpg",
+      contentBase64: "aGVsbG8=",
+    });
+  });
+
   it("leaves a small image untouched", async () => {
     asset({ width: 1000, height: 800 });
 

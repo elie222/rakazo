@@ -2,8 +2,9 @@ import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
-import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import type * as ImageManipulatorModule from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 import { filterPickedAttachments } from "./pick-attachments-filter.js";
 
@@ -13,8 +14,23 @@ export type { PickedAttachment, PickSkip } from "./pick-attachments-filter.js";
 const MAX_IMAGE_EDGE = 1_600;
 const IMAGE_COMPRESSION = 0.7;
 
-function compressedImageName(name: string, format: SaveFormat): string {
-  const extension = format === SaveFormat.PNG ? ".png" : ".jpg";
+let imageManipulator: typeof ImageManipulatorModule | null | undefined;
+
+function loadImageManipulator() {
+  if (imageManipulator !== undefined) return imageManipulator;
+  imageManipulator = null;
+  try {
+    if (requireOptionalNativeModule("ExpoImageManipulator")) {
+      imageManipulator = require("expo-image-manipulator") as typeof ImageManipulatorModule;
+    }
+  } catch {
+    // Older binaries may not be able to load the package.
+  }
+  return imageManipulator;
+}
+
+function compressedImageName(name: string, format: ImageManipulatorModule.SaveFormat): string {
+  const extension = format === "png" ? ".png" : ".jpg";
   return `${name.replace(/\.[^./\\]+$/, "") || "photo"}${extension}`;
 }
 
@@ -31,16 +47,19 @@ async function prepareImage(
   if (!width || !height || Math.max(width, height) <= MAX_IMAGE_EDGE) {
     return { uri, name, mimeType };
   }
-  const format = mimeType === "image/png" ? SaveFormat.PNG : SaveFormat.JPEG;
+  const manipulator = loadImageManipulator();
+  if (!manipulator) return { uri, name, mimeType };
+  const format =
+    mimeType === "image/png" ? manipulator.SaveFormat.PNG : manipulator.SaveFormat.JPEG;
   try {
-    const context = ImageManipulator.manipulate(uri);
+    const context = manipulator.ImageManipulator.manipulate(uri);
     context.resize(width >= height ? { width: MAX_IMAGE_EDGE } : { height: MAX_IMAGE_EDGE });
     const image = await context.renderAsync();
     const saved = await image.saveAsync({ compress: IMAGE_COMPRESSION, format });
     return {
       uri: saved.uri,
       name: compressedImageName(name, format),
-      mimeType: format === SaveFormat.PNG ? "image/png" : "image/jpeg",
+      mimeType: format === "png" ? "image/png" : "image/jpeg",
     };
   } catch {
     // An unreadable or unsupported image should not block the whole picker.
