@@ -1,8 +1,59 @@
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { collectNovncHtml, MAX_NOVNC_HTML_BYTES } from "./novnc-html.js";
+import {
+  collectNovncHtml,
+  injectNovncStorageShim,
+  isNovncPage,
+  MAX_NOVNC_HTML_BYTES,
+  shouldInjectNovncStorageShim,
+} from "./novnc-html.js";
 
-describe("CreateOS noVNC HTML rewrite", () => {
+const html = { "content-type": "text/html; charset=utf-8" };
+
+describe("noVNC storage shim gate", () => {
+  it("matches noVNC pages on any provider path", () => {
+    expect(isNovncPage("/vnc.html")).toBe(true);
+    expect(isNovncPage("/vnc_lite.html?autoconnect=true")).toBe(true);
+    expect(isNovncPage("/proxy/6080/embed.html")).toBe(true);
+    expect(isNovncPage("/core/rfb.js")).toBe(false);
+    expect(isNovncPage("/index.html")).toBe(false);
+    expect(isNovncPage("/websockify")).toBe(false);
+  });
+
+  it("injects into noVNC HTML", () => {
+    expect(shouldInjectNovncStorageShim(html, "/vnc.html")).toBe(true);
+    expect(
+      shouldInjectNovncStorageShim({ "content-type": "application/xhtml+xml" }, "/vnc.html"),
+    ).toBe(true);
+  });
+
+  it("skips non-HTML responses", () => {
+    expect(shouldInjectNovncStorageShim({ "content-type": "text/javascript" }, "/vnc.html")).toBe(
+      false,
+    );
+    expect(shouldInjectNovncStorageShim({}, "/vnc.html")).toBe(false);
+  });
+
+  it("skips HTML that is not a noVNC page", () => {
+    expect(shouldInjectNovncStorageShim(html, "/index.html")).toBe(false);
+  });
+
+  it("skips compressed HTML it cannot rewrite", () => {
+    expect(shouldInjectNovncStorageShim({ ...html, "content-encoding": "gzip" }, "/vnc.html")).toBe(
+      false,
+    );
+  });
+
+  it("puts the shim before the first script", () => {
+    expect(injectNovncStorageShim("<html><head><title>x</title>")).toMatch(
+      /^<html><head><script>\nObject\.defineProperty\(window, "localStorage"/,
+    );
+    const bare = injectNovncStorageShim('<!doctype html><script src="app.js"></script>');
+    expect(bare.indexOf("localStorage")).toBeLessThan(bare.indexOf('src="app.js"'));
+  });
+});
+
+describe("noVNC HTML read", () => {
   it("returns a document that ends", async () => {
     const html = await collectNovncHtml(Readable.from([Buffer.from("<html></html>")]), 1024);
     expect(html).toBe("<html></html>");
