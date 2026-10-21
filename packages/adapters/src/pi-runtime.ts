@@ -1318,7 +1318,7 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
                 details: { error: "no executor" },
               };
             })();
-            if (VERBATIM_TOOL_RESULTS.has(tool.name)) return result as AgentToolResult<unknown>;
+            if (VERBATIM_TOOL_RESULTS.has(tool.name) || tool.name.startsWith("mcp__rakazo-history__")) return result as AgentToolResult<unknown>;
             return boundAgentToolResult(result as AgentToolResult<unknown>);
           } catch (error) {
             failure = error;
@@ -2183,7 +2183,7 @@ export function serializeToolResult(
     const text = JSON.stringify(result);
     if (!text) return "ok";
     // skill-tools.ts already bounds skill content; the context budget selector may still shorten it.
-    if (text.length <= 12_000 || VERBATIM_TOOL_RESULTS.has(name)) return text;
+    if (text.length <= 12_000 || VERBATIM_TOOL_RESULTS.has(name) || name.startsWith("mcp__rakazo-history__")) return text;
     return (strategy ?? DEFAULT_CONTEXT_STRATEGY) === "current"
       ? clipToolResultText(text)
       : shortenToolResultText(text, 12_000, { name, arguments: args });
