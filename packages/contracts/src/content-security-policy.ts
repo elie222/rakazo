@@ -9,6 +9,13 @@
  * app policy the way a srcdoc frame would; its own meta CSP governs it and its nested preview. */
 export const HTML_VIEWER_PATH = "/html-viewer.html";
 
+/** Same-origin endpoint browsers send violation reports to, so a blocked resource is not silent. */
+export const CSP_REPORT_PATH = "/api/csp-report";
+const CSP_REPORT_GROUP = "csp";
+
+/** The `Reporting-Endpoints` header that names the policy's `report-to` group. */
+export const CSP_REPORTING_ENDPOINTS = `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`;
+
 const APP_DIRECTIVES: Record<string, string[]> = {
   "default-src": ["'self'"],
   "script-src": ["'self'"],
@@ -26,6 +33,9 @@ const APP_DIRECTIVES: Record<string, string[]> = {
   "base-uri": ["'self'"],
   "form-action": ["'self'"],
   "frame-ancestors": ["'none'"],
+  // Browsers with the Reporting API use report-to and ignore report-uri; the rest use report-uri.
+  "report-uri": [CSP_REPORT_PATH],
+  "report-to": [CSP_REPORT_GROUP],
 };
 
 function serialize(directives: Record<string, string[]>) {

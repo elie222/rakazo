@@ -1,5 +1,6 @@
 import { i18n } from "@lingui/core";
 import { applyUiDirection } from "./apply-ui-direction";
+import { importChunk } from "./preload-recovery";
 import { persistUiLocale, resolveUiLocale, type UiLocale } from "./ui-locale";
 
 export { i18n };
@@ -39,7 +40,7 @@ export function getActiveUiLocale(): UiLocale {
 }
 
 async function loadCatalog(locale: UiLocale): Promise<CatalogMessages> {
-  const { messages } = await catalogLoaders[locale]();
+  const { messages } = await importChunk(catalogLoaders[locale]);
   return messages;
 }
 

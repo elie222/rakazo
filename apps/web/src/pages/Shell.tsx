@@ -94,6 +94,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   resolvePersonaColorDef,
+  Spinner,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -220,6 +221,7 @@ import {
   subscribeComposerEnterToSend,
 } from "../lib/composer-enter-to-send-pref";
 import {
+  bootComputerOnce,
   embeddableScreenUrl,
   loadComputerScreen,
   screenIframeSandbox,
@@ -754,7 +756,10 @@ function SpaceShell() {
     section: BotSection;
     spaceId: string;
   } | null>(null);
-  const [booting, setBooting] = useState(false);
+  // The bot whose boot shows progress, and every bot whose boot request is still out.
+  const [bootingBotId, setBootingBotId] = useState<string | null>(null);
+  const booting = bootingBotId !== null && bootingBotId === computer?.botId;
+  const bootsInFlight = useRef(new Map<string, symbol>());
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [initialBotsLoaded, setInitialBotsLoaded] = useState(false);
   const [bootstrapMe, setBootstrapMe] = useState<Me | null>();
@@ -820,6 +825,8 @@ function SpaceShell() {
   // Screen-load failures can sit beside a still-valid embed URL; boot and
   // takeover failures must stay visible even when a URL remains.
   const [computerErrorFromScreen, setComputerErrorFromScreen] = useState(false);
+  const computerErrorFromScreenRef = useRef(false);
+  computerErrorFromScreenRef.current = computerErrorFromScreen;
   useEffect(() => {
     if (!computerOpen) {
       setComputerViewport(null);
@@ -1228,8 +1235,11 @@ function SpaceShell() {
         computerVisible.current,
       commit: (screen) => {
         setScreenUrl(screen.url);
-        setComputerError(screen.error);
-        setComputerErrorFromScreen(Boolean(screen.error));
+        // A screen read replaces only its own error; a failed boot keeps its error and Retry.
+        if (screen.error || computerErrorFromScreenRef.current) {
+          setComputerError(screen.error);
+          setComputerErrorFromScreen(Boolean(screen.error));
+        }
         cacheComputerFor(id, { screenUrl: screen.url });
       },
       fallbackError: t`Could not connect to the computer screen`,
@@ -2715,12 +2725,12 @@ function SpaceShell() {
   async function bootComputer({
     botId: targetBotId,
     takeControl,
-    overlay,
+    showProgress,
     force = false,
   }: {
     botId: string;
     takeControl: boolean;
-    overlay: boolean;
+    showProgress: boolean;
     force?: boolean;
   }) {
     const epoch = ++computerBootEpoch.current;
@@ -2731,15 +2741,19 @@ function SpaceShell() {
     const targetComputer = computer?.botId === targetBotId ? computer : (cached?.computer ?? null);
     const targetScreen = computer?.botId === targetBotId ? screenUrl : (cached?.screenUrl ?? null);
     const needsBoot = force || targetComputer?.state !== "running" || !targetScreen;
-    if (overlay && needsBoot) setBooting(true);
+    if (showProgress && needsBoot) setBootingBotId(targetBotId);
     setComputerError(null);
     setComputerErrorFromScreen(false);
     try {
       if (needsBoot) {
-        const status = await rpc.computer.boot({ botId: targetBotId });
+        const status = await bootComputerOnce(bootsInFlight.current, targetBotId, () =>
+          rpc.computer.boot({ botId: targetBotId }),
+        );
         if (!stillThisBoot() || !stillThisBot()) return;
-        commitComputer(status);
-        cacheComputerFor(targetBotId, { computer: status });
+        if (status) {
+          commitComputer(status);
+          cacheComputerFor(targetBotId, { computer: status });
+        }
       }
       if (takeControl) {
         await rpc.computer.takeover({ botId: targetBotId });
@@ -2752,7 +2766,7 @@ function SpaceShell() {
       setComputerErrorFromScreen(false);
       throw error;
     } finally {
-      if (stillThisBoot()) setBooting(false);
+      if (stillThisBoot()) setBootingBotId(null);
     }
   }
 
@@ -2790,7 +2804,7 @@ function SpaceShell() {
       await bootComputer({
         botId,
         takeControl: false,
-        overlay: false,
+        showProgress: false,
         force: true,
       }).catch(() => undefined);
     })();
@@ -2944,15 +2958,18 @@ function SpaceShell() {
       commitComputer(targetComputer);
       setScreenUrl(targetScreen);
     }
+    // Reopening during a boot shows it; a second boot would be refused as busy.
+    const bootInFlight = bootsInFlight.current.has(id) || targetComputer?.state === "booting";
     setComputerOpen(true);
     computerVisible.current = true;
+    if (bootInFlight && !takeControl) return true;
     const needsTakeover = takeControl && !userHoldsComputerControl(targetComputer, id);
     const blocked = computerTakeoverBlocked(targetComputer, snapshot?.run?.status);
     try {
       await bootComputer({
         botId: id,
         takeControl: needsTakeover && !blocked,
-        overlay: (needsTakeover && !blocked) || targetComputer?.state !== "running",
+        showProgress: (needsTakeover && !blocked) || targetComputer?.state !== "running",
         force: targetComputer?.state !== "running",
       });
       return true;
@@ -2998,18 +3015,45 @@ function SpaceShell() {
   const embeddedScreenUrl = embeddableScreenUrl(screenUrl);
   const hasControl = userHoldsComputerControl(computer, computerBot?.id);
   const hideScreenLoadError = computerErrorFromScreen && Boolean(embeddedScreenUrl);
-  const computerScreenError =
-    computerError && !hideScreenLoadError ? (
-      <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
-        <p className="text-destructive">{computerError}</p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => computerBot && void refreshComputerScreen(computerBot.id)}
-        >
-          <Trans>Retry screen</Trans>
-        </Button>
-      </div>
+  const computerFailure =
+    computerError && !hideScreenLoadError
+      ? computerError
+      : !booting && computer?.state === "error"
+        ? t`Computer failed to boot`
+        : null;
+  const computerScreenError = computerFailure ? (
+    <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
+      <p className="text-destructive">{computerFailure}</p>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          if (!computerBot) return;
+          if (computer?.state === "running") {
+            // An explicit retry clears any error; background screen reads clear only their own.
+            setComputerError(null);
+            setComputerErrorFromScreen(false);
+            void refreshComputerScreen(computerBot.id);
+          } else
+            void bootComputer({
+              botId: computerBot.id,
+              takeControl: false,
+              showProgress: true,
+              force: true,
+            }).catch(() => undefined);
+        }}
+      >
+        <Trans>Retry screen</Trans>
+      </Button>
+    </div>
+  ) : null;
+  // Booting shows inline with the screen's own Close; leaving it lets the boot finish.
+  const computerBooting =
+    booting || computer?.state === "booting" ? (
+      <span className="flex flex-col items-center gap-3">
+        <Spinner aria-hidden className="size-5 motion-reduce:animate-none" />
+        {t`Booting live desktop…`}
+      </span>
     ) : null;
   const computerPreviewScreen =
     !computerOpen &&
@@ -3966,7 +4010,7 @@ function SpaceShell() {
       </aside>
 
       {/* The full-screen computer covers the sidebar, so its edge must not catch clicks there. */}
-      {computerOpen || booting ? null : (
+      {computerOpen ? null : (
         <button
           type="button"
           data-testid="bots-sidebar-edge"
@@ -4338,11 +4382,12 @@ function SpaceShell() {
                             }
                           />
                         ) : (
+                          (computerBooting ??
                           computerPlaceholder(
                             computer?.state,
                             booting,
                             computerLabel(computer?.mode, active.name),
-                          )
+                          ))
                         ))}
                     </div>
                   )}
@@ -5011,16 +5056,7 @@ function SpaceShell() {
         ) : null}
       </Suspense>
 
-      {booting ? (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-[22px] bg-background/95">
-          <div className="text-[19px] font-medium text-foreground">
-            <Trans>Booting up {computerBot?.name ?? active?.name}’s computer</Trans>
-          </div>
-          <div className="h-[5px] w-[min(420px,70%)] overflow-hidden rounded-full bg-accent">
-            <div className="h-full w-2/3 rounded-full bg-primary" />
-          </div>
-        </div>
-      ) : computerOpen && computerBot ? (
+      {computerOpen && computerBot ? (
         <div className="fixed inset-0 z-30 bg-background">
           <div
             data-testid="computer-viewport"
@@ -5164,6 +5200,7 @@ function SpaceShell() {
               ) : (
                 <div className="grid h-full place-items-center text-sm text-muted-foreground/80">
                   {computerScreenError ??
+                    computerBooting ??
                     (computer?.state === "suspended"
                       ? t`Computer is asleep`
                       : computerLabel(computer?.mode, computerBot.name))}

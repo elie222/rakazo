@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   APP_CONTENT_SECURITY_POLICY,
   appContentSecurityPolicy,
+  CSP_REPORT_PATH,
+  CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   HTML_VIEWER_PATH,
   parseContentSecuritySources,
@@ -35,6 +37,20 @@ describe("app content security policy", () => {
   it("talks only to its own origin, which hosts the API, RPC, monitoring tunnel and screen proxy", () => {
     expect(policy.get("connect-src")).toEqual(["'self'"]);
     expect(policy.get("frame-src")).toEqual(["'self'", "blob:"]);
+  });
+
+  it("reports violations to the same-origin API endpoint with both mechanisms", () => {
+    expect(CSP_REPORT_PATH).toBe("/api/csp-report");
+    expect(policy.get("report-uri")).toEqual([CSP_REPORT_PATH]);
+    expect(policy.get("report-to")).toEqual(["csp"]);
+    expect(CSP_REPORTING_ENDPOINTS).toBe('csp="/api/csp-report"');
+    // The endpoint sits under /api, which 'self' already allows and the edge routes to the API.
+    expect(contentSecurityPolicyFor(CSP_REPORT_PATH)).toBeNull();
+    const extended = directives(
+      appContentSecurityPolicy({ connectSrc: ["https://x.example.com"] }),
+    );
+    expect(extended.get("report-uri")).toEqual([CSP_REPORT_PATH]);
+    expect(extended.get("report-to")).toEqual(["csp"]);
   });
 
   it("does not apply to proxied responses that carry their own policy", () => {

@@ -4,11 +4,16 @@ import type {
   OAuthClientProvider,
   OAuthDiscoveryState,
 } from "@modelcontextprotocol/sdk/client/auth.js";
-import { refreshAuthorization } from "@modelcontextprotocol/sdk/client/auth.js";
+import {
+  auth,
+  discoverOAuthProtectedResourceMetadata,
+  refreshAuthorization,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InvalidGrantError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
+  OAuthClientInformation,
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
@@ -39,6 +44,10 @@ export type OAuthMaterial = {
   secret?: string;
   env?: Record<string, string>;
   headers?: Record<string, string>;
+  /** A client registered with the authorization server out of band. It is
+   * configuration, not SDK state, so it outlives disconnects and replaces
+   * dynamic client registration for servers that do not offer it. */
+  oauthClient?: PreRegisteredClient;
   oauth?: OAuthState;
 };
 
@@ -54,6 +63,7 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   add(material.secret);
   add(material.oauth?.tokens?.access_token);
   add(material.oauth?.tokens?.refresh_token);
+  add(material.oauthClient?.client_secret);
   const client = material.oauth?.clientInformation;
   if (client && "client_secret" in client && typeof client.client_secret === "string") {
     add(client.client_secret);
@@ -169,8 +179,36 @@ const COMMON_CONFIG_VALUES = new Set([
   "async",
 ]);
 
+/** `authorization_server` binds the client to the server it was first used with,
+ * so an MCP server cannot later steer the secret to another one via discovery. */
+type PreRegisteredClient = OAuthClientInformation & { authorization_server?: string };
+
+function boundClient(
+  client: PreRegisteredClient,
+  authorizationServerUrl: string | undefined,
+): OAuthClientInformation {
+  if (!authorizationServerUrl) throw new Error("MCP OAuth authorization server is unknown");
+  if (
+    client.authorization_server &&
+    client.authorization_server !== new URL(authorizationServerUrl).href
+  )
+    throw new McpOAuthServerMismatchError();
+  const { authorization_server: _bound, ...information } = client;
+  return information;
+}
+
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };
 type ActorRef = { spaceId: string; userId: string };
+
+/** Our own text, so callers may show it as is. */
+export class McpOAuthServerMismatchError extends Error {
+  constructor() {
+    super(
+      "MCP OAuth authorization server differs from the one this client was first used with; reconfigure the server's OAuth client",
+    );
+    this.name = "McpOAuthServerMismatchError";
+  }
+}
 
 export class McpReauthorizationRequiredError extends Error {
   readonly code = "MCP_REAUTHORIZATION_REQUIRED";
@@ -279,7 +317,25 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     return this.options.state ?? this.runtimeState;
   }
   clientInformation(): OAuthClientInformationMixed | undefined {
-    return this.material.oauth?.clientInformation;
+    const client = this.material.oauthClient;
+    if (!client) return this.material.oauth?.clientInformation;
+    // The SDK saves discovery before asking for the client, so this is the server
+    // about to receive it. The first one is kept and written with the next persist.
+    const server = this.material.oauth?.discoveryState?.authorizationServerUrl;
+    const information = boundClient(client, server);
+    if (!client.authorization_server && server)
+      this.material.oauthClient = { ...client, authorization_server: new URL(server).href };
+    return information;
+  }
+  /**
+   * Take the binding another flow saved for this same client, so the code exchange checks
+   * against it instead of this flow's own (possibly different) choice.
+   */
+  adoptClientBinding(stored: PreRegisteredClient | undefined): void {
+    const client = this.material.oauthClient;
+    const bound = stored?.authorization_server;
+    if (!client || !bound || !sameOAuthClient(client, stored)) return;
+    this.material.oauthClient = { ...client, authorization_server: bound };
   }
   async saveClientInformation(value: OAuthClientInformationMixed): Promise<void> {
     this.oauth().clientInformation = value;
@@ -515,6 +571,32 @@ function oauthFetch(
   };
 }
 
+/**
+ * Some servers (Google's MCP servers, for one) answer the handshake without a
+ * token and only challenge tool calls, so connecting never asks for
+ * authorization. When the user asks to connect and the server publishes where to
+ * authorize (RFC 9728), start that authorization. Without that metadata the SDK
+ * would guess the server's own origin and could try to register a client there.
+ */
+async function startAdvertisedAuthorization(
+  provider: StoredMcpOAuthProvider,
+  serverUrl: URL,
+  fetchFn: typeof fetch,
+): Promise<void> {
+  let resourceMetadata: Awaited<ReturnType<typeof discoverOAuthProtectedResourceMetadata>>;
+  try {
+    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, undefined, fetchFn);
+  } catch {
+    return;
+  }
+  const advertised = resourceMetadata.authorization_servers?.[0];
+  if (!advertised) return;
+  // Hand the SDK the discovery just verified. Left to rediscover, a failed second
+  // read would fall back to the MCP server's own origin and bind the client there.
+  await provider.saveDiscoveryState({ authorizationServerUrl: advertised, resourceMetadata });
+  await auth(provider, { serverUrl, fetchFn });
+}
+
 type OAuthRejection = { status: number; code: string; description: string };
 
 const OAUTH_ERROR_BODY_MAX_CHARS = 8_000;
@@ -596,21 +678,60 @@ function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<n
 
 /** One refresh-token grant against the stored authorization server. */
 async function requestRefresh(
-  oauth: OAuthState,
+  material: OAuthMaterial,
   refreshToken: string,
   fetchFn: typeof fetch,
 ): Promise<OAuthTokens> {
-  const discovery = oauth.discoveryState;
-  if (!discovery?.authorizationServerUrl || !oauth.clientInformation)
+  const discovery = material.oauth?.discoveryState;
+  const clientInformation = material.oauthClient
+    ? boundClient(material.oauthClient, discovery?.authorizationServerUrl)
+    : material.oauth?.clientInformation;
+  if (!discovery?.authorizationServerUrl || !clientInformation)
     throw new Error("MCP OAuth state cannot refresh");
   return refreshAuthorization(discovery.authorizationServerUrl, {
     metadata: discovery.authorizationServerMetadata,
-    clientInformation: oauth.clientInformation,
+    clientInformation,
     refreshToken,
     resource: canonicalResource(discovery.resourceMetadata?.resource),
     fetchFn: (input, init) =>
       fetchFn(input, { ...init, signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS) }),
   });
+}
+
+function sameOAuthClient(
+  left: PreRegisteredClient | undefined,
+  right: PreRegisteredClient | undefined,
+): boolean {
+  return left?.client_id === right?.client_id && left?.client_secret === right?.client_secret;
+}
+
+/**
+ * The authorization server a flow will send its client to: the binding it carries, else
+ * the server its discovery found (a flow that began with an unbound client).
+ */
+function flowAuthorizationServer(material: OAuthMaterial): string | undefined {
+  const bound = material.oauthClient?.authorization_server;
+  if (bound) return bound;
+  const discovered = material.oauth?.discoveryState?.authorizationServerUrl;
+  return discovered ? new URL(discovered).href : undefined;
+}
+
+/** Whether a flow targets a server other than the one the stored client is bound to. */
+function conflictsWithBinding(stored: PreRegisteredClient | undefined, flow: OAuthMaterial) {
+  const bound = stored?.authorization_server;
+  const target = flowAuthorizationServer(flow);
+  return Boolean(bound && target && bound !== target);
+}
+
+/** What the settings UI may know about a server's OAuth setup; never a credential. */
+export type McpOAuthSummary = {
+  status: "none" | "connected" | "reconnect";
+  clientId: string | null;
+};
+
+function summarize(material: OAuthMaterial): McpOAuthSummary {
+  const status = material.oauth?.tokens ? "connected" : material.oauth ? "reconnect" : "none";
+  return { status, clientId: material.oauthClient?.client_id ?? null };
 }
 
 export class McpOAuthBroker {
@@ -623,22 +744,20 @@ export class McpOAuthBroker {
     private readonly allowPrivateEndpoint = false,
   ) {}
 
-  async statusFor(
-    server: ServerRef,
-    context: ActorRef,
-  ): Promise<"none" | "connected" | "reconnect"> {
-    const { material } = await this.loadMaterial(server, context);
-    if (material.oauth?.tokens) return "connected";
-    return material.oauth ? "reconnect" : "none";
+  async statusFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary["status"]> {
+    return (await this.summaryFor(server, context)).status;
   }
 
-  async statusForCiphertext(
+  async summaryFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary> {
+    const { material } = await this.loadMaterial(server, context);
+    return summarize(material);
+  }
+
+  async summaryForCiphertext(
     ciphertext: string | undefined,
     recordId: string | undefined,
-  ): Promise<"none" | "connected" | "reconnect"> {
-    const material = ciphertext && recordId ? await this.read(ciphertext, recordId) : {};
-    if (material.oauth?.tokens) return "connected";
-    return material.oauth ? "reconnect" : "none";
+  ): Promise<McpOAuthSummary> {
+    return summarize(ciphertext && recordId ? await this.read(ciphertext, recordId) : {});
   }
 
   async providerFor(
@@ -716,7 +835,14 @@ export class McpOAuthBroker {
     const signal = AbortSignal.timeout(15_000);
     try {
       await client.connect(transport, { signal, timeout: 15_000 });
+      if (!authorizationUrl && !(await provider.tokens()))
+        await startAdvertisedAuthorization(
+          provider,
+          endpoint,
+          provider.wrapFetch(networkFetch.fetch),
+        );
     } catch (error) {
+      if (error instanceof McpOAuthServerMismatchError) throw error;
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await client.close().catch(() => undefined);
@@ -838,11 +964,23 @@ export class McpOAuthBroker {
       },
     });
     if (consumed.count !== 1) throw new Error("MCP OAuth session is invalid or expired");
+    // The exchange sends the client secret: check it against the binding stored now, not
+    // the one this flow started with, in case an overlapping flow bound the client first.
+    const current = await this.prisma.mcpServer.findFirst({
+      where: { id: pending.serverId, spaceId: input.spaceId, userId: input.userId },
+      select: { id: true, endpoint: true, secretId: true },
+    });
+    if (current) {
+      const stored = await this.loadMaterial(current, input);
+      pending.provider.adoptClientBinding(stored.material.oauthClient);
+    }
     const endpoint = new URL(pending.endpoint);
     const networkFetch = oauthFetch(
       pending.endpoint,
       this.network,
-      {},
+      // Only for redacting errors: the exchange sends the client secret, but none of
+      // the server's static headers.
+      { oauth: { clientInformation: pending.provider.clientInformation() } },
       await actorMayUsePrivateEndpoint(this.prisma, pending.userId, this.allowPrivateEndpoint),
     );
     const transport = new StreamableHTTPClientTransport(endpoint, {
@@ -979,7 +1117,7 @@ export class McpOAuthBroker {
                 return { grant: { tokens: oauth?.tokens, obtainedAt: oauth?.obtainedAt } };
               let grant: TokenGrant;
               try {
-                grant = { tokens: await requestRefresh(oauth, current, network.fetch) };
+                grant = { tokens: await requestRefresh(material, current, network.fetch) };
                 grant.obtainedAt = Date.now();
               } catch (error) {
                 // Under the lock `current` is the stored token, so a rejection
@@ -1031,6 +1169,17 @@ export class McpOAuthBroker {
       const storedOAuth = nextMaterial.oauth;
       let kept: TokenGrant | undefined;
       if (material.oauth) {
+        // OAuth state belongs to the client that obtained it; a client changed in
+        // settings meanwhile has already dropped the grant this write carries.
+        if (!sameOAuthClient(material.oauthClient, nextMaterial.oauthClient))
+          throw new Error("MCP OAuth client changed during authorization; reconnect this server");
+        // Overlapping flows may have bound the same unbound client to different servers;
+        // the first binding saved wins and any other flow's state is refused.
+        if (conflictsWithBinding(nextMaterial.oauthClient, material))
+          throw new McpOAuthServerMismatchError();
+        const bound = material.oauthClient?.authorization_server;
+        if (nextMaterial.oauthClient && bound && !nextMaterial.oauthClient.authorization_server)
+          nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
         nextMaterial.oauth = structuredClone(material.oauth);
         if (
           options.storedRefreshToken !== undefined &&
@@ -1045,6 +1194,7 @@ export class McpOAuthBroker {
         nextMaterial.secret ||
           Object.keys(nextMaterial.env ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||
+          nextMaterial.oauthClient ||
           nextMaterial.oauth,
       );
       const stored = hasMaterial ? await this.putMaterial(nextMaterial, context) : undefined;

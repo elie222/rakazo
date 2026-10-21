@@ -102,6 +102,24 @@ describe("buildMcpCredentialBlob", () => {
       buildMcpCredentialBlob({ secret: "tok", headers: { Authorization: "Bearer tok" }, env: {} }),
     ).toEqual(JSON.stringify({ secret: "tok", env: {}, headers: { Authorization: "Bearer tok" } }));
   });
+
+  it("stores a pre-registered OAuth client on its own", () => {
+    expect(
+      JSON.parse(
+        buildMcpCredentialBlob({
+          headers: {},
+          oauthClient: { clientId: "client-1", clientSecret: "client-secret" },
+        }) ?? "null",
+      ),
+    ).toEqual({
+      env: {},
+      headers: {},
+      oauthClient: { client_id: "client-1", client_secret: "client-secret" },
+    });
+    expect(
+      JSON.parse(buildMcpCredentialBlob({ oauthClient: { clientId: "public-client" } }) ?? "null"),
+    ).toMatchObject({ oauthClient: { client_id: "public-client" } });
+  });
 });
 
 describe("needsOAuthProbe", () => {

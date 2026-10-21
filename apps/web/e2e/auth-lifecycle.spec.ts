@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { captureScreenshot, completeOnboarding, showPasswordForm, signup } from "./helpers";
+import {
+  captureScreenshot,
+  completeOnboarding,
+  showPasswordForm,
+  signup,
+  signupThroughForm,
+} from "./helpers";
 
 for (const mode of ["sign-in", "sign-up", "sso-only"] as const) {
   test(`SSO is ${mode === "sso-only" ? "primary" : "secondary"} on ${mode}`, async ({
@@ -95,7 +101,7 @@ test("logout protects bot deep links and sign-in restores the session", async ({
     "new-password",
   );
 
-  await signup(page, email, password, userName);
+  await signupThroughForm(page, email, password, userName);
   await completeOnboarding(page);
 
   await page.waitForURL(/\/app\/[^/]+$/);

@@ -374,6 +374,7 @@ msgstr "현재 모델"
 msgid "Activity"
 msgstr "활동"
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -602,6 +603,10 @@ msgstr "항상 허용됨"
 #: src/lib/model-connection-preflight.ts
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되어 있습니다."
+
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "An existing Honcho peer to read from. Rakazo never writes to it."
+msgstr "데이터를 읽어올 기존 Honcho 피어입니다. Rakazo는 이 피어에 데이터를 쓰지 않습니다."
 
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
@@ -856,11 +861,6 @@ msgstr ""
 #: src/pages/Shell.tsx
 msgid "Booting live desktop…"
 msgstr "라이브 데스크톱 시작 중…"
-
-#. placeholder {0}: computerBot?.name ?? active?.name
-#: src/pages/Shell.tsx
-msgid "Booting up {0}’s computer"
-msgstr "{0}의 컴퓨터를 켜는 중"
 
 #: src/pages/Shell.tsx
 msgid "bot"
@@ -2250,6 +2250,10 @@ msgstr "복제"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "예: Hivenet Agent, Presales, 근무표 봇"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "각 이름은 한 번만 사용할 수 있습니다."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "편집"
@@ -2312,6 +2316,10 @@ msgstr "이미지 한도는 1에서 1000 사이의 정수로 입력하세요."
 #: src/lib/model-connection-preflight.ts
 msgid "Enter an API key before testing."
 msgstr "테스트하기 전에 API 키를 입력하세요."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Environment variables"
+msgstr "환경 변수"
 
 #: src/lib/roster-status.ts
 #: src/pages/Shell.tsx
@@ -3219,6 +3227,7 @@ msgstr ""
 #: src/components/teach/SkillDraftCard.tsx
 #: src/pages/Auth.tsx
 #: src/pages/GroupPanel.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/RoutineEditor.tsx
 #: src/pages/shell/bot-credentials.tsx
 #: src/pages/shell/bot-panel.tsx
@@ -3456,6 +3465,14 @@ msgstr "이제 {0} 모델을 사용합니다."
 #: src/pages/McpOAuthCallback.tsx
 msgid "OAuth authorization was cancelled."
 msgstr "OAuth 인증이 취소되었습니다."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth 클라이언트 ID(선택 사항)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth 클라이언트 시크릿(선택 사항)"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
@@ -3765,6 +3782,10 @@ msgstr "대기 중"
 msgid "Quote"
 msgstr ""
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "React"
 msgstr "반응하기"
@@ -3863,6 +3884,10 @@ msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 msgid "Recreating the computer"
 msgstr ""
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "리디렉션 URI"
+
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
 #: src/pages/RoutineRunHistory.tsx
@@ -3898,6 +3923,7 @@ msgid "Reload"
 msgstr "새로고침"
 
 #: src/components/ApprovalRulesSettings.tsx
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/ModelBackupsSettings.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/ScratchpadSection.tsx
@@ -5129,6 +5155,10 @@ msgstr ""
 msgid "Use your own key"
 msgstr "내 키 사용"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "User peer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
@@ -5138,9 +5168,10 @@ msgstr ""
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."
 msgstr "이 서버의 자체 {hostCredentialSource} 자격 증명으로 {selectedProviderName}에 액세스합니다."
 
+#: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "값"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."

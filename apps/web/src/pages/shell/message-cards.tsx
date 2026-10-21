@@ -8,6 +8,7 @@ import { BuiCard, SuccessPop } from "../../components/ai/primitives";
 import type { ArtifactTarget } from "../../lib/artifact-open";
 import { chartViewport } from "../../lib/chart-viewport";
 import { connectMcpOauth } from "../../lib/mcp-connect";
+import { importChunk } from "../../lib/preload-recovery";
 import { rpc } from "../../lib/rpc";
 import { useArtifactImage } from "../../lib/use-artifact-image";
 import { errorText } from "../../lib/user-error";
@@ -264,7 +265,7 @@ function ChartCanvas({
     // Plot loads lazily so threads without charts never pay for the library.
     void (async () => {
       try {
-        const { buildPlotParts } = await import("@rakazo/core/plot");
+        const { buildPlotParts } = await importChunk(() => import("@rakazo/core/plot"));
         if (cancelled || !ref.current) return;
         // Hover inspection by default: give the first mark a tooltip unless
         // the spec already asks for one somewhere.

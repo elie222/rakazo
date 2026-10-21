@@ -608,6 +608,68 @@ describeWithDatabase("API authorization and resource isolation", () => {
     expect(await a.me()).toBe(200);
   });
 
+  it("accepts only signed bearer tokens, and every sign-in hands one out", async () => {
+    const email = `phone-signed-${stamp}@rakazo.test`;
+    const phone = await phoneSession(app, email);
+    const me = async (token: string) =>
+      (
+        await app.request("/rpc/me", {
+          method: "POST",
+          headers: {
+            origin: "rakazo://",
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ json: {} }),
+        })
+      ).status;
+    const authJson = async (path: string, token: string, body: unknown) => {
+      const response = await app.request(`/api/auth${path}`, {
+        method: "POST",
+        headers: {
+          origin: "rakazo://",
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(200);
+      const json = (await response.json()) as { token: string };
+      expect(json.token).toBe(decodeURIComponent(response.headers.get("set-auth-token") ?? ""));
+      return json.token;
+    };
+
+    const stored = await handles.prisma.session.findFirstOrThrow({
+      where: { userId: phone.userId },
+      select: { token: true },
+    });
+    expect(phone.token.startsWith(`${stored.token}.`)).toBe(true);
+    expect(phone.token).toBe(decodeURIComponent(phone.setAuthToken));
+    expect(await me(phone.token)).toBe(200);
+    expect(await me(encodeURIComponent(phone.token))).toBe(200);
+
+    // A token copied out of the session table, or given a forged signature, is not a session.
+    expect(await me(stored.token)).toBe(401);
+    expect(await me(`${stored.token}.${"A".repeat(43)}=`)).toBe(401);
+    const rawSession = await app.request("/api/auth/get-session", {
+      headers: { origin: "rakazo://", authorization: `Bearer ${stored.token}` },
+    });
+    expect(await rawSession.json()).toBeNull();
+
+    const signedIn = await authJson("/sign-in/email", "", { email, password: "password12" });
+    expect(await me(signedIn)).toBe(200);
+
+    // Replacing the session on a password change hands the phone the signed replacement.
+    const replaced = await authJson("/change-password", signedIn, {
+      currentPassword: "password12",
+      newPassword: "password34",
+      revokeOtherSessions: true,
+    });
+    expect(replaced).not.toBe(signedIn);
+    expect(await me(replaced)).toBe(200);
+    expect(await me(signedIn)).toBe(401);
+  });
+
   it("drops a push token when the session that registered it is revoked", async () => {
     const email = `push-sessions-${stamp}@rakazo.test`;
     const phone = await signup(app, email, "Push Sessions");
@@ -1833,7 +1895,8 @@ async function phoneSession(app: App, email: string) {
         body: JSON.stringify({ json: {} }),
       })
     ).status;
-  return { headers, me, cookie, userId: user.id };
+  const setAuthToken = response.headers.get("set-auth-token") ?? "";
+  return { headers, me, cookie, userId: user.id, token, setAuthToken };
 }
 
 async function signin(app: App, email: string, password = "password12") {
