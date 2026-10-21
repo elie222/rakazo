@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import {
   createModels,
   fauxAssistantMessage,
@@ -7,7 +8,7 @@ import {
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { ModelConnectInputSchema, OPENAI_COMPATIBLE_PROVIDER_ID } from "@rakazo/contracts";
 import { fetch as undiciFetch } from "undici";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildModelConnectPlaintext } from "./model-connect.js";
 import { listPiCatalog } from "./pi-models.js";
 import { parseModelSecret, secretValuesToRedact, serializeModelSecret } from "./pi-oauth.js";
@@ -21,6 +22,13 @@ import {
   registerOpenAiCompatibleCatalog,
   registerOpenAiCompatibleRuntime,
 } from "./pi-openai-compatible-provider.js";
+
+const savedPrivateHosts = process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS;
+
+afterEach(() => {
+  if (savedPrivateHosts === undefined) delete process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS;
+  else process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = savedPrivateHosts;
+});
 
 describe("model connect", () => {
   it("round-trips generic cache capabilities and preserves them when rotating credentials", () => {
@@ -403,6 +411,81 @@ describe("openai-compatible provider", () => {
     expect(error).toMatchObject({
       message: "Local model server hostname resolved outside the private network",
     });
+  });
+
+  it("returns validated private DNS addresses for an explicitly trusted hostname", async () => {
+    process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
+    const addresses = [
+      { address: "192.168.1.20", family: 4 },
+      { address: "fd12::20", family: 6 },
+    ];
+    const resolveHostname = vi.fn(async () => addresses);
+    const lookup = createOpenAiCompatibleLookup(
+      new URL("https://models.example.test/v1"),
+      resolveHostname,
+    );
+    const result = await new Promise<unknown>((resolve, reject) => {
+      lookup("models.example.test", { family: 0, all: true }, (error, resolved) =>
+        error ? reject(error) : resolve(resolved),
+      );
+    });
+    expect(result).toEqual(addresses);
+    expect(resolveHostname).toHaveBeenCalledWith("models.example.test");
+  });
+
+  it("dispatches trusted private hosts using checked DNS and the original Host header", async () => {
+    process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
+    let host: string | undefined;
+    const server = createServer((request, response) => {
+      host = request.headers.host;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: [{ id: "local-model" }] }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("Missing test server address");
+      const resolveHostname = vi.fn(async () => [{ address: "127.0.0.1", family: 4 }]);
+      const safeFetch = createOpenAiCompatibleFetch(undefined, resolveHostname, {
+        allowPublic: false,
+      });
+      const baseUrl = `http://models.example.test:${address.port}/v1`;
+      await expect(probeOpenAiCompatibleModels({ baseUrl }, safeFetch)).resolves.toEqual([
+        "local-model",
+      ]);
+      expect(host).toBe(`models.example.test:${address.port}`);
+      expect(resolveHostname).toHaveBeenCalledWith("models.example.test");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it.each([
+    ["169.254.169.254", 4],
+    ["100.100.100.200", 4],
+    ["fd00:ec2::254", 6],
+    ["169.254.1.1", 4],
+    ["fe80::1", 6],
+    ["203.0.113.1", 4],
+    ["not-an-address", 4],
+  ])("rejects unsafe or non-private DNS answers for trusted hosts: %s", async (address, family) => {
+    process.env.RAKAZO_OPENAI_COMPAT_PRIVATE_HOSTS = "models.example.test";
+    const lookup = createOpenAiCompatibleLookup(
+      new URL("https://models.example.test/v1"),
+      async () => [
+        { address: "192.168.1.20", family: 4 },
+        { address, family },
+      ],
+    );
+    const error = await new Promise<Error | null>((resolve) => {
+      lookup("models.example.test", { family: 0, all: false }, (lookupError) =>
+        resolve(lookupError),
+      );
+    });
+    expect(error).toBeInstanceOf(Error);
   });
 
   it.each([
