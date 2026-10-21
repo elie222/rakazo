@@ -490,6 +490,7 @@ function mcpServerDto(
     command: string | null;
     args: unknown;
     env: unknown;
+    files: unknown;
     headers: unknown;
     secretId: string | null;
     enabled: boolean;
@@ -502,12 +503,10 @@ function mcpServerDto(
   const args = Array.isArray(row.args)
     ? row.args.filter((item): item is string => typeof item === "string")
     : [];
-  const envKeys =
-    row.env && typeof row.env === "object" && !Array.isArray(row.env) ? Object.keys(row.env) : [];
-  const headerKeys =
-    row.headers && typeof row.headers === "object" && !Array.isArray(row.headers)
-      ? Object.keys(row.headers)
-      : [];
+  const keysOf = (value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
+  const envKeys = keysOf(row.env);
+  const headerKeys = keysOf(row.headers);
   return {
     id: row.id,
     spaceId: row.spaceId,
@@ -519,7 +518,7 @@ function mcpServerDto(
     command: row.command,
     args,
     envKeys,
-    fileKeys: [],
+    fileKeys: keysOf(row.files),
     headerKeys,
     hasSecret: row.secretId !== null,
     oauthStatus: oauth.status,
@@ -567,19 +566,35 @@ async function assertMcpRemoteEndpoint(
   }
 }
 
-/** A stdio server gets its OAuth grant through `{{oauth.*}}` env references, so
- * they must name real fields and the server must have a client to run the flow. */
-function assertMcpOAuthEnv(env: Record<string, string>, hasOAuthClient: boolean): void {
-  for (const [key, value] of Object.entries(env)) {
+/** A stdio server gets its OAuth grant through `{{oauth.*}}` references in env
+ * values and credential file templates, so they must name real fields and the
+ * server must have a client to run the flow. A key is either a value or a file path. */
+function assertMcpOAuthTemplates(
+  env: Record<string, string>,
+  files: Record<string, string>,
+  hasOAuthClient: boolean,
+): void {
+  for (const key of Object.keys(files)) {
+    if (key in env) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `${key} is set as both an environment variable and a credential file`,
+      });
+    }
+  }
+  const sources = [
+    ...Object.entries(env).map(([key, value]) => ({ label: `Environment variable ${key}`, value })),
+    ...Object.entries(files).map(([key, value]) => ({ label: `Credential file ${key}`, value })),
+  ];
+  for (const { label, value } of sources) {
     const { fields, unknown } = mcpOAuthEnvReferences(value);
     if (unknown[0] !== undefined) {
       throw new ORPCError("BAD_REQUEST", {
-        message: `Environment variable ${key} references unknown OAuth field {{oauth.${unknown[0]}}}`,
+        message: `${label} references unknown OAuth field {{oauth.${unknown[0]}}}`,
       });
     }
     if (fields[0] !== undefined && !hasOAuthClient) {
       throw new ORPCError("BAD_REQUEST", {
-        message: `Environment variable ${key} uses {{oauth.${fields[0]}}}, which needs an OAuth client`,
+        message: `${label} uses {{oauth.${fields[0]}}}, which needs an OAuth client`,
       });
     }
   }
@@ -4422,7 +4437,7 @@ export function createRouter(deps: RouterDeps) {
             deps,
           );
           if (input.transport === "stdio") {
-            assertMcpOAuthEnv(input.env, Boolean(input.oauthClient));
+            assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));
             await assertMcpRemoteEndpoint(
               input.oauthClient?.authorizationServer,
               context.actor,
@@ -4462,6 +4477,12 @@ export function createRouter(deps: RouterDeps) {
                 env: ("env" in input
                   ? Object.fromEntries(Object.keys(input.env).map((key) => [key, true]))
                   : {}) as Prisma.InputJsonValue,
+                files: Object.fromEntries(
+                  Object.keys("files" in input ? (input.files ?? {}) : {}).map((key) => [
+                    key,
+                    true,
+                  ]),
+                ) as Prisma.InputJsonValue,
                 headers: ("headers" in input
                   ? Object.fromEntries(Object.keys(input.headers).map((key) => [key, true]))
                   : {}) as Prisma.InputJsonValue,
@@ -4537,7 +4558,11 @@ export function createRouter(deps: RouterDeps) {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });
             if (update.action === "store" && config.transport === "stdio") {
-              assertMcpOAuthEnv(update.material.env ?? {}, Boolean(update.material.oauthClient));
+              assertMcpOAuthTemplates(
+                update.material.env ?? {},
+                update.material.files ?? {},
+                Boolean(update.material.oauthClient),
+              );
             }
             const stored =
               update.action === "store" && Object.keys(update.material).length > 0
@@ -4604,6 +4629,14 @@ export function createRouter(deps: RouterDeps) {
                       env: ("env" in config
                         ? Object.fromEntries(Object.keys(config.env).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,
+                      // Omitted files are kept in the material, so the keys follow it.
+                      ...(update.action === "store"
+                        ? {
+                            files: Object.fromEntries(
+                              Object.keys(update.material.files ?? {}).map((key) => [key, true]),
+                            ) as Prisma.InputJsonValue,
+                          }
+                        : {}),
                       headers: ("headers" in config
                         ? Object.fromEntries(Object.keys(config.headers).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,

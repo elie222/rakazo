@@ -16,6 +16,8 @@ type McpOAuthClient = {
 export type McpSecretMaterial = {
   secret?: string;
   env?: Record<string, string>;
+  /** Credential file templates by the env variable that receives the file's path. */
+  files?: Record<string, string>;
   headers?: Record<string, string>;
   oauthClient?: McpOAuthClient;
   oauth?: Record<string, unknown>;
@@ -32,8 +34,9 @@ export type McpMaterialUpdate =
  *   cleared entirely — the caller should delete the secret row and null the
  *   server's secretId instead of storing an empty object.
  *
- * env/headers use full-replace semantics (the update payload is the complete
- * set), matching the create handler. OAuth state is preserved unless the
+ * env/headers/files use full-replace semantics (the update payload is the
+ * complete set), matching the create handler; files are kept when omitted and
+ * only exist for stdio servers. OAuth state is preserved unless the
  * endpoint changed, since tokens issued for one endpoint must never be sent to
  * another server. */
 export function buildMcpUpdateMaterial(
@@ -67,15 +70,22 @@ export function buildMcpUpdateMaterial(
   const secret = "secret" in config && config.secret ? config.secret : undefined;
   const env = "env" in config ? config.env : undefined;
   const headers = "headers" in config ? config.headers : undefined;
+  const { files: storedFiles, ...withoutFiles } = material;
+  const files = config.transport === "stdio" ? (config.files ?? storedFiles) : undefined;
+  const hasFiles = files !== undefined && Object.keys(files).length > 0;
   const existingHasMaterial = Boolean(
     material.secret ||
       (material.env && Object.keys(material.env).length > 0) ||
+      (storedFiles && Object.keys(storedFiles).length > 0) ||
       (material.headers && Object.keys(material.headers).length > 0) ||
       material.oauthClient ||
       material.oauth,
   );
   const suppliesMaterial = Boolean(
-    secret || (env && Object.keys(env).length > 0) || (headers && Object.keys(headers).length > 0),
+    secret ||
+      (env && Object.keys(env).length > 0) ||
+      (headers && Object.keys(headers).length > 0) ||
+      hasFiles,
   );
   if (!existingHasMaterial && !suppliesMaterial) {
     return clearedOAuth ? { action: "store", material } : { action: "keep" };
@@ -83,10 +93,11 @@ export function buildMcpUpdateMaterial(
   return {
     action: "store",
     material: {
-      ...material,
+      ...withoutFiles,
       ...(secret ? { secret } : {}),
       ...(env !== undefined ? { env } : {}),
       ...(headers !== undefined ? { headers } : {}),
+      ...(hasFiles ? { files } : {}),
     },
   };
 }

@@ -85,6 +85,7 @@ export function parseMcpServerToolArgs(
 export function buildMcpCredentialBlob(parsed: {
   secret?: string;
   env?: Record<string, string>;
+  files?: Record<string, string>;
   headers?: Record<string, string>;
   oauthClient?: {
     clientId: string;
@@ -95,12 +96,14 @@ export function buildMcpCredentialBlob(parsed: {
 }): string | null {
   const env = parsed.env ?? {};
   const headers = parsed.headers ?? {};
+  const files = parsed.files ?? {};
   const client = parsed.oauthClient;
   if (
     !parsed.secret &&
     !client &&
     Object.keys(env).length === 0 &&
-    Object.keys(headers).length === 0
+    Object.keys(headers).length === 0 &&
+    Object.keys(files).length === 0
   ) {
     return null;
   }
@@ -108,6 +111,7 @@ export function buildMcpCredentialBlob(parsed: {
     secret: parsed.secret,
     env,
     headers,
+    ...(Object.keys(files).length > 0 ? { files } : {}),
     ...(client
       ? {
           oauthClient: {

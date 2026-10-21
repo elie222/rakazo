@@ -1013,6 +1013,7 @@ describe("MCP pre-registered OAuth client", () => {
         command: "npx",
         args: [],
         env: { GOOGLE_ACCESS_TOKEN: true },
+        files: { GOOGLE_CREDENTIALS_PATH: true },
         headers: {},
         secretId: "secret-0",
         enabled: true,
@@ -1184,6 +1185,163 @@ describe("MCP pre-registered OAuth client", () => {
         message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*OAuth client/),
       });
       expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    describe("credential files", () => {
+      const template = '{"refresh_token":"{{oauth.refresh_token}}"}';
+
+      it("stores the file template encrypted and returns only its key", async () => {
+        const { client, material, server } = harness();
+
+        const created = await client.mcp.servers.create({
+          ...stdio,
+          env: {},
+          files: { GOOGLE_CREDENTIALS_PATH: template },
+          oauthClient,
+        });
+
+        expect(created.fileKeys).toEqual(["GOOGLE_CREDENTIALS_PATH"]);
+        expect(JSON.stringify(created)).not.toContain("refresh_token");
+        expect(server()?.files).toEqual({ GOOGLE_CREDENTIALS_PATH: true });
+        expect(material().files).toEqual({ GOOGLE_CREDENTIALS_PATH: template });
+      });
+
+      it("returns no file keys for a server without files", async () => {
+        const { client, server } = harness();
+
+        const created = await client.mcp.servers.create({ ...stdio, env: {} });
+
+        expect(created.fileKeys).toEqual([]);
+        expect(server()?.files).toEqual({});
+      });
+
+      it("rejects an unknown reference in a file, naming the file key", async () => {
+        const { client, secrets } = harness();
+
+        await expect(
+          client.mcp.servers.create({
+            ...stdio,
+            env: {},
+            files: { GOOGLE_CREDENTIALS_PATH: "{{oauth.id_token}}" },
+            oauthClient,
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*oauth\.id_token/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects file references when the server has no OAuth client", async () => {
+        const { client, secrets } = harness();
+
+        await expect(
+          client.mcp.servers.create({
+            ...stdio,
+            env: {},
+            files: { GOOGLE_CREDENTIALS_PATH: template },
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*OAuth client/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects a key used as both an environment variable and a file", async () => {
+        const { client, secrets } = harness();
+
+        await expect(
+          client.mcp.servers.create({
+            ...stdio,
+            env: { GOOGLE_CREDENTIALS_PATH: "/tmp/x" },
+            files: { GOOGLE_CREDENTIALS_PATH: template },
+            oauthClient,
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*both/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      describe("update", () => {
+        const storedWithFile = {
+          env: {},
+          files: { GOOGLE_CREDENTIALS_PATH: template },
+          oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+        };
+        const base = {
+          id: "server-1",
+          config: { ...stdio, enabled: true, description: "", env: {} },
+        };
+
+        it("replaces the files with the supplied set", async () => {
+          const { client, material, server } = harness(true, storedWithFile);
+
+          const updated = await client.mcp.servers.update({
+            ...base,
+            config: { ...base.config, files: { OTHER_PATH: "{{oauth.access_token}}" } },
+          });
+
+          expect(updated.fileKeys).toEqual(["OTHER_PATH"]);
+          expect(server()?.files).toEqual({ OTHER_PATH: true });
+          expect(material().files).toEqual({ OTHER_PATH: "{{oauth.access_token}}" });
+        });
+
+        it("keeps the stored files when the update omits them", async () => {
+          const { client, material } = harness(true, storedWithFile);
+
+          const updated = await client.mcp.servers.update(base);
+
+          expect(updated.fileKeys).toEqual(["GOOGLE_CREDENTIALS_PATH"]);
+          expect(material().files).toEqual({ GOOGLE_CREDENTIALS_PATH: template });
+        });
+
+        it("rejects kept file references once the update removes the OAuth client", async () => {
+          const { client, secrets } = harness(true, storedWithFile);
+
+          await expect(
+            client.mcp.servers.update({
+              ...base,
+              config: { ...base.config, oauthClient: null },
+            }),
+          ).rejects.toMatchObject({
+            code: "BAD_REQUEST",
+            message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*OAuth client/),
+          });
+          expect(secrets.put).not.toHaveBeenCalled();
+        });
+
+        it("rejects an env variable that collides with a kept file", async () => {
+          const { client, secrets } = harness(true, storedWithFile);
+
+          await expect(
+            client.mcp.servers.update({
+              ...base,
+              config: { ...base.config, env: { GOOGLE_CREDENTIALS_PATH: "/tmp/x" } },
+            }),
+          ).rejects.toMatchObject({
+            code: "BAD_REQUEST",
+            message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*both/),
+          });
+          expect(secrets.put).not.toHaveBeenCalled();
+        });
+
+        it("drops the files when the credential is cleared", async () => {
+          const { client, material, server } = harness(true, storedWithFile);
+
+          const updated = await client.mcp.servers.update({
+            ...base,
+            config: { ...base.config, oauthClient: null, clearCredential: true },
+          });
+
+          expect(updated.fileKeys).toEqual([]);
+          expect(server()?.files).toEqual({});
+          expect(server()?.secretId).toBeNull();
+          expect(material).toThrow();
+        });
+      });
     });
 
     it("refuses a private authorization server from a user who is not the deployment owner", async () => {
