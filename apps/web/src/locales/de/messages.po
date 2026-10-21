@@ -3692,6 +3692,10 @@ msgstr "Wähle ein Tool zum Prüfen"
 msgid "Pin"
 msgstr "Anheften"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Angeheftet"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} abspielen"
@@ -4082,6 +4086,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "Erneut versuchen"
@@ -4961,6 +4966,7 @@ msgid "Type your answer"
 msgstr "Gib deine Antwort ein"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Nicht zugewiesen"
 

@@ -17,15 +17,25 @@ export function billingAccountForOrganization(
 }
 
 /** Idempotent per organization: a concurrent create keeps the first stored customer. */
-export function createBillingAccount(
+export async function createBillingAccount(
   prisma: PrismaClient,
   input: { organizationId: string; customerId: string },
 ): Promise<BillingAccount> {
-  return prisma.billingAccount.upsert({
-    where: { organizationId: input.organizationId },
-    create: input,
-    update: {},
-  });
+  try {
+    return await prisma.billingAccount.upsert({
+      where: { organizationId: input.organizationId },
+      create: input,
+      update: {},
+    });
+  } catch (error) {
+    // An empty update is not a native upsert, so a concurrent create can still collide.
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+      throw error;
+    }
+    const existing = await billingAccountForOrganization(prisma, input.organizationId);
+    if (!existing) throw error;
+    return existing;
+  }
 }
 
 /**

@@ -599,6 +599,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Try again.": "请重试。",
   "Treg token": "Treg 令牌",
   "Type your answer": "输入你的回答",
+  Pinned: "置顶",
   Unassigned: "未分组",
   Unpin: "取消置顶",
   unread: "未读",

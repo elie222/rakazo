@@ -59,10 +59,13 @@ import {
   createDb,
   createSecurityEventPruner,
   createThreadEvents,
+  describeRowSecurity,
   installSecurityEventStore,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
   pushSessionExpiresAt,
+  rowSecurityWarning,
+  runAsSystem,
   securityEventRetentionDays,
   verifyContentKeys,
 } from "@rakazo/db";
@@ -86,6 +89,8 @@ async function main() {
   });
   const { pool } = created;
   let { prisma } = created;
+  const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
+  if (rowSecurity) logger.warn(rowSecurity);
   const realtime = new PostgresRealtimeFanout({
     connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
     publisher: pool,
@@ -344,7 +349,10 @@ async function main() {
   logger.info("worker ready", { degraded: secrets.describe().capabilities.degraded ?? false });
 }
 
-main().catch(async (error) => {
+// The worker only does cross-tenant work: job dispatch, reconcilers, leadership and
+// realtime, all keyed by ids rather than a signed-in user. This is its one
+// row-level security bypass; jobs re-enter it explicitly (see wakeup.ts).
+runAsSystem("worker process", main).catch(async (error) => {
   logger.error("worker startup failed", error);
   await logger.flush({ timeoutMs: 2_000 });
   // jobHost.start retries 53300 without bound above, so a saturated Postgres at

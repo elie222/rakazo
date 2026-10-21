@@ -31,6 +31,8 @@ import {
   isApprovalAskBlock,
   isPeerReceiptBlocks,
   isRunTerminalEvent,
+  isRunWaitingOnUser,
+  isRunWorking,
   isSecretAskBlock,
   leaveThreadWindow,
   openThreadWindow,
@@ -282,14 +284,8 @@ function formatAttachmentSkip(item: { name: string; reason: string }): string {
   return `${name} (${item.reason})`;
 }
 
-function isWorkingStatus(status: string | undefined): boolean {
-  return (
-    status === "queued" ||
-    status === "leased" ||
-    status === "running" ||
-    status === "waiting_input" ||
-    status === "waiting_takeover"
-  );
+function isActiveStatus(status: string | undefined): boolean {
+  return isRunWorking(status) || isRunWaitingOnUser(status);
 }
 
 const ATTACHMENT_PLACEHOLDER_LINE = /^\[(?:image|file|chart): .*\]$/;
@@ -699,19 +695,22 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   activeThreadId.current = notificationThreadId;
   const currentBotStatus = snap ? snap.run?.status : currentBot?.status;
   const hasLiveProgress = visibleMessages.some((message) => message.id.startsWith("progress:"));
-  const workingGroupBots = useMemo(() => {
+  const activeGroupBots = useMemo(() => {
     if (!inGroup) return [];
     const seen = new Set<string>();
-    const working = snap?.activeRuns ?? (snap?.run ? [snap.run] : []);
-    return working.flatMap((run) => {
-      if (!run.botId || seen.has(run.botId) || !isWorkingStatus(run.status)) return [];
+    const active = snap?.activeRuns ?? (snap?.run ? [snap.run] : []);
+    return active.flatMap((run) => {
+      if (!run.botId || seen.has(run.botId) || !isActiveStatus(run.status)) return [];
       const member = snap?.members?.find((candidate) => candidate.botId === run.botId);
       if (!member) return [];
       seen.add(run.botId);
       return [{ ...member, status: run.status }];
     });
   }, [inGroup, snap?.activeRuns, snap?.members, snap?.run]);
-  const working = inGroup ? workingGroupBots.length > 0 : isWorkingStatus(currentBotStatus);
+  // A bot waiting on the user (an ask card, a computer takeover) can still be stopped, but its
+  // card is the state: no typing dots under it.
+  const workingGroupBots = activeGroupBots.filter((bot) => isRunWorking(bot.status));
+  const working = inGroup ? activeGroupBots.length > 0 : isActiveStatus(currentBotStatus);
 
   const speakFinishedReply = useCallback(() => {
     if (!botId || inGroup || !currentBot) return;
@@ -2339,7 +2338,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   );
 
   const workingFooter =
-    !inGroup && currentBot && isWorkingStatus(currentBotStatus) && !hasLiveProgress ? (
+    !inGroup && currentBot && isRunWorking(currentBotStatus) && !hasLiveProgress ? (
       <View
         accessibilityLabel={t("{name} is working", { name: currentBot.name })}
         accessibilityRole="text"

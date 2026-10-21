@@ -1,0 +1,82 @@
+import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import { abortableDelay } from "./async.js";
+
+type CatalogRef = Pick<ConnectionCatalogItem, "connectorId" | "slug">;
+
+export function catalogItemKey(item: CatalogRef) {
+  return `${item.connectorId}:${item.slug}`;
+}
+
+/** Connected or still-authorizing accounts for one catalog app. */
+export function catalogItemAccounts(connections: readonly Connection[], item: CatalogRef) {
+  return connections.filter(
+    (row) =>
+      row.connectorId === item.connectorId &&
+      row.provider === item.slug &&
+      (row.status === "connected" || row.status === "pending"),
+  );
+}
+
+export function isCatalogItemConnected(
+  connections: readonly Connection[],
+  item: ConnectionCatalogItem,
+) {
+  return (
+    item.connected ||
+    catalogItemAccounts(connections, item).some((row) => row.status === "connected")
+  );
+}
+
+/** "Gmail", then "Gmail 2", "Gmail 3" for additional accounts. */
+export function nextCatalogAccountLabel(
+  connections: readonly Connection[],
+  item: ConnectionCatalogItem,
+) {
+  const count = catalogItemAccounts(connections, item).filter(
+    (row) => row.status === "connected",
+  ).length;
+  return count <= 0 ? item.name : `${item.name} ${count + 1}`;
+}
+
+const CATALOG_CONNECT_POLL_ATTEMPTS = 45;
+const CATALOG_CONNECT_POLL_MS = 2_000;
+
+/**
+ * Begin a catalog connection, open its authorization page, and wait for it to finish.
+ * Platforms supply transport and URL opening; the flow itself stays identical everywhere.
+ */
+export async function connectCatalogItem(
+  item: ConnectionCatalogItem,
+  connections: readonly Connection[],
+  deps: {
+    begin: (input: {
+      connectorId: string;
+      provider: string;
+      displayName: string;
+    }) => Promise<{ connectionId: string; authorizationUrl: string | null }>;
+    complete: (input: { connectionId: string }) => Promise<Connection>;
+    openUrl: (url: string) => unknown;
+    signal: AbortSignal;
+    isCurrent?: () => boolean;
+  },
+): Promise<
+  { status: "connected"; row?: Connection } | { status: "pending" } | { status: "aborted" }
+> {
+  const stopped = () => deps.signal.aborted || deps.isCurrent?.() === false;
+  const started = await deps.begin({
+    connectorId: item.connectorId,
+    provider: item.slug,
+    displayName: nextCatalogAccountLabel(connections, item),
+  });
+  if (stopped()) return { status: "aborted" };
+  if (started.authorizationUrl) await deps.openUrl(started.authorizationUrl);
+  else if (item.noAuth) return { status: "connected" };
+  for (let attempt = 0; attempt < CATALOG_CONNECT_POLL_ATTEMPTS; attempt += 1) {
+    if (stopped()) return { status: "aborted" };
+    const row = await deps.complete({ connectionId: started.connectionId }).catch(() => undefined);
+    if (stopped()) return { status: "aborted" };
+    if (row?.status === "connected") return { status: "connected", row };
+    await abortableDelay(CATALOG_CONNECT_POLL_MS, deps.signal);
+  }
+  return stopped() ? { status: "aborted" } : { status: "pending" };
+}

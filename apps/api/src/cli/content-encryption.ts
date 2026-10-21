@@ -8,6 +8,7 @@ import {
   migrateContent,
   rewrapSpaceKeys,
   rotateSpaceDataKeys,
+  runAsSystem,
 } from "@rakazo/db";
 import { createSecretMigrationRepository } from "../secret-migration.js";
 
@@ -95,41 +96,47 @@ async function upgradeCredentials() {
   if (counts.failed) process.exitCode = 1;
 }
 
+// Rewrites every tenant's content, so it runs across Spaces.
 try {
-  if (command === "status") {
-    const status = await contentEncryptionStatus(prisma);
-    for (const table of status.tables)
-      write(`${table.table}: ${table.plaintext} of ${table.rows} in plaintext`);
-    for (const [masterKeyId, count] of Object.entries(status.masterKeys))
-      write(`space keys under master key ${masterKeyId}: ${count}`);
-    write(`active master key: ${contentKeys.provider.activeKeyId()}`);
-    const files = await artifacts.fileCounts();
-    write(
-      files.present
-        ? `artifacts: ${files.plaintext} of ${files.plaintext + files.sealed} in plaintext${
-            files.abandoned
-              ? `, ${files.abandoned} temporary files from an interrupted run (migrate removes them)`
-              : ""
-          }`
-        : "artifacts: no artifact directory under DATA_DIR; run where the data volume is mounted",
-    );
-  } else if (command === "migrate") {
-    await rewriteContent("encrypt");
-    await upgradeCredentials();
-  } else if (command === "rotate") {
-    const keys = await rewrapSpaceKeys(prisma, contentKeys, { dryRun, signal: controller.signal });
-    write(`space keys: ${keys.rewrapped} re-wrapped, ${keys.current} already current`);
-    if (flags.includes("--reencrypt") && !dryRun) {
+  await runAsSystem("content encryption maintenance", async () => {
+    if (command === "status") {
+      const status = await contentEncryptionStatus(prisma);
+      for (const table of status.tables)
+        write(`${table.table}: ${table.plaintext} of ${table.rows} in plaintext`);
+      for (const [masterKeyId, count] of Object.entries(status.masterKeys))
+        write(`space keys under master key ${masterKeyId}: ${count}`);
+      write(`active master key: ${contentKeys.provider.activeKeyId()}`);
+      const files = await artifacts.fileCounts();
       write(
-        `data keys: ${await rotateSpaceDataKeys(prisma, contentKeys, { signal: controller.signal })} spaces rotated`,
+        files.present
+          ? `artifacts: ${files.plaintext} of ${files.plaintext + files.sealed} in plaintext${
+              files.abandoned
+                ? `, ${files.abandoned} temporary files from an interrupted run (migrate removes them)`
+                : ""
+            }`
+          : "artifacts: no artifact directory under DATA_DIR; run where the data volume is mounted",
       );
+    } else if (command === "migrate") {
+      await rewriteContent("encrypt");
+      await upgradeCredentials();
+    } else if (command === "rotate") {
+      const keys = await rewrapSpaceKeys(prisma, contentKeys, {
+        dryRun,
+        signal: controller.signal,
+      });
+      write(`space keys: ${keys.rewrapped} re-wrapped, ${keys.current} already current`);
+      if (flags.includes("--reencrypt") && !dryRun) {
+        write(
+          `data keys: ${await rotateSpaceDataKeys(prisma, contentKeys, { signal: controller.signal })} spaces rotated`,
+        );
+        await rewriteContent("reencrypt");
+      }
+    } else if (command === "reencrypt") {
       await rewriteContent("reencrypt");
+    } else {
+      await rewriteContent("decrypt");
     }
-  } else if (command === "reencrypt") {
-    await rewriteContent("reencrypt");
-  } else {
-    await rewriteContent("decrypt");
-  }
+  });
 } catch (error) {
   process.stderr.write(
     `content-encryption ${command} failed: ${error instanceof Error ? error.message : "unknown error"}\n`,

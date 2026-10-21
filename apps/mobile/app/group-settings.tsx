@@ -105,6 +105,9 @@ export default function GroupSettingsScreen() {
             bots={bots}
             selected={selected}
             onChange={setSelected}
+            onOpenBot={(bot) =>
+              router.push({ pathname: "/bot-profile", params: { botId: bot.id, name: bot.name } })
+            }
             disabled={pending}
           />
         ) : null}
