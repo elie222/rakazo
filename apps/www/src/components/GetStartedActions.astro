@@ -12,18 +12,23 @@ import {
 type Props = {
   class: string;
   copy: HomeCopy["hero"];
-  downloads: DesktopDownloads;
+  /** Omitted where the GitHub link should stay on every platform. */
+  downloads?: DesktopDownloads;
+  /** PostHog `data-attr` prefix that tells this placement apart from others. */
+  placement: string;
+  githubLabel?: string;
 };
 
-const { class: className, copy, downloads } = Astro.props;
+const { class: className, copy, downloads, placement, githubLabel = copy.viewOnGithub } =
+  Astro.props;
 
 // `data-show` lists the platforms (set on <html> by the HomePage script) that see each action.
-const desktopDownloads = availableDesktopPlatforms(downloads).map((platform) => ({
+const desktopDownloads = (downloads ? availableDesktopPlatforms(downloads) : []).map((platform) => ({
   platform,
   label: copy.download[platform],
   href: desktopDownloadHref(platform),
 }));
-const githubPlatforms = ["ios", "android", "web", "windows", "linux"]
+const githubPlatforms = ["ios", "android", "web", "mac", "windows", "linux"]
   .filter((platform) => !desktopDownloads.some((download) => download.platform === platform))
   .join(" ");
 ---
@@ -49,7 +54,8 @@ const githubPlatforms = ["ios", "android", "web", "windows", "linux"]
     target="_blank"
     rel="noreferrer"
     data-show={githubPlatforms}
+    data-attr={`${placement}-github`}
   >
-    {copy.viewOnGithub}
+    {githubLabel}
   </a>
 </div>

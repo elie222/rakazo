@@ -342,8 +342,17 @@ button.button--secondary:focus-visible {
   text-align: center;
 }
 
-.hero .hero__eyebrow {
+.hero__pill {
+  display: inline-flex;
   margin-bottom: 30px;
+  padding: 6px 14px;
+  border: 1px solid var(--blue-line);
+  border-radius: 999px;
+  background: linear-gradient(to bottom, var(--blue-soft), var(--blue-soft-2));
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .hero h1,
@@ -751,18 +760,6 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 28px;
-}
-
-.cloud-badge {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  border: 1px solid var(--blue-line);
-  background: linear-gradient(to bottom, var(--blue-soft), var(--blue-soft-2));
-  padding: 5px 11px;
-  color: var(--blue);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .stats-band {
@@ -2983,8 +2980,9 @@ button.product-demo__dock-icon {
     font-size: clamp(2.375rem, 9vw, 3rem);
   }
 
-  .hero .hero__eyebrow {
+  .hero__pill {
     margin-bottom: 22px;
+    font-size: 12.5px;
   }
 
   .lead {
@@ -3290,10 +3288,23 @@ button.product-demo__dock-icon {
   }
 }
 
+.open-source {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: center;
+  gap: 56px;
+}
+
+@media (max-width: 960px) {
+  .open-source {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+}
+
 /* Homepage supporting details stay small beside the product examples. */
 .works-with,
-.source-links,
-.cloud-preview {
+.source-links {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3314,33 +3325,3 @@ button.product-demo__dock-icon {
   padding: 4px 8px;
 }
 
-.cloud-preview {
-  color: var(--muted-2);
-  font-size: 14px;
-}
-
-.cloud-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: nowrap;
-}
-
-.cloud-link {
-  color: var(--blue);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.cloud-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-@media (max-width: 720px) {
-  .cloud-preview {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-}

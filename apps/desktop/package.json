@@ -76,6 +76,27 @@
       ],
       "notarize": true
     },
+    "dmg": {
+      "title": "${productName}",
+      "iconSize": 100,
+      "window": {
+        "width": 660,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 170,
+          "y": 175,
+          "type": "file"
+        },
+        {
+          "x": 490,
+          "y": 175,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
     "win": {
       "icon": "assets/icon.ico",
       "target": [

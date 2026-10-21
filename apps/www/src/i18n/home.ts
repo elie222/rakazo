@@ -67,11 +67,8 @@ export type HomeCopy = {
     copy: string;
     starOnGithub: string;
     readTheDocs: string;
-    openClawAlternative: string;
     cloudTitle: string;
     cloudBadge: string;
-    cloudMeta: string;
-    tryCloud: string;
   };
   cta: {
     heading: string;
@@ -423,11 +420,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0. Run it, change it, make it yours.",
       starOnGithub: "Star on GitHub",
       readTheDocs: "Read the docs",
-      openClawAlternative: "OpenClaw alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Beta",
-      cloudMeta: "Bring your own keys, we run the computers",
-      tryCloud: "Try Rakazo Cloud",
     },
     cta: {
       heading: "Meet your first bot",
@@ -551,11 +545,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0. Selbst betreiben, ändern und anpassen.",
       starOnGithub: "Auf GitHub mit Stern markieren",
       readTheDocs: "Docs lesen",
-      openClawAlternative: "OpenClaw-Alternative",
       cloudTitle: "Cloud",
       cloudBadge: "Beta",
-      cloudMeta: "Deine Keys, wir betreiben die Computer",
-      tryCloud: "Rakazo Cloud ausprobieren",
     },
     cta: {
       heading: "Triff deinen ersten Bot",
@@ -678,11 +669,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0. 직접 실행하고 원하는 대로 수정하세요.",
       starOnGithub: "GitHub에서 Star",
       readTheDocs: "문서 읽기",
-      openClawAlternative: "OpenClaw 대안",
       cloudTitle: "Cloud",
       cloudBadge: "베타",
-      cloudMeta: "키는 당신 것, 컴퓨터는 우리가 운영",
-      tryCloud: "Rakazo Cloud 사용해 보기",
     },
     cta: {
       heading: "첫 봇을 만나보세요",
@@ -805,11 +793,8 @@ const HOME_COPY: Record<Locale, HomeCopy> = {
       copy: "Apache-2.0。自由运行、修改，按需定制。",
       starOnGithub: "在 GitHub 上点星",
       readTheDocs: "阅读文档",
-      openClawAlternative: "OpenClaw 替代方案",
       cloudTitle: "云端",
       cloudBadge: "测试版",
-      cloudMeta: "密钥归你，电脑由我们运行",
-      tryCloud: "试用 Rakazo Cloud",
     },
     cta: {
       heading: "认识你的第一个 Bot",

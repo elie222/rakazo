@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentMessage, AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type {
   Api,
@@ -47,6 +47,7 @@ import { automated, withAutomatedLabels } from "./automated-messages.js";
 import { connectionIdArgument, credentialArgument } from "./bot-secrets.js";
 import { DELEGATION_TOOL_NAMES } from "./builtin-tools.js";
 import { withCloudflareGatewayAuth } from "./cloudflare-ai-gateway.js";
+import { pruneForRebuild } from "./context-pruning.js";
 import { shortenToolResultText } from "./context-selection.js";
 import { DEFAULT_OPENROUTER_MODEL_ID } from "./deployment-model.js";
 import { estimateModelContextTokens } from "./model-context.js";
@@ -83,7 +84,11 @@ import { createRuntimeContextPolicy, VERBATIM_TOOL_RESULTS } from "./runtime-con
 import { SCHEDULE_TOOL_NAMES } from "./schedule-tools.js";
 import type { FinishedShellCommand } from "./shell-command-stream.js";
 import { deliverFinishedShells } from "./shell-command-stream.js";
-import { isThinkingSignatureMismatch, withoutThinkingBlocks } from "./thinking-signatures.js";
+import {
+  isThinkingSignatureMismatch,
+  withoutThinkingBlocks,
+  withoutThinkingFrom,
+} from "./thinking-signatures.js";
 import { textContentArg } from "./tool-text.js";
 import { argumentGiven } from "./update-bot-patch.js";
 
@@ -126,7 +131,6 @@ export const SILENT_ALLOWED_TOOL_CONTINUATION_PROMPT = automated(
 // tools and misses a final answer again.
 export { MISSING_TOOL_FINAL_RESPONSE_ERROR } from "@rakazo/core";
 
-const DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP = 2;
 // Reasoning-capable models must not start at "off": for OpenRouter, pi-ai maps
 // that to reasoning.effort "none", which 400s on endpoints that mandate
 // reasoning (e.g. google/gemini-3.7-flash). Keep a real level when model.reasoning
@@ -427,13 +431,6 @@ export class PiAgentRuntime implements AgentRuntime {
           getApiKey: hasBackups
             ? async () => activeStreamTarget.credentials?.accessToken ?? activeStreamTarget.apiKey
             : async () => apiKey,
-          transformContext: async (messages) =>
-            pruneComputerScreenshotContext(
-              pruneStalePageStateContext(messages),
-              hasBackups
-                ? activeStreamTarget.config.maxImagesPerPrompt
-                : request.model.maxImagesPerPrompt,
-            ),
           finishTurn: async (turn, turnSignal) => {
             await deliverFinishedShells(
               (text) => {
@@ -1532,11 +1529,6 @@ async function executeSubagent(host: ToolHost, executionId: string, args: Record
       hasBackups
         ? (selectedModel.credentials?.accessToken ?? selectedModel.apiKey)
         : selectedModel.apiKey,
-    transformContext: async (messages) =>
-      pruneComputerScreenshotContext(
-        pruneStalePageStateContext(messages),
-        requestModel.maxImagesPerPrompt,
-      ),
     initialState: {
       systemPrompt: [
         `You are a Rakazo subagent named "${name}".`,
@@ -1837,133 +1829,6 @@ function builtinParameters(tool: ConnectorTool) {
     });
   }
   return undefined;
-}
-
-/**
- * Tools whose result is a view of the current page or screen. Each new result supersedes the
- * earlier ones, so older results only cost context: a long browsing run otherwise re-sends every
- * snapshot it ever took on every model call.
- */
-const PAGE_STATE_TOOL_NAMES = new Set([
-  "browser_navigate",
-  "browser_snapshot",
-  "browser_act",
-  "computer_observe",
-  "computer_act",
-]);
-const DEFAULT_PAGE_STATE_RESULTS_TO_KEEP = 3;
-/**
- * Only results that actually carry a page (a snapshot tree, an observation) are worth trimming
- * or counting. Navigation confirmations, action receipts and errors are a line or two: trimming
- * them saves nothing, and counting them would push real page state out of the kept set.
- */
-const STALE_PAGE_STATE_MIN_CHARS = 1_000;
-const STALE_PAGE_STATE_NOTE =
-  "[Earlier page state trimmed to save context. Facts you still need from that page should already be in your notes or tracker; otherwise take a fresh snapshot.]";
-
-/**
- * Replace all but the most recent large page-state tool results with a short note. Runs on
- * every request from the untransformed agent history, so the same history always trims the same
- * way and the cached prompt prefix stays stable up to the newest trimmed result.
- */
-export function pruneStalePageStateContext(
-  messages: AgentMessage[],
-  keep = DEFAULT_PAGE_STATE_RESULTS_TO_KEEP,
-): AgentMessage[] {
-  let remaining = Math.max(0, Math.floor(keep));
-  let transformed: AgentMessage[] | undefined;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== "toolResult" || !PAGE_STATE_TOOL_NAMES.has(message.toolName)) continue;
-    // Failures are diagnostics, not fresh page state, even when their text is large.
-    const returnedError = (message.details as { error?: unknown } | undefined)?.error;
-    if (message.isError || (returnedError !== undefined && returnedError !== null)) continue;
-    if (textLength(message) < STALE_PAGE_STATE_MIN_CHARS) continue;
-    if (remaining > 0) {
-      remaining -= 1;
-      continue;
-    }
-    transformed ??= [...messages];
-    transformed[index] = {
-      ...message,
-      content: [{ type: "text", text: STALE_PAGE_STATE_NOTE }],
-    };
-  }
-  return transformed ?? messages;
-}
-
-function textLength(message: Extract<AgentMessage, { role: "toolResult" }>): number {
-  let total = 0;
-  for (const part of message.content) {
-    if (part.type === "text") total += part.text.length;
-  }
-  return total;
-}
-
-/** Keep recent visual state while respecting an optional model image budget. */
-export function pruneComputerScreenshotContext(
-  messages: AgentMessage[],
-  maxImagesPerPrompt?: number,
-): AgentMessage[] {
-  const imageLimit =
-    maxImagesPerPrompt === undefined
-      ? undefined
-      : Number.isFinite(maxImagesPerPrompt)
-        ? Math.max(0, Math.floor(maxImagesPerPrompt))
-        : DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP;
-  let remaining = imageLimit ?? DEFAULT_COMPUTER_SCREENSHOTS_TO_KEEP;
-  if (imageLimit !== undefined) {
-    const nonScreenshotImages = messages.reduce(
-      (count, message) =>
-        isComputerScreenshotMessage(message) ? count : count + imagePartCount(message),
-      0,
-    );
-    if (nonScreenshotImages > imageLimit) {
-      throw new Error(
-        `The configured model image limit is ${imageLimit}, but the prompt contains ${nonScreenshotImages} non-screenshot images.`,
-      );
-    }
-    remaining = imageLimit - nonScreenshotImages;
-  }
-  let transformed: AgentMessage[] | undefined;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!isComputerScreenshotMessage(message)) continue;
-    const images = imagePartCount(message);
-    if (remaining >= images) {
-      remaining -= images;
-      continue;
-    }
-    transformed ??= [...messages];
-    transformed[index] = {
-      ...message,
-      content: message.content.filter((part) => part.type !== "image"),
-    };
-  }
-  return transformed ?? messages;
-}
-
-function imagePartCount(message: AgentMessage): number {
-  if (!("content" in message) || !Array.isArray(message.content)) return 0;
-  return message.content.filter(
-    (part: unknown) =>
-      part !== null && typeof part === "object" && "type" in part && part.type === "image",
-  ).length;
-}
-
-function isComputerScreenshotMessage(
-  message: AgentMessage | undefined,
-): message is Extract<AgentMessage, { role: "toolResult" }> {
-  if (message?.role !== "toolResult" || !message.content.some((part) => part.type === "image")) {
-    return false;
-  }
-  const details = message.details;
-  return Boolean(
-    details &&
-      typeof details === "object" &&
-      "frameId" in details &&
-      typeof (details as { frameId?: unknown }).frameId === "string",
-  );
 }
 
 function isAgentToolExecutionResult(result: unknown): result is AgentToolExecutionResult {
@@ -2437,6 +2302,12 @@ interface FallbackStreamState {
   isProviderFailure(message: AssistantMessage): boolean;
   /** Set once a provider rejected replayed thinking signatures; see thinking-signatures.ts. */
   dropThinkingBlocks?: boolean;
+  /**
+   * Messages written before the last switch to a backup model. Their thinking is bound to the
+   * model and transcript it was written for, and the backup's policy starts with a rebuild that
+   * can rewrite earlier messages, so requests leave that thinking out from the switch on.
+   */
+  messagesBeforeSwitch?: number;
   stream(
     target: RuntimeModelTarget,
     context: TranscriptContext,
@@ -2496,6 +2367,12 @@ function fallbackSupportsContext(
   requestedThinkingLevel: AgentRunRequest["model"]["thinkingLevel"],
   tools: readonly ConnectorTool[],
 ): boolean {
+  // The backup's own context policy prunes on its first call; judge what it would send. Too
+  // many user images for its limit throws, and the caller skips the backup.
+  context = {
+    ...context,
+    messages: pruneForRebuild(context.messages, candidate.config.maxImagesPerPrompt),
+  };
   const inputTokens = estimateModelContextTokens(context, estimatePiImageTokens);
   const outputTokens = resolveCompletionMaxTokens(
     candidate.model.maxTokens,
@@ -2542,8 +2419,14 @@ function fallbackAwareModelStream(
   const signal = options?.signal ? AbortSignal.any([state.signal, options.signal]) : state.signal;
   // Once a signature is rejected, requests omit those thinking blocks. Backup fit
   // must use that same context, or a usable backup can be skipped on discarded text.
-  const requestContext = () =>
-    state.dropThinkingBlocks ? withoutThinkingBlocks(context) : context;
+  // A backup is judged on the context it would get after the switch, without earlier thinking.
+  const requestContext = (switching = false) => {
+    if (state.dropThinkingBlocks) return withoutThinkingBlocks(context);
+    const before = switching ? context.messages.length : state.messagesBeforeSwitch;
+    if (!before) return context;
+    const messages = withoutThinkingFrom(context.messages, 0, before);
+    return messages === context.messages ? context : { ...context, messages };
+  };
   const signalAborted = () => signal.aborted;
   const finishWithThrownError = (target: RuntimeModelTarget, error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -2615,7 +2498,7 @@ function fallbackAwareModelStream(
         if (
           !fallbackSupportsContext(
             candidate,
-            requestContext(),
+            requestContext(true),
             options,
             state.request.model.thinkingLevel,
             state.request.tools,
@@ -2703,6 +2586,7 @@ function fallbackAwareModelStream(
               const next = await resolveNext(target);
               if (failIfAborted(target)) return;
               if (next) {
+                state.messagesBeforeSwitch = context.messages.length;
                 await state.onSwitch(next);
                 if (failIfAborted(target)) return;
                 buffered = [];

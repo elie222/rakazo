@@ -18,13 +18,23 @@ export function isThinkingSignatureMismatch(errorMessage: string | undefined): b
 
 /** The context with thinking blocks removed from earlier assistant messages. */
 export function withoutThinkingBlocks(context: TranscriptContext): TranscriptContext {
+  const messages = withoutThinkingFrom(context.messages, 0);
+  return messages === context.messages ? context : { ...context, messages };
+}
+
+/** The messages with thinking blocks removed from assistant messages from `from` up to `to`. */
+export function withoutThinkingFrom<T extends TranscriptContext["messages"][number]>(
+  messages: T[],
+  from: number,
+  to = messages.length,
+): T[] {
   let changed = false;
-  const messages = context.messages.map((message) => {
-    if (message.role !== "assistant") return message;
+  const result = messages.map((message, index) => {
+    if (index < from || index >= to || message.role !== "assistant") return message;
     const content = message.content.filter((part) => part.type !== "thinking");
     if (content.length === message.content.length) return message;
     changed = true;
     return { ...message, content };
   });
-  return changed ? { ...context, messages } : context;
+  return changed ? result : messages;
 }

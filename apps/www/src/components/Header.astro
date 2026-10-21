@@ -47,7 +47,14 @@ function isCurrent(href: string): boolean {
     </nav>
   </div>
   <div class="site-header__right">
-    <a class="star-pill" href={GITHUB_URL} target="_blank" rel="noreferrer" aria-label={copy.github}>
+    <a
+      class="star-pill"
+      href={GITHUB_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={copy.github}
+      data-attr="header-github"
+    >
       <span aria-hidden="true">★</span>
       <span>{starsLabel}</span>
     </a>
@@ -76,7 +83,7 @@ function isCurrent(href: string): boolean {
             </a>
           ))
         }
-        <a href={GITHUB_URL} target="_blank" rel="noreferrer">{copy.github}</a>
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer" data-attr="menu-github">{copy.github}</a>
       </nav>
     </details>
   </div>
