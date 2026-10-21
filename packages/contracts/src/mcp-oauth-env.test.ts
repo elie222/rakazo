@@ -3,6 +3,7 @@ import {
   mcpOAuthEnvReferences,
   parseMcpOAuthAuthorizationParams,
   resolveMcpOAuthEnv,
+  resolveMcpOAuthFileTemplate,
   resolveMcpOAuthTemplate,
 } from "./mcp.js";
 
@@ -68,6 +69,19 @@ describe("MCP OAuth env references", () => {
     expect(() => resolveMcpOAuthTemplate("{{oauth.scope}}", {}, "GOOGLE_TOKENS")).toThrow(
       "oauth.scope is not available for GOOGLE_TOKENS",
     );
+  });
+
+  it("escapes values inside a JSON credential file and leaves other files as they are", () => {
+    const secret = 'a"b\\c';
+    const json = resolveMcpOAuthFileTemplate(
+      '{"client_secret":"{{oauth.client_secret}}","expiry_date":{{oauth.expires_at}}}',
+      { client_secret: secret, expires_at: "1792578000000" },
+      "GOOGLE_OAUTH_CREDENTIALS",
+    );
+    expect(JSON.parse(json)).toEqual({ client_secret: secret, expiry_date: 1792578000000 });
+    expect(
+      resolveMcpOAuthFileTemplate("secret={{oauth.client_secret}}", { client_secret: secret }, "F"),
+    ).toBe(`secret=${secret}`);
   });
 
   it("parses extra authorization parameters and refuses to override the flow's own", () => {

@@ -107,6 +107,32 @@ export function resolveMcpOAuthTemplate(
 }
 
 /**
+ * Fill a credential-file template. When the file is JSON, values are escaped for the JSON
+ * string they sit in, so a secret holding a quote or backslash keeps the file valid.
+ */
+export function resolveMcpOAuthFileTemplate(
+  template: string,
+  values: Partial<Record<McpOAuthEnvField, string>>,
+  label: string,
+): string {
+  let json = false;
+  try {
+    JSON.parse(template.replace(OAUTH_ENV_REFERENCE, "0"));
+    json = true;
+  } catch {
+    // Not JSON (e.g. an INI or plain token file): values go in as they are.
+  }
+  if (!json) return resolveMcpOAuthTemplate(template, values, label);
+  const escaped = Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      key,
+      value === undefined ? value : JSON.stringify(value).slice(1, -1),
+    ]),
+  ) as Partial<Record<McpOAuthEnvField, string>>;
+  return resolveMcpOAuthTemplate(template, escaped, label);
+}
+
+/**
  * Credential files for stdio servers whose packages read a file path rather than
  * a value. The key is the env variable that receives the file's path; the value
  * is the file content template, which may use the same `{{oauth.*}}` references.
