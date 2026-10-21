@@ -1780,6 +1780,28 @@ describe("MCP server health", () => {
       expect(tested.health.message).toMatch(/account/);
     });
 
+    it.each([
+      [{ secret: "fake-token" }, true],
+      [{ headers: { Authorization: "fake-token" } }, true],
+      [{ secret: "fake-token", env: { TOKEN: "{{oauth.access_token}}" } }, false],
+      [{ secret: "fake-token", files: { CONFIG: "{{oauth.access_token}}" } }, false],
+    ])(
+      "checks static credentials unless templates need a grant: %j",
+      async (material, shouldProbe) => {
+        const h = harness({
+          row: baseRow({ secretId: "secret-1" }),
+          oauth: { status: "none", clientId: "fake-client" },
+        });
+        vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
+          id: "secret-1",
+          ciphertext: "fake-ciphertext",
+        } as never);
+        vi.mocked(h.deps.secrets.load).mockResolvedValue(JSON.stringify(material));
+        await h.client.mcp.servers.test({ id: "server-1" });
+        expect(h.probe).toHaveBeenCalledTimes(shouldProbe ? 1 : 0);
+      },
+    );
+
     it("reports an error when this process has no MCP connector", async () => {
       const h = harness();
 

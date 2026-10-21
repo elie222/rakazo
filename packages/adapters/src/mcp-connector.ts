@@ -946,6 +946,7 @@ export class McpConnector implements ConnectorProvider {
             ),
           );
           const installKey = this.sessionKey(server, context);
+          let installHealth: { value: string; at: number } | undefined;
           try {
             installedBin = await ensureMcpPackage(npx.spec, {
               root: this.packagesRoot(),
@@ -954,7 +955,7 @@ export class McpConnector implements ConnectorProvider {
               signal: context.signal,
               env: installEnv,
               onSettled: async () => {
-                if (context.signal.aborted)
+                if (installHealth && this.healthWrites.get(server.id) === installHealth)
                   await this.recordHealth(
                     server.id,
                     { status: "unknown", message: null },
@@ -965,6 +966,7 @@ export class McpConnector implements ConnectorProvider {
                 this.installing.add(installKey);
                 const installing = { status: "installing", message: null } as const;
                 void this.recordHealth(server.id, installing, { force: true });
+                installHealth = this.healthWrites.get(server.id);
               },
             });
           } finally {

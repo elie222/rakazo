@@ -88,11 +88,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
-  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testingIds, setTestingIds] = useState<Set<string>>(() => new Set());
   // A test can spend minutes installing a package; re-reading the list while it runs lets
   // the card switch from "Checking…" to "Installing…" as soon as the server records it.
   const shouldPoll =
-    testingId !== null || servers.some((server) => server.health.status === "installing");
+    testingIds.size > 0 || servers.some((server) => server.health.status === "installing");
 
   async function refresh() {
     const [nextServers, nextBots, assignments] = await Promise.all([
@@ -325,7 +325,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
 
   async function testServer(server: McpServer) {
     setError(null);
-    setTestingId(server.id);
+    setTestingIds((current) => new Set(current).add(server.id));
     try {
       const updated = await rpc.mcp.servers.test({ id: server.id });
       setServers((current) => current.map((item) => (item.id === updated.id ? updated : item)));
@@ -337,7 +337,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     } catch (err) {
       setError(errorText(err, t`Could not test MCP server`));
     } finally {
-      setTestingId(null);
+      setTestingIds((current) => {
+        const next = new Set(current);
+        next.delete(server.id);
+        return next;
+      });
     }
   }
 
@@ -732,7 +736,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         </p>
                         <McpServerHealthLine
                           health={server.health}
-                          checking={testingId === server.id}
+                          checking={testingIds.has(server.id)}
                         />
                         {statusText ? (
                           <p
@@ -794,11 +798,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                             variant="outline"
                             size="sm"
                             disabled={
-                              testingId === server.id || server.health.status === "installing"
+                              testingIds.has(server.id) || server.health.status === "installing"
                             }
                             onClick={() => void testServer(server)}
                           >
-                            {testingId === server.id ? (
+                            {testingIds.has(server.id) ? (
                               <>
                                 <LoaderCircle aria-hidden="true" className="animate-spin" />
                                 <Trans>Testing…</Trans>

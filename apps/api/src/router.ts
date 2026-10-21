@@ -278,6 +278,7 @@ import {
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
 } from "./mcp-approval.js";
+import type { McpSecretMaterial } from "./mcp-material.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import {
   disconnectMemoryProvider,
@@ -924,9 +925,27 @@ export function createRouter(deps: RouterDeps) {
   });
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
-  // A server with its own OAuth client can only be launched once that account is connected.
-  const mcpAwaitsOAuth = (oauth: McpOAuthSummary) =>
-    oauth.clientId !== null && oauth.status !== "connected";
+  const mcpAwaitsOAuth = async (server: McpServerRow, actor: Actor, oauth: McpOAuthSummary) => {
+    if (oauth.status === "connected") return false;
+    const secret = server.secretId
+      ? await deps.prisma.secret.findFirst({
+          where: { id: server.secretId, spaceId: actor.spaceId, userId: actor.userId },
+        })
+      : null;
+    const material: McpSecretMaterial = secret
+      ? JSON.parse(await deps.secrets.load(secret.ciphertext, { recordId: secret.id }))
+      : {};
+    const needsGrant = [
+      ...Object.values(material.env ?? {}),
+      ...Object.values(material.files ?? {}),
+    ].some((value) => mcpOAuthEnvReferences(value).fields.length > 0);
+    return (
+      needsGrant ||
+      (oauth.clientId !== null &&
+        !material.secret &&
+        Object.keys(material.headers ?? {}).length === 0)
+    );
+  };
   const probeMcpServer = async (server: McpServerRow, actor: Actor): Promise<void> => {
     if (!deps.mcp) return;
     try {
@@ -965,7 +984,7 @@ export function createRouter(deps: RouterDeps) {
         healthCheckedAt: new Date(),
       };
     };
-    if (mcpAwaitsOAuth(oauth)) return shown("unknown", MCP_OAUTH_PENDING_MESSAGE);
+    if (await mcpAwaitsOAuth(row, actor, oauth)) return shown("unknown", MCP_OAUTH_PENDING_MESSAGE);
     const display = row.transport === "stdio" ? await shown("installing", null) : row;
     void probeMcpServer(row, actor);
     return display;
@@ -4829,7 +4848,7 @@ export function createRouter(deps: RouterDeps) {
               status: "error",
               message: "This server cannot be checked from here.",
             });
-          } else if (mcpAwaitsOAuth(oauth)) {
+          } else if (await mcpAwaitsOAuth(server, context.actor, oauth)) {
             await recordMcpServerHealth(deps.prisma, server.id, {
               status: "unknown",
               message: MCP_OAUTH_PENDING_MESSAGE,

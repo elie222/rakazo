@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import * as fs from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultMcpPackagesRoot,
   ensureMcpPackage,
@@ -12,6 +13,8 @@ import {
   parseNpxLaunch,
   registryPackageName,
 } from "./mcp-package-installer.js";
+
+vi.mock("node:fs/promises", { spy: true });
 
 describe("parseNpxLaunch", () => {
   it("reads the plain and -y forms", () => {
@@ -146,6 +149,38 @@ describe("ensureMcpPackage", () => {
 
   afterEach(async () => {
     await rm(work, { recursive: true, force: true });
+  });
+
+  it("preserves a fresh owner replacing the inspected expired lock", async () => {
+    const lock = `${mcpPackageDir("race-pkg", root, options().env)}.lock`;
+    await mkdir(lock, { recursive: true });
+    const expired = { token: "expired", expiresAt: 0, pid: process.pid, host: hostname() };
+    const fresh = { ...expired, token: "fresh", expiresAt: Date.now() + 60_000 };
+    await writeFile(join(lock, "owner"), JSON.stringify(expired));
+    const original = (await vi.importActual<typeof fs>("node:fs/promises")).rename;
+    const spy = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      if (from === lock) {
+        await writeFile(join(lock, "owner"), JSON.stringify(fresh));
+      }
+      return original(from, to);
+    });
+    const controller = new AbortController();
+    const pending = ensureMcpPackage("race-pkg", { ...options(), signal: controller.signal });
+    try {
+      await vi.waitFor(() => expect(spy).toHaveBeenCalled());
+      await vi.waitFor(async () =>
+        expect(JSON.parse(await readFile(join(lock, "owner"), "utf8"))).toEqual(fresh),
+      );
+      controller.abort();
+      await expect(pending).rejects.toThrow();
+      expect(await runs()).toEqual([]);
+    } finally {
+      spy.mockImplementation(original);
+      await rm(lock, { recursive: true, force: true });
+      // Let the shared install finish before deleting its fixture.
+      await vi.waitFor(async () => expect(await runs()).toHaveLength(1));
+      await vi.waitFor(async () => expect(await leftovers()).toEqual([]));
+    }
   });
 
   const runs = async () =>

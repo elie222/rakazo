@@ -327,6 +327,8 @@ async function readOwner(lock: string): Promise<LockOwner | undefined> {
 }
 
 async function breakStaleLock(lock: string, timeoutMs: number): Promise<void> {
+  const inspected = await stat(lock).catch(() => undefined);
+  if (!inspected) return;
   const owner = await readOwner(lock);
   let stale: boolean;
   if (owner) {
@@ -342,11 +344,23 @@ async function breakStaleLock(lock: string, timeoutMs: number): Promise<void> {
     stale = created !== undefined && Date.now() > created + timeoutMs + LOCK_GRACE_MS;
   }
   if (!stale) return;
-  // Rename first: only one waiter wins the takeover, the others see ENOENT and retry.
+  // Quarantine atomically, then verify that we moved the lock we inspected.
   const aside = `${lock}.stale-${randomUUID()}`;
   try {
     await rename(lock, aside);
   } catch {
+    return;
+  }
+  const movedOwner = await readOwner(aside);
+  const moved = await stat(aside);
+  if (
+    moved.ino !== inspected.ino ||
+    moved.dev !== inspected.dev ||
+    movedOwner?.token !== owner?.token
+  ) {
+    // A different waiter already replaced the expired owner. Never delete its lock.
+    // If another owner has acquired the path meanwhile, keep the quarantine intact.
+    await rename(aside, lock).catch(() => undefined);
     return;
   }
   await rm(aside, { recursive: true, force: true });

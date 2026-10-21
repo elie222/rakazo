@@ -465,6 +465,38 @@ describe("MCP connector managed stdio launch", () => {
     }
   });
 
+  it("resets installing health after a timed out discovery's shared install settles", async () => {
+    let finishInstall: (() => Promise<void> | undefined) | undefined;
+    vi.spyOn(installer, "ensureMcpPackage").mockImplementation(async (_spec, options) => {
+      options?.onInstall?.();
+      finishInstall = options?.onSettled;
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+          once: true,
+        });
+      });
+    });
+    const controller = new AbortController();
+    const connector = connectorFor({ discoveryTimeoutMs: 20 });
+    try {
+      const discovery = connector.discoverTools({
+        operationId: "test",
+        traceId: "test",
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: controller.signal,
+      });
+      await vi.waitFor(() => expect(finishInstall).toBeDefined());
+      await discovery;
+      await finishInstall?.();
+      expect(healthWrites().at(-1)).toMatchObject({ healthStatus: "unknown" });
+    } finally {
+      controller.abort();
+      await connector.close();
+    }
+  });
+
   it("rejects zero timeouts while preserving zero idle duration", () => {
     expect(
       mcpStdioOptionsFromEnv({
