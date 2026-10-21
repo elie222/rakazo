@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_channel_live">Статус агента</string>
+  <string name="rakazo_channel_messages">Сообщения агента</string>
+  <string name="rakazo_channel_scheduled">Запланированные задачи</string>
+  <string name="rakazo_channel_attention">Требуется внимание</string>
+
+  <string name="rakazo_live_one">%1$s работает</string>
+  <string name="rakazo_live_many">%1$s и ещё %2$d работают</string>
+  <string name="rakazo_live_working">Работает</string>
+
+  <string name="rakazo_scheduled_title">%1$s · Запланированная задача</string>
+  <string name="rakazo_replied_group">%1$s ответил(а) в %2$s</string>
+  <string name="rakazo_replied">%1$s ответил(а)</string>
+
+  <string name="rakazo_attention_failed">У %1$s возникла проблема</string>
+  <string name="rakazo_attention_takeover">%1$s требует вашего присутствия</string>
+  <string name="rakazo_attention_input">%1$s ждёт вашего ответа</string>
+</resources>

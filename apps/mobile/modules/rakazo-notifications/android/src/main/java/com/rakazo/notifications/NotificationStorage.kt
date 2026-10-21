@@ -58,6 +58,10 @@ internal class NotificationStorage(context: Context) {
     get() = preferences.getString(SPACE_ID, "").orEmpty()
     set(value) = commit { putString(SPACE_ID, value) }
 
+  var locale: String
+    get() = preferences.getString(LOCALE, "").orEmpty()
+    set(value) = commit { putString(LOCALE, value) }
+
   var token: String
     get() {
       val encoded = preferences.getString(TOKEN, null) ?: return ""
@@ -111,6 +115,7 @@ internal class NotificationStorage(context: Context) {
     const val ATTENTION = "needs_attention"
     const val ENDPOINT = "endpoint"
     const val SPACE_ID = "space_id"
+    const val LOCALE = "locale"
     const val TOKEN = "token"
     const val KEY_ALIAS = "rakazo.notifications.session"
     const val TRANSFORMATION = "AES/GCM/NoPadding"

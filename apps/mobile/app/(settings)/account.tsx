@@ -1,6 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { AccountSecurity, AvatarStyle } from "@rakazo/contracts";
 import { accountDisplay } from "@rakazo/core";
+import * as Notifications from "expo-notifications";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -116,6 +117,7 @@ export default function Account() {
   const notificationQueue = useRef<ReturnType<
     typeof createQueuedSave<LiveNotificationSettings>
   > | null>(null);
+  const [notificationPermission, setNotificationPermission] = useState<string | null>(null);
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -206,6 +208,13 @@ export default function Account() {
         archivedCounts.current = archivedChatCounts(archivedCounts.current, loaded);
         setArchivedCount(archivedCounts.current.bots + archivedCounts.current.groups);
       });
+      if (Platform.OS === "android") {
+        void Notifications.getPermissionsAsync()
+          .then((permission) => {
+            if (active) setNotificationPermission(permission.status);
+          })
+          .catch(() => undefined);
+      }
       return () => {
         active = false;
       };
@@ -561,6 +570,14 @@ export default function Account() {
 
         {Platform.OS === "android" ? (
           <SettingsGroup accessibilityLabel={t("Notifications")} label={t("Notifications")}>
+            {notificationPermission === "denied" ? (
+              <SettingsRow
+                accessibilityRole="button"
+                detail={t("Android blocked notifications.")}
+                onPress={() => void openLiveNotificationSettings()}
+                title={t("Notifications")}
+              />
+            ) : null}
             <SettingsSwitch
               label={t("Live working status")}
               value={notifications.liveConnection}
