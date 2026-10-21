@@ -881,6 +881,10 @@ describe("Railway computers", () => {
     if (!screen.url) throw new Error("missing screen URL");
     const url = new URL(screen.url);
     expect(url.origin).toBe("https://screen-test.up.railway.app");
+    expect(sandbox.exec).toHaveBeenCalledWith(
+      expect.stringContaining("0.0.0.0:6080 8>&-"),
+      expect.anything(),
+    );
     expect(url.searchParams.get("path")).toBe("websockify?token=screen-token");
     expect(url.searchParams.has("token")).toBe(false);
   });

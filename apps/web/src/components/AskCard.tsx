@@ -85,6 +85,9 @@ export function AskCard({
       )
     : askActions;
   const secretInput = isSecretAskBlock(block);
+  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // the card without fields or buttons.
+  const ownerOnly = secretInput && Boolean(block.credential) && !canDismiss;
   const loginInput = secretInput && block.credential?.auth.type === "login";
   const secretLabel = loginInput ? t`Password` : secretFieldLabel(block.purpose);
 
@@ -245,7 +248,7 @@ export function AskCard({
         <div className="mt-3.5 text-[13.5px] font-medium text-muted-foreground">
           <Trans>No longer active</Trans>
         </div>
-      ) : askActions?.length ? (
+      ) : ownerOnly ? null : askActions?.length ? (
         <div className={approvalActions ? "mt-3.5 flex flex-wrap gap-2" : "mt-3.5 space-y-1.5"}>
           {displayActions?.map((action) => (
             <Button

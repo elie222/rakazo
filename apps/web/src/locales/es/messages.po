@@ -304,6 +304,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Hay una credencial de suscripción guardada de forma segura."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "Acerca de {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr ""
@@ -2500,10 +2504,6 @@ msgstr "Finalizando conexión MCP…"
 msgid "Flag unexpected actions"
 msgstr "Marcar acciones inesperadas"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "¿Olvidaste la contraseña?"
@@ -2823,10 +2823,6 @@ msgstr ""
 msgid "Leave"
 msgstr "Salir"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Permite que este bot organice, ajuste y programe los bots que crea. Tú apruebas cada cambio."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Claro"
@@ -2975,6 +2971,10 @@ msgstr "Gestionar servidores MCP"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "Administrar configuración de mensajería"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "Gestionar los bots que crea"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3602,6 +3602,10 @@ msgstr "Orgánico"
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Clave de API de organización"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Organiza la barra lateral y edita bots. Los cambios en grupos, instrucciones, modelos y rutinas necesitan tu aprobación."
 
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"

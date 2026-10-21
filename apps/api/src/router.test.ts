@@ -4483,6 +4483,77 @@ describe("bot restore computer quota", () => {
   });
 });
 
+describe("group restore with archived bots", () => {
+  function fixture(archivedBots: Array<{ id: string; computerId: string | null }>, inUse = 0) {
+    const bot = { update: vi.fn(async () => ({})) };
+    const chatGroup = { update: vi.fn(async () => ({})) };
+    const tx = {
+      bot,
+      chatGroup,
+      chatGroupMember: { findMany: vi.fn(async () => archivedBots.map((item) => ({ bot: item }))) },
+      computer: {
+        count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
+      },
+      $queryRaw: vi.fn(async () => [{ id: "group-1", lock: "1" }]),
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: unknown) => Promise<unknown>) => callback(tx)),
+    };
+    const handler = new RPCHandler(
+      createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+    );
+    const call = async () =>
+      handler.handle(
+        new Request("http://rakazo.test/rpc/groups/restore", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { groupId: "group-1" } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "space-1",
+              userId: "user-1",
+              email: "user@example.test",
+              isDeploymentOwner: true,
+            },
+          },
+        },
+      );
+    return { tx, call };
+  }
+
+  it("brings the group's archived bots back before the group, so it can be opened again", async () => {
+    const { tx, call } = fixture([
+      { id: "bot-a", computerId: "computer-a" },
+      { id: "bot-b", computerId: null },
+    ]);
+    const { response } = await call();
+    expect(response.status).toBe(200);
+    expect(tx.bot.update.mock.calls).toEqual([
+      [{ where: { id: "bot-a" }, data: { archivedAt: null } }],
+      [{ where: { id: "bot-b" }, data: { archivedAt: null } }],
+    ]);
+    expect(tx.chatGroup.update).toHaveBeenCalledWith({
+      where: { id: "group-1" },
+      data: { archivedAt: null },
+    });
+    expect(tx.chatGroup.update.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.bot.update.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("refuses with the quota error and restores nothing when a bot's computer has no room", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const { tx, call } = fixture([{ id: "bot-a", computerId: "computer-a" }], 1);
+    const { response } = await call();
+    expect(response.status).toBe(400);
+    expect(tx.bot.update).not.toHaveBeenCalled();
+    expect(tx.chatGroup.update).not.toHaveBeenCalled();
+  });
+});
+
 afterEach(() => {
   delete process.env.SANDBOX_MAX_COMPUTERS_PER_USER;
 });

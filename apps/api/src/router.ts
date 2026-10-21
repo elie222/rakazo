@@ -2285,7 +2285,11 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
-        await groupRepos.restoreGroup(context.actor, input.groupId);
+        try {
+          await groupRepos.restoreGroup(context.actor, input.groupId);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
         return { ok: true as const };
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {

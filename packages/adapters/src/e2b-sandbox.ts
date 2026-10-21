@@ -114,6 +114,8 @@ export class E2BSandboxProvider implements SandboxProvider {
       browserProfilesDir: E2B_BROWSER_PROFILES,
       displayStart: 20,
       portStart: 6100,
+      // The provider port proxy reaches the isolated sandbox through its network interface.
+      bindHost: "0.0.0.0",
     }),
     run: async (computer, command, context) => {
       const result = await this.runSetupCommand(computer, command, context.signal);
