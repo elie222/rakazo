@@ -357,4 +357,84 @@ describe("buildMcpUpdateMaterial", () => {
       material: { secret: "s", env: { OLD: "x" }, headers: { Authorization: "b" } },
     });
   });
+
+  describe("stdio credential files", () => {
+    const stdio = {
+      transport: "stdio" as const,
+      slug: "x",
+      name: "x",
+      command: "npx",
+      args: [],
+      env: {},
+    };
+    const template = '{"refresh_token":"{{oauth.refresh_token}}"}';
+
+    it("stores supplied files with the rest of the material", () => {
+      expect(
+        buildMcpUpdateMaterial({}, { ...stdio, files: { CREDENTIALS_PATH: template } }),
+      ).toEqual({ action: "store", material: { env: {}, files: { CREDENTIALS_PATH: template } } });
+    });
+
+    it("replaces the stored files with the supplied set", () => {
+      const result = buildMcpUpdateMaterial(
+        { files: { OLD_PATH: "old", CREDENTIALS_PATH: "old" } },
+        { ...stdio, files: { CREDENTIALS_PATH: template } },
+      );
+      expect(result).toEqual({
+        action: "store",
+        material: { env: {}, files: { CREDENTIALS_PATH: template } },
+      });
+    });
+
+    it("keeps the stored files when the update omits them", () => {
+      const result = buildMcpUpdateMaterial(
+        { files: { CREDENTIALS_PATH: template } },
+        { ...stdio, env: { A: "b" } },
+      );
+      expect(result).toEqual({
+        action: "store",
+        material: { env: { A: "b" }, files: { CREDENTIALS_PATH: template } },
+      });
+    });
+
+    it("removes the files when an empty set is supplied", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { secret: "s", files: { CREDENTIALS_PATH: template } },
+          { ...stdio, files: {} },
+        ),
+      ).toEqual({ action: "store", material: { secret: "s", env: {} } });
+    });
+
+    it("drops the files when the static credential is cleared", () => {
+      const oauthClient = { client_id: "client-a" };
+      expect(
+        buildMcpUpdateMaterial(
+          { oauthClient, files: { CREDENTIALS_PATH: template } },
+          { ...stdio, files: { CREDENTIALS_PATH: template }, clearCredential: true },
+        ),
+      ).toEqual({ action: "store", material: { oauthClient } });
+      expect(
+        buildMcpUpdateMaterial(
+          { files: { CREDENTIALS_PATH: template } },
+          { ...stdio, clearCredential: true },
+        ),
+      ).toEqual({ action: "store", material: {} });
+    });
+
+    it("drops the files when the server is no longer stdio", () => {
+      expect(
+        buildMcpUpdateMaterial(
+          { secret: "s", files: { CREDENTIALS_PATH: template } },
+          {
+            transport: "streamable_http",
+            slug: "x",
+            name: "x",
+            endpoint: "https://mcp.example.test",
+            headers: {},
+          },
+        ),
+      ).toEqual({ action: "store", material: { secret: "s", headers: {} } });
+    });
+  });
 });

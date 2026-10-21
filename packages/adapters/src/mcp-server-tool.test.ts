@@ -122,6 +122,27 @@ describe("buildMcpCredentialBlob", () => {
   });
 });
 
+describe("buildMcpCredentialBlob credential files", () => {
+  const files = { CREDENTIALS_PATH: '{"refresh_token":"{{oauth.refresh_token}}"}' };
+
+  it("stores file templates, which may hold secrets, in the blob", () => {
+    expect(JSON.parse(buildMcpCredentialBlob({ files }) ?? "null")).toEqual({
+      env: {},
+      headers: {},
+      files,
+    });
+  });
+
+  it("leaves the files out when there are none", () => {
+    expect(buildMcpCredentialBlob({ files: {} })).toBeNull();
+    expect(JSON.parse(buildMcpCredentialBlob({ secret: "tok", files: {} }) ?? "null")).toEqual({
+      secret: "tok",
+      env: {},
+      headers: {},
+    });
+  });
+});
+
 describe("buildMcpCredentialBlob OAuth client options", () => {
   it("stores the scope and the normalized authorization server when given", () => {
     expect(

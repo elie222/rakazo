@@ -1236,6 +1236,7 @@ model McpServer {
   command       String?
   args          Json              @default("[]")
   env           Json              @default("{}")
+  files         Json              @default("{}")
   headers       Json              @default("{}")
   secretId      String?
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
