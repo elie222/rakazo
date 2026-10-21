@@ -73,3 +73,15 @@ export function loadFailureKind(error: unknown): LoadFailureKind {
   if (typeof status === "number" && status >= 500) return "server";
   return "other";
 }
+
+/** Keep useful boot details; the screen supplies the recovery title and copy. */
+export function computerBootErrorDetail(error: unknown): string | null {
+  if (isServerUnreachable(error) || loadFailureKind(error) === "server") return null;
+  const detail = errorText(error, "");
+  return !detail ||
+    /^(?:internal server error|server error|http\s+5\d{2}\b|5\d{2}\b)|time[ -]?out|timed out/i.test(
+      detail,
+    )
+    ? null
+    : detail;
+}

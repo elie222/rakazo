@@ -870,11 +870,6 @@ msgstr ""
 msgid "Booting live desktop…"
 msgstr "लाइव डेस्कटॉप शुरू हो रहा है…"
 
-#. placeholder {0}: computerBot?.name ?? active?.name
-#: src/pages/Shell.tsx
-msgid "Booting up {0}’s computer"
-msgstr "{0} का कंप्यूटर शुरू हो रहा है"
-
 #: src/pages/Shell.tsx
 msgid "bot"
 msgstr "बॉट"

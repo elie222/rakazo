@@ -870,11 +870,6 @@ msgstr ""
 msgid "Booting live desktop…"
 msgstr "正在启动实时桌面…"
 
-#. placeholder {0}: computerBot?.name ?? active?.name
-#: src/pages/Shell.tsx
-msgid "Booting up {0}’s computer"
-msgstr "正在启动 {0} 的电脑"
-
 #: src/pages/Shell.tsx
 msgid "bot"
 msgstr "Bot"

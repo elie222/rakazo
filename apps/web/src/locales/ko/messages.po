@@ -870,11 +870,6 @@ msgstr ""
 msgid "Booting live desktop…"
 msgstr "라이브 데스크톱 시작 중…"
 
-#. placeholder {0}: computerBot?.name ?? active?.name
-#: src/pages/Shell.tsx
-msgid "Booting up {0}’s computer"
-msgstr "{0}의 컴퓨터를 켜는 중"
-
 #: src/pages/Shell.tsx
 msgid "bot"
 msgstr "Bot"
