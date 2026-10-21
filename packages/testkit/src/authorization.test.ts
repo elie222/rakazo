@@ -14,12 +14,14 @@ import {
   pushSessionExpiresAt,
   releaseSpaceDeletionClaim,
   renewSpaceDeletionClaim,
+  runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Response | Promise<Response> };
 type AppHandles = Awaited<ReturnType<typeof createApp>>;
@@ -42,6 +44,7 @@ let botIntroHarness: BotIntroHarness | undefined;
 
 describeWithDatabase("API authorization and resource isolation", () => {
   let handles: AppHandles;
+  let db: AppHandles["prisma"];
   let app: App;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const dataDir = mkdtempSync(path.join(tmpdir(), "rakazo-authz-"));
@@ -58,6 +61,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       composio: new ComposioConnector({ client: new FakeComposioClient() }),
     });
     app = handles.app;
+    db = asSystem(handles.prisma);
     botIntroHarness = handles;
   });
 
@@ -234,7 +238,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       title: "Owner open work",
       notes: "private",
     });
-    const ownerSkill = await handles.prisma.taughtSkill.create({
+    const ownerSkill = await db.taughtSkill.create({
       data: {
         spaceId: ownerActor.spaceId,
         botId: ownerBot.id,
@@ -263,7 +267,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       "connections/begin",
       connectionInput("Owner Connection"),
     );
-    const ownerMemory = await handles.prisma.memoryDocument.create({
+    const ownerMemory = await db.memoryDocument.create({
       data: {
         spaceId: ownerActor.spaceId,
         userId: ownerActor.userId,
@@ -273,7 +277,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         content: "owner-only-memory",
       },
     });
-    const ownerArtifact = await handles.prisma.artifact.create({
+    const ownerArtifact = await db.artifact.create({
       data: {
         spaceId: ownerActor.spaceId,
         userId: ownerActor.userId,
@@ -285,7 +289,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         storageKey: "test/owner-secret.txt",
       },
     });
-    const ownerThread = await handles.prisma.thread.findUniqueOrThrow({
+    const ownerThread = await db.thread.findUniqueOrThrow({
       where: { botId: ownerBot.id },
     });
     const ownerTask = await handles.prisma.task.create({
@@ -469,7 +473,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       await handles.prisma.scratchpadItem.findUniqueOrThrow({ where: { id: ownerScratchpad.id } }),
     ).toMatchObject({ title: "Owner open work", notes: "private" });
     expect(
-      await handles.prisma.memoryDocument.findUniqueOrThrow({ where: { id: ownerMemory.id } }),
+      await db.memoryDocument.findUniqueOrThrow({ where: { id: ownerMemory.id } }),
     ).toMatchObject({ content: "owner-only-memory" });
 
     // Destructive bot removal is checked last so an authorization regression is unmistakable.
@@ -913,7 +917,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
 
     const created = await rpc<Space>(app, cookie, "spaces/create", { name: "Copied defaults" });
     const [modelPreference, voicePreference] = await Promise.all([
-      handles.prisma.spaceModelPreference.findUnique({
+      db.spaceModelPreference.findUnique({
         where: {
           spaceId_userId_credentialId: {
             spaceId: created.id,
@@ -922,7 +926,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
           },
         },
       }),
-      handles.prisma.spaceVoicePreference.findUnique({
+      db.spaceVoicePreference.findUnique({
         where: {
           spaceId_userId_credentialId: {
             spaceId: created.id,
@@ -943,7 +947,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       created.id,
     );
     await expect(
-      handles.prisma.spaceVoicePreference.findUniqueOrThrow({
+      db.spaceVoicePreference.findUniqueOrThrow({
         where: {
           spaceId_userId_credentialId: {
             spaceId: actor.spaceId,
@@ -954,7 +958,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       }),
     ).resolves.toMatchObject({ voiceId: voice.voiceId, isDefault: true });
     await expect(
-      handles.prisma.spaceVoicePreference.findUniqueOrThrow({
+      db.spaceVoicePreference.findUniqueOrThrow({
         where: {
           spaceId_userId_credentialId: {
             spaceId: created.id,
@@ -964,12 +968,12 @@ describeWithDatabase("API authorization and resource isolation", () => {
         },
       }),
     ).resolves.toMatchObject({ voiceId: "space-specific-voice", isDefault: true });
-    await expect(
-      handles.prisma.userModelCredential.count({ where: { userId: actor.userId } }),
-    ).resolves.toBe(1);
-    await expect(
-      handles.prisma.userVoiceCredential.count({ where: { userId: actor.userId } }),
-    ).resolves.toBe(1);
+    await expect(db.userModelCredential.count({ where: { userId: actor.userId } })).resolves.toBe(
+      1,
+    );
+    await expect(db.userVoiceCredential.count({ where: { userId: actor.userId } })).resolves.toBe(
+      1,
+    );
   });
 
   it("shares model credentials while keeping defaults private to each space", async () => {
@@ -977,7 +981,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
     const actor = await rpc<Actor>(app, cookie, "me");
     const support = await rpc<Space>(app, cookie, "spaces/create", { name: "Support models" });
     const expectSpaceModelDefault = async (spaceId: string, provider: string, modelId: string) => {
-      const preference = await handles.prisma.spaceModelPreference.findFirst({
+      const preference = await db.spaceModelPreference.findFirst({
         where: { userId: actor.userId, spaceId, isDefault: true },
         include: { credential: true },
       });
@@ -991,7 +995,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       modelId: "a/one",
     });
     expect(connectedA.isDefault).toBe(true);
-    const providerABeforeRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+    const providerABeforeRotation = await db.userModelCredential.findUniqueOrThrow({
       where: { id: connectedA.id },
     });
 
@@ -1001,19 +1005,19 @@ describeWithDatabase("API authorization and resource isolation", () => {
       label: "Provider A rotated",
       modelId: "a/rotated",
     });
-    const providerAAfterRotation = await handles.prisma.userModelCredential.findUniqueOrThrow({
+    const providerAAfterRotation = await db.userModelCredential.findUniqueOrThrow({
       where: { id: connectedA.id },
     });
     expect(rotatedA.id).toBe(connectedA.id);
     expect(providerAAfterRotation.secretId).not.toBe(providerABeforeRotation.secretId);
     expect(
-      await handles.prisma.secret.findUnique({ where: { id: providerABeforeRotation.secretId } }),
+      await db.secret.findUnique({ where: { id: providerABeforeRotation.secretId } }),
     ).toBeNull();
     await expect(
-      handles.prisma.secret.findUniqueOrThrow({ where: { id: providerAAfterRotation.secretId } }),
+      db.secret.findUniqueOrThrow({ where: { id: providerAAfterRotation.secretId } }),
     ).resolves.toMatchObject({ userId: actor.userId, spaceId: null, kind: "model" });
     expect(
-      await handles.prisma.userModelCredential.count({
+      await db.userModelCredential.count({
         where: { userId: actor.userId, provider: "provider-a" },
       }),
     ).toBe(1);
@@ -1472,11 +1476,13 @@ describeWithDatabase("API authorization and resource isolation", () => {
     await rpc(app, cookie, "models/connect", { ...connection, reasoning: true });
     const actor = await rpc<Actor>(app, cookie, "me");
     expect(
-      await handles.executor.resolveModel({
-        userId: actor.userId,
-        spaceId: actor.spaceId,
-        botId: bot.id,
-      }),
+      await runAsSystem("background job run.continue", () =>
+        handles.executor.resolveModel({
+          userId: actor.userId,
+          spaceId: actor.spaceId,
+          botId: bot.id,
+        }),
+      ),
     ).toMatchObject({ apiKey: "fake-saved-key", reasoning: true });
     const update = {
       botId: bot.id,
@@ -1565,7 +1571,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
   it("binds a new default to the space preference credential, not a newer unused duplicate", async () => {
     const cookie = await signup(app, `model-duplicates-${stamp}@rakazo.test`, "Model Duplicates");
     const actor = await rpc<Actor>(app, cookie, "me");
-    const olderSecret = await handles.prisma.secret.create({
+    const olderSecret = await db.secret.create({
       data: {
         userId: actor.userId,
         spaceId: null,
@@ -1573,7 +1579,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         ciphertext: "encrypted-older-key",
       },
     });
-    const newerSecret = await handles.prisma.secret.create({
+    const newerSecret = await db.secret.create({
       data: {
         userId: actor.userId,
         spaceId: null,
@@ -1581,7 +1587,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         ciphertext: "encrypted-newer-key",
       },
     });
-    const older = await handles.prisma.userModelCredential.create({
+    const older = await db.userModelCredential.create({
       data: {
         userId: actor.userId,
         provider: "duplicate-provider",
@@ -1591,7 +1597,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         updatedAt: new Date("2026-01-02T00:00:00.000Z"),
       },
     });
-    const newer = await handles.prisma.userModelCredential.create({
+    const newer = await db.userModelCredential.create({
       data: {
         userId: actor.userId,
         provider: "duplicate-provider",
@@ -1601,7 +1607,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
         updatedAt: new Date("2026-02-02T00:00:00.000Z"),
       },
     });
-    await handles.prisma.spaceModelPreference.create({
+    await db.spaceModelPreference.create({
       data: {
         spaceId: actor.spaceId,
         userId: actor.userId,
@@ -1616,7 +1622,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       modelId: "newer/selected",
     });
 
-    const preferences = await handles.prisma.spaceModelPreference.findMany({
+    const preferences = await db.spaceModelPreference.findMany({
       where: { userId: actor.userId, spaceId: actor.spaceId },
     });
     expect(preferences.filter((row) => row.isDefault).map((row) => row.credentialId)).toEqual([

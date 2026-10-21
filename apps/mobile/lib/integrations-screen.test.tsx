@@ -218,10 +218,16 @@ it.each(["https://example.test/logo.svg?version=1", "https://example.test/logo.S
     expect(container.querySelector("svg")).not.toBeNull();
   },
 );
-it("renders raster artwork with Image and falls back after failure", async () => {
-  await render(<ConnectorIcon name="Example" logo="https://example.test/logo.png" />);
-  expect(container.querySelector("img")?.getAttribute("src")).toContain("logo.png");
+it("retries extensionless artwork as SVG before falling back", async () => {
+  const logo = "https://logos.example.test/api/gmail";
+  await render(<ConnectorIcon name="Example" logo={logo} />);
+  expect(container.querySelector("img")?.getAttribute("src")).toContain(logo);
   await act(async () => container.querySelector("img")?.dispatchEvent(new Event("error")));
+  expect(container.querySelector("img")).toBeNull();
+  expect(container.querySelector("svg")?.getAttribute("data-uri")).toBe(logo);
+  await act(async () =>
+    container.querySelector("svg")?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+  );
   expect(container.textContent).toBe("E");
 });
 it("falls back for absent logos and empty names", async () => {

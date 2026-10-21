@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
   AdapterContext,
   ConnectorCall,
@@ -172,6 +173,18 @@ function unavailableTool(server: McpServer, reason: string): ConnectorTool {
   };
 }
 
+/** Whether the server rejected the request because it no longer knows the session. */
+function sessionGone(error: unknown): boolean {
+  if (!(error instanceof StreamableHTTPError)) return false;
+  return (
+    error.code === 404 ||
+    (error.code === 400 &&
+      /\bBad Request: (?:Server not initialized|No valid session ID(?: provided| or initialization request)?|Mcp-Session-Id header is required)(?="|$)/i.test(
+        error.message,
+      ))
+  );
+}
+
 /** Runtime MCP connector. Authorization is re-checked against the bot assignment on every call. */
 /**
  * Stale allowlist entries are filtered out below with no error. Discovery already has the
@@ -229,6 +242,8 @@ export class McpConnector implements ConnectorProvider {
   private readonly healthWrites = new Map<string, { value: string; at: number }>();
   private reaper?: ReturnType<typeof setInterval>;
   private resolvedPackagesRoot?: string;
+  private readonly inFlight = new WeakMap<McpSession, number>();
+  private readonly expired = new WeakSet<McpSession>();
   // Discovery runs more than once per run: once up front, then again on every lazy
   // catalog access. Each attempt needs its own executionId.
   private discoverySeq = 0;
@@ -575,27 +590,6 @@ export class McpConnector implements ConnectorProvider {
     return `${server.id} ${context.spaceId} ${context.userId}`;
   }
 
-  /** Run `use` on the server's session, keeping it from being reaped while it runs. */
-  private async withSession<T>(
-    server: McpServer,
-    context: AdapterContext,
-    use: (session: McpSession) => Promise<T>,
-  ): Promise<T> {
-    const key = this.sessionKey(server, context);
-    const session = await this.sessionFor(server, context);
-    const entry = this.sessions.get(key);
-    const tracked = entry?.session === session ? entry : undefined;
-    if (tracked) tracked.active += 1;
-    try {
-      return await use(session);
-    } finally {
-      if (tracked) {
-        tracked.active -= 1;
-        tracked.lastUsedAt = Date.now();
-      }
-    }
-  }
-
   /** Stop stdio processes nobody used for `idleMs`. Returns how many were stopped. */
   async reapIdle(now = Date.now()): Promise<number> {
     const idleMs = this.options.idleMs ?? DEFAULT_MCP_STDIO_IDLE_MS;
@@ -624,6 +618,45 @@ export class McpConnector implements ConnectorProvider {
     if (!entry) return;
     this.sessions.delete(sessionKey);
     await closeEntry(entry);
+  }
+
+  /**
+   * Streamable HTTP servers answer 404 for a session they expired or lost on restart; many
+   * (including the SDK's own "Server not initialized") answer 400 naming the session instead.
+   * The request never ran there, so it is sent once more on a fresh session instead of failing.
+   * While `use` runs, the session counts as active so the idle reaper leaves it alone.
+   */
+  private async withSession<T>(
+    server: McpServer,
+    context: AdapterContext,
+    use: (session: McpSession) => Promise<T>,
+  ): Promise<T> {
+    const sessionKey = this.sessionKey(server, context);
+    for (let attempt = 0; ; attempt += 1) {
+      const session = await this.sessionFor(server, context);
+      this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
+      // A session in use is never reaped as idle.
+      const entry = this.sessions.get(sessionKey);
+      const tracked = entry?.session === session ? entry : undefined;
+      if (tracked) tracked.active += 1;
+      try {
+        return await use(session);
+      } catch (error) {
+        if (attempt !== 0 || !sessionGone(error)) throw error;
+        // Stop reusing the expired session immediately, but let its other requests
+        // receive their own responses before closing the shared SDK client.
+        if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
+        this.expired.add(session);
+      } finally {
+        if (tracked) {
+          tracked.active -= 1;
+          tracked.lastUsedAt = Date.now();
+        }
+        const remaining = (this.inFlight.get(session) ?? 1) - 1;
+        this.inFlight.set(session, remaining);
+        if (remaining === 0 && this.expired.has(session)) await session.close();
+      }
+    }
   }
 
   private async sessionFor(server: McpServer, context: AdapterContext): Promise<McpSession> {

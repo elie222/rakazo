@@ -3755,6 +3755,10 @@ msgstr "जाँचने के लिए टूल चुनें"
 msgid "Pin"
 msgstr "पिन करें"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "पिन किए गए"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} चलाएँ"
@@ -4149,6 +4153,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "फिर कोशिश करें"
@@ -5038,6 +5043,7 @@ msgid "Type your answer"
 msgstr "अपना उत्तर लिखें"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "असाइन नहीं किया गया"
 

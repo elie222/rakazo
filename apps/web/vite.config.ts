@@ -7,7 +7,11 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
-import { contentSecurityPolicyFor } from "@rakazo/contracts/content-security-policy";
+import {
+  appContentSecurityPolicy,
+  contentSecurityPolicyFor,
+  parseContentSecuritySources,
+} from "@rakazo/contracts/content-security-policy";
 import {
   safeScreenProxyResponseHeaders,
   stripSensitiveHandshakeHeaders,
@@ -444,6 +448,17 @@ export default defineConfig(({ mode }) => {
   const desktopStackToken =
     process.env.RAKAZO_DESKTOP_STACK_TOKEN ?? rootEnv.RAKAZO_DESKTOP_STACK_TOKEN ?? "";
   const imageTag = process.env.RAKAZO_IMAGE_TAG ?? rootEnv.RAKAZO_IMAGE_TAG ?? "edge";
+  // Invalid origins throw here, so the server refuses to start rather than serve a wider policy.
+  const appPolicy = appContentSecurityPolicy({
+    scriptSrc: parseContentSecuritySources(
+      "RAKAZO_CSP_SCRIPT_SRC",
+      process.env.RAKAZO_CSP_SCRIPT_SRC ?? rootEnv.RAKAZO_CSP_SCRIPT_SRC,
+    ),
+    connectSrc: parseContentSecuritySources(
+      "RAKAZO_CSP_CONNECT_SRC",
+      process.env.RAKAZO_CSP_CONNECT_SRC ?? rootEnv.RAKAZO_CSP_CONNECT_SRC,
+    ),
+  });
   return {
     plugins: [
       react(),
@@ -455,7 +470,7 @@ export default defineConfig(({ mode }) => {
         name: "rakazo-content-security-policy",
         configurePreviewServer(server) {
           server.middlewares.use((req, res, next) => {
-            const policy = contentSecurityPolicyFor(req.url?.split("?", 1)[0] ?? "/");
+            const policy = contentSecurityPolicyFor(req.url?.split("?", 1)[0] ?? "/", appPolicy);
             if (policy) res.setHeader("content-security-policy", policy);
             next();
           });

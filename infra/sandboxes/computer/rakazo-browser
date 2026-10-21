@@ -28,9 +28,29 @@ else
   esac
 fi
 mkdir -p "$PROFILE"
-BIN="$(command -v chromium || command -v chromium-browser || true)"
+# Ubuntu's chromium is a confined snap that cannot use these flags, so a
+# snap is only the last resort. Google Chrome's .deb lives in /opt/google/chrome.
+is_snap_browser() {
+  case "$1" in /snap/*) return 0 ;; esac
+  case "$(readlink -f "$1" 2>/dev/null || true)" in /snap/*|*/bin/snap) return 0 ;; esac
+  # Ubuntu's /usr/bin/chromium-browser is a small script that runs the snap.
+  [ "$(head -c 2 "$1" 2>/dev/null)" = "#!" ] && grep -qs '/snap/' "$1"
+}
+BIN=""
+SNAP_BIN=""
+for candidate in chromium chromium-browser google-chrome google-chrome-stable /opt/google/chrome/chrome; do
+  found="$(command -v "$candidate" || true)"
+  [ -n "$found" ] && [ -x "$found" ] || continue
+  if is_snap_browser "$found"; then
+    [ -n "$SNAP_BIN" ] || SNAP_BIN="$found"
+    continue
+  fi
+  BIN="$found"
+  break
+done
+BIN="${BIN:-$SNAP_BIN}"
 if [ -z "$BIN" ]; then
-  echo "chromium is not installed" >&2
+  echo "no browser found: install chromium or google-chrome" >&2
   exit 1
 fi
 USER_DATA_DIR_SET=0

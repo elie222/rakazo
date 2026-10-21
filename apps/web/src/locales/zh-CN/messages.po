@@ -3755,6 +3755,10 @@ msgstr "选择要检查的工具"
 msgid "Pin"
 msgstr "置顶"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "置顶"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "播放 {name}"
@@ -4149,6 +4153,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "重试"
@@ -5038,6 +5043,7 @@ msgid "Type your answer"
 msgstr "输入你的回答"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "未分配"
 

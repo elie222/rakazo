@@ -400,7 +400,7 @@ test("footer app marks follow the integrations overlay", async ({ page }) => {
   await expect(footer.locator("img")).toHaveAttribute("src", logo);
   failCatalog = true;
   await footer.getByRole("button", { name: "Connect apps", exact: true }).click();
-  await expect(page.getByText("Service Unavailable", { exact: true })).toBeVisible();
+  await expect(page.getByText("Could not reach the server", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Close integrations", exact: true }).click();
   await expect(footer.locator("img")).toHaveAttribute("src", logo);
   failCatalog = false;

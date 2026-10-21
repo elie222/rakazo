@@ -303,7 +303,10 @@ export function SettingsOverlay({
           </nav>
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex items-start justify-between gap-4 px-6 pt-6 sm:px-8 sm:pt-7">
+            <div
+              data-testid="settings-header"
+              className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-6 pb-5 pt-6 sm:px-8 sm:pt-7"
+            >
               <div className="flex min-w-0 flex-col gap-2">
                 <DialogTitle className="text-2xl font-medium text-foreground">
                   {sectionTitle}
@@ -338,10 +341,11 @@ export function SettingsOverlay({
             <SpaceRpcProvider spaceId={spaceId}>
               <div
                 key={spaceId ?? "selected"}
+                data-testid="settings-scroll"
                 className={`min-h-0 flex-1 ${
                   section === "models" || section === "voice" || section === "memory"
                     ? "flex flex-col overflow-hidden"
-                    : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-5 sm:px-8 sm:pb-8"
+                    : "rk-scroll overflow-y-auto overscroll-contain px-6 pb-6 pt-6 sm:px-8 sm:pb-8"
                 }`}
               >
                 {section === "general" ? (

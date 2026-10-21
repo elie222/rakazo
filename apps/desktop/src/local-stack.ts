@@ -94,6 +94,7 @@ export function resolveImageTag(input: {
 
 const GENERATED_SECRETS: Record<string, number> = {
   POSTGRES_PASSWORD: 16,
+  POSTGRES_APP_PASSWORD: 16,
   BETTER_AUTH_SECRET: 32,
   ENCRYPTION_KEY: 32,
   SCREEN_PROXY_SECRET: 32,
@@ -122,19 +123,38 @@ export function renderStackEnv(template: string, randomHex: (bytes: number) => s
   return rendered.join("\n");
 }
 
-/** Keeps an existing regular `.env`, but replaces a final symlink instead of trusting its target. */
+// Secrets a later version added. A stack created before then gets them appended,
+// so an update keeps starting (Compose requires them) without touching other lines.
+const ADDED_SECRETS = ["POSTGRES_APP_PASSWORD"];
+
+/** Lines to append so an existing `.env` has every added secret, or "" when it already does. */
+export function missingStackSecrets(env: string, randomHex: (bytes: number) => string): string {
+  return ADDED_SECRETS.filter((name) => !new RegExp(`^${name}=\\S`, "m").test(env))
+    .map((name) => `${name}=${randomHex(GENERATED_SECRETS[name]!)}\n`)
+    .join("");
+}
+
+/**
+ * Keeps an existing regular `.env` (appending only secrets added since it was
+ * created), but replaces a final symlink instead of trusting its target.
+ */
 export async function ensureStackEnv(
   dir: string,
   template: string,
   randomHex: (bytes: number) => string,
 ): Promise<"kept" | "created"> {
   const destination = path.join(dir, STACK_ENV_FILE);
-  try {
-    const info = await lstat(destination);
-    if (!info.isSymbolicLink()) return "kept";
-  } catch {
-    // Missing files are created below.
+  const info = await lstat(destination).catch(() => undefined);
+  if (info && !info.isSymbolicLink()) {
+    const current = await readFile(destination, "utf8");
+    const missing = missingStackSecrets(current, randomHex);
+    if (missing) {
+      const separator = current === "" || current.endsWith("\n") ? "" : "\n";
+      await writePrivateFile(destination, `${current}${separator}${missing}`);
+    }
+    return "kept";
   }
+  // Missing files (and a final symlink) are created below.
   await writePrivateFile(destination, renderStackEnv(template, randomHex));
   return "created";
 }

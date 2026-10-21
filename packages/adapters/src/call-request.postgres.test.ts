@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BackgroundJob } from "@rakazo/adapter-kit";
-import { createDb, createThreadEvents } from "@rakazo/db";
+import { createDb, createThreadEvents, runAsSystem, runAsTenant } from "@rakazo/db";
 import { describe, expect, it, vi } from "vitest";
 import { reconcileCallRequests, requestUserCall, settleCallRequest } from "./call-request.js";
 
@@ -14,54 +14,58 @@ postgres("call isolation and cooldown (PostgreSQL)", () => {
     const userId = `${id}-user`;
     const spaceId = `${id}-space`;
     const organizationId = `${id}-org`;
+    const fixture = <T>(fn: () => Promise<T>) => runAsSystem("test fixture", fn);
     try {
-      await prisma.user.create({
-        data: { id: userId, name: "Call tester", email: `${id}@rakazo.test` },
-      });
-      await prisma.organization.create({
-        data: { id: organizationId, name: "Call tests", slug: id, createdAt: new Date() },
-      });
-      await prisma.space.create({ data: { id: spaceId, organizationId, name: "Call tests" } });
-      await prisma.userVoiceCredential.create({
-        data: { userId, provider: "scripted", secretId: "fake-secret" },
-      });
-      const runs = [];
-      for (const suffix of ["a", "b"]) {
-        const bot = await prisma.bot.create({
-          data: {
-            spaceId,
-            userId,
-            name: suffix,
-            color: "ink",
-            thread: { create: { spaceId, userId } },
-          },
-          include: { thread: true },
+      const runs = await fixture(async () => {
+        await prisma.user.create({
+          data: { id: userId, name: "Call tester", email: `${id}@rakazo.test` },
         });
-        const threadId = bot.thread!.id;
-        const task = await prisma.task.create({
-          data: {
-            spaceId,
-            userId,
-            botId: bot.id,
-            threadId,
-            prompt: "Call test",
-            status: "running",
-          },
+        await prisma.organization.create({
+          data: { id: organizationId, name: "Call tests", slug: id, createdAt: new Date() },
         });
-        runs.push(
-          await prisma.run.create({
+        await prisma.space.create({ data: { id: spaceId, organizationId, name: "Call tests" } });
+        await prisma.userVoiceCredential.create({
+          data: { userId, provider: "scripted", secretId: "fake-secret" },
+        });
+        const runs = [];
+        for (const suffix of ["a", "b"]) {
+          const bot = await prisma.bot.create({
+            data: {
+              spaceId,
+              userId,
+              name: suffix,
+              color: "ink",
+              thread: { create: { spaceId, userId } },
+            },
+            include: { thread: true },
+          });
+          const threadId = bot.thread!.id;
+          const task = await prisma.task.create({
             data: {
               spaceId,
               userId,
               botId: bot.id,
               threadId,
-              taskId: task.id,
+              prompt: "Call test",
               status: "running",
-              trigger: "user_message",
             },
-          }),
-        );
-      }
+          });
+          runs.push(
+            await prisma.run.create({
+              data: {
+                spaceId,
+                userId,
+                botId: bot.id,
+                threadId,
+                taskId: task.id,
+                status: "running",
+                trigger: "user_message",
+              },
+            }),
+          );
+        }
+        return runs;
+      });
       const jobs = {
         enqueue: vi.fn(async (_job: BackgroundJob) => undefined),
         cancel: vi.fn(),
@@ -69,39 +73,47 @@ postgres("call isolation and cooldown (PostgreSQL)", () => {
       };
       const deps = { prisma, events: createThreadEvents(prisma), jobs, phoneCallsEnabled: true };
       const input = { reason: "Review", opening: "Ready?" };
+      // Agent runs ring from the worker; the API answers inside the owner's request.
+      const ring = (run: (typeof runs)[number]) =>
+        runAsSystem("agent run tool call", () => requestUserCall(deps, run, input));
       for (const field of ["userId", "spaceId", "botId", "threadId"] as const) {
-        expect(
-          await requestUserCall(deps, { ...runs[0]!, [field]: "other" }, input),
-        ).toHaveProperty("error");
+        expect(await ring({ ...runs[0]!, [field]: "other" })).toHaveProperty("error");
       }
-      const results = await Promise.all(runs.map((run) => requestUserCall(deps, run, input)));
+      const results = await Promise.all(runs.map(ring));
       expect(results.filter((result) => "ok" in result)).toHaveLength(1);
-      expect(await prisma.message.count({ where: { thread: { userId } } })).toBe(1);
+      expect(await fixture(() => prisma.message.count({ where: { thread: { userId } } }))).toBe(1);
       jobs.enqueue.mockClear();
-      await reconcileCallRequests(deps);
-      const plan = await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SET LOCAL enable_seqscan = off`;
-        return tx.$queryRaw<Array<{ "QUERY PLAN": string }>>`
+      await runAsSystem("job reconciler", () => reconcileCallRequests(deps));
+      const plan = await fixture(() =>
+        prisma.$transaction(async (tx) => {
+          await tx.$executeRaw`SET LOCAL enable_seqscan = off`;
+          return tx.$queryRaw<Array<{ "QUERY PLAN": string }>>`
           EXPLAIN SELECT "threadId", blocks FROM messages
           WHERE role = 'bot' AND "clientNonce" LIKE 'call:%' AND "clientNonce" LIKE '%:request'
             AND blocks #> ARRAY['0', 'status'] = '"ringing"'::jsonb
           ORDER BY "createdAt" ASC LIMIT 100`;
-      });
+        }),
+      );
       expect(plan.map((row) => row["QUERY PLAN"]).join("\n")).toContain(
         "messages_call_recovery_idx",
       );
       expect(jobs.enqueue).toHaveBeenCalledOnce();
       const job = jobs.enqueue.mock.calls[0]?.[0];
       expect(job).toMatchObject({ name: "call.expire" });
-      const message = await prisma.message.findFirstOrThrow({ where: { thread: { userId } } });
+      const message = await fixture(() =>
+        prisma.message.findFirstOrThrow({ where: { thread: { userId } } }),
+      );
+      const asOwner = <T>(fn: () => Promise<T>) => runAsTenant({ spaceId, userId }, fn);
       const block = (message.blocks as unknown as Array<{ callId: string }>)[0]!;
       const settle = () =>
-        settleCallRequest(deps, {
-          threadId: message.threadId,
-          callId: block.callId,
-          from: ["ringing"],
-          status: "answered",
-        });
+        asOwner(() =>
+          settleCallRequest(deps, {
+            threadId: message.threadId,
+            callId: block.callId,
+            from: ["ringing"],
+            status: "answered",
+          }),
+        );
       // An event insert failure must roll back the status, leaving answer retryable.
       let failEvent = true;
       const failingPrisma = prisma.$extends({
@@ -118,18 +130,21 @@ postgres("call isolation and cooldown (PostgreSQL)", () => {
         },
       });
       await expect(
-        settleCallRequest(
-          { ...deps, prisma: failingPrisma as unknown as typeof prisma },
-          {
-            threadId: message.threadId,
-            callId: block.callId,
-            from: ["ringing"],
-            status: "answered",
-          },
+        asOwner(() =>
+          settleCallRequest(
+            { ...deps, prisma: failingPrisma as unknown as typeof prisma },
+            {
+              threadId: message.threadId,
+              callId: block.callId,
+              from: ["ringing"],
+              status: "answered",
+            },
+          ),
         ),
       ).rejects.toThrow("event insert failed");
       expect(
-        (await prisma.message.findUniqueOrThrow({ where: { id: message.id } })).blocks,
+        (await fixture(() => prisma.message.findUniqueOrThrow({ where: { id: message.id } })))
+          .blocks,
       ).toEqual(message.blocks);
       expect((await Promise.all([settle(), settle()])).filter(Boolean)).toHaveLength(1);
     } finally {

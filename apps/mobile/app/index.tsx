@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
-import { ACTIVE_RUN_STATUSES, accountDisplay } from "@rakazo/core";
+import { accountDisplay, isRunWorking } from "@rakazo/core";
 import { botColors } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
 import {
@@ -515,7 +515,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups]);
+  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups, locale]);
   const initials = accountDisplay(me ?? {}, t("You")).initial ?? "?";
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId
@@ -1773,7 +1773,7 @@ const BotRow = memo(function BotRow({
   const preview = previewSnippet(bot.preview, 40) || bot.title || t("No messages yet");
   const time = bot.updatedAt ? formatThreadTime(bot.updatedAt, new Date(day)) : "";
   const tag = botTag(bot.title, bot.name);
-  const working = ACTIVE_RUN_STATUSES.some((status) => status === bot.status);
+  const working = isRunWorking(bot.status);
   // Only flat avatars carry a usable color; image avatars fall back to the muted dot.
   const presentation = mobileBotAvatarPresentation(bot.color || FALLBACK_COLOR);
   const tint =

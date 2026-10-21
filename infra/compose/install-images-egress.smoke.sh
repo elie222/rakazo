@@ -26,6 +26,7 @@ if [[ "\$1" == info ]]; then
 fi
 [[ " \$* " == *" config "* ]] && cat >/dev/null && cat <<'EOF'
 POSTGRES_PASSWORD=p
+POSTGRES_APP_PASSWORD=a
 BETTER_AUTH_SECRET=b
 ENCRYPTION_KEY=e
 SCREEN_PROXY_SECRET=s
@@ -39,7 +40,7 @@ STUB
   chmod +x "$work/bin/"*
   : >"$work/cwd/docker-compose.images.yml"
   : >"$work/cwd/.env.images.example"
-  printf 'POSTGRES_PASSWORD=p\n%s\n' "$6" >"$work/cwd/.env"
+  printf 'POSTGRES_PASSWORD=p\nPOSTGRES_APP_PASSWORD=a\n%s\n' "$6" >"$work/cwd/.env"
   # Without the stub, drop PATH entries holding a real iptables (CI runners have one).
   local search="$PATH"
   if [[ "$4" != 1 ]]; then

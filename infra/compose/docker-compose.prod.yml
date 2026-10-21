@@ -15,7 +15,8 @@ x-logging: &logging
 x-app-environment: &app-environment
   # Runtime
   NODE_ENV: production
-  DATABASE_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
+  # The app's own login, subject to row-level security (docs/self-host.md#database-roles).
+  DATABASE_URL: postgres://rakazo_app:${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
   REALTIME_DATABASE_URL:
   DB_POOL_MAX:
   DATA_DIR: /data
@@ -269,7 +270,7 @@ services:
     command:
       - bash
       - -lc
-      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+      - pnpm db:migrate && exec env -u DATABASE_MIGRATION_URL pnpm --filter @rakazo/api start
     init: true
     logging: *logging
     security_opt:
@@ -280,6 +281,8 @@ services:
     mem_limit: 1536m
     environment:
       <<: *app-environment
+      # Owner login for `pnpm db:migrate`; the start command drops it before serving.
+      DATABASE_MIGRATION_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       # Sign-in, sessions, billing and inbound webhooks: API only.
       API_HOST: "0.0.0.0"
       API_PORT:
@@ -339,6 +342,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
+      # Probe every second while starting, so a deploy hands traffic over as soon as it can.
+      start_period: 2m
+      start_interval: 1s
 
   worker:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-local}
@@ -393,6 +399,8 @@ services:
       API_PROXY_TARGET: http://api:3100
       RAKAZO_HOST: ${RAKAZO_HOST:-app.example.com}
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
+      RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
+      RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
     expose:
       - "5173"
     networks:
@@ -401,6 +409,17 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:5173/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 2m
+      start_interval: 1s
 
   # The updater holds the Docker socket, which is root-equivalent on the host, so it is opt-in and
   # deliberately the narrowest service here: no `ports` (nothing on the host), only the dedicated
