@@ -518,9 +518,11 @@ async function makeBinsExecutable(dir: string, name: string): Promise<void> {
 async function resolveBin(dir: string, name: string, binName?: string): Promise<string> {
   const { unscoped, bins } = await declaredBins(dir, name);
   const byName = new Map(bins);
+  // Like npx: names that all run the same file (aliases) are one choice.
+  const targets = new Set(bins.map(([, path]) => path));
   const chosen = binName
     ? byName.get(binName)
-    : bins.length === 1
+    : targets.size === 1
       ? bins[0]?.[1]
       : byName.get(unscoped);
   if (!chosen) {

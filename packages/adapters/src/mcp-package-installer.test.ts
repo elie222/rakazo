@@ -374,6 +374,11 @@ describe("ensureMcpPackage", () => {
       options({ NPM_CONFIG_FAKE_BIN: '"cli.js"' }),
     );
     expect(single.binPath).toMatch(/solo\/cli\.js$/);
+    const aliased = await ensureMcpPackage(
+      "aliased@1.0.0",
+      options({ NPM_CONFIG_FAKE_BIN: JSON.stringify({ "srv-a": "s.js", "srv-b": "s.js" }) }),
+    );
+    expect(aliased.binPath).toMatch(/aliased\/s\.js$/);
   });
 
   it("refuses specs that are not registry packages", async () => {
