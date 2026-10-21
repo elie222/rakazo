@@ -43,7 +43,7 @@ export type OAuthMaterial = {
   /** A client registered with the authorization server out of band. It is
    * configuration, not SDK state, so it outlives disconnects and replaces
    * dynamic client registration for servers that do not offer it. */
-  oauthClient?: OAuthClientInformation;
+  oauthClient?: PreRegisteredClient;
   oauth?: OAuthState;
 };
 
@@ -175,8 +175,36 @@ const COMMON_CONFIG_VALUES = new Set([
   "async",
 ]);
 
+/** `authorization_server` binds the client to the server it was first used with,
+ * so an MCP server cannot later steer the secret to another one via discovery. */
+type PreRegisteredClient = OAuthClientInformation & { authorization_server?: string };
+
+function boundClient(
+  client: PreRegisteredClient,
+  authorizationServerUrl: string | undefined,
+): OAuthClientInformation {
+  if (!authorizationServerUrl) throw new Error("MCP OAuth authorization server is unknown");
+  if (
+    client.authorization_server &&
+    client.authorization_server !== new URL(authorizationServerUrl).href
+  )
+    throw new McpOAuthServerMismatchError();
+  const { authorization_server: _bound, ...information } = client;
+  return information;
+}
+
 type ServerRef = { id: string; endpoint: string | null; secretId: string | null };
 type ActorRef = { spaceId: string; userId: string };
+
+/** Our own text, so callers may show it as is. */
+export class McpOAuthServerMismatchError extends Error {
+  constructor() {
+    super(
+      "MCP OAuth authorization server differs from the one this client was first used with; reconfigure the server's OAuth client",
+    );
+    this.name = "McpOAuthServerMismatchError";
+  }
+}
 
 export class McpReauthorizationRequiredError extends Error {
   readonly code = "MCP_REAUTHORIZATION_REQUIRED";
@@ -285,7 +313,15 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     return this.options.state ?? this.runtimeState;
   }
   clientInformation(): OAuthClientInformationMixed | undefined {
-    return this.material.oauthClient ?? this.material.oauth?.clientInformation;
+    const client = this.material.oauthClient;
+    if (!client) return this.material.oauth?.clientInformation;
+    // The SDK saves discovery before asking for the client, so this is the server
+    // about to receive it. The first one is kept and written with the next persist.
+    const server = this.material.oauth?.discoveryState?.authorizationServerUrl;
+    const information = boundClient(client, server);
+    if (!client.authorization_server && server)
+      this.material.oauthClient = { ...client, authorization_server: new URL(server).href };
+    return information;
   }
   async saveClientInformation(value: OAuthClientInformationMixed): Promise<void> {
     this.oauth().clientInformation = value;
@@ -607,7 +643,9 @@ async function requestRefresh(
   fetchFn: typeof fetch,
 ): Promise<OAuthTokens> {
   const discovery = material.oauth?.discoveryState;
-  const clientInformation = material.oauthClient ?? material.oauth?.clientInformation;
+  const clientInformation = material.oauthClient
+    ? boundClient(material.oauthClient, discovery?.authorizationServerUrl)
+    : material.oauth?.clientInformation;
   if (!discovery?.authorizationServerUrl || !clientInformation)
     throw new Error("MCP OAuth state cannot refresh");
   return refreshAuthorization(discovery.authorizationServerUrl, {
@@ -621,8 +659,8 @@ async function requestRefresh(
 }
 
 function sameOAuthClient(
-  left: OAuthClientInformation | undefined,
-  right: OAuthClientInformation | undefined,
+  left: PreRegisteredClient | undefined,
+  right: PreRegisteredClient | undefined,
 ): boolean {
   return left?.client_id === right?.client_id && left?.client_secret === right?.client_secret;
 }
@@ -740,6 +778,7 @@ export class McpOAuthBroker {
     try {
       await client.connect(transport, { signal, timeout: 15_000 });
     } catch (error) {
+      if (error instanceof McpOAuthServerMismatchError) throw error;
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
       await client.close().catch(() => undefined);
@@ -1060,6 +1099,9 @@ export class McpOAuthBroker {
         // settings meanwhile has already dropped the grant this write carries.
         if (!sameOAuthClient(material.oauthClient, nextMaterial.oauthClient))
           throw new Error("MCP OAuth client changed during authorization; reconnect this server");
+        const bound = material.oauthClient?.authorization_server;
+        if (nextMaterial.oauthClient && bound && !nextMaterial.oauthClient.authorization_server)
+          nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
         nextMaterial.oauth = structuredClone(material.oauth);
         if (
           options.storedRefreshToken !== undefined &&

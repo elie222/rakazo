@@ -176,6 +176,28 @@ describe("buildMcpUpdateMaterial", () => {
       });
     });
 
+    it("keeps the client's authorization server binding until the client changes", () => {
+      const bound = {
+        oauthClient: {
+          client_id: "client-a",
+          client_secret: "secret-a",
+          authorization_server: "https://auth.example.test/",
+        },
+      };
+      expect(
+        buildMcpUpdateMaterial(bound, { ...remote, oauthClient: { clientId: "client-a" } }),
+      ).toEqual({ action: "store", material: { ...bound, headers: {} } });
+      expect(
+        buildMcpUpdateMaterial(bound, {
+          ...remote,
+          oauthClient: { clientId: "client-a", clientSecret: "rotated" },
+        }),
+      ).toEqual({
+        action: "store",
+        material: { headers: {}, oauthClient: { client_id: "client-a", client_secret: "rotated" } },
+      });
+    });
+
     it("removes the client and its grant when the update clears it", () => {
       expect(buildMcpUpdateMaterial(connected, { ...remote, oauthClient: null })).toEqual({
         action: "store",

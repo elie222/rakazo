@@ -1301,7 +1301,7 @@ describe("MCP OAuth", () => {
         (call) => (call[1] as { operationId?: string }).operationId === "mcp.oauth.session",
       );
       const session = JSON.parse(sessionWrite?.[0] as string) as OAuthMaterial;
-      expect(session.oauthClient).toEqual(oauthClient);
+      expect(session.oauthClient).toMatchObject(oauthClient);
     });
 
     it("exchanges the code with the configured client's secret", async () => {
@@ -1448,6 +1448,63 @@ describe("MCP OAuth", () => {
       ).rejects.toThrow("OAuth client changed");
 
       expect(await shared.stored()).toEqual(replacement);
+    });
+
+    it("binds the client to the authorization server it is first used with", async () => {
+      nonRegisteringAuthServer(() => undefined);
+      const { broker, secrets } = brokerWithMaterial({ oauthClient });
+
+      await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      const persisted = (secrets.put.mock.calls as unknown[][])
+        .filter((call) => (call[1] as { operationId?: string }).operationId === "mcp.oauth.persist")
+        .map((call) => JSON.parse(call[0] as string) as OAuthMaterial);
+      expect(persisted.at(-1)?.oauthClient).toEqual({
+        ...oauthClient,
+        authorization_server: "https://auth.example.test/",
+      });
+    });
+
+    it("never sends the client to a different authorization server", async () => {
+      const requested = nonRegisteringAuthServer(() => undefined);
+      const { broker, secrets } = brokerWithMaterial({
+        oauthClient: { ...oauthClient, authorization_server: "https://trusted-auth.example.test/" },
+      });
+
+      await expect(
+        broker.begin({
+          serverId: "server-1",
+          spaceId: "workspace-1",
+          userId: "user-1",
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+        }),
+      ).rejects.toThrow("authorization server");
+
+      expect(requested.some((request) => request.includes("/token"))).toBe(false);
+      expect(
+        (secrets.put.mock.calls as unknown[][]).some(
+          (call) => (call[1] as { operationId?: string }).operationId === "mcp.oauth.session",
+        ),
+      ).toBe(false);
+    });
+
+    it("does not refresh against an authorization server the client is not bound to", async () => {
+      const server = rotatingAuthServer();
+      const { clientInformation: _registered, ...oauth } = expiringMaterial(EXPIRED()).oauth;
+      const shared = sharedCredentials({
+        oauthClient: { ...oauthClient, authorization_server: "https://trusted-auth.example.test/" },
+        oauth,
+      });
+      const { provider } = await shared.startProcess(server.fetch);
+
+      await provider.tokens();
+
+      expect(server.requests).toHaveLength(0);
     });
 
     it("treats the client secret as a credential that must never be shown", () => {

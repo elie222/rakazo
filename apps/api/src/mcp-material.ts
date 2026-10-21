@@ -1,6 +1,11 @@
 import type { McpServerConfigInput } from "@rakazo/contracts";
 
-type McpOAuthClient = { client_id: string; client_secret?: string };
+type McpOAuthClient = {
+  client_id: string;
+  client_secret?: string;
+  /** Set on first use by McpOAuthBroker; kept while the client is unchanged. */
+  authorization_server?: string;
+};
 
 /** Shape of the encrypted MCP credential blob. `oauth` holds SDK OAuth state
  * (tokens, client registration, PKCE verifier) managed by McpOAuthBroker.

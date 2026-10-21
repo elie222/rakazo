@@ -714,6 +714,8 @@ enter the client ID (and secret, for a confidential client) under **Advanced** w
 server, and add the **Redirect URI** shown there (`<your web origin>/mcp/oauth/callback`) to the
 client's allowed redirect URIs. The client is stored encrypted with the server's other
 credentials and survives **Disconnect**; switching to a different client drops the current grant.
+On first use the client is bound to the authorization server the MCP server pointed to, and Rakazo
+refuses to send it anywhere else afterwards. Replacing the client clears the binding.
 
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
