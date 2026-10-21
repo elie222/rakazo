@@ -313,3 +313,48 @@ describe("skill prompt helpers", () => {
     expect(line).toContain("Prefer matching skills");
   });
 });
+
+describe("SKILL.md quoted frontmatter values", () => {
+  const resave = (md: string): string => {
+    const parsed = parseSkillMd(md);
+    if ("error" in parsed) throw new Error(parsed.error);
+    return buildSkillMd(parsed);
+  };
+
+  it.each([
+    'Use when the user says "ship it", then deploy.',
+    "Paths like C:\\Users, #win",
+    "Tabs\tand, commas",
+    '"quoted" start',
+  ])("keeps %j unchanged across saves", (description) => {
+    let md = buildSkillMd({ name: "s", description, body: "b" });
+    for (let i = 0; i < 3; i += 1) md = resave(md);
+    const parsed = parseSkillMd(md);
+    expect("error" in parsed ? parsed.error : parsed.description).toBe(description);
+  });
+
+  it("keeps string frontmatter that looks like a number or boolean a string", () => {
+    const md = resave('---\nname: s\ndescription: d\nversion: "1.10"\nbeta: "true"\n---\nb\n');
+    const parsed = parseSkillMd(md);
+    if ("error" in parsed) throw new Error(parsed.error);
+    expect(parsed.frontmatter.version).toBe("1.10");
+    expect(parsed.frontmatter.beta).toBe("true");
+  });
+
+  it("parses a doubled single quote as one quote", () => {
+    const parsed = parseSkillMd("---\nname: s\ndescription: 'it''s here'\n---\nb\n");
+    expect("error" in parsed ? parsed.error : parsed.description).toBe("it's here");
+  });
+
+  it("keeps a hand-written double-quoted value when the escape is not JSON", () => {
+    const parsed = parseSkillMd('---\nname: s\ndescription: "C:\\path"\n---\nb\n');
+    expect("error" in parsed ? parsed.error : parsed.description).toBe("C:\\path");
+  });
+
+  it("leaves plain descriptions unquoted", () => {
+    for (const description of ["Deploy the app", "don't panic"]) {
+      const md = buildSkillMd({ name: "s", description, body: "b" });
+      expect(md).toContain(`description: ${description}\n`);
+    }
+  });
+});
