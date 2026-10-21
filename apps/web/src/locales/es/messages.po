@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr " (sin leer)"
 
+#. placeholder {0}: health.toolCount
+#: src/components/McpServerHealthLine.tsx
+msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
+msgstr "{0, plural, one {En ejecución · # herramienta} other {En ejecución · # herramientas}}"
+
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -64,6 +69,16 @@ msgstr ""
 #: src/components/call/IncomingCall.tsx
 msgid "{0} is calling you"
 msgstr "{0} te está llamando"
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is not working"
+msgstr "{0} no funciona"
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is running"
+msgstr "{0} está en ejecución"
 
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
@@ -1064,6 +1079,10 @@ msgstr "Revisa la URL del servidor y la red y vuelve a probar."
 msgid "Check your email"
 msgstr "Revisa tu correo"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checked {checked}"
+msgstr "Comprobado {checked}"
+
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
 msgstr ""
@@ -1842,6 +1861,10 @@ msgstr "No se pudo enviar esta respuesta"
 msgid "Could not take control"
 msgstr "No se pudo tomar el control"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not test MCP server"
+msgstr "No se pudo probar el servidor MCP"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "No se pudo actualizar"
@@ -2327,6 +2350,10 @@ msgstr "Variables de entorno"
 msgid "Error"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Error details"
+msgstr "Detalles del error"
+
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every"
@@ -2709,6 +2736,10 @@ msgstr "Entradas"
 #: src/components/SidebarFooter.tsx
 msgid "Install update"
 msgstr "Instalar actualización"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Installing…"
+msgstr "Instalando…"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
@@ -3438,6 +3469,10 @@ msgstr "Ninguno aún"
 msgid "Normal"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Not checked yet"
+msgstr "Aún no comprobado"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "No conectado"
@@ -3449,6 +3484,10 @@ msgstr "No está en el catálogo de plugins"
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Ahora no"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Not working"
+msgstr "No funciona"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
@@ -4183,6 +4222,7 @@ msgstr "La hora de ejecución debe ser en el futuro."
 msgid "running"
 msgstr "en ejecución"
 
+#: src/components/McpServerHealthLine.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "En ejecución"
@@ -4745,6 +4785,10 @@ msgstr "Probar"
 msgid "Test API key"
 msgstr "Probar clave de API"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Test connection"
+msgstr "Probar conexión"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "Ejecución de prueba"
@@ -4754,6 +4798,7 @@ msgid "Test sign-in"
 msgstr "Probar inicio de sesión"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Probando…"
 

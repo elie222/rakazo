@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr "（未读）"
 
+#. placeholder {0}: health.toolCount
+#: src/components/McpServerHealthLine.tsx
+msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
+msgstr "{0, plural, other {运行中 · #个工具}}"
+
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -64,6 +69,16 @@ msgstr ""
 #: src/components/call/IncomingCall.tsx
 msgid "{0} is calling you"
 msgstr ""
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is not working"
+msgstr "{0} 无法正常工作"
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is running"
+msgstr "{0} 正在运行"
 
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
@@ -1064,6 +1079,10 @@ msgstr "请检查服务器 URL 和网络，然后重新测试。"
 msgid "Check your email"
 msgstr "请查看邮箱"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checked {checked}"
+msgstr "检查于 {checked}"
+
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
 msgstr ""
@@ -1842,6 +1861,10 @@ msgstr "无法提交此回答"
 msgid "Could not take control"
 msgstr "无法接管"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not test MCP server"
+msgstr "无法测试 MCP 服务器"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "无法更新"
@@ -2327,6 +2350,10 @@ msgstr "环境变量"
 msgid "Error"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Error details"
+msgstr "错误详情"
+
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every"
@@ -2709,6 +2736,10 @@ msgstr "输入"
 #: src/components/SidebarFooter.tsx
 msgid "Install update"
 msgstr "安装更新"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Installing…"
+msgstr "正在安装…"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
@@ -3438,6 +3469,10 @@ msgstr "暂无"
 msgid "Normal"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Not checked yet"
+msgstr "尚未检查"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "未连接"
@@ -3449,6 +3484,10 @@ msgstr "不在插件目录中"
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "暂不"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Not working"
+msgstr "无法正常工作"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
@@ -4183,6 +4222,7 @@ msgstr "运行时间必须是将来的时间。"
 msgid "running"
 msgstr "运行中"
 
+#: src/components/McpServerHealthLine.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "运行中"
@@ -4745,6 +4785,10 @@ msgstr "测试"
 msgid "Test API key"
 msgstr "测试 API 密钥"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Test connection"
+msgstr "测试连接"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "测试运行"
@@ -4754,6 +4798,7 @@ msgid "Test sign-in"
 msgstr "测试登录"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "正在测试…"
 

@@ -15,6 +15,14 @@ import { EncryptedSecretStore } from "./secrets.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
+/** Discovery of a failed server offers only its stand-in "unavailable" tool. */
+const unavailableOnly = (slug = "demo") => [
+  expect.objectContaining({
+    name: `mcp__${slug}__unavailable`,
+    route: expect.objectContaining({ toolName: "__rakazo_unavailable" }),
+  }),
+];
+
 const SERVER = {
   id: "server-1",
   slug: "demo",
@@ -222,7 +230,7 @@ describe("MCP connector session cache", () => {
       fake.values.delete(record.ref.split(":").at(-1)!);
       await vi.advanceTimersByTimeAsync(100);
       // Discovery suppresses per-server errors; no tools from the deleted credential survive.
-      await expect(connector.discoverTools(context)).resolves.toEqual([]);
+      await expect(connector.discoverTools(context)).resolves.toEqual(unavailableOnly());
       expect((connector as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
     } finally {
       await connector.close();
@@ -306,6 +314,8 @@ describe("MCP connector session cache", () => {
       },
       secret: { findFirst: vi.fn(async () => ({ id: record.id, ciphertext: record.ref })) },
     };
+    // Health writes succeed, so the only log lines are the ones this test is about.
+    Object.assign(prisma, { mcpServer: { updateMany: vi.fn(async () => ({ count: 1 })) } });
     const state = { failNext: false, initializations: 0, headers: [] as Record<string, string>[] };
     vi.stubGlobal("fetch", mcpFetch(state));
     const connector = new McpConnector(prisma as never, store, { network: TEST_NETWORK });
@@ -533,7 +543,7 @@ describe("MCP connector session cache", () => {
         runId: "run-1",
         signal: new AbortController().signal,
       } as never),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual(unavailableOnly());
 
     expect(append).toHaveBeenCalledTimes(1);
     expect(append.mock.calls[0]?.[0]).toMatchObject({
@@ -586,7 +596,7 @@ describe("MCP connector session cache", () => {
         runId: "run-1",
         signal: new AbortController().signal,
       } as never),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual(unavailableOnly());
 
     expect(append).toHaveBeenCalledTimes(1);
     const reason = String(append.mock.calls[0]?.[0].payload.error);
@@ -636,8 +646,11 @@ describe("MCP connector session cache", () => {
       connector.discoverTools(context as never),
     ]);
 
-    expect(first).toEqual([]);
-    expect(second).toEqual([]);
+    expect(first).toEqual(unavailableOnly());
+    expect(second).toEqual(unavailableOnly());
+    // The reason the model reads is redacted the same way.
+    expect(JSON.stringify([first, second])).not.toContain("local-key");
+    expect(first[0]?.description).toContain("[redacted]");
     expect(append).toHaveBeenCalledTimes(2);
     for (const call of append.mock.calls) {
       const message = String(call[0].payload.error);
@@ -693,7 +706,7 @@ describe("MCP connector session cache", () => {
         botId: "bot-1",
         signal: new AbortController().signal,
       } as never),
-    ).resolves.toEqual([]);
+    ).resolves.toEqual(unavailableOnly());
 
     expect(append).not.toHaveBeenCalled();
     await connector.close();
@@ -986,7 +999,7 @@ describe("MCP connector session cache", () => {
             botId: "bot-1",
             signal: new AbortController().signal,
           } as never),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual(unavailableOnly());
 
         expect(requests.slice(0, 2).map((request) => `${request.method} ${request.url}`)).toEqual([
           `POST ${SERVER.endpoint}`,
@@ -1734,7 +1747,7 @@ describe("MCP connector private endpoints", () => {
       botId: "bot-1",
       signal: new AbortController().signal,
     } as never);
-    expect(tools).toEqual([]);
+    expect(tools).toEqual(unavailableOnly());
     expect(fetch).not.toHaveBeenCalled();
     await connector.close();
   });
@@ -1762,7 +1775,7 @@ describe("MCP connector private endpoints", () => {
         botId: "bot-1",
         signal: new AbortController().signal,
       } as never);
-      expect(tools).toEqual([]);
+      expect(tools).toEqual(unavailableOnly());
       expect(fetch).not.toHaveBeenCalled();
       await connector.close();
     },

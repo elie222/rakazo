@@ -1,5 +1,8 @@
 import type { McpServerHealth } from "@rakazo/contracts";
 import type { PrismaClient } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
+
+const HEALTH_MESSAGE_MAX = 2000;
 
 /** A health observation to persist on an MCP server row. `checkedAt` defaults to now. */
 export type McpServerHealthUpdate = {
@@ -17,10 +20,25 @@ export async function recordMcpServerHealth(
   serverId: string,
   update: McpServerHealthUpdate,
 ): Promise<void> {
-  // TODO(agent-B): implement (updateMany by id, truncate message, swallow errors).
-  void prisma;
-  void serverId;
-  void update;
+  try {
+    // updateMany so a server deleted mid-probe is a silent no-op. Only health columns are
+    // written: `revision` stays put (a bump evicts live sessions). `updatedAt` is touched by
+    // Prisma's @updatedAt, but nothing orders or version-checks on it (it is display-only).
+    await prisma.mcpServer.updateMany({
+      where: { id: serverId },
+      data: {
+        healthStatus: update.status,
+        healthMessage:
+          update.status === "ok" || !update.message
+            ? null
+            : update.message.slice(0, HEALTH_MESSAGE_MAX),
+        healthToolCount: update.toolCount ?? null,
+        healthCheckedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    getLogger().error("mcp server health write failed", error, { "mcp.server.id": serverId });
+  }
 }
 
 /** Map persisted health columns onto the API DTO. */
@@ -35,8 +53,8 @@ export function mcpServerHealthDto(row: {
   );
   return {
     status: status ?? "unknown",
-    message: row.healthMessage,
-    toolCount: row.healthToolCount,
+    message: row.healthMessage ?? null,
+    toolCount: row.healthToolCount ?? null,
     checkedAt: row.healthCheckedAt?.toISOString() ?? null,
   };
 }

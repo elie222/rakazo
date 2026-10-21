@@ -9,6 +9,32 @@ const credentialsTemplate = `{
   }
 }`;
 
+function stdioServer(overrides: Partial<McpServer>): McpServer {
+  return {
+    id: "mcp-health-server",
+    spaceId: "mcp-health-workspace",
+    slug: "gmail",
+    name: "Gmail",
+    description: "",
+    transport: "stdio",
+    endpoint: null,
+    command: "npx",
+    args: ["-y", "@klodr/gmail-mcp@2.0.2"],
+    envKeys: [],
+    fileKeys: [],
+    headerKeys: [],
+    hasSecret: false,
+    oauthStatus: "connected",
+    oauthClientId: "google-client",
+    health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
+    enabled: true,
+    revision: 1,
+    createdAt: "2026-08-24T00:00:00.000Z",
+    updatedAt: "2026-08-24T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 test("adds a stdio MCP server with encrypted environment variables", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `mcp-stdio-${stamp}@rakazo.test`, "password12", "MCP stdio");
@@ -58,6 +84,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       hasSecret: true,
       oauthStatus: "none",
       oauthClientId: "google-client",
+      health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
       enabled: true,
       revision: 1,
       createdAt: "2026-08-24T00:00:00.000Z",
@@ -143,4 +170,131 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await expect(values.nth(0)).toHaveJSProperty("tagName", "INPUT");
   await expect(page.getByLabel("OAuth client ID (optional)")).toHaveValue("");
   await expect(page.getByLabel("Authorization server")).toHaveCount(0);
+});
+
+test("shows MCP server health, error details, and tests the connection on demand", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `mcp-health-${stamp}@rakazo.test`, "password12", "MCP health");
+  await completeOnboarding(page);
+
+  const failure = "npm error code ETIMEDOUT\nMCP error -32000: Connection closed";
+  let server = stdioServer({
+    health: {
+      status: "error",
+      message: failure,
+      toolCount: null,
+      checkedAt: new Date().toISOString(),
+    },
+  });
+  let testCalls = 0;
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: [server] }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/servers/test", async (route) => {
+    testCalls += 1;
+    const { json } = route.request().postDataJSON() as { json: { id: string } };
+    expect(json).toEqual({ id: server.id });
+    // The first test is slow and finishes healthy, so the button's busy state is observable.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    server = {
+      ...server,
+      health: {
+        status: "ok",
+        message: null,
+        toolCount: 3,
+        checkedAt: new Date().toISOString(),
+      },
+    };
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: server }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await page.getByTestId("integrations-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
+
+  // OAuth being connected must not read as "working": health is the primary status.
+  const health = page.getByTestId("mcp-health");
+  await expect(health).toHaveAttribute("data-status", "error");
+  await expect(health).toContainText("Not working");
+  await expect(page.getByText("OAuth connected", { exact: true })).toBeVisible();
+
+  // The raw log hides behind a disclosure, rendered left-to-right and scrollable.
+  const details = page.getByTestId("mcp-health-details");
+  await expect(details).not.toHaveAttribute("open", "");
+  await details.locator("summary").click();
+  await expect(details.locator("summary")).toContainText("Error details");
+  const log = details.locator("pre");
+  await expect(log).toBeVisible();
+  await expect(log).toHaveAttribute("dir", "ltr");
+  await expect(log).toContainText("MCP error -32000: Connection closed");
+  await captureScreenshot(page, testInfo, "mcp-health-error");
+
+  // Test connection calls the RPC, shows a busy state, and swaps in the fresh health.
+  const testButton = page.getByRole("button", { name: "Test connection", exact: true });
+  await testButton.click();
+  await expect(page.getByRole("button", { name: "Testing…", exact: true })).toBeDisabled();
+  await expect(health).toHaveAttribute("data-status", "ok");
+  await expect(health).toContainText("Running · 3 tools");
+  await expect(page.getByTestId("mcp-health-details")).toHaveCount(0);
+  await expect(page.getByText("Gmail is running")).toBeVisible();
+  await expect(testButton).toBeEnabled();
+  expect(testCalls).toBe(1);
+  await captureScreenshot(page, testInfo, "mcp-health-ok");
+});
+
+test("polls the server list while a stdio package is installing", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `mcp-installing-${stamp}@rakazo.test`, "password12", "MCP installing");
+  await completeOnboarding(page);
+
+  let listCalls = 0;
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    listCalls += 1;
+    const installing = listCalls < 3;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        json: [
+          stdioServer({
+            health: installing
+              ? { status: "installing", message: null, toolCount: null, checkedAt: null }
+              : {
+                  status: "ok",
+                  message: null,
+                  toolCount: 1,
+                  checkedAt: new Date().toISOString(),
+                },
+          }),
+        ],
+      }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await page.getByTestId("integrations-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+
+  const health = page.getByTestId("mcp-health");
+  await expect(health).toHaveAttribute("data-status", "installing");
+  await expect(page.getByRole("button", { name: "Test connection", exact: true })).toBeDisabled();
+  await expect(health).toHaveAttribute("data-status", "ok", { timeout: 15_000 });
+  await expect(health).toContainText("Running · 1 tool");
+
+  // Polling stops once nothing is installing.
+  const settled = listCalls;
+  await page.waitForTimeout(3500);
+  expect(listCalls).toBe(settled);
 });

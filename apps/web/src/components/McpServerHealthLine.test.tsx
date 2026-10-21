@@ -1,0 +1,59 @@
+// @vitest-environment jsdom
+
+import type { McpServerHealth } from "@rakazo/contracts";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it, vi } from "vitest";
+
+// The macros compile away in the app build; tests run the source, so expand them by hand.
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: unknown }) => children,
+  Plural: ({ value, one, other }: { value: number; one: string; other: string }) =>
+    (value === 1 ? one : other).replace("#", String(value)),
+}));
+vi.mock("../lib/relative-time", () => ({ formatRelativeTime: () => "5m ago" }));
+
+import { McpServerHealthLine } from "./McpServerHealthLine";
+
+const base: McpServerHealth = {
+  status: "unknown",
+  message: null,
+  toolCount: null,
+  checkedAt: null,
+};
+const render = (health: Partial<McpServerHealth>) =>
+  renderToStaticMarkup(<McpServerHealthLine health={{ ...base, ...health }} />);
+
+describe("McpServerHealthLine", () => {
+  it("shows the tool count and when it was checked when the server works", () => {
+    const html = render({ status: "ok", toolCount: 12, checkedAt: "2026-10-21T10:00:00.000Z" });
+    expect(html).toContain('data-status="ok"');
+    expect(html).toContain("Running · 12 tools");
+    expect(html).toContain("5m ago");
+    expect(render({ status: "ok", toolCount: 1 })).toContain("Running · 1 tool");
+  });
+
+  it("shows a spinner while installing", () => {
+    const html = render({ status: "installing" });
+    expect(html).toContain('data-status="installing"');
+    expect(html).toContain("animate-spin");
+    expect(html).toContain("Installing…");
+  });
+
+  it("puts the failure log in a collapsed, left-to-right, scrollable block", () => {
+    const html = render({ status: "error", message: "npm ERR! 404\n  at <script>" });
+    expect(html).toContain("Not working");
+    expect(html).toMatch(/<details[^>]*data-testid="mcp-health-details"/);
+    expect(html).not.toMatch(/<details[^>]* open/);
+    expect(html).toMatch(/<pre dir="ltr"[^>]*max-h-40[^>]*overflow-auto/);
+    // Raw log text is escaped, never interpreted as markup.
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("omits the details disclosure when there is no message", () => {
+    expect(render({ status: "error" })).not.toContain("<details");
+  });
+
+  it("says so when the server was never checked", () => {
+    expect(render({ status: "unknown" })).toContain("Not checked yet");
+  });
+});

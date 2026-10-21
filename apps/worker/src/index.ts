@@ -35,6 +35,7 @@ import {
   LocalArtifactStore,
   McpConnector,
   McpOAuthBroker,
+  mcpStdioOptionsFromEnv,
   messagingEnvFromProcess,
   messagingPlatformsFromEnv,
   PiAgentRuntime,
@@ -134,6 +135,7 @@ async function main() {
         .split(",")
         .map((v) => v.trim())
         .filter(Boolean),
+      ...mcpStdioOptionsFromEnv(process.env),
       events,
       allowPrivateEndpoint,
     },

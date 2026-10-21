@@ -738,6 +738,20 @@ Rakazo refreshes the grant and restarts the process shortly before an access tok
 expires, so a long-running process never keeps a dead token. A process that only receives the
 refresh token refreshes on its own. Temporary files are removed when the process stops.
 
+A server launched as `npx [-y] <package>[@version]` (or `npx -p <package> <bin>`) is not
+downloaded on every start. Rakazo installs the package once with `npm install` into
+`MCP_PACKAGES_DIR` (default `DATA_DIR/mcp-packages`, shared by the API and worker), then runs
+its bin directly; `npx` must still be in `MCP_STDIO_ALLOWED_COMMANDS`. The install has its own
+timeout, `MCP_STDIO_INSTALL_TIMEOUT_MS` (default 180000), separate from the handshake timeout
+`MCP_STDIO_STARTUP_TIMEOUT_MS` (default 30000). Pin a version so every start runs the same
+code; npm settings such as `NPM_CONFIG_REGISTRY` can be set in the server's environment
+variables. Local paths, git and tarball URLs, and unknown `npx` flags fall back to running the
+command as configured. Each server runs as one process per user in each of the API and worker,
+shared by that user's bots, and stops after `MCP_STDIO_IDLE_MS` (default 900000, 15 minutes)
+without use. When a server fails to start, the reason (including the end of its stderr, with
+credentials redacted) appears on the server in **Settings**, and its bots are told it is
+unavailable instead of silently losing its tools.
+
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
 Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models

@@ -1,0 +1,354 @@
+import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { McpConnector } from "./mcp-connector.js";
+import { mcpPackageDir } from "./mcp-package-installer.js";
+import { McpSession } from "./mcp-transport.js";
+
+/** A dependency-free stdio MCP server: one `hello` tool that echoes its launch arguments. */
+const SERVER_SOURCE = `#!/usr/bin/env node
+if (process.env.FAIL_LOUDLY) {
+  console.error("auth failed for " + process.env.MAIL_API_KEY + " as " + process.env.MAIL_ACCOUNT);
+  process.exit(1);
+}
+const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let index;
+  while ((index = buffer.indexOf("\\n")) >= 0) {
+    const message = JSON.parse(buffer.slice(0, index));
+    buffer = buffer.slice(index + 1);
+    if (message.id === undefined) continue;
+    if (message.method === "initialize")
+      send({ id: message.id, result: { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "demo", version: "1" } } });
+    else if (message.method === "tools/list")
+      send({ id: message.id, result: { tools: [{ name: "hello", inputSchema: { type: "object" } }] } });
+    else if (message.method === "tools/call")
+      send({ id: message.id, result: { content: [{ type: "text", text: "hi " + process.argv.slice(2).join(" ") }] } });
+    else send({ id: message.id, result: {} });
+  }
+});
+`;
+
+const SPEC = "@demo/mail-mcp@1.0.0";
+
+/** What a finished install leaves behind, without running npm. */
+async function publishPackage(root: string): Promise<void> {
+  const dir = mcpPackageDir(SPEC, root);
+  const packageDir = join(dir, "node_modules", "@demo", "mail-mcp");
+  await mkdir(packageDir, { recursive: true });
+  await writeFile(
+    join(packageDir, "package.json"),
+    JSON.stringify({ name: "@demo/mail-mcp", version: "1.0.0", bin: { "mail-mcp": "server.js" } }),
+  );
+  await writeFile(join(packageDir, "server.js"), SERVER_SOURCE);
+  await chmod(join(packageDir, "server.js"), 0o755);
+  await writeFile(join(dir, ".ready"), "{}\n");
+}
+
+const SERVER = {
+  id: "server-1",
+  slug: "mail",
+  name: "Mail",
+  transport: "stdio",
+  command: "npx",
+  args: ["-y", SPEC, "--region", "eu"],
+  endpoint: null,
+  secretId: "secret-1",
+  enabled: true,
+  revision: 1,
+};
+
+function contextFor(botId = "bot-1") {
+  return {
+    operationId: "test",
+    traceId: "test",
+    spaceId: "w1",
+    userId: "u1",
+    botId,
+    signal: new AbortController().signal,
+  } as never;
+}
+
+describe("MCP connector managed stdio launch", () => {
+  let root: string;
+  let env: Record<string, string>;
+  const updateMany = vi.fn(async (_args: { data: Record<string, unknown> }) => ({ count: 1 }));
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "rakazo-mcp-launch-"));
+    env = {};
+    updateMany.mockClear();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  function connectorFor(
+    options: { allowedCommands?: string[]; idleMs?: number; server?: typeof SERVER } = {},
+  ) {
+    const server = options.server ?? SERVER;
+    const assignment = (botId: string) => ({
+      botId,
+      serverId: server.id,
+      spaceId: "w1",
+      userId: "u1",
+      allowAllTools: true,
+      allowedTools: [],
+      server,
+    });
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async ({ where }: { where: { botId: string } }) => [
+          assignment(where.botId),
+        ]),
+        findFirst: vi.fn(async ({ where }: { where: { botId: string } }) =>
+          assignment(where.botId),
+        ),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })) },
+      mcpServer: { updateMany },
+    };
+    const secrets = { load: vi.fn(async () => JSON.stringify({ env })) };
+    return new McpConnector(prisma as never, secrets as never, {
+      stdioEnabled: true,
+      allowedCommands: options.allowedCommands ?? ["npx"],
+      packagesDir: root,
+      idleMs: options.idleMs,
+    });
+  }
+
+  const healthWrites = () => updateMany.mock.calls.map(([args]) => args.data);
+
+  async function callTool(connector: McpConnector, tool: { name: string; route?: unknown }) {
+    const events = [];
+    for await (const event of connector.execute(
+      { tool: tool.name, args: {}, executionId: "call-1", route: tool.route as never },
+      contextFor(),
+    ))
+      events.push(event);
+    return events;
+  }
+
+  it("launches the managed install's bin with the bin's own arguments", async () => {
+    await publishPackage(root);
+    const connector = connectorFor();
+    try {
+      const tools = await connector.discoverTools(contextFor());
+      expect(tools.map((tool) => tool.name)).toEqual(["mcp__mail__hello"]);
+      const [tool] = tools;
+      expect(await callTool(connector, tool!)).toMatchObject([
+        { type: "result", data: { content: [{ text: "hi --region eu" }] } },
+      ]);
+      await vi.waitFor(() =>
+        expect(healthWrites()).toContainEqual(
+          expect.objectContaining({ healthStatus: "ok", healthToolCount: 1 }),
+        ),
+      );
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("checks the configured launcher against the allowlist before installing", async () => {
+    const connector = connectorFor({ allowedCommands: ["node"] });
+    try {
+      const tools = await connector.discoverTools(contextFor());
+      expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+      expect(tools[0]?.description).toContain("allowlist");
+      expect(await readdir(root)).toEqual([]);
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("tells the model why an assigned server is unavailable, with secrets redacted", async () => {
+    await publishPackage(root);
+    env = {
+      FAIL_LOUDLY: "1",
+      MAIL_API_KEY: "sk-live-0123456789abcdef",
+      MAIL_ACCOUNT: "person@example.test",
+    };
+    const connector = connectorFor();
+    try {
+      const tools = await connector.discoverTools(contextFor());
+      expect(tools).toHaveLength(1);
+      const [placeholder] = tools;
+      expect(placeholder?.name).toBe("mcp__mail__unavailable");
+      expect(placeholder?.description).toContain('"Mail" is assigned to you but is unavailable');
+      expect(placeholder?.description).toContain("auth failed for [redacted] as [redacted]");
+      const visible = JSON.stringify({ tools, health: healthWrites() });
+      expect(visible).not.toContain("sk-live-0123456789abcdef");
+      expect(visible).not.toContain("person@example.test");
+
+      const events = await callTool(connector, placeholder!);
+      expect(events).toEqual([
+        {
+          type: "error",
+          message: expect.stringMatching(/^MCP server "Mail" is unavailable: .*auth failed for/s),
+        },
+      ]);
+      await vi.waitFor(() =>
+        expect(healthWrites()).toContainEqual(
+          expect.objectContaining({
+            healthStatus: "error",
+            healthMessage: expect.stringContaining("auth failed for [redacted]"),
+          }),
+        ),
+      );
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("records installing while another process installs the package, then uses it", async () => {
+    const dir = mcpPackageDir(SPEC, root);
+    const lock = `${dir}.lock`;
+    await mkdir(lock, { recursive: true });
+    await writeFile(
+      join(lock, "owner"),
+      JSON.stringify({
+        token: "other",
+        pid: process.pid,
+        host: hostname(),
+        expiresAt: Date.now() + 60_000,
+      }),
+    );
+    const connector = connectorFor();
+    try {
+      const discovering = connector.discoverTools(contextFor());
+      await vi.waitFor(() =>
+        expect(healthWrites()).toContainEqual(
+          expect.objectContaining({ healthStatus: "installing" }),
+        ),
+      );
+      await publishPackage(root);
+      await rm(lock, { recursive: true, force: true });
+      expect((await discovering).map((tool) => tool.name)).toEqual(["mcp__mail__hello"]);
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("runs one process per server for every bot of the same user", async () => {
+    await publishPackage(root);
+    const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+    const connector = connectorFor();
+    try {
+      await connector.discoverTools(contextFor("bot-1"));
+      await connector.discoverTools(contextFor("bot-2"));
+      expect(launches).toHaveBeenCalledTimes(1);
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("stops idle processes, never busy ones, and stops its timer on close", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    vi.spyOn(McpSession.prototype, "connectStdio").mockResolvedValue(undefined);
+    vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({
+      tools: [{ name: "hello", inputSchema: { type: "object" } }],
+    });
+    let finishCall: () => void = () => undefined;
+    vi.spyOn(McpSession.prototype, "callTool").mockImplementation(
+      () =>
+        new Promise((done) => {
+          finishCall = () => done({ content: [] });
+        }),
+    );
+    const close = vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    await publishPackage(root);
+    const connector = connectorFor({ idleMs: 1_000 });
+    const sessions = (connector as unknown as { sessions: Map<string, unknown> }).sessions;
+    try {
+      const [tool] = await connector.discoverTools(contextFor());
+      const calling = callTool(connector, tool!);
+      await vi.waitFor(() => expect(McpSession.prototype.callTool).toHaveBeenCalled());
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(sessions.size).toBe(1);
+      expect(close).not.toHaveBeenCalled();
+
+      finishCall();
+      await calling;
+      // Reaped within one sweep interval after it went idle.
+      await vi.advanceTimersByTimeAsync(2_500);
+      expect(sessions.size).toBe(0);
+      expect(close).toHaveBeenCalledTimes(1);
+
+      await connector.discoverTools(contextFor());
+      expect(vi.getTimerCount()).toBe(1);
+    } finally {
+      await connector.close();
+    }
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  describe("probe", () => {
+    it("starts an isolated process, records the result, and stops it", async () => {
+      await publishPackage(root);
+      const close = vi.spyOn(McpSession.prototype, "close");
+      const connector = connectorFor();
+      try {
+        const result = await connector.probe(SERVER as never, { spaceId: "w1", userId: "u1" });
+        expect(result).toEqual({ status: "ok", message: null, toolCount: 1 });
+        expect(close).toHaveBeenCalledTimes(1);
+        expect((connector as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
+        expect(healthWrites()).toEqual([
+          expect.objectContaining({ healthStatus: "ok", healthToolCount: 1 }),
+        ]);
+      } finally {
+        await connector.close();
+      }
+    });
+
+    it("reuses this process's live session instead of launching a second one", async () => {
+      await publishPackage(root);
+      const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+      const connector = connectorFor();
+      try {
+        await connector.discoverTools(contextFor());
+        const result = await connector.probe(SERVER as never, { spaceId: "w1", userId: "u1" });
+        expect(result).toMatchObject({ status: "ok", toolCount: 1 });
+        expect(launches).toHaveBeenCalledTimes(1);
+      } finally {
+        await connector.close();
+      }
+    });
+
+    it("shares one launch between concurrent probes of a server", async () => {
+      await publishPackage(root);
+      const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+      const connector = connectorFor();
+      try {
+        const scope = { spaceId: "w1", userId: "u1" };
+        const [first, second] = await Promise.all([
+          connector.probe(SERVER as never, scope),
+          connector.probe(SERVER as never, scope),
+        ]);
+        expect(first).toEqual(second);
+        expect(launches).toHaveBeenCalledTimes(1);
+      } finally {
+        await connector.close();
+      }
+    });
+
+    it("returns and records a redacted error", async () => {
+      await publishPackage(root);
+      env = { FAIL_LOUDLY: "1", MAIL_API_KEY: "sk-live-0123456789abcdef", MAIL_ACCOUNT: "x" };
+      const connector = connectorFor();
+      try {
+        const result = await connector.probe(SERVER as never, { spaceId: "w1", userId: "u1" });
+        expect(result.status).toBe("error");
+        expect(result.message).toContain("auth failed for [redacted]");
+        expect(JSON.stringify(healthWrites())).not.toContain("sk-live-0123456789abcdef");
+      } finally {
+        await connector.close();
+      }
+    });
+  });
+});
