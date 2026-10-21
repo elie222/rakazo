@@ -14,8 +14,8 @@ describe("listSpaceGroupsForSpaces", () => {
         sectionId: null,
         updatedAt: new Date("2026-08-20T00:00:00.000Z"),
         thread: {
+          id: "thread-1",
           unread: true,
-          messages: [{ blocks: [{ kind: "text", text: "Escalation pending" }] }],
         },
         members: [
           { bot: { id: "bot-1", name: "Triage", color: "#111", runs: [] } },
@@ -30,7 +30,24 @@ describe("listSpaceGroupsForSpaces", () => {
         ],
       },
     ]);
-    const repos = createGroupRepos({ chatGroup: { findMany } } as unknown as PrismaClient);
+    const repos = createGroupRepos({
+      chatGroup: { findMany },
+      $queryRaw: vi.fn(async () => [
+        {
+          id: "message-1",
+          threadId: "thread-1",
+          seq: 1,
+          role: "user",
+          blocks: [{ kind: "text", text: "Escalation pending" }],
+          botId: null,
+          replyToMessageId: null,
+          replyQuote: null,
+          runId: null,
+          clientNonce: null,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+        },
+      ]),
+    } as unknown as PrismaClient);
     const actor = {
       spaceId: "workspace-1",
       userId: "user-1",
@@ -449,6 +466,7 @@ describe("createGroup", () => {
       },
       chatGroupMember: { createMany },
       thread: { create: vi.fn() },
+      message: { findMany: vi.fn(async () => []) },
     };
     // The bots come back in a different order than the caller asked for, so the recorded
     // order has to come from the input, not from the lookup.
@@ -517,7 +535,10 @@ describe("listGroups archived", () => {
     const findMany = vi.fn(async (_query: { where: unknown; include: unknown }) => rows);
     return {
       findMany,
-      repos: createGroupRepos({ chatGroup: { findMany } } as unknown as PrismaClient),
+      repos: createGroupRepos({
+        chatGroup: { findMany },
+        $queryRaw: vi.fn(async () => []),
+      } as unknown as PrismaClient),
     };
   }
 
