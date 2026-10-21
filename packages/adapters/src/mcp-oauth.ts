@@ -9,6 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InvalidGrantError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import type {
+  OAuthClientInformation,
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
@@ -39,6 +40,10 @@ export type OAuthMaterial = {
   secret?: string;
   env?: Record<string, string>;
   headers?: Record<string, string>;
+  /** A client registered with the authorization server out of band. It is
+   * configuration, not SDK state, so it outlives disconnects and replaces
+   * dynamic client registration for servers that do not offer it. */
+  oauthClient?: OAuthClientInformation;
   oauth?: OAuthState;
 };
 
@@ -54,6 +59,7 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
   add(material.secret);
   add(material.oauth?.tokens?.access_token);
   add(material.oauth?.tokens?.refresh_token);
+  add(material.oauthClient?.client_secret);
   const client = material.oauth?.clientInformation;
   if (client && "client_secret" in client && typeof client.client_secret === "string") {
     add(client.client_secret);
@@ -279,7 +285,7 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
     return this.options.state ?? this.runtimeState;
   }
   clientInformation(): OAuthClientInformationMixed | undefined {
-    return this.material.oauth?.clientInformation;
+    return this.material.oauthClient ?? this.material.oauth?.clientInformation;
   }
   async saveClientInformation(value: OAuthClientInformationMixed): Promise<void> {
     this.oauth().clientInformation = value;
@@ -596,21 +602,33 @@ function lockMaterial(tx: Prisma.TransactionClient, serverId: string): Promise<n
 
 /** One refresh-token grant against the stored authorization server. */
 async function requestRefresh(
-  oauth: OAuthState,
+  material: OAuthMaterial,
   refreshToken: string,
   fetchFn: typeof fetch,
 ): Promise<OAuthTokens> {
-  const discovery = oauth.discoveryState;
-  if (!discovery?.authorizationServerUrl || !oauth.clientInformation)
+  const discovery = material.oauth?.discoveryState;
+  const clientInformation = material.oauthClient ?? material.oauth?.clientInformation;
+  if (!discovery?.authorizationServerUrl || !clientInformation)
     throw new Error("MCP OAuth state cannot refresh");
   return refreshAuthorization(discovery.authorizationServerUrl, {
     metadata: discovery.authorizationServerMetadata,
-    clientInformation: oauth.clientInformation,
+    clientInformation,
     refreshToken,
     resource: canonicalResource(discovery.resourceMetadata?.resource),
     fetchFn: (input, init) =>
       fetchFn(input, { ...init, signal: AbortSignal.timeout(REFRESH_REQUEST_TIMEOUT_MS) }),
   });
+}
+
+/** What the settings UI may know about a server's OAuth setup; never a credential. */
+export type McpOAuthSummary = {
+  status: "none" | "connected" | "reconnect";
+  clientId: string | null;
+};
+
+function summarize(material: OAuthMaterial): McpOAuthSummary {
+  const status = material.oauth?.tokens ? "connected" : material.oauth ? "reconnect" : "none";
+  return { status, clientId: material.oauthClient?.client_id ?? null };
 }
 
 export class McpOAuthBroker {
@@ -623,22 +641,20 @@ export class McpOAuthBroker {
     private readonly allowPrivateEndpoint = false,
   ) {}
 
-  async statusFor(
-    server: ServerRef,
-    context: ActorRef,
-  ): Promise<"none" | "connected" | "reconnect"> {
-    const { material } = await this.loadMaterial(server, context);
-    if (material.oauth?.tokens) return "connected";
-    return material.oauth ? "reconnect" : "none";
+  async statusFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary["status"]> {
+    return (await this.summaryFor(server, context)).status;
   }
 
-  async statusForCiphertext(
+  async summaryFor(server: ServerRef, context: ActorRef): Promise<McpOAuthSummary> {
+    const { material } = await this.loadMaterial(server, context);
+    return summarize(material);
+  }
+
+  async summaryForCiphertext(
     ciphertext: string | undefined,
     recordId: string | undefined,
-  ): Promise<"none" | "connected" | "reconnect"> {
-    const material = ciphertext && recordId ? await this.read(ciphertext, recordId) : {};
-    if (material.oauth?.tokens) return "connected";
-    return material.oauth ? "reconnect" : "none";
+  ): Promise<McpOAuthSummary> {
+    return summarize(ciphertext && recordId ? await this.read(ciphertext, recordId) : {});
   }
 
   async providerFor(
@@ -979,7 +995,7 @@ export class McpOAuthBroker {
                 return { grant: { tokens: oauth?.tokens, obtainedAt: oauth?.obtainedAt } };
               let grant: TokenGrant;
               try {
-                grant = { tokens: await requestRefresh(oauth, current, network.fetch) };
+                grant = { tokens: await requestRefresh(material, current, network.fetch) };
                 grant.obtainedAt = Date.now();
               } catch (error) {
                 // Under the lock `current` is the stored token, so a rejection
@@ -1045,6 +1061,7 @@ export class McpOAuthBroker {
         nextMaterial.secret ||
           Object.keys(nextMaterial.env ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||
+          nextMaterial.oauthClient ||
           nextMaterial.oauth,
       );
       const stored = hasMaterial ? await this.putMaterial(nextMaterial, context) : undefined;

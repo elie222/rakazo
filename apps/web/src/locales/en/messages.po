@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "OAuth authorization was cancelled."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth client ID (optional)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth client secret (optional)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth connected"
 
@@ -3854,6 +3862,10 @@ msgstr "Recreate a computer that is not working."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr "Recreating the computer"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "Redirect URI"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx

@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "OAuth ऑथराइज़ेशन रद्द कर दिया गया।"
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth क्लाइंट ID (वैकल्पिक)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth क्लाइंट सीक्रेट (वैकल्पिक)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth कनेक्टेड"
 
@@ -3854,6 +3862,10 @@ msgstr "काम न कर रहे कंप्यूटर को फिर
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "रीडायरेक्ट URI"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx

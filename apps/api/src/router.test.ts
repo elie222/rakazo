@@ -905,6 +905,82 @@ describe("MCP prepared credential updates", () => {
   });
 });
 
+describe("MCP pre-registered OAuth client", () => {
+  it("stores the client encrypted and returns only its ID", async () => {
+    const values = new Map<string, string>();
+    const secretRows = new Map<string, { id: string; ciphertext: string }>();
+    let server: Record<string, unknown> | undefined;
+    const prisma = {
+      mcpServer: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          server = {
+            ...data,
+            id: "server-1",
+            revision: 1,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+          return server;
+        }),
+      },
+      secret: {
+        create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
+          secretRows.set(data.id, data);
+          return data;
+        }),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => secretRows.get(where.id)),
+      },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
+    } as unknown as PrismaClient;
+    const secrets = {
+      put: vi.fn(async (plaintext: string) => {
+        values.set("cipher-1", plaintext);
+        return { id: "secret-1", ciphertext: "cipher-1" };
+      }),
+      load: vi.fn(async (ciphertext: string) => values.get(ciphertext)!),
+    };
+    const deps = {
+      prisma,
+      secrets,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "owner-1",
+      email: "owner@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+
+    const created = await client.mcp.servers.create({
+      transport: "streamable_http",
+      slug: "gmail",
+      name: "Gmail",
+      endpoint: "http://localhost:3100/mcp",
+      oauthClient: { clientId: "client-1.apps.example.test", clientSecret: "client-secret" },
+    });
+
+    expect(created).toMatchObject({
+      oauthClientId: "client-1.apps.example.test",
+      oauthStatus: "none",
+      hasSecret: true,
+    });
+    expect(JSON.stringify(created)).not.toContain("client-secret");
+    expect(server?.secretId).toBe("secret-1");
+    expect(JSON.parse(values.get("cipher-1")!)).toMatchObject({
+      oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+});
+
 describe("MCP loopback endpoints", () => {
   const LOOPBACK = "http://localhost:3100/api/auth/get-session";
 

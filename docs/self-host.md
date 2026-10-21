@@ -708,6 +708,13 @@ owner can attach one on localhost, the same LAN, or a Docker network. Set
 `MCP_ALLOW_PRIVATE_ENDPOINT=true` on the API and worker to allow these for every user. Cloud
 metadata addresses stay blocked. Leave the flag unset on public installs.
 
+Remote MCP servers that use OAuth normally register Rakazo with their provider on the first
+**Connect OAuth**. Some providers only accept a client you create in their console. For those,
+enter the client ID (and secret, for a confidential client) under **Advanced** when adding the
+server, and add the **Redirect URI** shown there (`<your web origin>/mcp/oauth/callback`) to the
+client's allowed redirect URIs. The client is stored encrypted with the server's other
+credentials and survives **Disconnect**; switching to a different client drops the current grant.
+
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
 Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models

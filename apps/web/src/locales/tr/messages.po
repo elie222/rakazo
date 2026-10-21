@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "OAuth yetkilendirmesi iptal edildi."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth istemci kimliği (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth istemci gizli anahtarı (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth bağlandı"
 
@@ -3854,6 +3862,10 @@ msgstr "Çalışmayan bir bilgisayarı yeniden oluşturun."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "Yönlendirme URI'si"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx

@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "OAuth 인증이 취소되었습니다."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth 클라이언트 ID(선택 사항)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth 클라이언트 시크릿(선택 사항)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth 연결됨"
 
@@ -3854,6 +3862,10 @@ msgstr "작동하지 않는 컴퓨터를 다시 만듭니다."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "리디렉션 URI"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx

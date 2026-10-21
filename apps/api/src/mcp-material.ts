@@ -1,11 +1,15 @@
 import type { McpServerConfigInput } from "@rakazo/contracts";
 
+type McpOAuthClient = { client_id: string; client_secret?: string };
+
 /** Shape of the encrypted MCP credential blob. `oauth` holds SDK OAuth state
- * (tokens, client registration, PKCE verifier) managed by McpOAuthBroker. */
+ * (tokens, client registration, PKCE verifier) managed by McpOAuthBroker.
+ * `oauthClient` is a client the user registered with the provider themselves. */
 export type McpSecretMaterial = {
   secret?: string;
   env?: Record<string, string>;
   headers?: Record<string, string>;
+  oauthClient?: McpOAuthClient;
   oauth?: Record<string, unknown>;
 };
 
@@ -29,12 +33,28 @@ export function buildMcpUpdateMaterial(
   config: McpServerConfigInput,
   options: { clearOAuth?: boolean } = {},
 ): McpMaterialUpdate {
-  const material = options.clearOAuth ? { ...existing } : existing;
-  const clearedOAuth = options.clearOAuth === true && material.oauth !== undefined;
-  if (options.clearOAuth) delete material.oauth;
+  const client = nextOAuthClient(
+    existing.oauthClient,
+    "oauthClient" in config ? config.oauthClient : undefined,
+  );
+  // Tokens are issued to one client, so a different client must authorize again.
+  const clearOAuth = options.clearOAuth === true || client.changed;
+  const material = clearOAuth ? { ...existing } : existing;
+  const clearedOAuth = clearOAuth && (material.oauth !== undefined || client.changed);
+  if (clearOAuth) delete material.oauth;
+  if (client.changed) {
+    if (client.next) material.oauthClient = client.next;
+    else delete material.oauthClient;
+  }
   const clearing = config.clearCredential === true;
   if (clearing) {
-    return { action: "store", material: material.oauth ? { oauth: material.oauth } : {} };
+    return {
+      action: "store",
+      material: {
+        ...(material.oauthClient ? { oauthClient: material.oauthClient } : {}),
+        ...(material.oauth ? { oauth: material.oauth } : {}),
+      },
+    };
   }
   const secret = "secret" in config && config.secret ? config.secret : undefined;
   const env = "env" in config ? config.env : undefined;
@@ -43,6 +63,7 @@ export function buildMcpUpdateMaterial(
     material.secret ||
       (material.env && Object.keys(material.env).length > 0) ||
       (material.headers && Object.keys(material.headers).length > 0) ||
+      material.oauthClient ||
       material.oauth,
   );
   const suppliesMaterial = Boolean(
@@ -59,5 +80,21 @@ export function buildMcpUpdateMaterial(
       ...(env !== undefined ? { env } : {}),
       ...(headers !== undefined ? { headers } : {}),
     },
+  };
+}
+
+/** Resolve the client an update asks for. A resent client ID without a secret
+ * keeps the stored secret; a different client ID never inherits it. */
+function nextOAuthClient(
+  existing: McpOAuthClient | undefined,
+  input: { clientId: string; clientSecret?: string } | null | undefined,
+): { next?: McpOAuthClient; changed: boolean } {
+  if (input === undefined) return { next: existing, changed: false };
+  if (input === null) return { changed: existing !== undefined };
+  const sameClient = existing?.client_id === input.clientId;
+  const secret = input.clientSecret ?? (sameClient ? existing?.client_secret : undefined);
+  return {
+    next: { client_id: input.clientId, ...(secret ? { client_secret: secret } : {}) },
+    changed: !sameClient || secret !== existing?.client_secret,
   };
 }
