@@ -86,7 +86,12 @@ export function buildMcpCredentialBlob(parsed: {
   secret?: string;
   env?: Record<string, string>;
   headers?: Record<string, string>;
-  oauthClient?: { clientId: string; clientSecret?: string } | null;
+  oauthClient?: {
+    clientId: string;
+    clientSecret?: string;
+    scope?: string;
+    authorizationServer?: string;
+  } | null;
 }): string | null {
   const env = parsed.env ?? {};
   const headers = parsed.headers ?? {};
@@ -108,6 +113,10 @@ export function buildMcpCredentialBlob(parsed: {
           oauthClient: {
             client_id: client.clientId,
             ...(client.clientSecret ? { client_secret: client.clientSecret } : {}),
+            ...(client.scope ? { scope: client.scope } : {}),
+            ...(client.authorizationServer
+              ? { authorization_server: new URL(client.authorizationServer).href }
+              : {}),
           },
         }
       : {}),

@@ -994,12 +994,41 @@ describe("MCP prepared credential updates", () => {
 });
 
 describe("MCP pre-registered OAuth client", () => {
-  it("stores the client encrypted and returns only its ID", async () => {
+  function harness(isDeploymentOwner = true, storedMaterial?: Record<string, unknown>) {
     const values = new Map<string, string>();
     const secretRows = new Map<string, { id: string; ciphertext: string }>();
     let server: Record<string, unknown> | undefined;
+    if (storedMaterial) {
+      values.set("cipher-0", JSON.stringify(storedMaterial));
+      secretRows.set("secret-0", { id: "secret-0", ciphertext: "cipher-0" });
+      server = {
+        id: "server-1",
+        spaceId: "workspace-1",
+        userId: "owner-1",
+        slug: "google-drive",
+        name: "Google Drive",
+        description: "",
+        transport: "stdio",
+        endpoint: null,
+        command: "npx",
+        args: [],
+        env: { GOOGLE_ACCESS_TOKEN: true },
+        headers: {},
+        secretId: "secret-0",
+        enabled: true,
+        revision: 1,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      };
+    }
     const prisma = {
       mcpServer: {
+        findFirst: vi.fn(async () => (server ? { ...server } : null)),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const { revision: _revision, ...rest } = data;
+          server = { ...server, ...rest, revision: Number(server?.revision) + 1 };
+          return server;
+        }),
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           server = {
             ...data,
@@ -1017,8 +1046,14 @@ describe("MCP pre-registered OAuth client", () => {
           return data;
         }),
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) => secretRows.get(where.id)),
+        deleteMany: vi.fn(async ({ where }: { where: { id: string } }) => {
+          secretRows.delete(where.id);
+          return { count: 1 };
+        }),
       },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $executeRaw: vi.fn(async () => 1),
+      $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
     const secrets = {
@@ -1031,6 +1066,7 @@ describe("MCP pre-registered OAuth client", () => {
     const deps = {
       prisma,
       secrets,
+      remoteConnectors: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -1042,11 +1078,20 @@ describe("MCP pre-registered OAuth client", () => {
     } as unknown as RouterDeps;
     const actor = {
       spaceId: "workspace-1",
-      userId: "owner-1",
+      userId: isDeploymentOwner ? "owner-1" : "member-1",
       email: "owner@rakazo.test",
-      isDeploymentOwner: true,
+      isDeploymentOwner,
     } satisfies Actor;
-    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return {
+      client: createRouterClient(createRouter(deps), { context: { actor } as never }),
+      material: () => JSON.parse(values.get("cipher-1")!),
+      server: () => server,
+      secrets,
+    };
+  }
+
+  it("stores the client encrypted and returns only its ID", async () => {
+    const { client, material, server } = harness();
 
     const created = await client.mcp.servers.create({
       transport: "streamable_http",
@@ -1062,9 +1107,193 @@ describe("MCP pre-registered OAuth client", () => {
       hasSecret: true,
     });
     expect(JSON.stringify(created)).not.toContain("client-secret");
-    expect(server?.secretId).toBe("secret-1");
-    expect(JSON.parse(values.get("cipher-1")!)).toMatchObject({
+    expect(server()?.secretId).toBe("secret-1");
+    expect(material()).toMatchObject({
       oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+
+  describe("stdio server with host-managed OAuth", () => {
+    const stdio = {
+      transport: "stdio",
+      slug: "google-drive",
+      name: "Google Drive",
+      command: "npx",
+      args: ["google-drive-mcp"],
+    } as const;
+    const oauthClient = {
+      clientId: "client-1.apps.example.test",
+      clientSecret: "client-secret",
+      scope: "https://www.googleapis.com/auth/drive.readonly",
+      authorizationServer: "https://accounts.example.test",
+    };
+
+    it("stores the client and env references encrypted and returns the client ID", async () => {
+      const { client, material, server } = harness();
+
+      const created = await client.mcp.servers.create({
+        ...stdio,
+        env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        oauthClient,
+      });
+
+      expect(created).toMatchObject({
+        oauthClientId: "client-1.apps.example.test",
+        oauthStatus: "none",
+        envKeys: ["GOOGLE_ACCESS_TOKEN"],
+      });
+      expect(JSON.stringify(created)).not.toContain("client-secret");
+      expect(server()?.env).toEqual({ GOOGLE_ACCESS_TOKEN: true });
+      expect(material()).toMatchObject({
+        env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        oauthClient: {
+          client_id: "client-1.apps.example.test",
+          client_secret: "client-secret",
+          scope: "https://www.googleapis.com/auth/drive.readonly",
+          authorization_server: "https://accounts.example.test/",
+        },
+      });
+    });
+
+    it("rejects an unknown OAuth reference, naming the variable and the reference", async () => {
+      const { client, secrets } = harness();
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "Bearer {{oauth.id_token}}" },
+          oauthClient,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*oauth\.id_token/),
+      });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    it("rejects OAuth references when the server has no OAuth client", async () => {
+      const { client, secrets } = harness();
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*OAuth client/),
+      });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    it("refuses a private authorization server from a user who is not the deployment owner", async () => {
+      const { client, secrets } = harness(false);
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+          oauthClient: { ...oauthClient, authorizationServer: "http://localhost:3100" },
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/HTTPS/) });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    describe("update", () => {
+      const update = {
+        id: "server-1",
+        config: {
+          ...stdio,
+          enabled: true,
+          description: "",
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        },
+      };
+      const stored = {
+        env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        oauthClient: {
+          client_id: "client-1.apps.example.test",
+          client_secret: "client-secret",
+          scope: "drive.readonly",
+          authorization_server: "https://accounts.example.test/",
+        },
+        oauth: { tokens: { access_token: "granted" } },
+      };
+
+      it("rejects references once the update removes the OAuth client", async () => {
+        const { client, secrets } = harness(true, stored);
+
+        await expect(
+          client.mcp.servers.update({
+            ...update,
+            config: { ...update.config, oauthClient: null },
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*OAuth client/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects an unknown reference even when the stored client is kept", async () => {
+        const { client, secrets } = harness(true, stored);
+
+        await expect(
+          client.mcp.servers.update({
+            ...update,
+            config: { ...update.config, env: { GOOGLE_ACCESS_TOKEN: "{{oauth.id_token}}" } },
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*oauth\.id_token/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("keeps the stored client and its grant when the update leaves the client out", async () => {
+        const { client, material } = harness(true, stored);
+
+        const updated = await client.mcp.servers.update(update);
+
+        expect(updated.oauthClientId).toBe("client-1.apps.example.test");
+        expect(material()).toEqual(stored);
+      });
+
+      it("clears the grant when the update changes the scope", async () => {
+        const { client, material } = harness(true, stored);
+
+        await client.mcp.servers.update({
+          ...update,
+          config: {
+            ...update.config,
+            oauthClient: {
+              clientId: "client-1.apps.example.test",
+              scope: "drive",
+              authorizationServer: "https://accounts.example.test",
+            },
+          },
+        });
+
+        expect(material().oauth).toBeUndefined();
+        expect(material().oauthClient).toEqual({
+          client_id: "client-1.apps.example.test",
+          client_secret: "client-secret",
+          scope: "drive",
+          authorization_server: "https://accounts.example.test/",
+        });
+      });
+    });
+
+    it("lets the deployment owner point at a private authorization server", async () => {
+      const { client } = harness();
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+          oauthClient: { ...oauthClient, authorizationServer: "http://localhost:3100" },
+        }),
+      ).resolves.toMatchObject({ oauthClientId: "client-1.apps.example.test" });
     });
   });
 });

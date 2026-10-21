@@ -3,7 +3,10 @@ import type { McpServerConfigInput } from "@rakazo/contracts";
 type McpOAuthClient = {
   client_id: string;
   client_secret?: string;
-  /** Set on first use by McpOAuthBroker; kept while the client is unchanged. */
+  /** Space-separated scopes to request. */
+  scope?: string;
+  /** Set on first use by McpOAuthBroker for a remote server, or by the user for
+   * stdio; kept while the client is unchanged. */
   authorization_server?: string;
 };
 
@@ -89,17 +92,38 @@ export function buildMcpUpdateMaterial(
 }
 
 /** Resolve the client an update asks for. A resent client ID without a secret
- * keeps the stored secret; a different client ID never inherits it. */
+ * keeps the stored secret; a different client ID never inherits it. Any
+ * difference in client, secret, scope, or authorization server is a change, and
+ * an unchanged resend keeps the stored object, including a first-use binding. */
 function nextOAuthClient(
   existing: McpOAuthClient | undefined,
-  input: { clientId: string; clientSecret?: string } | null | undefined,
+  input:
+    | { clientId: string; clientSecret?: string; scope?: string; authorizationServer?: string }
+    | null
+    | undefined,
 ): { next?: McpOAuthClient; changed: boolean } {
   if (input === undefined) return { next: existing, changed: false };
   if (input === null) return { changed: existing !== undefined };
   const sameClient = existing?.client_id === input.clientId;
   const secret = input.clientSecret ?? (sameClient ? existing?.client_secret : undefined);
+  const scope = input.scope || undefined;
+  const authorizationServer = input.authorizationServer
+    ? new URL(input.authorizationServer).href
+    : undefined;
+  const unchanged =
+    existing !== undefined &&
+    sameClient &&
+    secret === existing.client_secret &&
+    scope === existing.scope &&
+    (authorizationServer === undefined || authorizationServer === existing.authorization_server);
+  if (unchanged) return { next: existing, changed: false };
   return {
-    next: { client_id: input.clientId, ...(secret ? { client_secret: secret } : {}) },
-    changed: !sameClient || secret !== existing?.client_secret,
+    next: {
+      client_id: input.clientId,
+      ...(secret ? { client_secret: secret } : {}),
+      ...(scope ? { scope } : {}),
+      ...(authorizationServer ? { authorization_server: authorizationServer } : {}),
+    },
+    changed: true,
   };
 }

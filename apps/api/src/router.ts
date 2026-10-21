@@ -159,6 +159,7 @@ import {
   foldComputerCommands,
   IntegrationProviderIdSchema,
   isDeletableMemoryDocument,
+  mcpOAuthEnvReferences,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
   storedPiProviderIds,
@@ -562,6 +563,24 @@ async function assertMcpRemoteEndpoint(
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "MCP endpoint is invalid",
     });
+  }
+}
+
+/** A stdio server gets its OAuth grant through `{{oauth.*}}` env references, so
+ * they must name real fields and the server must have a client to run the flow. */
+function assertMcpOAuthEnv(env: Record<string, string>, hasOAuthClient: boolean): void {
+  for (const [key, value] of Object.entries(env)) {
+    const { fields, unknown } = mcpOAuthEnvReferences(value);
+    if (unknown[0] !== undefined) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `Environment variable ${key} references unknown OAuth field {{oauth.${unknown[0]}}}`,
+      });
+    }
+    if (fields[0] !== undefined && !hasOAuthClient) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `Environment variable ${key} uses {{oauth.${fields[0]}}}, which needs an OAuth client`,
+      });
+    }
   }
 }
 
@@ -4401,6 +4420,14 @@ export function createRouter(deps: RouterDeps) {
             context.actor,
             deps,
           );
+          if (input.transport === "stdio") {
+            assertMcpOAuthEnv(input.env, Boolean(input.oauthClient));
+            await assertMcpRemoteEndpoint(
+              input.oauthClient?.authorizationServer,
+              context.actor,
+              deps,
+            );
+          }
           const secretPayload = buildMcpCredentialBlob(input);
           const stored = secretPayload
             ? await deps.secrets.put(
@@ -4498,9 +4525,19 @@ export function createRouter(deps: RouterDeps) {
             if (existing.endpoint !== nextEndpoint) {
               await assertMcpRemoteEndpoint(nextEndpoint, context.actor, deps);
             }
+            if (config.transport === "stdio") {
+              await assertMcpRemoteEndpoint(
+                config.oauthClient?.authorizationServer,
+                context.actor,
+                deps,
+              );
+            }
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });
+            if (update.action === "store" && config.transport === "stdio") {
+              assertMcpOAuthEnv(update.material.env ?? {}, Boolean(update.material.oauthClient));
+            }
             const stored =
               update.action === "store" && Object.keys(update.material).length > 0
                 ? await deps.secrets.put(

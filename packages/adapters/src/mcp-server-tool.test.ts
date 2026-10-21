@@ -122,6 +122,36 @@ describe("buildMcpCredentialBlob", () => {
   });
 });
 
+describe("buildMcpCredentialBlob OAuth client options", () => {
+  it("stores the scope and the normalized authorization server when given", () => {
+    expect(
+      JSON.parse(
+        buildMcpCredentialBlob({
+          env: { TOKEN: "{{oauth.access_token}}" },
+          oauthClient: {
+            clientId: "client-1",
+            scope: "mail.read mail.send",
+            authorizationServer: "https://accounts.example.test",
+          },
+        }) ?? "null",
+      ),
+    ).toMatchObject({
+      oauthClient: {
+        client_id: "client-1",
+        scope: "mail.read mail.send",
+        authorization_server: "https://accounts.example.test/",
+      },
+    });
+  });
+
+  it("leaves out an empty scope and a missing authorization server", () => {
+    const blob = JSON.parse(
+      buildMcpCredentialBlob({ oauthClient: { clientId: "client-1", scope: "" } }) ?? "null",
+    );
+    expect(blob.oauthClient).toEqual({ client_id: "client-1" });
+  });
+});
+
 describe("needsOAuthProbe", () => {
   it("is true only for remote servers without static credentials", () => {
     expect(needsOAuthProbe({ transport: "streamable_http" })).toBe(true);
