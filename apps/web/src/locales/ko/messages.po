@@ -2247,6 +2247,10 @@ msgstr "복제"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "예: Hivenet Agent, Presales, 근무표 봇"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "각 이름은 한 번만 사용할 수 있습니다."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "편집"
@@ -5144,7 +5148,7 @@ msgstr "이 서버의 자체 {hostCredentialSource} 자격 증명으로 {selecte
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "값"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."

@@ -2247,6 +2247,10 @@ msgstr "डुप्लिकेट"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "उदा. Hivenet Agent, Presales, टाइमशीट बॉट"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "हर नाम का इस्तेमाल केवल एक बार किया जा सकता है।"
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "संपादित करें"
@@ -5144,7 +5148,7 @@ msgstr "{selectedProviderName} तक पहुँचने के लिए इ
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "मान"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."

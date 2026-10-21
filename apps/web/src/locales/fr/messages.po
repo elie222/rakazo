@@ -2247,6 +2247,10 @@ msgstr "Dupliquer"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "ex. Agent Hivenet, Préventes, bot de feuilles de temps"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Chaque nom ne peut être utilisé qu’une seule fois."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "Modifier"
@@ -5144,7 +5148,7 @@ msgstr "Utilise les identifiants {hostCredentialSource} propres à ce serveur po
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "Valeur"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."

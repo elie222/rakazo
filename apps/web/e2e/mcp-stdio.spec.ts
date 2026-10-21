@@ -20,7 +20,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       transport: "stdio",
       command: "npx",
       args: ["-y", "invoices-mcp@1.0.0"],
-      env: { INVOICES_API_ID: "id-value", INVOICES_API_SECRET: "secret-value" },
+      env: { INVOICES_API_ID: "id-value", _1PASSWORD_TOKEN: "secret-value" },
     });
     const created: McpServer = {
       id: "mcp-stdio-server",
@@ -32,7 +32,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       endpoint: null,
       command: "npx",
       args: ["-y", "invoices-mcp@1.0.0"],
-      envKeys: ["INVOICES_API_ID", "INVOICES_API_SECRET"],
+      envKeys: ["INVOICES_API_ID", "_1PASSWORD_TOKEN"],
       headerKeys: [],
       hasSecret: true,
       oauthStatus: "none",
@@ -71,12 +71,17 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await expect(values.nth(0)).toHaveAttribute("type", "password");
   await expect(values.nth(0)).toHaveAttribute("autocomplete", "new-password");
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await names.nth(1).fill("INVOICES_API_SECRET");
+  await names.nth(1).fill("1password-token");
+  await expect(names.nth(1)).toHaveValue("_1PASSWORD_TOKEN");
   await values.nth(1).fill("secret-value");
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await names.nth(2).fill("UNUSED");
+  await names.nth(2).fill("invoices-api-id");
+  await page.getByRole("button", { name: "Add server", exact: true }).click();
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(2);
+  expect(servers).toHaveLength(0);
   await page.getByRole("button", { name: "Remove", exact: true }).nth(2).click();
   await expect(names).toHaveCount(2);
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(0);
   await captureScreenshot(page, testInfo, "mcp-stdio-env-form");
 
   await page.getByRole("button", { name: "Add server", exact: true }).click();

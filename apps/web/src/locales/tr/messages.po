@@ -2247,6 +2247,10 @@ msgstr "Çoğalt"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "örn. Hivenet Agent, Presales, puantaj botu"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Her ad yalnızca bir kez kullanılabilir."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "Düzenle"
@@ -5144,7 +5148,7 @@ msgstr "{selectedProviderName} erişimi için bu sunucunun kendi {hostCredential
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "Değer"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."

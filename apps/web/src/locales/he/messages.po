@@ -2247,6 +2247,10 @@ msgstr "שכפול"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "לדוגמה: Hivenet Agent, Presales, בוט דיווח שעות"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "ניתן להשתמש בכל שם פעם אחת בלבד."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "עריכה"

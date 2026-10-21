@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
   FieldTitle,
@@ -36,7 +37,10 @@ const emptyEnvRow = (): EnvRow => ({ id: nextEnvRowId++, name: "", value: "" });
 
 /** Environment variable names the server accepts: capitals, digits, and underscores. */
 function envName(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  return value
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, "_")
+    .replace(/^(?=[0-9])/, "_");
 }
 
 function oauthStatusText(server: McpServer): string | null {
@@ -66,6 +70,14 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => [emptyEnvRow()]);
+  const duplicateEnvNames = new Set(
+    envRows
+      .filter(
+        (row, index) =>
+          row.name && envRows.some((other, i) => i !== index && other.name === row.name),
+      )
+      .map((row) => row.name),
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
@@ -126,6 +138,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       setError(t`Add a stdio command.`);
       return;
     }
+    if (transport === "stdio" && duplicateEnvNames.size > 0) return;
     setSaving(true);
     try {
       const slug = deriveMcpSlug(name);
@@ -383,9 +396,20 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           <Trans>Environment variables</Trans>
                         </FieldTitle>
                         {envRows.map((row) => (
-                          <div key={row.id} className="grid grid-cols-[.7fr_1fr_auto] gap-2">
+                          <Field
+                            key={row.id}
+                            orientation="horizontal"
+                            data-invalid={duplicateEnvNames.has(row.name) || undefined}
+                            className="grid grid-cols-[.7fr_1fr_auto] gap-2"
+                          >
                             <Input
                               aria-label={t`Name`}
+                              aria-invalid={duplicateEnvNames.has(row.name) || undefined}
+                              aria-describedby={
+                                duplicateEnvNames.has(row.name)
+                                  ? `mcp-env-error-${row.id}`
+                                  : undefined
+                              }
                               autoComplete="off"
                               value={row.name}
                               onChange={(e) =>
@@ -428,7 +452,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                             >
                               <X />
                             </Button>
-                          </div>
+                            {duplicateEnvNames.has(row.name) ? (
+                              <FieldError id={`mcp-env-error-${row.id}`} className="col-span-full">
+                                <Trans>Each name can be used once.</Trans>
+                              </FieldError>
+                            ) : null}
+                          </Field>
                         ))}
                         <Button
                           type="button"

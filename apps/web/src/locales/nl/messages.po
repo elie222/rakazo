@@ -2247,6 +2247,10 @@ msgstr "Dupliceren"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "bijv. Hivenet Agent, Presales, Timesheets-bot"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Elke naam kan maar één keer worden gebruikt."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "Bewerken"
