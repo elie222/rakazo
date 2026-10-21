@@ -604,6 +604,10 @@ msgstr "Her zaman izinli"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Bu sağlayıcı için abonelik girişi değil, bir API anahtarı saklanıyor."
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "An existing Honcho peer to read from. Rakazo never writes to it."
+msgstr "Verilerin okunacağı mevcut bir Honcho eşi. Rakazo bu eşe asla veri yazmaz."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Bir entegrasyon aracı"
@@ -2259,6 +2263,10 @@ msgstr "Çoğalt"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "örn. Hivenet Agent, Presales, puantaj botu"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Her ad yalnızca bir kez kullanılabilir."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "Düzenle"
@@ -3791,6 +3799,10 @@ msgstr "Kuyrukta"
 msgid "Quote"
 msgstr ""
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "React"
 msgstr "Tepki ver"
@@ -5168,6 +5180,10 @@ msgstr ""
 msgid "Use your own key"
 msgstr "Kendi anahtarınızı kullanın"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "User peer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
@@ -5367,7 +5383,3 @@ msgstr "OpenRouter sağlayıcınız"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
-
-#: src/pages/McpServersOverlay.tsx
-msgid "Each name can be used once."
-msgstr "Her ad yalnızca bir kez kullanılabilir."

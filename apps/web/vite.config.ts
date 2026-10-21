@@ -25,7 +25,13 @@ import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { appendForwardedFor } from "./src/forwarded-for.js";
 import { missingAssetMiddleware } from "./src/missing-asset.js";
-import { collectNovncHtml, MAX_NOVNC_HTML_BYTES } from "./src/novnc-html.js";
+import {
+  collectNovncHtml,
+  injectNovncStorageShim,
+  isNovncPage,
+  MAX_NOVNC_HTML_BYTES,
+  shouldInjectNovncStorageShim,
+} from "./src/novnc-html.js";
 import {
   resolveNovncTarget,
   safeProxyHeaders,
@@ -105,7 +111,8 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
     }
     const headers = {
       ...safeProxyHeaders(req.headers),
-      ...(isCreateOSNovncHost(target.hostname) ? { "accept-encoding": "identity" } : {}),
+      // The storage shim rewrites the page, so ask for it uncompressed.
+      ...(isNovncPage(target.path) ? { "accept-encoding": "identity" } : {}),
       host: `${target.hostname}:${target.port}`,
     };
     const transport = target.protocol === "https:" ? https : http;
@@ -173,7 +180,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
             });
           }
           const responseHeaders = safeScreenProxyResponseHeaders(incoming.headers);
-          if (shouldInjectNovncStorageShim(responseHeaders, target.hostname)) {
+          if (shouldInjectNovncStorageShim(responseHeaders, target.path)) {
             const declaredLength = Number(incoming.headers["content-length"] ?? 0);
             if (Number.isFinite(declaredLength) && declaredLength > MAX_NOVNC_HTML_BYTES) {
               finishUnavailable("html_too_large");
@@ -372,36 +379,6 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       upstream.destroy();
     });
   });
-}
-
-const NOVNC_STORAGE_SHIM_HOSTS = [".app.sb.createos.sh"];
-
-function isCreateOSNovncHost(hostname: string) {
-  return NOVNC_STORAGE_SHIM_HOSTS.some((suffix) => hostname.endsWith(suffix));
-}
-
-function shouldInjectNovncStorageShim(headers: http.IncomingHttpHeaders, hostname: string) {
-  if (!isCreateOSNovncHost(hostname)) return false;
-  if (headers["content-encoding"]) return false;
-  const contentType = String(headers["content-type"] ?? "").toLowerCase();
-  return contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
-}
-
-function injectNovncStorageShim(html: string) {
-  const shim = `<script>
-Object.defineProperty(window, "localStorage", {
-  configurable: true,
-  value: {
-    getItem() { return null; },
-    setItem() {},
-    removeItem() {},
-    clear() {},
-  },
-});
-</script>`;
-  return html.includes("<head>")
-    ? html.replace("<head>", `<head>${shim}`)
-    : html.replace(/<script\b/i, `${shim}<script`);
 }
 
 export default defineConfig(({ mode }) => {

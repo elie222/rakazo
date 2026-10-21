@@ -604,6 +604,10 @@ msgstr "항상 허용됨"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "이 서비스에는 구독 로그인이 아니라 API 키가 저장되어 있습니다."
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "An existing Honcho peer to read from. Rakazo never writes to it."
+msgstr "데이터를 읽어올 기존 Honcho 피어입니다. Rakazo는 이 피어에 데이터를 쓰지 않습니다."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "연동 도구"
@@ -2259,6 +2263,10 @@ msgstr "복제"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "예: Hivenet Agent, Presales, 근무표 봇"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "각 이름은 한 번만 사용할 수 있습니다."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "편집"
@@ -3791,6 +3799,10 @@ msgstr "대기 중"
 msgid "Quote"
 msgstr ""
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "React"
 msgstr "반응하기"
@@ -5168,6 +5180,10 @@ msgstr ""
 msgid "Use your own key"
 msgstr "내 키 사용"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "User peer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
@@ -5367,7 +5383,3 @@ msgstr "사용 중인 OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "언제든 실제 작업을 맡길 수 있는<0/>나만의 Agent 팀"
-
-#: src/pages/McpServersOverlay.tsx
-msgid "Each name can be used once."
-msgstr "각 이름은 한 번만 사용할 수 있습니다."

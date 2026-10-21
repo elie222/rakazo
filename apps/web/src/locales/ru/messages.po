@@ -604,6 +604,10 @@ msgstr "Всегда разрешено"
 msgid "An API key is stored for this provider, not a subscription sign-in."
 msgstr "Для этого поставщика сохранен API-ключ, а не вход по подписке."
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "An existing Honcho peer to read from. Rakazo never writes to it."
+msgstr "Существующий пир Honcho для чтения. Rakazo никогда не записывает в него данные."
+
 #: src/pages/RoutineEditor.tsx
 msgid "An integration tool"
 msgstr "Инструмент интеграции"
@@ -2259,6 +2263,10 @@ msgstr "Дублировать"
 msgid "e.g. Hivenet Agent, Presales, Timesheets bot"
 msgstr "напр. Hivenet Agent, Presales, бот табелей"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Каждое имя можно использовать только один раз."
+
 #: src/components/AskCard.tsx
 msgid "Edit"
 msgstr "Изменить"
@@ -3791,6 +3799,10 @@ msgstr "В очереди"
 msgid "Quote"
 msgstr ""
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "rakazo-shared and IDs starting with bot- are reserved for Rakazo."
+msgstr ""
+
 #: src/pages/Shell.tsx
 msgid "React"
 msgstr ""
@@ -5168,6 +5180,10 @@ msgstr ""
 msgid "Use your own key"
 msgstr "Использовать свой ключ"
 
+#: src/pages/memory-providers/HonchoSettingsForm.tsx
+msgid "User peer"
+msgstr ""
+
 #: src/components/AskCard.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
@@ -5367,7 +5383,3 @@ msgstr "Ваш OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Ваша команда постоянно работающих агентов<0/>, которым вы можете дать настоящую работу."
-
-#: src/pages/McpServersOverlay.tsx
-msgid "Each name can be used once."
-msgstr "Каждое имя можно использовать только один раз."
