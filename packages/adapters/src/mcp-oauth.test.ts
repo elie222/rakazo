@@ -1,3 +1,4 @@
+import { getLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OAuthMaterial } from "./mcp-oauth.js";
 import {
@@ -1185,7 +1186,9 @@ describe("MCP OAuth", () => {
     const oauthClient = { client_id: "registered-client", client_secret: "registered-secret" };
 
     /** An authorization server that only accepts clients registered out of band. */
-    function nonRegisteringAuthServer(onToken: (request: Request) => Promise<void> | void) {
+    function nonRegisteringAuthServer(
+      onToken: (request: Request) => Promise<Response | undefined> | Response | undefined,
+    ) {
       const requested: string[] = [];
       vi.stubGlobal(
         "fetch",
@@ -1218,7 +1221,8 @@ describe("MCP OAuth", () => {
             });
           }
           if (url === "https://auth.example.test/token" && request.method === "POST") {
-            await onToken(request);
+            const rejected = await onToken(request);
+            if (rejected) return rejected;
             return Response.json({
               access_token: "issued-access",
               refresh_token: "issued-refresh",
@@ -1348,6 +1352,63 @@ describe("MCP OAuth", () => {
       );
       expect(body.get("code")).toBe("authorization-code");
       expect(body.get("code_verifier")).toBe("verifier");
+    });
+
+    it("keeps the client secret out of a failed code exchange", async () => {
+      nonRegisteringAuthServer(() =>
+        Response.json(
+          {
+            error: "server_error",
+            error_description: "client secret registered-secret rejected",
+          },
+          { status: 400 },
+        ),
+      );
+      const sessionId = "4a1c8e2f-6b3d-4f0a-9c7e-1d2b3a4c5e6f";
+      const { broker, prisma } = brokerWithMaterial({
+        oauthClient,
+        oauth: {
+          redirectUri: "https://app.example.test/mcp/oauth/callback",
+          codeVerifier: "verifier",
+          discoveryState: {
+            authorizationServerUrl: "https://auth.example.test",
+            authorizationServerMetadata: {
+              issuer: "https://auth.example.test",
+              authorization_endpoint: "https://auth.example.test/authorize",
+              token_endpoint: "https://auth.example.test/token",
+              response_types_supported: ["code"],
+            },
+          },
+        },
+      });
+      prisma.mcpOAuthSession.findFirst.mockResolvedValue({
+        id: sessionId,
+        serverId: "server-1",
+        endpoint: "https://mcp.example.test/mcp",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+        oauthCiphertext: "session-encrypted",
+        createdAt: new Date(),
+      });
+      const warn = vi.spyOn(getLogger(), "warn");
+
+      const error = await broker
+        .complete({
+          sessionId,
+          code: "authorization-code",
+          state: sessionId,
+          spaceId: "workspace-1",
+          userId: "user-1",
+        })
+        .then(
+          () => undefined,
+          (caught: unknown) => caught as Error,
+        );
+
+      expect(error?.message).toContain("Could not complete MCP OAuth");
+      expect(error?.message).not.toContain("registered-secret");
+      expect(warn).toHaveBeenCalled();
+      for (const call of warn.mock.calls) expect(String(call)).not.toContain("registered-secret");
+      warn.mockRestore();
     });
 
     it("refreshes an expired grant with the configured client", async () => {

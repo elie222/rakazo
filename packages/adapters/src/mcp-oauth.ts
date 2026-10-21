@@ -865,7 +865,9 @@ export class McpOAuthBroker {
     const networkFetch = oauthFetch(
       pending.endpoint,
       this.network,
-      {},
+      // Only for redacting errors: the exchange sends the client secret, but none of
+      // the server's static headers.
+      { oauth: { clientInformation: pending.provider.clientInformation() } },
       await actorMayUsePrivateEndpoint(this.prisma, pending.userId, this.allowPrivateEndpoint),
     );
     const transport = new StreamableHTTPClientTransport(endpoint, {
