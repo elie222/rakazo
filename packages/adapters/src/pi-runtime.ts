@@ -97,6 +97,10 @@ interface ToolCallBudget {
 }
 // Optional fuse is process-local. continueRun on another worker starts at zero.
 const toolCallBudgetsByRun = new Map<string, ToolCallBudget>();
+const fullToolResults = new Map<string, { content: unknown[] }>();
+function toolCallKey(call: { name: string; arguments: unknown }): string {
+  return JSON.stringify([call.name, call.arguments]);
+}
 // Built on first use, not at module load: entry points call loadRootEnv() after
 // their imports, and ESM hoists those imports, so module-level env reads here
 // would run before .env is loaded and miss the local provider entirely.
@@ -487,6 +491,22 @@ export class PiAgentRuntime implements AgentRuntime {
         agent.subscribe(async (event) => {
           if (event.type === "message_end") {
             await piSession?.appendMessage(event.message);
+          }
+          // The model library shortens tool results to fit its own context window before
+          // Rakazo's prepareContext runs, and there is no hook that sees the result first.
+          // A paginated read-only connector already bounds each page, so put the full result
+          // back before the model sees it. Only the exact tool call's own result qualifies.
+          if (
+            event.type === "tool_execution_end" &&
+            event.toolName.startsWith("mcp__rakazo-history__") &&
+            !event.isError
+          ) {
+            const call = agent.state.messages
+              .filter((message) => message.role === "assistant")
+              .flatMap((message) => message.content)
+              .find((part) => part.type === "toolCall" && part.id === event.toolCallId);
+            const full = call?.type === "toolCall" ? fullToolResults.get(toolCallKey(call)) : undefined;
+            if (full) event.result.content = full.content;
           }
           if (event.type === "tool_execution_start") {
             if (host.toolCallBudget.exceeded) return;
@@ -1333,6 +1353,14 @@ function toAgentTool(tool: ConnectorTool, host: ToolHost, exposedName: string): 
             recordPiTelemetryContent(span, "pi.agent.tool.result", result);
             if (failed) span?.setStatus({ status: "error" });
             endToolCall(host);
+            if (tool.name.startsWith("mcp__rakazo-history__") && result !== undefined) {
+              const stored = result as { content?: unknown };
+              if (Array.isArray(stored.content)) {
+                fullToolResults.set(toolCallKey({ name: tool.name, arguments: args }), {
+                  content: stored.content,
+                });
+              }
+            }
             const completion: AgentToolCompletion = {
               name: tool.name,
               executionId,
