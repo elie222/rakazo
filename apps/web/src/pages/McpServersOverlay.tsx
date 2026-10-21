@@ -31,6 +31,9 @@ import { errorText } from "../lib/user-error";
 
 type EnvRow = { id: number; name: string; value: string };
 
+/** How an env value asks Rakazo to inject the granted OAuth access token. */
+const oauthEnvReference = "{{oauth.access_token}}";
+
 let nextEnvRowId = 0;
 const emptyEnvRow = (): EnvRow => ({ id: nextEnvRowId++, name: "", value: "" });
 
@@ -65,6 +68,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [headerValue, setHeaderValue] = useState("");
   const [oauthClientId, setOauthClientId] = useState("");
   const [oauthClientSecret, setOauthClientSecret] = useState("");
+  const [oauthAuthorizationServer, setOauthAuthorizationServer] = useState("");
+  const [oauthScope, setOauthScope] = useState("");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => [emptyEnvRow()]);
@@ -134,6 +139,13 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       const headers = headerValue.trim()
         ? { [headerName.trim() || "Authorization"]: headerValue.trim() }
         : {};
+      const oauthBase = oauthClientId.trim()
+        ? {
+            clientId: oauthClientId.trim(),
+            clientSecret: oauthClientSecret || undefined,
+            scope: oauthScope.trim() || undefined,
+          }
+        : undefined;
       const created =
         transport === "stdio"
           ? await rpc.mcp.servers.create({
@@ -146,6 +158,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                 envRows.filter((row) => row.name).map((row) => [row.name, row.value]),
               ),
               secret: secret || undefined,
+              oauthClient: oauthBase
+                ? { ...oauthBase, authorizationServer: oauthAuthorizationServer.trim() }
+                : undefined,
               enabled: true,
             })
           : await rpc.mcp.servers.create({
@@ -155,12 +170,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               endpoint: endpoint.trim(),
               headers,
               secret: secret || undefined,
-              oauthClient: oauthClientId.trim()
-                ? {
-                    clientId: oauthClientId.trim(),
-                    clientSecret: oauthClientSecret || undefined,
-                  }
-                : undefined,
+              oauthClient: oauthBase,
               enabled: true,
             });
       // replace() overwrites the bot's whole list, so merge with what it already has.
@@ -185,6 +195,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       setHeaderValue("");
       setOauthClientId("");
       setOauthClientSecret("");
+      setOauthAuthorizationServer("");
+      setOauthScope("");
       setCommand("");
       setArgs("");
       setEnvRows([emptyEnvRow()]);
@@ -411,8 +423,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                             />
                             <Input
                               aria-label={t`Value`}
-                              type="password"
-                              autoComplete="new-password"
+                              type={row.value.includes("{{oauth.") ? "text" : "password"}
+                              autoComplete={row.value.includes("{{oauth.") ? "off" : "new-password"}
                               value={row.value}
                               onChange={(e) =>
                                 setEnvRows((rows) =>
@@ -449,63 +461,95 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         >
                           <Trans>Add</Trans>
                         </Button>
+                        {oauthClientId.trim() ? (
+                          <p className="text-xs text-muted-foreground">
+                            <Trans>Use {oauthEnvReference} for the access token.</Trans>
+                          </p>
+                        ) : null}
                       </Field>
                     ) : (
+                      <div className="grid grid-cols-[.7fr_1fr] gap-2">
+                        <Input
+                          aria-label={t`Header name`}
+                          value={headerName}
+                          onChange={(e) => setHeaderName(e.target.value)}
+                        />
+                        <Input
+                          aria-label={t`Header value`}
+                          type="password"
+                          autoComplete="new-password"
+                          value={headerValue}
+                          onChange={(e) => setHeaderValue(e.target.value)}
+                          placeholder={t`Optional header value`}
+                        />
+                      </div>
+                    )}
+                    <Field>
+                      <FieldLabel htmlFor="mcp-oauth-client-id">
+                        <Trans>OAuth client ID (optional)</Trans>
+                      </FieldLabel>
+                      <Input
+                        id="mcp-oauth-client-id"
+                        autoComplete="off"
+                        value={oauthClientId}
+                        onChange={(e) => setOauthClientId(e.target.value)}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="mcp-oauth-client-secret">
+                        <Trans>OAuth client secret (optional)</Trans>
+                      </FieldLabel>
+                      <Input
+                        id="mcp-oauth-client-secret"
+                        type="password"
+                        autoComplete="new-password"
+                        value={oauthClientSecret}
+                        onChange={(e) => setOauthClientSecret(e.target.value)}
+                        placeholder={t`Stored encrypted`}
+                      />
+                    </Field>
+                    {oauthClientId.trim() ? (
                       <>
-                        <div className="grid grid-cols-[.7fr_1fr] gap-2">
-                          <Input
-                            aria-label={t`Header name`}
-                            value={headerName}
-                            onChange={(e) => setHeaderName(e.target.value)}
-                          />
-                          <Input
-                            aria-label={t`Header value`}
-                            type="password"
-                            autoComplete="new-password"
-                            value={headerValue}
-                            onChange={(e) => setHeaderValue(e.target.value)}
-                            placeholder={t`Optional header value`}
-                          />
-                        </div>
-                        <Field>
-                          <FieldLabel htmlFor="mcp-oauth-client-id">
-                            <Trans>OAuth client ID (optional)</Trans>
-                          </FieldLabel>
-                          <Input
-                            id="mcp-oauth-client-id"
-                            autoComplete="off"
-                            value={oauthClientId}
-                            onChange={(e) => setOauthClientId(e.target.value)}
-                          />
-                        </Field>
-                        <Field>
-                          <FieldLabel htmlFor="mcp-oauth-client-secret">
-                            <Trans>OAuth client secret (optional)</Trans>
-                          </FieldLabel>
-                          <Input
-                            id="mcp-oauth-client-secret"
-                            type="password"
-                            autoComplete="new-password"
-                            value={oauthClientSecret}
-                            onChange={(e) => setOauthClientSecret(e.target.value)}
-                            placeholder={t`Stored encrypted`}
-                          />
-                        </Field>
-                        {oauthClientId.trim() ? (
+                        {transport === "stdio" ? (
                           <Field>
-                            <FieldLabel htmlFor="mcp-oauth-redirect-uri">
-                              <Trans>Redirect URI</Trans>
+                            <FieldLabel htmlFor="mcp-oauth-authorization-server">
+                              <Trans>Authorization server</Trans>
                             </FieldLabel>
                             <Input
-                              id="mcp-oauth-redirect-uri"
-                              readOnly
-                              value={mcpOAuthRedirectUri()}
-                              onFocus={(e) => e.target.select()}
+                              id="mcp-oauth-authorization-server"
+                              type="url"
+                              autoComplete="off"
+                              value={oauthAuthorizationServer}
+                              onChange={(e) => setOauthAuthorizationServer(e.target.value)}
+                              placeholder="https://accounts.google.com"
                             />
                           </Field>
                         ) : null}
+                        <Field>
+                          <FieldLabel htmlFor="mcp-oauth-scope">
+                            <Trans>Scopes (optional)</Trans>
+                          </FieldLabel>
+                          <Input
+                            id="mcp-oauth-scope"
+                            autoComplete="off"
+                            value={oauthScope}
+                            onChange={(e) => setOauthScope(e.target.value)}
+                            placeholder="openid email"
+                          />
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor="mcp-oauth-redirect-uri">
+                            <Trans>Redirect URI</Trans>
+                          </FieldLabel>
+                          <Input
+                            id="mcp-oauth-redirect-uri"
+                            readOnly
+                            value={mcpOAuthRedirectUri()}
+                            onFocus={(e) => e.target.select()}
+                          />
+                        </Field>
                       </>
-                    )}
+                    ) : null}
                   </div>
                 </details>
                 {bots.length > 0 ? (
@@ -601,7 +645,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           })}
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {server.transport !== "stdio" ? (
+                          {server.transport !== "stdio" || server.oauthClientId ? (
                             <>
                               <Button
                                 type="button"

@@ -20,7 +20,17 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       transport: "stdio",
       command: "npx",
       args: ["-y", "invoices-mcp@1.0.0"],
-      env: { INVOICES_API_ID: "id-value", INVOICES_API_SECRET: "secret-value" },
+      env: {
+        INVOICES_API_ID: "id-value",
+        INVOICES_API_SECRET: "secret-value",
+        GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}",
+      },
+      oauthClient: {
+        clientId: "google-client",
+        clientSecret: "google-secret",
+        authorizationServer: "https://accounts.google.com",
+        scope: "openid email",
+      },
     });
     const created: McpServer = {
       id: "mcp-stdio-server",
@@ -32,11 +42,11 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       endpoint: null,
       command: "npx",
       args: ["-y", "invoices-mcp@1.0.0"],
-      envKeys: ["INVOICES_API_ID", "INVOICES_API_SECRET"],
+      envKeys: ["INVOICES_API_ID", "INVOICES_API_SECRET", "GOOGLE_ACCESS_TOKEN"],
       headerKeys: [],
       hasSecret: true,
       oauthStatus: "none",
-      oauthClientId: null,
+      oauthClientId: "google-client",
       enabled: true,
       revision: 1,
       createdAt: "2026-08-24T00:00:00.000Z",
@@ -77,11 +87,29 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await names.nth(2).fill("UNUSED");
   await page.getByRole("button", { name: "Remove", exact: true }).nth(2).click();
   await expect(names).toHaveCount(2);
+
+  // The OAuth client is host-managed: the grant reaches the process through a visible reference.
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await names.nth(2).fill("GOOGLE_ACCESS_TOKEN");
+  await values.nth(2).fill("{{oauth.access_token}}");
+  await expect(values.nth(2)).toHaveAttribute("type", "text");
+  await expect(values.nth(0)).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("Redirect URI")).toHaveCount(0);
+  await page.getByLabel("OAuth client ID (optional)").fill("google-client");
+  await page.getByLabel("OAuth client secret (optional)").fill("google-secret");
+  await page.getByLabel("Authorization server").fill("https://accounts.google.com");
+  await page.getByLabel("Scopes (optional)").fill("openid email");
+  await expect(page.getByLabel("Redirect URI")).toHaveValue(/\/mcp\/oauth\/callback$/);
+  await expect(page.getByText("Use {{oauth.access_token}} for the access token.")).toBeVisible();
   await captureScreenshot(page, testInfo, "mcp-stdio-env-form");
 
   await page.getByRole("button", { name: "Add server", exact: true }).click();
   await expect(page.getByText("Invoices", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect OAuth", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toHaveCount(0);
   await expect(names).toHaveCount(1);
   await expect(names.nth(0)).toHaveValue("");
   await expect(values.nth(0)).toHaveValue("");
+  await expect(page.getByLabel("OAuth client ID (optional)")).toHaveValue("");
+  await expect(page.getByLabel("Authorization server")).toHaveCount(0);
 });

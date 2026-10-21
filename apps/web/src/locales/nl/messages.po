@@ -760,6 +760,10 @@ msgstr "Authenticatie mislukt."
 msgid "Authorization code or callback URL"
 msgstr "Autorisatiecode of callback-URL"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "Autorisatieserver"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "De autorisatie is verlopen. Probeer het opnieuw."
@@ -4258,6 +4262,10 @@ msgstr "Bezig met opslaan…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Zeg ja of nee, of antwoord in een zin."
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "Scopes (optioneel)"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -5100,6 +5108,10 @@ msgstr "{0} gebruiken"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} gebruiken"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "Gebruik {oauthEnvReference} voor het toegangstoken."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
