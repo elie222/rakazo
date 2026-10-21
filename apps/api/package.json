@@ -8,6 +8,7 @@
     "start": "tsx src/index.ts",
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run --root ../.. apps/api/src",
+    "db:migrate": "tsx src/cli/migrate-database.ts",
     "secrets:infisical": "tsx src/cli/secrets-infisical.ts",
     "content-encryption": "tsx src/cli/content-encryption.ts"
   },

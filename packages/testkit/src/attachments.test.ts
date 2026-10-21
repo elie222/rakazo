@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 
@@ -199,7 +200,7 @@ describeAttachments("chat attachments", () => {
     expect(reply.replyToMessageId).toBe(parent.id);
     expect(reply.replyQuote).toBe("Parent first line");
     expect(reply.replyPreview).toEqual({ role: "user", text: "Parent first line" });
-    const event = await botIntroHarness!.prisma.event.findFirst({
+    const event = await asSystem(botIntroHarness!.prisma).event.findFirst({
       where: {
         threadId: snapshot.threadId,
         type: "thread.message.created",
@@ -235,7 +236,7 @@ describeAttachments("chat attachments", () => {
     expect(foreignReply.replyPreview).toBeNull();
     expect(foreignReply.replyQuote).toBe("");
 
-    await botIntroHarness!.prisma.message.delete({ where: { id: parent.id } });
+    await asSystem(botIntroHarness!.prisma).message.delete({ where: { id: parent.id } });
     snapshot = await rpc<ThreadSnapshot>(app, cookie, "threads/get", { botId: bot.id });
     const deletedReply = snapshot.messages.find((message) => message.id === reply.id)!;
     expect(deletedReply.replyToMessageId).toBeUndefined();

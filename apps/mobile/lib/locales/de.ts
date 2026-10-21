@@ -655,6 +655,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Save section name": "Abschnittsnamen speichern",
   "Section name": "Abschnittsname",
   "Silence notifications": "Benachrichtigungen stummschalten",
+  Pinned: "Angeheftet",
   Unassigned: "Nicht zugewiesen",
   Unpin: "Lösen",
   // components/computer-maintenance-actions.tsx

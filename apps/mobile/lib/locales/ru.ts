@@ -626,6 +626,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Try again.": "Попробуйте еще раз.",
   "Treg token": "Токен Treg",
   "Type your answer": "Введите ответ",
+  Pinned: "Закреплённые",
   Unassigned: "Без раздела",
   Unpin: "Открепить",
   unread: "непрочитано",

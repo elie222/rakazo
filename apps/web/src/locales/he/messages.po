@@ -3712,6 +3712,10 @@ msgstr ""
 msgid "Pin"
 msgstr "הצמדה"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "מוצמדים"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "הפעלת {name}"
@@ -4106,6 +4110,7 @@ msgstr "משחזר את סביבת העבודה"
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "לנסות שוב"
@@ -4989,6 +4994,7 @@ msgid "Type your answer"
 msgstr "יש להקליד תשובה"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "ללא שיוך"
 

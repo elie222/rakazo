@@ -41,7 +41,12 @@ export function authErrorText(body: unknown, fallback: string): string {
 }
 
 /** Status copy is a fallback: keep human server messages and known auth codes. */
-export function authResponseErrorText(status: number, body: unknown, invalidJson = false): string {
+export function authResponseErrorText(
+  status: number,
+  body: unknown,
+  invalidJson = false,
+  lastResort = t("Could not continue"),
+): string {
   const fallback =
     status === 429
       ? t("Too many attempts. Try again in a few minutes.")
@@ -49,7 +54,7 @@ export function authResponseErrorText(status: number, body: unknown, invalidJson
         ? t("Could not reach the server")
         : status >= 500 || invalidJson
           ? t("The server had a problem. Try again in a moment.")
-          : t("Could not continue");
+          : lastResort;
   return authErrorText(body, fallback).trim() || fallback;
 }
 

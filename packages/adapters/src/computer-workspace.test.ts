@@ -11,6 +11,7 @@ import {
   removeComputerWorkspaceDirectories,
   removeDeletedBotWorkspaces,
   restoreComputerWorkspace,
+  shouldSkipPortableWorkspaceFile,
   teamBrowserProfileName,
 } from "./computer-workspace.js";
 import { FakeSandboxProvider } from "./fake-sandbox.js";
@@ -30,6 +31,33 @@ afterEach(async () => {
 });
 
 describe("provider-neutral computer workspace", () => {
+  it("keeps signed-in browser state but not components the browser downloads again", () => {
+    const profile = ".browser-profiles/chromium-bot-1";
+    for (const kept of [
+      "Local State",
+      "Default/Cookies",
+      "Default/Login Data",
+      "Default/Extensions/abc/1.0/manifest.json",
+      "Default/Service Worker/Database/CURRENT",
+      "Default/Service Worker/ScriptCache/index",
+      "HistorySearch/embeddings.db",
+    ]) {
+      expect(shouldSkipPortableWorkspaceFile(`${profile}/${kept}`)).toBe(false);
+    }
+    for (const skipped of [
+      "optimization_guide_model_store/43/model.tflite",
+      "component_crx_cache/abc",
+      "WasmTtsEngine/1.0/bindings.wasm",
+      "WidevineCdm/4.10/manifest.json",
+      "Safe Browsing/UrlMalware.store",
+      "BrowserMetrics-spare.pma",
+      "Default/Service Worker/CacheStorage/abc/index",
+    ]) {
+      expect(shouldSkipPortableWorkspaceFile(`${profile}/${skipped}`)).toBe(true);
+    }
+    expect(shouldSkipPortableWorkspaceFile("project/WidevineCdm/notes.txt")).toBe(false);
+  });
+
   it("prepares shared and bot folders for a Team Computer", async () => {
     const provider = new FakeSandboxProvider();
     const computer = await provider.provision(

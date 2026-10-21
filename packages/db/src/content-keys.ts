@@ -3,6 +3,7 @@ import type { KeyProvider, KeyWrapContext, WrappedDataKey } from "@rakazo/adapte
 import { resolveEncryptionKey } from "@rakazo/core";
 import type { DataKey } from "./content-crypto.js";
 import { createRowId } from "./row-id.js";
+import { runAsSystem } from "./row-security.js";
 
 export interface MasterKey {
   id: string;
@@ -221,9 +222,13 @@ export class PgSpaceKeyStore implements SpaceKeyStore {
     return existing;
   }
 
+  // Which Space owns a row decides its key, not who may read it: the caller's own
+  // query still runs under row-level security, and results are shared across callers.
   async rowContext(source: SpaceSource, id: string) {
-    const { rows } = await this.db.query<RowContext>(ROW_CONTEXT[source], [id]);
-    return rows[0];
+    return runAsSystem("resolve the Space that owns an encrypted row", async () => {
+      const { rows } = await this.db.query<RowContext>(ROW_CONTEXT[source], [id]);
+      return rows[0];
+    });
   }
 
   async sampleByMasterKey() {

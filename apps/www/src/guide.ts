@@ -322,7 +322,7 @@ If downloads are blocked, use the [restricted-network guide](${SELF_HOST_RESTRIC
 ${SOURCE_CHECKOUT}
 \`\`\`
 
-Set \`POSTGRES_PASSWORD\` to a URI-safe random value (for example \`openssl rand -hex 16\`) and put the same value in \`DATABASE_URL\`. Set \`BETTER_AUTH_SECRET\`, \`ENCRYPTION_KEY\`, and \`SCREEN_PROXY_SECRET\` to independent long random values. Docker sandboxes also need a dedicated \`SANDBOX_SUPERVISOR_TOKEN\`. Keep these in \`.env\`, not in git.
+Set \`POSTGRES_PASSWORD\` and \`POSTGRES_APP_PASSWORD\` to two URI-safe random values (for example \`openssl rand -hex 16\`) and put them in \`DATABASE_MIGRATION_URL\` and \`DATABASE_URL\`. Set \`BETTER_AUTH_SECRET\`, \`ENCRYPTION_KEY\`, and \`SCREEN_PROXY_SECRET\` to independent long random values. Docker sandboxes also need a dedicated \`SANDBOX_SUPERVISOR_TOKEN\`. Keep these in \`.env\`, not in git.
 
 For host-side development with Docker Desktop, set \`SANDBOX_CONTROL_VIA_LOOPBACK=true\` in \`.env\`. The supervisor then publishes its control service on a loopback port, because Docker Desktop container addresses are not reachable from the host. Leave this unset when the supervisor runs inside Compose.
 

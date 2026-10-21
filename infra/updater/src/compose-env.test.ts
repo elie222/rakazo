@@ -56,9 +56,10 @@ const NOT_PASSED: Record<string, string> = {
 
 /**
  * Shared-package reads the worker must not receive. Only the API signs sessions and talks to
- * the identity provider, so the worker resolves no auth secret.
+ * the identity provider, so the worker resolves no auth secret. Only the API's start command
+ * migrates, so the worker never holds the owner database login.
  */
-const WORKER_DENIED = new Set(["BETTER_AUTH_SECRET"]);
+const WORKER_DENIED = new Set(["BETTER_AUTH_SECRET", "DATABASE_MIGRATION_URL"]);
 
 /** Reads a source scan cannot see: names held in constants or read by third-party SDKs. */
 const INDIRECT = {

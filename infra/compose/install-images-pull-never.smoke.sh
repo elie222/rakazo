@@ -90,6 +90,7 @@ case "$verb" in
   config)
     cat <<'EOF'
 POSTGRES_PASSWORD=test-postgres
+POSTGRES_APP_PASSWORD=test-app-postgres
 BETTER_AUTH_SECRET=test-auth-secret
 ENCRYPTION_KEY=test-encryption-key
 SCREEN_PROXY_SECRET=test-screen-secret
@@ -144,6 +145,7 @@ setup_work() {
   : > "$work/cwd/.env.images.example"
   cat > "$work/cwd/.env" <<'EOF'
 POSTGRES_PASSWORD=test-postgres
+POSTGRES_APP_PASSWORD=test-app-postgres
 BETTER_AUTH_SECRET=test-auth-secret
 ENCRYPTION_KEY=test-encryption-key
 SCREEN_PROXY_SECRET=test-screen-secret

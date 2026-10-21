@@ -20,6 +20,7 @@ export * from "./composer-mention-picker.js";
 export * from "./composer-mentions.js";
 export * from "./composer-slash.js";
 export * from "./computer-updates.js";
+export * from "./connection-catalog.js";
 export * from "./cron.js";
 export * from "./display-name.js";
 export * from "./echo.js";

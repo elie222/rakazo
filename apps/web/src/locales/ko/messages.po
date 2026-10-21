@@ -3712,6 +3712,10 @@ msgstr "확인할 도구 선택"
 msgid "Pin"
 msgstr "고정"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "고정됨"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} 재생"
@@ -4106,6 +4110,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "다시 시도"
@@ -4989,6 +4994,7 @@ msgid "Type your answer"
 msgstr "답변을 입력하세요"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "섹션 없음"
 

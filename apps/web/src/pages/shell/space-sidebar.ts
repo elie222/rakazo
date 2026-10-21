@@ -42,6 +42,7 @@ export async function commitSpaceRename(input: {
 export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends SidebarChat>(
   spaces: readonly SidebarSpace<TBot, TGroup>[],
   query: string,
+  labels?: { pinned: string; unassigned: string },
 ) {
   const needle = query.toLowerCase();
   const showSpaceNames = spaces.length > 1;
@@ -64,6 +65,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         sectionId: item.chat.sectionId,
       })),
       space.botSections,
+      { labels },
     );
     // Keep destinations visible after their last bot is dragged out. Search
     // still hides empty lists, and spaces without sections keep their old layout.
@@ -75,7 +77,7 @@ export function sidebarGroupsForSpaces<TBot extends SidebarChat, TGroup extends 
         }
       }
       if (!grouped.some((group) => group.key === "unassigned")) {
-        grouped.push({ key: "unassigned", title: "Unassigned", bots: [] });
+        grouped.push({ key: "unassigned", title: labels?.unassigned ?? "Unassigned", bots: [] });
       }
       const order = [
         "pinned",

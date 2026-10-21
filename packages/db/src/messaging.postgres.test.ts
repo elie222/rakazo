@@ -1,6 +1,8 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { createDb, type PrismaClient } from "./client.js";
+import type { PrismaClient } from "./client.js";
+import { createDb } from "./client.js";
 import { provisionMessagingIdentity } from "./messaging.js";
+import { runAsSystem } from "./row-security.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const describePostgres =
@@ -12,6 +14,15 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   let prisma: PrismaClient;
   let close: () => Promise<void>;
   let provisioned: { userId: string; spaceId: string; botId: string } | null = null;
+  // Production provisions from the inbound messaging webhook.
+  const provision = (from: string) =>
+    runAsSystem("messaging inbound", () =>
+      provisionMessagingIdentity(
+        prisma,
+        { provider, address: from },
+        { signupsEnabled: undefined, signupAllowlist: undefined },
+      ),
+    );
 
   afterAll(async () => {
     if (provisioned) {
@@ -30,11 +41,7 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       await db.pool.end();
     };
 
-    const result = await provisionMessagingIdentity(
-      prisma,
-      { provider, address },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const result = await provision(address);
     provisioned = result;
 
     expect(result.created).toBe(true);
@@ -66,10 +73,12 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     });
     expect(space!.memberships).toEqual([expect.objectContaining({ userId: result.userId })]);
 
-    const bot = await prisma.bot.findUnique({
-      where: { id: result.botId },
-      include: { thread: true },
-    });
+    const bot = await runAsSystem("test fixture", () =>
+      prisma.bot.findUnique({
+        where: { id: result.botId },
+        include: { thread: true },
+      }),
+    );
     expect(bot).toBeTruthy();
     expect(bot!.spaceId).toBe(result.spaceId);
     expect(bot!.userId).toBe(result.userId);
@@ -88,9 +97,11 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
     expect(identity!.verifiedAt).toBeNull();
 
     // bootstrap parity: same surrounding rows the auth signup hook creates
-    const memories = await prisma.memoryDocument.findMany({
-      where: { spaceId: result.spaceId, userId: result.userId },
-    });
+    const memories = await runAsSystem("test fixture", () =>
+      prisma.memoryDocument.findMany({
+        where: { spaceId: result.spaceId, userId: result.userId },
+      }),
+    );
     expect(memories.some((m) => m.scope === "user" && m.path === "MEMORY.md")).toBe(true);
     expect(memories.some((m) => m.scope === "bot" && m.botId === result.botId)).toBe(true);
     const pref = await prisma.notificationPreference.findFirst({
@@ -105,11 +116,7 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   });
 
   it("is idempotent for a repeat inbound from the same address", async () => {
-    const again = await provisionMessagingIdentity(
-      prisma,
-      { provider, address },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const again = await provision(address);
 
     expect(again.created).toBe(false);
     expect(again.userId).toBe(provisioned!.userId);
@@ -137,11 +144,7 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
       },
     });
     try {
-      const result = await provisionMessagingIdentity(
-        prisma,
-        { provider, address: partialAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      );
+      const result = await provision(partialAddress);
 
       expect(result.created).toBe(true);
       expect(result.userId).not.toBe(orphan.id);
@@ -165,18 +168,10 @@ describePostgres("provisionMessagingIdentity (PostgreSQL)", () => {
   it("resumes after a partial attempt that reached createBot, reusing the orphaned bot", async () => {
     const partialAddress = "+15550003333";
     // First attempt: let it provision fully, then delete only the identity row.
-    const first = await provisionMessagingIdentity(
-      prisma,
-      { provider, address: partialAddress },
-      { signupsEnabled: undefined, signupAllowlist: undefined },
-    );
+    const first = await provision(partialAddress);
     await prisma.messagingIdentity.deleteMany({ where: { provider, address: partialAddress } });
     try {
-      const second = await provisionMessagingIdentity(
-        prisma,
-        { provider, address: partialAddress },
-        { signupsEnabled: undefined, signupAllowlist: undefined },
-      );
+      const second = await provision(partialAddress);
 
       expect(second.userId).toBe(first.userId);
       expect(second.spaceId).toBe(first.spaceId);

@@ -11,6 +11,7 @@ import {
   PgSpaceKeyStore,
 } from "./content-keys.js";
 import { PrismaClient } from "./generated/prisma/client.js";
+import { installDbContext, withRowLevelSecurity } from "./row-security.js";
 
 export type Db = PrismaClient;
 
@@ -45,6 +46,7 @@ export function createPool(connectionString: string, options: DbClientOptions = 
     client.on("error", () => undefined);
   });
   installConnectRetry(pool);
+  installDbContext(pool);
   return pool;
 }
 
@@ -66,6 +68,7 @@ export function createDb(
     keepAlive: true,
   });
   keyPool.on("error", () => undefined);
+  installDbContext(keyPool);
   const end = pool.end.bind(pool) as () => Promise<void>;
   pool.end = (async () => {
     await keyPool.end().catch(() => undefined);
@@ -76,7 +79,11 @@ export function createDb(
     new PgSpaceKeyStore(keyPool),
   );
   const adapter = new PrismaPg(pool);
-  const prisma = withContentEncryption(new PrismaClient({ adapter }), contentKeys);
+  // Row-level security wraps everything else, so its findUnique rewrite still runs
+  // through content encryption.
+  const prisma = withRowLevelSecurity(
+    withContentEncryption(new PrismaClient({ adapter }), contentKeys),
+  );
   return { prisma, pool, contentKeys };
 }
 
