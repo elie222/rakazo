@@ -22,6 +22,10 @@ vi.mock("expo-document-picker", () => ({
   }),
 }));
 vi.mock("expo-image-picker", () => ({}));
+vi.mock("expo-image-manipulator", () => ({
+  ImageManipulator: { manipulate: vi.fn() },
+  SaveFormat: { JPEG: "jpeg", PNG: "png" },
+}));
 
 import { pickDocuments } from "./pick-attachments";
 
