@@ -399,7 +399,7 @@ it("shows the working dots only while the bot works, not while it waits on the u
     source.indexOf("const BotRow = memo("),
     source.indexOf("const GroupRow = memo("),
   );
-  const compiled = ts.transpileModule(`${rowSource}\nreturn BotRow;`, {
+  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
     compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
