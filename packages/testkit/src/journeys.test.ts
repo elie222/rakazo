@@ -2883,6 +2883,62 @@ describeJourneys("required product journeys", () => {
     expect(mixedOneShot.status).toBeGreaterThanOrEqual(400);
   });
 
+  it("routine timezone writes reject invalid zones without changing persisted schedules", async () => {
+    const cookie = await signup(app, `routine-zones-j-${stamp}@rakazo.test`, "Routine Zones");
+    const bot = await rpc<Bot>(app, cookie, "bots/create", { name: "Scheduler" });
+    const input = {
+      botId: bot.id,
+      name: "Daily",
+      prompt: "Check",
+      crons: ["0 9 * * *"],
+      active: false,
+    };
+    for (const timezone of ["Mars/Olympus_Mons", "", "+01:00"]) {
+      const response = await raw(app, cookie, "routines/create", { ...input, timezone });
+      expect.soft(response.status).toBe(400);
+    }
+    expect.soft(await prisma.routine.count({ where: { botId: bot.id } })).toBe(0);
+    const routine = await rpc<{ id: string; timezone: string }>(
+      app,
+      cookie,
+      "routines/create",
+      input,
+    );
+    expect(routine.timezone).toBe("UTC");
+    const before = await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } });
+    for (const timezone of ["Mars/Olympus_Mons", "", "+01:00"]) {
+      const response = await raw(app, cookie, "routines/update", {
+        routineId: routine.id,
+        timezone,
+        name: "Changed",
+      });
+      expect.soft(response.status).toBe(400);
+      expect
+        .soft(await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } }))
+        .toEqual(before);
+    }
+    for (const timezone of ["Pacific/Auckland", "UTC"]) {
+      const created = await rpc<{ id: string; timezone: string }>(app, cookie, "routines/create", {
+        ...input,
+        timezone,
+      });
+      expect(created.timezone).toBe(timezone);
+      const updated = await rpc<{ timezone: string }>(app, cookie, "routines/update", {
+        routineId: routine.id,
+        timezone,
+      });
+      expect(updated.timezone).toBe(timezone);
+      expect((await prisma.routine.findUniqueOrThrow({ where: { id: routine.id } })).timezone).toBe(
+        timezone,
+      );
+    }
+    const renamed = await rpc<{ timezone: string }>(app, cookie, "routines/update", {
+      routineId: routine.id,
+      name: "Renamed",
+    });
+    expect(renamed.timezone).toBe("UTC");
+  });
+
   it("23: never-run one-shot templates can be armed with a future runAt", async () => {
     const cookie = await signup(app, `once-arm-j-${stamp}@rakazo.test`, "Once Arm");
     const me = await rpc<Me>(app, cookie, "me");

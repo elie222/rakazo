@@ -1,6 +1,6 @@
 import type { ConnectorProvider, JobPublisher } from "@rakazo/adapter-kit";
 import { routineJobKey, routineWakeupJob } from "@rakazo/adapter-kit";
-import { RoutineWatchSchema } from "@rakazo/contracts";
+import { RoutineWatchSchema, TimeZoneSchema } from "@rakazo/contracts";
 import {
   cronFromPreset,
   isOneShotRoutineCron,
@@ -225,7 +225,11 @@ export async function createScheduleFromTool(
   if (!name) return { error: "name is required." };
   if (!prompt) return { error: "prompt is required." };
 
-  const timezone = String(input.timezone ?? "UTC");
+  const parsedTimezone = TimeZoneSchema.safeParse(input.timezone ?? "UTC");
+  if (!parsedTimezone.success) {
+    return { error: parsedTimezone.error.issues.map((issue) => issue.message).join("; ") };
+  }
+  const timezone = parsedTimezone.data;
   if (input.schedule.watch !== undefined) {
     return createWatchFromTool(deps, { ...input, name, prompt, timezone });
   }

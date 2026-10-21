@@ -205,6 +205,37 @@ describe("isOneShotRoutineCron", () => {
 });
 
 describe("schedule tool persistence", () => {
+  it.each([{ cron: "0 9 * * *" }, { watch: { kind: "files", paths: ["inbox"] } }])(
+    "rejects an invalid timezone before persisting %j",
+    async (schedule) => {
+      const create = vi.fn(async (args: { data: Record<string, unknown> }) => ({
+        id: "routine-1",
+        ...args.data,
+      }));
+      const enqueue = vi.fn(async () => undefined);
+      const deps = {
+        prisma: {
+          routine: { create },
+          bot: { findFirst: vi.fn(async () => ({ computer: null })) },
+        },
+        events: { append: vi.fn() },
+        jobs: { enqueue },
+      } as unknown as Parameters<typeof createScheduleFromTool>[0];
+      const result = await createScheduleFromTool(deps, {
+        spaceId: "ws-1",
+        botId: "bot-1",
+        userId: "user-1",
+        threadId: "thread-1",
+        name: "Daily",
+        prompt: "Check",
+        timezone: "Mars/Olympus_Mons",
+        schedule,
+      });
+      expect(result).toEqual({ error: "Unknown timezone" });
+      expect(create).not.toHaveBeenCalled();
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
   it("creates routines with routine.created and enqueues wakeup", async () => {
     const append = vi.fn(async () => undefined);
     const enqueue = vi.fn(async () => undefined);
