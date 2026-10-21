@@ -80,8 +80,8 @@ class RakazoNotificationService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) cachedToken = null
     val generation = synchronized(sessionLock) {
+      if (intent?.getBooleanExtra(EXTRA_RESET_TOKEN, false) == true) cachedToken = null
       sessionGeneration.incrementAndGet().also {
         if (intent?.action == ACTION_THREAD_CHANGED && (openBotId != null || openThreadId != null)) {
           clearLive()
@@ -108,25 +108,33 @@ class RakazoNotificationService : Service() {
     while (scope.isActive) {
       val storage = NotificationStorage(this)
       val settings = storage.settings
-      val token = cachedToken ?: storage.token.also { cachedToken = it }
       if (
         !settings.liveConnection ||
         storage.endpoint.isBlank() ||
-        token.isBlank() ||
         storage.spaceId.isBlank() ||
         !isAllowedNotificationEndpoint(storage.endpoint)
       ) {
         stopIfCurrent(generation)
         return
       }
+      val token = cachedToken ?: storage.token.also {
+        if (!runIfCurrent(generation) { cachedToken = it }) return
+      }
+      if (token.isBlank()) {
+        stopIfCurrent(generation)
+        return
+      }
       val seeded = prepareHistorySpace(generation, storage.spaceId) ?: return
       var recentPageBusy = true
       try {
+        if (generation != sessionGeneration.get()) return
         val avatarStyle = selectedAvatarStyle
           ?: avatarStyle(storage.endpoint, token, storage.spaceId)
             .also { selectedAvatarStyle = it }
+        if (generation != sessionGeneration.get()) return
         val active = runs(storage.endpoint, token, storage.spaceId, "active")
         val working = active.filter(::isWorking).filter { it.notificationsEnabled }
+        if (generation != sessionGeneration.get()) return
         val recent = runs(storage.endpoint, token, storage.spaceId, "recent")
         val replyLookups = mutableListOf<Pair<RunRecord, Boolean>>()
         val immediate = mutableListOf<Pair<RunRecord, NotificationCopy>>()
@@ -172,6 +180,7 @@ class RakazoNotificationService : Service() {
           return
         }
         for ((run, scheduled) in replyLookups) {
+          if (generation != sessionGeneration.get()) return
           val reply = runCatching {
             latestReply(storage.endpoint, token, storage.spaceId, run)
           }.getOrDefault("")
