@@ -89,7 +89,7 @@ export function AppConnectCard({
     <View
       accessibilityLabel={t("{name} connection", { name: block.name })}
       style={{
-        width: "90%",
+        width: "100%",
         borderRadius: 18,
         backgroundColor: native.fill,
         paddingHorizontal: 16,
