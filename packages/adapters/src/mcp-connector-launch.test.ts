@@ -305,6 +305,40 @@ describe("MCP connector managed stdio launch", () => {
       }
     });
 
+    it("ends the backoff once another process records a successful check", async () => {
+      await publishPackage(root);
+      env = { SILENT: "1" };
+      const server: typeof SERVER & { healthStatus?: string; healthCheckedAt?: Date } = {
+        ...SERVER,
+      };
+      const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+      const connector = connectorFor({ server, startupTimeoutMs: 300, discoveryTimeoutMs: 5_000 });
+      try {
+        expect(await connector.discoverTools(contextFor())).toMatchObject([
+          { name: "mcp__mail__unavailable" },
+        ]);
+        expect(launches).toHaveBeenCalledTimes(1);
+
+        // An older success says nothing about the failure that started the backoff.
+        server.healthStatus = "ok";
+        server.healthCheckedAt = new Date(Date.now() - 60_000);
+        expect(await connector.discoverTools(contextFor())).toMatchObject([
+          { name: "mcp__mail__unavailable" },
+        ]);
+        expect(launches).toHaveBeenCalledTimes(1);
+
+        // Test connection in the API passed after it: the next run tries the server again.
+        env = {};
+        server.healthCheckedAt = new Date(Date.now() + 1_000);
+        expect((await connector.discoverTools(contextFor())).map((tool) => tool.name)).toEqual([
+          "mcp__mail__hello",
+        ]);
+        expect(launches).toHaveBeenCalledTimes(2);
+      } finally {
+        await connector.close();
+      }
+    });
+
     it("lets a run go on while its package installs, and uses it on a later turn", async () => {
       const dir = mcpPackageDir(SPEC, root);
       const lock = `${dir}.lock`;

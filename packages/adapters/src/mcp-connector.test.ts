@@ -1263,6 +1263,85 @@ describe("MCP connector session cache", () => {
     }
   });
 
+  it("lets a running call finish when another run's discovery times out on its session", async () => {
+    const state = { failNext: false, initializations: 0, calls: [] as string[] };
+    const fetch = mcpFetch(state);
+    let lists = 0;
+    let callStarted!: () => void;
+    const callArrived = new Promise<void>((resolve) => {
+      callStarted = resolve;
+    });
+    let releaseCall!: () => void;
+    const callReleased = new Promise<void>((resolve) => {
+      releaseCall = resolve;
+    });
+    let releaseList!: () => void;
+    const listReleased = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, init);
+      if (request.method === "POST") {
+        const message = JSON.parse(await request.clone().text());
+        if (message.method === "tools/call") {
+          callStarted();
+          await callReleased;
+        }
+        if (message.method === "tools/list" && ++lists === 2) {
+          // The server stops answering tools/list.
+          await listReleased;
+          return new Response(null, { status: 202 });
+        }
+      }
+      return fetch(input, init);
+    });
+    const connector = new McpConnector(
+      {
+        botMcpServer: {
+          findMany: vi.fn().mockResolvedValue([ASSIGNMENT]),
+          findFirst: vi.fn().mockResolvedValue(ASSIGNMENT),
+        },
+      } as never,
+      {} as never,
+      { network: TEST_NETWORK, discoveryTimeoutMs: 200 },
+    );
+    const context = {
+      spaceId: "w1",
+      userId: "u1",
+      botId: "bot-1",
+      signal: new AbortController().signal,
+    } as never;
+    try {
+      await connector.discoverTools(context);
+      const running = (async () => {
+        const events = [];
+        for await (const event of connector.execute(
+          {
+            tool: "mcp__demo__slow",
+            args: {},
+            executionId: "slow",
+            route: { connectorId: "mcp", resourceId: "server-1", toolName: "slow" },
+          },
+          context,
+        ))
+          events.push(event);
+        return events;
+      })();
+      await callArrived;
+
+      expect(await connector.discoverTools(context)).toMatchObject([
+        { name: "mcp__demo__unavailable" },
+      ]);
+      releaseCall();
+      expect(await running).toMatchObject([{ type: "result" }]);
+      expect(state.calls).toEqual(["slow"]);
+      expect(state.initializations).toBe(1);
+    } finally {
+      releaseList();
+      await connector.close();
+    }
+  });
+
   it("keeps a server's tools when discovery finds the cached session expired", async () => {
     const state = { failNext: false, initializations: 0, sessionNotFound: 0 };
     vi.stubGlobal("fetch", mcpFetch(state));

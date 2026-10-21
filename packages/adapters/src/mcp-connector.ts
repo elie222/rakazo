@@ -109,6 +109,14 @@ function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   promise.catch(() => undefined);
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
 }
+/** Whether a check after `since` (by this or another process) found the server working. */
+function recoveredSince(
+  server: { healthStatus?: string | null; healthCheckedAt?: Date | null },
+  since: number,
+): boolean {
+  return server.healthStatus === "ok" && (server.healthCheckedAt?.getTime() ?? 0) > since;
+}
+
 /** Route name of the stand-in tool for an assigned server whose discovery failed. */
 const UNAVAILABLE_TOOL = "__rakazo_unavailable";
 /** Skip rewriting an unchanged health observation more often than this. */
@@ -274,7 +282,7 @@ export class McpConnector implements ConnectorProvider {
   /** Servers whose last discovery failed; runs skip them until `until`, per revision. */
   private readonly discoveryBackoff = new Map<
     string,
-    { revision: number; until: number; delayMs: number; reason: string }
+    { revision: number; since: number; until: number; delayMs: number; reason: string }
   >();
   /** Session keys whose npx package is being installed right now. */
   private readonly installing = new Set<string>();
@@ -354,17 +362,28 @@ export class McpConnector implements ConnectorProvider {
               "it is still installing its package; its tools will be available on a later turn",
             ),
           ];
-        // A server that just failed is not retried on every turn; a live session or a new
-        // revision (the user changed it) ends the wait early.
+        // A server that just failed is not retried on every turn; a live session, a new
+        // revision (the user changed it), or a later successful check recorded by any
+        // process (e.g. Test connection in the API) ends the wait early.
         const backoff = this.discoveryBackoff.get(key);
-        if (!live && backoff?.revision === server.revision && Date.now() < backoff.until)
+        if (
+          !live &&
+          backoff?.revision === server.revision &&
+          Date.now() < backoff.until &&
+          !recoveredSince(server, backoff.since)
+        )
           return [unavailableTool(server, backoff.reason)];
         let entry: SessionEntry | undefined;
+        // Past the deadline this run stops waiting for its own tools/list request only;
+        // the session and other calls on it carry on.
+        const listing = new AbortController();
         try {
           const listed = await withDeadline(
             this.withSession(server, context, (session) => {
               entry = this.sessions.get(key);
-              return session.listTools({ signal: context.signal });
+              return session.listTools({
+                signal: AbortSignal.any([context.signal, listing.signal]),
+              });
             }),
             this.options.discoveryTimeoutMs ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
           );
@@ -396,6 +415,7 @@ export class McpConnector implements ConnectorProvider {
               },
             }));
         } catch (error) {
+          if (error instanceof McpDiscoveryTimeoutError) listing.abort(error);
           // Capture material before eviction so the audited reason stays redacted, the
           // same reason execute() captures it before callTool.
           const material = (entry ?? this.sessions.get(key))?.material;
@@ -421,6 +441,7 @@ export class McpConnector implements ConnectorProvider {
             );
             this.discoveryBackoff.set(key, {
               revision: server.revision,
+              since: Date.now(),
               until: Date.now() + delayMs,
               delayMs,
               reason,
@@ -705,10 +726,18 @@ export class McpConnector implements ConnectorProvider {
     this.reaper.unref?.();
   }
 
+  /**
+   * Stop reusing a session. A session other calls are still using is closed by the last of
+   * them (see withSession), so one failure never cuts off another bot's running call.
+   */
   private async evict(sessionKey: string): Promise<void> {
     const entry = this.sessions.get(sessionKey);
     if (!entry) return;
     this.sessions.delete(sessionKey);
+    if ((this.inFlight.get(entry.session) ?? 0) > 0) {
+      this.expired.add(entry.session);
+      return;
+    }
     await closeEntry(entry);
   }
 
