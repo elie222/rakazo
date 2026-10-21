@@ -34,6 +34,7 @@ async function runRoutine(
     toolFailure?: "abort" | "recover";
     attachments?: "file" | "image";
     steering?: boolean;
+    steeringAfterFirst?: boolean;
     copyFailureOnce?: boolean;
     parallel?: boolean;
   } = {},
@@ -61,13 +62,14 @@ async function runRoutine(
   };
   const toolResults: unknown[] = [];
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
-    if (options.steering) await request.claimSteering?.([]);
+    if (options.steering && !options.steeringAfterFirst) await request.claimSteering?.([]);
     const execute = async (call: (typeof toolCalls)[number], index: number) => {
       try {
         toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
       } catch (error) {
         if (!options.toolFailure) throw error;
       }
+      if (index === 0 && options.steeringAfterFirst) await request.claimSteering?.([]);
       if (options.toolFailure === "abort") throw new DOMException("Aborted", "AbortError");
     };
     if (options.parallel) await Promise.all(toolCalls.map(execute));
@@ -320,6 +322,25 @@ describe("run computer provisioning", () => {
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sandbox.writeFile).toHaveBeenCalledTimes(2);
     expect(sandbox.listFiles).toHaveBeenCalledOnce();
+  });
+
+  it("copies steering attachments onto an already-started computer before the next tool", async () => {
+    const { sandbox, finalizeRun } = await runRoutine(
+      [
+        { name: "list_files", args: { path: "" } },
+        { name: "list_files", args: { path: "" } },
+      ],
+      { attachments: "file", steering: true, steeringAfterFirst: true },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeGreaterThan(
+      sandbox.listFiles.mock.invocationCallOrder[0]!,
+    );
+    expect(sandbox.writeFile.mock.invocationCallOrder[0]).toBeLessThan(
+      sandbox.listFiles.mock.invocationCallOrder[1]!,
+    );
   });
 
   it("does not boot for a steering attachment without computer tools", async () => {

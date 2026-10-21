@@ -326,7 +326,7 @@ function fileLine(file: MaterializedThreadFile): string {
 export function currentTurnFilesInstruction(files: readonly MaterializedThreadFile[]): string {
   if (!files.length) return "";
   return [
-    "Current-turn attachments are available at these paths when a tool needs them. Images are also provided directly for vision; do not start the computer just to view them. Inspect other files with file tools before answering questions about their contents:",
+    "Attachments will be copied to these paths when a tool needs the computer. If an image is visible directly in your input, answer from that image without starting the computer. Inspect files not visible in your input with file tools before answering questions about their contents:",
     ...files.map(fileLine),
   ].join("\n");
 }
