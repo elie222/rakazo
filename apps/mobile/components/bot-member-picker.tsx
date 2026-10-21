@@ -58,7 +58,7 @@ export function BotMemberPicker({
             value={query}
             onChangeText={setQuery}
             placeholder={t("Filter bots")}
-            placeholderTextColor={tokens.mutedForeground}
+            placeholderTextColor={tokens.faintForeground}
             accessibilityLabel={t("Filter bots")}
             style={{
               marginTop: 8,
@@ -106,9 +106,6 @@ export function BotMemberPicker({
                   if (next) setEverPicked((current) => new Set(current).add(bot.id));
                   onChange(next ? [...selected, bot.id] : selected.filter((id) => id !== bot.id));
                 }}
-                thumbColor={checked ? tokens.primaryForeground : tokens.foreground}
-                tintColor={tokens.primary}
-                trackColor={{ false: tokens.border, true: tokens.primary }}
                 value={checked}
               />
             </View>

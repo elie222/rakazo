@@ -277,8 +277,10 @@ export function HoldToTalkControls({
           {...talk.buttonProps}
           className={cn(
             "size-8 shrink-0 touch-none select-none rounded-full text-foreground/75 [-webkit-touch-callout:none]",
+            // The pointer is over the button while holding, so the outline variant's hover
+            // colours (a grey fill in dark, dark text) must not win over the recording red.
             recording &&
-              "scale-125 border-destructive bg-destructive text-destructive-foreground hover:bg-destructive",
+              "scale-125 border-destructive-fill bg-destructive-fill text-destructive-foreground hover:bg-destructive-fill hover:text-destructive-foreground dark:hover:bg-destructive-fill",
           )}
         >
           <Mic size={16} strokeWidth={1.8} />

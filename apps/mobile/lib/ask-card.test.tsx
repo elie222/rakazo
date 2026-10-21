@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { readFileSync } from "node:fs";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import React, { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -33,6 +34,8 @@ type SheetProps = {
 };
 let sheet: SheetProps;
 const scope = {
+  typeScale,
+  fontWeight,
   React,
   useState,
   useRef,
@@ -332,7 +335,8 @@ function state(text: string) {
 it("shows a dismissed secret card as a muted Dismissed and a saved one as Saved", async () => {
   await render({ input: "secret", status: "answered", answer: "", dismissed: true });
   expect(state("Dismissed")?.dataset.color).toBe("muted");
-  expect(state("Dismissed")?.dataset.weight).toBe("600");
+  // A card's status line is medium, like every card status.
+  expect(state("Dismissed")?.dataset.weight).toBe("500");
   expect(state("Dismissed")?.dataset.spacing).toBe("12");
   await render({ input: "secret", status: "answered", answer: "" });
   expect(state("Saved")?.dataset.color).toBe("success");

@@ -1,3 +1,4 @@
+import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Children, Fragment, isValidElement } from "react";
 import type { PressableProps } from "react-native";
@@ -181,12 +182,12 @@ function createSettingsStyles() {
     group: { gap: 7 },
     groupLabel: {
       color: native.secondaryLabel,
-      fontSize: 13,
+      ...typeScale.caption,
       paddingStart: 16,
     },
     footer: {
       color: native.secondaryLabel,
-      fontSize: 13,
+      ...typeScale.caption,
       paddingHorizontal: 16,
     },
     card: {
@@ -215,7 +216,7 @@ function createSettingsStyles() {
     stackedSwitch: { alignSelf: "flex-start", marginTop: 6 },
     title: { color: native.label, fontSize: 17 },
     prominent: { fontSize: 20, fontWeight: "600" },
-    detail: { color: native.secondaryLabel, fontSize: 15 },
+    detail: { color: native.secondaryLabel, ...typeScale.caption },
     destructive: { color: tokens.destructive },
     value: { flexShrink: 1, color: native.secondaryLabel, fontSize: 17 },
     pressed: { backgroundColor: native.fillPressed },

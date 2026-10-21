@@ -40,3 +40,24 @@ describe("archived bot lifecycle", () => {
     expect(deleted).toHaveBeenCalledOnce();
   });
 });
+
+it("keeps deletion bound to the archived bot's space through confirmation", async () => {
+  const requestContext = {
+    apiBase: "https://example.test",
+    headers: { "x-rakazo-space-id": "space-b" },
+  };
+  const deleted = vi.fn();
+  rpc.mockResolvedValueOnce({ ok: true });
+  confirmDeleteBot({ id: "bot-b", name: "Bot" }, deleted, () => true, requestContext);
+  await alert.mock.calls[0]![2][1].onPress();
+  await Promise.resolve();
+  expect(rpc).toHaveBeenCalledWith(
+    "bots/remove",
+    { botId: "bot-b", deleteMemories: false },
+    {
+      requestContext,
+      skipSpaceAuthRecovery: true,
+    },
+  );
+  expect(deleted).toHaveBeenCalledOnce();
+});

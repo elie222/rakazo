@@ -65,18 +65,18 @@ test("diagrams follow the app theme", async ({ page }, testInfo) => {
   // Diagram text is drawn in the theme's foreground token.
   await page.goto(fixture);
   await expectDrawn(page);
-  expect(await diagramMarkup(page)).toContain("fill:#ECECEE");
+  expect(await diagramMarkup(page)).toContain("fill:#FFFFFF");
 
   await page.goto(`${fixture}?theme=light`);
   await expectDrawn(page);
-  expect(await diagramMarkup(page)).toContain("fill:#1A1A1A");
+  expect(await diagramMarkup(page)).toContain("fill:#000000");
   await captureScreenshot(page, testInfo, "markdown-diagram-light");
 
   // Switching theme with the message open redraws it.
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "dark";
   });
-  await expect.poll(() => diagramMarkup(page)).toContain("fill:#ECECEE");
+  await expect.poll(() => diagramMarkup(page)).toContain("fill:#FFFFFF");
 });
 
 test("a wide diagram scrolls on a phone instead of shrinking its text away", async ({

@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr " (okunmadı)"
 
+#. placeholder {0}: health.toolCount
+#: src/components/McpServerHealthLine.tsx
+msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
+msgstr "{0, plural, one {Çalışıyor · # araç} other {Çalışıyor · # araç}}"
+
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -64,6 +69,16 @@ msgstr ""
 #: src/components/call/IncomingCall.tsx
 msgid "{0} is calling you"
 msgstr ""
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is not working"
+msgstr "{0} çalışmıyor"
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is running"
+msgstr "{0} çalışıyor"
 
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
@@ -768,6 +783,14 @@ msgstr "Kimlik doğrulama başarısız."
 msgid "Authorization code or callback URL"
 msgstr "Yetkilendirme kodu veya callback URL'si"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "Yetkilendirme parametreleri (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "Yetkilendirme sunucusu"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "Yetkilendirme zaman aşımına uğradı. Lütfen tekrar dene."
@@ -1059,9 +1082,17 @@ msgstr "Sunucu URL'sini ve ağı kontrol et, sonra yeniden test et."
 msgid "Check your email"
 msgstr "E-postanızı kontrol edin"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checked {checked}"
+msgstr "Kontrol edildi {checked}"
+
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
 msgstr ""
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "Bağlantı kontrol ediliyor…"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
@@ -1837,6 +1868,10 @@ msgstr "Bu yanıt gönderilemedi"
 msgid "Could not take control"
 msgstr "Kontrol alınamadı"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not test MCP server"
+msgstr "MCP sunucusu test edilemedi"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "Güncellenemedi"
@@ -2326,6 +2361,10 @@ msgstr "Ortam değişkenleri"
 msgid "Error"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Error details"
+msgstr "Hata ayrıntıları"
+
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every"
@@ -2436,6 +2475,10 @@ msgstr "Değişikliği belirten alanlar"
 #: src/pages/RoutineEditor.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Karşılaştırılacak alanlar, ör. id, modifiedTime (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "Dosya"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
@@ -2700,6 +2743,10 @@ msgstr "Girdiler"
 #: src/components/SidebarFooter.tsx
 msgid "Install update"
 msgstr "Güncellemeyi yükle"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Installing…"
+msgstr "Yükleniyor…"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
@@ -3429,6 +3476,10 @@ msgstr "Henüz yok"
 msgid "Normal"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Not checked yet"
+msgstr "Henüz kontrol edilmedi"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "Bağlı değil"
@@ -3440,6 +3491,10 @@ msgstr ""
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "Şimdi değil"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Not working"
+msgstr "Çalışmıyor"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
@@ -3484,7 +3539,7 @@ msgstr "OAuth bağlantısı başarısız"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "OAuth expired"
-msgstr ""
+msgstr "OAuth süresi doldu"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -4187,6 +4242,7 @@ msgstr ""
 msgid "running"
 msgstr "çalışıyor"
 
+#: src/components/McpServerHealthLine.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "Çalışıyor"
@@ -4273,6 +4329,10 @@ msgstr "Kaydediliyor…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Evet ya da hayır de veya bir cümleyle yanıtla."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "Kapsamlar (isteğe bağlı)"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4745,6 +4805,10 @@ msgstr "Dene"
 msgid "Test API key"
 msgstr "API anahtarını test et"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Test connection"
+msgstr "Bağlantıyı test et"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr ""
@@ -4754,6 +4818,7 @@ msgid "Test sign-in"
 msgstr "Oturum açmayı test et"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "Test ediliyor…"
 
@@ -5117,6 +5182,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} kullan"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "Erişim belirteci için {oauthEnvReference} kullanın."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx

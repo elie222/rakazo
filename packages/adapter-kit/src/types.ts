@@ -929,6 +929,8 @@ export interface BrowserSnapshotResult {
   /** Compact accessibility-style tree for the model. */
   tree: string;
   elements: BrowserSnapshotNode[];
+  /** The page was still loading or waiting on its own requests when it was captured. */
+  loading?: boolean;
   fallback?: "computer_act";
   error?: string;
 }
@@ -965,6 +967,8 @@ export interface BrowserActResult {
   /** Snapshot after the actions when available. */
   tree?: string;
   elements?: BrowserSnapshotNode[];
+  /** The page was still loading or waiting on its own requests when that snapshot was taken. */
+  loading?: boolean;
   fallback?: "computer_act";
   error?: string;
 }

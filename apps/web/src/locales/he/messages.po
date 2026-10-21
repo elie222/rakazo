@@ -17,6 +17,11 @@ msgstr ""
 msgid " (unread)"
 msgstr " (לא נקראה)"
 
+#. placeholder {0}: health.toolCount
+#: src/components/McpServerHealthLine.tsx
+msgid "{0, plural, one {Running · # tool} other {Running · # tools}}"
+msgstr "{0, plural, one {פעיל · # כלי} other {פעיל · # כלים}}"
+
 #. placeholder {0}: Math.ceil(oauth.expiresInSeconds / 60)
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
@@ -64,6 +69,16 @@ msgstr "טיפול של {0}"
 #: src/components/call/IncomingCall.tsx
 msgid "{0} is calling you"
 msgstr ""
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is not working"
+msgstr "{0} לא עובד"
+
+#. placeholder {0}: updated.name
+#: src/pages/McpServersOverlay.tsx
+msgid "{0} is running"
+msgstr "{0} פעיל"
 
 #. placeholder {0}: format(size / 1024)
 #: src/components/ArtifactFileCard.tsx
@@ -768,6 +783,14 @@ msgstr "האימות נכשל."
 msgid "Authorization code or callback URL"
 msgstr "קוד הרשאה או URL להחזרה (callback)"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "פרמטרים להרשאה (אופציונלי)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "שרת הרשאות"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "תם הזמן לאישור ההרשאה. אפשר לנסות שוב."
@@ -1059,9 +1082,17 @@ msgstr "יש לבדוק את כתובת ה-URL של השרת ואת הרשת, ו
 msgid "Check your email"
 msgstr "יש לבדוק את תיבת האימייל"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checked {checked}"
+msgstr "נבדק {checked}"
+
 #: src/components/ComputersUnavailableHint.tsx
 msgid "Checking computer setup…"
 msgstr "בודק את הגדרות המחשב…"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "בודק חיבור…"
 
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
@@ -1837,6 +1868,10 @@ msgstr "לא ניתן לשלוח את התשובה"
 msgid "Could not take control"
 msgstr "לא ניתן להשתלט"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Could not test MCP server"
+msgstr "לא ניתן לבדוק את שרת ה-MCP"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Could not update"
 msgstr "לא ניתן לעדכן"
@@ -2326,6 +2361,10 @@ msgstr "משתני סביבה"
 msgid "Error"
 msgstr "שגיאה"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Error details"
+msgstr "פרטי השגיאה"
+
 #: src/pages/ExternalConversationSettings.tsx
 #: src/pages/RoutineSchedule.tsx
 msgid "Every"
@@ -2436,6 +2475,10 @@ msgstr ""
 #: src/pages/RoutineEditor.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "קובץ"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
@@ -2700,6 +2743,10 @@ msgstr "קלטים"
 #: src/components/SidebarFooter.tsx
 msgid "Install update"
 msgstr "התקנת עדכון"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Installing…"
+msgstr "מתקין…"
 
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Instance API key"
@@ -3429,6 +3476,10 @@ msgstr "עדיין אין"
 msgid "Normal"
 msgstr "רגיל"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Not checked yet"
+msgstr "טרם נבדק"
+
 #: src/pages/ModelBackupsSettings.tsx
 msgid "Not connected"
 msgstr "לא מחובר"
@@ -3440,6 +3491,10 @@ msgstr "לא נמצא בקטלוג התוספים"
 #: src/pages/shell/message-cards.tsx
 msgid "Not now"
 msgstr "לא עכשיו"
+
+#: src/components/McpServerHealthLine.tsx
+msgid "Not working"
+msgstr "לא עובד"
 
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Nothing is still running"
@@ -4187,6 +4242,7 @@ msgstr "זמן ההרצה חייב להיות בעתיד."
 msgid "running"
 msgstr "פועל"
 
+#: src/components/McpServerHealthLine.tsx
 #: src/pages/ActivityList.tsx
 msgid "Running"
 msgstr "פועל"
@@ -4273,6 +4329,10 @@ msgstr "שומר…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "אפשר לענות כן או לא, או במשפט."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "היקפים (אופציונלי)"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -4745,6 +4805,10 @@ msgstr "בדיקה"
 msgid "Test API key"
 msgstr "בדיקת מפתח API"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Test connection"
+msgstr "בדיקת חיבור"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Test run"
 msgstr "הרצת בדיקה"
@@ -4754,6 +4818,7 @@ msgid "Test sign-in"
 msgstr "בדיקת התחברות"
 
 #: src/components/ModelConnectionPreflightNotice.tsx
+#: src/pages/McpServersOverlay.tsx
 msgid "Testing…"
 msgstr "בודק…"
 
@@ -5117,6 +5182,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "שימוש ב{hostLabel}"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx

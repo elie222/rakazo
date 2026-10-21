@@ -1,5 +1,6 @@
 import type { VoiceChatGroup } from "@rakazo/core";
 import { speechFromBlocks, voiceChatDuration, voiceChatSummary } from "@rakazo/core";
+import { typeScale } from "@rakazo/ui-tokens";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { MobileMessage } from "../lib/api";
@@ -79,15 +80,33 @@ const styles = StyleSheet.create({
     maxWidth: "88%",
     borderRadius: 18,
   },
-  header: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, height: 40 },
-  title: { fontSize: 15, fontWeight: "500" },
-  duration: { fontSize: 13, fontVariant: ["tabular-nums"] },
+  // 40 tall around the 22 pt title line, growing with it at larger text sizes.
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    minHeight: 40,
+  },
+  title: typeScale.cardTitle,
+  duration: { ...typeScale.caption, fontVariant: ["tabular-nums"] },
   chevron: { marginStart: "auto", paddingStart: 8 },
-  summary: { paddingHorizontal: 12, paddingBottom: 10, fontSize: 14, writingDirection: "auto" },
+  summary: {
+    paddingHorizontal: 12,
+    paddingBottom: 10,
+    ...typeScale.secondary,
+    writingDirection: "auto",
+  },
   transcript: { paddingHorizontal: 12, paddingBottom: 12, gap: 6 },
-  user: { alignSelf: "flex-end", fontSize: 14, textAlign: "right", writingDirection: "auto" },
+  user: {
+    alignSelf: "flex-end",
+    ...typeScale.secondary,
+    textAlign: "right",
+    writingDirection: "auto",
+  },
   bot: {
-    fontSize: 14,
+    ...typeScale.secondary,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 7,

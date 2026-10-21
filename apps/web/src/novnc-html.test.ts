@@ -5,6 +5,8 @@ import {
   injectNovncStorageShim,
   isNovncPage,
   MAX_NOVNC_HTML_BYTES,
+  novncPageRequestHeaders,
+  rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
 } from "./novnc-html.js";
 
@@ -97,6 +99,32 @@ describe("noVNC storage shim gate", () => {
     expect(stopped("moz-extension://abc/content.js")).toBe(true);
     expect(stopped("https://screen.example/core/rfb.js")).toBe(false);
     expect(stopped("")).toBe(false);
+  });
+});
+
+describe("noVNC page caching", () => {
+  it("drops validators so the upstream sends the full page", () => {
+    expect(
+      novncPageRequestHeaders({
+        accept: "text/html",
+        "accept-encoding": "gzip, br",
+        "if-modified-since": "Wed, 21 Oct 2026 01:05:20 GMT",
+        "if-none-match": '"abc"',
+      }),
+    ).toEqual({ accept: "text/html", "accept-encoding": "identity" });
+  });
+
+  it("marks the rewritten page as never stored", () => {
+    expect(
+      rewrittenNovncHeaders({
+        ...html,
+        "content-length": "10",
+        etag: '"abc"',
+        "last-modified": "Wed, 21 Oct 2026 01:05:20 GMT",
+        expires: "Thu, 22 Oct 2026 01:05:20 GMT",
+        "cache-control": "max-age=3600",
+      }),
+    ).toEqual({ ...html, "cache-control": "no-store" });
   });
 });
 

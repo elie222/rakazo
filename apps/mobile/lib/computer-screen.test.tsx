@@ -359,9 +359,10 @@ describe("computer screen", () => {
     expect(statusLabel(view).dataset.alignSelf).toBeUndefined();
   });
 
-  it("puts Take control under the status at accessibility text sizes", async () => {
-    // At AX5 the native button took the row and the label wrapped one letter per line.
-    textScale.fontScale = 3.571;
+  it("puts Take control under the status once text reaches its largest size", async () => {
+    // Text stops growing at xxxLarge but the native button doesn't: at AX5 it took the row and
+    // the label wrapped one letter per line.
+    textScale.fontScale = 1.353;
     respond(botWorking);
     const view = await render();
 
@@ -388,7 +389,7 @@ describe("computer screen", () => {
     const callsBefore = rpc.mock.calls.length;
 
     // The native picker keeps a stale height when the row above restacks.
-    textScale.fontScale = 3.571;
+    textScale.fontScale = 1.353;
     act(() => {
       root?.render(<Computer />);
     });

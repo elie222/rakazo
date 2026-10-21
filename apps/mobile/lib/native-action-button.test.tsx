@@ -155,6 +155,27 @@ describe("iOS action styling", () => {
     },
   );
 
+  it.each([true, false])(
+    "fills destructive actions with the solid red in dark mode (fill %s)",
+    (fill) => {
+      // The text red is pale in dark mode, so the white label lost contrast on it.
+      appearance.value = "dark";
+      renderToStaticMarkup(
+        <IosButton label="Delete group" prominence="destructive" fill={fill} onPress={() => {}} />,
+      );
+      const { modifiers, role } = swiftButton.mock.lastCall![0];
+      expect(role).toBe("destructive");
+      expect(modifiers).toContainEqual({
+        name: "tint",
+        value: tokensForAppearance("dark").destructiveFill,
+      });
+      expect(modifiers).not.toContainEqual({
+        name: "tint",
+        value: tokensForAppearance("dark").destructive,
+      });
+    },
+  );
+
   it("keeps the system label on compact secondary actions", () => {
     appearance.value = "dark";
     renderToStaticMarkup(

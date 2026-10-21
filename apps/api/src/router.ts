@@ -31,6 +31,7 @@ import type {
   FaviconResolver,
   getBotSecretMetadata,
   IntegrationProviderSettings,
+  McpConnector,
   McpOAuthSummary,
   MemoryProviderResolver,
   PiOAuthLogins,
@@ -83,6 +84,7 @@ import {
   listScratchpadItems,
   McpOAuthBroker,
   mapScratchpadItem,
+  mcpServerHealthDto,
   modelCredentialAuthKindsForSpace,
   modelCredentialDto,
   normalizeSecretDestination,
@@ -102,6 +104,7 @@ import {
   probeOpenAiCompatibleModels,
   provisionComputer,
   queueComputerUpdate,
+  recordMcpServerHealth,
   releaseComputerExecutionLease,
   replaceComputer,
   resolveAutoReviewChecker,
@@ -159,6 +162,7 @@ import {
   foldComputerCommands,
   IntegrationProviderIdSchema,
   isDeletableMemoryDocument,
+  mcpOAuthEnvReferences,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   parseTicketRef,
   storedPiProviderIds,
@@ -179,7 +183,13 @@ import {
   nextCronDateAcrossStrict,
   QUEUE_HOLDING_RUN_STATUSES,
 } from "@rakazo/core";
-import type { BoardEvents, Board as BoardRow, PrismaClient, ThreadEvents } from "@rakazo/db";
+import type {
+  BoardEvents,
+  Board as BoardRow,
+  McpServer as McpServerRow,
+  PrismaClient,
+  ThreadEvents,
+} from "@rakazo/db";
 import {
   appendEventInTransaction,
   BotSectionNameConflictError,
@@ -268,6 +278,7 @@ import {
   resolveMcpApprovalCards,
   revertConnectedMcpApprovals,
 } from "./mcp-approval.js";
+import type { McpSecretMaterial } from "./mcp-material.js";
 import { buildMcpUpdateMaterial } from "./mcp-material.js";
 import {
   disconnectMemoryProvider,
@@ -498,10 +509,15 @@ function mcpServerDto(
     command: string | null;
     args: unknown;
     env: unknown;
+    files: unknown;
     headers: unknown;
     secretId: string | null;
     enabled: boolean;
     revision: number;
+    healthStatus: string;
+    healthMessage: string | null;
+    healthToolCount: number | null;
+    healthCheckedAt: Date | null;
     createdAt: Date;
     updatedAt: Date;
   },
@@ -510,12 +526,10 @@ function mcpServerDto(
   const args = Array.isArray(row.args)
     ? row.args.filter((item): item is string => typeof item === "string")
     : [];
-  const envKeys =
-    row.env && typeof row.env === "object" && !Array.isArray(row.env) ? Object.keys(row.env) : [];
-  const headerKeys =
-    row.headers && typeof row.headers === "object" && !Array.isArray(row.headers)
-      ? Object.keys(row.headers)
-      : [];
+  const keysOf = (value: unknown) =>
+    value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value) : [];
+  const envKeys = keysOf(row.env);
+  const headerKeys = keysOf(row.headers);
   return {
     id: row.id,
     spaceId: row.spaceId,
@@ -527,16 +541,20 @@ function mcpServerDto(
     command: row.command,
     args,
     envKeys,
+    fileKeys: keysOf(row.files),
     headerKeys,
     hasSecret: row.secretId !== null,
     oauthStatus: oauth.status,
     oauthClientId: oauth.clientId,
     enabled: row.enabled,
     revision: row.revision,
+    health: mcpServerHealthDto(row),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
+
+const MCP_OAUTH_PENDING_MESSAGE = "Connect this server's account to check it.";
 
 function connectionContext(
   actor: Pick<Actor, "spaceId" | "userId">,
@@ -571,6 +589,40 @@ async function assertMcpRemoteEndpoint(
     throw new ORPCError("BAD_REQUEST", {
       message: error instanceof Error ? error.message : "MCP endpoint is invalid",
     });
+  }
+}
+
+/** A stdio server gets its OAuth grant through `{{oauth.*}}` references in env
+ * values and credential file templates, so they must name real fields and the
+ * server must have a client to run the flow. A key is either a value or a file path. */
+function assertMcpOAuthTemplates(
+  env: Record<string, string>,
+  files: Record<string, string>,
+  hasOAuthClient: boolean,
+): void {
+  for (const key of Object.keys(files)) {
+    if (key in env) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `${key} is set as both an environment variable and a credential file`,
+      });
+    }
+  }
+  const sources = [
+    ...Object.entries(env).map(([key, value]) => ({ label: `Environment variable ${key}`, value })),
+    ...Object.entries(files).map(([key, value]) => ({ label: `Credential file ${key}`, value })),
+  ];
+  for (const { label, value } of sources) {
+    const { fields, unknown } = mcpOAuthEnvReferences(value);
+    if (unknown[0] !== undefined) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `${label} references unknown OAuth field {{oauth.${unknown[0]}}}`,
+      });
+    }
+    if (fields[0] !== undefined && !hasOAuthClient) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `${label} uses {{oauth.${fields[0]}}}, which needs an OAuth client`,
+      });
+    }
   }
 }
 
@@ -629,6 +681,12 @@ export interface RouterDeps {
   integrationSettings?: IntegrationProviderSettings;
   composio?: ComposioProvider;
   mcpOAuth?: McpOAuthBroker;
+  /**
+   * The API process's MCP connector, used to launch/list an MCP server once so its health
+   * is visible (`mcp.servers.test` and the probe after create/update/OAuth). Without it
+   * servers are simply never probed from here.
+   */
+  mcp?: Pick<McpConnector, "probe">;
   connectors: ConnectorRegistry;
   remoteConnectors?: RemoteConnectorDependencies;
   artifacts: ArtifactStore;
@@ -867,6 +925,70 @@ export function createRouter(deps: RouterDeps) {
   });
   const onboardingDeps = { prisma: deps.prisma, events: deps.events, connectors: deps.connectors };
   const mcpOAuth = deps.mcpOAuth ?? new McpOAuthBroker(deps.prisma, deps.secrets);
+  const mcpAwaitsOAuth = async (server: McpServerRow, actor: Actor, oauth: McpOAuthSummary) => {
+    if (oauth.status === "connected") return false;
+    const secret = server.secretId
+      ? await deps.prisma.secret.findFirst({
+          where: { id: server.secretId, spaceId: actor.spaceId, userId: actor.userId },
+        })
+      : null;
+    const material: McpSecretMaterial = secret
+      ? JSON.parse(await deps.secrets.load(secret.ciphertext, { recordId: secret.id }))
+      : {};
+    const needsGrant = [
+      ...Object.values(material.env ?? {}),
+      ...Object.values(material.files ?? {}),
+    ].some((value) => mcpOAuthEnvReferences(value).fields.length > 0);
+    return (
+      needsGrant ||
+      (oauth.clientId !== null &&
+        !material.secret &&
+        Object.keys(material.headers ?? {}).length === 0)
+    );
+  };
+  const probeMcpServer = async (server: McpServerRow, actor: Actor): Promise<void> => {
+    if (!deps.mcp) return;
+    try {
+      // The connector records the outcome itself.
+      await deps.mcp.probe(server, { spaceId: actor.spaceId, userId: actor.userId });
+    } catch {
+      getLogger().error("mcp server probe failed", { "mcp.server.id": server.id });
+      await recordMcpServerHealth(deps.prisma, server.id, {
+        status: "error",
+        message: "Could not check this MCP server",
+      });
+    }
+  };
+  /**
+   * After a server is created, reconfigured or its OAuth connected: show `installing` (stdio
+   * may have to download a package) and probe in the background so the settings page turns
+   * ok/error without a click. Returns the row with the health the caller should display.
+   * Never throws; a probe problem must not fail the save.
+   */
+  const beginMcpProbe = async (
+    row: McpServerRow,
+    actor: Actor,
+    oauth: McpOAuthSummary,
+  ): Promise<McpServerRow> => {
+    if (!deps.mcp || !row.enabled) return row;
+    const shown = async (
+      status: "unknown" | "installing",
+      message: string | null,
+    ): Promise<McpServerRow> => {
+      await recordMcpServerHealth(deps.prisma, row.id, { status, message });
+      return {
+        ...row,
+        healthStatus: status,
+        healthMessage: message,
+        healthToolCount: null,
+        healthCheckedAt: new Date(),
+      };
+    };
+    if (await mcpAwaitsOAuth(row, actor, oauth)) return shown("unknown", MCP_OAUTH_PENDING_MESSAGE);
+    const display = row.transport === "stdio" ? await shown("installing", null) : row;
+    void probeMcpServer(row, actor);
+    return display;
+  };
   const codexCatalog = deps.codexCatalog ?? new CodexCatalogCache();
   const favicons = deps.favicons ?? createFaviconResolver();
   const refreshExpiredCredential =
@@ -4474,6 +4596,14 @@ export function createRouter(deps: RouterDeps) {
             context.actor,
             deps,
           );
+          if (input.transport === "stdio") {
+            assertMcpOAuthTemplates(input.env, input.files ?? {}, Boolean(input.oauthClient));
+            await assertMcpRemoteEndpoint(
+              input.oauthClient?.authorizationServer,
+              context.actor,
+              deps,
+            );
+          }
           const secretPayload = buildMcpCredentialBlob(input);
           const stored = secretPayload
             ? await deps.secrets.put(
@@ -4507,6 +4637,12 @@ export function createRouter(deps: RouterDeps) {
                 env: ("env" in input
                   ? Object.fromEntries(Object.keys(input.env).map((key) => [key, true]))
                   : {}) as Prisma.InputJsonValue,
+                files: Object.fromEntries(
+                  Object.keys("files" in input ? (input.files ?? {}) : {}).map((key) => [
+                    key,
+                    true,
+                  ]),
+                ) as Prisma.InputJsonValue,
                 headers: ("headers" in input
                   ? Object.fromEntries(Object.keys(input.headers).map((key) => [key, true]))
                   : {}) as Prisma.InputJsonValue,
@@ -4515,7 +4651,8 @@ export function createRouter(deps: RouterDeps) {
               },
             });
           });
-          return mcpServerDto(row, await mcpOAuth.summaryFor(row, context.actor));
+          const oauth = await mcpOAuth.summaryFor(row, context.actor);
+          return mcpServerDto(await beginMcpProbe(row, context.actor, oauth), oauth);
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -4571,9 +4708,28 @@ export function createRouter(deps: RouterDeps) {
             if (existing.endpoint !== nextEndpoint) {
               await assertMcpRemoteEndpoint(nextEndpoint, context.actor, deps);
             }
+            if (config.transport === "stdio") {
+              await assertMcpRemoteEndpoint(
+                config.oauthClient?.authorizationServer,
+                context.actor,
+                deps,
+              );
+            }
             const update = buildMcpUpdateMaterial(existingMaterial, config, {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });
+            if (update.action === "store" && config.transport === "stdio") {
+              await assertMcpRemoteEndpoint(
+                update.material.oauthClient?.authorization_server,
+                context.actor,
+                deps,
+              );
+              assertMcpOAuthTemplates(
+                update.material.env ?? {},
+                update.material.files ?? {},
+                Boolean(update.material.oauthClient),
+              );
+            }
             const stored =
               update.action === "store" && Object.keys(update.material).length > 0
                 ? await deps.secrets.put(
@@ -4639,11 +4795,24 @@ export function createRouter(deps: RouterDeps) {
                       env: ("env" in config
                         ? Object.fromEntries(Object.keys(config.env).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,
+                      // Omitted files are kept in the material, so the keys follow it.
+                      ...(update.action === "store"
+                        ? {
+                            files: Object.fromEntries(
+                              Object.keys(update.material.files ?? {}).map((key) => [key, true]),
+                            ) as Prisma.InputJsonValue,
+                          }
+                        : {}),
                       headers: ("headers" in config
                         ? Object.fromEntries(Object.keys(config.headers).map((key) => [key, true]))
                         : {}) as Prisma.InputJsonValue,
                       enabled: config.enabled,
                       revision: { increment: 1 },
+                      // The old verdict is about the old config.
+                      healthStatus: "unknown",
+                      healthMessage: null,
+                      healthToolCount: null,
+                      healthCheckedAt: null,
                       ...(stored ? { secretId: stored.id } : clearing ? { secretId: null } : {}),
                     },
                   });
@@ -4658,9 +4827,38 @@ export function createRouter(deps: RouterDeps) {
                   return updated;
                 }),
             );
-            if (row) return mcpServerDto(row, await mcpOAuth.summaryFor(row, context.actor));
+            if (row) {
+              const oauth = await mcpOAuth.summaryFor(row, context.actor);
+              return mcpServerDto(await beginMcpProbe(row, context.actor, oauth), oauth);
+            }
           }
           throw new ORPCError("CONFLICT", { message: "MCP credentials changed; retry" });
+        }),
+        test: authed.mcp.servers.test.handler(async ({ context, input }) => {
+          const scope = {
+            id: input.id,
+            spaceId: context.actor.spaceId,
+            userId: context.actor.userId,
+          };
+          const server = await deps.prisma.mcpServer.findFirst({ where: scope });
+          if (!server) throw new IsolationError();
+          const oauth = await mcpOAuth.summaryFor(server, context.actor);
+          if (!deps.mcp) {
+            await recordMcpServerHealth(deps.prisma, server.id, {
+              status: "error",
+              message: "This server cannot be checked from here.",
+            });
+          } else if (await mcpAwaitsOAuth(server, context.actor, oauth)) {
+            await recordMcpServerHealth(deps.prisma, server.id, {
+              status: "unknown",
+              message: MCP_OAUTH_PENDING_MESSAGE,
+            });
+          } else {
+            await probeMcpServer(server, context.actor);
+          }
+          const fresh = await deps.prisma.mcpServer.findFirst({ where: scope });
+          if (!fresh) throw new IsolationError();
+          return mcpServerDto(fresh, oauth);
         }),
         remove: authed.mcp.servers.remove.handler(async ({ context, input }) => {
           const server = await deps.prisma.mcpServer.findFirst({
@@ -4886,11 +5084,44 @@ export function createRouter(deps: RouterDeps) {
         }),
         complete: authed.mcp.oauth.complete.handler(async ({ context, input }) => {
           try {
+            // complete() consumes the session, so which server it belongs to is read first.
+            const session = deps.mcp
+              ? await deps.prisma.mcpOAuthSession
+                  .findFirst({
+                    where: {
+                      id: input.sessionId,
+                      spaceId: context.actor.spaceId,
+                      userId: context.actor.userId,
+                    },
+                    select: { serverId: true },
+                  })
+                  .catch(() => null)
+              : null;
             await mcpOAuth.complete({
               ...input,
               spaceId: context.actor.spaceId,
               userId: context.actor.userId,
             });
+            if (session) {
+              // The account is connected now: check the server so it shows ok/error.
+              void (async () => {
+                const server = await deps.prisma.mcpServer.findFirst({
+                  where: {
+                    id: session.serverId,
+                    spaceId: context.actor.spaceId,
+                    userId: context.actor.userId,
+                  },
+                });
+                if (server)
+                  await beginMcpProbe(
+                    server,
+                    context.actor,
+                    await mcpOAuth.summaryFor(server, context.actor),
+                  );
+              })().catch((error) =>
+                getLogger().error("mcp server probe after oauth failed", error),
+              );
+            }
             return { ok: true as const };
           } catch (error) {
             throw new ORPCError("BAD_REQUEST", {

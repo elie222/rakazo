@@ -92,6 +92,9 @@ for (const mode of ["development", "preview"] as const) {
           }
           res.setHeader("Content-Type", "text/javascript");
           res.end('export const loaded = "module loaded";');
+        } else if (req.headers["if-modified-since"] || req.headers["if-none-match"]) {
+          // Like a static file server: a browser holding any copy gets 304 and keeps it.
+          res.writeHead(304).end();
         } else if (/\bgzip\b/.test(String(req.headers["accept-encoding"] ?? ""))) {
           // Like a provider edge: compress HTML whenever the client allows it.
           res.setHeader("Content-Type", "text/html");
@@ -221,6 +224,21 @@ for (const mode of ["development", "preview"] as const) {
       expect(
         (await page.context().cookies(origin)).find((c) => c.name === "app-session")?.value,
       ).toBe("fake-session");
+    });
+
+    test("a browser holding an old copy still gets the rewritten page, never stored", async ({
+      request,
+    }) => {
+      const response = await request.get(screenUrl, {
+        headers: {
+          "if-modified-since": "Wed, 21 Oct 2026 01:05:20 GMT",
+          "if-none-match": '"cached"',
+        },
+      });
+      expect(response.status()).toBe(200);
+      expect(response.headers()["cache-control"]).toBe("no-store");
+      expect(response.headers()["last-modified"]).toBeUndefined();
+      expect(await response.text()).toContain("const items = new Map()");
     });
 
     test("HTML that is not a noVNC page is passed through unchanged", async ({ page }) => {

@@ -28,8 +28,12 @@ vi.mock("react-native", () => {
     );
   }
 
-  function MockText(props: { children?: ReactNode; accessibilityRole?: string }) {
-    return createElement("span", { role: props.accessibilityRole }, props.children);
+  function MockText(props: { children?: ReactNode; accessibilityRole?: string; style?: unknown }) {
+    return createElement(
+      "span",
+      { role: props.accessibilityRole, "data-style": JSON.stringify(props.style ?? null) },
+      props.children,
+    );
   }
 
   function MockPressable(props: {
@@ -168,6 +172,25 @@ describe("settings group", () => {
     expect(view.innerHTML).toBe("");
   });
 
+  it("sets the group label, row detail and footer at 14pt on an 18pt line", () => {
+    const view = render(
+      <SettingsGroup label="Appearance" footer="Applies on this device.">
+        <SettingsRow title="Language" detail="Follows the system" />
+      </SettingsGroup>,
+    );
+    const textStyle = (content: string) => {
+      const span = [...view.querySelectorAll<HTMLElement>("span")].find(
+        (element) => element.textContent === content,
+      );
+      return Object.assign({}, ...[JSON.parse(span?.dataset.style ?? "null")].flat());
+    };
+
+    for (const content of ["Appearance", "Follows the system", "Applies on this device."]) {
+      expect(textStyle(content)).toMatchObject({ fontSize: 14, lineHeight: 18 });
+    }
+    expect(textStyle("Language")).toMatchObject({ fontSize: 17 });
+  });
+
   it("announces the group label as a header", () => {
     const view = render(
       <SettingsGroup label="Appearance">
@@ -255,7 +278,7 @@ describe("settings group", () => {
     act(() => root?.unmount());
     container?.remove();
 
-    fontScale = 2.643;
+    fontScale = 1.353;
     expect(columnText(render(row))).toBe("LanguageEnglish");
   });
 
@@ -268,7 +291,7 @@ describe("settings group", () => {
     act(() => root?.unmount());
     container?.remove();
 
-    fontScale = 2.643;
+    fontScale = 1.353;
     expect(beforeSwitch(render(row))).toBe("SPAN");
   });
 });

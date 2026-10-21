@@ -126,7 +126,7 @@ function buttonColors(
   }
   if (prominence === "destructive" && fill) {
     return {
-      background: tokens.destructive,
+      background: tokens.destructiveFill,
       label: tokens.destructiveForeground,
       border: undefined,
     };

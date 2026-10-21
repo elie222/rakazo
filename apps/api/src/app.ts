@@ -363,6 +363,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     {
       stdioEnabled: env.mcpStdioEnabled,
       allowedCommands: env.mcpStdioAllowedCommands,
+      ...env.mcpStdio,
       network: remoteConnectors,
       events,
       allowPrivateEndpoint: env.mcpAllowPrivateEndpoint,
@@ -625,6 +626,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     oauthLogins,
     integrationSettings,
     mcpOAuth,
+    mcp,
     composio: stack.composio,
     connectors: stack.connector,
     remoteConnectors,

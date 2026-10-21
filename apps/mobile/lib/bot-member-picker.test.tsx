@@ -66,6 +66,11 @@ vi.mock("react-native", () => {
     Alert: { alert: vi.fn() },
   };
 });
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardAvoidingView: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  useKeyboardState: () => false,
+}));
+vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock("./native", () => ({ native: {}, useMobileTokens: () => ({}) }));
 vi.mock("./i18n", () => ({
   useI18n: () => ({

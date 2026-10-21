@@ -62,7 +62,7 @@ export function ComputerUpdateProgress() {
               style={styles.pill}
               fallbackStyle={[
                 styles.pillFallback,
-                { backgroundColor: tokens.card, borderColor: tokens.border },
+                { backgroundColor: tokens.glassFill, borderColor: tokens.glassStroke },
               ]}
             >
               {!computerUpdateNeedsAttention(update) ? (

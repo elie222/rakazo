@@ -1,5 +1,6 @@
 import type { MessageBlock } from "@rakazo/contracts";
 import { abortableDelay } from "@rakazo/core";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
 import { Linking, Text, View } from "react-native";
@@ -117,11 +118,11 @@ export function AppConnectCard({
           <Text
             accessibilityActions={accessibilityActions}
             onAccessibilityAction={onAccessibilityAction}
-            style={{ color: tokens.foreground, fontSize: 15, fontWeight: "600" }}
+            style={{ color: tokens.foreground, ...typeScale.cardTitle }}
           >
             {view.title}
           </Text>
-          <Text style={{ color: tokens.mutedForeground, fontSize: 13.5 }} numberOfLines={2}>
+          <Text style={{ color: tokens.mutedForeground, ...typeScale.secondary }} numberOfLines={2}>
             {view.description}
           </Text>
         </View>
@@ -135,12 +136,16 @@ export function AppConnectCard({
             onPress={() => void authorize()}
           />
         ) : !view.showAuthorize ? (
-          <Text style={{ color: tokens.success, fontSize: 13.5, fontWeight: "600" }}>
+          <Text
+            style={{ color: tokens.success, ...typeScale.secondary, fontWeight: fontWeight.medium }}
+          >
             {view.actionLabel}
           </Text>
         ) : null}
       </View>
-      {error ? <Text style={{ color: tokens.destructive, fontSize: 13 }}>{error}</Text> : null}
+      {error ? (
+        <Text style={{ color: tokens.destructive, ...typeScale.caption }}>{error}</Text>
+      ) : null}
     </View>
   );
 }

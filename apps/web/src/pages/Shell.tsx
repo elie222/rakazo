@@ -3812,7 +3812,8 @@ function SpaceShell() {
                                         {item.chat.unread ? (
                                           <span
                                             aria-hidden="true"
-                                            className="inline-block h-2 w-2 rounded-full bg-foreground"
+                                            data-roster-unread-dot
+                                            className="inline-block h-2 w-2 rounded-full bg-unread"
                                           />
                                         ) : null}
                                       </div>

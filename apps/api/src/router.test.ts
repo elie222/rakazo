@@ -5,6 +5,7 @@ import { createRouterClient } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import type { ManagedConnectorProvider } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
+import type { McpOAuthSummary } from "@rakazo/adapters";
 import * as adapters from "@rakazo/adapters";
 import {
   COMPUTER_SCREEN_UNAVAILABLE,
@@ -994,12 +995,42 @@ describe("MCP prepared credential updates", () => {
 });
 
 describe("MCP pre-registered OAuth client", () => {
-  it("stores the client encrypted and returns only its ID", async () => {
+  function harness(isDeploymentOwner = true, storedMaterial?: Record<string, unknown>) {
     const values = new Map<string, string>();
     const secretRows = new Map<string, { id: string; ciphertext: string }>();
     let server: Record<string, unknown> | undefined;
+    if (storedMaterial) {
+      values.set("cipher-0", JSON.stringify(storedMaterial));
+      secretRows.set("secret-0", { id: "secret-0", ciphertext: "cipher-0" });
+      server = {
+        id: "server-1",
+        spaceId: "workspace-1",
+        userId: "owner-1",
+        slug: "google-drive",
+        name: "Google Drive",
+        description: "",
+        transport: "stdio",
+        endpoint: null,
+        command: "npx",
+        args: [],
+        env: { GOOGLE_ACCESS_TOKEN: true },
+        files: { GOOGLE_CREDENTIALS_PATH: true },
+        headers: {},
+        secretId: "secret-0",
+        enabled: true,
+        revision: 1,
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      };
+    }
     const prisma = {
       mcpServer: {
+        findFirst: vi.fn(async () => (server ? { ...server } : null)),
+        update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          const { revision: _revision, ...rest } = data;
+          server = { ...server, ...rest, revision: Number(server?.revision) + 1 };
+          return server;
+        }),
         create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
           server = {
             ...data,
@@ -1017,8 +1048,14 @@ describe("MCP pre-registered OAuth client", () => {
           return data;
         }),
         findFirst: vi.fn(async ({ where }: { where: { id: string } }) => secretRows.get(where.id)),
+        deleteMany: vi.fn(async ({ where }: { where: { id: string } }) => {
+          secretRows.delete(where.id);
+          return { count: 1 };
+        }),
       },
       deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $executeRaw: vi.fn(async () => 1),
+      $queryRaw: vi.fn(async () => []),
       $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
     } as unknown as PrismaClient;
     const secrets = {
@@ -1031,6 +1068,7 @@ describe("MCP pre-registered OAuth client", () => {
     const deps = {
       prisma,
       secrets,
+      remoteConnectors: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
       env: {
         defaultProvider: "fake",
         defaultModel: "fake-model",
@@ -1042,11 +1080,20 @@ describe("MCP pre-registered OAuth client", () => {
     } as unknown as RouterDeps;
     const actor = {
       spaceId: "workspace-1",
-      userId: "owner-1",
+      userId: isDeploymentOwner ? "owner-1" : "member-1",
       email: "owner@rakazo.test",
-      isDeploymentOwner: true,
+      isDeploymentOwner,
     } satisfies Actor;
-    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+    return {
+      client: createRouterClient(createRouter(deps), { context: { actor } as never }),
+      material: () => JSON.parse(values.get("cipher-1")!),
+      server: () => server,
+      secrets,
+    };
+  }
+
+  it("stores the client encrypted and returns only its ID", async () => {
+    const { client, material, server } = harness();
 
     const created = await client.mcp.servers.create({
       transport: "streamable_http",
@@ -1062,9 +1109,361 @@ describe("MCP pre-registered OAuth client", () => {
       hasSecret: true,
     });
     expect(JSON.stringify(created)).not.toContain("client-secret");
-    expect(server?.secretId).toBe("secret-1");
-    expect(JSON.parse(values.get("cipher-1")!)).toMatchObject({
+    expect(server()?.secretId).toBe("secret-1");
+    expect(material()).toMatchObject({
       oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+
+  describe("stdio server with host-managed OAuth", () => {
+    const stdio = {
+      transport: "stdio",
+      slug: "google-drive",
+      name: "Google Drive",
+      command: "npx",
+      args: ["google-drive-mcp"],
+    } as const;
+    const oauthClient = {
+      clientId: "client-1.apps.example.test",
+      clientSecret: "client-secret",
+      scope: "https://www.googleapis.com/auth/drive.readonly",
+      authorizationServer: "https://accounts.example.test",
+    };
+
+    it("stores the client and env references encrypted and returns the client ID", async () => {
+      const { client, material, server } = harness();
+
+      const created = await client.mcp.servers.create({
+        ...stdio,
+        env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        oauthClient,
+      });
+
+      expect(created).toMatchObject({
+        oauthClientId: "client-1.apps.example.test",
+        oauthStatus: "none",
+        envKeys: ["GOOGLE_ACCESS_TOKEN"],
+      });
+      expect(JSON.stringify(created)).not.toContain("client-secret");
+      expect(server()?.env).toEqual({ GOOGLE_ACCESS_TOKEN: true });
+      expect(material()).toMatchObject({
+        env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        oauthClient: {
+          client_id: "client-1.apps.example.test",
+          client_secret: "client-secret",
+          scope: "https://www.googleapis.com/auth/drive.readonly",
+          authorization_server: "https://accounts.example.test/",
+        },
+      });
+    });
+
+    it("rejects an unknown OAuth reference, naming the variable and the reference", async () => {
+      const { client, secrets } = harness();
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "Bearer {{oauth.id_token}}" },
+          oauthClient,
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*oauth\.id_token/),
+      });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    it("rejects OAuth references when the server has no OAuth client", async () => {
+      const { client, secrets } = harness();
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        }),
+      ).rejects.toMatchObject({
+        code: "BAD_REQUEST",
+        message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*OAuth client/),
+      });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    describe("credential files", () => {
+      const template = '{"refresh_token":"{{oauth.refresh_token}}"}';
+
+      it("stores the file template encrypted and returns only its key", async () => {
+        const { client, material, server } = harness();
+
+        const created = await client.mcp.servers.create({
+          ...stdio,
+          env: {},
+          files: { GOOGLE_CREDENTIALS_PATH: template },
+          oauthClient,
+        });
+
+        expect(created.fileKeys).toEqual(["GOOGLE_CREDENTIALS_PATH"]);
+        expect(JSON.stringify(created)).not.toContain("refresh_token");
+        expect(server()?.files).toEqual({ GOOGLE_CREDENTIALS_PATH: true });
+        expect(material().files).toEqual({ GOOGLE_CREDENTIALS_PATH: template });
+      });
+
+      it("returns no file keys for a server without files", async () => {
+        const { client, server } = harness();
+
+        const created = await client.mcp.servers.create({ ...stdio, env: {} });
+
+        expect(created.fileKeys).toEqual([]);
+        expect(server()?.files).toEqual({});
+      });
+
+      it("rejects an unknown reference in a file, naming the file key", async () => {
+        const { client, secrets } = harness();
+
+        await expect(
+          client.mcp.servers.create({
+            ...stdio,
+            env: {},
+            files: { GOOGLE_CREDENTIALS_PATH: "{{oauth.id_token}}" },
+            oauthClient,
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*oauth\.id_token/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects file references when the server has no OAuth client", async () => {
+        const { client, secrets } = harness();
+
+        await expect(
+          client.mcp.servers.create({
+            ...stdio,
+            env: {},
+            files: { GOOGLE_CREDENTIALS_PATH: template },
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*OAuth client/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects a key used as both an environment variable and a file", async () => {
+        const { client, secrets } = harness();
+
+        await expect(
+          client.mcp.servers.create({
+            ...stdio,
+            env: { GOOGLE_CREDENTIALS_PATH: "/tmp/x" },
+            files: { GOOGLE_CREDENTIALS_PATH: template },
+            oauthClient,
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*both/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      describe("update", () => {
+        const storedWithFile = {
+          env: {},
+          files: { GOOGLE_CREDENTIALS_PATH: template },
+          oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+        };
+        const base = {
+          id: "server-1",
+          config: { ...stdio, enabled: true, description: "", env: {} },
+        };
+
+        it("replaces the files with the supplied set", async () => {
+          const { client, material, server } = harness(true, storedWithFile);
+
+          const updated = await client.mcp.servers.update({
+            ...base,
+            config: { ...base.config, files: { OTHER_PATH: "{{oauth.access_token}}" } },
+          });
+
+          expect(updated.fileKeys).toEqual(["OTHER_PATH"]);
+          expect(server()?.files).toEqual({ OTHER_PATH: true });
+          expect(material().files).toEqual({ OTHER_PATH: "{{oauth.access_token}}" });
+        });
+
+        it("keeps the stored files when the update omits them", async () => {
+          const { client, material } = harness(true, storedWithFile);
+
+          const updated = await client.mcp.servers.update(base);
+
+          expect(updated.fileKeys).toEqual(["GOOGLE_CREDENTIALS_PATH"]);
+          expect(material().files).toEqual({ GOOGLE_CREDENTIALS_PATH: template });
+        });
+
+        it("rejects kept file references once the update removes the OAuth client", async () => {
+          const { client, secrets } = harness(true, storedWithFile);
+
+          await expect(
+            client.mcp.servers.update({
+              ...base,
+              config: { ...base.config, oauthClient: null },
+            }),
+          ).rejects.toMatchObject({
+            code: "BAD_REQUEST",
+            message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*OAuth client/),
+          });
+          expect(secrets.put).not.toHaveBeenCalled();
+        });
+
+        it("rejects an env variable that collides with a kept file", async () => {
+          const { client, secrets } = harness(true, storedWithFile);
+
+          await expect(
+            client.mcp.servers.update({
+              ...base,
+              config: { ...base.config, env: { GOOGLE_CREDENTIALS_PATH: "/tmp/x" } },
+            }),
+          ).rejects.toMatchObject({
+            code: "BAD_REQUEST",
+            message: expect.stringMatching(/GOOGLE_CREDENTIALS_PATH.*both/),
+          });
+          expect(secrets.put).not.toHaveBeenCalled();
+        });
+
+        it("drops the files when the credential is cleared", async () => {
+          const { client, material, server } = harness(true, storedWithFile);
+
+          const updated = await client.mcp.servers.update({
+            ...base,
+            config: { ...base.config, oauthClient: null, clearCredential: true },
+          });
+
+          expect(updated.fileKeys).toEqual([]);
+          expect(server()?.files).toEqual({});
+          expect(server()?.secretId).toBeNull();
+          expect(material).toThrow();
+        });
+      });
+    });
+
+    it("refuses a private authorization server from a user who is not the deployment owner", async () => {
+      const { client, secrets } = harness(false);
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+          oauthClient: { ...oauthClient, authorizationServer: "http://localhost:3100" },
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringMatching(/HTTPS/) });
+      expect(secrets.put).not.toHaveBeenCalled();
+    });
+
+    describe("update", () => {
+      const update = {
+        id: "server-1",
+        config: {
+          ...stdio,
+          enabled: true,
+          description: "",
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        },
+      };
+      const stored = {
+        env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+        oauthClient: {
+          client_id: "client-1.apps.example.test",
+          client_secret: "client-secret",
+          scope: "drive.readonly",
+          authorization_server: "https://accounts.example.test/",
+        },
+        oauth: { tokens: { access_token: "granted" } },
+      };
+
+      it("rechecks a retained issuer before storing updated material", async () => {
+        const { client, secrets } = harness(false, {
+          ...stored,
+          oauthClient: { ...stored.oauthClient, authorization_server: "https://127.0.0.1/" },
+        });
+        await expect(client.mcp.servers.update(update)).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects references once the update removes the OAuth client", async () => {
+        const { client, secrets } = harness(true, stored);
+
+        await expect(
+          client.mcp.servers.update({
+            ...update,
+            config: { ...update.config, oauthClient: null },
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*OAuth client/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("rejects an unknown reference even when the stored client is kept", async () => {
+        const { client, secrets } = harness(true, stored);
+
+        await expect(
+          client.mcp.servers.update({
+            ...update,
+            config: { ...update.config, env: { GOOGLE_ACCESS_TOKEN: "{{oauth.id_token}}" } },
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: expect.stringMatching(/GOOGLE_ACCESS_TOKEN.*oauth\.id_token/),
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
+      it("keeps the stored client and its grant when the update leaves the client out", async () => {
+        const { client, material } = harness(true, stored);
+
+        const updated = await client.mcp.servers.update(update);
+
+        expect(updated.oauthClientId).toBe("client-1.apps.example.test");
+        expect(material()).toEqual(stored);
+      });
+
+      it("clears the grant when the update changes the scope", async () => {
+        const { client, material } = harness(true, stored);
+
+        await client.mcp.servers.update({
+          ...update,
+          config: {
+            ...update.config,
+            oauthClient: {
+              clientId: "client-1.apps.example.test",
+              scope: "drive",
+              authorizationServer: "https://accounts.example.test",
+            },
+          },
+        });
+
+        expect(material().oauth).toBeUndefined();
+        expect(material().oauthClient).toEqual({
+          client_id: "client-1.apps.example.test",
+          client_secret: "client-secret",
+          scope: "drive",
+          authorization_server: "https://accounts.example.test/",
+        });
+      });
+    });
+
+    it("lets the deployment owner point at a private authorization server", async () => {
+      const { client } = harness();
+
+      await expect(
+        client.mcp.servers.create({
+          ...stdio,
+          env: { GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}" },
+          oauthClient: { ...oauthClient, authorizationServer: "http://localhost:3100" },
+        }),
+      ).resolves.toMatchObject({ oauthClientId: "client-1.apps.example.test" });
     });
   });
 });
@@ -1176,6 +1575,371 @@ describe("MCP loopback endpoints", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("MCP server health", () => {
+  type Row = Record<string, unknown>;
+  const baseRow = (overrides: Row = {}): Row => ({
+    id: "server-1",
+    spaceId: "workspace-1",
+    userId: "owner-1",
+    slug: "gmail",
+    name: "Gmail",
+    description: "",
+    transport: "stdio",
+    endpoint: null,
+    command: "npx",
+    args: ["-y", "@klodr/gmail-mcp@2.0.2"],
+    env: {},
+    files: {},
+    headers: {},
+    secretId: null,
+    enabled: true,
+    revision: 1,
+    healthStatus: "unknown",
+    healthMessage: null,
+    healthToolCount: null,
+    healthCheckedAt: null,
+    createdAt: new Date(0),
+    updatedAt: new Date(0),
+    ...overrides,
+  });
+
+  function harness(options: { row?: Row | null; oauth?: McpOAuthSummary; probe?: unknown } = {}) {
+    let server: Row | null = options.row === undefined ? baseRow() : options.row;
+    const probe = vi.fn(
+      (options.probe as (() => Promise<unknown>) | undefined) ??
+        (async () => {
+          await recordHealth({ healthStatus: "ok", healthToolCount: 4 });
+          return { status: "ok", toolCount: 4 };
+        }),
+    );
+    const recordHealth = async (patch: Row) => {
+      if (server) server = { ...server, healthCheckedAt: new Date(5), ...patch };
+    };
+    const updateMany = vi.fn(async ({ data }: { data: Row }) => {
+      await recordHealth(data);
+      return { count: server ? 1 : 0 };
+    });
+    const matches = (where: Row) =>
+      Boolean(server) &&
+      Object.entries(where).every(([key, value]) => (server as Row)[key] === value);
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn(async ({ where }: { where: Row }) =>
+          matches(where) ? { ...server } : null,
+        ),
+        create: vi.fn(async ({ data }: { data: Row }) => {
+          server = baseRow({ ...data, id: "server-1" });
+          return { ...server };
+        }),
+        update: vi.fn(async ({ data }: { data: Row }) => {
+          const { revision: _revision, ...rest } = data;
+          server = { ...server, ...rest, revision: Number(server?.revision) + 1 };
+          return { ...server };
+        }),
+        updateMany,
+      },
+      secret: { findFirst: vi.fn(), create: vi.fn(), deleteMany: vi.fn() },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $executeRaw: vi.fn(async () => 1),
+      $queryRaw: vi.fn(async () => []),
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
+    } as unknown as PrismaClient;
+    const summaryFor = vi.fn(async () => options.oauth ?? { status: "none", clientId: null });
+    const deps = {
+      prisma,
+      secrets: { put: vi.fn(), load: vi.fn() },
+      remoteConnectors: { resolveHostname: async () => [{ address: "203.0.113.10", family: 4 }] },
+      mcpOAuth: { summaryFor, summaryForCiphertext: summaryFor },
+      mcp: { probe },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const clientFor = (actor: Partial<Actor> = {}) =>
+      createRouterClient(createRouter(deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+            ...actor,
+          },
+        } as never,
+      });
+    return {
+      client: clientFor(),
+      clientFor,
+      probe,
+      updateMany,
+      row: () => server,
+      deps,
+      createRouterWithoutProbe: () =>
+        createRouterClient(createRouter({ ...deps, mcp: undefined } as RouterDeps), {
+          context: {
+            actor: {
+              spaceId: "workspace-1",
+              userId: "owner-1",
+              email: "owner@rakazo.test",
+              isDeploymentOwner: true,
+            },
+          } as never,
+        }),
+    };
+  }
+
+  const stdioInput = {
+    transport: "stdio",
+    slug: "gmail",
+    name: "Gmail",
+    command: "npx",
+    args: ["-y", "@klodr/gmail-mcp@2.0.2"],
+  } as const;
+
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("lists servers with their health", async () => {
+    const h = harness({
+      row: baseRow({
+        healthStatus: "error",
+        healthMessage: "spawn npx ENOENT",
+        healthCheckedAt: new Date("2026-10-21T10:00:00.000Z"),
+      }),
+    });
+    (h.deps.prisma.mcpServer as unknown as { findMany: unknown }).findMany = vi.fn(async () => [
+      h.row(),
+    ]);
+
+    const [listed] = await h.client.mcp.servers.list();
+
+    expect(listed?.health).toEqual({
+      status: "error",
+      message: "spawn npx ENOENT",
+      toolCount: null,
+      checkedAt: "2026-10-21T10:00:00.000Z",
+    });
+  });
+
+  describe("test", () => {
+    it("probes the server and returns the recorded health", async () => {
+      const { client, probe } = harness();
+
+      const tested = await client.mcp.servers.test({ id: "server-1" });
+
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(probe.mock.calls[0]?.[1]).toMatchObject({ spaceId: "workspace-1", userId: "owner-1" });
+      expect(tested.health).toMatchObject({ status: "ok", toolCount: 4, message: null });
+      expect(tested.health.checkedAt).not.toBeNull();
+    });
+
+    it("refuses another user's server without probing it", async () => {
+      const { clientFor, probe } = harness();
+
+      await expect(
+        clientFor({ userId: "member-1" }).mcp.servers.test({ id: "server-1" }),
+      ).rejects.toThrow();
+      await expect(
+        clientFor({ spaceId: "workspace-2" }).mcp.servers.test({ id: "server-1" }),
+      ).rejects.toThrow();
+      await expect(clientFor().mcp.servers.test({ id: "does-not-exist" })).rejects.toThrow();
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("returns an error health instead of a 500 when the probe throws", async () => {
+      const { client } = harness({
+        probe: async () => {
+          throw new Error("MCP stdio is disabled");
+        },
+      });
+
+      const tested = await client.mcp.servers.test({ id: "server-1" });
+
+      expect(tested.health).toMatchObject({
+        status: "error",
+        message: "Could not check this MCP server",
+      });
+    });
+
+    it("says why it did not probe when the server still needs its OAuth account", async () => {
+      const { client, probe } = harness({
+        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+      });
+
+      const tested = await client.mcp.servers.test({ id: "server-1" });
+
+      expect(probe).not.toHaveBeenCalled();
+      expect(tested.health.status).toBe("unknown");
+      expect(tested.health.message).toMatch(/account/);
+    });
+
+    it.each([
+      [{ secret: "fake-token" }, true],
+      [{ headers: { Authorization: "fake-token" } }, true],
+      [{ secret: "fake-token", env: { TOKEN: "{{oauth.access_token}}" } }, false],
+      [{ secret: "fake-token", files: { CONFIG: "{{oauth.access_token}}" } }, false],
+    ])(
+      "checks static credentials unless templates need a grant: %j",
+      async (material, shouldProbe) => {
+        const h = harness({
+          row: baseRow({ secretId: "secret-1" }),
+          oauth: { status: "none", clientId: "fake-client" },
+        });
+        vi.mocked(h.deps.prisma.secret.findFirst).mockResolvedValue({
+          id: "secret-1",
+          ciphertext: "fake-ciphertext",
+        } as never);
+        vi.mocked(h.deps.secrets.load).mockResolvedValue(JSON.stringify(material));
+        await h.client.mcp.servers.test({ id: "server-1" });
+        expect(h.probe).toHaveBeenCalledTimes(shouldProbe ? 1 : 0);
+      },
+    );
+
+    it("reports an error when this process has no MCP connector", async () => {
+      const h = harness();
+
+      const tested = await h.createRouterWithoutProbe().mcp.servers.test({ id: "server-1" });
+
+      expect(tested.health.status).toBe("error");
+    });
+  });
+
+  describe("automatic probe", () => {
+    it("shows a new stdio server as installing and probes it in the background", async () => {
+      const { client, probe, row } = harness({ row: null });
+
+      const created = await client.mcp.servers.create(stdioInput);
+      expect(created.health.status).toBe("installing");
+      await flush();
+
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(row()?.healthStatus).toBe("ok");
+    });
+
+    it("probes a new remote server without claiming it is installing", async () => {
+      const { client, probe } = harness({ row: null });
+
+      const created = await client.mcp.servers.create({
+        transport: "streamable_http",
+        slug: "docs",
+        name: "Docs",
+        endpoint: "https://mcp.example.test/mcp",
+      });
+      await flush();
+
+      expect(created.health.status).toBe("unknown");
+      expect(probe).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fail the create when the probe fails", async () => {
+      const { client, row } = harness({
+        row: null,
+        probe: async () => {
+          throw new Error("boom");
+        },
+      });
+
+      const created = await client.mcp.servers.create(stdioInput);
+      await flush();
+
+      expect(created.id).toBe("server-1");
+      expect(row()).toMatchObject({
+        healthStatus: "error",
+        healthMessage: "Could not check this MCP server",
+      });
+    });
+
+    it("does not probe a server whose OAuth account is not connected", async () => {
+      const { client, probe, row } = harness({
+        row: null,
+        oauth: { status: "none", clientId: "client-1.apps.example.test" },
+      });
+
+      const created = await client.mcp.servers.create(stdioInput);
+      await flush();
+
+      expect(probe).not.toHaveBeenCalled();
+      expect(created.health.status).toBe("unknown");
+      expect(row()?.healthMessage).toMatch(/account/);
+    });
+
+    it("does not probe a disabled server", async () => {
+      const { client, probe } = harness({ row: null });
+
+      await client.mcp.servers.create({ ...stdioInput, enabled: false });
+      await flush();
+
+      expect(probe).not.toHaveBeenCalled();
+    });
+
+    it("resets health when the config changes and probes the new config", async () => {
+      const { client, probe, row } = harness({
+        row: baseRow({ healthStatus: "error", healthMessage: "old failure", healthToolCount: 2 }),
+      });
+      const seen: unknown[] = [];
+      probe.mockImplementation(async () => {
+        seen.push({ ...row() });
+        return { status: "ok" };
+      });
+
+      const updated = await client.mcp.servers.update({
+        id: "server-1",
+        config: { ...stdioInput, name: "Gmail 2", args: ["-y", "@klodr/gmail-mcp@2.1.0"] },
+      });
+      await flush();
+
+      expect(updated.revision).toBe(2);
+      expect(updated.health.status).toBe("installing");
+      expect(updated.health.message).toBeNull();
+      expect(probe).toHaveBeenCalledTimes(1);
+      expect(seen[0]).toMatchObject({ healthStatus: "installing", healthMessage: null });
+    });
+
+    it("does not probe when no MCP connector is wired", async () => {
+      const h = harness({ row: null });
+
+      const created = await h.createRouterWithoutProbe().mcp.servers.create(stdioInput);
+
+      expect(created.health.status).toBe("unknown");
+      expect(h.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("probes the server once its OAuth session completes", async () => {
+      const h = harness({ row: baseRow() });
+      const complete = vi.fn(async () => undefined);
+      Object.assign(h.deps, {
+        mcpOAuth: {
+          ...(h.deps.mcpOAuth as object),
+          complete,
+        },
+      });
+      (h.deps.prisma as unknown as { mcpOAuthSession: unknown }).mcpOAuthSession = {
+        findFirst: vi.fn(async () => ({ serverId: "server-1" })),
+      };
+      const client = createRouterClient(createRouter(h.deps), {
+        context: {
+          actor: {
+            spaceId: "workspace-1",
+            userId: "owner-1",
+            email: "owner@rakazo.test",
+            isDeploymentOwner: true,
+          },
+        } as never,
+      });
+
+      await client.mcp.oauth.complete({ sessionId: "session-1", code: "code", state: "session-1" });
+      await flush();
+
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(h.probe).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -3892,6 +4656,7 @@ describe("bot model auth on save", () => {
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = {
+      $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async () => [{ ...bot, name: "Ada renamed" }]),
@@ -4588,6 +5353,7 @@ describe("openai-compatible enabled models", () => {
     const bot = botRow(options.botModelId ?? options.defaultModel);
     const prisma = {
       ...pins,
+      $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>

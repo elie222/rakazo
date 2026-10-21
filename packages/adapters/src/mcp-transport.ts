@@ -1,21 +1,19 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-  StdioClientTransport,
-  type StdioServerParameters,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalMcpHost } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
-import {
-  createSafeRemoteFetch,
-  listMcpTools,
-  type RemoteTransportDependencies,
-  type SafeRemoteFetch,
-} from "./remote-mcp.js";
+
+import type { InstalledMcpBin } from "./mcp-package-installer.js";
+import { isInstalledMcpBin } from "./mcp-package-installer.js";
+
+import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
+import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 
@@ -67,9 +65,44 @@ export interface McpStdioOptions {
   env?: Record<string, string>;
   /** Exact executable allowlist. Stdio is otherwise disabled. */
   allowedCommands: readonly string[];
+  /**
+   * Launch this managed package bin instead of `command`, with `args` as the bin's own
+   * arguments. The allowlist still applies to `command` (the configured launcher, such as
+   * `npx`); only bins issued by `ensureMcpPackage` are accepted here.
+   */
+  installedBin?: InstalledMcpBin;
   maxBufferSize?: number;
   signal?: AbortSignal;
   timeoutMs?: number;
+}
+
+/** The process exited or never answered; the message carries the tail of its stderr. */
+export class McpStdioLaunchError extends Error {
+  constructor(
+    cause: unknown,
+    readonly stderr: string,
+  ) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    super(stderr ? `${message}\nstderr: ${stderr}` : message, { cause });
+    this.name = "McpStdioLaunchError";
+  }
+}
+
+const STDERR_TAIL_CHARS = 4_096;
+/** Terminal colour/cursor sequences (ESC [ ... letter) that npm and friends print. */
+const ANSI_ESCAPE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;?]*[A-Za-z]`, "g");
+
+/** Keeps the last few KB a process wrote to stderr, without terminal escapes. */
+class StderrTail {
+  private text = "";
+
+  push(chunk: Buffer | string): void {
+    this.text = (this.text + chunk.toString()).slice(-STDERR_TAIL_CHARS * 2);
+  }
+
+  toString(): string {
+    return this.text.replace(ANSI_ESCAPE, "").trim().slice(-STDERR_TAIL_CHARS);
+  }
 }
 
 export interface McpClientOptions {
@@ -233,11 +266,20 @@ export function withEndpointOriginFallback(
   };
 }
 
+/** Whether a configured stdio command is on the deployment's exact allowlist. */
+export function isAllowedStdioCommand(command: string, allowed: readonly string[]): boolean {
+  const trimmed = command.trim();
+  return trimmed.length > 0 && allowed.includes(trimmed);
+}
+
 function stdioParams(options: McpStdioOptions): StdioServerParameters {
-  const command = options.command.trim();
-  if (!command || !options.allowedCommands.includes(command)) {
+  if (!isAllowedStdioCommand(options.command, options.allowedCommands)) {
     throw new Error("MCP stdio command is not in the configured allowlist");
   }
+  if (options.installedBin !== undefined && !isInstalledMcpBin(options.installedBin)) {
+    throw new Error("MCP stdio bin was not installed by Rakazo");
+  }
+  const command = options.installedBin?.binPath ?? options.command.trim();
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(options.env ?? {})) {
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) env[key] = value;
@@ -351,6 +393,10 @@ export class McpSession {
       throw new Error("MCP session is already connected or connecting");
     const transport = new StdioClientTransport(stdioParams(options));
     this.transport = transport;
+    // Always drain stderr: an unread pipe fills up and blocks a chatty server. The tail
+    // explains a launch that fails ("not found", a crash) instead of a bare timeout.
+    const stderr = new StderrTail();
+    transport.stderr?.on("data", (chunk: Buffer) => stderr.push(chunk));
     const signal = combineSignals(options.signal, AbortSignal.timeout(options.timeoutMs ?? 15_000));
     this.connecting = this.client
       .connect(transport, { signal, timeout: options.timeoutMs ?? 15_000 })
@@ -360,7 +406,13 @@ export class McpSession {
       .finally(() => {
         this.connecting = undefined;
       });
-    await this.connecting;
+    try {
+      await this.connecting;
+    } catch (error) {
+      // Let the last stderr chunks of an exited process reach the buffer.
+      await new Promise((done) => setImmediate(done));
+      throw new McpStdioLaunchError(error, stderr.toString());
+    }
   }
 
   async listTools(options?: { signal?: AbortSignal }): Promise<ListToolsResult> {

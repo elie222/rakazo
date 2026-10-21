@@ -95,9 +95,13 @@ export function NativeActionButton({
         ...(stretches ? [frame({ maxWidth: Infinity, ...(small ? { minHeight: 16 } : {}) })] : []),
         ...(filled ? [foregroundStyle(tokens.primaryForeground)] : []),
       ];
+  // Destructive buttons use the prominent style, which fills with the tint under a white
+  // label; the text-red `destructive` is too pale for that in dark mode.
   const color =
     effectiveProminence === "destructive"
-      ? tokens.destructive
+      ? variant
+        ? tokens.destructive
+        : tokens.destructiveFill
       : effectiveProminence === "primary"
         ? tokens.primary
         : undefined;

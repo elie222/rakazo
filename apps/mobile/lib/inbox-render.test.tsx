@@ -2,6 +2,7 @@
 
 import { readFileSync } from "node:fs";
 import { ACTIVE_RUN_STATUSES, isRunWorking } from "@rakazo/core";
+import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { ComponentType, ReactElement, ReactNode } from "react";
 import * as React from "react";
 import { act, memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -19,6 +20,10 @@ vi.mock("./api", () => ({}));
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
+const rowDimensions = source.slice(
+  source.indexOf("const INBOX_ROW ="),
+  source.indexOf("function ConversationRow("),
+);
 
 // Run the actual row and renderItem code with native presentation stubbed out.
 // React still performs real memo comparisons; this measures JS row executions only.
@@ -61,9 +66,10 @@ function measure(before: boolean) {
         module: ts.ModuleKind.CommonJS,
       },
     }).outputText;
-  const BotRow = new Function(...Object.keys(scope), compile(`${rowSource}\nreturn BotRow;`))(
-    ...Object.values(scope),
-  );
+  const BotRow = new Function(
+    ...Object.keys(scope),
+    compile(`${rowDimensions}\n${rowSource}\nreturn BotRow;`),
+  )(...Object.values(scope));
   const action = vi.fn();
   const dependencies = {
     React,
@@ -237,7 +243,7 @@ it.each(["midnight", "focus", "foreground"])(
       source.indexOf("  if (!ready) {"),
     );
     const compiled = ts.transpileModule(
-      `${rowSource}\nreturn function List({ items }) {\n${daySource}\n${listSource}
+      `${rowDimensions}\n${rowSource}\nreturn function List({ items }) {\n${daySource}\n${listSource}
         return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
       };`,
       { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
@@ -333,7 +339,7 @@ it("renders saved bot rows without a title or notification setting", () => {
     source.indexOf("const BotRow = memo("),
     source.indexOf("const GroupRow = memo("),
   );
-  const compiled = ts.transpileModule(`${rowSource}\nreturn BotRow;`, {
+  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
     compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
@@ -394,7 +400,7 @@ it("shows the working dots only while the bot works, not while it waits on the u
     source.indexOf("const BotRow = memo("),
     source.indexOf("const GroupRow = memo("),
   );
-  const compiled = ts.transpileModule(`${rowSource}\nreturn BotRow;`, {
+  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
     compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
@@ -675,4 +681,100 @@ it("waits for a saved or live inbox before publishing a remounted session's sear
     act(() => root.unmount());
     vi.unstubAllGlobals();
   }
+});
+
+it("sets inbox rows and section headings in the shared type scale", () => {
+  const stylesSource = source.slice(source.indexOf("function createHomeStyles()"));
+  const rowDimensions = source.slice(
+    source.indexOf("const INBOX_ROW ="),
+    source.indexOf("\n", source.indexOf("const COMPACT_INBOX_ROW =")),
+  );
+  const compiled = ts.transpileModule(
+    `${rowDimensions}\n${stylesSource}\nreturn createHomeStyles;`,
+    {
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    },
+  ).outputText;
+  const scope = {
+    StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 0.5 },
+    native: new Proxy({}, { get: (_target, name) => String(name) }),
+    mobileTokens: () => new Proxy({}, { get: (_target, name) => String(name) }),
+    typeScale,
+    fontWeight,
+  };
+  const styles = new Function(...Object.keys(scope), compiled)(...Object.values(scope))();
+
+  expect(styles.name).toMatchObject({ fontSize: 17, lineHeight: 22, fontWeight: "500" });
+  expect(styles.name).toMatchObject({ flexShrink: 0, maxWidth: "100%" });
+  expect(styles.tag).toMatchObject({ flexShrink: 1, minWidth: 0, overflow: "hidden" });
+  expect(styles.rowTop.alignItems).toBe("flex-start");
+  expect(styles.titleRow.overflow).toBe("hidden");
+  expect(styles.preview).toMatchObject({ fontSize: 15, lineHeight: 19 });
+  expect(styles.time).toMatchObject({ fontSize: 14, lineHeight: 18 });
+  expect(styles.tagLabel).toMatchObject({ fontSize: 14, fontWeight: "500" });
+  // At the largest text sizes the tag moves under the name instead of squeezing it.
+  expect(styles.titleRowWrapped).toEqual({ flexWrap: "wrap" });
+  for (const heading of [styles.sectionTitle, styles.sectionHeading]) {
+    expect(heading).toMatchObject({ fontSize: 15, lineHeight: 19 });
+    expect(heading.fontWeight).toBeUndefined();
+  }
+  expect(styles.sectionCount).toMatchObject({ fontSize: 14, lineHeight: 18 });
+
+  // Search results are drawn like inbox rows.
+  const searchSource = readFileSync(new URL("../app/search.tsx", testFileUrl), "utf8");
+  const searchStyles = new Function(
+    ...Object.keys(scope),
+    ts.transpileModule(
+      `${searchSource.slice(searchSource.indexOf("function createStyles()"))}\nreturn createStyles;`,
+      { compilerOptions: { target: ts.ScriptTarget.ES2022 } },
+    ).outputText,
+  )(...Object.values(scope))();
+  for (const key of ["name", "time", "preview"] as const) {
+    expect(searchStyles[key]).toMatchObject({
+      fontSize: styles[key].fontSize,
+      lineHeight: styles[key].lineHeight,
+    });
+  }
+  expect(searchStyles.name.fontWeight).toBe(styles.name.fontWeight);
+});
+
+it("sets archived bot and group names in the inbox title scale", () => {
+  const archivedSource = readFileSync(
+    new URL("../components/archived-bot-list.tsx", testFileUrl),
+    "utf8",
+  );
+  const scope = {
+    React,
+    typeScale,
+    useI18n: () => ({ t: (text: string) => text }),
+    useResolvedAppearance: () => "light",
+    native: {},
+    ScrollView: "div",
+    View: "div",
+    MenuView: "div",
+    Pressable: "div",
+    Text: "span",
+    Chevron: () => null,
+    NativeSymbol: () => null,
+  };
+  const compiled = ts.transpileModule(
+    `${archivedSource.slice(archivedSource.indexOf("export function ArchivedBotList")).replace("export function", "function")}\nreturn ArchivedBotList;`,
+    { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
+  ).outputText;
+  const ArchivedBotList = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
+  const tree = ArchivedBotList({
+    bots: [{ id: "bot", name: "Helper" }],
+    groups: [{ id: "group", name: "Team" }],
+  });
+  const names: ReactElement<{ style: object; children: ReactNode }>[] = [];
+  function visit(node: ReactNode) {
+    React.Children.forEach(node, (child) => {
+      if (!React.isValidElement<{ style: object; children: ReactNode }>(child)) return;
+      if (child.type === "span") names.push(child);
+      visit(child.props.children);
+    });
+  }
+  visit(tree);
+  expect(names.map((name) => name.props.children)).toEqual(["Helper", "Team"]);
+  for (const name of names) expect(name.props.style).toMatchObject(typeScale.cardTitle);
 });

@@ -79,6 +79,7 @@ export * from "./keyless-http-web.js";
 export * from "./mcp-connector.js";
 export * from "./mcp-emulator.js";
 export * from "./mcp-oauth.js";
+export * from "./mcp-server-health.js";
 export * from "./mcp-server-tool.js";
 export * from "./mcp-transport.js";
 export * from "./media-generation-factory.js";

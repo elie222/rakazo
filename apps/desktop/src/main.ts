@@ -530,7 +530,7 @@ function oauthPopupWindowOptions(partition: string | null) {
     frame: true,
     titleBarStyle: "default" as const,
     autoHideMenuBar: true,
-    backgroundColor: "#0B0C0E",
+    backgroundColor: "#141414",
     webPreferences: oauthPopupSessionPreferences(partition),
   };
 }

@@ -1,4 +1,4 @@
-import { botColors } from "@rakazo/ui-tokens";
+import { botColors, typeScale } from "@rakazo/ui-tokens";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -291,18 +291,17 @@ function createStyles() {
     },
     body: { flex: 1, minWidth: 0, gap: 2 },
     rowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+    // Result rows match the inbox rows.
     name: {
       flex: 1,
       color: native.label,
-      fontSize: 17,
-      fontWeight: "600",
+      ...typeScale.cardTitle,
       writingDirection: "auto",
     },
-    time: { color: native.secondaryLabel, fontSize: 15 },
+    time: { color: native.secondaryLabel, ...typeScale.caption },
     preview: {
       color: native.secondaryLabel,
-      fontSize: 15,
-      lineHeight: 20,
+      ...typeScale.secondary,
       writingDirection: "auto",
     },
     empty: { color: native.secondaryLabel, fontSize: 16, paddingHorizontal: 20, paddingTop: 28 },

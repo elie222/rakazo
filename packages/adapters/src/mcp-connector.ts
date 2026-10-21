@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
   AdapterContext,
@@ -8,11 +11,21 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import type { McpOAuthEnvField } from "@rakazo/contracts";
+import {
+  isLocalMcpHost,
+  mcpOAuthEnvReferences,
+  resolveMcpOAuthEnv,
+  resolveMcpOAuthFileTemplate,
+} from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
-import { redactConnectorPayload, sanitizeConnectorError } from "./connector-safety.js";
+import {
+  combineSignals,
+  redactConnectorPayload,
+  sanitizeConnectorError,
+} from "./connector-safety.js";
 import { credentialDigest } from "./credential-digest.js";
 import { appendToolCompletionAudit } from "./executor.js";
 import {
@@ -25,8 +38,23 @@ import {
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
-import { oauthMaterialSecrets } from "./mcp-oauth.js";
-import { McpSession } from "./mcp-transport.js";
+import {
+  accessTokenExpiresAt,
+  looksLikeSecretValue,
+  McpReauthorizationRequiredError,
+  oauthMaterialSecrets,
+  TOKEN_REFRESH_SKEW_MS,
+} from "./mcp-oauth.js";
+import type { InstalledMcpBin } from "./mcp-package-installer.js";
+import {
+  DEFAULT_MCP_INSTALL_TIMEOUT_MS,
+  defaultMcpPackagesRoot,
+  ensureMcpPackage,
+  parseNpxLaunch,
+} from "./mcp-package-installer.js";
+import type { McpServerHealthUpdate } from "./mcp-server-health.js";
+import { recordMcpServerHealth } from "./mcp-server-health.js";
+import { isAllowedStdioCommand, McpSession } from "./mcp-transport.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
 
@@ -37,6 +65,15 @@ type SessionEntry = {
   digest?: string;
   ref?: string;
   recordId?: string;
+  /** For a process holding a renewable access token: when to replace it. */
+  accessTokenExpiresAt?: number;
+  /** Private directory holding the process's credential files; removed with the session. */
+  credentialDir?: string;
+  /** A local process, reaped after {@link McpConnectorOptions.idleMs} without use. */
+  stdio: boolean;
+  lastUsedAt: number;
+  /** Resolved credential values the child may echo in errors or tool output. */
+  launchSecrets?: string[];
 };
 type PendingSession = {
   revision: number;
@@ -44,6 +81,111 @@ type PendingSession = {
   invalidated?: boolean;
   ref?: string;
 };
+
+export const DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS = 30_000;
+export const DEFAULT_MCP_STDIO_IDLE_MS = 15 * 60_000;
+/** How long a run waits for one server's tool list before going on without it. */
+export const DEFAULT_MCP_DISCOVERY_TIMEOUT_MS = 20_000;
+/** After a failed discovery, runs skip the server for this long, doubling up to the max. */
+const DISCOVERY_BACKOFF_MS = 30_000;
+const DISCOVERY_BACKOFF_MAX_MS = 5 * 60_000;
+
+/** A server that did not list its tools within the discovery deadline. */
+class McpDiscoveryTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`did not list its tools within ${Math.round(timeoutMs / 1000)}s`);
+    this.name = "McpDiscoveryTimeoutError";
+  }
+}
+
+/** Reject after `timeoutMs` without cancelling `promise`, which may finish in the background. */
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  if (timeoutMs <= 0) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new McpDiscoveryTimeoutError(timeoutMs)), timeoutMs);
+  });
+  // The losing side must not surface as an unhandled rejection.
+  promise.catch(() => undefined);
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+/** Whether a check after `since` (by this or another process) found the server working. */
+function recoveredSince(
+  server: { healthStatus?: string | null; healthCheckedAt?: Date | null },
+  since: number,
+): boolean {
+  return server.healthStatus === "ok" && (server.healthCheckedAt?.getTime() ?? 0) > since;
+}
+
+/** Route name of the stand-in tool for an assigned server whose discovery failed. */
+const UNAVAILABLE_TOOL = "__rakazo_unavailable";
+/** Skip rewriting an unchanged health observation more often than this. */
+const HEALTH_REWRITE_MS = 60_000;
+
+export type McpConnectorOptions = {
+  stdioEnabled?: boolean;
+  allowedCommands?: string[];
+  network?: RemoteTransportDependencies;
+  /** Audit sink for failed discovery. Without it the log line stays the only trace. */
+  events?: Pick<ThreadEvents, "append">;
+  allowPrivateEndpoint?: boolean;
+  /** Where `npx` packages are installed; see `defaultMcpPackagesRoot`. */
+  packagesDir?: string;
+  /** Upper bound for installing an `npx` package. */
+  installTimeoutMs?: number;
+  /** Upper bound for a stdio process to answer the MCP handshake, after any install. */
+  startupTimeoutMs?: number;
+  /** Stop a stdio process unused for this long; 0 keeps processes until the connector closes. */
+  idleMs?: number;
+  /** Parent for private per-process credential directories; defaults to the OS temp directory. */
+  credentialTempRoot?: string;
+  /** How long a run waits for one server's tool list; 0 waits for the transport's own timeouts. */
+  discoveryTimeoutMs?: number;
+};
+
+function positiveInteger(value: string | undefined, allowZero = false): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && (allowZero ? parsed >= 0 : parsed > 0) ? parsed : undefined;
+}
+
+/** Stdio launch settings shared by the API and worker composition roots. */
+export function mcpStdioOptionsFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Pick<
+  McpConnectorOptions,
+  "packagesDir" | "installTimeoutMs" | "startupTimeoutMs" | "idleMs" | "discoveryTimeoutMs"
+> {
+  return {
+    packagesDir: defaultMcpPackagesRoot(env),
+    installTimeoutMs:
+      positiveInteger(env.MCP_STDIO_INSTALL_TIMEOUT_MS) ?? DEFAULT_MCP_INSTALL_TIMEOUT_MS,
+    startupTimeoutMs:
+      positiveInteger(env.MCP_STDIO_STARTUP_TIMEOUT_MS) ?? DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
+    idleMs: positiveInteger(env.MCP_STDIO_IDLE_MS, true) ?? DEFAULT_MCP_STDIO_IDLE_MS,
+    discoveryTimeoutMs:
+      positiveInteger(env.MCP_DISCOVERY_TIMEOUT_MS, true) ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
+  };
+}
+
+/** Stand-in for an assigned server whose tools could not be listed, so the model can say
+ * why instead of concluding the server is not assigned. Calling it returns the reason. */
+function unavailableTool(server: McpServer, reason: string): ConnectorTool {
+  const brief = reason.length > 400 ? `${reason.slice(0, 400)}...` : reason;
+  return {
+    name: `mcp__${server.slug}__unavailable`,
+    description: `The MCP server "${server.name}" is assigned to you but is unavailable right now, so none of its tools can be used. Reason: ${brief}. Tell the user it failed to start rather than saying it is not assigned. Calling this tool returns the same error.`,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    readOnly: true,
+    route: {
+      connectorId: "mcp",
+      resourceId: server.id,
+      resourceRevision: server.revision,
+      toolName: UNAVAILABLE_TOOL,
+      catalogGroup: server.slug,
+    },
+  };
+}
 
 /** Whether the server rejected the request because it no longer knows the session. */
 function sessionGone(error: unknown): boolean {
@@ -96,9 +238,56 @@ function reportAllowlistDrift(
   );
 }
 
+/** Redact complete credential documents and values a process may quote separately. */
+function credentialContentSecrets(content: string): string[] {
+  const values = content.length >= 8 ? [content] : [];
+  const visit = (value: unknown, key = ""): void => {
+    if (typeof value === "string") {
+      if (
+        value.length >= 8 &&
+        (/(secret|token|key|password|private|credential)/i.test(key) ||
+          (value.length >= 16 && looksLikeSecretValue(value)))
+      )
+        values.push(value);
+    } else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) visit(child, key);
+    }
+  };
+  try {
+    visit(JSON.parse(content));
+  } catch {
+    for (const line of content.split(/\r?\n/).map((line) => line.trim())) {
+      if (line.length >= 16 && looksLikeSecretValue(line)) values.push(line);
+    }
+  }
+  return values;
+}
+
+/** Stop the process, then remove the credential files it was launched with. */
+async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
+  try {
+    await entry.session.close();
+  } finally {
+    if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
+  }
+}
+
 export class McpConnector implements ConnectorProvider {
   private readonly sessions = new Map<string, SessionEntry>();
   private readonly connecting = new Map<string, PendingSession>();
+  private readonly probes = new Map<string, Promise<McpServerHealthUpdate>>();
+  /** Last discovery failure per session key, returned by the unavailable stand-in tool. */
+  private readonly unavailable = new Map<string, string>();
+  private readonly healthWrites = new Map<string, { value: string; at: number }>();
+  /** Servers whose last discovery failed; runs skip them until `until`, per revision. */
+  private readonly discoveryBackoff = new Map<
+    string,
+    { revision: number; since: number; until: number; delayMs: number; reason: string }
+  >();
+  /** Session keys whose npx package is being installed right now. */
+  private readonly installing = new Set<string>();
+  private reaper?: ReturnType<typeof setInterval>;
+  private resolvedPackagesRoot?: string;
   private readonly inFlight = new WeakMap<McpSession, number>();
   private readonly expired = new WeakSet<McpSession>();
   // Discovery runs more than once per run: once up front, then again on every lazy
@@ -108,14 +297,7 @@ export class McpConnector implements ConnectorProvider {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly secrets: SecretStore,
-    private readonly options: {
-      stdioEnabled?: boolean;
-      allowedCommands?: string[];
-      network?: RemoteTransportDependencies;
-      /** Audit sink for failed discovery. Without it the log line stays the only trace. */
-      events?: Pick<ThreadEvents, "append">;
-      allowPrivateEndpoint?: boolean;
-    } = {},
+    private readonly options: McpConnectorOptions = {},
     private readonly oauth?: McpOAuthBroker,
   ) {
     this.unsubscribe =
@@ -169,10 +351,49 @@ export class McpConnector implements ConnectorProvider {
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
+        const server = assignment.server;
+        const key = this.sessionKey(server, context);
+        const live = this.sessions.get(key)?.revision === server.revision;
+        // A package still installing finishes in the background; this run goes on without it.
+        if (!live && this.installing.has(key))
+          return [
+            unavailableTool(
+              server,
+              "it is still installing its package; its tools will be available on a later turn",
+            ),
+          ];
+        // A server that just failed is not retried on every turn; a live session, a new
+        // revision (the user changed it), or a later successful check recorded by any
+        // process (e.g. Test connection in the API) ends the wait early.
+        const backoff = this.discoveryBackoff.get(key);
+        if (
+          !live &&
+          backoff?.revision === server.revision &&
+          Date.now() < backoff.until &&
+          !recoveredSince(server, backoff.since)
+        )
+          return [unavailableTool(server, backoff.reason)];
+        let entry: SessionEntry | undefined;
+        // Past the deadline this run stops waiting for its own tools/list request only;
+        // the session and other calls on it carry on.
+        const listing = new AbortController();
         try {
-          const listed = await this.withSession(assignment.server, context, (session) =>
-            session.listTools({ signal: context.signal }),
+          const listed = await withDeadline(
+            this.withSession(server, context, (session) => {
+              entry = this.sessions.get(key);
+              return session.listTools({
+                signal: AbortSignal.any([context.signal, listing.signal]),
+              });
+            }),
+            this.options.discoveryTimeoutMs ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
           );
+          this.discoveryBackoff.delete(key);
+          this.unavailable.delete(key);
+          void this.recordHealth(assignment.server.id, {
+            status: "ok",
+            message: null,
+            toolCount: listed.tools.length,
+          });
           reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
             .filter(
@@ -194,24 +415,46 @@ export class McpConnector implements ConnectorProvider {
               },
             }));
         } catch (error) {
-          // A single unavailable server must not hide tools from other connectors.
-          getLogger().error(
-            `mcp discovery failed for server ${assignment.server.slug}:`,
-            sanitizeConnectorError(error),
-          );
+          if (error instanceof McpDiscoveryTimeoutError) listing.abort(error);
           // Capture material before eviction so the audited reason stays redacted, the
           // same reason execute() captures it before callTool.
-          const key = this.sessionKey(assignment.server, context);
-          const material = this.sessions.get(key)?.material;
+          const material = (entry ?? this.sessions.get(key))?.material;
+          const secrets = [
+            ...(material ? oauthMaterialSecrets(material) : []),
+            ...((entry ?? this.sessions.get(key))?.launchSecrets ?? []),
+          ];
+          const reason = this.installing.has(key)
+            ? "it is still installing its package; its tools will be available on a later turn"
+            : sanitizeConnectorError(error, secrets);
+          // A single unavailable server must not hide tools from other connectors.
+          getLogger().error(`mcp discovery failed for server ${assignment.server.slug}:`, reason);
           await this.evict(key);
+          this.unavailable.set(key, reason);
+          // A cancelled run says nothing about the server, and an install that outlived the
+          // deadline is still on its way.
+          if (!context.signal.aborted && !this.installing.has(key)) {
+            void this.recordHealth(assignment.server.id, { status: "error", message: reason });
+            const delayMs = Math.min(
+              (backoff?.revision === server.revision ? backoff.delayMs * 2 : 0) ||
+                DISCOVERY_BACKOFF_MS,
+              DISCOVERY_BACKOFF_MAX_MS,
+            );
+            this.discoveryBackoff.set(key, {
+              revision: server.revision,
+              since: Date.now(),
+              until: Date.now() + delayMs,
+              delayMs,
+              reason,
+            });
+          }
           await this.recordDiscoveryFailure(
             assignment.server.slug,
             error,
             context,
             startedAt,
-            material ? oauthMaterialSecrets(material) : [],
+            secrets,
           );
-          return [];
+          return [unavailableTool(assignment.server, reason)];
         }
       }),
     );
@@ -291,6 +534,16 @@ export class McpConnector implements ConnectorProvider {
       },
       include: { server: true },
     });
+    if (assignment && call.route.toolName === UNAVAILABLE_TOOL) {
+      const reason =
+        this.unavailable.get(this.sessionKey(assignment.server, context)) ??
+        "it could not be started";
+      yield {
+        type: "error",
+        message: `MCP server "${assignment.server.name}" is unavailable: ${reason}`,
+      };
+      return;
+    }
     if (
       !assignment ||
       (!assignment.allowAllTools &&
@@ -303,29 +556,137 @@ export class McpConnector implements ConnectorProvider {
     // drop this call's OAuth secrets from model-visible redaction. Recompute via
     // oauthMaterialSecrets(material) so in-place token refresh stays covered.
     let material: OAuthMaterial | undefined;
+    let launchSecrets: string[] = [];
     const sessionKey = this.sessionKey(assignment.server, context);
     try {
-      const route = call.route;
+      const toolName = call.route.toolName;
       const result = await this.withSession(assignment.server, context, (session) => {
         material = this.sessions.get(sessionKey)?.material;
-        return session.callTool(route.toolName, call.args, { signal: context.signal });
+        launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
+        return session.callTool(toolName, call.args, { signal: context.signal });
       });
-      const secrets = material ? oauthMaterialSecrets(material) : [];
+      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
-      const secrets = material ? oauthMaterialSecrets(material) : [];
+      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       await this.evict(sessionKey);
       yield { type: "error", message: sanitizeConnectorError(error, secrets) };
     }
   }
 
+  /**
+   * Launch (or reuse) a server once and list its tools, for the settings "Test connection"
+   * and the check after a save. A live session in this process is reused; otherwise an
+   * isolated session is started and stopped again. Concurrent probes of one server share a
+   * result. The outcome is recorded as the server's health and returned.
+   */
+  probe(
+    server: McpServer,
+    context: { spaceId: string; userId: string; signal?: AbortSignal },
+  ): Promise<McpServerHealthUpdate> {
+    const timeoutMs =
+      (this.options.installTimeoutMs ?? DEFAULT_MCP_INSTALL_TIMEOUT_MS) +
+      (this.options.startupTimeoutMs ?? DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS) +
+      30_000;
+    const adapterContext: AdapterContext = {
+      operationId: `mcp-probe-${server.id}`,
+      traceId: `mcp-probe-${server.id}`,
+      spaceId: context.spaceId,
+      userId: context.userId,
+      signal: combineSignals(context.signal, AbortSignal.timeout(timeoutMs)),
+    };
+    const key = this.sessionKey(server, adapterContext);
+    const probeKey = `${key} ${server.revision}`;
+    const pending = this.probes.get(probeKey);
+    if (pending) return pending;
+    const promise = this.runProbe(server, adapterContext, key).finally(() => {
+      if (this.probes.get(probeKey) === promise) this.probes.delete(probeKey);
+    });
+    this.probes.set(probeKey, promise);
+    return promise;
+  }
+
+  private async runProbe(
+    server: McpServer,
+    context: AdapterContext,
+    key: string,
+  ): Promise<McpServerHealthUpdate> {
+    let secrets: string[] = [];
+    let update: McpServerHealthUpdate;
+    // A process this one already runs (or is starting) answers; never launch a second.
+    const shared =
+      this.sessions.get(key)?.revision === server.revision ||
+      this.connecting.get(key)?.revision === server.revision;
+    try {
+      let toolCount: number;
+      if (shared) {
+        toolCount = (
+          await this.withSession(server, context, (session) => {
+            const material = this.sessions.get(key)?.material;
+            secrets = [
+              ...(material ? oauthMaterialSecrets(material) : []),
+              ...(this.sessions.get(key)?.launchSecrets ?? []),
+            ];
+            return session.listTools({ signal: context.signal });
+          })
+        ).tools.length;
+      } else {
+        const connected = await this.connectSession(server, context, () => undefined);
+        secrets = [...oauthMaterialSecrets(connected.material), ...(connected.launchSecrets ?? [])];
+        try {
+          toolCount = (await connected.session.listTools({ signal: context.signal })).tools.length;
+        } finally {
+          await closeEntry(connected).catch(() => undefined);
+        }
+      }
+      this.unavailable.delete(key);
+      this.discoveryBackoff.delete(key);
+      update = { status: "ok", message: null, toolCount };
+    } catch (error) {
+      // Like discovery: a shared session that cannot list its tools is dropped.
+      if (shared) await this.evict(key).catch(() => undefined);
+      update = { status: "error", message: sanitizeConnectorError(error, secrets) };
+    }
+    await this.recordHealth(server.id, update, { force: true });
+    return update;
+  }
+
+  /**
+   * Persist a health observation without ever failing the caller. Unchanged observations
+   * are rewritten at most once a minute, so discovery on every turn is not a write each.
+   */
+  private async recordHealth(
+    serverId: string,
+    update: McpServerHealthUpdate,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
+    const value = JSON.stringify([update.status, update.message ?? null, update.toolCount ?? null]);
+    const last = this.healthWrites.get(serverId);
+    const now = Date.now();
+    if (!options.force && last?.value === value && now - last.at < HEALTH_REWRITE_MS) return;
+    this.healthWrites.set(serverId, { value, at: now });
+    try {
+      await recordMcpServerHealth(this.prisma, serverId, update);
+    } catch {
+      // Health is advisory; the recorder already logs.
+    }
+  }
+
   async close(): Promise<void> {
     this.unsubscribe();
+    if (this.reaper) clearInterval(this.reaper);
+    this.reaper = undefined;
+    await Promise.allSettled([...this.probes.values()]);
     await Promise.allSettled([...this.connecting.values()].map(({ promise }) => promise));
-    await Promise.all([...this.sessions.values()].map(({ session }) => session.close()));
+    await Promise.all([...this.sessions.values()].map((entry) => closeEntry(entry)));
     this.sessions.clear();
     this.connecting.clear();
+  }
+
+  private packagesRoot(): string {
+    this.resolvedPackagesRoot ??= this.options.packagesDir ?? defaultMcpPackagesRoot();
+    return this.resolvedPackagesRoot;
   }
 
   private sessionKey(server: McpServer, context: AdapterContext): string {
@@ -334,39 +695,86 @@ export class McpConnector implements ConnectorProvider {
     return `${server.id} ${context.spaceId} ${context.userId}`;
   }
 
+  /** Stop stdio processes nobody used for `idleMs`. Returns how many were stopped. */
+  async reapIdle(now = Date.now()): Promise<number> {
+    const idleMs = this.options.idleMs ?? DEFAULT_MCP_STDIO_IDLE_MS;
+    if (idleMs <= 0) return 0;
+    const idle = [...this.sessions].filter(
+      ([, entry]) =>
+        entry.stdio &&
+        (this.inFlight.get(entry.session) ?? 0) === 0 &&
+        now - entry.lastUsedAt >= idleMs,
+    );
+    for (const [key, entry] of idle) {
+      if (
+        this.sessions.get(key) === entry &&
+        (this.inFlight.get(entry.session) ?? 0) === 0 &&
+        now - entry.lastUsedAt >= idleMs
+      )
+        await this.evict(key).catch(() => undefined);
+    }
+    return idle.length;
+  }
+
+  private startReaper(): void {
+    const idleMs = this.options.idleMs ?? DEFAULT_MCP_STDIO_IDLE_MS;
+    if (this.reaper || idleMs <= 0) return;
+    this.reaper = setInterval(
+      () => void this.reapIdle().catch(() => undefined),
+      Math.max(1_000, Math.min(idleMs / 2, 60_000)),
+    );
+    this.reaper.unref?.();
+  }
+
+  /**
+   * Stop reusing a session. A session other calls are still using is closed by the last of
+   * them (see withSession), so one failure never cuts off another bot's running call.
+   */
   private async evict(sessionKey: string): Promise<void> {
     const entry = this.sessions.get(sessionKey);
     if (!entry) return;
     this.sessions.delete(sessionKey);
-    await entry.session.close();
+    if ((this.inFlight.get(entry.session) ?? 0) > 0) {
+      this.expired.add(entry.session);
+      return;
+    }
+    await closeEntry(entry);
   }
 
   /**
    * Streamable HTTP servers answer 404 for a session they expired or lost on restart; many
    * (including the SDK's own "Server not initialized") answer 400 naming the session instead.
    * The request never ran there, so it is sent once more on a fresh session instead of failing.
+   * While `use` runs, the session counts as active so the idle reaper leaves it alone.
    */
   private async withSession<T>(
     server: McpServer,
     context: AdapterContext,
     use: (session: McpSession) => Promise<T>,
   ): Promise<T> {
+    const sessionKey = this.sessionKey(server, context);
     for (let attempt = 0; ; attempt += 1) {
       const session = await this.sessionFor(server, context);
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
+      // A session in use is never reaped as idle.
+      const entry = this.sessions.get(sessionKey);
+      const tracked = entry?.session === session ? entry : undefined;
       try {
         return await use(session);
       } catch (error) {
         if (attempt !== 0 || !sessionGone(error)) throw error;
-        const sessionKey = this.sessionKey(server, context);
         // Stop reusing the expired session immediately, but let its other requests
         // receive their own responses before closing the shared SDK client.
         if (this.sessions.get(sessionKey)?.session === session) this.sessions.delete(sessionKey);
         this.expired.add(session);
       } finally {
+        if (tracked) {
+          tracked.lastUsedAt = Date.now();
+        }
         const remaining = (this.inFlight.get(session) ?? 1) - 1;
         this.inFlight.set(session, remaining);
-        if (remaining === 0 && this.expired.has(session)) await session.close();
+        if (remaining === 0 && this.expired.has(session))
+          await closeEntry({ session, credentialDir: entry?.credentialDir });
       }
     }
   }
@@ -375,9 +783,18 @@ export class McpConnector implements ConnectorProvider {
     const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) {
+      existing.lastUsedAt = Date.now();
+      // A stdio process reads its access token once at launch; relaunch it before the
+      // token lapses so it starts with the renewed one.
+      if (
+        existing.accessTokenExpiresAt !== undefined &&
+        Date.now() >= existing.accessTokenExpiresAt - TOKEN_REFRESH_SKEW_MS &&
+        (this.inFlight.get(existing.session) ?? 0) === 0
+      )
+        await this.evict(sessionKey);
       // Every credential write stores a new record without bumping the revision, so a
       // different record means another process (an API or worker) changed the grant.
-      if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
+      else if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
       else if (existing.ref && server.secretId) {
         try {
           const plaintext = await this.secrets.load(existing.ref, {
@@ -419,22 +836,39 @@ export class McpConnector implements ConnectorProvider {
         live.recordId = recordId;
         live.digest = digest;
       }
-    }).then(async ({ session, material, ref, digest, recordId }) => {
-      if (this.connecting.get(sessionKey)?.invalidated) {
-        await session.close();
-        throw new Error("Secret changed during MCP connection; retry");
-      }
-      connected = {
+    }).then(
+      async ({
         session,
-        revision: server.revision,
         material,
         ref,
         digest,
         recordId,
-      };
-      this.sessions.set(sessionKey, connected);
-      return session;
-    });
+        accessTokenExpiresAt,
+        credentialDir,
+        launchSecrets,
+      }) => {
+        if (this.connecting.get(sessionKey)?.invalidated) {
+          await closeEntry({ session, credentialDir });
+          throw new Error("Secret changed during MCP connection; retry");
+        }
+        connected = {
+          session,
+          revision: server.revision,
+          material,
+          ref,
+          digest,
+          recordId,
+          accessTokenExpiresAt,
+          credentialDir,
+          stdio: server.transport === "stdio",
+          lastUsedAt: Date.now(),
+          launchSecrets,
+        };
+        this.sessions.set(sessionKey, connected);
+        if (connected.stdio) this.startReaper();
+        return session;
+      },
+    );
     this.connecting.set(sessionKey, { revision: server.revision, promise });
     try {
       return await promise;
@@ -453,10 +887,16 @@ export class McpConnector implements ConnectorProvider {
     ref?: string;
     digest?: string;
     recordId?: string;
+    accessTokenExpiresAt?: number;
+    credentialDir?: string;
+    launchSecrets?: string[];
   }> {
     const session = new McpSession({ name: `rakazo-${server.slug}` });
+    let credentialDir: string | undefined;
+    const launchSecrets: string[] = [];
     // Hoisted so a throw after the secret is decoded can still hand the material out.
     let material: OAuthMaterial | undefined;
+    // What the process was handed; its stderr can echo any of it.
     try {
       const secret = server.secretId
         ? await this.prisma.secret.findFirst({
@@ -481,14 +921,131 @@ export class McpConnector implements ConnectorProvider {
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
       const env = { ...(material.env ?? {}) };
+      const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
+        ref = record.ref;
+        recordId = record.id;
+        digest = credentialDigest(JSON.stringify(record.material));
+        onRef(ref, recordId, digest);
+      };
+      let accessTokenExpiresAtMs: number | undefined;
       if (server.transport === "stdio") {
         if (!this.options.stdioEnabled) throw new Error("MCP stdio is disabled");
+        const command = String(server.command ?? "");
+        const allowedCommands = this.options.allowedCommands ?? [];
+        // The allowlist names the configured launcher (`npx`), checked before any install.
+        if (!isAllowedStdioCommand(command, allowedCommands))
+          throw new Error("MCP stdio command is not in the configured allowlist");
+        const npx = parseNpxLaunch(command, args);
+        let installedBin: InstalledMcpBin | undefined;
+        if (npx) {
+          // Install outside the startup timeout, once per package, into the shared volume.
+          // npm sees the server's literal settings (e.g. NPM_CONFIG_*), never a grant.
+          const installEnv = Object.fromEntries(
+            Object.entries(env).filter(
+              ([, value]) => mcpOAuthEnvReferences(value).fields.length === 0,
+            ),
+          );
+          const installKey = this.sessionKey(server, context);
+          let installHealth: { value: string; at: number } | undefined;
+          try {
+            installedBin = await ensureMcpPackage(npx.spec, {
+              root: this.packagesRoot(),
+              binName: npx.binName,
+              timeoutMs: this.options.installTimeoutMs,
+              signal: context.signal,
+              env: installEnv,
+              onSettled: async () => {
+                if (installHealth && this.healthWrites.get(server.id) === installHealth)
+                  await this.recordHealth(
+                    server.id,
+                    { status: "unknown", message: null },
+                    { force: true },
+                  );
+              },
+              onInstall: () => {
+                this.installing.add(installKey);
+                const installing = { status: "installing", message: null } as const;
+                void this.recordHealth(server.id, installing, { force: true });
+                installHealth = this.healthWrites.get(server.id);
+              },
+            });
+          } finally {
+            this.installing.delete(installKey);
+          }
+        }
+        let launchEnv = env;
+        const files = material.files ?? {};
+        const references = [...Object.values(env), ...Object.values(files)].map(
+          (value) => mcpOAuthEnvReferences(value).fields,
+        );
+        let values: Partial<Record<McpOAuthEnvField, string>> = {};
+        if (references.some((fields) => fields.length > 0)) {
+          // The host holds the OAuth grant; the process only sees the values it asks for.
+          const provider = await this.oauth?.providerFor(server, context, loaded, onPersisted);
+          const tokens = await provider?.tokens();
+          const expiresAt = accessTokenExpiresAt(material.oauth);
+          if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
+            throw new McpReauthorizationRequiredError(server.id);
+          values = {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            client_id: material.oauthClient?.client_id,
+            client_secret: material.oauthClient?.client_secret,
+            expires_at: expiresAt === undefined ? undefined : String(expiresAt),
+            scope: tokens.scope ?? material.oauthClient?.scope,
+            token_type: tokens.token_type,
+          };
+          launchEnv = resolveMcpOAuthEnv(env, values);
+          if (
+            tokens.refresh_token &&
+            references.some(
+              (fields) => fields.includes("access_token") || fields.includes("expires_at"),
+            )
+          )
+            accessTokenExpiresAtMs = expiresAt;
+        }
+        const resolvedFiles = Object.entries(files).map(
+          ([key, template]) => [key, resolveMcpOAuthFileTemplate(template, values, key)] as const,
+        );
+        for (const [key, template] of Object.entries(env)) {
+          const value = launchEnv[key];
+          if (mcpOAuthEnvReferences(template).fields.length > 0 && value && value.length >= 8)
+            launchSecrets.push(value);
+        }
+        for (const [key, content] of resolvedFiles) {
+          if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) throw new Error("Invalid MCP credential file name");
+          launchSecrets.push(...credentialContentSecrets(content));
+        }
+        if (resolvedFiles.length > 0) {
+          // One private directory per launched process. A file path replaces an env value of
+          // the same name; the API rejects such overlaps, so this is only a safe fallback.
+          credentialDir = await mkdtemp(
+            join(this.options.credentialTempRoot ?? tmpdir(), "rakazo-mcp-"),
+          );
+          const dir = credentialDir;
+          const previousOnClose = session.client.onclose;
+          session.client.onclose = () => {
+            try {
+              previousOnClose?.();
+            } finally {
+              void rm(dir, { recursive: true, force: true }).catch(() => undefined);
+            }
+          };
+          launchEnv = { ...launchEnv };
+          for (const [key, content] of resolvedFiles) {
+            const path = join(credentialDir, key);
+            await writeFile(path, content, { mode: 0o600 });
+            launchEnv[key] = path;
+          }
+        }
         await session.connectStdio({
-          command: String(server.command ?? ""),
-          args,
-          env,
-          allowedCommands: this.options.allowedCommands ?? [],
+          command,
+          args: npx ? npx.binArgs : args,
+          installedBin,
+          env: launchEnv,
+          allowedCommands,
           signal: context.signal,
+          timeoutMs: this.options.startupTimeoutMs ?? DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
         });
       } else {
         if (!server.endpoint) throw new Error("MCP endpoint is required");
@@ -501,12 +1058,7 @@ export class McpConnector implements ConnectorProvider {
         );
         const authProvider =
           !localHttp && this.oauth
-            ? await this.oauth.providerFor(server, context, loaded, (record) => {
-                ref = record.ref;
-                recordId = record.id;
-                digest = credentialDigest(JSON.stringify(record.material));
-                onRef(ref, recordId, digest);
-              })
+            ? await this.oauth.providerFor(server, context, loaded, onPersisted)
             : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
@@ -533,15 +1085,27 @@ export class McpConnector implements ConnectorProvider {
           signal: context.signal,
         });
       }
-      return { session, material, ref, digest, recordId };
+      return {
+        session,
+        material,
+        ref,
+        digest,
+        recordId,
+        accessTokenExpiresAt: accessTokenExpiresAtMs,
+        credentialDir,
+        launchSecrets,
+      };
     } catch (error) {
-      await session.close().catch(() => undefined);
+      await closeEntry({ session, credentialDir }).catch(() => undefined);
       // Redact here, while the material is still in hand. This one rejection is handed
       // to every caller waiting on the same pending connect, and none of them can see
       // the secrets: the session never reached `sessions`. Sanitizing per caller would
       // cover only whoever looked first.
       if (!material) throw error;
-      throw new Error(sanitizeConnectorError(error, oauthMaterialSecrets(material)));
+      if (error instanceof McpReauthorizationRequiredError) throw error;
+      throw new Error(
+        sanitizeConnectorError(error, [...oauthMaterialSecrets(material), ...launchSecrets]),
+      );
     }
   }
 }

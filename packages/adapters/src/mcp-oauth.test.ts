@@ -219,7 +219,10 @@ describe("MCP OAuth", () => {
    * API and worker share a database. The credential advisory lock is a real mutex
    * held until the transaction that took it ends.
    */
-  function sharedCredentials(material: OAuthMaterial) {
+  function sharedCredentials(
+    material: OAuthMaterial,
+    endpoint: string | null = "https://mcp.example.test/mcp",
+  ) {
     const values = new Map<string, string>();
     let nextRecord = 0;
     const secrets = {
@@ -240,7 +243,7 @@ describe("MCP OAuth", () => {
     const rows: Array<{ id: string; ciphertext: string }> = [];
     const server = {
       id: "server-1",
-      endpoint: "https://mcp.example.test/mcp",
+      endpoint,
       secretId: null as string | null,
     };
     let lock = Promise.resolve();
@@ -1184,6 +1187,11 @@ describe("MCP OAuth", () => {
 
   describe("with a pre-registered client", () => {
     const oauthClient = { client_id: "registered-client", client_secret: "registered-secret" };
+    const AUTH_SERVER = "https://auth.example.test/";
+
+    function authorizationUrlOf(started: { status: string; authorizationUrl?: string }): URL {
+      return new URL(started.authorizationUrl ?? "");
+    }
 
     /** An authorization server that only accepts clients registered out of band. */
     function nonRegisteringAuthServer(
@@ -1257,13 +1265,17 @@ describe("MCP OAuth", () => {
       return requested;
     }
 
-    function brokerWithMaterial(material: OAuthMaterial) {
+    function brokerWithMaterial(
+      material: OAuthMaterial,
+      server: { transport?: string; endpoint?: string | null } = {},
+    ) {
       const tables = {
         mcpServer: {
           findFirst: vi.fn().mockResolvedValue({
             id: "server-1",
             endpoint: "https://mcp.example.test/mcp",
             secretId: "secret-1",
+            ...server,
           }),
           update: vi.fn().mockResolvedValue({}),
         },
@@ -1456,6 +1468,16 @@ describe("MCP OAuth", () => {
 
       expect(await shared.stored()).toEqual({ oauthClient });
       expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+    });
+
+    it("keeps credential files when OAuth is disconnected", async () => {
+      const files = { GOOGLE_OAUTH_CREDENTIALS: '{"token":"{{oauth.access_token}}"}' };
+      const shared = sharedCredentials({ files, oauth: expiringMaterial(Date.now()).oauth });
+      const { broker } = await shared.startProcess(rotatingAuthServer().fetch);
+
+      await broker.disconnect({ serverId: "server-1", ...shared.context });
+
+      expect(await shared.stored()).toEqual({ files });
     });
 
     it("refuses tokens from an authorization started before the client was changed", async () => {
@@ -1652,10 +1674,376 @@ describe("MCP OAuth", () => {
       ).toBe(false);
     });
 
+    it("keeps the configured scope out of the client information handed to the SDK", () => {
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        {
+          oauthClient: { ...oauthClient, scope: "read write", authorization_server: AUTH_SERVER },
+          oauth: { discoveryState: { authorizationServerUrl: "https://auth.example.test" } },
+        },
+        async () => undefined,
+      );
+
+      expect(provider.clientInformation()).toEqual(oauthClient);
+    });
+
+    it("authorizes with the configured scope when the server publishes OAuth metadata but does not challenge", async () => {
+      nonRegisteringAuthServer(() => undefined, { challenge: false });
+      const { broker } = brokerWithMaterial({
+        oauthClient: { ...oauthClient, scope: "mail.read mail.send" },
+      });
+
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      expect(authorizationUrlOf(started).searchParams.get("scope")).toBe("mail.read mail.send");
+    });
+
+    it("authorizes with the configured scope when the server challenges", async () => {
+      nonRegisteringAuthServer(() => undefined);
+      const { broker } = brokerWithMaterial({
+        oauthClient: { ...oauthClient, scope: "mail.read mail.send" },
+      });
+
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      expect(authorizationUrlOf(started).searchParams.get("scope")).toBe("mail.read mail.send");
+    });
+
+    describe("for a stdio server", () => {
+      const stdio = { transport: "stdio", endpoint: null };
+      const stdioClient = {
+        ...oauthClient,
+        authorization_server: AUTH_SERVER,
+        scope: "mail.read mail.send",
+      };
+      const discoveryState = {
+        authorizationServerUrl: "https://auth.example.test",
+        authorizationServerMetadata: {
+          issuer: "https://auth.example.test",
+          authorization_endpoint: "https://auth.example.test/authorize",
+          token_endpoint: "https://auth.example.test/token",
+          response_types_supported: ["code"],
+        },
+      };
+      const begin = {
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      };
+
+      it("authorizes at the issuer without contacting an MCP endpoint", async () => {
+        const requested = nonRegisteringAuthServer(() => undefined);
+        const { broker, prisma } = brokerWithMaterial({ oauthClient: stdioClient }, stdio);
+
+        const started = await broker.begin(begin);
+
+        expect(started.status).toBe("authorization_required");
+        const url = authorizationUrlOf(started);
+        expect(url.origin + url.pathname).toBe("https://auth.example.test/authorize");
+        expect(url.searchParams.get("client_id")).toBe("registered-client");
+        expect(url.searchParams.get("scope")).toBe("mail.read mail.send");
+        expect(url.searchParams.get("redirect_uri")).toBe(begin.redirectUri);
+        expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+        expect(url.searchParams.get("code_challenge")).toBeTruthy();
+        expect(url.searchParams.has("resource")).toBe(false);
+        expect(requested.some((request) => request.includes("mcp.example.test"))).toBe(false);
+        expect(requested.some((request) => request.includes("/register"))).toBe(false);
+        // The session row's endpoint column holds the authorization server.
+        expect(prisma.mcpOAuthSession.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({ serverId: "server-1", endpoint: AUTH_SERVER }),
+        });
+      });
+
+      it("starts authorization for an expired grant without a refresh token", async () => {
+        nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial(
+          {
+            oauthClient: stdioClient,
+            oauth: {
+              discoveryState,
+              obtainedAt: Date.now() - 7200_000,
+              tokens: { access_token: "expired", token_type: "Bearer", expires_in: 3600 },
+            },
+          },
+          stdio,
+        );
+        expect((await broker.begin(begin)).status).toBe("authorization_required");
+      });
+
+      const expiredRefreshable = {
+        oauthClient: stdioClient,
+        oauth: {
+          discoveryState,
+          obtainedAt: Date.now() - 7200_000,
+          tokens: {
+            access_token: "expired",
+            refresh_token: "refresh-1",
+            token_type: "Bearer",
+            expires_in: 3600,
+          },
+        },
+      };
+
+      it("starts authorization for an expired grant whose refresh token was revoked", async () => {
+        nonRegisteringAuthServer(() => Response.json({ error: "invalid_grant" }, { status: 400 }));
+        const { broker } = brokerWithMaterial(structuredClone(expiredRefreshable), stdio);
+        expect((await broker.begin(begin)).status).toBe("authorization_required");
+      });
+
+      it("never reports an expired grant whose refresh keeps failing as connected", async () => {
+        nonRegisteringAuthServer(() => new Response("unavailable", { status: 503 }));
+        const { broker } = brokerWithMaterial(structuredClone(expiredRefreshable), stdio);
+        await expect(broker.begin(begin)).rejects.toThrow("Could not start MCP OAuth");
+      });
+
+      it("rejects a loopback issuer before sending credentials", async () => {
+        const requested = nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial(
+          { oauthClient: { ...stdioClient, authorization_server: "https://127.0.0.1/" } },
+          stdio,
+        );
+        await expect(broker.begin(begin)).rejects.toThrow(/private|loopback/i);
+        expect(requested).toEqual([]);
+      });
+
+      it("still requires an authorization server", async () => {
+        const requested = nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial({ oauthClient }, stdio);
+
+        await expect(broker.begin(begin)).rejects.toThrow("endpoint is required");
+
+        expect(requested).toEqual([]);
+      });
+
+      it("does not start another authorization while the grant is usable", async () => {
+        const requested = nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial(
+          {
+            oauthClient: stdioClient,
+            oauth: {
+              discoveryState,
+              obtainedAt: Date.now(),
+              tokens: {
+                access_token: "held",
+                refresh_token: "held-refresh",
+                token_type: "Bearer",
+                expires_in: 3600,
+              },
+            },
+          },
+          stdio,
+        );
+
+        await expect(broker.begin(begin)).resolves.toEqual({ status: "already_connected" });
+
+        expect(requested).toEqual([]);
+      });
+
+      it("applies the HTTPS policy to the authorization server", async () => {
+        const requested = nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial(
+          { oauthClient: { ...stdioClient, authorization_server: "http://auth.example.test/" } },
+          stdio,
+        );
+
+        await expect(broker.begin(begin)).rejects.toThrow("must use HTTPS");
+
+        expect(requested).toEqual([]);
+      });
+
+      it("exchanges the code at the issuer with the configured client", async () => {
+        let authorization: string | null = null;
+        let body = new URLSearchParams();
+        const requested = nonRegisteringAuthServer(async (request) => {
+          authorization = request.headers.get("authorization");
+          body = new URLSearchParams(await request.text());
+        });
+        const sessionId = "7d2e9c64-1a58-4b0e-8f3c-5e6a7b8c9d01";
+        const { broker, prisma, secrets } = brokerWithMaterial(
+          {
+            oauthClient: stdioClient,
+            oauth: {
+              redirectUri: begin.redirectUri,
+              codeVerifier: "verifier",
+              discoveryState,
+            },
+          },
+          stdio,
+        );
+        prisma.mcpOAuthSession.findFirst.mockResolvedValue({
+          id: sessionId,
+          serverId: "server-1",
+          endpoint: AUTH_SERVER,
+          redirectUri: begin.redirectUri,
+          oauthCiphertext: "session-encrypted",
+          createdAt: new Date(),
+        });
+
+        await broker.complete({
+          sessionId,
+          code: "authorization-code",
+          state: sessionId,
+          spaceId: "workspace-1",
+          userId: "user-1",
+        });
+
+        expect(authorization).toBe(
+          `Basic ${Buffer.from("registered-client:registered-secret").toString("base64")}`,
+        );
+        expect(body.get("code")).toBe("authorization-code");
+        expect(body.get("code_verifier")).toBe("verifier");
+        expect(body.has("resource")).toBe(false);
+        expect(requested.some((request) => request.includes("mcp.example.test"))).toBe(false);
+        const persisted = (secrets.put.mock.calls as unknown[][])
+          .filter(
+            (call) => (call[1] as { operationId?: string }).operationId === "mcp.oauth.persist",
+          )
+          .map((call) => JSON.parse(call[0] as string) as OAuthMaterial);
+        expect(persisted.at(-1)?.oauth?.tokens).toMatchObject({
+          access_token: "issued-access",
+          refresh_token: "issued-refresh",
+        });
+        expect(prisma.mcpServer.update).toHaveBeenCalledWith({
+          where: { id: "server-1" },
+          data: { revision: { increment: 1 } },
+        });
+      });
+
+      it("keeps the client secret out of a failed code exchange", async () => {
+        nonRegisteringAuthServer(() =>
+          Response.json(
+            {
+              error: "server_error",
+              error_description: "client secret registered-secret rejected",
+            },
+            { status: 400 },
+          ),
+        );
+        const sessionId = "c3b2a190-8e7d-4c6b-9a5f-4e3d2c1b0a99";
+        const { broker, prisma } = brokerWithMaterial(
+          {
+            oauthClient: stdioClient,
+            oauth: { redirectUri: begin.redirectUri, codeVerifier: "verifier", discoveryState },
+          },
+          stdio,
+        );
+        prisma.mcpOAuthSession.findFirst.mockResolvedValue({
+          id: sessionId,
+          serverId: "server-1",
+          endpoint: AUTH_SERVER,
+          redirectUri: begin.redirectUri,
+          oauthCiphertext: "session-encrypted",
+          createdAt: new Date(),
+        });
+
+        const error = await broker
+          .complete({
+            sessionId,
+            code: "authorization-code",
+            state: sessionId,
+            spaceId: "workspace-1",
+            userId: "user-1",
+          })
+          .then(
+            () => undefined,
+            (caught: unknown) => caught as Error,
+          );
+
+        expect(error?.message).toContain("Could not complete MCP OAuth");
+        expect(error?.message).not.toContain("registered-secret");
+      });
+
+      it("refreshes an expired grant at the issuer", async () => {
+        const server = rotatingAuthServer();
+        const { clientInformation: _registered, ...oauth } = expiringMaterial(EXPIRED()).oauth;
+        const { resourceMetadata: _resource, ...discovery } = oauth.discoveryState;
+        const shared = sharedCredentials(
+          { oauthClient: stdioClient, oauth: { ...oauth, discoveryState: discovery } },
+          null,
+        );
+        const { provider } = await shared.startProcess(server.fetch);
+
+        await expect(provider.tokens()).resolves.toMatchObject({ access_token: "access-1" });
+
+        expect(server.requests).toHaveLength(1);
+        expect(await shared.stored()).toMatchObject({
+          oauthClient: stdioClient,
+          oauth: { tokens: { refresh_token: "refresh-1" } },
+        });
+      });
+    });
+
+    it.each([
+      ["scope", { scope: "calendar.readonly" }, { scope: "gmail.readonly" }],
+      [
+        "authorization server",
+        { authorization_server: "https://auth.example.test/" },
+        { authorization_server: "https://other-auth.example.test/" },
+      ],
+    ])(
+      "refuses tokens from an authorization started before the client's %s changed",
+      async (_name, before, after) => {
+        const shared = sharedCredentials({
+          oauthClient: { ...oauthClient, ...before },
+          oauth: { redirectUri: "https://app/cb" },
+        });
+        const { provider } = await shared.startProcess(rotatingAuthServer().fetch);
+        const replacement = { oauthClient: { ...oauthClient, ...after } };
+        await shared.replaceStored(replacement);
+
+        await expect(
+          provider.saveTokens({ access_token: "for-old-settings", token_type: "Bearer" }),
+        ).rejects.toThrow("OAuth client changed");
+
+        expect(await shared.stored()).toEqual(replacement);
+      },
+    );
+
+    it("adds the client's extra authorization parameters to the authorization URL", async () => {
+      nonRegisteringAuthServer(() => undefined, { challenge: false });
+      const { broker } = brokerWithMaterial({
+        oauthClient: { ...oauthClient, authorization_params: "access_type=offline&prompt=consent" },
+      });
+
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      const url = new URL(
+        started.status === "authorization_required" ? started.authorizationUrl : "",
+      );
+      expect(url.searchParams.get("access_type")).toBe("offline");
+      expect(url.searchParams.get("prompt")).toBe("consent");
+      expect(url.searchParams.get("client_id")).toBe("registered-client");
+    });
+
     it("treats the client secret as a credential that must never be shown", () => {
       expect(oauthMaterialSecrets({ oauthClient })).toContain("registered-secret");
       expect(oauthMaterialSecrets({ oauthClient })).not.toContain("registered-client");
     });
+  });
+
+  it("treats a static credential file as a secret but not one built from the grant", () => {
+    const key = '{"type":"service_account","private_key":"static-key"}';
+    const secrets = oauthMaterialSecrets({
+      files: { KEY_FILE: key, TOKEN_FILE: '{"token":"{{oauth.access_token}}"}', FLAG: "true" },
+    });
+
+    expect(secrets).toEqual([key]);
   });
 
   it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {

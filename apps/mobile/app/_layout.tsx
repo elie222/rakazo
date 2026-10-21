@@ -70,9 +70,12 @@ import {
   setInboxHidden,
   useSplitView,
 } from "../lib/split-view";
+import { capTextScaling } from "../lib/text-scale";
 import { startUnsentSends } from "../lib/unsent-sends";
 import { InboxPane } from "./index";
 
+// Before anything renders: text grows with the iOS text size only up to a fixed maximum.
+capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
