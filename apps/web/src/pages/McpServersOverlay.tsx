@@ -22,6 +22,8 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
+  Textarea,
+  Toggle,
 } from "@rakazo/ui-web";
 import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -29,13 +31,13 @@ import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
-type EnvRow = { id: number; name: string; value: string };
+type EnvRow = { id: number; name: string; value: string; file: boolean };
 
 /** How an env value asks Rakazo to inject the granted OAuth access token. */
 const oauthEnvReference = "{{oauth.access_token}}";
 
 let nextEnvRowId = 0;
-const emptyEnvRow = (): EnvRow => ({ id: nextEnvRowId++, name: "", value: "" });
+const emptyEnvRow = (): EnvRow => ({ id: nextEnvRowId++, name: "", value: "", file: false });
 
 /** Environment variable names the server accepts: capitals, digits, and underscores. */
 function envName(value: string): string {
@@ -146,6 +148,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             scope: oauthScope.trim() || undefined,
           }
         : undefined;
+      const envEntries = (file: boolean) =>
+        Object.fromEntries(
+          envRows
+            .filter((row) => row.name && row.file === file)
+            .map((row) => [row.name, row.value]),
+        );
       const created =
         transport === "stdio"
           ? await rpc.mcp.servers.create({
@@ -154,9 +162,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               transport,
               command: command.trim(),
               args: args.split(/\s+/).filter(Boolean),
-              env: Object.fromEntries(
-                envRows.filter((row) => row.name).map((row) => [row.name, row.value]),
-              ),
+              env: envEntries(false),
+              files: envEntries(true),
               secret: secret || undefined,
               oauthClient: oauthBase
                 ? { ...oauthBase, authorizationServer: oauthAuthorizationServer.trim() }
@@ -206,6 +213,10 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  function updateEnvRow(id: number, patch: Partial<EnvRow>) {
+    setEnvRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
   }
 
   async function connectOAuth(server: McpServer) {
@@ -405,36 +416,40 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           <Trans>Environment variables</Trans>
                         </FieldTitle>
                         {envRows.map((row) => (
-                          <div key={row.id} className="grid grid-cols-[.7fr_1fr_auto] gap-2">
+                          <div
+                            key={row.id}
+                            className="grid grid-cols-[.7fr_1fr_auto_auto] items-start gap-2"
+                          >
                             <Input
                               aria-label={t`Name`}
                               autoComplete="off"
+                              className={row.file ? "col-span-2" : undefined}
                               value={row.name}
                               onChange={(e) =>
-                                setEnvRows((rows) =>
-                                  rows.map((item) =>
-                                    item.id === row.id
-                                      ? { ...item, name: envName(e.target.value) }
-                                      : item,
-                                  ),
-                                )
+                                updateEnvRow(row.id, { name: envName(e.target.value) })
                               }
                               placeholder="API_KEY"
                             />
-                            <Input
-                              aria-label={t`Value`}
-                              type={row.value.includes("{{oauth.") ? "text" : "password"}
-                              autoComplete={row.value.includes("{{oauth.") ? "off" : "new-password"}
-                              value={row.value}
-                              onChange={(e) =>
-                                setEnvRows((rows) =>
-                                  rows.map((item) =>
-                                    item.id === row.id ? { ...item, value: e.target.value } : item,
-                                  ),
-                                )
-                              }
-                              placeholder={t`Stored encrypted`}
-                            />
+                            {row.file ? null : (
+                              <Input
+                                aria-label={t`Value`}
+                                type={row.value.includes("{{oauth.") ? "text" : "password"}
+                                autoComplete={
+                                  row.value.includes("{{oauth.") ? "off" : "new-password"
+                                }
+                                value={row.value}
+                                onChange={(e) => updateEnvRow(row.id, { value: e.target.value })}
+                                placeholder={t`Stored encrypted`}
+                              />
+                            )}
+                            <Toggle
+                              variant="outline"
+                              size="sm"
+                              pressed={row.file}
+                              onPressedChange={(file) => updateEnvRow(row.id, { file })}
+                            >
+                              <Trans>File</Trans>
+                            </Toggle>
                             <Button
                               type="button"
                               variant="ghost"
@@ -450,6 +465,16 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                             >
                               <X />
                             </Button>
+                            {row.file ? (
+                              <Textarea
+                                aria-label={t`Value`}
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="col-span-full min-h-24 font-mono text-xs"
+                                value={row.value}
+                                onChange={(e) => updateEnvRow(row.id, { value: e.target.value })}
+                              />
+                            ) : null}
                           </div>
                         ))}
                         <Button

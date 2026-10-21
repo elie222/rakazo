@@ -2434,6 +2434,10 @@ msgstr "Campos que indicam uma alteração"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Campos para comparar, por exemplo id, modifiedTime (opcional)"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "Arquivo"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "Arquivos ou pastas no computador"

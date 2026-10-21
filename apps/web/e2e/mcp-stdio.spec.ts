@@ -2,6 +2,13 @@ import { expect, test } from "@playwright/test";
 import type { McpServer } from "@rakazo/contracts";
 import { captureScreenshot, completeOnboarding, signup } from "./helpers";
 
+const credentialsTemplate = `{
+  "installed": {
+    "client_id": "{{oauth.client_id}}",
+    "client_secret": "{{oauth.client_secret}}"
+  }
+}`;
+
 test("adds a stdio MCP server with encrypted environment variables", async ({ page }, testInfo) => {
   const stamp = Date.now();
   await signup(page, `mcp-stdio-${stamp}@rakazo.test`, "password12", "MCP stdio");
@@ -25,6 +32,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
         INVOICES_API_SECRET: "secret-value",
         GOOGLE_ACCESS_TOKEN: "{{oauth.access_token}}",
       },
+      files: { GOOGLE_OAUTH_CREDENTIALS: credentialsTemplate },
       oauthClient: {
         clientId: "google-client",
         clientSecret: "google-secret",
@@ -32,6 +40,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
         scope: "openid email",
       },
     });
+    expect(json.env).not.toHaveProperty("GOOGLE_OAUTH_CREDENTIALS");
     const created: McpServer = {
       id: "mcp-stdio-server",
       spaceId: "mcp-stdio-workspace",
@@ -43,7 +52,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
       command: "npx",
       args: ["-y", "invoices-mcp@1.0.0"],
       envKeys: ["INVOICES_API_ID", "INVOICES_API_SECRET", "GOOGLE_ACCESS_TOKEN"],
-      fileKeys: [],
+      fileKeys: ["GOOGLE_OAUTH_CREDENTIALS"],
       headerKeys: [],
       hasSecret: true,
       oauthStatus: "none",
@@ -95,6 +104,22 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await values.nth(2).fill("{{oauth.access_token}}");
   await expect(values.nth(2)).toHaveAttribute("type", "text");
   await expect(values.nth(0)).toHaveAttribute("type", "password");
+  // A file row hands the process a path to a file holding the template (visible, multi-line).
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await names.nth(3).fill("GOOGLE_OAUTH_CREDENTIALS");
+  await page.getByRole("button", { name: "File", exact: true }).nth(3).click();
+  await expect(values.nth(3)).toHaveJSProperty("tagName", "TEXTAREA");
+  await values.nth(3).fill(credentialsTemplate);
+  await expect(values.nth(3)).toHaveAttribute("autocomplete", "off");
+  await expect(values.nth(3)).toHaveAttribute("spellcheck", "false");
+  await expect(page.getByRole("button", { name: "File", exact: true }).nth(3)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: "File", exact: true }).nth(0)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(page.getByLabel("Redirect URI")).toHaveCount(0);
   await page.getByLabel("OAuth client ID (optional)").fill("google-client");
   await page.getByLabel("OAuth client secret (optional)").fill("google-secret");
@@ -111,6 +136,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await expect(names).toHaveCount(1);
   await expect(names.nth(0)).toHaveValue("");
   await expect(values.nth(0)).toHaveValue("");
+  await expect(values.nth(0)).toHaveJSProperty("tagName", "INPUT");
   await expect(page.getByLabel("OAuth client ID (optional)")).toHaveValue("");
   await expect(page.getByLabel("Authorization server")).toHaveCount(0);
 });
