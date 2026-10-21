@@ -132,6 +132,22 @@ export const tokens = darkTokens;
 
 export const RADIUS = "0.75rem";
 
+export const fontWeight = { regular: "400", medium: "500", semibold: "600" } as const;
+
+/**
+ * Native text styles on the system font, in points: iOS body text is 17/22. Titles use the
+ * font's own line spacing, written out so they don't inherit a smaller body line height.
+ */
+export const typeScale = {
+  title: { fontSize: 22, lineHeight: 26, fontWeight: fontWeight.semibold },
+  headline: { fontSize: 19, lineHeight: 23, fontWeight: fontWeight.semibold },
+  cardTitle: { fontSize: 17, lineHeight: 22, fontWeight: fontWeight.medium },
+  body: { fontSize: 17, lineHeight: 22 },
+  secondary: { fontSize: 15, lineHeight: 19 },
+  caption: { fontSize: 14, lineHeight: 18 },
+  footnote: { fontSize: 12, lineHeight: 16 },
+} as const;
+
 export const botColors = [
   "#3EC5A8",
   "#F5A03C",

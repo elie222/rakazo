@@ -82,6 +82,12 @@ import {
   signOut,
 } from "../lib/api";
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
+import {
+  archivedChatCounts,
+  loadAllArchivedChats as loadArchivedChats,
+  notifyArchivedChatsChanged,
+  onArchivedChatsChanged,
+} from "../lib/archived-chats";
 import { mobileBotAvatarPresentation } from "../lib/bot-avatar";
 import type { CollapsedSections } from "../lib/collapsed-sections";
 import { loadCollapsedSections, saveCollapsedSections } from "../lib/collapsed-sections";
@@ -238,6 +244,10 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     sections: MobileBotSection[];
   } | null>(null);
   const organizeRequestId = useRef(0);
+  const [archived, setArchived] = useState({ spaceId: "", count: 0 });
+  // All spaces’ archived chats; a list that fails to load keeps its last count.
+  const archivedCounts = useRef({ spaceId: "", bots: 0, groups: 0 });
+  const archivedRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);
   const [activity, setActivity] = useState<{ active: RunActivityRow[]; recent: RunActivityRow[] }>({
     active: [],
@@ -420,6 +430,28 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         if (timer !== undefined) clearTimeout(timer);
       };
     }, [hasSession, loadBots]),
+  );
+
+  const spaceId = me?.spaceId;
+  // Another space's count never shows while this space's is loading.
+  const archivedCount = archived.spaceId === spaceId ? archived.count : 0;
+  const loadArchivedCount = useCallback(async () => {
+    if (!spaceId) return;
+    const requestId = ++archivedRequestId.current;
+    const loaded = await loadArchivedChats();
+    if (requestId !== archivedRequestId.current) return;
+    const previous =
+      archivedCounts.current.spaceId === spaceId ? archivedCounts.current : { bots: 0, groups: 0 };
+    archivedCounts.current = { spaceId, ...archivedChatCounts(previous, loaded) };
+    setArchived({ spaceId, count: archivedCounts.current.bots + archivedCounts.current.groups });
+  }, [spaceId]);
+  // Not part of the poll: the count changes only through archive and restore, which signal it.
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasSession) return;
+      void loadArchivedCount();
+      return onArchivedChatsChanged(() => void loadArchivedCount());
+    }, [hasSession, loadArchivedCount]),
   );
 
   const loadActivity = useCallback(async () => {
@@ -949,6 +981,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       if (action === "archive") {
         try {
           await chatRpc(chat.spaceId, `${kind}s/archive`, chatTarget(kind, chat.id));
+          notifyArchivedChatsChanged();
         } catch (err) {
           Alert.alert(
             kind === "bot" ? t("Could not archive bot") : t("Could not update chat"),
@@ -1355,9 +1388,15 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
               )
             }
             ListFooterComponent={
-              !showLoadFailure && inboxNeedsCreateHint(listData) ? (
-                <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
-              ) : null
+              <>
+                {!showLoadFailure && inboxNeedsCreateHint(listData) ? (
+                  <Text style={styles.empty}>{t("Tap + to create a bot")}</Text>
+                ) : null}
+                <ArchivedChatsRow
+                  count={archivedCount}
+                  onPress={() => router.push("/archived-bots")}
+                />
+              </>
             }
             renderItem={renderItem}
           />
@@ -1471,6 +1510,9 @@ function ActivityRow({
   );
 }
 
+const INBOX_ROW = { padding: 16, gap: 12, avatarSize: 62 };
+const COMPACT_INBOX_ROW = { padding: 12, gap: 10 };
+
 function ConversationRow({
   chatId,
   title,
@@ -1543,7 +1585,12 @@ function ConversationRow({
         styles.row,
         compact ? styles.compactRow : null,
         selected ? styles.rowSelected : null,
-        depth > 0 ? { paddingInlineStart: (compact ? 12 : 16) + depth * 16 } : null,
+        depth > 0
+          ? {
+              paddingInlineStart:
+                (compact ? COMPACT_INBOX_ROW.padding : INBOX_ROW.padding) + depth * 16,
+            }
+          : null,
         pressed && styles.rowPressed,
       ]}
     >
@@ -1623,6 +1670,37 @@ function HeaderButton({
       ]}
     >
       {children}
+    </Pressable>
+  );
+}
+
+/** The way back to archived chats, at the very end of the list in the section heading style. */
+function ArchivedChatsRow({ count, onPress }: { count: number; onPress: () => void }) {
+  const styles = useThemedStyles(createHomeStyles);
+  const { t } = useI18n();
+  const compact = useContext(CompactRowsContext);
+  const row = compact ? COMPACT_INBOX_ROW : INBOX_ROW;
+  if (count < 1) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${t("Archived")}, ${count}`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.sectionToggle,
+        styles.archivedRow,
+        { paddingInlineStart: row.padding + INBOX_ROW.avatarSize + row.gap },
+        pressed && styles.rowPressed,
+      ]}
+    >
+      <Text style={styles.sectionTitle}>{t("Archived")}</Text>
+      <Text style={styles.sectionCount}>{count}</Text>
+      <NativeSymbol
+        ios="chevron.right"
+        android="chevron-forward"
+        size={12}
+        color={native.tertiaryLabel}
+      />
     </Pressable>
   );
 }
@@ -1816,7 +1894,7 @@ const BotRow = memo(function BotRow({
         <BotAvatar
           color={bot.color || FALLBACK_COLOR}
           identity={bot.id}
-          size={62}
+          size={INBOX_ROW.avatarSize}
           status={bot.status}
           muted={bot.notifyOnFinish === false}
         />
@@ -1885,7 +1963,7 @@ const GroupRow = memo(function GroupRow({
       onLongPress={onLongPress ? () => onLongPress(group) : undefined}
       actions={onAction ? inboxRowActionList(group) : undefined}
       onAction={runAction}
-      avatar={<GroupAvatar members={group.members} size={62} />}
+      avatar={<GroupAvatar members={group.members} size={INBOX_ROW.avatarSize} />}
     />
   );
   return onAction ? (
@@ -1982,9 +2060,9 @@ function createHomeStyles() {
     row: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 16,
+      paddingHorizontal: INBOX_ROW.padding,
       paddingVertical: 14,
-      gap: 12,
+      gap: INBOX_ROW.gap,
     },
     rowSelected: {
       marginHorizontal: 12,
@@ -2019,8 +2097,8 @@ function createHomeStyles() {
       fontWeight: "700",
     },
     compactRow: {
-      paddingHorizontal: 12,
-      gap: 10,
+      paddingHorizontal: COMPACT_INBOX_ROW.padding,
+      gap: COMPACT_INBOX_ROW.gap,
     },
     treeToggle: {
       width: 20,
@@ -2134,6 +2212,7 @@ function createHomeStyles() {
       paddingTop: 12,
       paddingBottom: 4,
     },
+    archivedRow: { flex: 0, width: "100%" },
     sectionTitle: {
       flexShrink: 1,
       color: native.secondaryLabel,
