@@ -129,3 +129,64 @@ test("renders masked secret card and saves without putting the value in chat", a
   await expect(page.getByText(secretValue)).toHaveCount(0);
   await captureScreenshot(page, testInfo, "secret-card-saved");
 });
+
+test("dismisses a secret card, resumes the bot and frees the composer", async ({
+  page,
+}, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `secret-dismiss-${stamp}@rakazo.test`, "password12", "Secret Dismiss");
+  await completeOnboarding(page);
+
+  const botId = activeBotId(page);
+  const composer = page.getByPlaceholder(/Message/);
+  await composer.fill("show a secret card for a masked api key");
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? null;
+      },
+      { timeout: 60_000 },
+    )
+    .toBe("waiting_input");
+
+  const card = page.getByTestId("secret-ask-card");
+  if ((await card.count()) === 0) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByPlaceholder(/Message/)).toBeVisible({ timeout: 15_000 });
+  }
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  const typedValue = `sk-test-dismissed-${stamp}`;
+  await card.getByLabel("API key").fill(typedValue);
+  await card.getByRole("button", { name: "Dismiss", exact: true }).click();
+
+  await expect(card.getByText("Dismissed", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(card.locator("input")).toHaveCount(0);
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await rpc<{ run?: { status: string } | null }>(page, "threads/get", {
+          botId,
+        });
+        return snapshot.run?.status ?? "completed";
+      },
+      { timeout: 30_000 },
+    )
+    .toBe("completed");
+  const history = await rpc(page, "threads/messages", { botId });
+  expect(JSON.stringify(history)).not.toContain(typedValue);
+  await captureScreenshot(page, testInfo, "secret-card-dismissed");
+
+  // The composer is no longer held by the pending card.
+  await composer.fill(`after dismissing ${stamp}`);
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(`after dismissing ${stamp}`, { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(card.getByText("Dismissed", { exact: true })).toBeVisible();
+});

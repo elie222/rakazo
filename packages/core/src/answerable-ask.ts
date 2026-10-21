@@ -1,11 +1,13 @@
+import { isSecretAskBlock } from "./action-approval.js";
+
 type AskSnapshot = {
   messages: readonly {
     id: string;
     runId?: string | null;
-    blocks: readonly { kind: string; status?: string }[];
+    blocks: readonly { kind: string; status?: string; input?: string; approvalEffectId?: string }[];
   }[];
-  run?: { id: string; status: string } | null;
-  activeRuns?: readonly { id: string; status: string }[];
+  run?: { id: string; status: string; userId?: string } | null;
+  activeRuns?: readonly { id: string; status: string; userId?: string }[];
 };
 
 export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<string> {
@@ -23,6 +25,31 @@ export function answerableAskMessageIds(snapshot: AskSnapshot | null): Set<strin
     }
   }
   return answerable;
+}
+
+/** Secret requests can only be dismissed by the user of their run. */
+export function dismissableAskMessageIds(
+  snapshot: AskSnapshot | null,
+  userId?: string,
+): Set<string> {
+  const dismissable = new Set<string>();
+  if (!snapshot || !userId) return dismissable;
+  const runs = snapshot.activeRuns ?? (snapshot.run ? [snapshot.run] : []);
+  const ownedRunIds = new Set(
+    runs
+      .filter((run) => run.status === "waiting_input" && run.userId === userId)
+      .map((run) => run.id),
+  );
+  for (const message of snapshot.messages) {
+    if (
+      message.runId &&
+      ownedRunIds.has(message.runId) &&
+      message.blocks.some((block) => isSecretAskBlock(block) && block.status !== "answered")
+    ) {
+      dismissable.add(message.id);
+    }
+  }
+  return dismissable;
 }
 
 export function selectedAskActionLabel(

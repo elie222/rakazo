@@ -1,0 +1,87 @@
+import { expect, test } from "@playwright/test";
+import type { McpServer } from "@rakazo/contracts";
+import { captureScreenshot, completeOnboarding, signup } from "./helpers";
+
+test("adds a stdio MCP server with encrypted environment variables", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `mcp-stdio-${stamp}@rakazo.test`, "password12", "MCP stdio");
+  await completeOnboarding(page);
+
+  const servers: McpServer[] = [];
+  await page.context().route("**/rpc/mcp/servers/list", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: servers }),
+    });
+  });
+  await page.context().route("**/rpc/mcp/servers/create", async (route) => {
+    const { json } = route.request().postDataJSON() as { json: Record<string, unknown> };
+    expect(json).toMatchObject({
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "invoices-mcp@1.0.0"],
+      env: { INVOICES_API_ID: "id-value", INVOICES_API_SECRET: "secret-value" },
+    });
+    const created: McpServer = {
+      id: "mcp-stdio-server",
+      spaceId: "mcp-stdio-workspace",
+      slug: "invoices",
+      name: "Invoices",
+      description: "",
+      transport: "stdio",
+      endpoint: null,
+      command: "npx",
+      args: ["-y", "invoices-mcp@1.0.0"],
+      envKeys: ["INVOICES_API_ID", "INVOICES_API_SECRET"],
+      headerKeys: [],
+      hasSecret: true,
+      oauthStatus: "none",
+      oauthClientId: null,
+      enabled: true,
+      revision: 1,
+      createdAt: "2026-08-24T00:00:00.000Z",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+    };
+    servers.push(created);
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ json: created }),
+    });
+  });
+
+  await page.getByRole("button", { name: "Connect apps", exact: true }).click();
+  await page.getByTestId("integrations-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  await page.getByRole("button", { name: "Manage MCP servers", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "MCP servers" })).toBeVisible();
+
+  await page.getByLabel("Server name").fill("Invoices");
+  await page.getByRole("tab", { name: "STDIO", exact: true }).click();
+  await page.getByLabel("Command").fill("npx");
+  await page.getByLabel("Arguments").fill("-y invoices-mcp@1.0.0");
+  await page.getByText("Advanced", { exact: true }).click();
+
+  const names = page.getByRole("textbox", { name: "Name", exact: true });
+  const values = page.getByLabel("Value", { exact: true });
+  // Names are normalized to the environment-variable form the server accepts.
+  await names.nth(0).fill("invoices-api-id");
+  await expect(names.nth(0)).toHaveValue("INVOICES_API_ID");
+  await values.nth(0).fill("id-value");
+  await expect(values.nth(0)).toHaveAttribute("type", "password");
+  await expect(values.nth(0)).toHaveAttribute("autocomplete", "new-password");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await names.nth(1).fill("INVOICES_API_SECRET");
+  await values.nth(1).fill("secret-value");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await names.nth(2).fill("UNUSED");
+  await page.getByRole("button", { name: "Remove", exact: true }).nth(2).click();
+  await expect(names).toHaveCount(2);
+  await captureScreenshot(page, testInfo, "mcp-stdio-env-form");
+
+  await page.getByRole("button", { name: "Add server", exact: true }).click();
+  await expect(page.getByText("Invoices", { exact: true })).toBeVisible();
+  await expect(names).toHaveCount(1);
+  await expect(names.nth(0)).toHaveValue("");
+  await expect(values.nth(0)).toHaveValue("");
+});

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   answerableAskMessageIds,
+  dismissableAskMessageIds,
   resolveAskChoice,
   selectedAskActionLabel,
 } from "./answerable-ask.js";
@@ -87,5 +88,68 @@ describe("resolveAskChoice", () => {
 
   it("leaves unmatched free-text as a custom answer", () => {
     expect(resolveAskChoice("Toronto", actions)).toBeUndefined();
+  });
+});
+
+describe("dismissableAskMessageIds", () => {
+  it.each(["run", "activeRuns"])("uses each message's run from %s", (source) => {
+    const run = { id: "run-1", status: "waiting_input", userId: "owner" };
+    const snapshot = {
+      ...(source === "run"
+        ? { run }
+        : { activeRuns: [run, { ...run, id: "run-2", userId: "other" }] }),
+      messages: [
+        {
+          id: "secret",
+          runId: "run-1",
+          blocks: [{ kind: "ask", input: "secret", status: "pending" }],
+        },
+        {
+          id: "login",
+          runId: "run-1",
+          blocks: [
+            {
+              kind: "ask",
+              input: "secret",
+              status: "pending",
+              credential: { auth: { type: "login" } },
+            },
+          ],
+        },
+        {
+          id: "other",
+          runId: "run-2",
+          blocks: [{ kind: "ask", input: "secret", status: "pending" }],
+        },
+        {
+          id: "answered",
+          runId: "run-1",
+          blocks: [{ kind: "ask", input: "secret", status: "answered" }],
+        },
+        { id: "question", runId: "run-1", blocks: [{ kind: "ask", status: "pending" }] },
+        {
+          id: "approval",
+          runId: "run-1",
+          blocks: [{ kind: "ask", input: "secret", approvalEffectId: "effect", status: "pending" }],
+        },
+      ],
+    };
+    expect(dismissableAskMessageIds(snapshot, "owner")).toEqual(new Set(["secret", "login"]));
+    expect(dismissableAskMessageIds(snapshot, "member")).toEqual(new Set());
+    expect(dismissableAskMessageIds(snapshot)).toEqual(new Set());
+    expect(
+      dismissableAskMessageIds(
+        { ...snapshot, run: { ...run, userId: undefined }, activeRuns: undefined },
+        "owner",
+      ),
+    ).toEqual(new Set());
+    expect(
+      dismissableAskMessageIds(
+        { ...snapshot, run: { ...run, status: "running" }, activeRuns: undefined },
+        "owner",
+      ),
+    ).toEqual(new Set());
+    expect(dismissableAskMessageIds(null, "owner")).toEqual(new Set());
+    expect(answerableAskMessageIds(snapshot).has("secret")).toBe(true);
   });
 });

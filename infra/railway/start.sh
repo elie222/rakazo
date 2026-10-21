@@ -32,7 +32,7 @@ pnpm --filter @rakazo/worker start &
   }
   throw new Error("API did not become ready");
 '
-  exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u BETTER_AUTH_SECRET \
+  exec env -u RAILWAY_API_TOKEN -u DATABASE_URL -u ENCRYPTION_KEY -u ENCRYPTION_MASTER_KEYS -u BETTER_AUTH_SECRET \
     pnpm --filter @rakazo/web preview --host 0.0.0.0 --port 5173
 ) &
 wait -n

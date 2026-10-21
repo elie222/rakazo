@@ -119,9 +119,10 @@ export async function settleCallRequest(
       ...(input.durationSeconds === undefined ? {} : { durationSeconds: input.durationSeconds }),
     };
     const blocks = [next, ...before.slice(1)];
-    // Compare-and-set on the stored blocks: a concurrent settle leaves this one a no-op.
+    // Compare-and-set on the stored status (a plaintext copy beside the encrypted
+    // block): a concurrent settle leaves this one a no-op.
     const updated = await tx.message.updateMany({
-      where: { id: message.id, blocks: { equals: message.blocks as Prisma.InputJsonValue } },
+      where: { id: message.id, blocks: { path: ["0", "status"], equals: block.status } },
       data: { blocks: blocks as Prisma.InputJsonValue },
     });
     if (updated.count !== 1) return null;

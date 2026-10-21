@@ -2589,6 +2589,24 @@ describe("discarded mobile thread refresh cursor", () => {
     }
   });
 
+  it("keeps a live message applied while a refresh snapshot was in flight", () => {
+    const live = applyMobileThreadEvent(fetched, {
+      type: "thread.message.created",
+      seq: 6,
+      payload: {
+        messageId: "new-live-message",
+        role: "user",
+        blocks: [{ kind: "text", text: "New message" }],
+      },
+    })!;
+    const result = mobileThreadRefreshResult({ ...gate, onScreen: live });
+    expect(result.commit).toBe(false);
+    expect(result.snapshot).toBe(live);
+    expect(result.snapshot?.messages.at(-1)?.id).toBe("new-live-message");
+    expect(result.snapshot?.cursor).toBe(6);
+    expect(mobileThreadRefreshResult({ ...gate, onScreen: fetched }).commit).toBe(true);
+  });
+
   it("starts the subscription at a snapshot the refresh committed", () => {
     const result = mobileThreadRefreshResult(gate);
     expect(result.commit).toBe(true);

@@ -20,6 +20,7 @@ x-app-environment: &app-environment
   DB_POOL_MAX:
   DATA_DIR: /data
   ENCRYPTION_KEY:
+  ENCRYPTION_MASTER_KEYS:
   WAKEUP_DRIVER: graphile
   AGENT_RUNTIME: pi
   API_URL:

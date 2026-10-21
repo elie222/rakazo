@@ -2663,6 +2663,7 @@ export function createRouter(deps: RouterDeps) {
           answer: input.answer,
           clientNonce: input.clientNonce,
           username: input.username,
+          dismiss: input.dismiss,
         });
         if (!answered) {
           throw new ORPCError("CONFLICT", {

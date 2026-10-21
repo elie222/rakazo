@@ -1097,8 +1097,12 @@ export function mobileThreadRefreshResult(input: {
   activeBotId: string | undefined;
   activeGroupId: string | undefined;
 }): { commit: boolean; snapshot: MobileSnapshot | null } {
+  // Live events may advance the screen while this snapshot is in flight.
   const commit =
-    input.requestGeneration === input.currentGeneration && shouldApplyMobileThreadRefresh(input);
+    input.requestGeneration === input.currentGeneration &&
+    shouldApplyMobileThreadRefresh(input) &&
+    (input.onScreen?.threadId !== input.fetched.threadId ||
+      (input.fetched.cursor ?? -1) >= (input.onScreen.cursor ?? -1));
   return { commit, snapshot: commit ? input.fetched : input.onScreen };
 }
 

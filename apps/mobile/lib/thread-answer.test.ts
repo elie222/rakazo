@@ -26,6 +26,7 @@ function setup(refresh: () => Promise<void>) {
     message: { id: string; runId: string },
     answer: string,
     username?: string,
+    dismiss?: boolean,
   ) => Promise<void>;
   return { ...scope, answerMessage };
 }
@@ -44,15 +45,36 @@ describe("mobile ask answers", () => {
     expect(h.refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("reports an accepted answer as sent when the refresh after it fails", async () => {
-    const h = setup(async () => {
-      throw new Error("offline");
+  it("sends a dismissal with an empty answer and no username", async () => {
+    const h = setup(async () => undefined);
+    await h.answerMessage({ id: "message-1", runId: "run-1" }, "", undefined, true);
+    expect(h.rpc).toHaveBeenCalledWith("threads/answer", {
+      botId: "bot-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answer: "",
+      dismiss: true,
     });
-    await expect(
-      h.answerMessage({ id: "message-1", runId: "run-1" }, "example-password", "ada"),
-    ).resolves.toBeUndefined();
     expect(h.refresh).toHaveBeenCalledTimes(1);
   });
+
+  it.each([false, true])(
+    "reports an accepted answer or dismissal when refresh fails: %s",
+    async (dismiss) => {
+      const h = setup(async () => {
+        throw new Error("offline");
+      });
+      await expect(
+        h.answerMessage(
+          { id: "message-1", runId: "run-1" },
+          dismiss ? "" : "example-password",
+          undefined,
+          dismiss,
+        ),
+      ).resolves.toBeUndefined();
+      expect(h.refresh).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("still fails when the server doesn't accept the answer", async () => {
     const h = setup(async () => undefined);

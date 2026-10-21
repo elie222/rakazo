@@ -125,6 +125,8 @@ export const MessageBlock = z.discriminatedUnion("kind", [
     site: z.string().optional(),
     status: z.enum(["pending", "answered"]).optional(),
     answer: z.string().optional(),
+    /** A secret request the user dismissed instead of answering. */
+    dismissed: z.literal(true).optional(),
     actions: z
       .array(
         z.object({

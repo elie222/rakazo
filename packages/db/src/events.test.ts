@@ -2393,6 +2393,195 @@ describe("answerRunInput", () => {
     expect(tx.run.updateMany).not.toHaveBeenCalled();
   });
 
+  describe("dismissing a secret request", () => {
+    const login = {
+      name: "example_login",
+      origin: "https://login.example.test",
+      auth: { type: "login" },
+    };
+
+    function setup(options: {
+      block?: Record<string, unknown>;
+      ownerId?: string;
+      trigger?: string;
+      effect?: { id: string } | null;
+    }) {
+      const block = options.block ?? {
+        kind: "ask",
+        text: "Example sign-in",
+        input: "secret",
+        purpose: "password",
+        credential: login,
+        status: "pending",
+      };
+      const tx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: "thread-1" }]),
+        message: {
+          findFirst: vi.fn().mockResolvedValue({ id: "message-1", blocks: [block] }),
+          update: vi.fn().mockResolvedValue({ id: "message-1" }),
+        },
+        run: {
+          findFirst: vi.fn().mockResolvedValue({
+            botId: "bot-1",
+            userId: options.ownerId ?? "user-1",
+            trigger: options.trigger ?? "message",
+            task: { prompt: "Sign in to the example site" },
+          }),
+          findUnique: vi.fn().mockResolvedValue({ status: "queued" }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        task: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+        externalEffect: {
+          findFirst: vi
+            .fn()
+            .mockResolvedValue(options.effect === undefined ? { id: "effect-1" } : options.effect),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        thread: { update: vi.fn().mockResolvedValue({ nextEventSeq: 10 }) },
+        event: {
+          create: vi.fn(async ({ data }: { data: { seq: number; type: string } }) => ({
+            ...event(data.seq),
+            type: data.type,
+          })),
+        },
+      };
+      const prisma = {
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
+      } as unknown as PrismaClient;
+      const writer = { store: vi.fn(), withPrepared: vi.fn() };
+      const dismiss = (input: Record<string, unknown> = {}) =>
+        answerRunInput(
+          prisma,
+          {
+            spaceId: "workspace-1",
+            threadId: "thread-1",
+            runId: "run-1",
+            messageId: "message-1",
+            answeredByUserId: "user-1",
+            answer: "",
+            dismiss: true,
+            ...input,
+          },
+          new TestFanout(),
+          writer,
+        );
+      return { tx, writer, dismiss, block };
+    }
+
+    it.each([
+      ["a login card", undefined],
+      [
+        "a connector code card",
+        { kind: "ask", text: "Enter the code", input: "secret", purpose: "otp", status: "pending" },
+      ],
+    ])("resumes the run with the dismissal and stores nothing for %s", async (_name, block) => {
+      const h = setup({ block });
+
+      await expect(h.dismiss()).resolves.toBe(true);
+
+      expect(h.writer.withPrepared).not.toHaveBeenCalled();
+      expect(h.writer.store).not.toHaveBeenCalled();
+      expect(h.tx.run.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: "run-1",
+          spaceId: "workspace-1",
+          threadId: "thread-1",
+          status: "waiting_input",
+        },
+        data: { status: "queued" },
+      });
+      const request = {
+        runId: "run-1",
+        spaceId: "workspace-1",
+        kind: "request_secret",
+        status: "intended",
+      };
+      expect(h.tx.externalEffect.updateMany).toHaveBeenCalledWith({
+        where: request,
+        data: { status: "completed", result: { ok: false, dismissed: true } },
+      });
+      expect(h.tx.task.updateMany).toHaveBeenCalledWith({
+        where: { runs: { some: { id: "run-1" } } },
+        data: { prompt: "The user dismissed this request." },
+      });
+      expect(h.tx.message.update).toHaveBeenCalledWith({
+        where: { id: "message-1" },
+        data: { blocks: [{ ...h.block, status: "answered", answer: "", dismissed: true }] },
+      });
+    });
+
+    it("keeps a background run's instructions in the resumed prompt", async () => {
+      const h = setup({ trigger: "routine" });
+      await expect(h.dismiss()).resolves.toBe(true);
+      expect(h.tx.task.updateMany).toHaveBeenCalledWith({
+        where: { runs: { some: { id: "run-1" } } },
+        data: {
+          prompt:
+            "Sign in to the example site\n\nExample sign-in\nAnswer: The user dismissed this request.",
+        },
+      });
+    });
+
+    it.each([
+      ["another member of the space", { ownerId: "owner" }, {}],
+      [
+        "another member, for a connector code",
+        {
+          ownerId: "owner",
+          block: { kind: "ask", text: "Enter the code", input: "secret", status: "pending" },
+        },
+        {},
+      ],
+      [
+        "a question card",
+        {
+          block: { kind: "ask", text: "Which city?", status: "pending" },
+        },
+        {},
+      ],
+      [
+        "an approval card",
+        {
+          block: {
+            kind: "ask",
+            text: "Review before writing",
+            input: "secret",
+            approvalEffectId: "effect-1",
+            status: "pending",
+            actions: [{ id: "allow", label: "Allow once" }],
+          },
+        },
+        {},
+      ],
+      [
+        "an answered card",
+        {
+          block: {
+            kind: "ask",
+            text: "Example sign-in",
+            input: "secret",
+            credential: login,
+            status: "answered",
+            answer: "",
+          },
+        },
+        {},
+      ],
+      ["a card without a pending request", { effect: null }, {}],
+      ["a dismissal that carries a value", {}, { answer: "example-password" }],
+      ["a dismissal that carries a username", {}, { username: "ada" }],
+    ])("rejects a dismissal from %s", async (_name, options, input) => {
+      const h = setup(options);
+
+      await expect(h.dismiss(input)).resolves.toBe(false);
+
+      expect(h.tx.run.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.externalEffect.updateMany).not.toHaveBeenCalled();
+      expect(h.tx.message.update).not.toHaveBeenCalled();
+      expect(h.writer.store).not.toHaveBeenCalled();
+    });
+  });
+
   describe("login cards", () => {
     const login = {
       name: "site_login",
