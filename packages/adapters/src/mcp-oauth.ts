@@ -573,14 +573,18 @@ async function startAdvertisedAuthorization(
   serverUrl: URL,
   fetchFn: typeof fetch,
 ): Promise<void> {
-  let advertised: string[] | undefined;
+  let resourceMetadata: Awaited<ReturnType<typeof discoverOAuthProtectedResourceMetadata>>;
   try {
-    advertised = (await discoverOAuthProtectedResourceMetadata(serverUrl, undefined, fetchFn))
-      .authorization_servers;
+    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, undefined, fetchFn);
   } catch {
     return;
   }
-  if (advertised?.length) await auth(provider, { serverUrl, fetchFn });
+  const advertised = resourceMetadata.authorization_servers?.[0];
+  if (!advertised) return;
+  // Hand the SDK the discovery just verified. Left to rediscover, a failed second
+  // read would fall back to the MCP server's own origin and bind the client there.
+  await provider.saveDiscoveryState({ authorizationServerUrl: advertised, resourceMetadata });
+  await auth(provider, { serverUrl, fetchFn });
 }
 
 type OAuthRejection = { status: number; code: string; description: string };

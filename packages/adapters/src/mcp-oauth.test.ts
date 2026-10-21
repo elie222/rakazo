@@ -1188,8 +1188,12 @@ describe("MCP OAuth", () => {
     /** An authorization server that only accepts clients registered out of band. */
     function nonRegisteringAuthServer(
       onToken: (request: Request) => Promise<Response | undefined> | Response | undefined,
-      { challenge = true }: { challenge?: boolean } = {},
+      {
+        challenge = true,
+        metadataReads = Number.POSITIVE_INFINITY,
+      }: { challenge?: boolean; metadataReads?: number } = {},
     ) {
+      let metadataServed = 0;
       const requested: string[] = [];
       vi.stubGlobal(
         "fetch",
@@ -1221,6 +1225,8 @@ describe("MCP OAuth", () => {
             });
           }
           if (url === "https://mcp.example.test/.well-known/oauth-protected-resource/mcp") {
+            metadataServed += 1;
+            if (metadataServed > metadataReads) return new Response("unavailable", { status: 503 });
             return Response.json({
               resource: "https://mcp.example.test/mcp",
               authorization_servers: ["https://auth.example.test"],
@@ -1540,6 +1546,31 @@ describe("MCP OAuth", () => {
       expect(authorizationUrl.origin).toBe("https://auth.example.test");
       expect(authorizationUrl.searchParams.get("client_id")).toBe("registered-client");
       expect(requested.some((request) => request.includes("/register"))).toBe(false);
+    });
+
+    it("keeps authorization on the advertised server when a later metadata read fails", async () => {
+      const requested = nonRegisteringAuthServer(() => undefined, {
+        challenge: false,
+        metadataReads: 1,
+      });
+      const { broker } = brokerWithMaterial({ oauthClient });
+
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      expect(started.status).toBe("authorization_required");
+      expect(
+        new URL(started.status === "authorization_required" ? started.authorizationUrl : "").origin,
+      ).toBe("https://auth.example.test");
+      expect(
+        requested.some((request) =>
+          request.includes("mcp.example.test/.well-known/oauth-authorization-server"),
+        ),
+      ).toBe(false);
     });
 
     it("treats the client secret as a credential that must never be shown", () => {
