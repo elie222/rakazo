@@ -81,6 +81,18 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   await speakReply.click();
   await replySpoken;
 
+  await page.route("**/api/voice/speak", (route) =>
+    route.fulfill({
+      status: 402,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Insufficient credit", code: "VOICE_OUT_OF_CREDIT" }),
+    }),
+  );
+  await speakReply.click();
+  await expect(page.getByText("Your voice provider is out of credit.")).toBeVisible();
+  await captureScreenshot(page, testInfo, "read-aloud-out-of-credit");
+  await page.unroute("**/api/voice/speak");
+
   await openUserSettings(page, "voice");
   await expect(page.getByRole("button", { name: "Replace key" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Disconnect", exact: true })).toBeVisible();

@@ -89,7 +89,14 @@ export function SettingsRow({
   const stacked = useStackedSettings();
   const end = (
     <>
-      {value ? <Text style={styles.value}>{value}</Text> : null}
+      {value ? (
+        <Text
+          numberOfLines={stacked ? undefined : 1}
+          style={[styles.value, !stacked && styles.inlineValue]}
+        >
+          {value}
+        </Text>
+      ) : null}
       {trailing}
     </>
   );
@@ -221,6 +228,8 @@ function createSettingsStyles() {
     detail: { color: native.secondaryLabel, ...typeScale.caption },
     destructive: { color: tokens.destructive },
     value: { flexShrink: 1, color: native.secondaryLabel, fontSize: 17 },
+    // A long value truncates instead of pushing the title out of the row.
+    inlineValue: { maxWidth: "60%" },
     pressed: { backgroundColor: native.fillPressed },
     dimmed: { opacity: 0.45 },
   });

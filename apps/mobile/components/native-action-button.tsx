@@ -31,7 +31,11 @@ export function NativeActionButton({
   const compact = prominence === "plain" || prominence === "quiet";
   const colors =
     variant === "text"
-      ? { background: "transparent", label: tokens.link, border: undefined }
+      ? {
+          background: "transparent",
+          label: prominence === "destructive" ? tokens.destructive : tokens.link,
+          border: undefined,
+        }
       : variant === "rectangular"
         ? {
             background: effectiveProminence === "primary" ? tokens.primary : tokens.card,
@@ -55,7 +59,7 @@ export function NativeActionButton({
           flexDirection: "row",
           gap: icon && label ? 6 : undefined,
           minHeight:
-            variant === "rectangular"
+            variant === "rectangular" || (variant === "text" && prominence === "destructive")
               ? 44
               : variant === "text" || small || compact
                 ? undefined

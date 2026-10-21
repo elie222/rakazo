@@ -93,6 +93,7 @@ vi.mock("@expo/ui/swift-ui/modifiers", () => {
       "font",
       "foregroundStyle",
       "frame",
+      "padding",
       "progressViewStyle",
       "tint",
     ].map((name) => [name, modifier(name)]),
@@ -376,4 +377,50 @@ describe("Android action feedback", () => {
       }
     },
   );
+});
+
+describe("destructive text actions", () => {
+  it.each(["light", "dark"] as const)("uses red text and a 44pt target in %s mode", (scheme) => {
+    appearance.value = scheme;
+    renderToStaticMarkup(
+      <IosButton
+        label="Disconnect"
+        prominence="destructive"
+        variant="text"
+        fill={false}
+        onPress={() => {}}
+      />,
+    );
+    expect(swiftButton.mock.lastCall?.[0]).toMatchObject({
+      role: "destructive",
+      modifiers: expect.arrayContaining([
+        { name: "buttonStyle", value: "plain" },
+        { name: "accessibilityLabel", value: "Disconnect" },
+      ]),
+    });
+    expect(swiftText.mock.lastCall?.[0].modifiers).toEqual(
+      expect.arrayContaining([
+        { name: "foregroundStyle", value: tokensForAppearance(scheme).destructive },
+        { name: "frame", value: { minHeight: 44 } },
+      ]),
+    );
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      <FallbackButton
+        label="Disconnect"
+        prominence="destructive"
+        variant="text"
+        fill={false}
+        onPress={() => {}}
+      />,
+    );
+    const button = host.querySelector("button")!;
+    expect(button.getAttribute("aria-label")).toBe("Disconnect");
+    expect(button.style.minHeight).toBe("44px");
+    expect(button.style.backgroundColor).toBe("transparent");
+    expect(button.style.borderWidth).toBe("0px");
+    const expected = document.createElement("span");
+    expected.style.color = tokensForAppearance(scheme).destructive;
+    expect(host.querySelector("span")!.style.color).toBe(expected.style.color);
+  });
 });

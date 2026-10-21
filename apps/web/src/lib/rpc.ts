@@ -4,6 +4,7 @@ import type { ContractRouterClient } from "@orpc/contract";
 import type { AppContract, ProductEvent } from "@rakazo/contracts";
 import { LOCAL_SETTINGS_PAGE, LOCAL_SETTINGS_RPC } from "@rakazo/contracts";
 import { displayIdentityEvent, displayIdentityResult } from "@rakazo/core";
+import { authClient } from "./auth";
 import { desktopBridge } from "./desktop";
 import { i18n } from "./i18n";
 import { identityLabels } from "./identity-display";
@@ -72,14 +73,25 @@ const link = new RPCLink<RpcClientContext>({
     }
     const spaceId =
       options.context.spaceId === undefined ? selectedSpaceId() : options.context.spaceId;
-    return fetch(request, {
+    const response = await fetch(request, {
       headers: withSpaceHeaders(request.headers, spaceId),
       credentials: "include",
       // Keep cancellation attached directly to fetch rather than only a cloned Request.
       signal: options.signal,
     });
+    recheckSessionOnUnauthorized(response.status);
+    return response;
   },
 });
+
+/**
+ * A 401 means the session behind the app's last known user may be gone, but Better Auth only
+ * rechecks it on focus or a timer, so a backgrounded window would keep its stale user (and every
+ * screen that polls) indefinitely. Recheck now: a signed-out answer routes to sign-in.
+ */
+export function recheckSessionOnUnauthorized(status: number): void {
+  if (status === 401) authClient.$store.notify("$sessionSignal");
+}
 
 export type RpcClient = ContractRouterClient<AppContract, RpcClientContext>;
 

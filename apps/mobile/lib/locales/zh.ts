@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  Provider: "提供商",
+  "No matching providers": "没有匹配的提供商",
   "To:": "收件人：",
   Next: "下一步",
   "Ex: Project Falcon": "例如：猎鹰计划",
@@ -255,7 +257,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Connect MCP server {name}": "连接 MCP 服务器 {name}",
   "Connect Treg": "连接 Treg",
   Connected: "已连接",
-  "Connected · {label}": "已连接 · {label}",
   "Connected and using {label}.": "已连接并正在使用 {label}。",
   "Connected. Its tools are available from your next message.":
     "已连接。从你的下一条消息起即可使用它的工具。",
@@ -755,7 +756,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not disconnect this provider": "无法断开此提供商",
   "Default ({level})": "默认（{level}）",
   "Disconnected {provider}.": "已断开 {provider}。",
-  "Save limits": "保存限制",
   "Sign in again": "重新登录",
   "Thinking: {level}": "思考：{level}",
   "Waiting for sign-in — the code expires in about {minutes} minutes.":

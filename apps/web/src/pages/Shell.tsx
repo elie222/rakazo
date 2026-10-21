@@ -96,6 +96,7 @@ import {
   PopoverTrigger,
   resolvePersonaColorDef,
   Spinner,
+  toast,
 } from "@rakazo/ui-web";
 import {
   ArrowDown,
@@ -341,6 +342,15 @@ import type { RosterDropTarget } from "./shell/roster-drop";
 import { resolveRosterDrop } from "./shell/roster-drop";
 import { commitSpaceRename, countUnreadChats, sidebarGroupsForSpaces } from "./shell/space-sidebar";
 import { WindowChrome } from "./WindowChrome";
+
+const READ_ALOUD_TOAST = "read-aloud-error";
+
+/** Chat read-aloud has no caption to carry a failure, so it surfaces as a toast. */
+function readAloud(text: string, opts: { botId: string; messageId: string }) {
+  void speaker.speak(text, opts).then((error) => {
+    if (error) toast.error(error, { id: READ_ALOUD_TOAST });
+  });
+}
 
 const BotContextMenu = lazyOverlay(() =>
   import("./BotContextMenu").then((module) => module.BotContextMenu),
@@ -1449,7 +1459,7 @@ function SpaceShell() {
     const text = speechFromBlocks(lastBot.blocks);
     if (!text) return;
     autoSpoken.current = lastBot.id;
-    void speaker.speak(text, { botId: active.id, messageId: lastBot.id });
+    readAloud(text, { botId: active.id, messageId: lastBot.id });
   }, [
     snapshot?.messages,
     snapshot?.run?.status,
@@ -2644,7 +2654,7 @@ function SpaceShell() {
     }
     const text = speechFromBlocks(message.blocks);
     const id = message.botId ?? activeBotId.current;
-    if (text && id) void speaker.speak(text, { botId: id, messageId: message.id });
+    if (text && id) readAloud(text, { botId: id, messageId: message.id });
   }, []);
 
   async function createGroup(input: { name: string; botIds: string[] }) {

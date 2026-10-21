@@ -360,10 +360,6 @@ msgstr "Ярлык аккаунта"
 msgid "Account menu for {name}"
 msgstr "Меню аккаунта {name}"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Accounts"
-msgstr "Аккаунты"
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -2934,10 +2930,6 @@ msgstr "Загрузка предварительного просмотра…"
 msgid "Loading rules…"
 msgstr "Загрузка правил…"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Loading tools…"
-msgstr "Загрузка инструментов…"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "Загрузка поставщиков голосовой связи…"
@@ -3459,10 +3451,6 @@ msgstr "Командных диалогов пока нет."
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No tools available."
-msgstr "Нет доступных инструментов."
 
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"

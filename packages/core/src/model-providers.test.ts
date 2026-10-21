@@ -429,6 +429,25 @@ describe("chat model choices", () => {
     expect(
       filterModelChoices([{ key: "openrouter::x", label: "X", provider: "openrouter" }], "router"),
     ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [
+          {
+            key: "cloudflare-ai-gateway::x",
+            label: "X",
+            provider: "cloudflare-ai-gateway",
+            providerLabel: "Cloudflare AI Gateway",
+          },
+        ],
+        "AI Gateway",
+      ),
+    ).toHaveLength(1);
+    expect(
+      filterModelChoices(
+        [{ key: "google", label: "Google", providerLabel: "All providers" }],
+        "all",
+      ),
+    ).toEqual([]);
     expect(filterModelChoices(choices, "gemini")).toEqual([]);
     expect(filterModelChoices(choices, " ")).toBe(choices);
   });

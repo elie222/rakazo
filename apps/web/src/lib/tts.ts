@@ -78,7 +78,8 @@ export class Speaker {
     }
   }
 
-  async speak(text: string, opts: SpeakOptions = {}): Promise<void> {
+  /** Resolves with this request's failure text; stopping or superseding it resolves with none. */
+  async speak(text: string, opts: SpeakOptions = {}): Promise<string | undefined> {
     this.stop();
     const mine = this.token;
     const controller = new AbortController();
@@ -93,11 +94,10 @@ export class Speaker {
         this.prepare(text, opts, controller.signal, spaceId),
       );
     } catch (error) {
-      if (live()) {
-        this.set({ ...IDLE, error: errorText(error) });
-      }
+      const failure = live() ? errorText(error) : undefined;
+      if (failure) this.set({ ...IDLE, error: failure });
       if (this.request === controller) this.request = null;
-      return;
+      return failure;
     }
     if (!live()) return;
     if (!utterances.length) {
@@ -119,14 +119,10 @@ export class Speaker {
       if (!current) break;
       const rendered = await current;
       if ("error" in rendered) {
-        if (live()) {
-          this.set({
-            ...IDLE,
-            error: errorText(rendered.error),
-          });
-        }
+        const failure = live() ? errorText(rendered.error) : undefined;
+        if (failure) this.set({ ...IDLE, error: failure });
         if (this.request === controller) this.request = null;
-        return;
+        return failure;
       }
       if (!live()) return;
       this.set({

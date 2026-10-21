@@ -210,6 +210,13 @@ test("takeover, routine, plugins, and export are reachable", async ({ page }, te
   await expect(detail.getByLabel("Account label").nth(1)).toHaveValue("Work");
   await captureScreenshot(page, testInfo, "11a2-multi-account-plugins");
 
+  await page
+    .getByTestId("connection-tools")
+    .getByText(/tools?$/)
+    .click();
+  await expect(detail.getByText("Send email", { exact: true })).toBeVisible();
+  await captureScreenshot(page, testInfo, "11a3-plugin-tools");
+
   await page.getByRole("button", { name: "Close integrations" }).click();
   await page.getByRole("button", { name: "Connect apps", exact: true }).click();
   await expect(page.getByPlaceholder("Search apps")).toBeVisible();

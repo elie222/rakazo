@@ -360,10 +360,6 @@ msgstr ""
 msgid "Account menu for {name}"
 msgstr "{name}의 계정 메뉴"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Accounts"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -2934,10 +2930,6 @@ msgstr "미리보기를 불러오는 중…"
 msgid "Loading rules…"
 msgstr "확인 규칙을 불러오는 중…"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Loading tools…"
-msgstr ""
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "음성 서비스를 불러오는 중…"
@@ -3458,10 +3450,6 @@ msgstr ""
 
 #: src/pages/Board.tsx
 msgid "No tickets yet"
-msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No tools available."
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx

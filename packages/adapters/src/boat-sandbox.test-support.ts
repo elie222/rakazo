@@ -6,6 +6,7 @@ import type {
   CommandResponse,
   CommandStatusRequest,
   CommandStatusResponse,
+  CreateDownloadUrlRequest,
   CreateRequest,
   CreateSandboxResponse,
   CreateUploadUrlRequest,
@@ -48,6 +49,9 @@ interface FakeSandbox {
   recovery: BoatRecovery;
 }
 
+/** Boat's artifact route refuses larger files; download URLs have no size limit. */
+export const BOAT_ARTIFACT_MAX_BYTES = 50 * 1024 * 1024;
+
 const RUNNABLE = new Set<SandboxStateEnum>(["ready", "idle", "running"]);
 // Where each in-flight state settles by the next read.
 const SETTLES_TO: Partial<Record<SandboxStateEnum, SandboxStateEnum>> = {
@@ -69,6 +73,7 @@ export class FakeBoatApi implements BoatSandboxSdk {
   private readonly detached = new Map<number, CommandResponse>();
   private created = 0;
   private readonly uploads = new Map<string, { sandboxId: string; path: string }>();
+  private readonly downloads = new Map<string, { sandboxId: string; path: string }>();
   private startsExhausted = false;
   private rejectAll?: { status: number; code: string; message: string };
 
@@ -225,6 +230,32 @@ export class FakeBoatApi implements BoatSandboxSdk {
     };
   }
 
+  async createDownloadUrl({
+    sandboxId,
+    fileUrlRequest,
+  }: CreateDownloadUrlRequest): Promise<FileUrlResponse> {
+    this.runnable(sandboxId);
+    const url = `https://downloads.on.boat.dev/file?token=fake-download-${this.downloads.size}`;
+    this.downloads.set(url, { sandboxId, path: fileUrlRequest.path });
+    return {
+      ok: true,
+      type: "file.download_url",
+      method: "GET",
+      url,
+      path: fileUrlRequest.path,
+      expiresAt: new Date(Date.now() + 900_000),
+    };
+  }
+
+  /** What the sandbox serves at a download URL. */
+  serveDownload(url: string): Response {
+    const download = this.downloads.get(url);
+    if (!download) return new Response(null, { status: 404 });
+    const file = this.runnable(download.sandboxId).files.get(download.path);
+    if (!file) return new Response(null, { status: 404 });
+    return new Response(Buffer.from(file.content));
+  }
+
   completeUpload(url: string, content: Uint8Array): void {
     const upload = this.uploads.get(url);
     if (!upload) throw new Error("Unknown fake upload");
@@ -251,6 +282,13 @@ export class FakeBoatApi implements BoatSandboxSdk {
   async artifactRaw({ sandboxId, path }: ArtifactRequest): Promise<ApiResponse<Blob>> {
     const file = this.runnable(sandboxId).files.get(path);
     if (!file) throw boatError(404, "not_found", `File not found: ${path}`);
+    if (file.content.byteLength > BOAT_ARTIFACT_MAX_BYTES) {
+      throw boatError(
+        400,
+        "artifact_failed",
+        `Artifact is too large (${file.content.byteLength} bytes > ${BOAT_ARTIFACT_MAX_BYTES})`,
+      );
+    }
     return {
       raw: new Response(Buffer.from(file.content), {
         headers: { "content-length": String(file.content.byteLength) },

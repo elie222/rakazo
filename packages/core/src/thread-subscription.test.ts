@@ -509,6 +509,93 @@ describe("thread subscription recovery", () => {
     await running;
   });
 
+  it("stops reconnecting once the server rejects the session", async () => {
+    vi.useFakeTimers();
+    const { callbacks } = setup();
+    callbacks.subscribe.mockRejectedValue(
+      Object.assign(new Error("Unauthorized"), { status: 401 }),
+    );
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+    expect(callbacks.refresh).not.toHaveBeenCalled();
+  });
+
+  it("stops retrying the head lookup once the server rejects the session", async () => {
+    vi.useFakeTimers();
+    const { callbacks } = setup(null);
+    callbacks.loadInitial.mockResolvedValue(null);
+    callbacks.loadHead.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.loadHead).toHaveBeenCalledTimes(1);
+    expect(callbacks.subscribe).not.toHaveBeenCalled();
+  });
+
+  it("stops before the head lookup when the initial load rejects the session", async () => {
+    vi.useFakeTimers();
+    const { callbacks } = setup();
+    callbacks.loadInitial.mockRejectedValue(
+      Object.assign(new Error("Unauthorized"), { status: 401 }),
+    );
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.loadHead).not.toHaveBeenCalled();
+    expect(callbacks.subscribe).not.toHaveBeenCalled();
+    expect(callbacks.refresh).not.toHaveBeenCalled();
+  });
+
+  it("stops reconnecting when its refresh rejects the session", async () => {
+    vi.useFakeTimers();
+    const { channel, callbacks } = setup();
+    callbacks.refresh.mockRejectedValue(Object.assign(new Error("Unauthorized"), { status: 401 }));
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(0);
+    channel.end();
+    await expect(running).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+    expect(callbacks.subscribe.mock.calls[0]?.[1].aborted).toBe(true);
+    expect(callbacks.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["subscribe", "read", "refresh"])(
+    "cancels a pending %s when snapshot recovery rejects the session",
+    async (stage) => {
+      vi.useFakeTimers();
+      const { abort, channel, state, callbacks } = setup(null);
+      const subscribed = deferred<AsyncIterable<ProductEvent>>();
+      const refreshed = deferred<void>();
+      callbacks.refresh.mockRejectedValue(
+        Object.assign(new Error("Unauthorized"), { status: 401 }),
+      );
+      if (stage === "subscribe") callbacks.subscribe.mockReturnValue(subscribed.promise);
+      if (stage === "refresh") callbacks.refresh.mockReturnValueOnce(refreshed.promise);
+      const running = runThreadSubscription(callbacks);
+      await vi.advanceTimersByTimeAsync(0);
+      const transportSignal = callbacks.subscribe.mock.calls[0]?.[1];
+      if (stage === "refresh") {
+        channel.end();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(callbacks.refresh).toHaveBeenCalledTimes(1);
+      }
+      await vi.advanceTimersByTimeAsync(250);
+      await expect(running).resolves.toBeUndefined();
+      expect(transportSignal?.aborted).toBe(true);
+      expect(abort.signal.aborted).toBe(false);
+      state.committed = head;
+      subscribed.resolve(channel.events);
+      refreshed.resolve();
+      channel.send(event(11));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+      expect(callbacks.refresh).toHaveBeenCalledTimes(stage === "refresh" ? 2 : 1);
+      expect(callbacks.beforeEvent).not.toHaveBeenCalled();
+      expect(callbacks.applyEvent).not.toHaveBeenCalled();
+      expect(callbacks.onEvent).not.toHaveBeenCalled();
+    },
+  );
+
   it("cancels a reconnect delay without rejecting or starting another request", async () => {
     vi.useFakeTimers();
     const { abort, channel, callbacks } = setup();

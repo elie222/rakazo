@@ -398,14 +398,24 @@ export function chatModelChoices(
   return choices.concat(connected);
 }
 
-/** Match a choice by label, model id, or provider; a blank query keeps every choice. */
+/**
+ * Match a choice by label, model id, provider id, or (for a model that names its provider) the
+ * provider's display name; a blank query keeps every choice. A choice without a provider only
+ * uses providerLabel as a section heading, so that heading is not searched.
+ */
 export function filterModelChoices<C extends ChatModelChoice>(
   choices: readonly C[],
   query: string,
 ): readonly C[] {
   if (!query.trim()) return choices;
   return choices.filter((choice) =>
-    matchesSearchQuery(query, choice.label, choice.modelId, choice.provider),
+    matchesSearchQuery(
+      query,
+      choice.label,
+      choice.modelId,
+      choice.provider,
+      choice.provider ? choice.providerLabel : undefined,
+    ),
   );
 }
 

@@ -360,10 +360,6 @@ msgstr ""
 msgid "Account menu for {name}"
 msgstr "{name} için hesap menüsü"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Accounts"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -2934,10 +2930,6 @@ msgstr "Önizleme yükleniyor…"
 msgid "Loading rules…"
 msgstr "Kurallar yükleniyor…"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Loading tools…"
-msgstr ""
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "Ses sağlayıcıları yükleniyor…"
@@ -3458,10 +3450,6 @@ msgstr ""
 
 #: src/pages/Board.tsx
 msgid "No tickets yet"
-msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No tools available."
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx

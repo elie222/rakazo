@@ -1,4 +1,5 @@
 import { COMPUTER_UPDATE_STAGES, type ComputerUpdate } from "@rakazo/contracts";
+import { isUnauthorizedError } from "./http-response.js";
 
 /** Shared polling and local presentation state; the server owns operation lifetime. */
 export function createComputerUpdates(client: {
@@ -17,6 +18,7 @@ export function createComputerUpdates(client: {
   };
   const poll = async (epoch: number) => {
     const stamp = revision;
+    let unauthorized = false;
     try {
       const updates = await client.list();
       if (epoch !== generation || stamp !== revision) return;
@@ -26,12 +28,16 @@ export function createComputerUpdates(client: {
         openId: updates.some((item) => item.id === state.openId) ? state.openId : null,
       };
       emit();
-    } catch {
-      /* Keep the last known operation through transient connection failures. */
+    } catch (error) {
+      // Keep the last known operation through transient failures; a 401 stops polling until
+      // the next watch, since a signed-out session cannot recover by asking again.
+      unauthorized = isUnauthorizedError(error);
     } finally {
       if (epoch === generation) {
         clearTimeout(timer);
-        timer = setTimeout(() => void poll(epoch), state.updates.length ? 1500 : 15000);
+        if (!unauthorized) {
+          timer = setTimeout(() => void poll(epoch), state.updates.length ? 1500 : 15000);
+        }
       }
     }
   };

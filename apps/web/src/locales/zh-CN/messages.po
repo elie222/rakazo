@@ -360,10 +360,6 @@ msgstr ""
 msgid "Account menu for {name}"
 msgstr "{name} 的账户菜单"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Accounts"
-msgstr ""
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -2934,10 +2930,6 @@ msgstr "正在加载预览…"
 msgid "Loading rules…"
 msgstr "正在加载规则…"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Loading tools…"
-msgstr ""
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "正在加载语音提供方…"
@@ -3458,10 +3450,6 @@ msgstr ""
 
 #: src/pages/Board.tsx
 msgid "No tickets yet"
-msgstr ""
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No tools available."
 msgstr ""
 
 #: src/pages/RoutineEditor.tsx

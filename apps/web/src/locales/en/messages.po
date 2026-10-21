@@ -360,10 +360,6 @@ msgstr "Account label"
 msgid "Account menu for {name}"
 msgstr "Account menu for {name}"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Accounts"
-msgstr "Accounts"
-
 #. placeholder {0}: bot.name
 #. placeholder {0}: group.spaceName
 #. placeholder {0}: section.name
@@ -2934,10 +2930,6 @@ msgstr "Loading preview…"
 msgid "Loading rules…"
 msgstr "Loading rules…"
 
-#: src/pages/PluginsOverlay.tsx
-msgid "Loading tools…"
-msgstr "Loading tools…"
-
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Loading voice providers…"
 msgstr "Loading voice providers…"
@@ -3459,10 +3451,6 @@ msgstr "No team conversations yet."
 #: src/pages/Board.tsx
 msgid "No tickets yet"
 msgstr "No tickets yet"
-
-#: src/pages/PluginsOverlay.tsx
-msgid "No tools available."
-msgstr "No tools available."
 
 #: src/pages/RoutineEditor.tsx
 msgid "No trigger"
