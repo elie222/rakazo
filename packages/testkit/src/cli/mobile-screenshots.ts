@@ -87,7 +87,9 @@ async function main() {
 
   try {
     await waitForHealth(`${HOST_API_URL}/health`, 15_000);
-    for (const { name: flow, window } of FLOWS) {
+    for (const { name: flow, window } of process.env.MOBILE_KEYBOARD_ONLY === "true"
+      ? [{ name: "keyboard-lifecycle", window: undefined }]
+      : FLOWS) {
       // A failed reset is reported without hiding why the flow failed.
       let flowFailed = false;
       let flowError: unknown;

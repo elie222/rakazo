@@ -25,6 +25,7 @@ export type ThreadComposerHandle = {
 
 type ThreadComposerProps = {
   ref: Ref<ThreadComposerHandle>;
+  onFocus?: () => void;
   agentSkills: AgentSkillCatalogEntry[];
   composerMentionTargets: ReturnType<typeof buildComposerMentionOptions>;
   composerPrompt: string;
@@ -46,6 +47,7 @@ type ThreadComposerProps = {
 
 export function ThreadComposer({
   ref,
+  onFocus,
   agentSkills,
   composerMentionTargets,
   composerPrompt,
@@ -440,6 +442,7 @@ export function ThreadComposer({
                 </Text>
               ) : null}
               <TextInput
+                onFocus={onFocus}
                 value={draft}
                 onChangeText={updateDraft}
                 accessibilityLabel={composerPrompt}

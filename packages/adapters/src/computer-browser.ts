@@ -15,8 +15,7 @@ import type {
 } from "@rakazo/adapter-kit";
 import { FakeBrowserProvider, type FakeBrowserProviderOptions } from "./fake-browser.js";
 
-const DETACHED_MESSAGE =
-  "Page browser is not attached to this computer's Chrome. Use computer_act on the desktop browser instead.";
+const DETACHED_MESSAGE = "Page browser is not attached to this computer's Chrome.";
 
 type LivePayload = Partial<PageBrowserResult>;
 
@@ -115,6 +114,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       title: typeof live.title === "string" ? live.title : "",
       tree: typeof live.tree === "string" ? live.tree : formatTree(elements),
       elements,
+      ...(live.loading === true ? { loading: true } : {}),
     };
   }
 
@@ -150,6 +150,7 @@ export class ComputerBrowserProvider implements BrowserProvider {
       title: typeof live.title === "string" ? live.title : "",
       tree: typeof live.tree === "string" ? live.tree : elements ? formatTree(elements) : undefined,
       elements,
+      ...(live.loading === true ? { loading: true } : {}),
     };
   }
 

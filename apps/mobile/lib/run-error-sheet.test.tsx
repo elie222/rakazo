@@ -213,10 +213,7 @@ it.each([false, true])("keeps history fetch errors visible (provider failure: %s
   const testFileUrl = import.meta.url;
   const source = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
   const noticeStart = source.indexOf("  const visibleRunError =");
-  const notice = source.slice(
-    noticeStart,
-    source.indexOf("  return (\n    <KeyboardAvoidingView", noticeStart),
-  );
+  const notice = source.slice(noticeStart, source.indexOf("  return (\n    <View", noticeStart));
   const footerStart = source.indexOf("{pinnedNewerCursor === null ? failedSendBubbles : null}");
   const footer = source.slice(footerStart, source.indexOf("</ScrollView>", footerStart));
   const scope = {
