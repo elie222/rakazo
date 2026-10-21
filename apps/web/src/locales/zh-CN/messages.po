@@ -761,6 +761,10 @@ msgid "Authorization code or callback URL"
 msgstr "授权码或回调 URL"
 
 #: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "授权参数（可选）"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization server"
 msgstr "授权服务器"
 

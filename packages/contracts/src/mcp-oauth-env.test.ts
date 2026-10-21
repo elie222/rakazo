@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mcpOAuthEnvReferences, resolveMcpOAuthEnv, resolveMcpOAuthTemplate } from "./mcp.js";
+import {
+  mcpOAuthEnvReferences,
+  parseMcpOAuthAuthorizationParams,
+  resolveMcpOAuthEnv,
+  resolveMcpOAuthTemplate,
+} from "./mcp.js";
 
 describe("MCP OAuth env references", () => {
   it("finds the referenced fields and flags unknown ones", () => {
@@ -41,5 +46,17 @@ describe("MCP OAuth env references", () => {
     expect(() => resolveMcpOAuthTemplate("{{oauth.scope}}", {}, "GOOGLE_TOKENS")).toThrow(
       "oauth.scope is not available for GOOGLE_TOKENS",
     );
+  });
+
+  it("parses extra authorization parameters and refuses to override the flow's own", () => {
+    expect(parseMcpOAuthAuthorizationParams("access_type=offline&prompt=consent")).toEqual({
+      access_type: "offline",
+      prompt: "consent",
+    });
+    expect(parseMcpOAuthAuthorizationParams("")).toEqual({});
+    expect(() => parseMcpOAuthAuthorizationParams("redirect_uri=https://evil.example")).toThrow(
+      "redirect_uri",
+    );
+    expect(() => parseMcpOAuthAuthorizationParams("scope=a")).toThrow("scope");
   });
 });

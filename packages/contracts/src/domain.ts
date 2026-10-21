@@ -14,6 +14,7 @@ import {
   McpRemoteEndpointSchema,
   McpStdioFilesSchema,
   McpTransportSchema,
+  parseMcpOAuthAuthorizationParams,
 } from "./mcp.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
@@ -780,6 +781,21 @@ const McpOAuthClientFields = {
   clientSecret: z.string().min(1).max(4096).optional(),
   /** Space-separated scopes to request. Empty: the server's advertised scopes. */
   scope: z.string().trim().max(2000).optional(),
+  /** Extra authorization request parameters in query-string form, e.g. Google's
+   * `access_type=offline&prompt=consent` for a refresh token. */
+  authorizationParams: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((value) => {
+      try {
+        parseMcpOAuthAuthorizationParams(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Extra authorization parameters cannot set the OAuth flow's own parameters")
+    .optional(),
 };
 /** A client registered with the server's OAuth provider out of band, for
  * providers without dynamic client registration. On update, omit it to keep

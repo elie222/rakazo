@@ -761,6 +761,10 @@ msgid "Authorization code or callback URL"
 msgstr "Yetkilendirme kodu veya callback URL'si"
 
 #: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "Yetkilendirme parametreleri (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization server"
 msgstr "Yetkilendirme sunucusu"
 

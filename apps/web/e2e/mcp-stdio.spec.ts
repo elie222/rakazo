@@ -38,6 +38,7 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
         clientSecret: "google-secret",
         authorizationServer: "https://accounts.google.com",
         scope: "openid email",
+        authorizationParams: "access_type=offline&prompt=consent",
       },
     });
     expect(json.env).not.toHaveProperty("GOOGLE_OAUTH_CREDENTIALS");
@@ -125,6 +126,9 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await page.getByLabel("OAuth client secret (optional)").fill("google-secret");
   await page.getByLabel("Authorization server").fill("https://accounts.google.com");
   await page.getByLabel("Scopes (optional)").fill("openid email");
+  await page
+    .getByLabel("Authorization parameters (optional)")
+    .fill("access_type=offline&prompt=consent");
   await expect(page.getByLabel("Redirect URI")).toHaveValue(/\/mcp\/oauth\/callback$/);
   await expect(page.getByText("Use {{oauth.access_token}} for the access token.")).toBeVisible();
   await captureScreenshot(page, testInfo, "mcp-stdio-env-form");

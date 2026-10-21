@@ -761,6 +761,10 @@ msgid "Authorization code or callback URL"
 msgstr "인증 코드 또는 돌아온 페이지 주소"
 
 #: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "인증 매개변수(선택 사항)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization server"
 msgstr "인증 서버"
 

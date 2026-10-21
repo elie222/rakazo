@@ -5,6 +5,8 @@ type McpOAuthClient = {
   client_secret?: string;
   /** Space-separated scopes to request. */
   scope?: string;
+  /** Extra authorization request parameters, query-string form. */
+  authorization_params?: string;
   /** Set on first use by McpOAuthBroker for a remote server, or by the user for
    * stdio; kept while the client is unchanged. */
   authorization_server?: string;
@@ -109,7 +111,13 @@ export function buildMcpUpdateMaterial(
 function nextOAuthClient(
   existing: McpOAuthClient | undefined,
   input:
-    | { clientId: string; clientSecret?: string; scope?: string; authorizationServer?: string }
+    | {
+        clientId: string;
+        clientSecret?: string;
+        scope?: string;
+        authorizationServer?: string;
+        authorizationParams?: string;
+      }
     | null
     | undefined,
 ): { next?: McpOAuthClient; changed: boolean } {
@@ -118,6 +126,7 @@ function nextOAuthClient(
   const sameClient = existing?.client_id === input.clientId;
   const secret = input.clientSecret ?? (sameClient ? existing?.client_secret : undefined);
   const scope = input.scope || undefined;
+  const authorizationParams = input.authorizationParams || undefined;
   const authorizationServer = input.authorizationServer
     ? new URL(input.authorizationServer).href
     : undefined;
@@ -126,6 +135,7 @@ function nextOAuthClient(
     sameClient &&
     secret === existing.client_secret &&
     scope === existing.scope &&
+    authorizationParams === existing.authorization_params &&
     (authorizationServer === undefined || authorizationServer === existing.authorization_server);
   if (unchanged) return { next: existing, changed: false };
   return {
@@ -133,6 +143,7 @@ function nextOAuthClient(
       client_id: input.clientId,
       ...(secret ? { client_secret: secret } : {}),
       ...(scope ? { scope } : {}),
+      ...(authorizationParams ? { authorization_params: authorizationParams } : {}),
       ...(authorizationServer ? { authorization_server: authorizationServer } : {}),
     },
     changed: true,

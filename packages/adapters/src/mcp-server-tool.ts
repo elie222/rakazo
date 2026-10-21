@@ -92,6 +92,7 @@ export function buildMcpCredentialBlob(parsed: {
     clientSecret?: string;
     scope?: string;
     authorizationServer?: string;
+    authorizationParams?: string;
   } | null;
 }): string | null {
   const env = parsed.env ?? {};
@@ -118,6 +119,9 @@ export function buildMcpCredentialBlob(parsed: {
             client_id: client.clientId,
             ...(client.clientSecret ? { client_secret: client.clientSecret } : {}),
             ...(client.scope ? { scope: client.scope } : {}),
+            ...(client.authorizationParams
+              ? { authorization_params: client.authorizationParams }
+              : {}),
             ...(client.authorizationServer
               ? { authorization_server: new URL(client.authorizationServer).href }
               : {}),

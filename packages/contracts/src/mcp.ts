@@ -117,3 +117,30 @@ export const McpStdioFilesSchema = z
       ctx.addIssue({ code: "custom", message: "At most 8 credential files are allowed" });
     }
   });
+
+/** Parameters the OAuth flow sets itself; extra authorization parameters may not override them. */
+const MCP_OAUTH_FLOW_PARAMS = new Set([
+  "response_type",
+  "client_id",
+  "redirect_uri",
+  "scope",
+  "state",
+  "code_challenge",
+  "code_challenge_method",
+  "resource",
+]);
+
+/**
+ * Extra parameters for the authorization request, in query-string form. Some
+ * providers need them to issue a refresh token, e.g. Google's
+ * `access_type=offline&prompt=consent`.
+ */
+export function parseMcpOAuthAuthorizationParams(value: string): Record<string, string> {
+  const params: Record<string, string> = {};
+  for (const [key, entry] of new URLSearchParams(value.trim().replace(/^\?/, ""))) {
+    if (MCP_OAUTH_FLOW_PARAMS.has(key))
+      throw new Error(`${key} is set by the OAuth flow and cannot be an extra parameter`);
+    params[key] = entry;
+  }
+  return params;
+}

@@ -184,3 +184,17 @@ describe("needsOAuthProbe", () => {
     expect(needsOAuthProbe({ transport: "stdio", command: "c" } as never)).toBe(false);
   });
 });
+
+describe("buildMcpCredentialBlob authorization parameters", () => {
+  it("stores the client's extra authorization parameters", () => {
+    expect(
+      JSON.parse(
+        buildMcpCredentialBlob({
+          oauthClient: { clientId: "c", authorizationParams: "access_type=offline" },
+        }) ?? "null",
+      ),
+    ).toMatchObject({
+      oauthClient: { client_id: "c", authorization_params: "access_type=offline" },
+    });
+  });
+});

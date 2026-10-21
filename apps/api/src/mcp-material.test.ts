@@ -124,6 +124,37 @@ describe("buildMcpUpdateMaterial", () => {
       oauth: { tokens: { access_token: "t" } },
     };
 
+    it("stores extra authorization parameters and treats a change as a new client", () => {
+      const stored = {
+        oauthClient: { client_id: "client-a", authorization_params: "access_type=offline" },
+        oauth: { tokens: { access_token: "t" } },
+      };
+      expect(
+        buildMcpUpdateMaterial(stored, {
+          ...remote,
+          oauthClient: { clientId: "client-a", authorizationParams: "access_type=offline" },
+        }),
+      ).toEqual({ action: "store", material: { ...stored, headers: {} } });
+      expect(
+        buildMcpUpdateMaterial(stored, {
+          ...remote,
+          oauthClient: {
+            clientId: "client-a",
+            authorizationParams: "access_type=offline&prompt=consent",
+          },
+        }),
+      ).toEqual({
+        action: "store",
+        material: {
+          headers: {},
+          oauthClient: {
+            client_id: "client-a",
+            authorization_params: "access_type=offline&prompt=consent",
+          },
+        },
+      });
+    });
+
     it("stores a client supplied on update", () => {
       expect(
         buildMcpUpdateMaterial(

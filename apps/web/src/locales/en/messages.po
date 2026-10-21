@@ -761,6 +761,10 @@ msgid "Authorization code or callback URL"
 msgstr "Authorization code or callback URL"
 
 #: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "Authorization parameters (optional)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "Authorization server"
 msgstr "Authorization server"
 

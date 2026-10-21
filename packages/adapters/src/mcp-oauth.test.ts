@@ -1869,6 +1869,27 @@ describe("MCP OAuth", () => {
       },
     );
 
+    it("adds the client's extra authorization parameters to the authorization URL", async () => {
+      nonRegisteringAuthServer(() => undefined, { challenge: false });
+      const { broker } = brokerWithMaterial({
+        oauthClient: { ...oauthClient, authorization_params: "access_type=offline&prompt=consent" },
+      });
+
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      const url = new URL(
+        started.status === "authorization_required" ? started.authorizationUrl : "",
+      );
+      expect(url.searchParams.get("access_type")).toBe("offline");
+      expect(url.searchParams.get("prompt")).toBe("consent");
+      expect(url.searchParams.get("client_id")).toBe("registered-client");
+    });
+
     it("treats the client secret as a credential that must never be shown", () => {
       expect(oauthMaterialSecrets({ oauthClient })).toContain("registered-secret");
       expect(oauthMaterialSecrets({ oauthClient })).not.toContain("registered-client");

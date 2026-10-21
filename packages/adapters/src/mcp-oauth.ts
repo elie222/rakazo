@@ -20,7 +20,11 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { isLocalMcpHost, mcpOAuthEnvReferences } from "@rakazo/contracts";
+import {
+  isLocalMcpHost,
+  mcpOAuthEnvReferences,
+  parseMcpOAuthAuthorizationParams,
+} from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -198,6 +202,8 @@ const COMMON_CONFIG_VALUES = new Set([
 type PreRegisteredClient = OAuthClientInformation & {
   authorization_server?: string;
   scope?: string;
+  /** Extra authorization request parameters, query-string form. */
+  authorization_params?: string;
 };
 
 function boundClient(
@@ -210,7 +216,12 @@ function boundClient(
     client.authorization_server !== new URL(authorizationServerUrl).href
   )
     throw new McpOAuthServerMismatchError();
-  const { authorization_server: _bound, scope: _scope, ...information } = client;
+  const {
+    authorization_server: _bound,
+    scope: _scope,
+    authorization_params: _params,
+    ...information
+  } = client;
   return information;
 }
 
@@ -441,6 +452,11 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
         await this.invalidateCredentials("tokens");
       }
       throw error;
+    }
+    const extra = this.material.oauthClient?.authorization_params;
+    if (extra) {
+      for (const [key, value] of Object.entries(parseMcpOAuthAuthorizationParams(extra)))
+        if (!authorizationUrl.searchParams.has(key)) authorizationUrl.searchParams.set(key, value);
     }
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
@@ -794,6 +810,7 @@ function sameOAuthClient(
     left?.client_id === right?.client_id &&
     left?.client_secret === right?.client_secret &&
     left?.scope === right?.scope &&
+    left?.authorization_params === right?.authorization_params &&
     (!bound || left?.authorization_server === right?.authorization_server)
   );
 }

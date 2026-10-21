@@ -722,7 +722,9 @@ read credentials from the environment), so Rakazo runs the flow for them. They a
 the API and worker have `MCP_STDIO_ENABLED=true` and the command is listed in
 `MCP_STDIO_ALLOWED_COMMANDS`. When adding the server, enter the OAuth client, its
 **Authorization server** (the issuer, for example `https://accounts.google.com`) and the
-**Scopes**, then click **Connect OAuth** as for a remote server. Pass the grant to the process
+**Scopes**, then click **Connect OAuth** as for a remote server. Some providers issue a refresh
+token only when asked through extra parameters: for Google, set **Authorization parameters** to
+`access_type=offline&prompt=consent`. Pass the grant to the process
 through its environment variables:
 
 - A value can reference `{{oauth.access_token}}`, `{{oauth.refresh_token}}`,

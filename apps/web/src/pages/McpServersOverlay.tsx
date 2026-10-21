@@ -72,6 +72,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [oauthClientSecret, setOauthClientSecret] = useState("");
   const [oauthAuthorizationServer, setOauthAuthorizationServer] = useState("");
   const [oauthScope, setOauthScope] = useState("");
+  const [oauthParams, setOauthParams] = useState("");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [envRows, setEnvRows] = useState<EnvRow[]>(() => [emptyEnvRow()]);
@@ -146,6 +147,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
             clientId: oauthClientId.trim(),
             clientSecret: oauthClientSecret || undefined,
             scope: oauthScope.trim() || undefined,
+            authorizationParams: oauthParams.trim() || undefined,
           }
         : undefined;
       const envEntries = (file: boolean) =>
@@ -204,6 +206,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       setOauthClientSecret("");
       setOauthAuthorizationServer("");
       setOauthScope("");
+      setOauthParams("");
       setCommand("");
       setArgs("");
       setEnvRows([emptyEnvRow()]);
@@ -560,6 +563,18 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                             value={oauthScope}
                             onChange={(e) => setOauthScope(e.target.value)}
                             placeholder="openid email"
+                          />
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor="mcp-oauth-params">
+                            <Trans>Authorization parameters (optional)</Trans>
+                          </FieldLabel>
+                          <Input
+                            id="mcp-oauth-params"
+                            autoComplete="off"
+                            value={oauthParams}
+                            onChange={(e) => setOauthParams(e.target.value)}
+                            placeholder="access_type=offline&prompt=consent"
                           />
                         </Field>
                         <Field>
