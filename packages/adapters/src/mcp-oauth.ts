@@ -960,12 +960,12 @@ export class McpOAuthBroker {
           () => authorizationUrl !== undefined,
         );
       else {
+        // tokens() renews an expiring grant first; a grant still expired afterwards (no
+        // refresh token, or the refresh keeps failing) cannot start the process, so the
+        // user re-authorizes instead of being told it is connected.
         const tokens = await provider.tokens();
         const expiresAt = accessTokenExpiresAt(loaded.material.oauth);
-        if (
-          !tokens ||
-          (expiresAt !== undefined && Date.now() >= expiresAt && !tokens.refresh_token)
-        )
+        if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
           await authorizeAtIssuer(provider, target, provider.wrapFetch(networkFetch.fetch));
       }
     } catch (error) {

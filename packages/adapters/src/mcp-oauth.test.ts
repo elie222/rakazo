@@ -1781,6 +1781,32 @@ describe("MCP OAuth", () => {
         expect((await broker.begin(begin)).status).toBe("authorization_required");
       });
 
+      const expiredRefreshable = {
+        oauthClient: stdioClient,
+        oauth: {
+          discoveryState,
+          obtainedAt: Date.now() - 7200_000,
+          tokens: {
+            access_token: "expired",
+            refresh_token: "refresh-1",
+            token_type: "Bearer",
+            expires_in: 3600,
+          },
+        },
+      };
+
+      it("starts authorization for an expired grant whose refresh token was revoked", async () => {
+        nonRegisteringAuthServer(() => Response.json({ error: "invalid_grant" }, { status: 400 }));
+        const { broker } = brokerWithMaterial(structuredClone(expiredRefreshable), stdio);
+        expect((await broker.begin(begin)).status).toBe("authorization_required");
+      });
+
+      it("never reports an expired grant whose refresh keeps failing as connected", async () => {
+        nonRegisteringAuthServer(() => new Response("unavailable", { status: 503 }));
+        const { broker } = brokerWithMaterial(structuredClone(expiredRefreshable), stdio);
+        await expect(broker.begin(begin)).rejects.toThrow("Could not start MCP OAuth");
+      });
+
       it("rejects a loopback issuer before sending credentials", async () => {
         const requested = nonRegisteringAuthServer(() => undefined);
         const { broker } = brokerWithMaterial(
