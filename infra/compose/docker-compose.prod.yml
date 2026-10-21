@@ -201,6 +201,7 @@ x-app-environment: &app-environment
   MCP_STDIO_INSTALL_TIMEOUT_MS:
   MCP_STDIO_STARTUP_TIMEOUT_MS:
   MCP_STDIO_IDLE_MS:
+  MCP_DISCOVERY_TIMEOUT_MS:
   MCP_PACKAGES_DIR:
   MCP_ALLOW_PRIVATE_ENDPOINT:
   # Messaging (outbound delivery runs in the worker)
