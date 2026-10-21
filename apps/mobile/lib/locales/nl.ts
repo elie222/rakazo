@@ -359,7 +359,6 @@ export const NL_MESSAGES: Record<string, string> = {
   Profile: "Profiel",
   Routines: "Routines",
   "Could not load routines": "Routines laden mislukt",
-  "Booting {label}": "{label} opstarten",
   Bot: "Bot",
   "Close computer": "Computer sluiten",
   "Computer keyboard": "Computertoetsenbord",
@@ -733,6 +732,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Use an http or https URL": "Gebruik een http- of https-URL",
   "Android blocked notifications.": "Android heeft meldingen geblokkeerd.",
   "Could not reach the server": "De server is niet bereikbaar",
+  "Request timed out": "Time-out bij verzoek",
   "Enter a password": "Voer een wachtwoord in",
   "Enter a valid email": "Voer een geldig e-mailadres in",
   "Something went wrong. Try again.": "Er is iets misgegaan. Probeer het opnieuw.",
@@ -893,4 +893,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Add passkey": "Passkey toevoegen",
   Rename: "Naam wijzigen",
   "Add a passkey for faster sign-in?": "Passkey toevoegen om sneller aan te melden?",
+  "Couldn't start the computer": "De computer kon niet worden gestart",
+  "Something went wrong while it was starting. Try again in a moment.":
+    "Er ging iets mis tijdens het opstarten. Probeer het over een moment opnieuw.",
 };

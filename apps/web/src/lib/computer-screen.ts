@@ -58,3 +58,19 @@ export function screenIframeSandbox(url: string | null) {
     return undefined;
   }
 }
+
+/** Deduplicate only the boot request; callers can still take over and refresh. */
+export async function bootComputerOnce<T>(
+  inFlight: Map<string, symbol>,
+  botId: string,
+  boot: () => Promise<T>,
+): Promise<T | undefined> {
+  if (inFlight.has(botId)) return;
+  const token = Symbol(botId);
+  inFlight.set(botId, token);
+  try {
+    return await boot();
+  } finally {
+    if (inFlight.get(botId) === token) inFlight.delete(botId);
+  }
+}

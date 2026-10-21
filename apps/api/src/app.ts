@@ -714,7 +714,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     monitoringRoutes(
       env.browserMonitoring,
       fetch,
-      async (request) => (await auth.api.getSession({ headers: sessionHeaders(request) }))?.user.id,
+      async (request) => (await auth.api.getSession({ headers: request.headers }))?.user.id,
     ),
   );
   app.route("/", cspReportRoutes(requestClientIp));
