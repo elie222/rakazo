@@ -1691,6 +1691,10 @@ msgstr "Impossible d'ouvrir les paramètres locaux. Démarrez le serveur local e
 msgid "Could not play a test clip"
 msgstr "Impossible de lire un extrait de test"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "Impossible de préécouter cette voix"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Impossible de joindre le serveur du modèle."
@@ -2494,6 +2498,10 @@ msgstr "Mot de passe oublié ?"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr "Gratuit"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "Gratuit, fonctionne hors ligne"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "Utiliser votre propre clé"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "Utilise les voix installées sur ce Mac. Aucune clé d'API."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

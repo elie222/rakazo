@@ -256,3 +256,16 @@ it("clears stale voices if the refresh fails after activating a provider", async
   expect(container.textContent).toContain("Could not load voice settings");
   expect(state.save).not.toHaveBeenCalled();
 });
+
+it("hides the macOS provider on the phone", async () => {
+  const original = state.rpc.getMockImplementation()!;
+  state.rpc.mockImplementation(async (proc: string, args?: { provider: string }) => {
+    if (proc === "voice/catalog") {
+      const listed = await original(proc, args);
+      return [{ id: "macos", name: "macOS", transcribe: false }, ...listed];
+    }
+    return original(proc, args);
+  });
+  await render();
+  expect(container.textContent).not.toContain("macOS");
+});

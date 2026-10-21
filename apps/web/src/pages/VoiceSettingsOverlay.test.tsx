@@ -14,6 +14,7 @@ const voice = vi.hoisted(() => ({
   disconnect: vi.fn(),
   setVoice: vi.fn(),
   setSpeechModel: vi.fn(),
+  previewMacVoice: vi.fn(),
 }));
 
 const { speak } = vi.hoisted(() => ({ speak: vi.fn(async () => undefined) }));
@@ -307,6 +308,64 @@ it.each([
     }
   },
 );
+
+it("shows that a Mac sample is playing and ignores another click", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let release: () => void = () => undefined;
+  voice.previewMacVoice.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true });
+      }),
+  );
+  voice.catalog.mockResolvedValue([
+    { id: "macos", name: "macOS", description: "", transcribe: false },
+  ]);
+  voice.credentials.mockResolvedValue([]);
+  voice.status.mockResolvedValue({
+    configured: false,
+    ready: false,
+    transcribe: false,
+    provider: null,
+    voiceId: "",
+  });
+  voice.voices.mockResolvedValue([{ id: "macos:Zoe (Premium)", label: "Zoe (Premium)" }]);
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const button = (text: string) => {
+    const found = [...container.querySelectorAll("button")].find((entry) =>
+      entry.textContent?.includes(text),
+    );
+    if (!found) throw new Error(`Missing button: ${text}`);
+    return found;
+  };
+  try {
+    await act(async () => {
+      root.render(<VoiceSettingsOverlay embedded onClose={() => undefined} />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      button("Hear a sample").click();
+    });
+
+    expect(container.textContent).toContain("Playing…");
+    expect(voice.previewMacVoice).toHaveBeenCalledTimes(1);
+    expect(voice.previewMacVoice).toHaveBeenCalledWith({ voice: "Zoe (Premium)" });
+    await act(async () => {
+      button("Playing…").click();
+    });
+    expect(voice.previewMacVoice).toHaveBeenCalledTimes(1);
+  } finally {
+    release();
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 it.each([null, "space-edited"])("plays a sample for the bound space %s", async (spaceId) => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

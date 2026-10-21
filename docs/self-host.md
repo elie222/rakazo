@@ -1374,6 +1374,12 @@ Images use existing inline chat rendering. MP4 files can be previewed with nativ
 video controls on web and Electron and opened/downloaded through the existing
 native file flow on mobile. No new mobile player or settings screen is required.
 
+## Voice
+
+Voice providers are optional. ElevenLabs, OpenAI, Cartesia, and Fish Audio are connected in Voice settings with their own keys.
+
+When the API process is running on macOS and `/usr/bin/say` exists, Voice settings also lists the voices installed on that Mac. Playback uses `say` on the Mac that runs the API. A browser on another machine hears it only when that Mac's audio is shared. Docker and Linux do not show the Mac voice, because the API process there cannot call `say`. There is no environment variable for this.
+
 ## Connect mobile clients
 
 The iOS and Android app can also point at a self-hosted origin at runtime. On the sign-in screen, tap **Use a custom server** and enter the same HTTPS origin as `WEB_ORIGIN` (for example `https://app.example.com`). Store builds still default to `EXPO_PUBLIC_API_URL`; the in-app setting is an override for people running their own API. Changing the server signs the device out of any previous session.

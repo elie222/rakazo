@@ -87,10 +87,10 @@ export function VoiceSettingsOverlay({
     setBaseUrl(cred?.endpoint ?? "");
     setTtsModel(cred?.ttsModel ?? "");
     setSttModel(cred?.sttModel ?? "");
-    if (cred) {
+    if (cred || selected === "macos") {
       const listed = await rpc.voice.voices({ provider: selected });
       setVoices(listed);
-      if (!activeVoice && listed[0]) setVoiceId(listed[0].id);
+      if (!activeVoice && listed[0]) setVoiceId(listed[0].id.replace(/^macos:/, ""));
     } else {
       setVoices([]);
     }
@@ -104,6 +104,8 @@ export function VoiceSettingsOverlay({
 
   const selected = catalog.find((entry) => entry.id === provider) ?? catalog[0];
   const credential = credentials.find((entry) => entry.provider === provider);
+  const macProvider = selected?.id === "macos";
+  const voiceReady = Boolean(credential) || macProvider;
   const voiceOptions = useMemo(
     () => (voices.length ? voices : voiceId ? [{ id: voiceId, label: voiceId }] : []),
     [voices, voiceId],
@@ -160,6 +162,10 @@ export function VoiceSettingsOverlay({
 
   async function chooseVoice(nextVoiceId: string) {
     setVoiceId(nextVoiceId);
+    if (selected?.id === "macos") {
+      setVoiceId(nextVoiceId.replace(/^macos:/, ""));
+      return;
+    }
     if (!credential) return;
     markPending("voice");
     setError(null);
@@ -263,7 +269,9 @@ export function VoiceSettingsOverlay({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[15px] text-foreground">{entry.name}</span>
                     <span className="mt-0.5 block text-[12px] text-muted-foreground/80">
-                      {entry.transcribe ? (
+                      {entry.id === "macos" ? (
+                        <Trans>Free, works offline</Trans>
+                      ) : entry.transcribe ? (
                         <Trans>Speak + transcribe</Trans>
                       ) : (
                         <Trans>Speak only</Trans>
@@ -291,107 +299,116 @@ export function VoiceSettingsOverlay({
           {notice ? <p className="mb-4 text-sm text-success">{notice}</p> : null}
           {selected ? (
             <>
-              {selfHosted ? (
-                <Field className="mt-5">
-                  <FieldLabel htmlFor={baseUrlId}>
-                    <Trans>Server URL</Trans>
-                  </FieldLabel>
-                  <Input
-                    id={baseUrlId}
-                    type="url"
-                    autoComplete="off"
-                    spellCheck={false}
-                    value={baseUrl}
-                    onChange={(event) => setBaseUrl(event.target.value)}
-                    placeholder="http://192.168.1.10:8880/v1"
-                  />
-                </Field>
+              {macProvider ? (
+                <p className="mt-5 text-sm text-muted-foreground">
+                  <Trans>Uses the voices installed on this Mac. No API key.</Trans>
+                </p>
               ) : null}
-              <Field className="mt-5">
-                <FieldLabel htmlFor={apiKeyId}>
-                  <Trans>API key</Trans>
-                </FieldLabel>
-                <Input
-                  id={apiKeyId}
-                  type="password"
-                  autoComplete="new-password"
-                  value={apiKey}
-                  onChange={(event) => setApiKey(event.target.value)}
-                  placeholder={
-                    selfHosted
-                      ? t`Optional`
-                      : credential
-                        ? t`Paste a replacement key`
-                        : t`Paste your API key`
-                  }
-                />
-              </Field>
-              {selfHosted ? (
+              {macProvider ? null : (
                 <>
+                  {selfHosted ? (
+                    <Field className="mt-5">
+                      <FieldLabel htmlFor={baseUrlId}>
+                        <Trans>Server URL</Trans>
+                      </FieldLabel>
+                      <Input
+                        id={baseUrlId}
+                        type="url"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={baseUrl}
+                        onChange={(event) => setBaseUrl(event.target.value)}
+                        placeholder="http://192.168.1.10:8880/v1"
+                      />
+                    </Field>
+                  ) : null}
                   <Field className="mt-5">
-                    <FieldLabel htmlFor={ttsModelId}>
-                      <Trans>Speech model</Trans>
+                    <FieldLabel htmlFor={apiKeyId}>
+                      <Trans>API key</Trans>
                     </FieldLabel>
                     <Input
-                      id={ttsModelId}
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={ttsModel}
-                      maxLength={200}
-                      onChange={(event) => setTtsModel(event.target.value)}
-                      placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
+                      id={apiKeyId}
+                      type="password"
+                      autoComplete="new-password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder={
+                        selfHosted
+                          ? t`Optional`
+                          : credential
+                            ? t`Paste a replacement key`
+                            : t`Paste your API key`
+                      }
                     />
                   </Field>
-                  <Field className="mt-5">
-                    <FieldLabel htmlFor={sttModelId}>
-                      <Trans>Transcription model</Trans>
-                    </FieldLabel>
-                    <Input
-                      id={sttModelId}
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={sttModel}
-                      maxLength={200}
-                      onChange={(event) => setSttModel(event.target.value)}
-                      placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
-                    />
-                  </Field>
+                  {selfHosted ? (
+                    <>
+                      <Field className="mt-5">
+                        <FieldLabel htmlFor={ttsModelId}>
+                          <Trans>Speech model</Trans>
+                        </FieldLabel>
+                        <Input
+                          id={ttsModelId}
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={ttsModel}
+                          maxLength={200}
+                          onChange={(event) => setTtsModel(event.target.value)}
+                          placeholder={DEFAULT_COMPATIBLE_TTS_MODEL}
+                        />
+                      </Field>
+                      <Field className="mt-5">
+                        <FieldLabel htmlFor={sttModelId}>
+                          <Trans>Transcription model</Trans>
+                        </FieldLabel>
+                        <Input
+                          id={sttModelId}
+                          autoComplete="off"
+                          spellCheck={false}
+                          value={sttModel}
+                          maxLength={200}
+                          onChange={(event) => setSttModel(event.target.value)}
+                          placeholder={DEFAULT_COMPATIBLE_STT_MODEL}
+                        />
+                      </Field>
+                    </>
+                  ) : null}
+                  <Button
+                    type="button"
+                    className="mt-3"
+                    disabled={busy || !canConnect}
+                    onClick={() => void connectKey()}
+                  >
+                    {pending === "connect" ? (
+                      <Trans>Connecting…</Trans>
+                    ) : credential && selfHosted ? (
+                      <Trans>Reconnect</Trans>
+                    ) : credential ? (
+                      <Trans>Replace key</Trans>
+                    ) : (
+                      <Trans>Connect</Trans>
+                    )}
+                  </Button>
+                  {credential ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      disabled={busy}
+                      onClick={() => void disconnectProvider()}
+                    >
+                      {pending === "disconnect" ? (
+                        <Trans>Disconnecting…</Trans>
+                      ) : (
+                        <Trans>Disconnect</Trans>
+                      )}
+                    </Button>
+                  ) : null}
                 </>
-              ) : null}
-              <Button
-                type="button"
-                className="mt-3"
-                disabled={busy || !canConnect}
-                onClick={() => void connectKey()}
-              >
-                {pending === "connect" ? (
-                  <Trans>Connecting…</Trans>
-                ) : credential && selfHosted ? (
-                  <Trans>Reconnect</Trans>
-                ) : credential ? (
-                  <Trans>Replace key</Trans>
-                ) : (
-                  <Trans>Connect</Trans>
-                )}
-              </Button>
-              {credential ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  disabled={busy}
-                  onClick={() => void disconnectProvider()}
-                >
-                  {pending === "disconnect" ? (
-                    <Trans>Disconnecting…</Trans>
-                  ) : (
-                    <Trans>Disconnect</Trans>
-                  )}
-                </Button>
-              ) : null}
+              )}
 
-              {credential ? (
+              {voiceReady ? (
                 <>
                   <Field className="mt-6">
                     <FieldLabel htmlFor={voiceSelectId}>
@@ -405,7 +422,7 @@ export function VoiceSettingsOverlay({
                       onChange={(event) => void chooseVoice(event.target.value)}
                     >
                       {voiceOptions.map((voice) => (
-                        <NativeSelectOption key={voice.id} value={voice.id}>
+                        <NativeSelectOption key={voice.id} value={voice.id.replace(/^macos:/, "")}>
                           {voice.label}
                           {voice.description ? ` · ${voice.description}` : ""}
                         </NativeSelectOption>
@@ -439,8 +456,21 @@ export function VoiceSettingsOverlay({
                     type="button"
                     variant="secondary"
                     className="mt-4 rounded-full"
-                    disabled={busy || !status?.ready}
-                    onClick={() => void testVoice()}
+                    disabled={busy || (!macProvider && !status?.ready)}
+                    onClick={() => {
+                      if (macProvider && voiceId) {
+                        markPending("test");
+                        setError(null);
+                        void rpc.voice
+                          .previewMacVoice({ voice: voiceId })
+                          .catch((err: unknown) =>
+                            setError(errorText(err, t`Could not preview that voice`)),
+                          )
+                          .finally(() => markPending(null));
+                        return;
+                      }
+                      void testVoice();
+                    }}
                   >
                     {pending === "test" ? <Trans>Playing…</Trans> : <Trans>Hear a sample</Trans>}
                   </Button>

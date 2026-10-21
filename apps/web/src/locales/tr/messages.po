@@ -1691,6 +1691,10 @@ msgstr ""
 msgid "Could not play a test clip"
 msgstr "Deneme sesi çalınamadı"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "Bu ses önizlenemedi"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Model sunucusuna ulaşılamadı."
@@ -2494,6 +2498,10 @@ msgstr "Parolanızı mı unuttunuz?"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "Ücretsiz, çevrimdışı çalışır"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "Kendi anahtarınızı kullanın"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "Bu Mac'te yüklü sesleri kullanır. API anahtarı gerekmez."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

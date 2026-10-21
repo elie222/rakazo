@@ -75,6 +75,7 @@ function mapBot(
     computer: { scope: string } | null;
     voiceId?: string | null;
     autoSpeak?: boolean;
+    macVoice?: string;
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: string | null;
@@ -120,6 +121,7 @@ function mapBot(
     updatedAt: updatedAt.toISOString(),
     voiceId: bot.voiceId ?? null,
     autoSpeak: bot.autoSpeak ?? false,
+    macVoice: bot.macVoice ?? "",
     modelProvider: bot.modelProvider ? canonicalPiProviderId(bot.modelProvider) : null,
     modelId: bot.modelId ?? null,
     thinkingLevel: (bot.thinkingLevel as Bot["thinkingLevel"]) ?? null,

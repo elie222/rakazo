@@ -1691,6 +1691,10 @@ msgstr ""
 msgid "Could not play a test clip"
 msgstr "Testclip konnte nicht abgespielt werden"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "Diese Stimme konnte nicht vorgespielt werden"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Der Modellserver war nicht erreichbar."
@@ -2494,6 +2498,10 @@ msgstr "Passwort vergessen?"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr "Kostenlos"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "Kostenlos, funktioniert offline"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "Eigenen Schlüssel verwenden"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "Nutzt die auf diesem Mac installierten Stimmen. Kein API-Schlüssel."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

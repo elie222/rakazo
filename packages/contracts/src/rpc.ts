@@ -1021,6 +1021,17 @@ export const appContract = {
     voices: oc
       .input(z.object({ provider: z.string().optional() }))
       .output(z.array(VoiceInfoSchema)),
+    macVoices: oc.output(
+      z.object({
+        available: z.boolean(),
+        voices: z.array(
+          z.object({ name: z.string(), quality: z.enum(["premium", "enhanced", "standard"]) }),
+        ),
+      }),
+    ),
+    previewMacVoice: oc
+      .input(z.object({ voice: z.string().trim().min(1).max(120) }))
+      .output(z.object({ ok: z.literal(true) })),
     prepare: oc
       .input(
         z.object({
@@ -1030,6 +1041,9 @@ export const appContract = {
         }),
       )
       .output(z.object({ ready: z.boolean(), utterances: z.array(z.string()) })),
+    spokenText: oc
+      .input(z.object({ botId: Id, messageId: Id, speakOnHost: z.boolean().optional() }))
+      .output(z.object({ text: z.string(), hostSpoken: z.boolean() })),
   },
   externalConversations: {
     updatePolicy: oc

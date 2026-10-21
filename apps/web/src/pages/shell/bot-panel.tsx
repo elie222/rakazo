@@ -224,6 +224,7 @@ export function BotSettings({
     autoSpeak?: boolean;
     fleetManagement?: boolean;
     voiceId?: string | null;
+    macVoice?: string;
     modelProvider?: string | null;
     modelId?: string | null;
     thinkingLevel?: ThinkingLevel | null;
@@ -254,6 +255,7 @@ export function BotSettings({
   useEffect(() => setFleetManagement(bot.fleetManagement), [bot.fleetManagement]);
   const [voiceId, setVoiceId] = useState(bot.voiceId ?? "");
   const [voices, setVoices] = useState<VoiceInfo[]>([]);
+  const [macVoice, setMacVoice] = useState(bot.macVoice ?? "");
   const [modelKey, setModelKey] = useState(
     bot.modelProvider && bot.modelId ? modelOptionKey(bot.modelProvider, bot.modelId) : "",
   );
@@ -294,10 +296,23 @@ export function BotSettings({
     }) => Promise<void>
   >(async () => undefined);
   useEffect(() => {
-    void rpc.voice
-      .voices({})
-      .then(setVoices)
-      .catch(() => setVoices([]));
+    let current = true;
+    void (async () => {
+      const status = await rpc.voice.status().catch(() => null);
+      if (!current) return;
+      if (status?.provider === "macos") {
+        const listed = await rpc.voice.voices({}).catch(() => []);
+        if (current) setVoices(listed);
+        return;
+      }
+      // A failed cloud list must not drop voices that work without that account.
+      const [listed, mac] = await Promise.all([
+        rpc.voice.voices({}).catch(() => []),
+        rpc.voice.voices({ provider: "macos" }).catch(() => []),
+      ]);
+      if (!current) return;
+      setVoices(mac.length ? [...listed, ...mac] : listed);
+    })();
     void Promise.all([rpc.models.credentials(), rpc.models.list(), rpc.me()])
       .then(([nextCredentials, nextCatalog, nextMe]) => {
         setCredentials(nextCredentials);
@@ -308,6 +323,9 @@ export function BotSettings({
         setModelMetaReady(true);
       })
       .catch(() => undefined);
+    return () => {
+      current = false;
+    };
   }, []);
 
   const connectedOptions = connectedModelChoices(credentials, catalog);
@@ -392,6 +410,7 @@ export function BotSettings({
         memoryScope,
         autoSpeak,
         voiceId: voiceId || null,
+        macVoice,
         modelProvider: selected?.provider ?? null,
         modelId: selected?.modelId ?? null,
         ...(modelMetaReady &&
@@ -687,16 +706,33 @@ export function BotSettings({
             change.
           </Trans>
         </div>
-        {voices.length ? (
+        {voices.length || macVoice ? (
           <label htmlFor={`${ids}-voice`} className={fieldLabelClass}>
             <Trans>Voice</Trans>
             <NativeSelect
               id={`${ids}-voice`}
               className="mt-2 w-full"
-              value={voiceId}
-              onChange={(event) => setVoiceId(event.target.value)}
+              value={macVoice ? `macos:${macVoice}` : voiceId}
+              onChange={(event) => {
+                const next = event.target.value;
+                const mac =
+                  next.startsWith("macos:") || voices.some((voice) => voice.id === `macos:${next}`);
+                if (mac) {
+                  const name = next.slice("macos:".length);
+                  setMacVoice(name);
+                  setVoiceId("");
+                  setAutoSpeak(true);
+                  void rpc.voice.previewMacVoice({ voice: name }).catch(() => undefined);
+                  return;
+                }
+                setMacVoice("");
+                setVoiceId(next);
+              }}
             >
               <NativeSelectOption value="">{t`Account default`}</NativeSelectOption>
+              {macVoice && !voices.some((voice) => voice.id === `macos:${macVoice}`) ? (
+                <NativeSelectOption value={`macos:${macVoice}`}>{macVoice}</NativeSelectOption>
+              ) : null}
               {voices.map((voice) => (
                 <NativeSelectOption key={voice.id} value={voice.id}>
                   {voice.label}

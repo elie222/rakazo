@@ -1691,6 +1691,10 @@ msgstr ""
 msgid "Could not play a test clip"
 msgstr "샘플 음성을 재생하지 못했습니다."
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "그 음성을 미리 들을 수 없습니다"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "모델 서버에 연결하지 못했습니다."
@@ -2494,6 +2498,10 @@ msgstr "비밀번호를 잊으셨나요?"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr "무료"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "무료, 오프라인에서 작동"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "내 키 사용"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "이 Mac에 설치된 음성을 사용합니다. API 키가 필요 없습니다."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

@@ -98,6 +98,7 @@ function fakeBot(id: string, name: string, title: string): Bot {
     createdAt: "2026-01-01T00:00:00.000Z",
     voiceId: null,
     autoSpeak: false,
+    macVoice: "",
     modelProvider: null,
     modelId: null,
     thinkingLevel: null,

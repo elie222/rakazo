@@ -128,6 +128,93 @@ test("voice settings connect a key, speak a reply, and open a call", async ({ pa
   );
 });
 
+test("voice settings list Mac voices when the server offers them", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `voice-mac-${stamp}@rakazo.test`, "password12", `Mac ${stamp}`);
+  await completeOnboarding(page);
+  await page.route("**/rpc/voice/catalog", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const voices = Array.isArray(body.json) ? body.json : [];
+    if (!voices.some((entry) => entry.id === "macos")) {
+      voices.unshift({
+        id: "macos",
+        name: "macOS",
+        description: "Voices installed on the Mac running Rakazo.",
+        transcribe: false,
+      });
+    }
+    await route.fulfill({ response, json: { ...body, json: voices } });
+  });
+  await page.route("**/rpc/voice/voices", async (route) => {
+    const request = route.request().postDataJSON() as { json?: { provider?: string } };
+    if (request.json?.provider !== "macos") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      json: {
+        json: [
+          { id: "macos:Zoe (Premium)", label: "Zoe (Premium)" },
+          { id: "macos:Samantha", label: "Samantha" },
+        ],
+      },
+    });
+  });
+  await openUserSettings(page, "voice");
+  const settings = page.getByTestId("voice-settings");
+  await settings.getByRole("button", { name: "macOS" }).click();
+  await expect(settings.getByText("Free, works offline")).toBeVisible();
+  await expect(
+    settings.getByText("Uses the voices installed on this Mac. No API key."),
+  ).toBeVisible();
+  await expect(settings.getByRole("option", { name: "Zoe (Premium)" })).toBeAttached();
+  await captureScreenshot(page, testInfo, "voice-macos");
+});
+
+test("bot settings list a Mac voice", async ({ page }) => {
+  const stamp = Date.now();
+  await signup(page, `voice-bot-${stamp}@rakazo.test`, "password12", `Bot ${stamp}`);
+  await completeOnboarding(page);
+  await page.route("**/rpc/voice/status", async (route) => {
+    await route.fulfill({
+      json: {
+        json: { configured: true, ready: true, transcribe: false, provider: "macos", voiceId: "" },
+      },
+    });
+  });
+  await page.route("**/rpc/voice/voices", async (route) => {
+    await route.fulfill({
+      json: { json: [{ id: "macos:Zoe (Premium)", label: "Zoe (Premium)" }] },
+    });
+  });
+  const showMacVoice = async (route: {
+    fetch: () => Promise<Response>;
+    fulfill: (options: { response: Response; json: unknown }) => Promise<void>;
+  }) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    const lists = [body.json?.bots, body.json?.current?.bots];
+    for (const bots of lists) {
+      if (!Array.isArray(bots)) continue;
+      for (const bot of bots) {
+        if (bot?.name === "Chief") {
+          bot.macVoice = "Zoe (Premium)";
+          bot.autoSpeak = true;
+        }
+      }
+    }
+    await route.fulfill({ response, json: body });
+  };
+  await page.route("**/rpc/bootstrap", showMacVoice);
+  await page.route("**/rpc/spaces/list", showMacVoice);
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await settings.getByText("Advanced", { exact: true }).click();
+  await expect(settings.getByLabel("Voice")).toHaveValue("macos:Zoe (Premium)");
+});
+
 test("incoming calls keep failed actions available for retry", async ({ page }, testInfo) => {
   await signup(page, `incoming-call-${Date.now()}@rakazo.test`, "password12", "Call tester");
   await completeOnboarding(page);

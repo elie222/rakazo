@@ -31,6 +31,7 @@ function bot(id = "bot-1"): Bot {
     memoryScope: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     voiceId: null,
+    macVoice: "",
     teamChatAmbientEnabled: false,
     teamChatRules: "",
     fleetManagement: false,

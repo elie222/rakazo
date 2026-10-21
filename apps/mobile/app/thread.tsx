@@ -726,13 +726,32 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
     if (decision.action !== "speak") return;
     autoSpokenBotId.current = currentBot.id;
     autoSpoken.current = decision.messageId;
-    void speakText(decision.text, {
-      botId: currentBot.id,
-      speaker: {
-        name: currentBot.name,
-        color: resolvePersonaColorDef(currentBot.id, currentBot.color).light,
-      },
-    }).catch(() => undefined);
+    const speaker = {
+      name: currentBot.name,
+      color: resolvePersonaColorDef(currentBot.id, currentBot.color).light,
+    };
+    const spokenBotId = currentBot.id;
+    const spokenMessageId = decision.messageId;
+    void rpc<{ text: string; hostSpoken: boolean }>("voice/spokenText", {
+      botId: spokenBotId,
+      messageId: spokenMessageId,
+      speakOnHost: false,
+    })
+      .then((spoken) => {
+        if (autoSpoken.current !== spokenMessageId || autoSpokenBotId.current !== spokenBotId) {
+          return;
+        }
+        if (!navigation.isFocused()) return;
+        if (spoken.hostSpoken || !spoken.text) return;
+        return speakText(spoken.text, { botId: spokenBotId, speaker }).catch(() => undefined);
+      })
+      .catch(() => {
+        if (autoSpoken.current !== spokenMessageId || autoSpokenBotId.current !== spokenBotId) {
+          return;
+        }
+        if (!navigation.isFocused()) return;
+        return speakText(decision.text, { botId: spokenBotId, speaker }).catch(() => undefined);
+      });
   }, [
     botId,
     inGroup,

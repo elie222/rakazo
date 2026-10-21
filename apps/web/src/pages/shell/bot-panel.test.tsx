@@ -12,7 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("../../lib/rpc", () => ({
   rpc: {
     bots: { get: vi.fn(), update: vi.fn(), restoreInstructions: vi.fn() },
-    voice: { voices: vi.fn().mockResolvedValue([]) },
+    voice: {
+      voices: vi.fn().mockResolvedValue([]),
+      status: vi.fn().mockResolvedValue({ provider: null }),
+    },
     models: {
       credentials: vi.fn().mockResolvedValue([]),
       list: vi.fn().mockResolvedValue([]),
@@ -106,6 +109,7 @@ function bot(description = "Billing", overrides: Partial<Bot> = {}): Bot {
     createdAt: "2026-09-01T00:00:00.000Z",
     voiceId: null,
     autoSpeak: false,
+    macVoice: "",
     modelProvider: null,
     modelId: null,
     thinkingLevel: null,
@@ -191,6 +195,44 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+});
+
+describe("BotSettings Mac voices", () => {
+  afterEach(() => {
+    vi.mocked(rpc.voice.voices).mockReset().mockResolvedValue([]);
+    vi.mocked(rpc.voice.status).mockReset().mockResolvedValue({
+      configured: false,
+      ready: false,
+      transcribe: false,
+      provider: null,
+      voiceId: "",
+    });
+  });
+
+  it("keeps Mac voices when the cloud voice list fails", async () => {
+    vi.mocked(rpc.voice.status).mockResolvedValue({
+      configured: true,
+      ready: false,
+      transcribe: false,
+      provider: "elevenlabs",
+      voiceId: "",
+    });
+    vi.mocked(rpc.voice.voices).mockImplementation(async (input) => {
+      if (input?.provider === "macos") {
+        return [{ id: "macos:Samantha", name: "Samantha", label: "Samantha", provider: "macos" }];
+      }
+      throw new Error("expired key");
+    });
+    await render();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const labels = [...container.querySelectorAll("option")].map((option) => option.textContent);
+    expect(labels).toContain("Samantha");
+  });
 });
 
 describe("BotSettings model choices", () => {

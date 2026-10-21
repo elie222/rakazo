@@ -1691,6 +1691,10 @@ msgstr ""
 msgid "Could not play a test clip"
 msgstr "无法播放测试片段"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "无法试听该语音"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "无法连接到模型服务器。"
@@ -2494,6 +2498,10 @@ msgstr "忘记密码？"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr "免费"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "免费，可离线使用"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "使用自己的密钥"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "使用这台 Mac 上已安装的语音。无需 API 密钥。"
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

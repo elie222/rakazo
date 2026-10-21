@@ -87,6 +87,7 @@ function inboxBot(): Bot {
     createdAt: "2026-10-07T00:00:00.000Z",
     voiceId: null,
     autoSpeak: false,
+    macVoice: "",
     modelProvider: "openai",
     modelId: "gpt-4.1",
     thinkingLevel: null,

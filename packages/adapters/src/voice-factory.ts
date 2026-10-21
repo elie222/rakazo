@@ -51,14 +51,22 @@ export function scriptedVoiceEnabled() {
   return process.env.AGENT_RUNTIME === "scripted";
 }
 
-export function listVoiceCatalog() {
-  return scriptedVoiceEnabled()
-    ? [...VOICE_CATALOG, SCRIPTED_VOICE_CATALOG_ENTRY]
-    : [...VOICE_CATALOG];
+export const MACOS_VOICE_PROVIDER = {
+  id: "macos",
+  name: "macOS",
+  description: "Voices installed on the Mac running Rakazo. Speech plays on that Mac.",
+  transcribe: false,
+} as const;
+
+export function listVoiceCatalog(platform = process.platform) {
+  const catalog =
+    platform === "darwin" ? [MACOS_VOICE_PROVIDER, ...VOICE_CATALOG] : [...VOICE_CATALOG];
+  return scriptedVoiceEnabled() ? [...catalog, SCRIPTED_VOICE_CATALOG_ENTRY] : catalog;
 }
 
 export function voiceCatalogEntry(id: string) {
   if (id === SCRIPTED_VOICE_CATALOG_ENTRY.id) return SCRIPTED_VOICE_CATALOG_ENTRY;
+  if (id === MACOS_VOICE_PROVIDER.id) return MACOS_VOICE_PROVIDER;
   return VOICE_CATALOG.find((entry) => entry.id === id);
 }
 

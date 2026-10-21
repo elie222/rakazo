@@ -62,7 +62,6 @@ import {
   SLASH_ACTIONS,
   searchHitThreadTarget,
   serializeComposerPrompt,
-  speechFromBlocks,
   timeSeparatorIds,
   truncateSlashDescription,
   withLiveStreamingProgress,
@@ -263,6 +262,7 @@ import {
   spaceSwitchDecision,
   useSpaceEpoch,
 } from "../lib/space-switch";
+import { spokenTextForRequest } from "../lib/speak-request";
 import {
   activeThreadRuns,
   applyThreadSendReceipt,
@@ -1432,10 +1432,16 @@ function SpaceShell() {
     }
     if (snapshot.run && ["running", "queued", "leased"].includes(snapshot.run.status)) return;
     if (!lastBot || lastBot.id === autoSpoken.current) return;
-    const text = speechFromBlocks(lastBot.blocks);
-    if (!text) return;
     autoSpoken.current = lastBot.id;
-    void speaker.speak(text, { botId: active.id, messageId: lastBot.id });
+    const messageId = lastBot.id;
+    const botId = active.id;
+    void rpc.voice
+      .spokenText({ botId, messageId, speakOnHost: true })
+      .then((spoken) => {
+        if (spoken.hostSpoken || !spoken.text || autoSpoken.current !== messageId) return;
+        void speaker.speak(spoken.text, { botId, messageId });
+      })
+      .catch(() => undefined);
   }, [
     snapshot?.messages,
     snapshot?.run?.status,
@@ -2048,6 +2054,10 @@ function SpaceShell() {
     () => foldPeerReplies(activeSnapshot?.messages ?? [], { includePeerReceipts: true }),
     [activeSnapshot?.messages],
   );
+  const macVoiceBotIds = useMemo(
+    () => new Set(bots.filter((bot) => bot.macVoice).map((bot) => bot.id)),
+    [bots],
+  );
   const transcriptRef = useRef(transcript);
   useLayoutEffect(() => {
     transcriptRef.current = transcript;
@@ -2603,14 +2613,25 @@ function SpaceShell() {
   }, []);
   const speakingMessageIdRef = useRef(speakingMessageId);
   speakingMessageIdRef.current = speakingMessageId;
+  const speakRequestRef = useRef(0);
   const speakMessage = useCallback((message: ThreadMessage) => {
     if (speakingMessageIdRef.current === message.id) {
+      speakRequestRef.current += 1;
       speaker.stop();
       return;
     }
-    const text = speechFromBlocks(message.blocks);
     const id = message.botId ?? activeBotId.current;
-    if (text && id) void speaker.speak(text, { botId: id, messageId: message.id });
+    if (!id) return;
+    // The lookup is async. A slower reply for an earlier click must not start later.
+    const request = ++speakRequestRef.current;
+    speaker.stop();
+    void rpc.voice
+      .spokenText({ botId: id, messageId: message.id, speakOnHost: true })
+      .then((spoken) => {
+        const text = spokenTextForRequest(request, speakRequestRef.current, spoken);
+        if (text) void speaker.speak(text, { botId: id, messageId: message.id });
+      })
+      .catch(() => undefined);
   }, []);
 
   async function createGroup(input: { name: string; botIds: string[] }) {
@@ -4159,6 +4180,7 @@ function SpaceShell() {
             onBotChanged={refreshBots}
             onAddRoutine={addSkillRoutine}
             voiceReady={Boolean(voiceStatus?.ready)}
+            macVoiceBotIds={macVoiceBotIds}
             speakingMessageId={speakingMessageId}
             onSpeak={speakMessage}
             onOpenComputer={onOpenComputer}
@@ -5194,6 +5216,7 @@ const Transcript = memo(function Transcript({
   onBotChanged,
   onAddRoutine,
   voiceReady,
+  macVoiceBotIds,
   speakingMessageId,
   onSpeak,
   onOpenComputer,
@@ -5225,6 +5248,7 @@ const Transcript = memo(function Transcript({
   onBotChanged: () => Promise<void>;
   onAddRoutine: (name: string, prompt: string) => void;
   voiceReady: boolean;
+  macVoiceBotIds: ReadonlySet<string>;
   speakingMessageId: string | null;
   onSpeak: (message: ThreadMessage) => void;
   onOpenComputer: (botId?: string) => void;
@@ -5614,7 +5638,7 @@ const Transcript = memo(function Transcript({
                       onRefresh={onRefresh}
                       onBotChanged={onBotChanged}
                       onAddRoutine={onAddRoutine}
-                      voiceReady={voiceReady}
+                      voiceReady={voiceReady || macVoiceBotIds.has(message.botId ?? "")}
                       speaking={speakingMessageId === message.id}
                       onSpeak={() => onSpeak(message)}
                       onOpenComputer={onOpenComputer}

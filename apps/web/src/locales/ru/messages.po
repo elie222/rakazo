@@ -1691,6 +1691,10 @@ msgstr "Не удалось открыть локальные настройки
 msgid "Could not play a test clip"
 msgstr "Не удалось воспроизвести тестовый клип."
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "Не удалось прослушать этот голос"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Не удалось связаться с сервером модели."
@@ -2494,6 +2498,10 @@ msgstr "Забыли пароль?"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr "Бесплатно"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "Бесплатно, работает офлайн"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "Использовать свой ключ"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr ""
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "Использует голоса, установленные на этом Mac. Ключ API не нужен."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

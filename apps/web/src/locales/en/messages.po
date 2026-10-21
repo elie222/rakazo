@@ -1691,6 +1691,10 @@ msgstr "Could not open local settings. Start the local server and create its own
 msgid "Could not play a test clip"
 msgstr "Could not play a test clip"
 
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Could not preview that voice"
+msgstr "Could not preview that voice"
+
 #: src/lib/model-connection-preflight.ts
 msgid "Could not reach the model server."
 msgstr "Could not reach the model server."
@@ -2494,6 +2498,10 @@ msgstr "Forgot password?"
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Free"
 msgstr "Free"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Free, works offline"
+msgstr "Free, works offline"
 
 #: src/pages/ActivityList.tsx
 msgid "From"
@@ -5123,6 +5131,10 @@ msgstr "Use your own key"
 #: src/pages/shell/bot-credentials.tsx
 msgid "Username"
 msgstr "Username"
+
+#: src/pages/VoiceSettingsOverlay.tsx
+msgid "Uses the voices installed on this Mac. No API key."
+msgstr "Uses the voices installed on this Mac. No API key."
 
 #: src/pages/ModelSettingsOverlay.tsx
 msgid "Uses this server's own {hostCredentialSource} credentials to access {selectedProviderName}."

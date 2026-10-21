@@ -481,6 +481,8 @@ model Bot {
   computerSwitching Boolean           @default(false)
   voiceId           String?
   autoSpeak         Boolean           @default(false)
+  /// Installed macOS `say` voice. Empty keeps cloud playback.
+  macVoice          String            @default("")
   modelProvider     String?
   modelId           String?
   thinkingLevel     String?
