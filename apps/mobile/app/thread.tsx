@@ -1511,6 +1511,7 @@ function Thread({ sessionEpoch }: { sessionEpoch: number }) {
                 event.type === "thread.subagent" ||
                 event.type === "thread.cloud_agent" ||
                 event.type === "thread.cleared" ||
+                event.type === "run.started" ||
                 event.type === "run.waiting_input" ||
                 event.type === "computer.takeover.requested" ||
                 event.type === "computer.takeover.released" ||
