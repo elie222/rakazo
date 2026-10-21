@@ -16,7 +16,7 @@ import {
   isLocalMcpHost,
   mcpOAuthEnvReferences,
   resolveMcpOAuthEnv,
-  resolveMcpOAuthTemplate,
+  resolveMcpOAuthFileTemplate,
 } from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -609,7 +609,7 @@ export class McpConnector implements ConnectorProvider {
             accessTokenExpiresAtMs = expiresAt;
         }
         const resolvedFiles = Object.entries(files).map(
-          ([key, template]) => [key, resolveMcpOAuthTemplate(template, values, key)] as const,
+          ([key, template]) => [key, resolveMcpOAuthFileTemplate(template, values, key)] as const,
         );
         for (const [key, template] of Object.entries(env)) {
           const value = launchEnv[key];
