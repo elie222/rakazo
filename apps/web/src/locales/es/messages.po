@@ -3694,6 +3694,10 @@ msgstr "Elige una herramienta para comprobar"
 msgid "Pin"
 msgstr "Fijar"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Fijados"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Reproducir {name}"
@@ -4087,6 +4091,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "Reintentar"
@@ -4966,6 +4971,7 @@ msgid "Type your answer"
 msgstr "Escribe tu respuesta"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Sin asignar"
 

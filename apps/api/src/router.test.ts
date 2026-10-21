@@ -589,6 +589,94 @@ describe("thread answer delivery", () => {
   });
 });
 
+describe("secret request dismissal", () => {
+  function setup(answered: boolean) {
+    const answerRunInput = vi.fn().mockResolvedValue(answered);
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const prisma = {
+      bot: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "bot-1",
+          thread: { id: "thread-1" },
+          computer: null,
+        }),
+      },
+    } as unknown as PrismaClient;
+    const deps = {
+      prisma,
+      events: { answerRunInput },
+      jobs: { enqueue },
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "https://web.example.test",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "user-1",
+      email: "user@example.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const handler = new RPCHandler(createRouter(deps));
+    const send = (json: Record<string, unknown>) =>
+      handler.handle(
+        new Request("https://api.example.test/rpc/threads/answer", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            json: { botId: "bot-1", runId: "run-1", messageId: "message-1", ...json },
+          }),
+        }),
+        { prefix: "/rpc", context: { actor } },
+      );
+    return { answerRunInput, enqueue, send };
+  }
+
+  it("passes a dismissal on as the signed-in user and wakes the run", async () => {
+    const h = setup(true);
+    const { response } = await h.send({ answer: "", dismiss: true });
+
+    expect(response.status).toBe(200);
+    expect(h.answerRunInput).toHaveBeenCalledWith({
+      spaceId: "workspace-1",
+      threadId: "thread-1",
+      runId: "run-1",
+      messageId: "message-1",
+      answeredByUserId: "user-1",
+      answer: "",
+      clientNonce: undefined,
+      username: undefined,
+      dismiss: true,
+    });
+    expect(h.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("reports a dismissal the card no longer accepts as a conflict", async () => {
+    const h = setup(false);
+    const { response } = await h.send({ answer: "", dismiss: true });
+
+    expect(response.status).toBe(409);
+    expect(h.enqueue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a dismissal with a value", { answer: "example-password", dismiss: true }],
+    ["a dismissal with a username", { answer: "", username: "ada", dismiss: true }],
+    ["a dismissal during a call", { answer: "", clientNonce: "call:call-1:x", dismiss: true }],
+    ["an empty answer", { answer: "" }],
+  ])("rejects %s before it reaches the run", async (_name, json) => {
+    const h = setup(true);
+    const { response } = await h.send(json);
+
+    expect(response.status).toBe(400);
+    expect(h.answerRunInput).not.toHaveBeenCalled();
+  });
+});
+
 describe("thread stream authorization", () => {
   afterEach(() => {
     vi.useRealTimers();

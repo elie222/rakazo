@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
 import { startModelEmulator } from "./model-emulator.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 const databaseAvailable = process.env.VERIFY_DATABASE === "1" && Boolean(process.env.DATABASE_URL);
@@ -141,7 +142,7 @@ describe.skipIf(!databaseAvailable)("offline Pi product journey", () => {
       const messages = JSON.stringify(thread.messages);
       expect(messages).toContain("Saved notes/result.txt.");
       expect(messages).not.toContain(fixtureKey);
-      const tools = await handles.prisma.event.findMany({
+      const tools = await asSystem(handles.prisma).event.findMany({
         where: { botId: bot.id, type: "agent.tool.called" },
         select: { payload: true },
       });

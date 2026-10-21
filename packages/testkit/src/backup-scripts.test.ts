@@ -75,6 +75,8 @@ if (args[0] === "inspect") {
     while (written < 65536) written += fs.writeSync(1, Buffer.alloc(65536 - written));
   }
   console.log("fake custom-format dump");
+} else if (args.includes("psql") && args.includes("-c")) {
+  // restore.sh pre-creates the runtime role the dump's grants name.
 } else if (args.includes("psql")) {
   fs.writeFileSync(process.env.SQL_INPUT, fs.readFileSync(0));
   if (process.env.FAIL_SQL === "1") {
@@ -312,7 +314,9 @@ describe("development restore failures", () => {
         FAIL_SQL: fail ? "1" : "0",
       });
       expect(result.status).toBe(fail ? 3 : 0);
-      const command = f.commands().find((args) => args.includes("psql"));
+      const psql = f.commands().filter((args) => args.includes("psql"));
+      expect(psql[0]?.at(-1)).toContain("CREATE ROLE rakazo_app NOLOGIN");
+      const command = psql.find((args) => args.includes("--single-transaction"));
       expect(command).toEqual(
         expect.arrayContaining([
           "-X",

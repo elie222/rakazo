@@ -54,15 +54,20 @@ import {
 } from "@rakazo/adapters";
 import { resolveEncryptionKey, resolveSupervisorToken, uploadSizeFromEnv } from "@rakazo/core";
 import {
+  contentEncryptionOf,
   createBoardEvents,
   createDb,
   createSecurityEventPruner,
   createThreadEvents,
+  describeRowSecurity,
   installSecurityEventStore,
   isTooManyDatabaseConnections,
   parsePositiveInteger,
   pushSessionExpiresAt,
+  rowSecurityWarning,
+  runAsSystem,
   securityEventRetentionDays,
+  verifyContentKeys,
 } from "@rakazo/db";
 import { SERVICE_NAMES } from "@rakazo/logging";
 import { createRootLogger } from "@rakazo/logging/axiom";
@@ -84,6 +89,8 @@ async function main() {
   });
   const { pool } = created;
   let { prisma } = created;
+  const rowSecurity = rowSecurityWarning(await describeRowSecurity(prisma));
+  if (rowSecurity) logger.warn(rowSecurity);
   const realtime = new PostgresRealtimeFanout({
     connectionString: process.env.REALTIME_DATABASE_URL ?? databaseUrl,
     publisher: pool,
@@ -93,6 +100,11 @@ async function main() {
     logger.warn("Secret storage degraded; encrypted credentials remain available");
   prisma = withSecretPersistence(prisma, secrets);
   installSecurityEventStore(prisma);
+  const unreadableMasterKeys = await verifyContentKeys(prisma);
+  if (unreadableMasterKeys.length)
+    logger.error("Stored space keys need master keys that are not configured", undefined, {
+      masterKeyIds: unreadableMasterKeys,
+    });
   const analytics = createProductAnalytics();
   const events = createThreadEvents(prisma, realtime, {
     analytics,
@@ -172,7 +184,7 @@ async function main() {
   integrationSettings.warmDirectories();
   const memoryProviders = new SpaceMemoryProviderResolver(prisma, secrets);
   const home = new LocalAgentHomeStore(dataDir);
-  const artifacts = new LocalArtifactStore(dataDir);
+  const artifacts = new LocalArtifactStore(dataDir, contentEncryptionOf(prisma)?.ring);
   const inMemoryJobs = process.env.WAKEUP_DRIVER === "memory" ? new InMemoryJobQueue() : undefined;
   const jobs: JobPublisher = inMemoryJobs ?? new GraphileJobPublisher(pool);
   const ticketChanges = createTicketChangeNotifier({
@@ -337,7 +349,10 @@ async function main() {
   logger.info("worker ready", { degraded: secrets.describe().capabilities.degraded ?? false });
 }
 
-main().catch(async (error) => {
+// The worker only does cross-tenant work: job dispatch, reconcilers, leadership and
+// realtime, all keyed by ids rather than a signed-in user. This is its one
+// row-level security bypass; jobs re-enter it explicitly (see wakeup.ts).
+runAsSystem("worker process", main).catch(async (error) => {
   logger.error("worker startup failed", error);
   await logger.flush({ timeoutMs: 2_000 });
   // jobHost.start retries 53300 without bound above, so a saturated Postgres at

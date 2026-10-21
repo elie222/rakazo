@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AdapterContext, BackgroundJob, JobPublisher } from "@rakazo/adapter-kit";
-import { clearThread, createDb, type PrismaClient } from "@rakazo/db";
+import type { PrismaClient } from "@rakazo/db";
+import { clearThread, createDb, runAsSystem, runAsTenant } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CursorCloudAgentEmulator } from "./cloud-agent-emulator.js";
 import type { CloudAgentConnection } from "./cloud-agent-factory.js";
@@ -40,42 +41,47 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
   async function setup() {
     const id = randomUUID();
     users.push(id);
-    await prisma.user.create({
-      data: { id, name: "Cloud test", email: `${id}@example.test`, emailVerified: true },
-    });
-    await prisma.organization.create({
-      data: { id, name: "Cloud test", slug: id, createdAt: new Date() },
-    });
-    await prisma.space.create({
-      data: { id, organizationId: id, name: "Cloud test", isDefault: true },
-    });
-    await prisma.member.create({
-      data: { id, organizationId: id, userId: id, role: "owner", createdAt: new Date() },
-    });
-    const bot = await prisma.bot.create({
-      data: { spaceId: id, userId: id, name: "Cloud test", color: "test-color" },
-    });
-    const thread = await prisma.thread.create({ data: { spaceId: id, userId: id, botId: bot.id } });
-    const task = await prisma.task.create({
-      data: {
-        spaceId: id,
-        userId: id,
-        botId: bot.id,
-        threadId: thread.id,
-        prompt: "Test",
-        status: "completed",
-      },
-    });
-    const run = await prisma.run.create({
-      data: {
-        spaceId: id,
-        userId: id,
-        botId: bot.id,
-        threadId: thread.id,
-        taskId: task.id,
-        status: "completed",
-        trigger: "user",
-      },
+    const { bot, thread, run } = await runAsSystem("test fixture", async () => {
+      await prisma.user.create({
+        data: { id, name: "Cloud test", email: `${id}@example.test`, emailVerified: true },
+      });
+      await prisma.organization.create({
+        data: { id, name: "Cloud test", slug: id, createdAt: new Date() },
+      });
+      await prisma.space.create({
+        data: { id, organizationId: id, name: "Cloud test", isDefault: true },
+      });
+      await prisma.member.create({
+        data: { id, organizationId: id, userId: id, role: "owner", createdAt: new Date() },
+      });
+      const bot = await prisma.bot.create({
+        data: { spaceId: id, userId: id, name: "Cloud test", color: "test-color" },
+      });
+      const thread = await prisma.thread.create({
+        data: { spaceId: id, userId: id, botId: bot.id },
+      });
+      const task = await prisma.task.create({
+        data: {
+          spaceId: id,
+          userId: id,
+          botId: bot.id,
+          threadId: thread.id,
+          prompt: "Test",
+          status: "completed",
+        },
+      });
+      const run = await prisma.run.create({
+        data: {
+          spaceId: id,
+          userId: id,
+          botId: bot.id,
+          threadId: thread.id,
+          taskId: task.id,
+          status: "completed",
+          trigger: "user",
+        },
+      });
+      return { bot, thread, run };
     });
     const wire = new CursorCloudAgentEmulator();
     const connection: CloudAgentConnection = {
@@ -108,7 +114,9 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
       args: Record<string, unknown>,
       overrides: Partial<typeof context> = {},
     ) =>
-      executeCloudAgentTool(deps, { ...context, ...overrides }, run, `cloud_agent_${name}`, args);
+      runAsSystem("agent run tool call", () =>
+        executeCloudAgentTool(deps, { ...context, ...overrides }, run, `cloud_agent_${name}`, args),
+      );
     const launch = async () => {
       const result = await tool("launch", {
         prompt: "Add README",
@@ -120,8 +128,13 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     };
     const state = (agentId: string) =>
       prisma.cloudAgent.findUniqueOrThrow({ where: { id: agentId } });
-    const poll = (agentId: string) => pollCloudAgent(deps, { agentId });
-    const clear = () => clearThread(prisma, { spaceId: id, botId: bot.id, threadId: thread.id });
+    const poll = (agentId: string) =>
+      runAsSystem("cloud agent poll job", () => pollCloudAgent(deps, { agentId }));
+    // Clearing a chat is an API request by its owner.
+    const clear = () =>
+      runAsTenant({ spaceId: id, userId: id }, () =>
+        clearThread(prisma, { spaceId: id, botId: bot.id, threadId: thread.id }),
+      );
     const wakes = () =>
       prisma.run.findMany({ where: { threadId: thread.id, trigger: "cloud_agent" } });
     const finish = async (agentId: string) => {
@@ -205,7 +218,7 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect((await h.state(id)).nextPollAt).not.toBeNull();
     h.enqueue.mockResolvedValue(undefined);
     h.enqueue.mockClear();
-    await reconcileCloudAgents(h.deps);
+    await runAsSystem("job reconciler", () => reconcileCloudAgents(h.deps));
     expect(h.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "cloud_agent.poll", payload: { agentId: id } }),
     );
@@ -216,7 +229,9 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     expect(wake?.status).toBe("queued");
     h.enqueue.mockResolvedValue(undefined);
     h.enqueue.mockClear();
-    await createJobReconciler({ prisma, jobs: h.deps.jobs }).reconcileOnce();
+    await runAsSystem("job reconciler", () =>
+      createJobReconciler({ prisma, jobs: h.deps.jobs }).reconcileOnce(),
+    );
     expect(h.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ name: "run.continue", payload: { runId: wake!.id } }),
     );
@@ -242,7 +257,11 @@ describePostgres("cloud agent lifecycle and recovery (PostgreSQL + Cursor emulat
     await after.clear();
     await after.poll(afterId);
     expect(await after.state(afterId)).toMatchObject({ status: "cancelled", nextPollAt: null });
-    expect(await prisma.message.count({ where: { threadId: after.thread.id } })).toBe(0);
+    expect(
+      await runAsSystem("test fixture", () =>
+        prisma.message.count({ where: { threadId: after.thread.id } }),
+      ),
+    ).toBe(0);
     expect(await after.wakes()).toHaveLength(0);
     expect(await after.tool("status", { id: afterId })).toMatchObject({
       id: afterId,

@@ -72,11 +72,12 @@ services:
     command:
       - bash
       - -lc
-      - pnpm --filter @rakazo/db exec prisma migrate deploy && pnpm --filter @rakazo/api start
+      # The owner URL lives only in this command, so neither process environment holds it.
+      - DATABASE_MIGRATION_URL=postgres://rakazo:topology-only-password@postgres:5432/rakazo pnpm db:migrate && exec pnpm --filter @rakazo/api start
     environment: &app-environment
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-10}
       NODE_ENV: production
-      DATABASE_URL: postgres://rakazo:topology-only-password@postgres:5432/rakazo
+      DATABASE_URL: postgres://rakazo_app:topology-only-runtime-password@postgres:5432/rakazo
       DATA_DIR: /data
       BETTER_AUTH_SECRET: topology-only-auth-secret-at-least-32-characters
       SCREEN_PROXY_SECRET: topology-only-screen-proxy-secret-at-least-32-characters

@@ -633,6 +633,7 @@ export const NL_MESSAGES: Record<string, string> = {
   "Save section name": "Sectienaam opslaan",
   "Section name": "Sectienaam",
   "Silence notifications": "Meldingen dempen",
+  Pinned: "Vastgezet",
   Unassigned: "Niet toegewezen",
   Unpin: "Vastzetten opheffen",
   "Could not update computer": "Computer bijwerken mislukt",

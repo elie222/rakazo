@@ -3694,6 +3694,10 @@ msgstr "Pick a tool to check"
 msgid "Pin"
 msgstr "Pin"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Pinned"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Play {name}"
@@ -4087,6 +4091,7 @@ msgstr "Restoring your workspace"
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -4966,6 +4971,7 @@ msgid "Type your answer"
 msgstr "Type your answer"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Unassigned"
 
