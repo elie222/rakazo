@@ -31,6 +31,7 @@ import type {
   FaviconResolver,
   getBotSecretMetadata,
   IntegrationProviderSettings,
+  McpOAuthSummary,
   MemoryProviderResolver,
   PiOAuthLogins,
   RemoteConnectorDependencies,
@@ -504,7 +505,7 @@ function mcpServerDto(
     createdAt: Date;
     updatedAt: Date;
   },
-  oauthStatus: McpServer["oauthStatus"] = "none",
+  oauth: McpOAuthSummary = { status: "none", clientId: null },
 ): McpServer {
   const args = Array.isArray(row.args)
     ? row.args.filter((item): item is string => typeof item === "string")
@@ -528,7 +529,8 @@ function mcpServerDto(
     envKeys,
     headerKeys,
     hasSecret: row.secretId !== null,
-    oauthStatus,
+    oauthStatus: oauth.status,
+    oauthClientId: oauth.clientId,
     enabled: row.enabled,
     revision: row.revision,
     createdAt: row.createdAt.toISOString(),
@@ -2248,7 +2250,11 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
-        await groupRepos.restoreGroup(context.actor, input.groupId);
+        try {
+          await groupRepos.restoreGroup(context.actor, input.groupId);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
         return { ok: true as const };
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
@@ -4454,7 +4460,7 @@ export function createRouter(deps: RouterDeps) {
             rows.map(async (row) =>
               mcpServerDto(
                 row,
-                await mcpOAuth.statusForCiphertext(
+                await mcpOAuth.summaryForCiphertext(
                   row.secretId ? ciphertextById.get(row.secretId) : undefined,
                   row.secretId ?? undefined,
                 ),
@@ -4509,7 +4515,7 @@ export function createRouter(deps: RouterDeps) {
               },
             });
           });
-          return mcpServerDto(row, await mcpOAuth.statusFor(row, context.actor));
+          return mcpServerDto(row, await mcpOAuth.summaryFor(row, context.actor));
         }),
         update: authed.mcp.servers.update.handler(async ({ context, input }) => {
           for (let attempt = 0; attempt < 5; attempt++) {
@@ -4652,7 +4658,7 @@ export function createRouter(deps: RouterDeps) {
                   return updated;
                 }),
             );
-            if (row) return mcpServerDto(row, await mcpOAuth.statusFor(row, context.actor));
+            if (row) return mcpServerDto(row, await mcpOAuth.summaryFor(row, context.actor));
           }
           throw new ORPCError("CONFLICT", { message: "MCP credentials changed; retry" });
         }),

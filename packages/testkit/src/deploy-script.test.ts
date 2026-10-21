@@ -184,6 +184,16 @@ describe("production deploy script", () => {
     expect(rollout(deploy.commands())).toEqual(ROLLOUT);
   });
 
+  it("deploys the revision the launcher pinned even after main moves on", () => {
+    const deploy = fixture();
+    const pinned = commit(deploy.upstream, "pinned");
+    commit(deploy.upstream, "later");
+    const result = deploy.run({ RAKAZO_DEPLOY_REVISION: pinned });
+    expect(result.status).toBe(0);
+    expect(deploy.head()).toBe(pinned);
+    expect(deploy.deployed()).toBe(pinned);
+  });
+
   it("deploys when the recorded revision is not the checkout", () => {
     const deploy = fixture();
     write(path.join(deploy.checkout, ".last-deployed-revision"), "outdated\n");
@@ -317,5 +327,51 @@ describe("production deploy script", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("did not recover");
     expect(deploy.head()).toBe(deploy.first);
+  });
+});
+
+describe("production deploy launcher", () => {
+  it("runs the deploy script from origin/main, not the checkout", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "rakazo-launcher-"));
+    temporaryDirectories.push(root);
+    const upstream = path.join(root, "upstream");
+    const checkout = path.join(root, "checkout with spaces");
+    const script = path.join("infra", "compose", "deploy-main.sh");
+    mkdirSync(upstream);
+    git(upstream, "init", "-q", "-b", "main");
+    write(path.join(upstream, script), 'echo "stale $*"\n');
+    git(upstream, "add", script);
+    commit(upstream, "first");
+    git(root, "clone", "-q", upstream, checkout);
+    write(path.join(upstream, script), 'echo "current $0 $* $RAKAZO_DEPLOY_REVISION"\n');
+    git(upstream, "add", script);
+    const next = commit(upstream, "next");
+
+    const result = spawnSync(
+      "/bin/bash",
+      [path.join(repoRoot, "infra/compose/deploy-launcher.sh"), "--flag"],
+      {
+        cwd: root,
+        env: { PATH: process.env.PATH, HOME: root, RAKAZO_DEPLOY_DIR: checkout },
+        encoding: "utf8",
+        timeout: 20_000,
+      },
+    );
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(`current rakazo-deploy-main --flag ${next}`);
+  });
+
+  it("refuses a relative checkout path", () => {
+    const result = spawnSync(
+      "/bin/bash",
+      [path.join(repoRoot, "infra/compose/deploy-launcher.sh")],
+      {
+        env: { PATH: process.env.PATH, RAKAZO_DEPLOY_DIR: "relative" },
+        encoding: "utf8",
+      },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("absolute path");
   });
 });

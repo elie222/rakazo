@@ -488,3 +488,81 @@ describe("createGroup", () => {
     expect(group.members.map((member) => member.botId)).toEqual(["lead", "build"]);
   });
 });
+
+describe("listGroups archived", () => {
+  const actor = {
+    spaceId: "space-1",
+    userId: "user-1",
+    email: "user@example.test",
+    isDeploymentOwner: false,
+  };
+  const member = (id: string, archived = false) => ({
+    bot: { id, name: id, color: "#111", runs: [], archivedAt: archived ? new Date() : null },
+  });
+  const group = (id: string, archived: boolean, members: ReturnType<typeof member>[]) => ({
+    id,
+    spaceId: "space-1",
+    userId: "user-1",
+    name: id,
+    pinned: false,
+    sectionId: null,
+    archivedAt: archived ? new Date("2026-10-20T00:00:00.000Z") : null,
+    createdAt: new Date("2026-10-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-10-20T00:00:00.000Z"),
+    thread: { id: `thread-${id}`, unread: false, messages: [] },
+    members,
+  });
+
+  function repos(rows: ReturnType<typeof group>[]) {
+    const findMany = vi.fn(async (_query: { where: unknown; include: unknown }) => rows);
+    return {
+      findMany,
+      repos: createGroupRepos({ chatGroup: { findMany } } as unknown as PrismaClient),
+    };
+  }
+
+  it("lists every archived group and every group its archived bots left unopenable", async () => {
+    const { findMany, repos: groupRepos } = repos([
+      group("archived-with-archived-bots", true, [member("a", true), member("b", true)]),
+      group("archived-with-active-bots", true, [member("h"), member("i")]),
+      group("left-with-one-bot", false, [member("c"), member("d", true)]),
+      group("still-openable", false, [member("e"), member("f"), member("g", true)]),
+    ]);
+    const listed = await groupRepos.listGroups(actor, { archived: true });
+    expect(listed.map((item) => [item.id, item.archivedAt !== null])).toEqual([
+      ["archived-with-archived-bots", true],
+      ["archived-with-active-bots", true],
+      ["left-with-one-bot", false],
+    ]);
+    // Archived bots stay listed, so the group still names who is in it.
+    expect(listed[0]!.members.map((item) => item.botId)).toEqual(["a", "b"]);
+    expect(listed[2]!.members.map((item) => item.botId)).toEqual(["c", "d"]);
+    const query = findMany.mock.calls[0]![0] as {
+      where: unknown;
+      include: { members: { where?: unknown } };
+    };
+    expect(query.where).toEqual({
+      spaceId: "space-1",
+      userId: "user-1",
+      OR: [
+        { archivedAt: { not: null } },
+        { members: { some: { bot: { archivedAt: { not: null } } } } },
+      ],
+    });
+    expect(query.include.members.where).toBeUndefined();
+  });
+
+  it("keeps the active list to groups with enough active bots", async () => {
+    const { findMany, repos: groupRepos } = repos([
+      group("openable", false, [member("a"), member("b")]),
+      group("one-bot", false, [member("c")]),
+    ]);
+    const listed = await groupRepos.listGroups(actor);
+    expect(listed.map((item) => item.id)).toEqual(["openable"]);
+    expect(findMany.mock.calls[0]![0].where).toEqual({
+      spaceId: "space-1",
+      userId: "user-1",
+      archivedAt: null,
+    });
+  });
+});

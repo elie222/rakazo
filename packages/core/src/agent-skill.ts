@@ -458,11 +458,19 @@ function parseSimpleYamlObject(text: string): Record<string, unknown> {
 
 function parseYamlScalar(raw: string): string | number | boolean {
   const value = raw.trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    // Saves write double-quoted values with JSON.stringify. Decode them so the next save
+    // does not add another escape layer. Non-JSON escapes such as "C:\path" keep the slice.
+    try {
+      const decoded: unknown = JSON.parse(value);
+      if (typeof decoded === "string") return decoded;
+    } catch {
+      // Fall through to the slice below.
+    }
     return value.slice(1, -1);
+  }
+  if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1).replaceAll("''", "'");
   }
   if (value === "true") return true;
   if (value === "false") return false;
@@ -498,7 +506,14 @@ function formatYamlLine(key: string, value: unknown): string {
     if (value.includes("\n") || value.includes(": ")) {
       return formatYamlBlockScalar(key, value);
     }
-    if (value === "" || /[#{}[\],&*?|>!%@`]/.test(value) || value !== value.trim()) {
+    if (
+      value === "" ||
+      /[#{}[\],&*?|>!%@`]/.test(value) ||
+      value !== value.trim() ||
+      value.startsWith('"') ||
+      value.startsWith("'") ||
+      typeof parseYamlScalar(value) !== "string"
+    ) {
       return `${key}: ${JSON.stringify(value)}`;
     }
     return `${key}: ${value}`;

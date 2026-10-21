@@ -42,7 +42,7 @@ export function InstructionSettings({ bot }: { bot: Bot }) {
   }
   return (
     <div className="mt-4 space-y-3">
-      <label htmlFor={`${id}-instructions`} className="block text-sm">
+      <label htmlFor={`${id}-instructions`} className="block text-[14px] text-muted-foreground">
         <Trans>Instructions</Trans>
         <Textarea
           id={`${id}-instructions`}

@@ -993,6 +993,82 @@ describe("MCP prepared credential updates", () => {
   });
 });
 
+describe("MCP pre-registered OAuth client", () => {
+  it("stores the client encrypted and returns only its ID", async () => {
+    const values = new Map<string, string>();
+    const secretRows = new Map<string, { id: string; ciphertext: string }>();
+    let server: Record<string, unknown> | undefined;
+    const prisma = {
+      mcpServer: {
+        create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          server = {
+            ...data,
+            id: "server-1",
+            revision: 1,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+          return server;
+        }),
+      },
+      secret: {
+        create: vi.fn(async ({ data }: { data: { id: string; ciphertext: string } }) => {
+          secretRows.set(data.id, data);
+          return data;
+        }),
+        findFirst: vi.fn(async ({ where }: { where: { id: string } }) => secretRows.get(where.id)),
+      },
+      deploymentSettings: { findUnique: vi.fn().mockResolvedValue({ ownerUserId: "owner-1" }) },
+      $transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(prisma)),
+    } as unknown as PrismaClient;
+    const secrets = {
+      put: vi.fn(async (plaintext: string) => {
+        values.set("cipher-1", plaintext);
+        return { id: "secret-1", ciphertext: "cipher-1" };
+      }),
+      load: vi.fn(async (ciphertext: string) => values.get(ciphertext)!),
+    };
+    const deps = {
+      prisma,
+      secrets,
+      env: {
+        defaultProvider: "fake",
+        defaultModel: "fake-model",
+        webOrigin: "http://127.0.0.1:5173",
+        screenProxySecret: "fake-test-secret",
+        sandboxProvider: "fake",
+      },
+      dataDir: "/tmp/rakazo-router-test",
+    } as unknown as RouterDeps;
+    const actor = {
+      spaceId: "workspace-1",
+      userId: "owner-1",
+      email: "owner@rakazo.test",
+      isDeploymentOwner: true,
+    } satisfies Actor;
+    const client = createRouterClient(createRouter(deps), { context: { actor } as never });
+
+    const created = await client.mcp.servers.create({
+      transport: "streamable_http",
+      slug: "gmail",
+      name: "Gmail",
+      endpoint: "http://localhost:3100/mcp",
+      oauthClient: { clientId: "client-1.apps.example.test", clientSecret: "client-secret" },
+    });
+
+    expect(created).toMatchObject({
+      oauthClientId: "client-1.apps.example.test",
+      oauthStatus: "none",
+      hasSecret: true,
+    });
+    expect(JSON.stringify(created)).not.toContain("client-secret");
+    expect(server?.secretId).toBe("secret-1");
+    expect(JSON.parse(values.get("cipher-1")!)).toMatchObject({
+      oauthClient: { client_id: "client-1.apps.example.test", client_secret: "client-secret" },
+    });
+  });
+});
+
 describe("MCP loopback endpoints", () => {
   const LOOPBACK = "http://localhost:3100/api/auth/get-session";
 
@@ -4017,6 +4093,77 @@ describe("bot restore computer quota", () => {
     const { response } = await call();
     expect(response.status).toBe(200);
     expect(prisma.bot.update).toHaveBeenCalledOnce();
+  });
+});
+
+describe("group restore with archived bots", () => {
+  function fixture(archivedBots: Array<{ id: string; computerId: string | null }>, inUse = 0) {
+    const bot = { update: vi.fn(async () => ({})) };
+    const chatGroup = { update: vi.fn(async () => ({})) };
+    const tx = {
+      bot,
+      chatGroup,
+      chatGroupMember: { findMany: vi.fn(async () => archivedBots.map((item) => ({ bot: item }))) },
+      computer: {
+        count: vi.fn(async (args: { where: { id?: string } }) => (args.where.id ? 0 : inUse)),
+      },
+      $queryRaw: vi.fn(async () => [{ id: "group-1", lock: "1" }]),
+    };
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: unknown) => Promise<unknown>) => callback(tx)),
+    };
+    const handler = new RPCHandler(
+      createRouter({ prisma, env: { sandboxProvider: "fake" } } as unknown as RouterDeps),
+    );
+    const call = async () =>
+      handler.handle(
+        new Request("http://rakazo.test/rpc/groups/restore", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ json: { groupId: "group-1" } }),
+        }),
+        {
+          prefix: "/rpc",
+          context: {
+            actor: {
+              spaceId: "space-1",
+              userId: "user-1",
+              email: "user@example.test",
+              isDeploymentOwner: true,
+            },
+          },
+        },
+      );
+    return { tx, call };
+  }
+
+  it("brings the group's archived bots back before the group, so it can be opened again", async () => {
+    const { tx, call } = fixture([
+      { id: "bot-a", computerId: "computer-a" },
+      { id: "bot-b", computerId: null },
+    ]);
+    const { response } = await call();
+    expect(response.status).toBe(200);
+    expect(tx.bot.update.mock.calls).toEqual([
+      [{ where: { id: "bot-a" }, data: { archivedAt: null } }],
+      [{ where: { id: "bot-b" }, data: { archivedAt: null } }],
+    ]);
+    expect(tx.chatGroup.update).toHaveBeenCalledWith({
+      where: { id: "group-1" },
+      data: { archivedAt: null },
+    });
+    expect(tx.chatGroup.update.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.bot.update.mock.invocationCallOrder[1]!,
+    );
+  });
+
+  it("refuses with the quota error and restores nothing when a bot's computer has no room", async () => {
+    process.env.SANDBOX_MAX_COMPUTERS_PER_USER = "1";
+    const { tx, call } = fixture([{ id: "bot-a", computerId: "computer-a" }], 1);
+    const { response } = await call();
+    expect(response.status).toBe(400);
+    expect(tx.bot.update).not.toHaveBeenCalled();
+    expect(tx.chatGroup.update).not.toHaveBeenCalled();
   });
 });
 

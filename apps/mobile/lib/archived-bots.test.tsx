@@ -252,9 +252,9 @@ describe("archived chat read failures", () => {
     rpc.mockRejectedValueOnce(new Error("Internal server error"));
     await act(async () => container.querySelector("button")!.click());
     expect(push).not.toHaveBeenCalled();
-    rpc.mockResolvedValueOnce({ ok: true });
+    rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
     await act(async () => container.querySelectorAll("button")[1]!.click());
-    expect(rpc).toHaveBeenLastCalledWith("bots/restore", { botId: bot.id });
+    expect(rpc).toHaveBeenCalledWith("bots/restore", { botId: bot.id });
     expect(container.textContent).toBe("No archived chats");
     expect(push).not.toHaveBeenCalled();
   });
@@ -310,7 +310,7 @@ describe("archived chat read failures", () => {
     )!;
     groupRpc.mockResolvedValueOnce({ ok: true });
     await act(async () => restore.click());
-    expect(groupRpc).toHaveBeenLastCalledWith("groups/restore", { groupId: group.id });
+    expect(groupRpc).toHaveBeenCalledWith("groups/restore", { groupId: group.id });
     expect(container.textContent).not.toContain("Restore Crew");
     expect(container.textContent).toContain(bot.name);
   });
@@ -392,12 +392,29 @@ describe("archived chat read failures", () => {
     expect(container.textContent).toBe("No archived chats");
   });
 
+  it("reloads both lists after a restore, since a group comes back with its bots", async () => {
+    groupRpc.mockResolvedValueOnce([group]);
+    await act(async () => {
+      focus.current!();
+    });
+    const restore = [...container.querySelectorAll("button")].find(
+      (item) => item.textContent === "Restore Crew",
+    )!;
+    // Restoring the group also restored its archived bot, so the server no longer lists it.
+    groupRpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
+    rpc.mockResolvedValueOnce([]);
+    await act(async () => restore.click());
+    expect(container.textContent).toBe("No archived chats");
+  });
+
   it("keeps the bots load error after restoring the last group", async () => {
     await act(async () => root.render(null));
     rpc.mockRejectedValueOnce(new Error(""));
     groupRpc.mockResolvedValueOnce([group]);
     await act(async () => root.render(<ArchivedBots />));
+    // The reload after the restore fails for bots again.
     groupRpc.mockResolvedValueOnce({ ok: true });
+    rpc.mockRejectedValueOnce(new Error(""));
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore Crew",
     )!;
@@ -409,7 +426,9 @@ describe("archived chat read failures", () => {
     await act(async () => root.render(null));
     groupRpc.mockRejectedValueOnce(new Error(""));
     await act(async () => root.render(<ArchivedBots />));
-    rpc.mockResolvedValueOnce({ ok: true });
+    // The reload after the restore fails for groups again.
+    rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
+    groupRpc.mockRejectedValueOnce(new Error(""));
     const restore = [...container.querySelectorAll("button")].find(
       (item) => item.textContent === "Restore",
     )!;
