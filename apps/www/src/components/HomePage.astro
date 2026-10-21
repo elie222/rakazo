@@ -10,6 +10,12 @@ import FeatureIllustration from "./FeatureIllustration.astro";
 import RepoCard from "./RepoCard.astro";
 import RosterBotAvatar from "./RosterBotAvatar.astro";
 import type { Locale } from "../i18n/locales";
+import chatgptLogo from "./provider-logos/chatgpt.svg?raw";
+import claudeLogo from "./provider-logos/claude.svg?raw";
+import grokLogo from "./provider-logos/grok.svg?raw";
+import lmStudioLogo from "./provider-logos/lmstudio.svg?raw";
+import ollamaLogo from "./provider-logos/ollama.svg?raw";
+import openRouterLogo from "./provider-logos/openrouter.svg?raw";
 import { HOME_MODEL_PROVIDERS, getHomeCopy } from "../i18n/home";
 import {
   DEFAULT_LOCALE,
@@ -58,6 +64,14 @@ const starsLabel = stars === null ? copy.starFallback : formatStarCount(stars);
 const setupAgentPrompt = `Set up Rakazo for me. Follow the setup prompt at ${SETUP_PROMPT_URL}`;
 const desktopPlatforms = availableDesktopPlatforms(desktopDownloads);
 const PLATFORM_NAMES = { mac: "macOS", windows: "Windows", linux: "Linux" } as const;
+const PROVIDER_LOGOS: Record<string, string> = {
+  Claude: claudeLogo,
+  ChatGPT: chatgptLogo,
+  OpenRouter: openRouterLogo,
+  Grok: grokLogo,
+  Ollama: ollamaLogo,
+  "LM Studio": lmStudioLogo,
+};
 const pageUrl = `${SITE_URL}${homeHref === "/" ? "/" : homeHref}`;
 
 const structuredData = homeStructuredData({
@@ -224,22 +238,14 @@ const structuredData = homeStructuredData({
       </section>
 
       <section id="selfhost" class="section">
-        <div class="section-intro">
-          <div class="eyebrow">{copy.selfHost.eyebrow}</div>
-          <h2 class="section-heading">{copy.selfHost.heading}</h2>
-          <p class="section-copy">
-            {copy.selfHost.copy}
-          </p>
-        </div>
-        <div class="works-with">
-          <span>{copy.selfHost.worksWith}</span>
-          {HOME_MODEL_PROVIDERS.map((name) => <span class="provider-chip">{name}</span>)}
-        </div>
-        <div class="selfhost-cta">
+        <div class="selfhost__intro">
+          <div class="section-intro">
+            <h2 class="section-heading">{copy.selfHost.heading}</h2>
+            <p class="section-copy">
+              {copy.selfHost.copy}
+            </p>
+          </div>
           <Button href={SELF_HOST_GUIDE_PATH}>{copy.openSource.readTheDocs}</Button>
-          <Button href={GITHUB_URL} variant="secondary" external data-attr="selfhost-github">
-            {copy.hero.viewOnGithub}
-          </Button>
         </div>
         <div class="card-grid-3">
           {
@@ -251,6 +257,15 @@ const structuredData = homeStructuredData({
               </article>
             ))
           }
+        </div>
+        <div class="works-with">
+          <span>{copy.selfHost.worksWith}</span>
+          {HOME_MODEL_PROVIDERS.map((name) => (
+            <span class="provider-chip">
+              <Fragment set:html={PROVIDER_LOGOS[name]} />
+              {name}
+            </span>
+          ))}
         </div>
       </section>
 
@@ -403,7 +418,7 @@ const structuredData = homeStructuredData({
   const marqueeGroup = marquee?.querySelector<HTMLElement>(".testimonial-group");
   if (marquee && marqueeGroup) {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const pixelsPerSecond = 36;
+    const pixelsPerSecond = 18;
     let frame = 0;
     let last = 0;
     let offset = 0;

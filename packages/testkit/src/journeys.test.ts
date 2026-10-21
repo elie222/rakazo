@@ -3,10 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { runJobKey } from "@rakazo/adapter-kit";
 import {
-  ComposioEmulator,
+  ComposioConnector,
   createScheduleFromTool,
   DesktopSandboxProvider,
   DestinationEmulator,
+  FakeComposioClient,
   FakeSandboxProvider,
   handoffToGroupBot,
   organizeBot,
@@ -121,7 +122,7 @@ describeJourneys("required product journeys", () => {
       dataDir,
       sandboxProvider: "fake",
       agentRuntime: "scripted",
-      composio: new ComposioEmulator(),
+      composio: new ComposioConnector({ client: new FakeComposioClient() }),
       connectors: [connector],
     });
     app = handles.app;

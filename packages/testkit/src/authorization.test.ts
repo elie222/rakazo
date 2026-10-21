@@ -1,7 +1,12 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator, ExpoPushProvider, loadPushToken } from "@rakazo/adapters";
+import {
+  ComposioConnector,
+  ExpoPushProvider,
+  FakeComposioClient,
+  loadPushToken,
+} from "@rakazo/adapters";
 import type { appContract, Space, SpaceNavigation } from "@rakazo/contracts";
 import {
   claimEmptySpaceDeletionForMember,
@@ -50,7 +55,7 @@ describeWithDatabase("API authorization and resource isolation", () => {
       agentRuntime: "scripted",
       wakeupDriver: "memory",
       signupsEnabled: "true",
-      composio: new ComposioEmulator(),
+      composio: new ComposioConnector({ client: new FakeComposioClient() }),
     });
     app = handles.app;
     botIntroHarness = handles;
@@ -1790,7 +1795,7 @@ function capabilityInput(name: string) {
 }
 
 function connectionInput(displayName: string) {
-  return { provider: "test-provider", displayName };
+  return { provider: "SLACK", displayName };
 }
 
 async function signup(app: App, email: string, name: string) {

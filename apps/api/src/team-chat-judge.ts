@@ -7,6 +7,7 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import {
+  actorMayUsePrivateEndpoint,
   formatCurrentTimeInstruction,
   matchesFailedOAuthSecret,
   resolveModelAuth,
@@ -122,6 +123,8 @@ interface ModelTeamChatEngagementJudgeDeps {
   deploymentModelKey?: string;
   providerOverride?: string;
   modelOverride?: string;
+  /** The instance flag (`MCP_ALLOW_PRIVATE_ENDPOINT`). */
+  allowPrivateEndpoint?: boolean;
   timeoutMs?: number;
 }
 
@@ -323,6 +326,11 @@ export class ModelTeamChatEngagementJudge implements TeamChatEngagementJudge {
           id: modelId,
           apiKey: parsed.apiKey,
           baseUrl: parsed.baseUrl,
+          allowPrivateEndpoint: await actorMayUsePrivateEndpoint(
+            this.deps.prisma,
+            bot.userId,
+            this.deps.allowPrivateEndpoint === true,
+          ),
           ...limit,
           ...context,
         },

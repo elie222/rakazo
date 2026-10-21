@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  ComposioEmulator,
+  ComposioConnector,
   EncryptedSecretStore,
+  FakeComposioClient,
   InstalledConnectorProvider,
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
@@ -28,7 +29,8 @@ const TEST_ENCRYPTION_KEY = "offline-connector-test-encryption-key";
 describeWithDatabase("Composio catalog reconciliation", () => {
   let handles: AppHandles;
   let app: App;
-  let composio: ComposioEmulator;
+  let fake: FakeComposioClient;
+  let composio: ComposioConnector;
   let thirdParties: ThirdPartyConnectorEmulator;
   let connectionOrdinal = 0;
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -36,7 +38,8 @@ describeWithDatabase("Composio catalog reconciliation", () => {
 
   beforeAll(async () => {
     const { createApp } = await import("../../../apps/api/src/app.ts");
-    composio = new ComposioEmulator();
+    fake = new FakeComposioClient();
+    composio = new ComposioConnector({ client: fake });
     thirdParties = new ThirdPartyConnectorEmulator();
     const pipedream = new PipedreamConnector(
       {
@@ -204,6 +207,31 @@ describeWithDatabase("Composio catalog reconciliation", () => {
     ).resolves.toContainEqual(expect.objectContaining({ slug: "GMAIL", connected: false }));
   });
 
+  it("marks a connected account Composio reports dead as needing reconnect", async () => {
+    const cookie = await signup(app, `reconnect-${stamp}@rakazo.test`, "Reconnect");
+    const work = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Work",
+    });
+    const personal = await rpc<{ connectionId: string }>(app, cookie, "connections/begin", {
+      connectorId: "composio",
+      provider: "GMAIL",
+      displayName: "Personal",
+    });
+    const row = await handles.prisma.connection.findUniqueOrThrow({
+      where: { id: work.connectionId },
+    });
+    fake.setStatus(row.providerRef!, "EXPIRED");
+
+    await rpc(app, cookie, "connections/catalog", { connectorId: "composio" });
+
+    await expect(statuses([work.connectionId, personal.connectionId])).resolves.toEqual([
+      { id: work.connectionId, status: "error" },
+      { id: personal.connectionId, status: "connected" },
+    ]);
+  });
+
   it("returns the remote catalog when local reconciliation fails", async () => {
     const cookie = await signup(app, `db-failure-connections-${stamp}@rakazo.test`, "DB Failure");
     const actor = await rpc<Actor>(app, cookie, "me");
@@ -301,8 +329,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
       expect.objectContaining({
         type: "result",
         data: expect.objectContaining({
-          successful: true,
-          data: expect.objectContaining({
+          data: {
             messages: [
               expect.objectContaining({
                 messageId: "18c5f5d1a2b3c4d6",
@@ -310,11 +337,11 @@ describeWithDatabase("Composio catalog reconciliation", () => {
               }),
             ],
             resultSizeEstimate: 1,
-          }),
+          },
         }),
       }),
     );
-    expect(composio.executions).toContainEqual(
+    expect(fake.executions).toContainEqual(
       expect.objectContaining({
         userId: actor.userId,
         tool: "GMAIL_FETCH_EMAILS",
@@ -644,7 +671,7 @@ describeWithDatabase("Composio catalog reconciliation", () => {
   }
 });
 
-async function connectRemote(composio: ComposioEmulator, actor: Actor, provider: string) {
+async function connectRemote(composio: ComposioConnector, actor: Actor, provider: string) {
   await composio.begin(
     { provider, redirectUrl: "http://127.0.0.1.invalid/callback" },
     {

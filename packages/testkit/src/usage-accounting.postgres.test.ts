@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import { recordUsage } from "@rakazo/db";
 import { describe, expect, it } from "vitest";
 import { runAutoReviewJudge } from "../../adapters/src/auto-review.js";
@@ -94,7 +94,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         contextStrategy: "current",
         wakeupDriver: "memory",
         signupsEnabled: "true",
-        composio: new ComposioEmulator(),
+        composio: new ComposioConnector({ client: new FakeComposioClient() }),
         encryptionKey: "usage-fixture-encryption-key",
       });
       stop = handles.stop;
@@ -205,6 +205,7 @@ describe.skipIf(!enabled)("persisted Pi usage accounting", () => {
         runtime: handles.runtime,
         checker: { provider: model.model.provider, model: model.model.id },
         baseUrl: model.baseUrl,
+        allowPrivateEndpoint: true,
         contextWindow: 32768,
         maxTokens: 4096,
         prompt: "Review the synthetic fixture.",

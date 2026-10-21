@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator, FakeSandboxProvider } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient, FakeSandboxProvider } from "@rakazo/adapters";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -104,7 +104,7 @@ describe.skipIf(!databaseAvailable)("offline Pi computer approval", () => {
           agentRuntime: "pi",
           wakeupDriver: "memory",
           signupsEnabled: "true",
-          composio: new ComposioEmulator(),
+          composio: new ComposioConnector({ client: new FakeComposioClient() }),
           encryptionKey: "offline-computer-fixture-encryption-key",
         });
         stop = handles.stop;

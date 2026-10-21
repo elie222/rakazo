@@ -399,6 +399,7 @@ export default function Layout() {
                         name="bot-settings"
                         options={glassHeaderOptions(t("Chat settings"))}
                       />
+                      <Stack.Screen name="bot-model" options={glassHeaderOptions(t("Model"))} />
                       <Stack.Screen
                         name="thread"
                         options={{ title: t("Thread"), animation: chatAnimation }}

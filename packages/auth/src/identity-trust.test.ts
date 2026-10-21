@@ -594,6 +594,36 @@ describe("session credentials", () => {
     expect(server?.session).not.toHaveProperty("token");
   });
 
+  it("stores password reset tokens hashed and accepts one stored before hashing", async () => {
+    const f = fixture();
+    const { user } = (await (await f.signup()).json()) as { user: { id: string } };
+    expect(
+      (await f.request("/request-password-reset", { email: "approved@example.test" })).status,
+    ).toBe(200);
+    const token = f.messages.at(-1)!.text.match(/reset-password\/([^?\s]+)/)![1]!;
+    expect(f.data.verification!.some((row) => String(row.identifier).includes(token))).toBe(false);
+    const reset = await f.request("/reset-password", { token, newPassword: "offline-password34" });
+    expect(reset.status, await reset.clone().text()).toBe(200);
+    f.data.verification!.push({
+      id: "legacy-reset",
+      identifier: "reset-password:legacy-reset-token",
+      value: user.id,
+      expiresAt: new Date(Date.now() + 60_000),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    const legacy = await f.request("/reset-password", {
+      token: "legacy-reset-token",
+      newPassword: "offline-password56",
+    });
+    expect(legacy.status, await legacy.clone().text()).toBe(200);
+    const signedIn = await f.request("/sign-in/email", {
+      email: "approved@example.test",
+      password: "offline-password56",
+    });
+    expect(signedIn.status).toBe(200);
+  });
+
   it("requires the password to delete an account, even from a fresh session", async () => {
     const f = fixture({ delivery: false });
     const { token } = (await (await f.signup()).json()) as { token: string };

@@ -124,12 +124,21 @@ describe("source-read evidence", () => {
     services.seedGithubReleases([]);
     const args = { owner: "example", repo: "widget" };
     const events = [];
+    const github = {
+      id: "github",
+      connectorId: "composio",
+      externalId: "GITHUB",
+      displayName: "GitHub",
+    };
     for await (const event of services.execute(
       { tool: "GITHUB_GET_RELEASE", args, executionId: "synthetic" } as ConnectorCall,
-      context,
+      { ...context, connectedConnections: [github] },
     ))
       events.push(event);
-    expect(events).toContainEqual({ type: "result", data: expect.objectContaining({ ok: false }) });
+    expect(events).toContainEqual({
+      type: "result",
+      data: expect.objectContaining({ data: expect.objectContaining({ ok: false }) }),
+    });
     expect(services.calls[0]?.outcome).toBe("rejected");
     const e = evidence({ calls: services.calls });
     expect(SILENCE_EVAL_CASES[1]!.grade(e)).toContainEqual({

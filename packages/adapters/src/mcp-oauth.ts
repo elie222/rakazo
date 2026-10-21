@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type {
   OAuthClientProvider,
   OAuthDiscoveryState,
@@ -238,6 +239,8 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
   private readonly runtimeState = randomUUID();
   private persistQueue = Promise.resolve();
   private refreshing?: Promise<void>;
+  /** The stored grant `wrapFetch` last handed the SDK in place of a token response. */
+  private served?: OAuthTokens;
   /** The refresh token storage held when this provider last read or wrote it. */
   private storedRefreshToken: string | null;
 
@@ -289,31 +292,63 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
    */
   async tokens(): Promise<OAuthTokens | undefined> {
     if (this.options.refresh && accessTokenExpired(this.material.oauth)) {
-      this.refreshing ??= this.refreshExpiredToken().finally(() => {
-        this.refreshing = undefined;
-      });
-      await this.refreshing;
+      // Transient setup or transport failures must not discard a usable token.
+      await this.renew().catch(() => undefined);
     }
     return this.material.oauth?.tokens;
   }
 
-  private async refreshExpiredToken(): Promise<void> {
+  /**
+   * After a 401 or 403 the SDK refreshes on its own through the transport's
+   * fetch. Serve that token request from the locked refresh, so processes share
+   * one refresh and never send a refresh token storage has already replaced.
+   */
+  wrapFetch(fetch: typeof globalThis.fetch): typeof globalThis.fetch {
+    return async (input, init) => {
+      const body = init?.body instanceof URLSearchParams ? init.body : undefined;
+      if (!this.options.refresh || body?.get("grant_type") !== "refresh_token")
+        return fetch(input, init);
+      // Skip it when a concurrent request already renewed the token the SDK read.
+      if (body.get("refresh_token") === this.material.oauth?.tokens?.refresh_token) {
+        try {
+          await this.renew();
+        } catch {
+          // The SDK starts re-authorization, which drops the grant, on any other failure.
+          return Response.json({ error: "temporarily_unavailable" }, { status: 503 });
+        }
+      }
+      const tokens = this.material.oauth?.tokens;
+      this.served = tokens;
+      return tokens
+        ? Response.json(tokens)
+        : Response.json({ error: "invalid_grant" }, { status: 400 });
+    };
+  }
+
+  /** Renews under the credential lock; concurrent callers share one refresh. */
+  private renew(): Promise<void> {
+    this.refreshing ??= this.refreshHeldGrant().finally(() => {
+      this.refreshing = undefined;
+    });
+    return this.refreshing;
+  }
+
+  private async refreshHeldGrant(): Promise<void> {
     const oauth = this.material.oauth;
     const held = oauth?.tokens;
     if (!oauth || !held?.refresh_token || !this.options.refresh) return;
-    try {
-      const grant = await this.options.refresh(held.refresh_token);
-      // A write that landed while the refresh ran is newer than the grant it replaced.
-      if (this.material.oauth !== oauth || oauth.tokens !== held) return;
-      applyGrant(oauth, grant);
-      this.storedRefreshToken = grant.tokens?.refresh_token ?? null;
-    } catch {
-      // Transient setup or transport failures must not discard a usable token.
-    }
+    const grant = await this.options.refresh(held.refresh_token);
+    // A write that landed while the refresh ran is newer than the grant it replaced.
+    if (this.material.oauth !== oauth || oauth.tokens !== held) return;
+    applyGrant(oauth, grant);
+    this.storedRefreshToken = grant.tokens?.refresh_token ?? null;
   }
 
   async saveTokens(value: OAuthTokens): Promise<void> {
     const oauth = this.oauth();
+    // The locked refresh behind `wrapFetch` already stored this grant.
+    if (this.served && oauth.tokens === this.served && isDeepStrictEqual(value, this.served))
+      return;
     oauth.tokens = value;
     oauth.obtainedAt = Date.now();
     await this.persist(true);
@@ -611,7 +646,7 @@ export class McpOAuthBroker {
     context: ActorRef,
     loaded?: { material: OAuthMaterial; secretId?: string },
     onPersisted?: ProviderOptions["onPersisted"],
-  ): Promise<OAuthClientProvider | undefined> {
+  ): Promise<StoredMcpOAuthProvider | undefined> {
     const material = loaded ?? (await this.loadMaterial(server, context));
     if (!material.material.oauth) return undefined;
     return this.createProvider(server, context, material, { onPersisted });
@@ -675,7 +710,7 @@ export class McpOAuthBroker {
     const transport = new StreamableHTTPClientTransport(endpoint, {
       requestInit: { headers: networkFetch.headers },
       authProvider: provider,
-      fetch: networkFetch.fetch,
+      fetch: provider.wrapFetch(networkFetch.fetch),
     });
     const client = new Client({ name: "rakazo-oauth", version: "0.1.0" });
     const signal = AbortSignal.timeout(15_000);

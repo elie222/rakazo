@@ -851,3 +851,83 @@ test("saves and reloads an ordered backup model list for connected models", asyn
     { provider: targets[1]!.provider, modelId: targets[1]!.id },
   ]);
 });
+
+test("chat settings search a long model list", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  await signup(page, `chat-model-search-${stamp}@rakazo.test`, "password12", `Search ${stamp}`);
+  await completeOnboarding(page);
+
+  const catalog = await rpc<
+    Array<{
+      provider: string;
+      providerName?: string;
+      id: string;
+      label: string;
+      placeholder?: boolean;
+    }>
+  >(page, "models/list", {});
+  const openRouter = catalog.filter(
+    (entry) => entry.provider === "openrouter" && !entry.placeholder,
+  );
+  expect(openRouter.length).toBeGreaterThan(10);
+  const target = openRouter.find((entry) => entry.id.startsWith("anthropic/")) ?? openRouter[0]!;
+  // A fake key lists the whole OpenRouter catalogue without calling OpenRouter.
+  await rpc(page, "models/connect", {
+    provider: "openrouter",
+    apiKey: "fake-openrouter-key",
+    modelId: target.id,
+  });
+
+  await page.reload();
+  await page.locator("main").getByRole("button", { name: "Chief", exact: true }).click();
+  const settings = page.getByTestId("bot-settings");
+  await expect(settings).toBeVisible();
+  await settings.getByTestId("bot-settings-advanced").evaluate((element) => {
+    (element as HTMLDetailsElement).open = true;
+  });
+  const model = settings
+    .locator("label")
+    .filter({ hasText: /^Model/ })
+    .getByRole("button");
+  await expect(model).toHaveText(/^Space default/);
+  await model.click();
+
+  const search = page.getByRole("combobox", { name: "Search models" });
+  await expect(search).toBeFocused();
+  const options = page.locator('[data-slot="command-list"]').getByRole("option");
+  await expect(options).toHaveCount(openRouter.length + 1);
+  // Rows show names, so this provider prefix can only match the model ids.
+  const anthropicIds = openRouter.filter((entry) => entry.id.includes("anthropic/")).length;
+  expect(anthropicIds).toBeGreaterThan(0);
+  await search.fill("ANTHROPIC/");
+  await expect(options).toHaveCount(anthropicIds);
+  await captureScreenshot(page, testInfo, "chat-settings-model-search");
+
+  await search.fill("no model is called this");
+  await expect(options).toHaveCount(0);
+  await expect(page.getByText("No matching models")).toBeVisible();
+  await captureScreenshot(page, testInfo, "chat-settings-model-search-empty");
+
+  await search.fill(target.id);
+  const targetLabel = `${target.providerName ?? target.provider} · ${target.label}`;
+  await page
+    .locator('[data-slot="command-list"]')
+    .getByRole("option", { name: targetLabel, exact: true })
+    .click();
+  await expect(search).toBeHidden();
+  await expect(model).toHaveText(targetLabel);
+  const saved = page.waitForResponse(
+    (response) => response.url().includes("/rpc/bots/update") && response.ok(),
+  );
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await saved;
+  const bots = await rpc<Array<{ name: string; modelProvider?: string; modelId?: string }>>(
+    page,
+    "bots/list",
+    {},
+  );
+  expect(bots.find((bot) => bot.name === "Chief")).toMatchObject({
+    modelProvider: "openrouter",
+    modelId: target.id,
+  });
+});

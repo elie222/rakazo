@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { ComposioEmulator } from "@rakazo/adapters";
+import { ComposioConnector, FakeComposioClient } from "@rakazo/adapters";
 import { describe, expect, it } from "vitest";
 import { discardBotIntroRun } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
@@ -176,7 +176,7 @@ describe.skipIf(!enabled)("history retrieval through executor", () => {
           agentRuntime: "pi",
           wakeupDriver: "memory",
           signupsEnabled: "true",
-          composio: new ComposioEmulator(),
+          composio: new ComposioConnector({ client: new FakeComposioClient() }),
           encryptionKey: "history-fixture-encryption-key",
           deploymentModelKey: fakeSecrets[0],
           composioApiKey: fakeSecrets[1],

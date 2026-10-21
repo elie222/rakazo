@@ -755,10 +755,15 @@ html[data-platform="web"] [data-show]:not([data-show~="web"]) {
   }
 }
 
-.selfhost-cta {
+.selfhost__intro {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+#selfhost .works-with {
   margin-top: 28px;
 }
 
@@ -3318,10 +3323,19 @@ button.product-demo__dock-icon {
 }
 
 .provider-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid var(--line-2);
   border-radius: 6px;
   background: var(--surface);
   color: var(--body);
   padding: 4px 8px;
+}
+
+.provider-chip svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 

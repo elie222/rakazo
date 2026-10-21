@@ -9,8 +9,8 @@ import {
   normalizeCreateBotProfile,
 } from "@rakazo/contracts";
 import {
-  connectedModelChoices,
   credentialForModel,
+  MODEL_SEARCH_THRESHOLD,
   modelOptionKey,
   parseModelOptionKey,
   resolveSelectableModelId,
@@ -39,6 +39,7 @@ import {
   withAvatarShape,
 } from "../lib/bot-avatar-edit";
 import { deviceVoices, setVoiceForBot, voiceForBot, voiceLabel } from "../lib/bot-voices";
+import { chatModelPickerChoices } from "../lib/chat-model";
 import { COMPUTER_LIFECYCLE_TIMEOUT_MS } from "../lib/computer";
 import { loadDeviceVoiceEnabled } from "../lib/device-voice";
 import { useI18n } from "../lib/i18n";
@@ -54,7 +55,7 @@ export default function BotSettingsScreen() {
   const tokens = useMobileTokens();
   const { t } = useI18n();
   const router = useRouter();
-  const { botId } = useLocalSearchParams<{ botId: string }>();
+  const { botId, model: pickedModel } = useLocalSearchParams<{ botId: string; model?: string }>();
   const [bot, setBot] = useState<BotSettingsRecord | null>(null);
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
@@ -123,10 +124,6 @@ export default function BotSettingsScreen() {
       });
   }, [t]);
 
-  const connectedOptions = useMemo(
-    () => connectedModelChoices(credentials, catalog),
-    [catalog, credentials],
-  );
   const storedModel = modelKey ? parseModelOptionKey(modelKey) : null;
   const selectedModel = storedModel
     ? {
@@ -155,23 +152,10 @@ export default function BotSettingsScreen() {
     []
   ).filter((level) => level !== "off");
 
-  const spaceDefaultLabel = me?.defaultModel
-    ? `${t("Space default")} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-    : t("Space default");
-
-  const modelChoices: MenuPickerChoice[] = useMemo(() => {
-    const choices: MenuPickerChoice[] = [{ key: "", label: spaceDefaultLabel }];
-    if (selectedModelKey && !connectedOptions.some((option) => option.key === selectedModelKey)) {
-      choices.push({
-        key: selectedModelKey,
-        label: selectedModel?.modelId ?? selectedModelKey,
-      });
-    }
-    for (const option of connectedOptions) {
-      choices.push({ key: option.key, label: option.label });
-    }
-    return choices;
-  }, [connectedOptions, selectedModel?.modelId, selectedModelKey, spaceDefaultLabel]);
+  const modelChoices = useMemo(
+    () => chatModelPickerChoices(me, catalog, credentials, selectedModelKey, t),
+    [catalog, credentials, me, selectedModelKey, t],
+  );
 
   const thinkingChoices: MenuPickerChoice[] = useMemo(
     () => [
@@ -189,6 +173,13 @@ export default function BotSettingsScreen() {
     setModelKey(key);
     setThinkingLevel("");
   }
+
+  // The searchable model list hands its pick back as a one-shot route param.
+  useEffect(() => {
+    if (pickedModel === undefined) return;
+    router.setParams({ model: undefined });
+    selectModel(pickedModel);
+  }, [pickedModel]);
 
   function applyVoices(available: Voice[], assigned: string | undefined) {
     setVoices(available);
@@ -669,6 +660,15 @@ export default function BotSettingsScreen() {
                 choices={modelChoices}
                 label={t("Model")}
                 onChange={selectModel}
+                onPress={
+                  modelChoices.length > MODEL_SEARCH_THRESHOLD
+                    ? () =>
+                        router.push({
+                          pathname: "/bot-model",
+                          params: { botId, value: selectedModelKey },
+                        })
+                    : undefined
+                }
                 value={selectedModelKey}
               />
               {thinkingOptions.length ? (
@@ -698,15 +698,6 @@ export default function BotSettingsScreen() {
       </ScrollView>
     </>
   );
-}
-
-function catalogLabel(
-  catalog: MobileModel[],
-  provider: string | null | undefined,
-  modelId: string,
-) {
-  if (!provider) return undefined;
-  return catalog.find((entry) => entry.provider === provider && entry.id === modelId)?.label;
 }
 
 function thinkingLevelLabel(level: ThinkingLevel, t: (message: string) => string) {

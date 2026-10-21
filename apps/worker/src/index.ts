@@ -155,7 +155,7 @@ async function main() {
     resolveEncryptionKey(process.env),
     {
       composio: isComposioEnabled(process.env.COMPOSIO_API_KEY)
-        ? new ComposioConnector(process.env.COMPOSIO_API_KEY)
+        ? new ComposioConnector({ apiKey: process.env.COMPOSIO_API_KEY })
         : undefined,
       pipedream,
     },

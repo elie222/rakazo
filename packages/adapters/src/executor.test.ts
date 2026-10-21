@@ -26,6 +26,7 @@ import {
   withRecentTurnImages,
 } from "./executor.js";
 import { UnavailableModelForAuthError, validateConnectedModelChoice } from "./model-selection.js";
+import { PRIVATE_MODEL_ENDPOINT_MESSAGE } from "./openai-compatible-url.js";
 import { RetiredModelCredentialError, serializeModelSecret } from "./pi-oauth.js";
 import { parseUpdateBotPatch } from "./update-bot-patch.js";
 
@@ -1019,6 +1020,8 @@ function compatibleExecutor(
   return createRunExecutor({
     prisma: prisma as unknown as PrismaClient,
     secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+    // The fixture endpoint is on loopback; private-endpoint access has its own tests.
+    mcpAllowPrivateEndpoint: true,
     ...extra,
   } as unknown as Parameters<typeof createRunExecutor>[0]);
 }
@@ -3048,6 +3051,36 @@ description: Prepare standup notes
     },
   );
 
+  describe("private model endpoints at run time", () => {
+    const scope = { userId: "user-1", spaceId: "ws-1" };
+    const plaintext = compatibleSecret(["space-model"]);
+    function executorFor(ownerUserId: string | null, mcpAllowPrivateEndpoint = false) {
+      const prisma = compatiblePrismaParts({ "ws-1": "space-model" }, plaintext);
+      prisma.deploymentSettings.findUnique = vi.fn(async () =>
+        ownerUserId ? { ownerUserId } : null,
+      ) as never;
+      return compatibleExecutor(prisma, plaintext, { mcpAllowPrivateEndpoint });
+    }
+
+    it("refuses a saved private endpoint for a user who is not the deployment owner", async () => {
+      await expect(
+        executorFor("owner-user").resolveConnectedModel(scope, COMPATIBLE_PROVIDER, "space-model"),
+      ).rejects.toThrow(PRIVATE_MODEL_ENDPOINT_MESSAGE);
+      await expect(executorFor(null).resolveModel(scope)).rejects.toThrow(
+        PRIVATE_MODEL_ENDPOINT_MESSAGE,
+      );
+    });
+
+    it.each([
+      ["the deployment owner", "user-1", false],
+      ["any user under the instance flag", "owner-user", true],
+    ] as const)("lets %s run a saved private endpoint", async (_who, owner, flag) => {
+      await expect(
+        executorFor(owner, flag).resolveConnectedModel(scope, COMPATIBLE_PROVIDER, "space-model"),
+      ).resolves.toMatchObject({ baseUrl: COMPATIBLE_BASE_URL, allowPrivateEndpoint: true });
+    });
+  });
+
   it("resolves a helper model enabled only in the connection's list", async () => {
     const plaintext = compatibleSecret(["space-model", "second-model"]);
     const executor = compatibleExecutor(
@@ -3418,6 +3451,7 @@ description: Prepare standup notes
     const executor = createRunExecutor({
       prisma,
       secretStore: { load: vi.fn(() => plaintext), put: vi.fn() },
+      mcpAllowPrivateEndpoint: true,
     } as unknown as Parameters<typeof createRunExecutor>[0]);
 
     await expect(

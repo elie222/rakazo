@@ -78,8 +78,9 @@ export function serializeOpenAiCompatibleVoiceSecret(
     sttModel?: string;
   },
   previousPlaintext?: string,
+  policy?: { allowPrivate?: boolean },
 ): string {
-  const url = assertAllowedOpenAiCompatibleUrl(input.baseUrl);
+  const url = assertAllowedOpenAiCompatibleUrl(input.baseUrl, policy);
   const baseUrl = normalizeOpenAiCompatibleBaseUrl(input.baseUrl);
   const previous = previousPlaintext ? tryParseSecret(previousPlaintext) : undefined;
   const same = previous?.baseUrl === baseUrl ? previous : undefined;
@@ -279,8 +280,10 @@ function endpoint(secret: OpenAiCompatibleVoiceSecret, path: string): string {
 export class OpenAiCompatibleVoiceProvider implements VoiceProvider {
   private readonly fetch: typeof globalThis.fetch;
 
-  constructor(options: { fetch?: typeof globalThis.fetch } = {}) {
-    this.fetch = createOpenAiCompatibleFetch(options.fetch);
+  constructor(options: { fetch?: typeof globalThis.fetch; allowPrivateEndpoint?: boolean } = {}) {
+    this.fetch = createOpenAiCompatibleFetch(options.fetch, undefined, {
+      allowPrivate: options.allowPrivateEndpoint,
+    });
   }
 
   describe(): AdapterDescriptor<VoiceCapabilities> {

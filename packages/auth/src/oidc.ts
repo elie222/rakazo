@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, getOAuthState } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins";
+import type { TokenKey } from "./token-storage.js";
+import { openIdToken } from "./token-storage.js";
 
 const OIDC_FRESH_AGE = 5 * 60;
 const OIDC_CLOCK_SKEW = 60;
@@ -221,15 +223,16 @@ export function oidcAccountSubject(issuer: string, subject: string) {
 }
 
 /** Stored ID tokens were verified during linking; bind their subject to the stored account ID. */
-export function isCurrentOidcAccount(
+export async function isCurrentOidcAccount(
   account: { providerId: string; accountId: string; idToken?: string | null },
   issuer: string | undefined,
+  key: TokenKey,
 ) {
-  if (!issuer || account.providerId !== "oidc" || !account.idToken) return false;
+  if (!issuer || account.providerId !== "oidc") return false;
+  const idToken = await openIdToken(key, account.idToken);
+  if (!idToken) return false;
   try {
-    const claims = JSON.parse(
-      Buffer.from(account.idToken.split(".")[1] ?? "", "base64url").toString(),
-    );
+    const claims = JSON.parse(Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString());
     return (
       claims.iss === issuer &&
       typeof claims.sub === "string" &&

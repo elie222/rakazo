@@ -16,6 +16,7 @@ import {
   isBuiltinToolName,
 } from "@rakazo/contracts";
 import {
+  chatModelChoices,
   connectedModelChoices,
   credentialForModel,
   modelOptionKey,
@@ -41,6 +42,7 @@ import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { BotCredentialsSection } from "./bot-credentials";
+import { ChatModelPicker } from "./chat-model-picker";
 
 const ScratchpadSection = lazy(() =>
   import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
@@ -320,6 +322,14 @@ export function BotSettings({
     ? modelOptionKey(selectedModel.provider, selectedModel.modelId)
     : "";
 
+  const modelChoices = chatModelChoices(
+    connectedOptions,
+    selectedModelKey,
+    me?.defaultModel
+      ? `${t`Space default`} (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
+      : t`Space default`,
+  );
+
   const effectiveProvider = selectedModel?.provider ?? me?.defaultProvider ?? null;
   const effectiveModelId = selectedModel?.modelId ?? me?.defaultModel ?? null;
   const effectiveEntry =
@@ -588,33 +598,15 @@ export function BotSettings({
         ) : null}
         <label htmlFor={`${ids}-model`} className={fieldLabelClass}>
           <Trans>Model</Trans>
-          <NativeSelect
+          <ChatModelPicker
             id={`${ids}-model`}
-            className="mt-2 w-full"
+            choices={modelChoices}
             value={selectedModelKey}
-            onChange={(event) => {
-              setModelKey(event.target.value);
+            onChange={(key) => {
+              setModelKey(key);
               setThinkingLevel("");
             }}
-          >
-            <NativeSelectOption value="">
-              {t`Space default`}
-              {me?.defaultModel
-                ? ` (${catalogLabel(catalog, me.defaultProvider, me.defaultModel) ?? me.defaultModel})`
-                : ""}
-            </NativeSelectOption>
-            {selectedModelKey &&
-            !connectedOptions.some((option) => option.key === selectedModelKey) ? (
-              <NativeSelectOption value={selectedModelKey}>
-                {selectedModel?.modelId ?? selectedModelKey}
-              </NativeSelectOption>
-            ) : null}
-            {connectedOptions.map((option) => (
-              <NativeSelectOption key={option.key} value={option.key}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+          />
         </label>
         {thinkingOptions.length ? (
           <label htmlFor={`${ids}-thinking`} className={fieldLabelClass}>

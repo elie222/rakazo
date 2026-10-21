@@ -269,6 +269,7 @@ export async function runAutoReviewJudge(input: {
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  allowPrivateEndpoint?: boolean;
   cacheCapabilities?: CacheCapabilities;
   contextWindow?: number;
   maxTokens?: number;
@@ -313,6 +314,7 @@ export async function runAutoReviewJudge(input: {
           accountId: input.accountId,
           gatewayId: input.gatewayId,
           baseUrl: input.baseUrl,
+          allowPrivateEndpoint: input.allowPrivateEndpoint,
           cacheCapabilities: input.cacheCapabilities,
           contextWindow: input.contextWindow,
           maxTokens: input.maxTokens,
@@ -387,6 +389,7 @@ export type LlmAutoReviewOptions = {
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  allowPrivateEndpoint?: boolean;
   cacheCapabilities?: CacheCapabilities;
   contextWindow?: number;
   maxTokens?: number;

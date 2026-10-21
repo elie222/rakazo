@@ -41,7 +41,13 @@ export function accountSecurity(
                 proof.value === ctx.context.session.user.id &&
                 proof.expiresAt.getTime() > Date.now(),
             ),
-            ssoLinked: accounts.some((account) => isCurrentOidcAccount(account, ssoIssuer)),
+            ssoLinked: (
+              await Promise.all(
+                accounts.map((account) =>
+                  isCurrentOidcAccount(account, ssoIssuer, ctx.context.secretConfig),
+                ),
+              )
+            ).some(Boolean),
             hasPassword: Boolean(credential?.password),
             passwordChangeEnabled,
             emailDeletion: Boolean(email),

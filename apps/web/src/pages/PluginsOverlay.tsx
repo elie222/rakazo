@@ -116,10 +116,12 @@ export function PluginsOverlay({
   const connectionAttempt = useRef<AbortController | null>(null);
 
   async function refresh() {
+    // The catalog call reconciles connection rows, so list them after it settles.
+    const catalog = rpc.connections.catalog({});
     const [items, installs, rows, catalogFeed] = await Promise.all([
-      rpc.connections.catalog({}),
+      catalog,
       rpc.capabilities.list(),
-      rpc.connections.list(),
+      catalog.catch(() => undefined).then(() => rpc.connections.list()),
       optionalCatalogFeedProbe(rpc.capabilities.catalogSearch({ query: "" })),
     ]);
     setCatalogLoaded(true);

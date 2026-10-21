@@ -5,6 +5,7 @@ import {
   McpReauthorizationRequiredError,
   StoredMcpOAuthProvider,
 } from "./mcp-oauth.js";
+import { McpSession } from "./mcp-transport.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -397,6 +398,111 @@ describe("MCP OAuth", () => {
     },
   );
 
+  /**
+   * An MCP server that has already revoked `old-access` before its stored expiry.
+   * `onRejected` runs before each 401 so a test can line the rejections up.
+   */
+  function earlyRevokingMcpServer(
+    authFetch: typeof globalThis.fetch,
+    onRejected: () => Promise<void> = async () => undefined,
+  ) {
+    const bearers: string[] = [];
+    const network = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      if (logicalHref(input, init) !== "https://mcp.example.test/mcp")
+        return authFetch(input, init);
+      const request = new Request(input, init);
+      if (request.method !== "POST") return new Response(null, { status: 405 });
+      const bearer = request.headers.get("authorization") ?? "";
+      bearers.push(bearer);
+      if (bearer === "Bearer old-access") {
+        await onRejected();
+        return new Response(null, { status: 401 });
+      }
+      const body = (await request.json()) as { id?: number; method: string };
+      if (body.method !== "initialize") return new Response(null, { status: 202 });
+      return Response.json({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: {
+          protocolVersion: "2025-11-25",
+          capabilities: {},
+          serverInfo: { name: "fake", version: "1" },
+        },
+      });
+    });
+    const connect = (provider: StoredMcpOAuthProvider, session: McpSession) =>
+      session.connectRemote({
+        url: "https://mcp.example.test/mcp",
+        authProvider: provider,
+        network: { fetch: network, resolveHostname: TEST_NETWORK.resolveHostname },
+      });
+    return { network, bearers, connect };
+  }
+
+  const reauthorizableMaterial = () => ({
+    oauth: {
+      ...expiringMaterial(Date.now()).oauth,
+      redirectUri: "https://app.example.test/mcp/oauth/callback",
+    },
+  });
+
+  it("routes the SDK's refresh after a 401 before expiry through one locked refresh", async () => {
+    const auth = rotatingAuthServer();
+    const shared = sharedCredentials(reauthorizableMaterial());
+    // Hold both 401s until each process has one.
+    let rejected = 0;
+    let releaseRejections: () => void = () => undefined;
+    const bothRejected = new Promise<void>((resolve) => {
+      releaseRejections = resolve;
+    });
+    const mcp = earlyRevokingMcpServer(auth.fetch, async () => {
+      rejected += 1;
+      if (rejected === 2) releaseRejections();
+      await bothRejected;
+    });
+    const api = await shared.startProcess(mcp.network);
+    const worker = await shared.startProcess(mcp.network);
+    const sessions = [new McpSession(), new McpSession()];
+
+    try {
+      await Promise.all([
+        mcp.connect(api.provider, sessions[0] as McpSession),
+        mcp.connect(worker.provider, sessions[1] as McpSession),
+      ]);
+    } finally {
+      await Promise.all(sessions.map((session) => session.close()));
+    }
+
+    expect(auth.requests.map((request) => request.get("refresh_token"))).toEqual(["old-refresh"]);
+    expect(await api.provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(await worker.provider.tokens()).toMatchObject({ access_token: "access-1" });
+    expect(mcp.bearers.filter((bearer) => bearer !== "Bearer old-access")).toEqual(
+      Array(mcp.bearers.length - 2).fill("Bearer access-1"),
+    );
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({ refresh_token: "refresh-1" });
+  });
+
+  it("keeps the grant when the refresh after a 401 fails temporarily", async () => {
+    const shared = sharedCredentials(reauthorizableMaterial());
+    const mcp = earlyRevokingMcpServer(async () => {
+      throw new TypeError("network unavailable");
+    });
+    const { provider } = await shared.startProcess(mcp.network);
+    const before = await shared.stored();
+    const session = new McpSession();
+
+    try {
+      const error = await mcp.connect(provider, session).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(McpReauthorizationRequiredError);
+    } finally {
+      await session.close();
+    }
+
+    expect(await provider.tokens()).toMatchObject({ access_token: "old-access" });
+    expect(await shared.stored()).toEqual(before);
+  });
+
   it("refreshes with the stored token when the adopted grant has expired as well", async () => {
     const server = rotatingAuthServer();
     const shared = sharedCredentials(expiringMaterial(EXPIRED()));
@@ -452,6 +558,16 @@ describe("MCP OAuth", () => {
 
     expect((await shared.stored()).oauth?.tokens).toMatchObject({
       refresh_token: "reauthorized-refresh",
+    });
+
+    // A reused access token still carries a newly issued refresh token.
+    await worker.provider.saveTokens({
+      access_token: "reauthorized",
+      refresh_token: "reissued-refresh",
+      token_type: "Bearer",
+    });
+    expect((await shared.stored()).oauth?.tokens).toMatchObject({
+      refresh_token: "reissued-refresh",
     });
   });
 

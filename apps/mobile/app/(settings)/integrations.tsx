@@ -227,10 +227,9 @@ export default function Integrations() {
     setCatalogError(null);
     let next: IntegrationsSnapshot;
     try {
-      const [catalog, connections] = await Promise.all([
-        rpc<ConnectionCatalogItem[]>("connections/catalog"),
-        rpc<Connection[]>("connections/list"),
-      ]);
+      // The catalog call reconciles connection rows, so list them after it.
+      const catalog = await rpc<ConnectionCatalogItem[]>("connections/catalog");
+      const connections = await rpc<Connection[]>("connections/list");
       next = { catalog, connections };
     } catch (reason) {
       if (!mounted.current || focus !== focusGeneration.current) return;

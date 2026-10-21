@@ -80,6 +80,8 @@ async function main() {
     process.env.DATA_DIR = path.join(reportDir, "data");
     process.env.SIGNUPS_ENABLED = "true";
     process.env.SIGNUP_ALLOWLIST = "";
+    // Model and speech fixtures listen on loopback, and most test accounts are not the owner.
+    process.env.MCP_ALLOW_PRIVATE_ENDPOINT = "true";
     process.env.CI = "1";
 
     execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env: process.env });
@@ -170,7 +172,8 @@ async function main() {
 
     const [
       {
-        ComposioEmulator,
+        ComposioConnector,
+        FakeComposioClient,
         DestinationEmulator,
         EmailEmulator,
         PipedreamConnector,
@@ -194,7 +197,7 @@ async function main() {
     const handles = await createApp({
       databaseUrl,
       prisma: undefined,
-      composio: new ComposioEmulator(),
+      composio: new ComposioConnector({ client: new FakeComposioClient() }),
       connectors: [new DestinationEmulator()],
       pipedream,
       email,

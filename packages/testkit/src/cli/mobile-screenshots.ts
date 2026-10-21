@@ -5,8 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import {
-  ComposioEmulator,
+  ComposioConnector,
   EmailEmulator,
+  FakeComposioClient,
   PipedreamConnector,
   ThirdPartyConnectorEmulator,
 } from "@rakazo/adapters";
@@ -67,7 +68,7 @@ async function main() {
     dataDir: DATA_DIR,
     apiHost: "0.0.0.0",
     apiUrl: HOST_API_URL,
-    composio: new ComposioEmulator(),
+    composio: new ComposioConnector({ client: new FakeComposioClient() }),
     pipedream,
     email: new EmailEmulator(),
     remoteConnectors: {

@@ -2166,9 +2166,11 @@ function SpaceShell() {
     ).then((lists) => {
       if (!cancelled) setMentionRoutines(lists.flat());
     });
+    // The catalog call reconciles connection rows, so list them after it.
+    const catalogRequest = rpc.connections.catalog({}).catch(() => null);
     void Promise.all([
-      rpc.connections.list().catch(() => null),
-      rpc.connections.catalog({}).catch(() => null),
+      catalogRequest.then(() => rpc.connections.list().catch(() => null)),
+      catalogRequest,
     ]).then(([connections, catalog]) => {
       if (cancelled) return;
       const connected = connections?.filter((row) => row.status === "connected") ?? [];

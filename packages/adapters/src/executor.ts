@@ -312,6 +312,7 @@ import {
   modelIdSupportsImages,
 } from "./model-vision.js";
 import { nativeShellCommandArgv } from "./native-shell.js";
+import { assertAllowedOpenAiCompatibleUrl } from "./openai-compatible-url.js";
 import type { CodexLiveCatalog } from "./pi-codex-catalog.js";
 import { codexLiveListsModel } from "./pi-codex-catalog.js";
 import { toOAuthCredential } from "./pi-credentials.js";
@@ -3060,6 +3061,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       apiKey: resolved.oauth ? undefined : resolved.apiKey,
       ...cloudflareRunFields(resolved),
       baseUrl: resolved.baseUrl,
+      allowPrivateEndpoint: resolved.allowPrivateEndpoint,
       cacheCapabilities: resolved.cacheCapabilities,
       contextWindow: resolved.contextWindow,
 
@@ -3146,6 +3148,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
         ...cloudflareRunFields(resolved),
         baseUrl: resolved.baseUrl,
+        allowPrivateEndpoint: resolved.allowPrivateEndpoint,
         cacheCapabilities: resolved.cacheCapabilities,
         contextWindow: resolved.contextWindow,
 
@@ -4935,6 +4938,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       accountId: judgeKey.accountId,
                       gatewayId: judgeKey.gatewayId,
                       baseUrl: judgeKey.baseUrl,
+                      allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
                       cacheCapabilities: judgeKey.cacheCapabilities,
                       contextWindow: judgeKey.contextWindow,
                       maxTokens: judgeKey.maxTokens,
@@ -7365,6 +7369,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
+                allowPrivateEndpoint: resolved.allowPrivateEndpoint,
                 cacheCapabilities: resolved.cacheCapabilities,
                 contextWindow: resolved.contextWindow,
 
@@ -9504,6 +9509,7 @@ async function resolveModelKey(
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
   reasoning?: boolean;
@@ -9588,6 +9594,26 @@ async function resolveModelKey(
       const oauth = resolved.secret.kind === "oauth" ? resolved.secret.credential : undefined;
       const baseUrl =
         resolved.secret.kind === "openai_compatible" ? resolved.secret.baseUrl : undefined;
+      // Connections saved before the owner gate may already point at private hosts,
+      // so decide for the credential's owner on every run, not only on save.
+      const allowPrivateEndpoint = baseUrl
+        ? await actorMayUsePrivateEndpoint(
+            deps.prisma,
+            userId,
+            deps.mcpAllowPrivateEndpoint === true,
+          )
+        : undefined;
+      if (baseUrl) {
+        try {
+          // The public gate stays with the request-time fetch guard.
+          assertAllowedOpenAiCompatibleUrl(baseUrl, {
+            allowPublic: true,
+            allowPrivate: allowPrivateEndpoint,
+          });
+        } catch (error) {
+          throw new UnavailableModelForAuthError((error as Error).message);
+        }
+      }
       const acceptsImages =
         credential.provider === OPENAI_COMPATIBLE_PROVIDER_ID &&
         resolved.secret.kind === "openai_compatible" &&
@@ -9605,6 +9631,7 @@ async function resolveModelKey(
         accountId,
         gatewayId,
         baseUrl,
+        allowPrivateEndpoint,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,
         contextWindow: resolved.secret.kind !== "oauth" ? resolved.secret.contextWindow : undefined,
