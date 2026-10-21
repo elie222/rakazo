@@ -4,7 +4,11 @@ import type {
   OAuthClientProvider,
   OAuthDiscoveryState,
 } from "@modelcontextprotocol/sdk/client/auth.js";
-import { refreshAuthorization } from "@modelcontextprotocol/sdk/client/auth.js";
+import {
+  auth,
+  discoverOAuthProtectedResourceMetadata,
+  refreshAuthorization,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { InvalidGrantError } from "@modelcontextprotocol/sdk/server/auth/errors.js";
@@ -557,6 +561,28 @@ function oauthFetch(
   };
 }
 
+/**
+ * Some servers (Google's MCP servers, for one) answer the handshake without a
+ * token and only challenge tool calls, so connecting never asks for
+ * authorization. When the user asks to connect and the server publishes where to
+ * authorize (RFC 9728), start that authorization. Without that metadata the SDK
+ * would guess the server's own origin and could try to register a client there.
+ */
+async function startAdvertisedAuthorization(
+  provider: StoredMcpOAuthProvider,
+  serverUrl: URL,
+  fetchFn: typeof fetch,
+): Promise<void> {
+  let advertised: string[] | undefined;
+  try {
+    advertised = (await discoverOAuthProtectedResourceMetadata(serverUrl, undefined, fetchFn))
+      .authorization_servers;
+  } catch {
+    return;
+  }
+  if (advertised?.length) await auth(provider, { serverUrl, fetchFn });
+}
+
 type OAuthRejection = { status: number; code: string; description: string };
 
 const OAUTH_ERROR_BODY_MAX_CHARS = 8_000;
@@ -777,6 +803,12 @@ export class McpOAuthBroker {
     const signal = AbortSignal.timeout(15_000);
     try {
       await client.connect(transport, { signal, timeout: 15_000 });
+      if (!authorizationUrl && !(await provider.tokens()))
+        await startAdvertisedAuthorization(
+          provider,
+          endpoint,
+          provider.wrapFetch(networkFetch.fetch),
+        );
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");

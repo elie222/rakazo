@@ -1188,6 +1188,7 @@ describe("MCP OAuth", () => {
     /** An authorization server that only accepts clients registered out of band. */
     function nonRegisteringAuthServer(
       onToken: (request: Request) => Promise<Response | undefined> | Response | undefined,
+      { challenge = true }: { challenge?: boolean } = {},
     ) {
       const requested: string[] = [];
       vi.stubGlobal(
@@ -1196,6 +1197,20 @@ describe("MCP OAuth", () => {
           const request = input instanceof Request ? input : new Request(input, init);
           const url = logicalHref(input, init);
           requested.push(`${request.method} ${url}`);
+          if (url === "https://mcp.example.test/mcp" && request.method === "POST" && !challenge) {
+            // Like Google's MCP servers: the handshake is open, only tool calls need a token.
+            const body = (await request.json()) as { id?: number; method: string };
+            if (body.method !== "initialize") return new Response(null, { status: 202 });
+            return Response.json({
+              jsonrpc: "2.0",
+              id: body.id,
+              result: {
+                protocolVersion: "2025-06-18",
+                capabilities: { tools: {} },
+                serverInfo: { name: "open-handshake", version: "1" },
+              },
+            });
+          }
           if (url === "https://mcp.example.test/mcp" && request.method === "POST") {
             return new Response(null, {
               status: 401,
@@ -1507,10 +1522,80 @@ describe("MCP OAuth", () => {
       expect(server.requests).toHaveLength(0);
     });
 
+    it("starts authorization when the server publishes OAuth metadata but does not challenge", async () => {
+      const requested = nonRegisteringAuthServer(() => undefined, { challenge: false });
+      const { broker } = brokerWithMaterial({ oauthClient });
+
+      const started = await broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      });
+
+      expect(started.status).toBe("authorization_required");
+      const authorizationUrl = new URL(
+        started.status === "authorization_required" ? started.authorizationUrl : "",
+      );
+      expect(authorizationUrl.origin).toBe("https://auth.example.test");
+      expect(authorizationUrl.searchParams.get("client_id")).toBe("registered-client");
+      expect(requested.some((request) => request.includes("/register"))).toBe(false);
+    });
+
     it("treats the client secret as a credential that must never be shown", () => {
       expect(oauthMaterialSecrets({ oauthClient })).toContain("registered-secret");
       expect(oauthMaterialSecrets({ oauthClient })).not.toContain("registered-client");
     });
+  });
+
+  it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const url = logicalHref(input, init);
+        requested.push(`${request.method} ${url}`);
+        if (url === "https://mcp.example.test/mcp" && request.method === "POST") {
+          const body = (await request.json()) as { id?: number; method: string };
+          if (body.method !== "initialize") return new Response(null, { status: 202 });
+          return Response.json({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              protocolVersion: "2025-06-18",
+              capabilities: {},
+              serverInfo: { name: "open", version: "1" },
+            },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    const prisma = {
+      mcpServer: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: "server-1",
+          endpoint: "https://mcp.example.test/mcp",
+          secretId: null,
+        }),
+      },
+      mcpOAuthSession: oauthSessionStore(),
+    };
+    const broker = new McpOAuthBroker(prisma as never, {} as never, TEST_NETWORK);
+
+    await expect(
+      broker.begin({
+        serverId: "server-1",
+        spaceId: "workspace-1",
+        userId: "user-1",
+        redirectUri: "https://app.example.test/mcp/oauth/callback",
+      }),
+    ).resolves.toEqual({ status: "authorization_not_requested" });
+    expect(requested.filter((request) => request.startsWith("POST"))).toEqual([
+      "POST https://mcp.example.test/mcp",
+      "POST https://mcp.example.test/mcp",
+    ]);
   });
 
   it("completes a persisted OAuth session after the API process restarts", async () => {
