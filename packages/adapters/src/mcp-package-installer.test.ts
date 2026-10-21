@@ -102,24 +102,25 @@ describe("defaultMcpPackagesRoot", () => {
 
 /**
  * A stand-in for npm: installs `<name>` from the last argument into `--prefix`, logging each
- * run. FAKE_NPM_MODE=hang writes half a package and never exits; fail exits 1 with output.
+ * run. NPM_CONFIG_FAKE_MODE=hang writes half a package and never exits; fail exits 1 with output.
  */
 const FAKE_NPM = `#!/usr/bin/env node
 const fs = require("node:fs");
 const path = require("node:path");
+if (process.env.API_KEY) throw new Error("server secret leaked to npm");
 const args = process.argv.slice(2);
 const prefix = args[args.indexOf("--prefix") + 1];
 const target = args.at(-1);
 const name = target.startsWith("@") ? "@" + target.slice(1).split("@")[0] : target.split("@")[0];
-if (process.env.FAKE_NPM_LOG) fs.appendFileSync(process.env.FAKE_NPM_LOG, target + "\\n");
+if (process.env.NPM_CONFIG_FAKE_LOG) fs.appendFileSync(process.env.NPM_CONFIG_FAKE_LOG, target + "\\n");
 const dir = path.join(prefix, "node_modules", ...name.split("/"));
 fs.mkdirSync(dir, { recursive: true });
-const mode = process.env.FAKE_NPM_MODE || "ok";
-const bin = JSON.parse(process.env.FAKE_NPM_BIN || '{"server":"bin/server.js"}');
+const mode = process.env.NPM_CONFIG_FAKE_MODE || "ok";
+const bin = JSON.parse(process.env.NPM_CONFIG_FAKE_BIN || '{"server":"bin/server.js"}');
 fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name, version: "1.0.0", bin }));
 if (mode === "hang") { setInterval(() => {}, 1000); return; }
 if (mode === "fail") { console.error("npm ERR! 404 Not Found - " + name); process.exit(1); }
-const delay = Number(process.env.FAKE_NPM_DELAY_MS || 0);
+const delay = Number(process.env.NPM_CONFIG_FAKE_DELAY_MS || 0);
 setTimeout(() => {
   for (const file of new Set(typeof bin === "string" ? [bin] : Object.values(bin))) {
     fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
@@ -154,7 +155,23 @@ describe("ensureMcpPackage", () => {
   const options = (env: Record<string, string> = {}) => ({
     root,
     npmCommand: npm,
-    env: { FAKE_NPM_LOG: log, ...env },
+    env: { NPM_CONFIG_FAKE_LOG: log, ...env },
+  });
+
+  it("isolates registry settings and excludes server credentials from install scripts", async () => {
+    const first = await ensureMcpPackage(
+      "server@1",
+      options({ npm_config_registry: "https://one.example.test", API_KEY: "fake-api-secret" }),
+    );
+    const second = await ensureMcpPackage(
+      "server@1",
+      options({ npm_config_registry: "https://two.example.test" }),
+    );
+    expect(first.binPath).not.toBe(second.binPath);
+    expect(await runs()).toHaveLength(2);
+    expect(mcpPackageDir("server@1", root, { NPM_CONFIG_A: "a", npm_config_b: "b" })).toBe(
+      mcpPackageDir("server@1", root, { npm_config_b: "b", NPM_CONFIG_A: "a" }),
+    );
   });
 
   it("installs once, publishes a ready dir, and returns an executable bin", async () => {
@@ -186,7 +203,7 @@ describe("ensureMcpPackage", () => {
   it("shares one install between concurrent callers", async () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
-        ensureMcpPackage("server@1.0.0", options({ FAKE_NPM_DELAY_MS: "200" })),
+        ensureMcpPackage("server@1.0.0", options({ NPM_CONFIG_FAKE_DELAY_MS: "200" })),
       ),
     );
     expect(new Set(results.map((bin) => bin.binPath)).size).toBe(1);
@@ -195,7 +212,10 @@ describe("ensureMcpPackage", () => {
 
   it("never publishes an interrupted install, and the next call recovers", async () => {
     await expect(
-      ensureMcpPackage("server@2.0.0", { ...options({ FAKE_NPM_MODE: "hang" }), timeoutMs: 500 }),
+      ensureMcpPackage("server@2.0.0", {
+        ...options({ NPM_CONFIG_FAKE_MODE: "hang" }),
+        timeoutMs: 500,
+      }),
     ).rejects.toThrow("npm install server@2.0.0 timed out");
     expect((await readdir(root)).filter((entry) => !entry.startsWith("."))).toEqual([]);
     expect(await leftovers()).toEqual([]);
@@ -206,14 +226,14 @@ describe("ensureMcpPackage", () => {
 
   it("reports npm's output when the install fails and cleans up", async () => {
     await expect(
-      ensureMcpPackage("missing@1.0.0", options({ FAKE_NPM_MODE: "fail" })),
+      ensureMcpPackage("missing@1.0.0", options({ NPM_CONFIG_FAKE_MODE: "fail" })),
     ).rejects.toThrow(/npm install missing@1.0.0 failed \(exit 1\): npm ERR! 404 Not Found/);
     expect(await readdir(root)).toEqual([]);
   });
 
   it("takes over the lock and debris of a crashed install", async () => {
     const probe = await ensureMcpPackage("server@3.0.0", options());
-    const key = basename(mcpPackageDir("server@3.0.0", root));
+    const key = basename(mcpPackageDir("server@3.0.0", root, options().env));
     await rm(join(root, key), { recursive: true, force: true });
     // A process on another host died mid-install: its lock expired, its staging dir remains.
     await mkdir(join(root, `${key}.lock`));
@@ -231,7 +251,7 @@ describe("ensureMcpPackage", () => {
 
   it("waits for another process that holds the lock instead of installing twice", async () => {
     const probe = await ensureMcpPackage("server@4.0.0", options());
-    const key = basename(mcpPackageDir("server@4.0.0", root));
+    const key = basename(mcpPackageDir("server@4.0.0", root, options().env));
     const ready = join(root, key);
     const aside = join(work, "aside");
     await mkdir(aside);
@@ -262,29 +282,58 @@ describe("ensureMcpPackage", () => {
   it("stops waiting on abort while the install finishes for the next caller", async () => {
     const controller = new AbortController();
     const waiting = ensureMcpPackage("server@5.0.0", {
-      ...options({ FAKE_NPM_DELAY_MS: "300" }),
+      ...options({ NPM_CONFIG_FAKE_DELAY_MS: "300" }),
       signal: controller.signal,
     });
     controller.abort(new Error("run cancelled"));
     await expect(waiting).rejects.toThrow("run cancelled");
-    const bin = await ensureMcpPackage("server@5.0.0", options());
+    const bin = await ensureMcpPackage(
+      "server@5.0.0",
+      options({ NPM_CONFIG_FAKE_DELAY_MS: "300" }),
+    );
     expect(execFileSync(bin.binPath, { encoding: "utf8" })).toContain("ran server");
     expect(await runs()).toHaveLength(1);
+  });
+
+  it("observes a shared install rejection even when the caller is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("cancelled before install"));
+    let settled!: () => void;
+    const done = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    await expect(
+      ensureMcpPackage("missing@2", {
+        ...options({ NPM_CONFIG_FAKE_MODE: "fail" }),
+        signal: controller.signal,
+        onSettled: async () => {
+          settled();
+        },
+      }),
+    ).rejects.toThrow("cancelled before install");
+    await done;
+    expect(await leftovers()).toEqual([]);
   });
 
   it("picks npx's bin: named, single, or the package's own", async () => {
     const bins = JSON.stringify({ alpha: "a.js", multi: "m.js" });
     const named = await ensureMcpPackage("multi@1.0.0", {
-      ...options({ FAKE_NPM_BIN: bins }),
+      ...options({ NPM_CONFIG_FAKE_BIN: bins }),
       binName: "alpha",
     });
     expect(named.binPath).toMatch(/multi\/a\.js$/);
-    const own = await ensureMcpPackage("multi@1.0.0", options({ FAKE_NPM_BIN: bins }));
+    const own = await ensureMcpPackage("multi@1.0.0", options({ NPM_CONFIG_FAKE_BIN: bins }));
     expect(own.binPath).toMatch(/multi\/m\.js$/);
     await expect(
-      ensureMcpPackage("multi@1.0.0", { ...options({ FAKE_NPM_BIN: bins }), binName: "nope" }),
+      ensureMcpPackage("multi@1.0.0", {
+        ...options({ NPM_CONFIG_FAKE_BIN: bins }),
+        binName: "nope",
+      }),
     ).rejects.toThrow("multi has no bin named nope (available: alpha, multi)");
-    const single = await ensureMcpPackage("solo@1.0.0", options({ FAKE_NPM_BIN: '"cli.js"' }));
+    const single = await ensureMcpPackage(
+      "solo@1.0.0",
+      options({ NPM_CONFIG_FAKE_BIN: '"cli.js"' }),
+    );
     expect(single.binPath).toMatch(/solo\/cli\.js$/);
   });
 
@@ -305,6 +354,7 @@ describe("ensureMcpPackage", () => {
       execFileSync("npm", ["pack", "--silent", "--pack-destination", work], {
         cwd: fixture,
         encoding: "utf8",
+        env: { ...process.env, NPM_CONFIG_CACHE: join(work, "npm-cache") },
       }).trim(),
     );
 
@@ -314,6 +364,16 @@ describe("ensureMcpPackage", () => {
       env: { NPM_CONFIG_OFFLINE: "true", NPM_CONFIG_CACHE: join(work, "npm-cache") },
     });
     expect(execFileSync(bin.binPath, { encoding: "utf8" }).trim()).toBe("fixture");
-    expect(existsSync(join(mcpPackageDir("fixture-mcp@1.0.0", root), ".ready"))).toBe(true);
+    expect(
+      existsSync(
+        join(
+          mcpPackageDir("fixture-mcp@1.0.0", root, {
+            NPM_CONFIG_OFFLINE: "true",
+            NPM_CONFIG_CACHE: join(work, "npm-cache"),
+          }),
+          ".ready",
+        ),
+      ),
+    ).toBe(true);
   }, 60_000);
 });

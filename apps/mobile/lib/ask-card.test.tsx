@@ -189,6 +189,36 @@ async function openSheet() {
   expect(sheet.destination).toBe("login.example.test");
 }
 
+it("closes an open login sheet once the viewer is no longer the run's user", async () => {
+  const renderAs = (canDismiss: boolean) =>
+    act(async () =>
+      root.render(
+        <AskBlock
+          ask={{ kind: "ask", text: longTitle, status: "pending", ...loginAsk }}
+          canAnswer
+          canDismiss={canDismiss}
+          onAnswer={async () => undefined}
+          onDismiss={async () => undefined}
+          actionProps={{}}
+        />,
+      ),
+    );
+  await render(loginAsk);
+  await openSheet();
+  expect(sheet.pending).toBe(true);
+
+  // The sheet clears its own fields before it closes, so it is told the card is no longer pending.
+  await renderAs(false);
+  expect(container.querySelector("[data-sheet]")).not.toBeNull();
+  expect(sheet.pending).toBe(false);
+  await act(async () => sheet.onClose());
+  expect(container.querySelector("[data-sheet]")).toBeNull();
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+
+  await renderAs(true);
+  expect(container.querySelector("[data-sheet]")).toBeNull();
+});
+
 it("keeps a reopened sheet open when an earlier save completes", async () => {
   let complete!: () => void;
   await render(
@@ -376,6 +406,8 @@ for (const input of ["secret", "login"]) {
     );
     const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
     expect(labels.includes("Dismiss")).toBe(canDismiss);
+    // A login is filled in only by the run's user; see the credential card test below.
+    if (input === "login" && !canDismiss) return;
     const primary = button(input === "login" ? "Continue" : "Save");
     expect(primary.style.flex).toBe("1 1 0%");
     expect(primary.dataset.fill).toBe("true");
@@ -473,3 +505,37 @@ it("uses the full column for wide asks and reserves only the visible avatar gutt
     expect(regular.menuWidth).toBe(avatar ? 360 - gutter : 324);
   }
 });
+
+it.each([
+  [
+    "login",
+    { name: "example_login", origin: "https://login.example.test", auth: { type: "login" } },
+  ],
+  ["API", { name: "example_api", origin: "https://api.example.test", auth: { type: "bearer" } }],
+])(
+  "shows a %s credential card read-only to anyone but the run's user",
+  async (_name, credential) => {
+    const render = (canDismiss: boolean) =>
+      act(async () =>
+        root.render(
+          <AskBlock
+            ask={{ kind: "ask", text: "Secret", input: "secret", status: "pending", credential }}
+            canAnswer
+            canDismiss={canDismiss}
+            onAnswer={async () => {}}
+            onDismiss={async () => {}}
+            actionProps={{}}
+          />,
+        ),
+      );
+
+    await render(false);
+    expect(container.querySelector("input")).toBeNull();
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    expect(container.textContent).toContain("Secret");
+    expect(container.textContent).not.toContain("Waiting for this bot’s response.");
+
+    await render(true);
+    expect(container.querySelectorAll("button").length).toBeGreaterThan(0);
+  },
+);

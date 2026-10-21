@@ -320,6 +320,8 @@ export function ThreadComposer({
             borderRadius: 22,
             flexDirection: "row",
             alignItems: "flex-end",
+            // Keeps text clear of the call/send pill even when it runs to the trailing edge (RTL).
+            gap: 8,
             paddingStart: 16,
             paddingEnd: 8,
           }}

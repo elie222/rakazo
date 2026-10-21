@@ -1,11 +1,13 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
-import { type McpOAuthBroker, type OAuthMaterial, StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
+import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import { migrateSecrets } from "./secret-migration.js";
@@ -1459,6 +1461,51 @@ describe("MCP connector stdio OAuth", () => {
     vi.useRealTimers();
   });
 
+  it.each([false, true])(
+    "refuses expired launch tokens (refresh token: %s)",
+    async (refreshable) => {
+      const launches = stubSession();
+      const load = stored({}, (value) => {
+        if (value.oauth) value.oauth.obtainedAt = Date.now() - 7200_000;
+        if (!refreshable) delete value.oauth?.tokens?.refresh_token;
+      });
+      const connector = stdioConnector(load, brokerFor());
+      await connector.discoverTools(context);
+      expect(launches).toHaveLength(0);
+      await connector.close();
+    },
+  );
+
+  it("waits for active calls before replacing an expiring process", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = stdioConnector(stored(), brokerFor());
+    await connector.discoverTools(context);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockImplementationOnce(async () => {
+      enter();
+      await held;
+      return { tools: [] };
+    });
+    const active = connector.discoverTools(context);
+    await entered;
+    vi.setSystemTime(Date.now() + 3550_000);
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(1);
+    release();
+    await active;
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(2);
+    await connector.close();
+  });
+
   it("launches the process with the OAuth references resolved", async () => {
     const launches = stubSession();
     const load = stored();
@@ -1690,7 +1737,7 @@ describe("MCP connector stdio credential files", () => {
     return () => JSON.parse(json) as OAuthMaterial;
   }
 
-  function connectorFor(load: () => OAuthMaterial, withBroker = true) {
+  function connectorFor(load: () => OAuthMaterial, withBroker = true, refresh = false) {
     const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
     const prisma = {
       botMcpServer: {
@@ -1703,17 +1750,34 @@ describe("MCP connector stdio credential files", () => {
     const broker = {
       providerFor: vi.fn<McpOAuthBroker["providerFor"]>(async (_server, _context, loaded) =>
         loaded?.material.oauth
-          ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined)
+          ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined, {
+              ...(refresh
+                ? {
+                    refresh: async () => ({
+                      tokens: {
+                        access_token: "renewed-access",
+                        refresh_token: "renewed-refresh",
+                        token_type: "Bearer",
+                        expires_in: 3600,
+                      },
+                      obtainedAt: Date.now(),
+                    }),
+                  }
+                : {}),
+            })
           : undefined,
       ),
     };
     return new McpConnector(
       prisma as never,
       secrets as never,
-      { stdioEnabled: true, allowedCommands: ["mail-mcp"] },
+      { stdioEnabled: true, allowedCommands: ["mail-mcp"], credentialTempRoot: credentialRoot },
       withBroker ? (broker as unknown as McpOAuthBroker) : undefined,
     );
   }
+
+  const credentialRoot = mkdtempSync(join(tmpdir(), "mcp-credentials-test-"));
+  afterAll(() => rmSync(credentialRoot, { recursive: true, force: true }));
 
   type Launch = {
     env: Record<string, string>;
@@ -1746,11 +1810,134 @@ describe("MCP connector stdio credential files", () => {
   }
 
   const credentialDirs = () =>
-    readdirSync(tmpdir()).filter((name) => name.startsWith("rakazo-mcp-"));
+    readdirSync(credentialRoot).filter((name) => name.startsWith("rakazo-mcp-"));
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it("launches with the refreshed grant when the stored grant has expired", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored({}, Date.now() - 7200_000), true, true);
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(1);
+    const content = JSON.parse(launches[0]?.files.MAIL_CREDENTIALS?.content ?? "{}");
+    expect(content.token).toBe("renewed-access");
+    expect(content.expiry).toBeGreaterThan(Date.now());
+    await connector.close();
+  });
+
+  it("preserves ordinary config values in tool results", async () => {
+    stubSession();
+    const connector = connectorFor(stored({ env: { DEBUG: "1", NODE_ENV: "production" } }));
+    const text = "1 production authorized_user";
+    vi.spyOn(McpSession.prototype, "callTool").mockResolvedValue({
+      content: [{ type: "text", text }],
+    });
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: "mcp__mail__read",
+        args: {},
+        executionId: "test",
+        route: { connectorId: "mcp", resourceId: "server-1", toolName: "read" },
+      },
+      context,
+    ))
+      events.push(event);
+    expect(JSON.stringify(events)).toContain(text);
+    await connector.close();
+  });
+
+  it("removes credentials when reconnect replaces a session", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+    vi.spyOn(McpSession.prototype, "listTools")
+      .mockRejectedValueOnce(new StreamableHTTPError(404, "Session not found"))
+      .mockResolvedValue({ tools: [] });
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(2);
+    expect(existsSync(launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "missing")).toBe(false);
+    await connector.close();
+  });
+
+  it("redacts literal JSON secrets alongside OAuth substitutions on launch and discovery errors", async () => {
+    const launches = stubSession();
+    const load = stored({
+      files: { CREDS: '{"client_secret":"literal-file-secret","token":"{{oauth.access_token}}"}' },
+      env: { CUSTOM: "prefix-{{oauth.access_token}}" },
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockRejectedValue(
+      new Error("literal-file-secret prefix-access-1 access-1"),
+    );
+    const connector = connectorFor(load);
+    const log = vi.spyOn(getLogger(), "error");
+    await connector.discoverTools(context);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("literal-file-secret");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("prefix-access-1");
+    await connector.close();
+    expect(existsSync(launches[0]?.files.CREDS?.dir ?? "missing")).toBe(false);
+  });
+
+  it("removes credentials when the child closes without eviction", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+    await connector.discoverTools(context);
+    const session = vi.mocked(McpSession.prototype.connectStdio).mock.contexts[0] as McpSession;
+    session?.client.onclose?.();
+    await vi.waitFor(() =>
+      expect(existsSync(launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "missing")).toBe(false),
+    );
+    await connector.close();
+  });
+
+  it("redacts resolved file and environment values when connection fails", async () => {
+    stubSession(async () => {
+      throw new Error("literal-file-secret prefix-access-1 access-1");
+    });
+    const connector = connectorFor(
+      stored({
+        files: { CREDS: '{"secret":"literal-file-secret","token":"{{oauth.access_token}}"}' },
+        env: { CUSTOM: "prefix-{{oauth.access_token}}" },
+      }),
+    );
+    const log = vi.spyOn(getLogger(), "error");
+    await connector.discoverTools(context);
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /literal-file-secret|prefix-access-1|access-1/,
+    );
+    await connector.close();
+  });
+
+  it.each([false, true])("redacts resolved credentials from calls (throws: %s)", async (throws) => {
+    stubSession();
+    const connector = connectorFor(
+      stored({
+        files: { CREDS: '{"secret":"literal-file-secret","token":"{{oauth.access_token}}"}' },
+        env: { CUSTOM: "prefix-{{oauth.access_token}}" },
+      }),
+    );
+    const text = "literal-file-secret prefix-access-1 access-1";
+    vi.spyOn(McpSession.prototype, "callTool").mockImplementation(async () => {
+      if (throws) throw new Error(text);
+      return { content: [{ type: "text", text }] };
+    });
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: "mcp__mail__read",
+        args: {},
+        executionId: "test",
+        route: { connectorId: "mcp", resourceId: "server-1", toolName: "read" },
+      },
+      context,
+    ))
+      events.push(event);
+    expect(events).toMatchObject([{ type: throws ? "error" : "result" }]);
+    expect(JSON.stringify(events)).not.toMatch(/literal-file-secret|prefix-access-1|access-1/);
+    expect(JSON.stringify(events)).toContain("[redacted]");
+    await connector.close();
   });
 
   it("writes the resolved template to a private file and passes its path in the env", async () => {
@@ -1763,7 +1950,7 @@ describe("MCP connector stdio credential files", () => {
     const file = launch?.files.MAIL_CREDENTIALS;
     expect(launch?.env.MAIL_REGION).toBe("eu");
     expect(launch?.env.MAIL_CREDENTIALS).toMatch(/\/MAIL_CREDENTIALS$/);
-    expect(file?.dir.startsWith(`${tmpdir()}/rakazo-mcp-`)).toBe(true);
+    expect(file?.dir.startsWith(`${credentialRoot}/rakazo-mcp-`)).toBe(true);
     expect(file?.dirMode).toBe(0o700);
     expect(file?.mode).toBe(0o600);
     expect(JSON.parse(file?.content ?? "")).toEqual({

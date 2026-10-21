@@ -4266,6 +4266,9 @@ function AskBlock({
   const answered = saved || dismissed || ask.status === "answered";
   const secretInput = isSecretAskBlock(ask);
   const loginInput = secretInput && ask.credential?.auth.type === "login";
+  // A login or credential is saved for the run's user, so only they can fill one in; others see
+  // the card without fields or buttons.
+  const ownerOnly = secretInput && Boolean(ask.credential) && !canDismiss;
   const incomplete = secretInput ? answer.length === 0 : !answer.trim();
   const secretLabel =
     ask.purpose === "password"
@@ -4351,7 +4354,7 @@ function AskBlock({
             ? t(dismissed || ask.dismissed ? "Dismissed" : "Saved")
             : t("Answered: {answer}", { answer: ask.answer ?? t("Done") })}
         </Text>
-      ) : canAnswer && loginInput ? (
+      ) : canAnswer && ownerOnly ? null : canAnswer && loginInput ? (
         <View style={askInputStyles.buttons}>
           <NativeActionButton
             label={t("Continue")}
@@ -4426,8 +4429,9 @@ function AskBlock({
         <SecretAskSheet
           title={plainAskTitle(ask.text)}
           destination={secretDestinationLabel(ask.credential)}
-          // Once any save is accepted the open sheet clears its own fields, then closes itself.
-          pending={canAnswer && !answered}
+          // Once any save is accepted, or the viewer is no longer the run's user, the open sheet
+          // clears its own fields, then closes itself.
+          pending={canAnswer && !answered && !ownerOnly}
           onClose={() => {
             if (session === sheetSession.current) setSheetOpen(false);
           }}

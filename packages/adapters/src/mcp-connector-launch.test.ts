@@ -2,7 +2,12 @@ import { chmod, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { McpConnector } from "./mcp-connector.js";
+import {
+  DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
+  McpConnector,
+  mcpStdioOptionsFromEnv,
+} from "./mcp-connector.js";
+import * as installer from "./mcp-package-installer.js";
 import { mcpPackageDir } from "./mcp-package-installer.js";
 import { McpSession } from "./mcp-transport.js";
 
@@ -181,10 +186,12 @@ describe("MCP connector managed stdio launch", () => {
       const [placeholder] = tools;
       expect(placeholder?.name).toBe("mcp__mail__unavailable");
       expect(placeholder?.description).toContain('"Mail" is assigned to you but is unavailable');
-      expect(placeholder?.description).toContain("auth failed for [redacted] as [redacted]");
+      expect(placeholder?.description).toContain(
+        "auth failed for [redacted] as person@example.test",
+      );
       const visible = JSON.stringify({ tools, health: healthWrites() });
       expect(visible).not.toContain("sk-live-0123456789abcdef");
-      expect(visible).not.toContain("person@example.test");
+      expect(visible).toContain("person@example.test");
 
       const events = await callTool(connector, placeholder!);
       expect(events).toEqual([
@@ -288,7 +295,69 @@ describe("MCP connector managed stdio launch", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("resets installing health after a cancelled discovery's shared install settles", async () => {
+    let finishInstall: (() => Promise<void> | undefined) | undefined;
+    vi.spyOn(installer, "ensureMcpPackage").mockImplementation(async (_spec, options) => {
+      options?.onInstall?.();
+      finishInstall = options?.onSettled;
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+          once: true,
+        });
+      });
+    });
+    const controller = new AbortController();
+    const connector = connectorFor();
+    try {
+      const discovery = connector.discoverTools({
+        operationId: "test",
+        traceId: "test",
+        spaceId: "w1",
+        userId: "u1",
+        botId: "bot-1",
+        signal: controller.signal,
+      });
+      await vi.waitFor(() => expect(finishInstall).toBeDefined());
+      controller.abort(new Error("cancelled"));
+      await discovery;
+      await finishInstall?.();
+      expect(healthWrites().at(-1)).toMatchObject({ healthStatus: "unknown" });
+    } finally {
+      await connector.close();
+    }
+  });
+
+  it("rejects zero timeouts while preserving zero idle duration", () => {
+    expect(
+      mcpStdioOptionsFromEnv({
+        MCP_STDIO_INSTALL_TIMEOUT_MS: "0",
+        MCP_STDIO_STARTUP_TIMEOUT_MS: "0",
+        MCP_STDIO_IDLE_MS: "0",
+      }),
+    ).toMatchObject({
+      installTimeoutMs: 180_000,
+      startupTimeoutMs: DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
+      idleMs: 0,
+    });
+  });
+
   describe("probe", () => {
+    it("starts a separate probe for a new server revision", async () => {
+      await publishPackage(root);
+      const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+      const connector = connectorFor();
+      try {
+        const scope = { spaceId: "w1", userId: "u1" };
+        const first = connector.probe(SERVER as never, scope);
+        const second = connector.probe({ ...SERVER, revision: 2 } as never, scope);
+        expect(first).not.toBe(second);
+        await Promise.all([first, second]);
+        expect(launches).toHaveBeenCalledTimes(2);
+      } finally {
+        await connector.close();
+      }
+    });
+
     it("starts an isolated process, records the result, and stops it", async () => {
       await publishPackage(root);
       const close = vi.spyOn(McpSession.prototype, "close");

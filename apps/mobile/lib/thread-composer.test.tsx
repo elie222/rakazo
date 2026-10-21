@@ -231,4 +231,19 @@ describe("thread composer isolation", () => {
       expect(capsule.paddingEnd).toBe(inset);
     }
   });
+
+  it("keeps right-to-left text clear of the call and send pills", () => {
+    const style = (element: Element) => JSON.parse((element as HTMLElement).dataset.style!);
+    // Right-to-left text runs up to the field's trailing edge, right next to the pill.
+    for (const [label, draft] of [
+      ["Call", ""],
+      ["Send", "אבג"],
+      ["Send", "مرحبا\nبالعالم"],
+    ] as const) {
+      type(draft);
+      const button = container.querySelector(`button[aria-label="${label}"]`)!;
+      const capsule = style(button.closest('[data-glass="roundedRectangle"]')!);
+      expect(capsule.gap).toBe(capsule.paddingEnd);
+    }
+  });
 });

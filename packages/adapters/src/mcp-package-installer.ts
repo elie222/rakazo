@@ -9,7 +9,8 @@
  * launches the installed bin directly.
  */
 
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { accessSync, constants } from "node:fs";
 import {
@@ -19,6 +20,7 @@ import {
   mkdtemp,
   readdir,
   readFile,
+  realpath,
   rename,
   rm,
   stat,
@@ -143,6 +145,7 @@ export type EnsureMcpPackageOptions = {
   env?: Record<string, string>;
   /** Called once when the package is not installed yet and this call has to wait for it. */
   onInstall?: () => void;
+  onSettled?: () => Promise<void>;
   /** npm executable. Tests point this at a stub. */
   npmCommand?: string;
   /** What npm installs instead of `spec` (tests install a local tarball). */
@@ -155,9 +158,18 @@ const inFlight = new Map<string, Promise<void>>();
  * The install directory for `spec` under `root`. Native addons are built per Node ABI, so
  * the Node major version is part of the key.
  */
-export function mcpPackageDir(spec: string, root: string): string {
+export function mcpPackageDir(
+  spec: string,
+  root: string,
+  env: Record<string, string> = {},
+): string {
   const nodeMajor = process.versions.node.split(".")[0];
-  const key = createHash("sha256").update(`${spec}\0node${nodeMajor}`).digest("hex").slice(0, 32);
+  const key = createHash("sha256")
+    .update(
+      `${spec}\0node${nodeMajor}\0${JSON.stringify(Object.entries(npmSettings(env)).sort(([a], [b]) => a.localeCompare(b)))}`,
+    )
+    .digest("hex")
+    .slice(0, 32);
   return join(resolve(root), key);
 }
 
@@ -174,7 +186,7 @@ export async function ensureMcpPackage(
   const name = registryPackageName(spec);
   if (!name) throw new Error(`Not an npm registry package: ${spec}`);
   const root = resolve(options.root ?? defaultMcpPackagesRoot());
-  const dir = mcpPackageDir(spec, root);
+  const dir = mcpPackageDir(spec, root, options.env);
   const key = basename(dir);
   if (!(await isReady(dir))) {
     options.onInstall?.();
@@ -192,6 +204,12 @@ export async function ensureMcpPackage(
       }).finally(() => inFlight.delete(dir));
       inFlight.set(dir, pending);
     }
+    void pending
+      .then(
+        () => options.onSettled?.(),
+        () => options.onSettled?.(),
+      )
+      .catch(() => undefined);
     await abortable(pending, options.signal);
   }
   const bin: InstalledMcpBin = Object.freeze({
@@ -211,6 +229,7 @@ async function isReady(dir: string): Promise<boolean> {
 }
 
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  void promise.catch(() => undefined);
   if (!signal) return promise;
   signal.throwIfAborted();
   return new Promise<T>((resolvePromise, reject) => {
@@ -349,18 +368,26 @@ async function releaseLock(lock: string, token: string): Promise<void> {
 }
 
 /** npm and proxy settings from the host, the server's own env on top. */
+export function npmSettings(extra: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(extra).filter(([key]) =>
+      /^(?:npm_config_|https?_proxy$|no_proxy$|node_extra_ca_certs$)/i.test(key),
+    ),
+  );
+}
+
 function installEnvironment(extra: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = { ...getDefaultEnvironment() };
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
     if (
-      key.startsWith("NPM_CONFIG_") ||
+      /^npm_config_/i.test(key) ||
       /^(?:https?_proxy|no_proxy)$/i.test(key) ||
       key === "NODE_EXTRA_CA_CERTS"
     )
       env[key] = value;
   }
-  for (const [key, value] of Object.entries(extra)) {
+  for (const [key, value] of Object.entries(npmSettings(extra))) {
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) env[key] = value;
   }
   return env;
@@ -455,7 +482,13 @@ async function declaredBins(dir: string, name: string): Promise<DeclaredBins> {
     if (typeof path !== "string") continue;
     const binPath = resolve(packageDir, path);
     // A bin must stay inside its package; anything else is not launched.
-    if (binPath.startsWith(packageDir + sep)) bins.push([bin, binPath]);
+    if (binPath.startsWith(packageDir + sep)) {
+      const actual = await realpath(binPath).catch(() => undefined);
+      const actualPackage = await realpath(packageDir);
+      const actualRoot = await realpath(dir);
+      if (actualPackage.startsWith(actualRoot + sep) && actual?.startsWith(actualPackage + sep))
+        bins.push([bin, actual]);
+    }
   }
   return { packageDir, unscoped, bins };
 }

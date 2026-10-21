@@ -1,7 +1,12 @@
 /** Shared logic for the agent-facing add_mcp_server tool. Pure and unit-tested;
  * the executor wires the parsed result into Prisma + the secret store. */
 
-import { McpRemoteEndpointSchema, type McpTransport, McpTransportSchema } from "@rakazo/contracts";
+import type { McpTransport } from "@rakazo/contracts";
+import {
+  McpRemoteEndpointSchema,
+  McpTransportSchema,
+  mcpOAuthEnvReferences,
+} from "@rakazo/contracts";
 import { deriveMcpSlug } from "@rakazo/core";
 import { toStringRecord } from "./memory-provider-factory.js";
 
@@ -63,6 +68,16 @@ export function parseMcpServerToolArgs(
   if (Object.keys(env).length > MAX_ENV_ENTRIES || Object.keys(headers).length > MAX_ENV_ENTRIES) {
     return undefined;
   }
+
+  // This tool accepts static credentials only; OAuth templates need a configured client.
+  if (
+    transport === "stdio" &&
+    Object.values(env).some((value) => {
+      const references = mcpOAuthEnvReferences(value);
+      return references.fields.length > 0 || references.unknown.length > 0;
+    })
+  )
+    return undefined;
 
   return {
     slug: deriveMcpSlug(name),

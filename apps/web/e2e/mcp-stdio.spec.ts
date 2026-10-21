@@ -113,13 +113,19 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   const names = page.getByRole("textbox", { name: "Name", exact: true });
   const values = page.getByLabel("Value", { exact: true });
   // Names are normalized to the environment-variable form the server accepts.
+  await names.nth(0).fill("123-key");
+  await expect(names.nth(0)).toHaveValue("_123_KEY");
   await names.nth(0).fill("invoices-api-id");
   await expect(names.nth(0)).toHaveValue("INVOICES_API_ID");
   await values.nth(0).fill("id-value");
   await expect(values.nth(0)).toHaveAttribute("type", "password");
   await expect(values.nth(0)).toHaveAttribute("autocomplete", "new-password");
   await page.getByRole("button", { name: "Add", exact: true }).click();
+  await names.nth(1).fill("invoices-api-id");
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Add server", exact: true })).toBeDisabled();
   await names.nth(1).fill("INVOICES_API_SECRET");
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(0);
   await values.nth(1).fill("secret-value");
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await names.nth(2).fill("UNUSED");
@@ -134,8 +140,13 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await expect(values.nth(0)).toHaveAttribute("type", "password");
   // A file row hands the process a path to a file holding the template (visible, multi-line).
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await names.nth(3).fill("GOOGLE_OAUTH_CREDENTIALS");
+  await names.nth(3).fill("GOOGLE_ACCESS_TOKEN");
   await page.getByRole("button", { name: "File", exact: true }).nth(3).click();
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Add server", exact: true })).toBeDisabled();
+  await captureScreenshot(page, testInfo, "mcp-stdio-duplicate-names");
+  await names.nth(3).fill("GOOGLE_OAUTH_CREDENTIALS");
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(0);
   await expect(values.nth(3)).toHaveJSProperty("tagName", "TEXTAREA");
   await values.nth(3).fill(credentialsTemplate);
   await expect(values.nth(3)).toHaveAttribute("autocomplete", "off");

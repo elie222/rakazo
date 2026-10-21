@@ -152,7 +152,10 @@ function isAmbiguousCredentialKey(key: string): boolean {
  * would otherwise corrupt unrelated tool output. Numeric-only filtering applies
  * only to ambiguous keys — explicit carriers still register OTP-like tokens.
  */
-function looksLikeSecretValue(value: string, options: { allowNumeric?: boolean } = {}): boolean {
+export function looksLikeSecretValue(
+  value: string,
+  options: { allowNumeric?: boolean } = {},
+): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (COMMON_CONFIG_VALUES.has(trimmed.toLowerCase())) return false;
@@ -275,7 +278,7 @@ export const TOKEN_REFRESH_SKEW_MS = 60_000;
 /** When the access token lapses, if the grant says. */
 export function accessTokenExpiresAt(oauth: OAuthState | undefined): number | undefined {
   const lifetimeSeconds = oauth?.tokens?.expires_in;
-  if (!oauth?.obtainedAt || !lifetimeSeconds) return undefined;
+  if (oauth?.obtainedAt === undefined || lifetimeSeconds === undefined) return undefined;
   return oauth.obtainedAt + lifetimeSeconds * 1000;
 }
 
@@ -956,8 +959,15 @@ export class McpOAuthBroker {
           networkFetch,
           () => authorizationUrl !== undefined,
         );
-      else if (!(await provider.tokens()))
-        await authorizeAtIssuer(provider, target, provider.wrapFetch(networkFetch.fetch));
+      else {
+        const tokens = await provider.tokens();
+        const expiresAt = accessTokenExpiresAt(loaded.material.oauth);
+        if (
+          !tokens ||
+          (expiresAt !== undefined && Date.now() >= expiresAt && !tokens.refresh_token)
+        )
+          await authorizeAtIssuer(provider, target, provider.wrapFetch(networkFetch.fetch));
+      }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
@@ -1320,6 +1330,7 @@ export class McpOAuthBroker {
       const hasMaterial = Boolean(
         nextMaterial.secret ||
           Object.keys(nextMaterial.env ?? {}).length ||
+          Object.keys(nextMaterial.files ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||
           nextMaterial.oauthClient ||
           nextMaterial.oauth,

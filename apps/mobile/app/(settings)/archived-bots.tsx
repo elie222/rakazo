@@ -55,16 +55,17 @@ export default function ArchivedBots() {
     }, [loadChats]),
   );
 
-  // Every restore and delete settles here. In the visit it started in, the row goes and a list
-  // load still running (it may predate the change) is restarted rather than dropped, so the
-  // other list isn't lost. After leaving, a later open visit reloads instead.
+  // Every restore and delete settles here. In the visit it started in, the row goes and both
+  // lists reload: a group restores with its bots, and a bot's restore or deletion can bring its
+  // group back or remove it. A load still running may predate the change, so it's restarted.
+  // After leaving, a later open visit reloads instead.
   function removed(generation: number, removeRow: () => void) {
     if (generation !== focusGeneration.current) {
       if (focused.current) void loadChats();
       return;
     }
     removeRow();
-    if (listRequest.current) void loadChats();
+    void loadChats();
   }
 
   async function mutate(request: () => Promise<unknown>, removeRow: () => void, failure: string) {

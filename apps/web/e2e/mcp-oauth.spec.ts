@@ -28,6 +28,7 @@ test("connects an MCP server through the OAuth popup callback", async ({ page },
     oauthClientId: null,
     enabled: true,
     revision: 1,
+    health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
     createdAt: "2026-08-24T00:00:00.000Z",
     updatedAt: "2026-08-24T00:00:00.000Z",
   };
@@ -162,6 +163,7 @@ test("adds an MCP server with a pre-registered OAuth client", async ({ page }, t
       oauthClientId: "client-1.apps.example.test",
       enabled: true,
       revision: 1,
+      health: { status: "unknown", message: null, toolCount: null, checkedAt: null },
       createdAt: "2026-08-24T00:00:00.000Z",
       updatedAt: "2026-08-24T00:00:00.000Z",
     };

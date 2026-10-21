@@ -1755,6 +1755,32 @@ describe("MCP OAuth", () => {
         });
       });
 
+      it("starts authorization for an expired grant without a refresh token", async () => {
+        nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial(
+          {
+            oauthClient: stdioClient,
+            oauth: {
+              discoveryState,
+              obtainedAt: Date.now() - 7200_000,
+              tokens: { access_token: "expired", token_type: "Bearer", expires_in: 3600 },
+            },
+          },
+          stdio,
+        );
+        expect((await broker.begin(begin)).status).toBe("authorization_required");
+      });
+
+      it("rejects a loopback issuer before sending credentials", async () => {
+        const requested = nonRegisteringAuthServer(() => undefined);
+        const { broker } = brokerWithMaterial(
+          { oauthClient: { ...stdioClient, authorization_server: "https://127.0.0.1/" } },
+          stdio,
+        );
+        await expect(broker.begin(begin)).rejects.toThrow(/private|loopback/i);
+        expect(requested).toEqual([]);
+      });
+
       it("still requires an authorization server", async () => {
         const requested = nonRegisteringAuthServer(() => undefined);
         const { broker } = brokerWithMaterial({ oauthClient }, stdio);

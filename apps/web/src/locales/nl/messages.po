@@ -319,6 +319,10 @@ msgstr "Er is een aanmeldtabblad geopend op <0>{0}</0>. Voer daar deze code in �
 msgid "A subscription credential is stored securely."
 msgstr "Een abonnementsgegeven wordt veilig opgeslagen."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "Over {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr "Over groepen"
@@ -2531,10 +2535,6 @@ msgstr "MCP-verbinding afronden…"
 msgid "Flag unexpected actions"
 msgstr "Onverwachte acties markeren"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr "Vlootbeheer"
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Wachtwoord vergeten?"
@@ -2858,10 +2858,6 @@ msgstr "Later"
 msgid "Leave"
 msgstr "Verlaten"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Laat deze bot de bots organiseren, afstemmen en plannen die hij zelf maakt. Jij keurt elke wijziging goed."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Licht"
@@ -3010,6 +3006,10 @@ msgstr "MCP-servers beheren"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "Berichtinstellingen beheren"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "De bots beheren die deze bot maakt"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3645,6 +3645,10 @@ msgstr "Organisch"
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organisatie-API-sleutel"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring."
 
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
@@ -5412,3 +5416,7 @@ msgstr "Jouw OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Je team van altijd actieve agents<0/>dat je echt werk kunt geven."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Elke naam kan maar één keer worden gebruikt."

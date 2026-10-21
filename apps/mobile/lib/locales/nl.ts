@@ -1,4 +1,9 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "About {label}": "Over {label}",
+  "Manage the bots it creates": "De bots beheren die deze bot maakt",
+  "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
+    "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring.",
+
   Resets: "Resetdatum",
   Limit: "Limiet",
   "Provider message": "Bericht van aanbieder",
@@ -21,8 +26,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Update from {name}": "Update van {name}",
   "{name} asked: {text}": "{name} vraagt: {text}",
   "{name} asked": "{name} vraagt",
-  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
-    "Laat deze bot de bots organiseren, afstemmen en plannen die hij zelf maakt. Jij keurt elke wijziging goed.",
   "Too many attempts. Try again in a few minutes.":
     "Te veel pogingen. Probeer het over een paar minuten opnieuw.",
   "The server had a problem. Try again in a moment.":
@@ -857,7 +860,6 @@ export const NL_MESSAGES: Record<string, string> = {
   "Remove photo": "Foto verwijderen",
   Shape: "Vorm",
   "Shape {number}": "Vorm {number}",
-  "Fleet management": "Vlootbeheer",
   "Try again": "Opnieuw proberen",
   "Your session expired": "Je sessie is verlopen",
   "The server had a problem": "Er is een probleem met de server",

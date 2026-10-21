@@ -753,6 +753,9 @@ describe("DaytonaSandboxProvider", () => {
       researcher,
     );
     expect(writerView.url).toContain("6100-preview");
+    expect(
+      fixture.executeCommand.mock.calls.some(([command]) => command.includes("0.0.0.0:6100 8>&-")),
+    ).toBe(true);
     expect(researcherView.url).not.toBe(writerView.url);
     expect(researcherView.url).toContain("6100-preview");
     expect(new URL(researcherView.url!).searchParams.get("path")).toMatch(

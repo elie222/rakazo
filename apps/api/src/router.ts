@@ -932,11 +932,11 @@ export function createRouter(deps: RouterDeps) {
     try {
       // The connector records the outcome itself.
       await deps.mcp.probe(server, { spaceId: actor.spaceId, userId: actor.userId });
-    } catch (error) {
-      getLogger().error("mcp server probe failed", error, { "mcp.server.id": server.id });
+    } catch {
+      getLogger().error("mcp server probe failed", { "mcp.server.id": server.id });
       await recordMcpServerHealth(deps.prisma, server.id, {
         status: "error",
-        message: error instanceof Error ? error.message : "Could not check this MCP server",
+        message: "Could not check this MCP server",
       });
     }
   };
@@ -2353,7 +2353,11 @@ export function createRouter(deps: RouterDeps) {
         return { ok: true as const };
       }),
       restore: authed.groups.restore.handler(async ({ context, input }) => {
-        await groupRepos.restoreGroup(context.actor, input.groupId);
+        try {
+          await groupRepos.restoreGroup(context.actor, input.groupId);
+        } catch (error) {
+          throw mapSpaceLifecycleError(error);
+        }
         return { ok: true as const };
       }),
       remove: authed.groups.remove.handler(async ({ context, input }) => {
@@ -4696,6 +4700,11 @@ export function createRouter(deps: RouterDeps) {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });
             if (update.action === "store" && config.transport === "stdio") {
+              await assertMcpRemoteEndpoint(
+                update.material.oauthClient?.authorization_server,
+                context.actor,
+                deps,
+              );
               assertMcpOAuthTemplates(
                 update.material.env ?? {},
                 update.material.files ?? {},

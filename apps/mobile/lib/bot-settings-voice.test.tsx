@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   stopVoicePlayback: vi.fn(),
   stop: vi.fn(),
   speak: vi.fn(),
+  alert: vi.fn(),
 }));
 const offered = [
   { identifier: "voice-a", name: "Alice", language: "en-US" },
@@ -88,6 +89,7 @@ vi.mock("react-native", () => {
       children,
     );
   return {
+    Alert: { alert: mocks.alert },
     Platform: { OS: "ios" },
     StyleSheet: { create: (styles: unknown) => styles },
     ScrollView: view,
@@ -95,8 +97,30 @@ vi.mock("react-native", () => {
     Text: ({ children, style }: { children?: ReactNode; style: unknown }) =>
       createElement("span", { "data-style": JSON.stringify(style) }, children),
     TextInput: () => null,
-    Pressable: ({ children, onPress }: { children?: ReactNode; onPress: () => void }) =>
-      createElement("button", { type: "button", onClick: onPress }, children),
+    Pressable: ({
+      children,
+      onPress,
+      accessibilityLabel,
+      accessibilityHint,
+      accessibilityRole,
+    }: {
+      children?: ReactNode;
+      onPress: () => void;
+      accessibilityLabel?: string;
+      accessibilityHint?: string;
+      accessibilityRole?: string;
+    }) =>
+      createElement(
+        "button",
+        {
+          type: "button",
+          onClick: onPress,
+          "aria-label": accessibilityLabel,
+          "data-hint": accessibilityHint,
+          role: accessibilityRole,
+        },
+        children,
+      ),
   };
 });
 vi.mock("./native", () => ({
@@ -106,12 +130,10 @@ vi.mock("./native", () => ({
   useThemedStyles: (createStyles: () => unknown) => createStyles(),
 }));
 vi.mock("./i18n", () => {
-  const t = (text: string, values?: { name: string }) => text.replace("{name}", values?.name ?? "");
+  const t = (text: string, values?: Record<string, string | number>) =>
+    text.replace(/\{(\w+)\}/g, (_, key) => String(values?.[key] ?? ""));
   return { t, useI18n: () => ({ t }) };
 });
-vi.mock("../components/settings-group", () => ({
-  SettingsFooter: ({ children }: { children: ReactNode }) => createElement("span", {}, children),
-}));
 vi.mock("../components/bot-avatar", () => ({ BotAvatar: () => null }));
 vi.mock("./bot-avatar-edit", () => ({
   avatarColor: (value: string) => value,
@@ -202,10 +224,26 @@ describe("bot settings device voice menu", () => {
   const render = async () => act(async () => root.render(<BotSettingsScreen />));
   const menu = () => container.querySelector('[data-menu="Device voice"]');
 
+  it("shows fleet help in a native alert from an accessible button", async () => {
+    await render();
+    const help = container.querySelector<HTMLButtonElement>(
+      '[aria-label="About Manage the bots it creates"]',
+    );
+    expect(help?.getAttribute("role")).toBe("button");
+    const explanation =
+      "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.";
+    expect(help?.getAttribute("data-hint")).toBe(explanation);
+    expect(container.textContent).not.toContain(explanation);
+    await act(async () => help?.click());
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Manage the bots it creates", explanation);
+  });
+
   it("persists fleet toggles immediately without adding them to unrelated saves", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Manage the bots it creates"]',
+    );
     if (!toggle) throw new Error("Missing fleet switch");
     await act(async () => {
       toggle.click();
@@ -229,7 +267,9 @@ describe("bot settings device voice menu", () => {
   it("restores the fleet toggle when saving fails", async () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
-    const toggle = container.querySelector<HTMLButtonElement>('[aria-label="Fleet management"]');
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Manage the bots it creates"]',
+    );
     if (!toggle) throw new Error("Missing fleet switch");
     await act(async () => {
       toggle.click();
@@ -355,7 +395,7 @@ describe("bot settings device voice menu", () => {
       expect(label.parentElement!.lastElementChild!.getAttribute("data-style")).toContain(
         '"textAlign":"right"',
       );
-      expect(container.querySelector("i")).toBeNull();
+      expect(container.querySelector('i[data-ios="chevron.up.chevron.down"]')).toBeNull();
     },
   );
 
@@ -363,7 +403,7 @@ describe("bot settings device voice menu", () => {
     mocks.deviceVoices.mockRejectedValueOnce(new Error("Load failed"));
     await render();
     expect(menu()).toBeNull();
-    expect(container.querySelector("i")).toBeNull();
+    expect(container.querySelector('i[data-ios="chevron.up.chevron.down"]')).toBeNull();
     const retry = () =>
       [...container.querySelectorAll("button")].find((item) =>
         item.textContent?.includes("Could not load voices"),

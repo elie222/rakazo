@@ -319,6 +319,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Un identifiant d'abonnement est stocké de façon sécurisée."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "À propos de {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr "À propos des groupes"
@@ -2531,10 +2535,6 @@ msgstr "Finalisation de la connexion MCP…"
 msgid "Flag unexpected actions"
 msgstr "Signaler les actions inattendues"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Mot de passe oublié ?"
@@ -2858,10 +2858,6 @@ msgstr "Plus tard"
 msgid "Leave"
 msgstr "Quitter"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Permet à ce bot d’organiser, d’ajuster et de planifier les bots qu’il crée. Vous approuvez chaque modification."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Clair"
@@ -3010,6 +3006,10 @@ msgstr "Gérer les serveurs MCP"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "Gérer les paramètres de messagerie"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "Gérer les bots qu’il crée"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3645,6 +3645,10 @@ msgstr "Organique"
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Clé API de l'organisation"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Organisez la barre latérale et modifiez les bots. Les modifications des groupes, instructions, modèles et routines nécessitent votre approbation."
 
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
@@ -5225,7 +5229,7 @@ msgstr "Utilise les identifiants {hostCredentialSource} propres à ce serveur po
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "Valeur"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."
@@ -5412,3 +5416,7 @@ msgstr "Votre OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Votre équipe d'agents toujours actifs<0/>à qui vous pouvez confier de vrais travaux."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Chaque nom ne peut être utilisé qu’une fois."

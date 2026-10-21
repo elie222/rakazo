@@ -1052,6 +1052,12 @@ export interface AutoReviewRequest {
   userTask: string;
   botDescription: string;
   matchingRules: AutoReviewMatchingRule[];
+  /**
+   * A web_fetch to a site the run was not given. `args` is then only the full URL, and
+   * `userTask` only the owner's own words (their message or the routine's instructions), never
+   * tool results or inbound messages, so injected text cannot argue for the site.
+   */
+  newSite?: boolean;
 }
 
 export interface AutoReviewResult {

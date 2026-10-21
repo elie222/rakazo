@@ -1,4 +1,9 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "About {label}": "关于{label}",
+  "Manage the bots it creates": "管理它创建的机器人",
+  "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
+    "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。",
+
   Resets: "重置时间",
   Limit: "限额",
   "Provider message": "提供商消息",
@@ -22,8 +27,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "{name} asked": "{name} 问",
   Close: "关闭",
   Link: "链接",
-  "Lets this bot organize, retune and schedule the bots it creates. You approve each change.":
-    "允许此机器人整理、调整和安排它创建的机器人。每项更改都由你批准。",
   "Too many attempts. Try again in a few minutes.": "尝试次数过多。请过几分钟再试。",
   "The server had a problem. Try again in a moment.": "服务器出现问题。请稍后重试。",
   "Password sign-in is turned off on this server": "此服务器已关闭密码登录",
@@ -864,7 +867,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Remove photo": "移除照片",
   Shape: "形状",
   "Shape {number}": "形状 {number}",
-  "Fleet management": "集群管理",
   "Try again": "重试",
   "Your session expired": "会话已过期",
   "The server had a problem": "服务器出现问题",

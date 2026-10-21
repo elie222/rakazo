@@ -319,6 +319,10 @@ msgstr "A sign-in tab opened at <0>{0}</0>. Enter this code there — this windo
 msgid "A subscription credential is stored securely."
 msgstr "A subscription credential is stored securely."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "About {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr "About groups"
@@ -2531,10 +2535,6 @@ msgstr "Finishing MCP connection…"
 msgid "Flag unexpected actions"
 msgstr "Flag unexpected actions"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr "Fleet management"
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Forgot password?"
@@ -2858,10 +2858,6 @@ msgstr "Later"
 msgid "Leave"
 msgstr "Leave"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Light"
@@ -3010,6 +3006,10 @@ msgstr "Manage MCP servers"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "Manage messaging settings"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "Manage the bots it creates"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3645,6 +3645,10 @@ msgstr "Organic"
 #: src/pages/memory-providers/SupermemorySettingsForm.tsx
 msgid "Organization API key"
 msgstr "Organization API key"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
 
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
@@ -5412,3 +5416,7 @@ msgstr "Your OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Your team of always-on agents<0/>that you can give real work to."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Each name can be used once."
