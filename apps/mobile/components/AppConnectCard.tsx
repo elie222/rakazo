@@ -3,10 +3,11 @@ import { waitForConnection } from "@rakazo/core";
 import { fontWeight, typeScale } from "@rakazo/ui-tokens";
 import { useEffect, useRef, useState } from "react";
 import type { ViewProps } from "react-native";
-import { Linking, Text, View } from "react-native";
+import { Linking, Text, useWindowDimensions, View } from "react-native";
 import { rpc } from "../lib/api";
 import { appConnectPresentation } from "../lib/app-connect";
 import { useI18n } from "../lib/i18n";
+import { threadCardWidth } from "../lib/message-presentation";
 import { native, useMobileTokens } from "../lib/native";
 import { useThreadReadOnly } from "../lib/thread-read-only";
 import { errorText } from "../lib/user-error";
@@ -24,6 +25,7 @@ export function AppConnectCard({
   onAccessibilityAction?: ViewProps["onAccessibilityAction"];
 }) {
   const { t } = useI18n();
+  const { width: windowWidth } = useWindowDimensions();
   const readOnly = useThreadReadOnly();
   const tokens = useMobileTokens();
   const [busy, setBusy] = useState(false);
@@ -89,7 +91,7 @@ export function AppConnectCard({
     <View
       accessibilityLabel={t("{name} connection", { name: block.name })}
       style={{
-        width: "100%",
+        width: threadCardWidth(windowWidth),
         borderRadius: 18,
         backgroundColor: native.fill,
         paddingHorizontal: 16,
