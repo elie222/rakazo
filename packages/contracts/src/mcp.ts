@@ -48,6 +48,10 @@ export const MCP_OAUTH_ENV_FIELDS = [
   "refresh_token",
   "client_id",
   "client_secret",
+  /** Access token expiry in epoch milliseconds, the form Google's token files use. */
+  "expires_at",
+  "scope",
+  "token_type",
 ] as const;
 export type McpOAuthEnvField = (typeof MCP_OAUTH_ENV_FIELDS)[number];
 
@@ -83,11 +87,33 @@ export function resolveMcpOAuthEnv(
 ): Record<string, string> {
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
-    resolved[key] = value.replace(OAUTH_ENV_REFERENCE, (_reference, name: string) => {
-      const field = isOAuthEnvField(name) ? values[name] : undefined;
-      if (!field) throw new Error(`MCP OAuth value oauth.${name} is not available for ${key}`);
-      return field;
-    });
+    resolved[key] = resolveMcpOAuthTemplate(value, values, key);
   }
   return resolved;
 }
+
+/** Replace OAuth references in one value or credential-file template; `label` names it in errors. */
+export function resolveMcpOAuthTemplate(
+  template: string,
+  values: Partial<Record<McpOAuthEnvField, string>>,
+  label: string,
+): string {
+  return template.replace(OAUTH_ENV_REFERENCE, (_reference, name: string) => {
+    const field = isOAuthEnvField(name) ? values[name] : undefined;
+    if (!field) throw new Error(`MCP OAuth value oauth.${name} is not available for ${label}`);
+    return field;
+  });
+}
+
+/**
+ * Credential files for stdio servers whose packages read a file path rather than
+ * a value. The key is the env variable that receives the file's path; the value
+ * is the file content template, which may use the same `{{oauth.*}}` references.
+ */
+export const McpStdioFilesSchema = z
+  .record(z.string().regex(/^[A-Z_][A-Z0-9_]*$/), z.string().max(65536))
+  .superRefine((value, ctx) => {
+    if (Object.keys(value).length > 8) {
+      ctx.addIssue({ code: "custom", message: "At most 8 credential files are allowed" });
+    }
+  });

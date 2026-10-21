@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mcpOAuthEnvReferences, resolveMcpOAuthEnv } from "./mcp.js";
+import { mcpOAuthEnvReferences, resolveMcpOAuthEnv, resolveMcpOAuthTemplate } from "./mcp.js";
 
 describe("MCP OAuth env references", () => {
   it("finds the referenced fields and flags unknown ones", () => {
@@ -28,5 +28,18 @@ describe("MCP OAuth env references", () => {
       resolveMcpOAuthEnv({ REFRESH: "{{oauth.refresh_token}}" }, { access_token: "a" }),
     ).toThrow("oauth.refresh_token is not available for REFRESH");
     expect(() => resolveMcpOAuthEnv({ X: "{{oauth.id_token}}" }, {})).toThrow("oauth.id_token");
+  });
+
+  it("fills a credential file template, naming the file in errors", () => {
+    expect(
+      resolveMcpOAuthTemplate(
+        '{"refresh_token":"{{oauth.refresh_token}}","expiry_date":{{oauth.expires_at}}}',
+        { refresh_token: "1//r", expires_at: "1792578000000" },
+        "GOOGLE_TOKENS",
+      ),
+    ).toBe('{"refresh_token":"1//r","expiry_date":1792578000000}');
+    expect(() => resolveMcpOAuthTemplate("{{oauth.scope}}", {}, "GOOGLE_TOKENS")).toThrow(
+      "oauth.scope is not available for GOOGLE_TOKENS",
+    );
   });
 });

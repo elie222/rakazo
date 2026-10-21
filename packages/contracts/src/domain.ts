@@ -9,7 +9,12 @@ import {
 } from "./cloudflare-ai-gateway.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
-import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
+import {
+  McpHeadersSchema,
+  McpRemoteEndpointSchema,
+  McpStdioFilesSchema,
+  McpTransportSchema,
+} from "./mcp.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
 
@@ -815,6 +820,8 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
         }
       })
       .default({}),
+    /** Update: omit to keep the stored files, send the complete set to replace them. */
+    files: McpStdioFilesSchema.optional(),
     secret: z.string().max(16384).optional(),
     oauthClient: McpStdioOAuthClientInput,
   }),
@@ -832,6 +839,8 @@ export const McpServerSchema = z.object({
   command: z.string().nullable(),
   args: z.array(z.string()),
   envKeys: z.array(z.string()),
+  /** Env variables that receive a credential file's path instead of a value. */
+  fileKeys: z.array(z.string()),
   headerKeys: z.array(z.string()),
   hasSecret: z.boolean(),
   oauthStatus: z.enum(["none", "connected", "reconnect"]),

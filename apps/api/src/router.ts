@@ -519,6 +519,7 @@ function mcpServerDto(
     command: row.command,
     args,
     envKeys,
+    fileKeys: [],
     headerKeys,
     hasSecret: row.secretId !== null,
     oauthStatus: oauth.status,
