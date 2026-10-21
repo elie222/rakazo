@@ -5,7 +5,11 @@ import type { ConnectionMode } from "./ConnectionModeFields";
 import { ConnectionModeFields } from "./ConnectionModeFields";
 import type { MemoryProviderConnectionDraft, MemoryProviderSettingsFormProps } from "./registry";
 
-const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9_-]{0,512}$/;
+const RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{0,512}$/;
+// Rakazo writes to these peers, so they cannot be read as the user's own peer.
+function isReservedPeerId(value: string): boolean {
+  return value === "rakazo-shared" || value.startsWith("bot-");
+}
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:8000";
 
 export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFormProps) {
@@ -14,17 +18,29 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
   const workspaceErrorId = useId();
   const [mode, setMode] = useState<ConnectionMode>("cloud");
   const [baseUrl, setBaseUrl] = useState(DEFAULT_LOCAL_BASE_URL);
+  const userPeerId = useId();
+  const userPeerErrorId = useId();
+  const userPeerDescriptionId = useId();
+  const [userPeer, setUserPeer] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [workspace, setWorkspace] = useState("");
-  const workspaceValid = WORKSPACE_ID_PATTERN.test(workspace.trim());
+  const workspaceValid = RESOURCE_ID_PATTERN.test(workspace.trim());
+  const showUserPeer = workspace.trim().length > 0;
+  const userPeerFormatValid = RESOURCE_ID_PATTERN.test(userPeer.trim());
+  const userPeerReserved = isReservedPeerId(userPeer.trim());
+  const userPeerValid = !showUserPeer || (userPeerFormatValid && !userPeerReserved);
   const ready =
-    apiKey.trim().length >= 8 && workspaceValid && (mode === "cloud" || Boolean(baseUrl.trim()));
+    apiKey.trim().length >= 8 &&
+    workspaceValid &&
+    userPeerValid &&
+    (mode === "cloud" || Boolean(baseUrl.trim()));
 
   async function connect() {
     if (!ready) return;
     const draft: MemoryProviderConnectionDraft = {
       settings: {
         ...(mode === "local" ? { mode, baseUrl: baseUrl.trim() } : {}),
+        ...(showUserPeer && userPeer.trim() ? { userPeerId: userPeer.trim() } : {}),
         ...(workspace.trim() ? { workspaceId: workspace.trim() } : {}),
       },
       credentials: { apiKey: apiKey.trim() },
@@ -80,6 +96,38 @@ export function HonchoSettingsForm({ busy, onConnect }: MemoryProviderSettingsFo
           </FieldError>
         ) : null}
       </Field>
+
+      {showUserPeer ? (
+        <Field className="mt-4" data-invalid={userPeerValid ? undefined : true}>
+          <FieldLabel htmlFor={userPeerId}>
+            <Trans>User peer</Trans>
+          </FieldLabel>
+          <Input
+            id={userPeerId}
+            value={userPeer}
+            disabled={busy}
+            aria-invalid={userPeerValid ? undefined : true}
+            aria-describedby={
+              userPeerValid ? userPeerDescriptionId : `${userPeerDescriptionId} ${userPeerErrorId}`
+            }
+            onChange={(event) => setUserPeer(event.target.value)}
+            maxLength={512}
+            autoComplete="off"
+          />
+          <p id={userPeerDescriptionId} className="mt-2 text-[13px] text-muted-foreground">
+            <Trans>An existing Honcho peer to read from. Rakazo never writes to it.</Trans>
+          </p>
+          {!userPeerValid ? (
+            <FieldError id={userPeerErrorId}>
+              {userPeerFormatValid ? (
+                <Trans>rakazo-shared and IDs starting with bot- are reserved for Rakazo.</Trans>
+              ) : (
+                <Trans>Use up to 512 letters, digits, _ or -.</Trans>
+              )}
+            </FieldError>
+          ) : null}
+        </Field>
+      ) : null}
 
       <Button
         type="button"

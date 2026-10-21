@@ -502,7 +502,11 @@ describe("append-only run transcript boundaries", () => {
     expect(extendsPrevious(first, second)).toBe(true);
     expect(JSON.stringify(second)).not.toContain("Earlier result shortened after you read it");
 
-    // Force a rebuild by changing instructions after the result has been read.
+    run.act(second, "c", "ok");
+    run.act(run.send(), "d", "ok");
+    run.send();
+
+    // Force a rebuild after a leaves the three-result window.
     run.state.systemPrompt = "Changed instructions";
     const rebuilt = run.send();
     const result = rebuilt.messages.find(
@@ -512,7 +516,7 @@ describe("append-only run transcript boundaries", () => {
     expect(serialized.split("Earlier result shortened after you read it")).toHaveLength(2);
     expect(serialized).not.toContain("unavailable");
     expect(staleThinking(rebuilt)).toEqual([]);
-    run.act(rebuilt, "c", "ok");
+    run.act(rebuilt, "e", "ok");
     const next = run.send();
     expect(extendsPrevious(rebuilt, next)).toBe(true);
     expect(
