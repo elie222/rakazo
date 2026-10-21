@@ -467,15 +467,25 @@ export const appContract = {
     clear: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),
     answer: oc
       .input(
-        threadTarget.safeExtend({
-          runId: Id,
-          messageId: Id,
-          answer: z.string().min(1),
-          /** Carries the call id for an answer spoken during a call. */
-          clientNonce: z.string().min(1).max(200).optional(),
-          /** Only for a login card; `answer` carries its password. */
-          username: z.string().min(1).max(512).optional(),
-        }),
+        threadTarget
+          .safeExtend({
+            runId: Id,
+            messageId: Id,
+            answer: z.string(),
+            /** Carries the call id for an answer spoken during a call. */
+            clientNonce: z.string().min(1).max(200).optional(),
+            /** Only for a login card; `answer` carries its password. */
+            username: z.string().min(1).max(512).optional(),
+            /** Turns down a pending secret request; `answer` is then empty. */
+            dismiss: z.literal(true).optional(),
+          })
+          .refine(
+            (input) =>
+              input.dismiss
+                ? input.answer === "" && !input.username && !input.clientNonce
+                : input.answer.length > 0,
+            "Send either an answer or a dismissal",
+          ),
       )
       .output(z.object({ ok: z.literal(true) })),
     markRead: oc.input(threadTarget).output(z.object({ ok: z.literal(true) })),

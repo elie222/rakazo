@@ -64,6 +64,39 @@ describe("bounded context selection", () => {
       selectContext([call, result, result, user("steering")], { budget, strategy: "retrieval" }),
     ).toThrow("Duplicate tool result");
   });
+  it("keeps and shortens the unread tool step after steering", () => {
+    const oldCall = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "old", name: "read", arguments: {} }],
+    };
+    const oldResult = { role: "toolResult", toolCallId: "old", content: "old ".repeat(1000) };
+    const current = user("current objective");
+    const call = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "pending", name: "read", arguments: {} }],
+    };
+    const result = { role: "toolResult", toolCallId: "pending", content: "x".repeat(1500) };
+    const steering = user("also check the summary");
+    const selected = selectContext([oldCall, oldResult, current, call, result, steering], {
+      budget,
+      strategy: "retrieval",
+      protectedIndexes: [2, 5],
+    });
+    expect(selected.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "toolResult",
+      "user",
+    ]);
+    expect(selected.messages[1]).toEqual(call);
+    expect(selected.messages[2]).toMatchObject({ toolCallId: "pending" });
+    expect(JSON.stringify(selected.messages[2]!.content)).toContain("Tool result truncated");
+    expect(selected.truncatedToolResults).toBe(1);
+    expect(selected.droppedMessages).toBe(2);
+    expect(selected.estimatedInputTokens).toBeLessThanOrEqual(
+      budget.contextWindow - budget.outputReserve,
+    );
+  });
   it("preserves actual images while shortening result text and fails if the image alone cannot fit", () => {
     const image = { type: "image", data: "a".repeat(10000), mimeType: "image/png" };
     const call = {

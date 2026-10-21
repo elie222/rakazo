@@ -1,13 +1,24 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import type { PrismaClient } from "@rakazo/db";
-import { Prisma } from "@rakazo/db";
+import { Prisma, runAsSystem } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { deleteSecretBestEffort } from "./secret-store-factory.js";
 
 type Candidate = { id: string; ciphertext: string };
 type Cleanup = { old: Candidate[]; written: Candidate[]; client?: Prisma.TransactionClient };
-async function cleanupUnreferenced(
+// A ciphertext ref can be shared across tenants, so the reference count must see
+// every row: deleting from the store on a tenant-filtered count of zero would
+// destroy a secret another Space still uses.
+function cleanupUnreferenced(
+  prisma: PrismaClient,
+  store: SecretStore,
+  candidates: Candidate[],
+): Promise<void> {
+  return runAsSystem("secret reference count", () => deleteUnreferenced(prisma, store, candidates));
+}
+
+async function deleteUnreferenced(
   prisma: PrismaClient,
   store: SecretStore,
   candidates: Candidate[],

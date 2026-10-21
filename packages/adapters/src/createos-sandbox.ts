@@ -70,19 +70,6 @@ const MAX_ERROR_BODY_CHARS = 2_000;
 const CREATEOS_ERROR_RESPONSE_TIMEOUT_MS = 1_000;
 const CREATEOS_SUCCESS_RESPONSE_TIMEOUT_MS = 30_000;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
-const BROWSER_PROFILE_DIR = ".browser-profiles";
-const BROWSER_PROFILE_CACHE_DIRS = new Set([
-  "Cache",
-  "Code Cache",
-  "CacheStorage",
-  "GPUCache",
-  "GrShaderCache",
-  "ShaderCache",
-  "Crashpad",
-  "component_crx_cache",
-  "startup_cache",
-  "cache2",
-]);
 /** Statuses CreateOS moves out of on its own. */
 const TRANSITIONAL_CREATEOS_STATUSES = new Set(["creating", "pausing", "resuming", "forking"]);
 /** Statuses from which a sandbox never runs again. */
@@ -1789,12 +1776,6 @@ function isTransientCreateOSHttpStatus(status: number): boolean {
 
 function shouldSkipCreateOSWorkspaceFile(relative: string): boolean {
   if (relative === ".rakazo" || relative.startsWith(".rakazo/")) return true;
-  if (
-    relative.startsWith(`${BROWSER_PROFILE_DIR}/`) &&
-    relative.split("/").some((segment) => BROWSER_PROFILE_CACHE_DIRS.has(segment))
-  ) {
-    return true;
-  }
   return shouldSkipPortableWorkspaceFile(relative);
 }
 

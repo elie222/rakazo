@@ -220,6 +220,9 @@ create_env() {
       "POSTGRES_PASSWORD=")
         printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)"
         ;;
+      "POSTGRES_APP_PASSWORD=")
+        printf 'POSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 16)"
+        ;;
       "BETTER_AUTH_SECRET=")
         printf 'BETTER_AUTH_SECRET=%s\n' "$(openssl rand -hex 32)"
         ;;
@@ -244,10 +247,21 @@ create_env() {
   echo "Created .env with random secrets."
 }
 
+# Secrets added after a .env was created. Append them so an upgrade still starts,
+# leaving every existing line untouched.
+add_missing_secrets() {
+  if ! grep -Eq '^POSTGRES_APP_PASSWORD=[^[:space:]]' "$ENV_FILE"; then
+    [[ ! -s "$ENV_FILE" || -z "$(tail -c 1 "$ENV_FILE")" ]] || printf '\n' >> "$ENV_FILE"
+    printf 'POSTGRES_APP_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> "$ENV_FILE"
+    echo "Added POSTGRES_APP_PASSWORD to .env."
+  fi
+}
+
 validate_required_secrets() {
   if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f - config --environment <<'YAML' | awk '
     BEGIN {
       required["POSTGRES_PASSWORD"] = 1
+      required["POSTGRES_APP_PASSWORD"] = 1
       required["BETTER_AUTH_SECRET"] = 1
       required["ENCRYPTION_KEY"] = 1
       required["SCREEN_PROXY_SECRET"] = 1
@@ -274,6 +288,7 @@ services:
   api:
     environment:
       _RAKAZO_VALIDATE_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      _RAKAZO_VALIDATE_POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set POSTGRES_APP_PASSWORD in .env}
       _RAKAZO_VALIDATE_BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
       _RAKAZO_VALIDATE_ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
       _RAKAZO_VALIDATE_SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
@@ -327,6 +342,7 @@ download "$ENV_EXAMPLE"
 
 if [[ -e "$ENV_FILE" ]]; then
   echo "Keeping existing .env."
+  add_missing_secrets
 else
   create_env
 fi

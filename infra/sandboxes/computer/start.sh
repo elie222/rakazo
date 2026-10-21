@@ -121,6 +121,7 @@ if [[ ! -f "$NOVNC_ROOT/mobile-keyboard.js" ]]; then
   echo "noVNC mobile-keyboard.js is missing from the computer image" >&2
   exit 1
 fi
+# The screen proxy reaches this isolated container through its bridge interface.
 websockify --heartbeat=30 --web="$NOVNC_ROOT" --token-plugin=TokenFile --token-source=/tmp/rakazo/view-target-1 0.0.0.0:6080 >/tmp/rakazo/novnc.log 2>&1 &
 
 wait "$XVFB_PID"

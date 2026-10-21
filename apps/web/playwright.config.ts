@@ -5,10 +5,13 @@ const webPort = Number(process.env.WEB_PORT ?? 5173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${webPort}`;
 const realSandbox = isRealSandboxProvider();
 const boatSandbox = process.env.SANDBOX_PROVIDER === "boat";
+// GitHub Actions shards the suite; each shard writes a blob that the merge job turns into one report.
 const reporters = [
   ...(process.env.CI ? ([["github"]] as const) : []),
   ["list"] as const,
-  ["html", { open: "never", outputFolder: "../../playwright-report" }] as const,
+  process.env.GITHUB_ACTIONS
+    ? (["blob", { outputDir: "../../blob-report" }] as const)
+    : (["html", { open: "never", outputFolder: "../../playwright-report" }] as const),
 ];
 
 export default defineConfig({

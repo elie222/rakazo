@@ -273,6 +273,22 @@ model Space {
   @@map("spaces")
 }
 
+/// A space's data encryption key, wrapped by a master key. There is no foreign key:
+/// keys are created on their own connection, possibly before the space row commits.
+/// A trigger deletes them with the space, which crypto-shreds anything left behind.
+model SpaceKey {
+  id          String   @id
+  spaceId     String
+  version     Int
+  masterKeyId String
+  wrappedKey  String
+  createdAt   DateTime @default(now())
+
+  @@unique([spaceId, version])
+  @@index([masterKeyId])
+  @@map("space_keys")
+}
+
 model SpaceMember {
   id               String                 @id
   spaceId          String
@@ -607,6 +623,8 @@ model Message {
   replies          Message[] @relation("MessageReplies")
   runId            String?
   clientNonce      String?
+  /// Blind-index search tokens for the encrypted blocks; NULL until the row is encrypted.
+  searchTokens     Int[]
   sourceRuns            Run[]             @relation("RunSourceMessage")
   externalTranscriptFor  ExternalMessage?
   steeringMessages SteeringMessage[]
@@ -616,6 +634,7 @@ model Message {
   @@unique([threadId, clientNonce])
   @@index([threadId, seq])
   @@index([replyToMessageId])
+  @@index([searchTokens], type: Gin)
   @@map("messages")
 }
 

@@ -155,6 +155,14 @@ test("account settings language picker includes Hebrew and mirrors the UI right-
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "he");
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
+
+  await page.goto("/app");
+  await page.waitForURL(/\/app\/[^/]+$/);
+  const sidebar = page.getByTestId("bots-sidebar");
+  await expect(sidebar).toBeInViewport({ ratio: 1 });
+  const box = await sidebar.boundingBox();
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeCloseTo(page.viewportSize()?.width ?? 0, 0);
+  await captureScreenshot(page, testInfo, "ui-locale-app-he");
 });
 
 test("account settings language picker includes Dutch and persists it", async ({

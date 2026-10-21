@@ -971,6 +971,7 @@ export type MessagingAgentConnection = z.infer<typeof MessagingAgentConnectionSc
 
 export const RunSchema = z.object({
   id: Id,
+  userId: Id.optional(),
   botId: Id,
   threadId: Id,
   taskId: Id,

@@ -1,7 +1,13 @@
+import type { DesktopEnvironment } from "@rakazo/core/node/desktop-runtime";
 import {
+  ensureScreenCommand as coreEnsureScreenCommand,
+  interactiveScreenCommand as coreInteractiveScreenCommand,
+  terminalCommand as coreTerminalCommand,
+  DEFAULT_DESKTOP_ENV,
   BROWSER_APPLICATIONS as DOCKER_BROWSER_ALIASES,
   MAX_DESKTOP_DISPLAY,
   resetDesktopRuntimeCommand,
+  screenPorts,
   shellQuote,
   stopBrowserCommand,
   stopExtraScreenCommand,
@@ -10,13 +16,10 @@ import {
 
 export {
   browserProfilePathForScreen,
-  ensureScreenCommand,
-  interactiveScreenCommand,
   prepareBrowserProfileCommand,
   quiesceBrowserProfilesCommand,
   stopBrowserCommand,
   stopExtraScreenCommand,
-  terminalCommand,
 } from "@rakazo/core/node/desktop-runtime";
 
 import { timingSafeEqual } from "node:crypto";
@@ -26,6 +29,42 @@ import { canReleaseScreenLease, canTakeScreenLease } from "@rakazo/core";
 import { z } from "zod";
 import type { SandboxInput } from "./computer-spec.js";
 import { xdotoolCommand } from "./computer-spec.js";
+
+// Docker forwarding reaches the isolated container's bridge interface; loopback cannot serve it.
+const DOCKER_DESKTOP_ENV: DesktopEnvironment = { ...DEFAULT_DESKTOP_ENV, bindHost: "0.0.0.0" };
+
+export function ensureScreenCommand(
+  index: number,
+  screenId: string,
+  viewToken: string,
+  env = DOCKER_DESKTOP_ENV,
+) {
+  return coreEnsureScreenCommand(index, screenId, viewToken, env);
+}
+
+export function interactiveScreenCommand(
+  interactive: boolean,
+  controlToken?: string,
+  layout = screenPorts(0),
+) {
+  return coreInteractiveScreenCommand(interactive, controlToken, {
+    ...layout,
+    bindHost: DOCKER_DESKTOP_ENV.bindHost,
+  });
+}
+
+export function terminalCommand(
+  controlToken: string,
+  terminalToken: string,
+  cwd: string,
+  env = DOCKER_DESKTOP_ENV,
+  layout = screenPorts(0, env),
+) {
+  return coreTerminalCommand(controlToken, terminalToken, cwd, env, {
+    ...layout,
+    bindHost: env.bindHost,
+  });
+}
 
 export const computerActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("key"), key: z.string(), modifiers: z.array(z.string()).optional() }),

@@ -148,7 +148,7 @@ so the mode does not apply there.
 
 ## Docker Compose (single machine)
 
-1. Copy `.env.example` to `.env` and set `POSTGRES_PASSWORD` (`openssl rand -hex 16`), plus `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
+1. Copy `.env.example` to `.env` and set `POSTGRES_PASSWORD` and `POSTGRES_APP_PASSWORD` (`openssl rand -hex 16` each), plus `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`, and `SCREEN_PROXY_SECRET` to independent long random strings (32+ characters; 64 hex for `ENCRYPTION_KEY`). Docker sandboxes also need a dedicated `SANDBOX_SUPERVISOR_TOKEN`. Keep existing `ENCRYPTION_KEY` values so stored credentials stay decryptable.
 2. Set `OPENROUTER_API_KEY` (and `COMPOSIO_API_KEY` if you want Plugins).
 3. Build the computer image: `pnpm sandbox:build` (Compose also builds it via the `computer` service).
 4. `docker compose --env-file .env -f infra/compose/docker-compose.yml up --build`
@@ -170,6 +170,36 @@ add `infra/compose/docker-compose.postgres-host.yml` so Postgres is published on
 `127.0.0.1:5433`, or use
 `docker compose --env-file .env -f infra/compose/docker-compose.yml exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
 Do not publish Postgres on a public interface.
+
+### Database roles
+
+Rakazo uses two Postgres logins:
+
+- The owner (`POSTGRES_USER`, or `DATABASE_MIGRATION_URL` outside Compose) runs migrations and
+  owns the tables.
+- The app login (`rakazo_app` with `POSTGRES_APP_PASSWORD`, or `DATABASE_URL`) is not a
+  superuser, cannot bypass row-level security, cannot create objects, and can only read and write
+  the app tables.
+
+`pnpm db:migrate`, which the API's start command runs, applies the migrations and the job queue
+schema as the owner. It then creates the app login named in `DATABASE_URL`, or updates its
+password, and grants it the `rakazo_app` role. When migrations run as a role without
+`CREATEROLE`, as on some managed Postgres, create the login yourself and
+`GRANT rakazo_app TO <login>`.
+
+Messages, events, threads, memory, artifacts, secrets, model and voice credentials, and skills have
+row-level security. Each signed-in request sees only its Space's rows, plus the user's own
+account-level credentials. A query that leaves out its Space filter returns nothing from other
+Spaces. Background jobs, reconcilers and webhooks run in a named system scope (`runAsSystem` in
+`packages/db`). The job queue's tables (`graphile_worker`) hold job metadata, not Space content:
+graphile-worker turns on row-level security for them, and `pnpm db:migrate` adds a policy that
+gives the app login every row.
+
+With only `DATABASE_URL` set, migrations and the app share one login. Everything keeps working,
+but `pnpm db:migrate`, the API and the worker warn that row-level security is not enforced. To fix
+this, set `DATABASE_MIGRATION_URL` to the owner and `DATABASE_URL` to a new login.
+
+Run `pg_dump` as the owner. The app login would only dump rows it is allowed to see.
 
 The Docker supervisor is not published as its own image and is not exposed on the host. It runs from
 the app image, stays on the internal Compose network, and holds the Docker socket because access to
@@ -560,6 +590,25 @@ Caddy resolves the client first. `Caddyfile.prod` takes the TCP peer and overwri
 header: `Caddyfile.cloudflare.example` does this with Cloudflare's ranges and `CF-Connecting-IP`.
 For another CDN, copy that file and change the ranges and the header. If you copied the Cloudflare
 example before this change, copy it again.
+
+### Content-Security-Policy
+
+The web server sends a strict Content-Security-Policy: scripts and connections are limited to the
+app's own origin. When a CDN in front of the app injects a script, such as an analytics beacon, the
+browser blocks it until you add its origins. `RAKAZO_CSP_SCRIPT_SRC` extends `script-src` and
+`RAKAZO_CSP_CONNECT_SRC` extends `connect-src`. Each takes space-separated `https://` origins, with
+an optional port and leading `*.` wildcard (`https://*.example.com`). Keywords such as
+`'unsafe-inline'`, bare schemes, `*`, `http://` origins and paths are rejected, and the web server
+refuses to start until the value is fixed. Restart the web service after changing either one.
+
+For example, Cloudflare Web Analytics loads its script from one host and reports to another:
+
+```bash
+RAKAZO_CSP_SCRIPT_SRC=https://static.cloudflareinsights.com
+RAKAZO_CSP_CONNECT_SRC=https://cloudflareinsights.com
+```
+
+Add only origins you trust: a script these settings allow runs with the signed-in user's access.
 
 ### Security events
 
@@ -1007,18 +1056,23 @@ Open a **new SSH connection** and run the printed `confirm TOKEN` command; confi
 original connection is rejected. An unconfirmed change restores the saved rules and default policies.
 The guard does not protect arbitrary direct `ufw` commands or SSH daemon configuration changes.
 
-To deploy from CI, install `infra/compose/deploy-main.sh` as `/usr/local/sbin/rakazo-deploy-main`
+To deploy from CI, install `infra/compose/deploy-launcher.sh` as `/usr/local/sbin/rakazo-deploy-main`
 and give CI a key restricted to it in the deploy user's `authorized_keys`
 (`restrict,command="/usr/local/sbin/rakazo-deploy-main" ssh-ed25519 …`). It builds `origin/main`,
-restarts the stack, waits for `https://$RAKAZO_HOST/health`, and rolls back on failure. Build and
+starts each new API and web container beside the running one and stops the old one only once the
+new one is healthy, so a deploy does not take the site offline, then waits for
+`https://$RAKAZO_HOST/health` and rolls back on failure. Old and new API containers serve together
+for a few seconds after migrations run, so a migration must keep working with the previous
+release: add first, and drop or rename only in a later deploy. Build and
 start are time-limited so a stuck build fails the deploy instead of holding its lock; a deploy that
 finds the lock held exits non-zero. A deploy refuses to start with less than
 `RAKAZO_DEPLOY_MIN_FREE_GB` (default `5`) free, and after a healthy rollout it removes untagged
 images and build cache unused for a day, keeping the previous images tagged `rakazo-rollback`.
 For a checkout outside `/srv/rakazo`, put `RAKAZO_DEPLOY_DIR=/absolute/path` (and any of these
-settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. After pulling a new
-version of the script, reinstall it with
-`sudo install -m 0755 infra/compose/deploy-main.sh /usr/local/sbin/rakazo-deploy-main`.
+settings) in a root-owned `/etc/rakazo/deploy.env` readable by the deploy user. The launcher runs
+`infra/compose/deploy-main.sh` from `origin/main`, so deploy changes apply on the next deploy; only
+a change to the launcher itself needs
+`sudo install -m 0755 infra/compose/deploy-launcher.sh /usr/local/sbin/rakazo-deploy-main`.
 
 ### Docker computers on the production stack
 
@@ -1104,7 +1158,7 @@ GIT_SHA=$(git rev-parse HEAD) docker compose --env-file .env -f infra/compose/do
 ```
 
 `up --wait` does not report success until the new API is healthy and the worker and web containers
-are running. The API's start command runs `prisma migrate deploy` before it serves, so migration
+are running. The API's start command runs `pnpm db:migrate` before it serves, so migration
 failure keeps health red. A failed CLI recreate does not auto-roll back; recover with the previous
 `RAKAZO_IMAGE_TAG` (or rebuild `local`) and `up -d --wait --pull never`.
 
@@ -1115,8 +1169,26 @@ Sidecar `/apply` and `/rollback` recover a failed recreate by redeploying the pr
 image when possible; if that also fails, they report a possible mixed-version runtime.
 
 Source checkouts (not Compose) still upgrade the old way: pull, rebuild with
-`GIT_SHA=$(git rev-parse HEAD)`, run `pnpm --filter @rakazo/db migrate`, then restart API and worker.
+`GIT_SHA=$(git rev-parse HEAD)`, run `pnpm db:migrate`, then restart API and worker.
 Product contracts stay compatible across cloud and self-hosted.
+
+### Upgrading to the separate app database login
+
+Releases with [database roles](#database-roles) need `POSTGRES_APP_PASSWORD` in `.env`. The
+desktop app, `install-images.sh` and `infra/compose/deploy-main.sh` add it when it is missing.
+Elsewhere, add it yourself (`openssl rand -hex 16`) before you pull, or Compose stops at config
+validation with `Set POSTGRES_APP_PASSWORD in .env`. On first start, the API creates the
+`rakazo_app` login, and the API and worker then connect as it. Nothing else changes, and the
+upgrade does not rewrite any data.
+
+If a feature misbehaves under row-level security, run `ALTER ROLE <login> BYPASSRLS;` on the login
+in `DATABASE_URL` (`rakazo_app` in Compose) as a superuser (the Compose owner is one), then
+restart the API and worker. Role attributes are not inherited, so granting it to `rakazo_app` does
+nothing for a separate login. The app then runs as before, with a startup warning, and later
+migrations leave that login alone. Undo it with
+`NOBYPASSRLS` and another restart, then search the API and worker logs for
+`violates row-level security` and `without a tenant or system context`. Rolling back to an older release works without changes: it
+ignores the extra variable and connects as the owner.
 
 ### Space privacy-boundary migration
 

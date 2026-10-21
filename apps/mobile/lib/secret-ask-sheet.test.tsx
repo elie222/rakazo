@@ -351,3 +351,11 @@ it("closes after a delay when no field reports, as when the card is no longer pe
   expect(seen).toEqual([["", "", true, true]]);
   expect(onSave).not.toHaveBeenCalled();
 });
+
+it("keeps Cancel and Save as the only sheet actions", async () => {
+  await render();
+  expect([...container.querySelectorAll("button")].map((item) => item.textContent)).toEqual([
+    "Cancel",
+    "Save",
+  ]);
+});

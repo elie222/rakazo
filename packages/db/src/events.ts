@@ -221,7 +221,13 @@ export interface AnswerRunInput {
   clientNonce?: string;
   /** Only for a login card; `answer` carries its password. */
   username?: string;
+  /** Turns down a pending secret request; only the run's user can, and nothing is stored. */
+  dismiss?: boolean;
 }
+
+/** What request_secret returns to the bot once the user dismissed its card. */
+const DISMISSED_SECRET_RESULT = { ok: false, dismissed: true } as const;
+const DISMISSED_SECRET_PROMPT = "The user dismissed this request.";
 
 export interface SendUserMessageInput {
   spaceId: string;
@@ -702,9 +708,24 @@ async function commitAnswerRunInput(
   const secretAsk = isSecretAskBlock(pendingAsk);
   const choiceAsk = !approvalAsk && !secretAsk && Boolean(pendingAsk.actions?.length);
   const selectedChoice = choiceAsk ? resolveAskChoice(input.answer, pendingAsk.actions) : undefined;
-  if (secretAsk && !runSecretWriter) return null;
+  const dismissed = Boolean(input.dismiss);
+  // Only the run's user can turn down a secret request; every other card needs an answer.
+  if (dismissed && (!secretAsk || run.userId !== input.answeredByUserId || input.answer))
+    return null;
+  const secretRequest = {
+    runId: input.runId,
+    spaceId: input.spaceId,
+    kind: "request_secret",
+    status: "intended",
+  };
+  if (
+    dismissed &&
+    !(await tx.externalEffect.findFirst({ where: secretRequest, select: { id: true } }))
+  )
+    return null;
+  if (secretAsk && !dismissed && !runSecretWriter) return null;
   if (secretAsk && pendingAsk.credential && run.userId !== input.answeredByUserId) return null;
-  const loginAsk = secretAsk && pendingAsk.credential?.auth.type === "login";
+  const loginAsk = secretAsk && !dismissed && pendingAsk.credential?.auth.type === "login";
   // A username belongs only to a login card, which cannot be saved without one.
   if (loginAsk !== Boolean(input.username?.trim())) return null;
   const login = loginAsk
@@ -842,6 +863,18 @@ async function commitAnswerRunInput(
         update: {},
       });
     }
+  } else if (dismissed) {
+    // Nothing is stored. The bot's request_secret call returns the dismissal, and the resumed
+    // run is told why.
+    await tx.externalEffect.updateMany({
+      where: secretRequest,
+      data: { status: "completed", result: DISMISSED_SECRET_RESULT },
+    });
+    const task = await tx.task.updateMany({
+      where: { runs: { some: { id: input.runId } } },
+      data: { prompt: resumePrompt(run, pendingAsk.text, DISMISSED_SECRET_PROMPT) },
+    });
+    if (task.count !== 1) throw new Error("Run task was not available to answer");
   } else if (secretAsk) {
     await runSecretWriter!.store({
       botId: run.botId,
@@ -887,6 +920,7 @@ async function commitAnswerRunInput(
           ...block,
           status: "answered" as const,
           answer: recordedAnswer,
+          ...(dismissed ? { dismissed: true as const } : {}),
           ...(editedInstructions !== undefined && pendingAsk.instructionUpdate
             ? {
                 instructionUpdate: { ...pendingAsk.instructionUpdate, after: editedInstructions },
@@ -928,9 +962,11 @@ export async function answerRunInput(
     prisma.$transaction(async (tx: Prisma.TransactionClient) =>
       commitAnswerRunInput(tx, input, writer),
     );
-  const committed = runSecretWriter?.withPrepared
-    ? await runSecretWriter.withPrepared(prisma, input, commit)
-    : await commit();
+  // A dismissal has no secret to prepare.
+  const committed =
+    runSecretWriter?.withPrepared && !input.dismiss
+      ? await runSecretWriter.withPrepared(prisma, input, commit)
+      : await commit();
 
   if (!committed) return false;
   if (committed.approval) {

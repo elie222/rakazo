@@ -35,6 +35,7 @@ import {
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
+import { InfoTooltip } from "../../components/InfoTooltip";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
@@ -509,7 +510,7 @@ export function BotSettings({
           }}
         />
       </div>
-      <label htmlFor={`${ids}-name`} className="mt-4 block text-[13.5px] text-muted-foreground/80">
+      <label htmlFor={`${ids}-name`} className={fieldLabelClass}>
         <Trans>Name</Trans>
         <Input
           id={`${ids}-name`}
@@ -545,22 +546,18 @@ export function BotSettings({
         />
       </label>
       <div className="mt-6 flex items-center justify-between pt-4 border-t border-border/20">
-        <div className="space-y-0.5 pe-4">
-          <div
-            id={`${ids}-notify-finish-label`}
-            className="text-[13.5px] font-medium text-foreground"
-          >
+        <div className="flex items-center gap-1 pe-4">
+          <div id={`${ids}-notify-finish-label`} className="text-[14px] text-muted-foreground">
             <Trans>Notifications</Trans>
           </div>
-          <div id={`${ids}-notify-finish-desc`} className="text-[12px] text-muted-foreground/70">
-            <Trans>Get notified when this Bot finishes or needs input</Trans>
-          </div>
+          <InfoTooltip label={t`Notifications`}>
+            {t`Get notified when this Bot finishes or needs input`}
+          </InfoTooltip>
         </div>
         <Switch
           id={`${ids}-notify-finish`}
           checked={notifyOnFinish}
           aria-labelledby={`${ids}-notify-finish-label`}
-          aria-describedby={`${ids}-notify-finish-desc`}
           onCheckedChange={(checked) => {
             setNotifyOnFinish(checked);
             void enqueueSave({ notifyOnFinish: checked });
@@ -657,19 +654,26 @@ export function BotSettings({
         ) : null}
         <label
           htmlFor={`${ids}-auto-speak`}
-          className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-foreground/75"
+          className="mt-5 flex cursor-pointer items-center justify-between gap-3 text-[14px] text-muted-foreground"
         >
+          <span>
+            <Trans>Read replies aloud</Trans>
+          </span>
           <Switch
             id={`${ids}-auto-speak`}
             checked={autoSpeak}
             onCheckedChange={(checked) => setAutoSpeak(checked)}
           />
-          <Trans>Read replies aloud</Trans>
         </label>
-        <label
-          htmlFor={`${ids}-fleet-management`}
-          className="mt-5 flex cursor-pointer items-center gap-3 text-[14px] text-foreground/75"
-        >
+        <div className="mt-5 flex items-center justify-between gap-3 text-[14px] text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <label htmlFor={`${ids}-fleet-management`}>
+              <Trans>Manage the bots it creates</Trans>
+            </label>
+            <InfoTooltip label={t`Manage the bots it creates`}>
+              {t`Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.`}
+            </InfoTooltip>
+          </div>
           <Switch
             id={`${ids}-fleet-management`}
             checked={fleetManagement}
@@ -679,13 +683,6 @@ export function BotSettings({
               void enqueueSave({ fleetManagement: checked });
             }}
           />
-          <Trans>Fleet management</Trans>
-        </label>
-        <div className="text-[12px] text-muted-foreground/70">
-          <Trans>
-            Lets this bot organize, retune and schedule the bots it creates. You approve each
-            change.
-          </Trans>
         </div>
         {voices.length ? (
           <label htmlFor={`${ids}-voice`} className={fieldLabelClass}>
@@ -734,7 +731,7 @@ export function BotSettings({
           <label
             key={toolName}
             htmlFor={`${ids}-disabled-${toolName}`}
-            className="mt-2 flex items-center justify-between gap-3 text-[13px] text-foreground/80"
+            className="mt-2 flex items-center justify-between gap-3 text-[14px] text-muted-foreground"
           >
             <span className="font-mono">{toolName}</span>
             <Switch

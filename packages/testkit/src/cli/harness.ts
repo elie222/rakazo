@@ -13,10 +13,12 @@ const e2e = process.argv.includes("--e2e");
 const sandboxArg = process.argv.find((arg) => arg.startsWith("--sandbox="));
 const specArg = process.argv.find((arg) => arg.startsWith("--spec="));
 const grepArg = process.argv.find((arg) => arg.startsWith("--grep="));
+const shardArg = process.argv.find((arg) => arg.startsWith("--shard="));
 const runtimeArg = process.argv.find((arg) => arg.startsWith("--runtime="));
 const sandboxProvider = sandboxArg?.slice("--sandbox=".length) ?? "fake";
 const e2eSpec = specArg?.slice("--spec=".length);
 const e2eGrep = grepArg?.slice("--grep=".length);
+const e2eShard = shardArg?.slice("--shard=".length);
 const agentRuntime = runtimeArg?.slice("--runtime=".length) ?? "scripted";
 
 if (Number(integration) + Number(e2e) !== 1) {
@@ -47,12 +49,20 @@ async function main() {
   await mkdir(reportDir, { recursive: true });
   const container = await new PostgreSqlContainer("postgres:16-alpine").start();
   try {
-    const databaseUrl = container.getConnectionUri();
+    // Migrations run as the container superuser and the e2e API connects as the
+    // runtime login, so row-level security is enforced as in a deployment.
+    // Test code that seeds or inspects rows directly connects as the owner.
+    const migrationUrl = container.getConnectionUri();
+    const runtimeUrl = new URL(migrationUrl);
+    runtimeUrl.username = "rakazo_app";
+    runtimeUrl.password = "rakazo-test-runtime";
+    const databaseUrl = runtimeUrl.toString();
     const apiPort = Number(process.env.API_PORT ?? 3110);
     const webPort = Number(process.env.WEB_PORT ?? 5180);
     const webOrigin = `http://127.0.0.1:${webPort}`;
 
     process.env.DATABASE_URL = databaseUrl;
+    process.env.DATABASE_MIGRATION_URL = migrationUrl;
     process.env.REALTIME_DATABASE_URL = databaseUrl;
     process.env.VERIFY_DATABASE = "1";
     process.env.WAKEUP_DRIVER = "memory";
@@ -85,17 +95,14 @@ async function main() {
     process.env.CI = "1";
 
     execSync("pnpm --filter @rakazo/db generate", { stdio: "inherit", env: process.env });
-    execSync("pnpm --filter @rakazo/db exec prisma migrate deploy", {
-      stdio: "inherit",
-      env: process.env,
-      cwd: path.resolve("packages/db"),
-    });
+    execSync("pnpm db:migrate", { stdio: "inherit", env: process.env });
 
     if (integration) {
       const suites = [
         "packages/testkit/src/pi-offline.postgres.test.ts",
         "packages/testkit/src/usage-accounting.postgres.test.ts",
         "packages/db/src/history-retrieval.postgres.test.ts",
+        "packages/db/src/content-encryption.postgres.test.ts",
         "packages/testkit/src/history-retrieval.postgres.test.ts",
         "packages/testkit/src/history-short-product.postgres.test.ts",
         "packages/testkit/src/history-followup-product.postgres.test.ts",
@@ -115,6 +122,7 @@ async function main() {
         "packages/testkit/src/connections.test.ts",
         "packages/testkit/src/bot-secrets.test.ts",
         "packages/db/src/space-membership.postgres.test.ts",
+        "packages/db/src/row-security.postgres.test.ts",
         "packages/db/src/messaging.postgres.test.ts",
         "packages/db/src/billing.postgres.test.ts",
         "apps/api/src/billing.postgres.test.ts",
@@ -144,23 +152,34 @@ async function main() {
         if (result.exitCode !== 0)
           throw new Error("Isolated integration database operation failed");
       };
-      for (const [index, suite] of suites.entries()) {
+      // Run every suite, then fail with the full list, so one run shows every break.
+      const failed: string[] = [];
+      // --spec=<part of a path> runs only the matching suites.
+      const selected = e2eSpec ? suites.filter((suite) => suite.includes(e2eSpec)) : suites;
+      if (!selected.length) throw new Error(`No integration suite matches ${e2eSpec}`);
+      for (const [index, suite] of selected.entries()) {
         const database = `integration_${index}`;
         await databaseCommand(`CREATE DATABASE "${database}" TEMPLATE "${template}"`);
+        const suiteMigrationUrl = new URL(migrationUrl);
+        suiteMigrationUrl.pathname = `/${database}`;
         const suiteUrl = new URL(databaseUrl);
         suiteUrl.pathname = `/${database}`;
         try {
           await runProcess("pnpm", ["exec", "vitest", "run", suite], {
             ...process.env,
             DATABASE_URL: suiteUrl.toString(),
+            DATABASE_MIGRATION_URL: suiteMigrationUrl.toString(),
             REALTIME_DATABASE_URL: suiteUrl.toString(),
             OPENROUTER_API_KEY: "",
             MODEL_API_KEY: "",
           });
+        } catch {
+          failed.push(suite);
         } finally {
           await databaseCommand(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
         }
       }
+      if (failed.length) throw new Error(`Integration suites failed:\n${failed.join("\n")}`);
       await writeSummary(reportDir, {
         ok: true,
         mode,
@@ -180,7 +199,12 @@ async function main() {
         ThirdPartyConnectorEmulator,
       },
       { createApp },
-    ] = await Promise.all([import("@rakazo/adapters"), import("../../../../apps/api/src/app.ts")]);
+      { drainUnscopedDatabaseAccess },
+    ] = await Promise.all([
+      import("@rakazo/adapters"),
+      import("../../../../apps/api/src/app.ts"),
+      import("@rakazo/db"),
+    ]);
     const { serve } = await import("@hono/node-server");
     const thirdParties = new ThirdPartyConnectorEmulator();
     const pipedream = new PipedreamConnector(
@@ -242,10 +266,12 @@ async function main() {
             "test",
             ...(e2eSpec ? [e2eSpec] : []),
             ...(e2eGrep ? ["--grep", e2eGrep] : []),
+            ...(e2eShard ? ["--shard", e2eShard] : []),
           ],
           {
             ...process.env,
             CI: "1",
+            DATABASE_URL: migrationUrl,
             // Pin English so e2e selectors match source messages regardless of runner locale.
             VITE_DEFAULT_UI_LOCALE: "en",
           },
@@ -257,6 +283,13 @@ async function main() {
         });
         if (failedRuns.length) console.error("Failed agent runs:", failedRuns);
         throw error;
+      }
+      // The API connects as the runtime login, where such a call returns nothing.
+      const unscoped = drainUnscopedDatabaseAccess();
+      if (unscoped.length) {
+        throw new Error(
+          `Database access without a tenant or system context:\n\n${unscoped.join("\n\n")}`,
+        );
       }
       await writeSummary(reportDir, {
         ok: true,
