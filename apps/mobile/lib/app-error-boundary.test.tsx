@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import * as SplashScreen from "expo-splash-screen";
 import type { ReactNode } from "react";
 import { act } from "react";
 import type { Root } from "react-dom/client";
@@ -7,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AppErrorBoundary } from "../components/app-error-boundary";
 
+vi.mock("expo-splash-screen", () => ({ hideAsync: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../lib/appearance", () => ({
   mobileTokens: () => ({
     background: "background",
@@ -66,6 +68,7 @@ describe("AppErrorBoundary", () => {
 
     const retry = container.querySelector("button");
     expect(retry?.textContent).toBe("Try again.");
+    expect(SplashScreen.hideAsync).toHaveBeenCalledOnce();
 
     shouldThrow = false;
     act(() => retry?.click());

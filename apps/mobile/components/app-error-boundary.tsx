@@ -1,3 +1,4 @@
+import * as SplashScreen from "expo-splash-screen";
 import type { ReactNode } from "react";
 import { Component } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -13,6 +14,11 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(): State {
     return { failed: true };
+  }
+
+  override componentDidCatch() {
+    // React Native already reports caught render errors through ExceptionsManager.
+    void SplashScreen.hideAsync().catch(() => undefined);
   }
 
   override render() {
