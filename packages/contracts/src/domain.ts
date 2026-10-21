@@ -844,6 +844,19 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
 ]);
 export type McpServerConfigInput = z.infer<typeof McpServerConfigInput>;
 
+/**
+ * Last observed launch/discovery outcome of an MCP server. `installing` covers a stdio
+ * package being prepared; `unknown` means nothing has tried to reach the server yet.
+ */
+export const McpServerHealthSchema = z.object({
+  status: z.enum(["unknown", "installing", "ok", "error"]),
+  /** Redacted, human-readable failure reason (stderr tail included for stdio). */
+  message: z.string().nullable(),
+  toolCount: z.number().int().nonnegative().nullable(),
+  checkedAt: z.string().nullable(),
+});
+export type McpServerHealth = z.infer<typeof McpServerHealthSchema>;
+
 export const McpServerSchema = z.object({
   id: Id,
   spaceId: Id,
@@ -862,6 +875,7 @@ export const McpServerSchema = z.object({
   oauthStatus: z.enum(["none", "connected", "reconnect"]),
   /** The pre-registered OAuth client, when one is configured. Its secret is never returned. */
   oauthClientId: z.string().nullable(),
+  health: McpServerHealthSchema,
   enabled: z.boolean(),
   revision: z.number().int().positive(),
   createdAt: z.string(),

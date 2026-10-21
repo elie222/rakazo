@@ -1242,6 +1242,11 @@ model McpServer {
   secret        Secret?           @relation(fields: [secretId], references: [id], onDelete: SetNull)
   enabled       Boolean           @default(true)
   revision      Int               @default(1)
+  /// Last launch/discovery outcome: unknown | installing | ok | error.
+  healthStatus    String          @default("unknown")
+  healthMessage   String?
+  healthToolCount Int?
+  healthCheckedAt DateTime?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
   assignments   BotMcpServer[]
