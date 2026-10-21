@@ -1,4 +1,4 @@
-import { ATTACHMENT_MAX_BYTES } from "@rakazo/contracts";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { inferAttachmentMimeType } from "@rakazo/core";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
@@ -42,8 +42,8 @@ async function prepareImage(
   height: number | undefined,
 ) {
   const mimeType = inferAttachmentMimeType(name, sourceMimeType ?? undefined);
-  // Animated GIFs must stay animated; the manipulator would flatten them.
-  if (mimeType === "image/gif") return { uri, name, mimeType };
+  // Preserve animation and transparency in GIF and WebP images.
+  if (mimeType === "image/gif" || mimeType === "image/webp") return { uri, name, mimeType };
   if (!width || !height || Math.max(width, height) <= MAX_IMAGE_EDGE) {
     return { uri, name, mimeType };
   }
@@ -94,9 +94,19 @@ export async function pickFromLibrary(
     quality: 1,
   });
   if (result.canceled) return { attachments: [], skipped: [] };
-  const candidates = await Promise.all(
-    result.assets.map(async (asset) => {
-      const originalName = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
+  const attachments: PickedAttachment[] = [];
+  const skipped: PickSkip[] = [];
+  for (const asset of result.assets) {
+    const originalName = asset.fileName ?? `photo-${asset.assetId ?? Date.now()}.jpg`;
+    // Once full, let the filter report the skip without processing the file.
+    let candidate: Parameters<typeof filterPickedAttachments>[1][number] = {
+      name: originalName,
+      mimeType: inferAttachmentMimeType(originalName, asset.mimeType ?? undefined),
+      size: 0,
+      contentBase64: "",
+      previewUri: asset.uri,
+    };
+    if (existingCount + attachments.length < ATTACHMENT_MAX_COUNT) {
       const prepared = await prepareImage(
         asset.uri,
         originalName,
@@ -105,16 +115,23 @@ export async function pickFromLibrary(
         asset.height,
       );
       const { contentBase64, size } = await readUriAsBase64(prepared.uri, maxBytes);
-      return {
+      candidate = {
         name: prepared.name,
         mimeType: prepared.mimeType,
         size,
         contentBase64,
         previewUri: prepared.uri,
       };
-    }),
-  );
-  return filterPickedAttachments(existingCount, candidates, maxBytes);
+    }
+    const filtered = filterPickedAttachments(
+      existingCount + attachments.length,
+      [candidate],
+      maxBytes,
+    );
+    attachments.push(...filtered.attachments);
+    skipped.push(...filtered.skipped);
+  }
+  return { attachments, skipped };
 }
 
 export async function takePhoto(

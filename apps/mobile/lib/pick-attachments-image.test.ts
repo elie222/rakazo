@@ -1,4 +1,5 @@
 import Module from "node:module";
+import { ATTACHMENT_MAX_COUNT } from "@rakazo/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { pickFromLibrary as PickFromLibrary } from "./pick-attachments";
 
@@ -10,6 +11,15 @@ const state = vi.hoisted(() => ({
     width: 4000 as number | undefined,
     height: 3000 as number | undefined,
   },
+  assets: [] as Array<{
+    uri: string;
+    fileName: string;
+    mimeType: string;
+    width: number | undefined;
+    height: number | undefined;
+  }>,
+  file: vi.fn(),
+  info: vi.fn(),
   manipulate: vi.fn(),
   resize: vi.fn(),
   render: vi.fn(),
@@ -21,17 +31,20 @@ const state = vi.hoisted(() => ({
 
 vi.mock("expo-file-system", () => ({
   File: class {
+    constructor(private uri: string) {
+      state.file(uri);
+    }
     info() {
-      return { size: 2 * 1024 * 1024 };
+      return state.info();
     }
     base64() {
-      return state.base64();
+      return state.base64(this.uri);
     }
   },
 }));
 vi.mock("expo-document-picker", () => ({}));
 vi.mock("expo-image-picker", () => ({
-  launchImageLibraryAsync: vi.fn(async () => ({ canceled: false, assets: [state.asset] })),
+  launchImageLibraryAsync: vi.fn(async () => ({ canceled: false, assets: state.assets })),
 }));
 vi.mock("expo-modules-core", () => ({
   requireOptionalNativeModule: state.optionalNativeModule,
@@ -54,6 +67,7 @@ function asset(overrides: Partial<typeof state.asset> = {}) {
     height: 3000,
     ...overrides,
   };
+  state.assets = [state.asset];
 }
 
 beforeEach(async () => {
@@ -70,6 +84,9 @@ beforeEach(async () => {
   );
   ({ pickFromLibrary } = await import("./pick-attachments"));
   asset();
+  state.assets = [state.asset];
+  state.file.mockReset();
+  state.info.mockReset().mockReturnValue({ size: 2 * 1024 * 1024 });
   state.manipulate.mockReset();
   state.resize.mockReset();
   state.render.mockReset();
@@ -93,6 +110,8 @@ describe("image attachment preparation", () => {
     expect(state.optionalNativeModule).toHaveBeenCalledExactlyOnceWith("ExpoImageManipulator");
     expect(state.loadManipulator).not.toHaveBeenCalled();
     expect(state.manipulate).not.toHaveBeenCalled();
+    expect(state.file).toHaveBeenCalledWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
       name: "photo.jpg",
       mimeType: "image/jpeg",
@@ -111,6 +130,8 @@ describe("image attachment preparation", () => {
 
     expect(state.loadManipulator).toHaveBeenCalledExactlyOnceWith("expo-image-manipulator");
     expect(state.manipulate).not.toHaveBeenCalled();
+    expect(state.file).toHaveBeenCalledWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
       name: "photo.jpg",
       mimeType: "image/jpeg",
@@ -125,6 +146,8 @@ describe("image attachment preparation", () => {
     const result = await pickFromLibrary();
 
     expect(state.manipulate).not.toHaveBeenCalled();
+    expect(state.file).toHaveBeenCalledWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
       name: "photo.jpg",
       previewUri: "file:///fake/photo.jpg",
@@ -134,6 +157,8 @@ describe("image attachment preparation", () => {
   it("resizes a wide image by width", async () => {
     const result = await pickFromLibrary();
 
+    expect(state.file).toHaveBeenCalledExactlyOnceWith("file:///fake/photo-resized.jpg");
+    expect(state.base64).toHaveBeenCalledExactlyOnceWith("file:///fake/photo-resized.jpg");
     expect(state.resize).toHaveBeenCalledWith({ width: 1_600 });
     expect(state.save).toHaveBeenCalledWith({ compress: 0.7, format: "jpeg" });
     expect(result.attachments[0]?.previewUri).toBe("file:///fake/photo-resized.jpg");
@@ -144,6 +169,8 @@ describe("image attachment preparation", () => {
 
     await pickFromLibrary();
 
+    expect(state.file).toHaveBeenCalledExactlyOnceWith("file:///fake/photo-resized.jpg");
+    expect(state.base64).toHaveBeenCalledExactlyOnceWith("file:///fake/photo-resized.jpg");
     expect(state.resize).toHaveBeenCalledWith({ height: 1_600 });
   });
 
@@ -153,6 +180,8 @@ describe("image attachment preparation", () => {
     const result = await pickFromLibrary();
 
     expect(state.manipulate).not.toHaveBeenCalled();
+    expect(state.file).toHaveBeenCalledWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]?.previewUri).toBe("file:///fake/photo.jpg");
   });
 
@@ -162,10 +191,66 @@ describe("image attachment preparation", () => {
     const result = await pickFromLibrary();
 
     expect(state.manipulate).not.toHaveBeenCalled();
+    expect(state.file).toHaveBeenCalledWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
       name: "photo.gif",
       mimeType: "image/gif",
     });
+  });
+
+  it("preserves a large WebP", async () => {
+    asset({ uri: "file:///fake/photo.webp", fileName: "photo.webp", mimeType: "image/webp" });
+
+    const result = await pickFromLibrary();
+
+    expect(state.optionalNativeModule).not.toHaveBeenCalled();
+    expect(state.manipulate).not.toHaveBeenCalled();
+    expect(state.file).toHaveBeenCalledExactlyOnceWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledExactlyOnceWith(state.asset.uri);
+    expect(result.attachments[0]).toMatchObject({
+      name: "photo.webp",
+      mimeType: "image/webp",
+      previewUri: state.asset.uri,
+    });
+  });
+
+  it.each([0, 1])(
+    "does not process over-limit assets with %i slots remaining",
+    async (remaining) => {
+      state.assets = [state.asset, { ...state.asset, fileName: "extra.jpg" }];
+
+      const result = await pickFromLibrary(ATTACHMENT_MAX_COUNT - remaining);
+
+      expect(state.manipulate).toHaveBeenCalledTimes(remaining);
+      expect(state.file).toHaveBeenCalledTimes(remaining);
+      expect(state.base64).toHaveBeenCalledTimes(remaining);
+      expect(result.attachments).toHaveLength(remaining);
+      expect(result.skipped).toEqual(
+        state.assets.slice(remaining).map((item) => ({
+          name: item.fileName,
+          reason: `max ${ATTACHMENT_MAX_COUNT} attachments`,
+        })),
+      );
+    },
+  );
+
+  it("keeps a later photo when an oversized photo leaves a slot open", async () => {
+    state.assets = [
+      state.asset,
+      { ...state.asset, fileName: "next.jpg" },
+      { ...state.asset, fileName: "extra.jpg" },
+    ];
+    state.info.mockReturnValueOnce({ size: 100 * 1024 * 1024 }).mockReturnValue({ size: 2 });
+
+    const result = await pickFromLibrary(ATTACHMENT_MAX_COUNT - 1, 50 * 1024 * 1024);
+    expect(state.manipulate).toHaveBeenCalledTimes(2);
+    expect(state.file).toHaveBeenCalledTimes(2);
+    expect(result.attachments[0]?.name).toBe("next.jpg");
+    expect(result.skipped).toEqual([
+      { name: "photo.jpg", reason: "over 50 MiB" },
+      { name: "extra.jpg", reason: `max ${ATTACHMENT_MAX_COUNT} attachments` },
+    ]);
   });
 
   it("keeps the original when manipulation fails", async () => {
@@ -175,6 +260,8 @@ describe("image attachment preparation", () => {
 
     const result = await pickFromLibrary();
 
+    expect(state.file).toHaveBeenCalledExactlyOnceWith(state.asset.uri);
+    expect(state.base64).toHaveBeenCalledExactlyOnceWith(state.asset.uri);
     expect(result.attachments[0]).toMatchObject({
       name: "photo.jpg",
       mimeType: "image/jpeg",
