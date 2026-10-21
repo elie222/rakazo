@@ -335,6 +335,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Could not play a sample": "Не удалось воспроизвести сэмпл",
   "Could not play that clip.": "Не удалось воспроизвести этот клип.",
   "Could not reach the server": "Не удалось связаться с сервером",
+  "Request timed out": "Время ожидания запроса истекло",
   "Enter a password": "Введите пароль",
   "Enter a valid email": "Введите корректный адрес электронной почты",
   "Something went wrong. Try again.": "Что-то пошло не так. Попробуйте ещё раз.",
@@ -683,7 +684,6 @@ export const RU_MESSAGES: Record<string, string> = {
   archived: "в архиве",
   Attachment: "Вложение",
   "Bearer authentication": "Аутентификация Bearer",
-  "Booting {label}": "Загрузка {label}",
   bot: "бот",
   "{from} messaged {to}": "{from} отправил сообщение {to}",
   "Bring your own key. ElevenLabs, OpenAI, and Cartesia all plug into the same speak buttons.":
@@ -938,4 +938,7 @@ export const RU_MESSAGES: Record<string, string> = {
   "Add passkey": "Добавить ключ доступа",
   Rename: "Переименовать",
   "Add a passkey for faster sign-in?": "Добавить ключ доступа для быстрого входа?",
+  "Couldn't start the computer": "Не удалось запустить компьютер",
+  "Something went wrong while it was starting. Try again in a moment.":
+    "При запуске что-то пошло не так. Попробуйте ещё раз чуть позже.",
 };

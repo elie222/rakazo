@@ -1,12 +1,13 @@
 import type { BillingStatus, Me } from "@rakazo/contracts";
 import type { ReactNode } from "react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { fetchAuthCapabilities } from "../lib/auth-capabilities";
 import { peekInitialBootstrap } from "../lib/bootstrap";
+import { lazyComponent } from "../lib/preload-recovery";
 import { rpc } from "../lib/rpc";
 
-const PaywallPage = lazy(() =>
-  import("../pages/Paywall").then((module) => ({ default: module.PaywallPage })),
+const PaywallPage = lazyComponent(() =>
+  import("../pages/Paywall").then((module) => module.PaywallPage),
 );
 
 type GateState =

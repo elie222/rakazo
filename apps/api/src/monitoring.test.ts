@@ -1,3 +1,4 @@
+import { monitoringUserId } from "@rakazo/logging";
 import { describe, expect, it } from "vitest";
 import { loadEnv } from "./env.js";
 import { MAX_MONITORING_ENVELOPE_BYTES, monitoringRoutes, parseDsn } from "./monitoring.js";
@@ -63,11 +64,40 @@ describe("monitoring routes", () => {
       environment: "lg-acme",
       release: "abc",
       tunnel: "/api/monitoring/tunnel",
+      userId: null,
     });
     const disabled = await monitoringRoutes(undefined).request("/api/monitoring/config");
     expect(await disabled.json()).toEqual({ dsn: null });
     const invalid = await monitoringRoutes({ dsn: "nope" }).request("/api/monitoring/config");
     expect(await invalid.json()).toEqual({ dsn: null });
+  });
+
+  it("gives a signed-in browser only its pseudonymous id, and only with a secret", async () => {
+    const secret = "test-pseudonym-secret";
+    const session = async (request: Request) =>
+      request.headers.get("cookie") === "session=1" ? "user-raw-1" : undefined;
+    const app = monitoringRoutes({ ...CONFIG, pseudonymSecret: secret }, fetch, session);
+    const signedIn = await app.request("/api/monitoring/config", {
+      headers: { cookie: "session=1" },
+    });
+    const body = (await signedIn.json()) as { userId: string };
+    expect(body.userId).toBe(monitoringUserId(secret, "user-raw-1"));
+    expect(JSON.stringify(body)).not.toContain("user-raw-1");
+    const anonymous = await app.request("/api/monitoring/config");
+    expect(((await anonymous.json()) as { userId: unknown }).userId).toBeNull();
+
+    const noSecret = monitoringRoutes(CONFIG, fetch, session);
+    const withoutSecret = await noSecret.request("/api/monitoring/config", {
+      headers: { cookie: "session=1" },
+    });
+    expect(((await withoutSecret.json()) as { userId: unknown }).userId).toBeNull();
+
+    const failing = monitoringRoutes({ ...CONFIG, pseudonymSecret: secret }, fetch, async () => {
+      throw new Error("database down");
+    });
+    const degraded = await failing.request("/api/monitoring/config");
+    expect(degraded.status).toBe(200);
+    expect(((await degraded.json()) as { userId: unknown }).userId).toBeNull();
   });
 
   it("forwards envelopes for the configured project with rate-limit headers", async () => {

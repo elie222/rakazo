@@ -33,24 +33,25 @@ import {
   Toggle,
 } from "@rakazo/ui-web";
 import { X } from "lucide-react";
-import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
+import { Suspense, useEffect, useId, useRef, useState } from "react";
 import { ErrorBoundary, SectionLoadFailed } from "../../components/ErrorBoundary";
 import { InfoTooltip } from "../../components/InfoTooltip";
 import { InstructionSettings } from "../../components/InstructionSettings";
 import { botProfilePatch } from "../../lib/bot-profile-patch";
 import { thinkingLevelLabel } from "../../lib/model-catalog";
+import { lazyComponent } from "../../lib/preload-recovery";
 import { rpc } from "../../lib/rpc";
 import { errorText } from "../../lib/user-error";
 import { AvatarStudioPopover } from "./avatar-studio-popover";
 import { BotCredentialsSection } from "./bot-credentials";
 import { ChatModelPicker } from "./chat-model-picker";
 
-const ScratchpadSection = lazy(() =>
-  import("../ScratchpadSection").then((module) => ({ default: module.ScratchpadSection })),
+const ScratchpadSection = lazyComponent(() =>
+  import("../ScratchpadSection").then((module) => module.ScratchpadSection),
 );
 
-const KnowledgeSection = lazy(() =>
-  import("../KnowledgeSection").then((module) => ({ default: module.KnowledgeSection })),
+const KnowledgeSection = lazyComponent(() =>
+  import("../KnowledgeSection").then((module) => module.KnowledgeSection),
 );
 
 const fieldLabelClass = "mt-4 block text-[14px] text-muted-foreground";

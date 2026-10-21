@@ -1,4 +1,5 @@
-import { useLayoutEffect, useState } from "react";
+import type { ComponentType } from "react";
+import { lazy, useLayoutEffect, useState } from "react";
 
 const PRELOAD_RECOVERY_KEY = "rk:preload-recovery";
 const PRELOAD_RECOVERY_STATE_KEY = "rk:preload-recovery-state";
@@ -36,6 +37,25 @@ export function usePreloadRecoveryState<T>(key: string, initial: T) {
 }
 
 const PRELOAD_RECOVERY_COOLDOWN_MS = 30_000;
+let reloading = false;
+const untilReload = new Promise<never>(() => {});
+
+/**
+ * Every dynamic import goes through here. When a stale chunk has started the
+ * recovery reload, the import stays pending instead of rejecting, so Suspense
+ * keeps its fallback until the page unloads rather than rendering an error.
+ */
+export function importChunk<T>(load: () => Promise<T>): Promise<T> {
+  return load().catch((error: unknown) => {
+    if (reloading) return untilReload;
+    throw error;
+  });
+}
+
+/** `React.lazy` for a named export, held pending like `importChunk` during recovery. */
+export function lazyComponent<Props>(load: () => Promise<ComponentType<Props>>) {
+  return lazy(() => importChunk(load).then((component) => ({ default: component })));
+}
 
 type PreloadRecoveryWindow = Pick<
   Window,
@@ -51,6 +71,9 @@ type PreloadRecoveryWindow = Pick<
 /**
  * Vite emits this event when a lazy chunk from an older deployment no longer
  * exists. Reload once so the browser receives the current asset manifest.
+ * The event is not cancelled: cancelling makes the import resolve to
+ * `undefined`, which crashes `React.lazy` before the reload lands. The import
+ * rejects instead and `importChunk` holds it pending while the page reloads.
  * While offline a reload would only reach the browser's offline page, so the
  * failure is left to the app's error boundaries, which offer a retry.
  */
@@ -70,20 +93,22 @@ export function installPreloadRecovery(
     () => storage.removeItem(PRELOAD_RECOVERY_KEY),
     PRELOAD_RECOVERY_COOLDOWN_MS,
   );
-  const onPreloadError = (event: Event) => {
+  const onPreloadError = () => {
+    if (reloading) return;
     if (!target.navigator.onLine || storage.getItem(PRELOAD_RECOVERY_KEY)) return;
-    event.preventDefault();
     storage.setItem(PRELOAD_RECOVERY_KEY, "1");
     try {
       storage.setItem(PRELOAD_RECOVERY_STATE_KEY, JSON.stringify(getState()));
     } catch {
       // Recovery still works when the overlay snapshot cannot be stored.
     }
+    reloading = true;
     target.location.reload();
   };
 
   target.addEventListener("vite:preloadError", onPreloadError);
   return () => {
+    reloading = false;
     target.clearTimeout(clearRecovery);
     target.removeEventListener("vite:preloadError", onPreloadError);
   };

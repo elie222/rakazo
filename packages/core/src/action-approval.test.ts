@@ -8,6 +8,7 @@ import {
   isApprovalAskBlock,
   isOwnerStartedRun,
   isSecretAskBlock,
+  newSiteOutcome,
   outboundSiteGate,
   planActionGate,
   resolveActionApproval,
@@ -396,7 +397,7 @@ describe("planActionGate", () => {
     ).toBe("allow");
   });
 
-  it("asks before a new site without judging, even with a rule for the whole tool", () => {
+  it("sends a new site to Auto Review, even with a rule for the whole tool", () => {
     const gate = (source: "default" | "always_allow") =>
       planActionGate({
         resolved: { decision: "allow", source, matchingRules: [] },
@@ -405,8 +406,37 @@ describe("planActionGate", () => {
         checkerConfigured: true,
         newDestination: true,
       });
-    expect(gate("default")).toBe("ask");
-    expect(gate("always_allow")).toBe("ask");
+    expect(gate("default")).toBe("judge");
+    expect(gate("always_allow")).toBe("judge");
+  });
+
+  it("asks before a new site when Auto Review is off or has no checker", () => {
+    for (const [autoReviewEnabled, checkerConfigured] of [
+      [false, true],
+      [true, false],
+    ] as const) {
+      expect(
+        planActionGate({
+          resolved: { decision: "allow", source: "always_allow", matchingRules: [] },
+          consequential,
+          autoReviewEnabled,
+          checkerConfigured,
+          newDestination: true,
+        }),
+      ).toBe("ask");
+    }
+  });
+
+  it("lets a require_approval rule ask about a new site without judging", () => {
+    expect(
+      planActionGate({
+        resolved: { decision: "ask", source: "require_approval", matchingRules: [] },
+        consequential,
+        autoReviewEnabled: true,
+        checkerConfigured: true,
+        newDestination: true,
+      }),
+    ).toBe("ask");
   });
 
   it("does not judge non-consequential tools", () => {
@@ -430,6 +460,24 @@ describe("applyJudgeDecision", () => {
   it("fails closed on consequential checker errors and open on exempt", () => {
     expect(applyJudgeDecision({ decision: "error", consequential: true })).toBe("ask");
     expect(applyJudgeDecision({ decision: "error", consequential: false })).toBe("allow");
+  });
+});
+
+describe("newSiteOutcome", () => {
+  it("allows a new site Auto Review passed, in any run", () => {
+    for (const trigger of ["user", "routine", "webhook"]) {
+      expect(newSiteOutcome({ trigger, decision: "allow" })).toBe("allow");
+    }
+  });
+
+  it("asks a person about a new site that was not passed", () => {
+    for (const trigger of ["user", "follow_up", "routine", "messaging"]) {
+      expect(newSiteOutcome({ trigger, decision: "ask" })).toBe("ask");
+    }
+  });
+
+  it("refuses it in a webhook run, which has nobody to ask", () => {
+    expect(newSiteOutcome({ trigger: "webhook", decision: "ask" })).toBe("deny");
   });
 });
 
@@ -475,47 +523,25 @@ describe("outboundSiteGate", () => {
   };
 
   it("lets a run reach sites it was given", () => {
-    expect(
-      outboundSiteGate({ trigger: "user", site: "example.com", trusted: true, rules: [] }),
-    ).toBe("allow");
+    expect(outboundSiteGate({ site: "example.com", trusted: true, rules: [] })).toBe("allow");
   });
 
-  it("asks before a new site in a run a person can answer", () => {
-    for (const trigger of ["user", "follow_up", "routine", "bot_message", "messaging"]) {
-      expect(outboundSiteGate({ trigger, site: "attacker.test", trusted: false, rules: [] })).toBe(
-        "ask",
-      );
-    }
-  });
-
-  it("refuses a new site in a webhook run and never allows it on its own", () => {
-    expect(
-      outboundSiteGate({ trigger: "webhook", site: "attacker.test", trusted: false, rules: [] }),
-    ).toBe("deny");
+  it("marks any other site new, even with a rule for the whole tool", () => {
+    expect(outboundSiteGate({ site: "attacker.test", trusted: false, rules: [] })).toBe("new");
     expect(
       outboundSiteGate({
-        trigger: "webhook",
         site: "attacker.test",
         trusted: false,
         rules: [{ effect: "always_allow", matchKind: "tool", matchValue: "web_fetch" }],
       }),
-    ).toBe("deny");
+    ).toBe("new");
   });
 
-  it("allows a site the owner always allowed, even in a webhook run", () => {
-    for (const trigger of ["user", "webhook"]) {
-      expect(
-        outboundSiteGate({ trigger, site: "example.com", trusted: false, rules: [siteRule] }),
-      ).toBe("allow");
-    }
-    expect(
-      outboundSiteGate({
-        trigger: "webhook",
-        site: "other.com",
-        trusted: false,
-        rules: [siteRule],
-      }),
-    ).toBe("deny");
+  it("allows a site the owner always allowed, and only that site", () => {
+    expect(outboundSiteGate({ site: "example.com", trusted: false, rules: [siteRule] })).toBe(
+      "allow",
+    );
+    expect(outboundSiteGate({ site: "other.com", trusted: false, rules: [siteRule] })).toBe("new");
   });
 
   it("matches site rules ahead of tool rules", () => {

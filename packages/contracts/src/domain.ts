@@ -771,18 +771,30 @@ const McpServerBaseInput = z.object({
    * OAuth state survives so a connected server stays connected. */
   clearCredential: z.boolean().optional(),
 });
+/** A client registered with the server's OAuth provider out of band, for
+ * providers without dynamic client registration. On update, omit it to keep
+ * the stored client and send null to remove it. */
+const McpOAuthClientInput = z
+  .object({
+    clientId: z.string().trim().min(1).max(512),
+    clientSecret: z.string().min(1).max(4096).optional(),
+  })
+  .nullable()
+  .optional();
 export const McpServerConfigInput = z.discriminatedUnion("transport", [
   McpServerBaseInput.extend({
     transport: z.literal("streamable_http"),
     endpoint: McpRemoteEndpointSchema,
     headers: McpHeadersSchema.default({}),
     secret: z.string().max(16384).optional(),
+    oauthClient: McpOAuthClientInput,
   }),
   McpServerBaseInput.extend({
     transport: z.literal("sse"),
     endpoint: McpRemoteEndpointSchema,
     headers: McpHeadersSchema.default({}),
     secret: z.string().max(16384).optional(),
+    oauthClient: McpOAuthClientInput,
   }),
   McpServerBaseInput.extend({
     transport: z.literal("stdio"),
@@ -815,6 +827,8 @@ export const McpServerSchema = z.object({
   headerKeys: z.array(z.string()),
   hasSecret: z.boolean(),
   oauthStatus: z.enum(["none", "connected", "reconnect"]),
+  /** The pre-registered OAuth client, when one is configured. Its secret is never returned. */
+  oauthClientId: z.string().nullable(),
   enabled: z.boolean(),
   revision: z.number().int().positive(),
   createdAt: z.string(),

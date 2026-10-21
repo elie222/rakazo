@@ -312,6 +312,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Could not play a sample": "无法播放示例",
   "Could not play that clip.": "无法播放该音频。",
   "Could not reach the server": "无法连接服务器",
+  "Request timed out": "请求超时",
   "Enter a password": "请输入密码",
   "Enter a valid email": "请输入有效的邮箱地址",
   "Something went wrong. Try again.": "出了点问题，请重试。",
@@ -653,7 +654,6 @@ export const ZH_MESSAGES: Record<string, string> = {
   archived: "已归档",
   Attachment: "附件",
   "Bearer authentication": "Bearer 认证",
-  "Booting {label}": "正在启动 {label}",
   bot: "Bot",
   "{from} messaged {to}": "{from} 已向 {to} 发消息",
   "Bring your own key. ElevenLabs, OpenAI, Cartesia, and Fish Audio all plug into the same speak buttons.":
@@ -905,4 +905,7 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Add passkey": "添加通行密钥",
   Rename: "重命名",
   "Add a passkey for faster sign-in?": "添加通行密钥以便更快登录？",
+  "Couldn't start the computer": "无法启动电脑",
+  "Something went wrong while it was starting. Try again in a moment.":
+    "启动时出了点问题。请稍后重试。",
 };

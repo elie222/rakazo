@@ -379,7 +379,6 @@ export const DE_MESSAGES: Record<string, string> = {
   "Get notified when this Bot finishes or needs input":
     "Benachrichtigung, wenn dieser Bot fertig ist oder Eingabe braucht",
   // app/computer.tsx
-  "Booting {label}": "{label} wird gestartet",
   Bot: "Bot",
   "Close computer": "Computer schließen",
   "Computer keyboard": "Computertastatur",
@@ -777,6 +776,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Android blocked notifications.": "Android hat Benachrichtigungen blockiert.",
   // lib/user-error.ts
   "Could not reach the server": "Server konnte nicht erreicht werden",
+  "Request timed out": "Zeitüberschreitung der Anfrage",
   "Enter a password": "Gib ein Passwort ein",
   "Enter a valid email": "Gib eine gültige E-Mail-Adresse ein",
   "Something went wrong. Try again.": "Etwas ist schiefgelaufen. Versuche es erneut.",
@@ -942,4 +942,7 @@ export const DE_MESSAGES: Record<string, string> = {
   "Add passkey": "Passkey hinzufügen",
   Rename: "Umbenennen",
   "Add a passkey for faster sign-in?": "Passkey für schnellere Anmeldung hinzufügen?",
+  "Couldn't start the computer": "Der Computer konnte nicht gestartet werden",
+  "Something went wrong while it was starting. Try again in a moment.":
+    "Beim Starten ist etwas schiefgelaufen. Versuche es in einem Moment erneut.",
 };
