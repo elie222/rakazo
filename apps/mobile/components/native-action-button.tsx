@@ -3,7 +3,7 @@ import type { mobileTokens } from "../lib/appearance";
 import { native, useMobileTokens } from "../lib/native";
 import type { ActionProminence, NativeActionButtonProps } from "../lib/native-controls";
 import { actionAccessibilityState, actionFills, actionProminence } from "../lib/native-controls";
-import { androidRipple } from "../lib/ripple";
+import { androidRipple, withAlpha } from "../lib/ripple";
 import { NativeSymbol } from "./native-symbol";
 
 /** Android (and non-iOS) form buttons. iOS uses the SwiftUI button in the platform file. */
@@ -48,7 +48,7 @@ export function NativeActionButton({
       accessibilityState={actionAccessibilityState(inactive, selected)}
       disabled={inactive}
       hitSlop={compact ? 8 : undefined}
-      android_ripple={androidRipple()}
+      android_ripple={androidRipple(withAlpha(colors.label, 0.2))}
       onPress={onPress}
       style={({ pressed }) => [
         {
@@ -74,6 +74,7 @@ export function NativeActionButton({
           opacity: inactive ? 0.45 : pressed && Platform.OS !== "android" ? 0.7 : 1,
         },
         style,
+        Platform.OS === "android" && { overflow: "hidden" },
       ]}
     >
       {busy ? (

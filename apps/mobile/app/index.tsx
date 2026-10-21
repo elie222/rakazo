@@ -1589,6 +1589,7 @@ function ConversationRow({
         styles.row,
         compact ? styles.compactRow : null,
         selected ? styles.rowSelected : null,
+        selected && Platform.OS === "android" && { overflow: "hidden" },
         depth > 0
           ? {
               paddingInlineStart:
