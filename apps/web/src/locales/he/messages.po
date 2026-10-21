@@ -760,6 +760,10 @@ msgstr "האימות נכשל."
 msgid "Authorization code or callback URL"
 msgstr "קוד הרשאה או URL להחזרה (callback)"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "שרת הרשאות"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "תם הזמן לאישור ההרשאה. אפשר לנסות שוב."
@@ -4258,6 +4262,10 @@ msgstr "שומר…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "אפשר לענות כן או לא, או במשפט."
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "היקפים (אופציונלי)"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -5100,6 +5108,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "שימוש ב{hostLabel}"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "השתמש ב-{oauthEnvReference} עבור אסימון הגישה."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx

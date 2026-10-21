@@ -760,6 +760,10 @@ msgstr "Échec de l'authentification."
 msgid "Authorization code or callback URL"
 msgstr "Code d'autorisation ou URL de rappel"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "Serveur d'autorisation"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "L'autorisation a expiré. Veuillez réessayer."
@@ -4258,6 +4262,10 @@ msgstr "Enregistrement en cours…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Dites oui ou non, ou répondez en une phrase."
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "Portées (facultatif)"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -5100,6 +5108,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "Utiliser {hostLabel}"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "Utilisez {oauthEnvReference} pour le jeton d'accès."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
