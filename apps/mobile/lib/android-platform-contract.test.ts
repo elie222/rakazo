@@ -63,6 +63,12 @@ describe("Android mobile platform contract", () => {
     expect(service).toContain("manager.notify(run.threadId.hashCode(), notification)");
     expect(service).toContain("THREAD_NOTIFICATION_IDS");
     expect(service).toContain("cancel(threadId.hashCode())");
+    expect(service).toContain("cachedToken");
+    expect(service).toContain("persistedSeen");
+    expect(service).toContain("SLOW_POLL_INTERVAL_MS");
+    expect(service).toContain("SLOW_POLL_INTERVAL_MS * (1L shl");
+    expect(service).toContain("MAX_BACKOFF_MS");
+    expect(service).toContain("runCatching { context.startService(intent) }");
     expect(module).toContain('AsyncFunction("setOpenThread")');
     expect(live).toContain("setOpenNotificationThread");
     expect(thread).toContain("if (!navigation.isFocused() || !notificationThreadId) return");
