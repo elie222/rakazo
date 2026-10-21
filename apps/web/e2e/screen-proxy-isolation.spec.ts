@@ -26,10 +26,20 @@ const screenHtml = `<!doctype html><title>Fake screen</title>
     asset: loaded,
     cookie: attempt(() => document.cookie),
     storage: attempt(() => localStorage.getItem('app-data')),
-    // The shim replaces the property; the real getter must still throw in the sandbox.
-    realStorage: attempt(() =>
-      Object.getOwnPropertyDescriptor(Window.prototype, 'localStorage').get.call(window).getItem('app-data'),
-    ),
+    // A blank child frame shares this opaque origin but not the shim, so it reaches the real
+    // getter. Only a SecurityError proves the sandbox blocked it.
+    realStorage: (() => {
+      const frame = document.createElement('iframe');
+      document.documentElement.append(frame);
+      try {
+        frame.contentWindow.localStorage;
+        return 'readable';
+      } catch (error) {
+        return error.name;
+      } finally {
+        frame.remove();
+      }
+    })(),
     parent: attempt(() => parent.document.title),
     api: await fetch('/session', { credentials: 'include' }).then(r => r.text()).catch(() => 'blocked'),
   };
@@ -200,7 +210,7 @@ for (const mode of ["development", "preview"] as const) {
         socket: "ok",
         cookie: "blocked",
         storage: null,
-        realStorage: "blocked",
+        realStorage: "SecurityError",
         api: "blocked",
       });
       expect(response?.headers()["content-security-policy"]).toContain(
@@ -218,7 +228,7 @@ for (const mode of ["development", "preview"] as const) {
       expect(response?.headers()["content-encoding"]).toBe("gzip");
       expect(JSON.parse(await page.locator("body").innerText())).toMatchObject({
         storage: "blocked",
-        realStorage: "blocked",
+        realStorage: "SecurityError",
       });
     });
 
@@ -280,7 +290,7 @@ for (const mode of ["development", "preview"] as const) {
           socket: "ok",
           cookie: "blocked",
           storage: null,
-          realStorage: "blocked",
+          realStorage: "SecurityError",
           parent: "blocked",
           api: "blocked",
         });

@@ -17,22 +17,28 @@ export function isNovncPage(path: string) {
  */
 export function shouldInjectNovncStorageShim(headers: IncomingHttpHeaders, path: string) {
   if (!isNovncPage(path)) return false;
-  if (headers["content-encoding"]) return false;
+  const encoding = String(headers["content-encoding"] ?? "")
+    .trim()
+    .toLowerCase();
+  if (encoding && encoding !== "identity") return false;
   const contentType = String(headers["content-type"] ?? "").toLowerCase();
   return contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
 }
 
 export function injectNovncStorageShim(html: string) {
   const shim = `<script>
-Object.defineProperty(window, "localStorage", {
-  configurable: true,
-  value: {
-    getItem() { return null; },
-    setItem() {},
-    removeItem() {},
-    clear() {},
-  },
-});
+(() => {
+  const items = new Map();
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: {
+      getItem(key) { return items.has(String(key)) ? items.get(String(key)) : null; },
+      setItem(key, value) { items.set(String(key), String(value)); },
+      removeItem(key) { items.delete(String(key)); },
+      clear() { items.clear(); },
+    },
+  });
+})();
 </script>`;
   return html.includes("<head>")
     ? html.replace("<head>", `<head>${shim}`)

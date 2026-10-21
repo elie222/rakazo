@@ -38,6 +38,12 @@ describe("noVNC storage shim gate", () => {
     expect(shouldInjectNovncStorageShim(html, "/index.html")).toBe(false);
   });
 
+  it("injects into HTML marked identity encoded", () => {
+    expect(
+      shouldInjectNovncStorageShim({ ...html, "content-encoding": "identity" }, "/vnc.html"),
+    ).toBe(true);
+  });
+
   it("skips compressed HTML it cannot rewrite", () => {
     expect(shouldInjectNovncStorageShim({ ...html, "content-encoding": "gzip" }, "/vnc.html")).toBe(
       false,
@@ -45,11 +51,24 @@ describe("noVNC storage shim gate", () => {
   });
 
   it("puts the shim before the first script", () => {
-    expect(injectNovncStorageShim("<html><head><title>x</title>")).toMatch(
-      /^<html><head><script>\nObject\.defineProperty\(window, "localStorage"/,
-    );
+    const headed = injectNovncStorageShim("<html><head><title>x</title>");
+    expect(headed).toMatch(/^<html><head><script>/);
+    expect(headed.indexOf("localStorage")).toBeLessThan(headed.indexOf("<title>"));
     const bare = injectNovncStorageShim('<!doctype html><script src="app.js"></script>');
     expect(bare.indexOf("localStorage")).toBeLessThan(bare.indexOf('src="app.js"'));
+  });
+
+  it("keeps values for the life of the page", () => {
+    const script = injectNovncStorageShim("<head>").match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
+    const window = {} as { localStorage: Storage };
+    new Function("window", script)(window);
+    window.localStorage.setItem("setting", "value");
+    expect(window.localStorage.getItem("setting")).toBe("value");
+    window.localStorage.removeItem("setting");
+    expect(window.localStorage.getItem("setting")).toBeNull();
+    window.localStorage.setItem("other", 1 as unknown as string);
+    window.localStorage.clear();
+    expect(window.localStorage.getItem("other")).toBeNull();
   });
 });
 
