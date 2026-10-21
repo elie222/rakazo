@@ -318,7 +318,13 @@ describe("MCP OAuth", () => {
       if (!(provider instanceof StoredMcpOAuthProvider)) throw new Error("expected a provider");
       return { broker, provider };
     };
-    return { startProcess, stored, server, context, lockSettings };
+    /** Another writer (the settings API) replacing the stored credential. */
+    const replaceStored = async (next: OAuthMaterial) => {
+      const record = await secrets.put(JSON.stringify(next));
+      rows.push(record);
+      server.secretId = record.id;
+    };
+    return { startProcess, stored, replaceStored, server, context, lockSettings };
   }
 
   /** A public-client authorization server: each refresh token works once. */
@@ -1227,7 +1233,7 @@ describe("MCP OAuth", () => {
     }
 
     function brokerWithMaterial(material: OAuthMaterial) {
-      const prisma = {
+      const tables = {
         mcpServer: {
           findFirst: vi.fn().mockResolvedValue({
             id: "server-1",
@@ -1238,9 +1244,19 @@ describe("MCP OAuth", () => {
         },
         secret: {
           findFirst: vi.fn().mockResolvedValue({ id: "secret-1", ciphertext: "encrypted" }),
+          create: vi.fn().mockResolvedValue({}),
+          deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
         },
+      };
+      const tx = {
+        ...tables,
+        $executeRaw: vi.fn().mockResolvedValue(1),
+        $queryRaw: vi.fn().mockResolvedValue([]),
+      };
+      const prisma = {
+        ...tables,
         mcpOAuthSession: oauthSessionStore(),
-        $transaction: vi.fn().mockResolvedValue([]),
+        $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       };
       const secrets = {
         load: vi.fn(async () => JSON.stringify(material)),
@@ -1358,6 +1374,19 @@ describe("MCP OAuth", () => {
 
       expect(await shared.stored()).toEqual({ oauthClient });
       expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
+    });
+
+    it("refuses tokens from an authorization started before the client was changed", async () => {
+      const shared = sharedCredentials({ oauthClient, oauth: { redirectUri: "https://app/cb" } });
+      const { provider } = await shared.startProcess(rotatingAuthServer().fetch);
+      const replacement = { oauthClient: { client_id: "replacement-client" } };
+      await shared.replaceStored(replacement);
+
+      await expect(
+        provider.saveTokens({ access_token: "for-old-client", token_type: "Bearer" }),
+      ).rejects.toThrow("OAuth client changed");
+
+      expect(await shared.stored()).toEqual(replacement);
     });
 
     it("treats the client secret as a credential that must never be shown", () => {

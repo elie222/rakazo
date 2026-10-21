@@ -620,6 +620,13 @@ async function requestRefresh(
   });
 }
 
+function sameOAuthClient(
+  left: OAuthClientInformation | undefined,
+  right: OAuthClientInformation | undefined,
+): boolean {
+  return left?.client_id === right?.client_id && left?.client_secret === right?.client_secret;
+}
+
 /** What the settings UI may know about a server's OAuth setup; never a credential. */
 export type McpOAuthSummary = {
   status: "none" | "connected" | "reconnect";
@@ -1047,6 +1054,10 @@ export class McpOAuthBroker {
       const storedOAuth = nextMaterial.oauth;
       let kept: TokenGrant | undefined;
       if (material.oauth) {
+        // OAuth state belongs to the client that obtained it; a client changed in
+        // settings meanwhile has already dropped the grant this write carries.
+        if (!sameOAuthClient(material.oauthClient, nextMaterial.oauthClient))
+          throw new Error("MCP OAuth client changed during authorization; reconnect this server");
         nextMaterial.oauth = structuredClone(material.oauth);
         if (
           options.storedRefreshToken !== undefined &&
