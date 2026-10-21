@@ -1,5 +1,8 @@
 import path from "node:path";
-import { contentSecurityPolicyFor } from "@rakazo/contracts/content-security-policy";
+import {
+  CSP_REPORTING_ENDPOINTS,
+  contentSecurityPolicyFor,
+} from "@rakazo/contracts/content-security-policy";
 
 const PASSTHROUGH_PATHS = ["/api", "/rpc", "/novnc"];
 
@@ -62,7 +65,11 @@ export function bundledRendererHeaders(file: string, requestUrl: string): Header
     "x-content-type-options": "nosniff",
   });
   const policy = contentSecurityPolicyFor(new URL(requestUrl).pathname);
-  if (policy) headers.set("content-security-policy", policy);
+  if (policy) {
+    headers.set("content-security-policy", policy);
+    // Reports go to /api on this origin, which is forwarded to the API like every other call.
+    headers.set("reporting-endpoints", CSP_REPORTING_ENDPOINTS);
+  }
   return headers;
 }
 

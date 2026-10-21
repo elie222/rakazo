@@ -1,4 +1,4 @@
-import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import type { TransactionalEmail } from "@rakazo/adapter-kit";
 import { bootstrapUserSpace, recordSecurityEvent } from "@rakazo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -134,8 +134,9 @@ function fixture({
     members.add(user.id);
     return { spaceId: "space-1" };
   });
+  const secret = "offline-auth-secret-at-least-32-characters";
   const auth = createAuth(prisma as never, {
-    secret: "offline-auth-secret-at-least-32-characters",
+    secret,
     baseURL,
     webOrigin,
     signupsEnabled: "true",
@@ -220,7 +221,9 @@ function fixture({
       updatedAt: now,
     });
     members.add(id);
-    return { id, token };
+    // Clients hold the signed form the session cookie and `set-auth-token` carry.
+    const signature = createHmac("sha256", secret).update(token).digest("base64");
+    return { id, token: `${token}.${signature}` };
   };
   const sessionFor = (token: string) =>
     auth.api.getSession({ headers: new Headers({ authorization: `Bearer ${token}` }) });

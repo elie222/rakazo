@@ -9,6 +9,7 @@ import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
 import {
   appContentSecurityPolicy,
+  CSP_REPORTING_ENDPOINTS,
   contentSecurityPolicyFor,
   parseContentSecuritySources,
 } from "@rakazo/contracts/content-security-policy";
@@ -449,7 +450,10 @@ export default defineConfig(({ mode }) => {
         configurePreviewServer(server) {
           server.middlewares.use((req, res, next) => {
             const policy = contentSecurityPolicyFor(req.url?.split("?", 1)[0] ?? "/", appPolicy);
-            if (policy) res.setHeader("content-security-policy", policy);
+            if (policy) {
+              res.setHeader("content-security-policy", policy);
+              res.setHeader("reporting-endpoints", CSP_REPORTING_ENDPOINTS);
+            }
             next();
           });
         },

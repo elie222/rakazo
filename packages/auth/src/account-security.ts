@@ -129,9 +129,15 @@ export function accountSecurity(
   };
 }
 
+/**
+ * Session rows hold the raw token, so a raw bearer could be replayed from a database
+ * copy. A bearer must carry the signature the session cookie has.
+ */
+export const signedBearer = bearer({ requireSignature: true });
+
 /** Hook results are applied after all before hooks, so native bearer conversion is explicit here. */
 export async function sessionForAuthHook(ctx: Parameters<typeof getSessionFromCtx>[0]) {
-  const converted = await bearer().hooks.before[0]!.handler({ ...ctx, returnHeaders: false });
+  const converted = await signedBearer.hooks.before[0]!.handler({ ...ctx, returnHeaders: false });
   return getSessionFromCtx(
     { ...ctx, headers: converted?.context.headers ?? ctx.headers },
     { disableCookieCache: true },

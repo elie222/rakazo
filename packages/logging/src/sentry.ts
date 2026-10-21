@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/node";
+import { isMonitoringUserId, monitoringPseudonymSecret, monitoringUserId } from "./pseudonym.js";
 import { redactSensitiveText } from "./redaction.js";
 import type { LogEvent, LogSink, SerializedError } from "./types.js";
 
@@ -9,6 +10,8 @@ export interface SentryConfig {
   dsn: string;
   environment?: string;
   release?: string;
+  /** Keys the pseudonymous user id; without it reports carry no user. */
+  pseudonymSecret?: string;
 }
 
 const TAG_KEYS = ["request.id", "trace.id", "jobId", "runId"] as const;
@@ -28,6 +31,7 @@ export function sentryConfigFromEnv(source: NodeJS.ProcessEnv = process.env): {
       dsn,
       environment: source.SENTRY_ENVIRONMENT?.trim() || undefined,
       release: source.SENTRY_RELEASE?.trim() || releaseFromGitSha(source.GIT_SHA),
+      pseudonymSecret: monitoringPseudonymSecret(source),
     },
   };
 }
@@ -95,6 +99,10 @@ export function createSentrySink(
           if (typeof value === "string" && value.length > 0 && value.length <= 200)
             scope.setTag(key, redactSensitiveText(value));
         }
+        const userId = event["user.id"];
+        // Only the keyed hash leaves: never the account id, and no address for the collector to infer.
+        if (config.pseudonymSecret && typeof userId === "string" && userId.length > 0)
+          scope.setUser({ id: monitoringUserId(config.pseudonymSecret, userId), ip_address: null });
         scope.setExtra("log.message", message);
         if (error) {
           Sentry.captureException(rebuildError(error));
@@ -139,7 +147,8 @@ function rebuildError(serialized: SerializedError): Error {
 
 function redactEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
   delete event.request;
-  delete event.user;
+  const userId = event.user?.id;
+  event.user = isMonitoringUserId(userId) ? { id: userId, ip_address: null } : { ip_address: null };
   delete event.breadcrumbs;
   event.server_name = undefined;
   if (event.extra) {

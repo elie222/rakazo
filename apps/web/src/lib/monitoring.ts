@@ -10,6 +10,7 @@ interface MonitoringConfig {
   environment?: string | null;
   release?: string | null;
   tunnel?: string;
+  userId?: string | null;
 }
 
 const MAX_PENDING = 20;
@@ -17,13 +18,45 @@ const MAX_PENDING = 20;
 let sentry: typeof SentryReact | undefined;
 // Errors caught while startup is still in flight; sent once the SDK starts, dropped if it does not.
 let pending: Array<[unknown, ErrorInfo]> | undefined = [];
+// The signed-in user's pseudonymous id, minted by the API; the raw account id never leaves.
+let userId: string | undefined;
+let identifications = 0;
+// Unknown until the session resolves; false means signed out.
+let signedInState: boolean | undefined;
+let monitoringOff = false;
+const MONITORING_USER_ID = /^[0-9a-f]{64}$/;
+
+function validUserId(value: unknown): value is string {
+  return typeof value === "string" && MONITORING_USER_ID.test(value);
+}
 
 export async function startMonitoring(fetchImpl: typeof fetch = fetch): Promise<boolean> {
   sentry = await loadSentry(fetchImpl);
   const queued = pending ?? [];
   pending = undefined;
+  monitoringOff = sentry === undefined;
   for (const [error, errorInfo] of queued) sentry?.captureReactException(error, errorInfo);
   return sentry !== undefined;
+}
+
+/** Follow sign-in and sign-out so reports count affected users without naming them. */
+export async function identifyMonitoringUser(
+  signedIn: boolean,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const current = ++identifications;
+  signedInState = signedIn;
+  userId = undefined;
+  if (!signedIn || monitoringOff) return;
+  try {
+    const response = await fetchImpl("/api/monitoring/config");
+    if (!response.ok) return;
+    const { userId: id } = (await response.json()) as MonitoringConfig;
+    // A sign-out or another account that arrived meanwhile wins.
+    if (current === identifications && validUserId(id)) userId = id;
+  } catch {
+    // Reports go out without a user.
+  }
 }
 
 async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact | undefined> {
@@ -37,6 +70,9 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
     return undefined;
   }
   if (!config.dsn) return undefined;
+  // Errors queued during startup count the user too, unless a sign-out or a newer answer came first.
+  if (signedInState !== false && userId === undefined && validUserId(config.userId))
+    userId = config.userId;
   let Sentry: typeof SentryReact;
   try {
     // A stale chunk after a deploy or a network failure must not surface as an unhandled rejection.
@@ -73,7 +109,8 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
           delete event.request.cookies;
           delete event.request.data;
         }
-        delete event.user;
+        // Only the pseudonymous id, and no address for the collector to infer one from.
+        event.user = userId ? { id: userId, ip_address: null } : { ip_address: null };
         if (event.message) event.message = scrubText(event.message);
         for (const value of event.exception?.values ?? []) {
           if (value.value) value.value = scrubText(value.value);

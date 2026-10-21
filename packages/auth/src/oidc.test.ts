@@ -1,4 +1,4 @@
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import type * as Db from "@rakazo/db";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -100,6 +100,12 @@ function setup(options: Partial<AuthEnv> = {}, hasMembership = true) {
   });
 }
 
+/** Signs a stored session token the way the session cookie and `set-auth-token` do. */
+function signedBearer(token: string) {
+  if (token.includes(".")) return token;
+  return `${token}.${createHmac("sha256", secret).update(token).digest("base64")}`;
+}
+
 async function request(
   path: string,
   body?: unknown,
@@ -110,7 +116,7 @@ async function request(
     origin,
     "content-type": "application/json",
     ...(cookies ? { cookie: cookies } : {}),
-    ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+    ...(bearer ? { authorization: `Bearer ${signedBearer(bearer)}` } : {}),
   });
   for (const [key, value] of Object.entries(overrides)) {
     if (value === null) headers.delete(key);
@@ -1199,6 +1205,12 @@ describe("SSO-only account deletion", () => {
     const sessionToken = String(rows("session")[0]!.token);
     expireOidcProofs();
     cookies = "";
+    // A token copied from the session table is not a session.
+    const raw = { authorization: `Bearer ${sessionToken}` };
+    expect((await request("/request-account-deletion", {}, undefined, raw)).status).toBe(401);
+    expect((await request("/delete-user", {}, undefined, raw)).status).toBe(401);
+    const reauth = { provider: "oidc", additionalData: { reauthenticate: true } };
+    expect((await request("/sign-in/social", reauth, undefined, raw)).status).toBe(401);
     expect((await request("/delete-user", { token: "wrong-code" }, sessionToken)).status).not.toBe(
       200,
     );

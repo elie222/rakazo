@@ -256,14 +256,33 @@ describe("mobile session storage", () => {
 });
 
 describe("auth response token parsing", () => {
-  it("prefers explicit JSON tokens, including nested session responses", () => {
+  it("prefers the signed set-auth-token header over the cookie and an unsigned body token", () => {
     const response = new Response(null, {
-      headers: { "set-cookie": "better-auth.session_token=cookie-token; Path=/" },
+      headers: {
+        "set-auth-token": "header-token.c2lnbmF0dXJl%2B%3D",
+        "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/",
+      },
     });
 
-    expect(tokenFromAuthResponse(response, { token: "body-token" })).toBe("body-token");
-    expect(tokenFromAuthResponse(response, { session: { token: "nested-token" } })).toBe(
-      "nested-token",
+    expect(tokenFromAuthResponse(response, { token: "header-token" })).toBe(
+      "header-token.c2lnbmF0dXJl+=",
+    );
+  });
+
+  it("prefers the signed cookie over an unsigned body token", () => {
+    const response = new Response(null, {
+      headers: { "set-cookie": "better-auth.session_token=cookie-token.sig; Path=/" },
+    });
+
+    expect(tokenFromAuthResponse(response, { token: "cookie-token" })).toBe("cookie-token.sig");
+  });
+
+  it("falls back to JSON tokens, including nested session responses", () => {
+    const response = new Response(null);
+
+    expect(tokenFromAuthResponse(response, { token: "body-token.sig" })).toBe("body-token.sig");
+    expect(tokenFromAuthResponse(response, { session: { token: "nested-token.sig" } })).toBe(
+      "nested-token.sig",
     );
   });
 
