@@ -66,6 +66,7 @@ export function AppConnectCard({
           botId,
           provider: block.provider,
           connectorId: block.connectorId,
+          name: block.name,
         });
         if (controller.signal.aborted) return;
         setLocalStatus("connected");

@@ -5,6 +5,7 @@ import type {
   MemorySnapshot,
 } from "@rakazo/adapter-kit";
 import { MEMORY_REVISION_CONFLICT_ERROR } from "@rakazo/adapter-kit";
+import type { ConnectionCatalogItem } from "@rakazo/contracts";
 import {
   legacyScopedToolEffectIdempotencyKey,
   toolEffectIdempotencyKey,
@@ -50,7 +51,16 @@ type ToolCall = {
   executionId: string;
 };
 
-function fixture(runId = "run-1") {
+type ConnectionRow = { connectorId: string; provider: string; displayName: string; status: string };
+
+function fixture(
+  runId = "run-1",
+  options: {
+    trigger?: string;
+    catalog?: ConnectionCatalogItem[];
+    connections?: ConnectionRow[];
+  } = {},
+) {
   const effects: Effect[] = [];
   const results: unknown[] = [];
   const media = new FakeMediaGenerationProvider();
@@ -79,7 +89,7 @@ function fixture(runId = "run-1") {
     spaceId: "space-1",
     userId: "user-1",
     status: "queued",
-    trigger: "user",
+    trigger: options.trigger ?? "user",
     leaseFence: 0,
   };
   const memoryCommit = vi.fn(async (_request: MemoryCommitRequest) => ({ revision: "rev-1" }));
@@ -191,7 +201,17 @@ function fixture(runId = "run-1") {
     task: {
       findUniqueOrThrow: vi.fn(async () => ({ id: run.taskId, prompt: "Update shared state" })),
     },
-    connection: { findMany: vi.fn(async () => []) },
+    connection: {
+      findMany: vi.fn(async ({ where }: { where: Partial<ConnectionRow> }) =>
+        (options.connections ?? [])
+          .filter((row) =>
+            Object.entries(where).every(
+              ([key, value]) => !(key in row) || row[key as keyof ConnectionRow] === value,
+            ),
+          )
+          .map((row, index) => ({ id: `connection-${index + 1}`, providerRef: null, ...row })),
+      ),
+    },
     spaceModelPreference: { findFirst: vi.fn(async () => null) },
     userModelCredential: { findFirst: vi.fn(async () => null) },
     deploymentSettings: {
@@ -260,6 +280,10 @@ function fixture(runId = "run-1") {
       discoverTools: async () => [],
       resolveCall: async () => undefined,
       execute: async function* () {},
+    },
+    connectors: options.catalog && {
+      managed: () => undefined,
+      managedProviders: () => [{ catalog: async () => options.catalog }],
     },
     sandbox: { describe: () => ({ capabilities: { graphical: false } }) },
     memory: {
@@ -820,5 +844,101 @@ describe("mutating tool effect idempotency keys", () => {
     expect(f.memoryCommit).not.toHaveBeenCalled();
     expect(f.effects).toHaveLength(1);
     expect(f.results[0]).toEqual({ ok: true, legacy: true });
+  });
+});
+
+describe("request_app_connection", () => {
+  const gmail: ConnectionCatalogItem = {
+    connectorId: "composio",
+    slug: "GMAIL",
+    name: "Gmail",
+    logo: null,
+    connected: false,
+    noAuth: false,
+  };
+  const call = (args: Record<string, unknown>, executionId = "call_0") => ({
+    name: "request_app_connection",
+    args,
+    executionId,
+  });
+
+  it("posts a pending card for a catalog app", async () => {
+    const f = fixture("run-app-connect", { catalog: [gmail] });
+    f.setCalls([call({ app: "gmail" })]);
+    await f.run();
+    expect(f.messageCreate).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({
+        role: "bot",
+        blocks: [
+          {
+            kind: "app_connect",
+            connectorId: "composio",
+            provider: "GMAIL",
+            name: "Gmail",
+            description: "Search, read, draft, and send email.",
+            logo: null,
+            status: "pending",
+          },
+        ],
+      }),
+    });
+    expect(f.results[0]).toEqual({ posted: true, status: "pending", note: expect.any(String) });
+  });
+
+  it("reports the connected accounts instead of posting", async () => {
+    const f = fixture("run-app-connected", {
+      catalog: [{ ...gmail, connected: true }],
+      connections: [
+        { connectorId: "composio", provider: "GMAIL", displayName: "Gmail", status: "connected" },
+        { connectorId: "composio", provider: "SLACK", displayName: "Slack", status: "connected" },
+      ],
+    });
+    f.setCalls([call({ app: "Gmail" })]);
+    await f.run();
+    expect(f.messageCreate).not.toHaveBeenCalled();
+    expect(f.results[0]).toEqual({ connected: true, accounts: ["Gmail"] });
+  });
+
+  it("rejects an app the catalog does not list", async () => {
+    const f = fixture("run-app-unknown", { catalog: [gmail] });
+    f.setCalls([call({ app: "Fax" })]);
+    await f.run();
+    expect(f.messageCreate).not.toHaveBeenCalled();
+    expect(f.results[0]).toEqual({ error: "Fax is not in the app catalog." });
+  });
+
+  it("labels the card for an additional account", async () => {
+    const f = fixture("run-app-account", {
+      catalog: [{ ...gmail, connected: true }],
+      connections: [
+        { connectorId: "composio", provider: "GMAIL", displayName: "Gmail", status: "connected" },
+      ],
+    });
+    f.setCalls([call({ app: "gmail", account: " Work\n" })]);
+    await f.run();
+    expect(f.messageCreate).toHaveBeenCalledExactlyOnceWith({
+      data: expect.objectContaining({
+        blocks: [expect.objectContaining({ name: "Gmail · Work", status: "pending" })],
+      }),
+    });
+  });
+
+  it("does not post the card again on a retried call", async () => {
+    const f = fixture("run-app-retry", { catalog: [gmail] });
+    f.setCalls([call({ app: "gmail" })]);
+    await f.run();
+    f.setCalls([call({ app: "gmail" })]);
+    await f.run();
+    expect(f.messageCreate).toHaveBeenCalledOnce();
+    expect(f.effects).toHaveLength(1);
+    expect(f.results[1]).toEqual(f.results[0]);
+  });
+
+  it("tells a background run that no card was posted", async () => {
+    const f = fixture("run-app-background", { trigger: "tickets", catalog: [gmail] });
+    f.setCalls([call({ app: "gmail" })]);
+    await f.run();
+    expect(f.messageCreate).not.toHaveBeenCalled();
+    expect(f.results[0]).toEqual({ error: expect.stringContaining("nothing was posted") });
   });
 });

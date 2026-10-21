@@ -1,5 +1,6 @@
-import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
+import type { Connection, ConnectionCatalogItem, MessageBlock } from "@rakazo/contracts";
 import { abortableDelay } from "./async.js";
+import { featuredConnectorProvidersMatch, normalizeConnectorKey } from "./featured-connectors.js";
 
 type CatalogRef = Pick<ConnectionCatalogItem, "connectorId" | "slug">;
 
@@ -25,6 +26,44 @@ export function isCatalogItemConnected(
     item.connected ||
     catalogItemAccounts(connections, item).some((row) => row.status === "connected")
   );
+}
+
+/** The catalog app a slug, name, or featured alias names; undefined when none matches. */
+export function findCatalogItem(
+  catalog: readonly ConnectionCatalogItem[],
+  app: string,
+): ConnectionCatalogItem | undefined {
+  const needle = app.trim().toLowerCase();
+  return (
+    catalog.find((item) => item.slug.toLowerCase() === needle) ??
+    catalog.find((item) => item.name.toLowerCase() === needle) ??
+    catalog.find((item) => featuredConnectorProvidersMatch(item.slug, app))
+  );
+}
+
+const APP_CONNECT_DESCRIPTIONS: Record<string, string> = {
+  slack: "Search, read, and send messages.",
+  gmail: "Search, read, draft, and send email.",
+  googlecalendar: "Search events and schedule meetings.",
+  notion: "Search and edit pages and databases.",
+  googledocs: "Draft and edit documents.",
+  hackernews: "Search stories and discussions.",
+};
+
+/** The inline authorization card for a catalog app; `name` labels one of several accounts. */
+export function appConnectCard(
+  item: ConnectionCatalogItem,
+  name = item.name,
+): Extract<MessageBlock, { kind: "app_connect" }> {
+  return {
+    kind: "app_connect",
+    connectorId: item.connectorId,
+    provider: item.slug,
+    name,
+    description: APP_CONNECT_DESCRIPTIONS[normalizeConnectorKey(item.slug)] ?? "",
+    logo: item.logo,
+    status: item.connected ? "connected" : "pending",
+  };
 }
 
 /** "Gmail", then "Gmail 2", "Gmail 3" for additional accounts. */

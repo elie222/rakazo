@@ -1,6 +1,6 @@
 import type { ConnectorRegistry } from "@rakazo/adapters";
 import type { Actor, MessageBlock } from "@rakazo/contracts";
-import { featuredConnectorProvidersMatch } from "@rakazo/core";
+import { appConnectCard, featuredConnectorProvidersMatch, findCatalogItem } from "@rakazo/core";
 import type { Prisma, PrismaClient, ThreadEvents } from "@rakazo/db";
 import {
   appendEventInTransaction,
@@ -59,15 +59,6 @@ const FOCUS_OPTIONS: FocusOption[] = [
     apps: ["slack", "gmail", "googlecalendar"],
   },
 ];
-
-const APP_DESCRIPTIONS: Record<string, string> = {
-  slack: "Search, read, and send messages.",
-  gmail: "Search, read, draft, and send email.",
-  googlecalendar: "Search events and schedule meetings.",
-  notion: "Search and edit pages and databases.",
-  googledocs: "Draft and edit documents.",
-  hackernews: "Search stories and discussions.",
-};
 
 async function post(
   deps: OnboardingDeps,
@@ -261,23 +252,8 @@ export async function chooseFocus(
     )
   ).flat();
   const cards: MessageBlock[] = option.apps.flatMap((slug) => {
-    const entry = catalog.find(
-      (item) =>
-        item.slug.toLowerCase() === slug.toLowerCase() ||
-        featuredConnectorProvidersMatch(item.slug, slug),
-    );
-    if (!entry) return [];
-    return [
-      {
-        kind: "app_connect" as const,
-        connectorId: entry.connectorId ?? "composio",
-        provider: entry.slug,
-        name: entry.name,
-        description: APP_DESCRIPTIONS[slug] ?? "",
-        logo: entry.logo ?? null,
-        status: entry.connected ? ("connected" as const) : ("pending" as const),
-      },
-    ];
+    const entry = findCatalogItem(catalog, slug);
+    return entry ? [appConnectCard(entry)] : [];
   });
   if (!cards.length) {
     await post(deps, target, [{ kind: "text", text: "What would you like to work on first?" }]);
@@ -302,41 +278,40 @@ export async function chooseFocus(
   ]);
 }
 
+/** Flips the pending cards for the provider, or only the card titled `name` when given. */
 export async function markAppConnected(
   deps: OnboardingDeps,
   actor: Actor,
   botId: string,
   provider: string,
   connectorId = "composio",
+  name?: string,
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
-  const target = { spaceId: actor.spaceId, botId: bot.id, threadId: thread.id };
+  // A bot posts cards from chat into group threads too; onboarding cards carry no botId.
   const messages = await deps.prisma.message.findMany({
-    where: { threadId: thread.id },
-    select: { id: true, blocks: true },
-    orderBy: { createdAt: "asc" },
+    where: { OR: [{ threadId: thread.id }, { botId: bot.id }] },
+    select: { id: true, threadId: true, blocks: true },
+    orderBy: { createdAt: "desc" },
     take: 100,
   });
+  const matches = (block: MessageBlock): block is Extract<MessageBlock, { kind: "app_connect" }> =>
+    block.kind === "app_connect" &&
+    (block.connectorId ?? "composio") === connectorId &&
+    featuredConnectorProvidersMatch(block.provider, provider) &&
+    (name === undefined || block.name === name);
   for (const message of messages) {
     const blocks = message.blocks as MessageBlock[];
-    if (
-      !blocks.some(
-        (block) =>
-          block.kind === "app_connect" &&
-          (block.connectorId ?? "composio") === connectorId &&
-          featuredConnectorProvidersMatch(block.provider, provider) &&
-          block.status !== "connected",
-      )
-    )
-      continue;
+    if (!blocks.some((block) => matches(block) && block.status !== "connected")) continue;
     const next = blocks.map((block) =>
-      block.kind === "app_connect" &&
-      (block.connectorId ?? "composio") === connectorId &&
-      featuredConnectorProvidersMatch(block.provider, provider)
-        ? { ...block, status: "connected" as const }
-        : block,
+      matches(block) ? { ...block, status: "connected" as const } : block,
     );
-    await updateBlocks(deps, target, message.id, next);
+    await updateBlocks(
+      deps,
+      { spaceId: actor.spaceId, botId: bot.id, threadId: message.threadId },
+      message.id,
+      next,
+    );
   }
 }
 

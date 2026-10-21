@@ -37,7 +37,7 @@ export type FeaturedConnectorTile = {
 /** Keep catalog screens responsive even when a provider exposes thousands of apps. */
 export const CONNECTION_CATALOG_PAGE_SIZE = 60;
 
-function normalizeConnectorKey(value: string): string {
+export function normalizeConnectorKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 

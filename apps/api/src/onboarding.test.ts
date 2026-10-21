@@ -76,3 +76,23 @@ it("marks only the authorized connector when provider slugs collide", async () =
     data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
   });
 });
+
+it("flips only the named card, in the thread where it was posted", async () => {
+  const { deps, actor, tx } = fixture([]);
+  const blocks = ["Gmail", "Gmail · Work"].map((name) => ({
+    kind: "app_connect",
+    connectorId: "composio",
+    provider: "gmail",
+    name,
+    status: "pending",
+  }));
+  deps.prisma.message = {
+    findMany: vi.fn(async () => [{ id: "cards", threadId: "group-thread", blocks }]),
+  } as never;
+  await markAppConnected(deps, actor, "bot", "gmail", "composio", "Gmail · Work");
+  expect(tx.message.update).toHaveBeenCalledWith({
+    where: { id: "cards" },
+    data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
+  });
+  expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
+});

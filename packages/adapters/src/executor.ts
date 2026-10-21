@@ -14,6 +14,7 @@ import type {
   BrowserProvider,
   ComputerRef,
   ConnectorCall,
+  ConnectorCatalogItem,
   ConnectorProvider,
   ConnectorTool,
   JobPublisher,
@@ -57,6 +58,7 @@ import {
 } from "@rakazo/contracts";
 import type { ActionApprovalRule, ToolCallStreak } from "@rakazo/core";
 import {
+  appConnectCard,
   appendTextSegment,
   appendToolCallSegment,
   applyJudgeDecision,
@@ -73,6 +75,7 @@ import {
   displayName,
   endsSentence,
   expandSkillReferencesInPrompt,
+  findCatalogItem,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
   humanizeToolName,
@@ -2736,7 +2739,10 @@ export interface ExecutorDeps {
   home: AgentHomeStore;
   artifacts?: ArtifactStore;
   connector?: ConnectorProvider;
-  connectors?: { managed(id: string): ManagedConnectorProvider | undefined };
+  connectors?: {
+    managed(id: string): ManagedConnectorProvider | undefined;
+    managedProviders(): ManagedConnectorProvider[];
+  };
   secrets: string[];
   secretStore: SecretStore;
   deploymentModelKey?: string;
@@ -7161,6 +7167,74 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 : { ok: true },
             );
           }
+          if (name === "request_app_connection") {
+            const app = String(args.app ?? "").trim();
+            if (!app) return finish({ error: "app is required" });
+            if (isBackgroundRunTrigger(run.trigger)) {
+              return finish({
+                error:
+                  "This run has no chat to post a connect card in, so nothing was posted. Connect the app from a chat with the user instead.",
+              });
+            }
+            const providers = deps.connectors?.managedProviders() ?? [];
+            if (providers.length === 0) {
+              return finish({
+                error: "No app catalog is configured, so apps cannot be connected.",
+              });
+            }
+            // Like the catalog screen, one provider failing does not hide the others.
+            const catalogs = await Promise.all(
+              providers.map((provider) =>
+                provider
+                  .catalog({
+                    ...context,
+                    signal: AbortSignal.any([context.signal, AbortSignal.timeout(15_000)]),
+                  })
+                  .catch((): ConnectorCatalogItem[] | undefined => undefined),
+              ),
+            );
+            if (catalogs.every((items) => items === undefined)) {
+              return finish({
+                error: "The app catalog could not be checked right now. Try again later.",
+              });
+            }
+            const catalog = catalogs.flatMap((items) => items ?? []);
+            const item = findCatalogItem(catalog, app);
+            if (!item) return finish({ error: `${app} is not in the app catalog.` });
+            const account = appAccountLabel(args.account);
+            const accounts = (
+              await deps.prisma.connection.findMany({
+                where: {
+                  spaceId: run.spaceId,
+                  userId: run.userId,
+                  connectorId: item.connectorId,
+                  provider: item.slug,
+                  status: "connected",
+                },
+                select: { displayName: true },
+              })
+            ).map((row) => row.displayName);
+            if (!account && (item.connected || accounts.length > 0)) {
+              return finish({ connected: true, accounts });
+            }
+            await publishMessage(
+              deps,
+              run,
+              "bot",
+              [
+                {
+                  ...appConnectCard(item, account ? `${item.name} · ${account}` : item.name),
+                  status: "pending",
+                },
+              ],
+              true,
+            );
+            return finish({
+              posted: true,
+              status: "pending",
+              note: "The user authorizes it on the card in this chat; later tool calls will see the connection once they have.",
+            });
+          }
           if (name === "message_bot") {
             const sent = await messageBot(
               deps,
@@ -7335,10 +7409,16 @@ export function createRunExecutor(deps: ExecutorDeps) {
           }
         };
 
-        const pluginLine =
+        const pluginLine = `${
           connectedPlugins.length > 0
             ? `Connected plugins: ${connectedPlugins.map((row) => `${row.displayName} (${row.connectorId}:${row.provider})`).join(", ")}. Prefer those plugin tools over the computer browser or web search when reading app data (repos, releases, mail, calendar, and similar).`
-            : "No plugins are connected yet.";
+            : "No plugins are connected yet."
+        }${
+          builtinOffered(disabledBuiltinTools, "request_app_connection") &&
+          !isBackgroundRunTrigger(run.trigger)
+            ? " To connect another app, call request_app_connection to put a connect card in this chat instead of sending the user to the Connect apps list."
+            : ""
+        }`;
         const taughtSkillIndex = savedSkills.slice(0, 20);
         const taughtSkillsLine =
           taughtSkillIndex.length > 0
@@ -8752,6 +8832,7 @@ export function selectBuiltinToolsForRun(options: {
       (!isBackgroundRunTrigger(options.trigger) ||
         ![
           "message_user",
+          "request_app_connection",
           "message_bot",
           "handoff_to_bot",
           "message_agent",
@@ -9505,6 +9586,15 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
     }
     return block;
   });
+}
+
+/** A model-supplied account label, cut to one short plain line for the card title. */
+function appAccountLabel(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\s]+/gu, " ")
+    .trim()
+    .slice(0, 40)
+    .trim();
 }
 
 function isUniqueViolation(error: unknown): boolean {

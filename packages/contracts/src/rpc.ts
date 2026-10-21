@@ -831,7 +831,13 @@ export const appContract = {
     /** Flip an app_connect card to connected after authorization completes. */
     appConnected: oc
       .input(
-        z.object({ botId: Id, provider: z.string(), connectorId: z.string().default("composio") }),
+        z.object({
+          botId: Id,
+          provider: z.string(),
+          connectorId: z.string().default("composio"),
+          /** The card's title; without it every pending card for the provider flips. */
+          name: z.string().optional(),
+        }),
       )
       .output(z.object({ ok: z.literal(true) })),
   },

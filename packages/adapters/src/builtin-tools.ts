@@ -475,6 +475,23 @@ export const builtinAgentTools: ConnectorTool[] = [
     },
   },
   {
+    name: "request_app_connection",
+    description:
+      "Post a card in this chat that lets the user connect an app from the plugin catalog (Gmail, Slack, Notion, GitHub, and more) in one tap. Use it whenever the user wants an app connected or a task needs one that is not; never send them to the Connect apps list. Returns the connected accounts instead when the app is already connected; pass account to ask for an additional account.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: { type: "string", maxLength: 80, description: "App name or catalog slug." },
+        account: {
+          type: "string",
+          maxLength: 40,
+          description: "Short label for an additional account, such as Work.",
+        },
+      },
+      required: ["app"],
+    },
+  },
+  {
     name: "request_secret",
     get description() {
       return secretAskToolSurface().description;
