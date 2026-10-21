@@ -151,6 +151,9 @@ describe("ensureMcpPackage", () => {
     await rm(work, { recursive: true, force: true });
   });
 
+  // Generous waits: under a loaded parallel run the stub npm install can take seconds.
+  const WAIT = { timeout: 15_000, interval: 50 };
+
   it("preserves a fresh owner replacing the inspected expired lock", async () => {
     const lock = `${mcpPackageDir("race-pkg", root, options().env)}.lock`;
     await mkdir(lock, { recursive: true });
@@ -167,9 +170,10 @@ describe("ensureMcpPackage", () => {
     const controller = new AbortController();
     const pending = ensureMcpPackage("race-pkg", { ...options(), signal: controller.signal });
     try {
-      await vi.waitFor(() => expect(spy).toHaveBeenCalled());
-      await vi.waitFor(async () =>
-        expect(JSON.parse(await readFile(join(lock, "owner"), "utf8"))).toEqual(fresh),
+      await vi.waitFor(() => expect(spy).toHaveBeenCalled(), WAIT);
+      await vi.waitFor(
+        async () => expect(JSON.parse(await readFile(join(lock, "owner"), "utf8"))).toEqual(fresh),
+        WAIT,
       );
       controller.abort();
       await expect(pending).rejects.toThrow();
@@ -178,10 +182,10 @@ describe("ensureMcpPackage", () => {
       spy.mockImplementation(original);
       await rm(lock, { recursive: true, force: true });
       // Let the shared install finish before deleting its fixture.
-      await vi.waitFor(async () => expect(await runs()).toHaveLength(1));
-      await vi.waitFor(async () => expect(await leftovers()).toEqual([]));
+      await vi.waitFor(async () => expect(await runs()).toHaveLength(1), WAIT);
+      await vi.waitFor(async () => expect(await leftovers()).toEqual([]), WAIT);
     }
-  });
+  }, 30_000);
 
   const runs = async () =>
     existsSync(log) ? (await readFile(log, "utf8")).trim().split("\n").filter(Boolean) : [];
