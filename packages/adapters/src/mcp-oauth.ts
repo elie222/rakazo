@@ -371,6 +371,16 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       this.material.oauthClient = { ...client, authorization_server: new URL(server).href };
     return information;
   }
+  /**
+   * Take the binding another flow saved for this same client, so the code exchange checks
+   * against it instead of this flow's own (possibly different) choice.
+   */
+  adoptClientBinding(stored: PreRegisteredClient | undefined): void {
+    const client = this.material.oauthClient;
+    const bound = stored?.authorization_server;
+    if (!client || !bound || !sameOAuthClient(client, stored)) return;
+    this.material.oauthClient = { ...client, authorization_server: bound };
+  }
   async saveClientInformation(value: OAuthClientInformationMixed): Promise<void> {
     this.oauth().clientInformation = value;
     await this.persist();
@@ -815,6 +825,24 @@ function sameOAuthClient(
   );
 }
 
+/**
+ * The authorization server a flow will send its client to: the binding it carries, else
+ * the server its discovery found (a flow that began with an unbound client).
+ */
+function flowAuthorizationServer(material: OAuthMaterial): string | undefined {
+  const bound = material.oauthClient?.authorization_server;
+  if (bound) return bound;
+  const discovered = material.oauth?.discoveryState?.authorizationServerUrl;
+  return discovered ? new URL(discovered).href : undefined;
+}
+
+/** Whether a flow targets a server other than the one the stored client is bound to. */
+function conflictsWithBinding(stored: PreRegisteredClient | undefined, flow: OAuthMaterial) {
+  const bound = stored?.authorization_server;
+  const target = flowAuthorizationServer(flow);
+  return Boolean(bound && target && bound !== target);
+}
+
 /** What the settings UI may know about a server's OAuth setup; never a credential. */
 export type McpOAuthSummary = {
   status: "none" | "connected" | "reconnect";
@@ -1054,6 +1082,16 @@ export class McpOAuthBroker {
       },
     });
     if (consumed.count !== 1) throw new Error("MCP OAuth session is invalid or expired");
+    // The exchange sends the client secret: check it against the binding stored now, not
+    // the one this flow started with, in case an overlapping flow bound the client first.
+    const current = await this.prisma.mcpServer.findFirst({
+      where: { id: pending.serverId, spaceId: input.spaceId, userId: input.userId },
+      select: { id: true, endpoint: true, secretId: true },
+    });
+    if (current) {
+      const stored = await this.loadMaterial(current, input);
+      pending.provider.adoptClientBinding(stored.material.oauthClient);
+    }
     const networkFetch = oauthFetch(
       pending.endpoint,
       this.network,
@@ -1262,6 +1300,10 @@ export class McpOAuthBroker {
         // settings meanwhile has already dropped the grant this write carries.
         if (!sameOAuthClient(material.oauthClient, nextMaterial.oauthClient))
           throw new Error("MCP OAuth client changed during authorization; reconnect this server");
+        // Overlapping flows may have bound the same unbound client to different servers;
+        // the first binding saved wins and any other flow's state is refused.
+        if (conflictsWithBinding(nextMaterial.oauthClient, material))
+          throw new McpOAuthServerMismatchError();
         const bound = material.oauthClient?.authorization_server;
         if (nextMaterial.oauthClient && bound && !nextMaterial.oauthClient.authorization_server)
           nextMaterial.oauthClient = { ...nextMaterial.oauthClient, authorization_server: bound };
