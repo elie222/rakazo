@@ -288,9 +288,23 @@ export async function markAppConnected(
   name?: string,
 ): Promise<void> {
   const { bot, thread } = await requireBotThread(deps, actor, botId);
-  // A bot posts cards from chat into group threads too; onboarding cards carry no botId.
+  const connections = await deps.prisma.connection.findMany({
+    where: { spaceId: actor.spaceId, userId: actor.userId, connectorId, status: "connected" },
+    select: { provider: true },
+  });
+  if (
+    !connections.some((connection) =>
+      featuredConnectorProvidersMatch(connection.provider, provider),
+    )
+  ) {
+    return;
+  }
+  // Group cards belong to the thread owner, just like primary-thread onboarding cards.
   const messages = await deps.prisma.message.findMany({
-    where: { OR: [{ threadId: thread.id }, { botId: bot.id }] },
+    where: {
+      thread: { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null },
+      OR: [{ threadId: thread.id }, { botId: bot.id }],
+    },
     select: { id: true, threadId: true, blocks: true },
     orderBy: { createdAt: "desc" },
     take: 100,

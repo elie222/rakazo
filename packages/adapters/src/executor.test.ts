@@ -3722,3 +3722,24 @@ describe("call_user availability", () => {
     expect(offered({ voiceCall: true })).toBe(false);
   });
 });
+
+it.each([{ trigger: "messaging" }, { externalConversation: true }, { trigger: "tickets" }])(
+  "hides app connection cards from unsupported runs %j",
+  (surface) => {
+    const options = {
+      graphicalToolsAllowed: false,
+      groupId: null,
+      trigger: "user",
+      semanticMemoryEnabled: false,
+      messagingChannelRun: false,
+    };
+    expect(
+      selectBuiltinToolsForRun(options).some((tool) => tool.name === "request_app_connection"),
+    ).toBe(true);
+    expect(
+      selectBuiltinToolsForRun({ ...options, ...surface }).some(
+        (tool) => tool.name === "request_app_connection",
+      ),
+    ).toBe(false);
+  },
+);

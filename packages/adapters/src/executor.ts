@@ -75,6 +75,7 @@ import {
   displayName,
   endsSentence,
   expandSkillReferencesInPrompt,
+  featuredConnectorProvidersMatch,
   findCatalogItem,
   formatSkillRunPrompt,
   formatSkillsCatalogInstruction,
@@ -4209,6 +4210,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             mediaVideoEnabled: Boolean(deps.artifacts && mediaGeneration?.capabilities.video),
             cloudAgentEnabled: cloudAgentsEnabled(cloudAgent, run.spaceId),
             messagingChannelRun,
+            externalConversation: Boolean(thread.externalConversationId),
             voiceCall,
             disabledBuiltinTools: bot.disabledBuiltinTools,
             fleetManagement: bot.fleetManagement,
@@ -7176,6 +7178,12 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   "This run has no chat to post a connect card in, so nothing was posted. Connect the app from a chat with the user instead.",
               });
             }
+            if (run.trigger === "messaging" || thread.externalConversationId) {
+              return finish({
+                error:
+                  "This chat cannot authorize apps on a connect card, so nothing was posted. Connect the app in the app instead.",
+              });
+            }
             const providers = deps.connectors?.managedProviders() ?? [];
             if (providers.length === 0) {
               return finish({
@@ -7202,18 +7210,25 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const item = findCatalogItem(catalog, app);
             if (!item) return finish({ error: `${app} is not in the app catalog.` });
             const account = appAccountLabel(args.account);
+            if (account === null) {
+              return finish({
+                error:
+                  "Use a short plain account label without URLs or special characters; nothing was posted.",
+              });
+            }
             const accounts = (
               await deps.prisma.connection.findMany({
                 where: {
                   spaceId: run.spaceId,
                   userId: run.userId,
                   connectorId: item.connectorId,
-                  provider: item.slug,
                   status: "connected",
                 },
-                select: { displayName: true },
+                select: { displayName: true, provider: true },
               })
-            ).map((row) => row.displayName);
+            )
+              .filter((row) => featuredConnectorProvidersMatch(row.provider, item.slug))
+              .map((row) => row.displayName);
             if (!account && (item.connected || accounts.length > 0)) {
               return finish({ connected: true, accounts });
             }
@@ -7415,7 +7430,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             : "No plugins are connected yet."
         }${
           builtinOffered(disabledBuiltinTools, "request_app_connection") &&
-          !isBackgroundRunTrigger(run.trigger)
+          !isBackgroundRunTrigger(run.trigger) &&
+          run.trigger !== "messaging" &&
+          !thread.externalConversationId
             ? " To connect another app, call request_app_connection to put a connect card in this chat instead of sending the user to the Connect apps list."
             : ""
         }`;
@@ -8793,6 +8810,7 @@ export function selectBuiltinToolsForRun(options: {
   mediaImagesEnabled?: boolean;
   mediaVideoEnabled?: boolean;
   messagingChannelRun: boolean;
+  externalConversation?: boolean;
   /** Hanging up is only offered to a turn the caller spoke on a live call. */
   voiceCall?: boolean;
   /** Built-in names this bot turned off. Unknown names are ignored. */
@@ -8823,6 +8841,8 @@ export function selectBuiltinToolsForRun(options: {
   ).filter(
     (tool) =>
       !disabled.has(tool.name) &&
+      (!(options.trigger === "messaging" || options.externalConversation) ||
+        tool.name !== "request_app_connection") &&
       (!FLEET_TOOL_NAMES_SET.has(tool.name) ||
         (Boolean(options.fleetManagement) && fleetToolsAllowed)) &&
       (options.mediaImagesEnabled || tool.name !== "generate_image") &&
@@ -9589,12 +9609,12 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
 }
 
 /** A model-supplied account label, cut to one short plain line for the card title. */
-function appAccountLabel(value: unknown): string {
-  return String(value ?? "")
-    .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\s]+/gu, " ")
-    .trim()
-    .slice(0, 40)
-    .trim();
+function appAccountLabel(value: unknown): string | null {
+  if (value === undefined) return "";
+  if (typeof value !== "string") return null;
+  const label = value.replace(/\s+/gu, " ").trim();
+  if (!/^[\p{L}\p{N} ._\-'&+@()]*$/u.test(label)) return null;
+  return label.slice(0, 40).trim();
 }
 
 function isUniqueViolation(error: unknown): boolean {

@@ -57,6 +57,7 @@ function fixture(
   runId = "run-1",
   options: {
     trigger?: string;
+    externalConversationId?: string;
     catalog?: ConnectionCatalogItem[];
     connections?: ConnectionRow[];
   } = {},
@@ -187,7 +188,11 @@ function fixture(
       updateMany: vi.fn(async () => ({ count: 1 })),
     },
     thread: {
-      findUniqueOrThrow: vi.fn(async () => ({ id: run.threadId, groupId: null })),
+      findUniqueOrThrow: vi.fn(async () => ({
+        id: run.threadId,
+        groupId: null,
+        externalConversationId: options.externalConversationId ?? null,
+      })),
       update: vi.fn(async () => ({ nextMessageSeq: 2, nextEventSeq: 2 })),
     },
     message: { findMany: vi.fn(async () => []), create: messageCreate },
@@ -309,6 +314,7 @@ function fixture(
 
   return {
     effects,
+    runtimeRun,
     media,
     artifactRows,
     artifactPut,
@@ -889,7 +895,7 @@ describe("request_app_connection", () => {
     const f = fixture("run-app-connected", {
       catalog: [{ ...gmail, connected: true }],
       connections: [
-        { connectorId: "composio", provider: "GMAIL", displayName: "Gmail", status: "connected" },
+        { connectorId: "composio", provider: "gmail", displayName: "Gmail", status: "connected" },
         { connectorId: "composio", provider: "SLACK", displayName: "Slack", status: "connected" },
       ],
     });
@@ -941,4 +947,75 @@ describe("request_app_connection", () => {
     expect(f.messageCreate).not.toHaveBeenCalled();
     expect(f.results[0]).toEqual({ error: expect.stringContaining("nothing was posted") });
   });
+});
+
+describe("app connection card boundaries", () => {
+  const gmail: ConnectionCatalogItem = {
+    connectorId: "composio",
+    slug: "gmail",
+    name: "Gmail",
+    logo: null,
+    connected: false,
+    noAuth: false,
+  };
+  it.each([
+    "https://example.test",
+    "Work/Personal",
+    "Work: urgent",
+    "Click <here>",
+    "Work\u202E",
+    "Work 🚀",
+  ])("rejects an unsafe label %s", async (account) => {
+    const f = fixture("unsafe-label", { catalog: [gmail] });
+    f.setCalls([
+      { name: "request_app_connection", args: { app: "gmail", account }, executionId: "call_0" },
+    ]);
+    await f.run();
+    expect(f.messageCreate).not.toHaveBeenCalled();
+    expect(f.results[0]).toEqual({ error: expect.stringContaining("nothing was posted") });
+  });
+  it("collapses whitespace, limits the label, and ignores model-supplied catalog fields", async () => {
+    const f = fixture("plain-label", { catalog: [gmail] });
+    f.setCalls([
+      {
+        name: "request_app_connection",
+        args: {
+          app: "gmail",
+          account: `  Work \n Team & Co. ${"a".repeat(40)}`,
+          connectorId: "forged",
+          provider: "forged",
+          logo: "https://example.test/forged",
+        },
+        executionId: "call_0",
+      },
+    ]);
+    await f.run();
+    expect(f.messageCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        blocks: [
+          expect.objectContaining({
+            name: `Gmail · ${`Work Team & Co. ${"a".repeat(40)}`.slice(0, 40)}`,
+            connectorId: "composio",
+            provider: "gmail",
+            logo: null,
+          }),
+        ],
+      }),
+    });
+  });
+  it.each([{ trigger: "messaging" }, { externalConversationId: "conversation" }])(
+    "does not post or advertise cards on an external surface %j",
+    async (surface) => {
+      const f = fixture("external-card", { catalog: [gmail], ...surface });
+      f.setCalls([
+        { name: "request_app_connection", args: { app: "gmail" }, executionId: "call_0" },
+      ]);
+      await f.run();
+      expect(f.messageCreate).not.toHaveBeenCalled();
+      expect(f.results[0]).toEqual({ error: expect.stringContaining("nothing was posted") });
+      expect(JSON.stringify(f.runtimeRun.mock.calls)).not.toContain(
+        "To connect another app, call request_app_connection",
+      );
+    },
+  );
 });

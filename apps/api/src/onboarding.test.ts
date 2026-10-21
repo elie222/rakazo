@@ -17,11 +17,12 @@ function fixture(catalog: unknown[]) {
     $executeRaw: vi.fn(),
     message: {
       findMany: vi.fn(async () => [{ id: "choice", blocks: [{ kind: "choice", answerId: null }] }]),
-      update: vi.fn(),
+      update: vi.fn((_input: { where: { id: string }; data: unknown }) => undefined),
     },
   };
   const deps = {
     prisma: {
+      connection: { findMany: vi.fn(async () => [{ provider: "GMAIL" }, { provider: "SLACK" }]) },
       bot: { findFirst: vi.fn(async () => ({ id: "bot", thread: { id: "thread" } })) },
       $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(tx)),
     },
@@ -95,4 +96,104 @@ it("flips only the named card, in the thread where it was posted", async () => {
     data: { blocks: [blocks[0], { ...blocks[1], status: "connected" }] },
   });
   expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
+});
+
+it("scopes candidate cards to the actor's space and owned internal threads", async () => {
+  const { deps, actor, tx } = fixture([]);
+  const blocks = [
+    {
+      kind: "app_connect",
+      connectorId: "composio",
+      provider: "gmail",
+      name: "Gmail",
+      status: "pending",
+    },
+  ];
+  const messages = [
+    {
+      id: "primary",
+      threadId: "thread",
+      botId: null,
+      blocks,
+      thread: { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null },
+    },
+    {
+      id: "group",
+      threadId: "group-thread",
+      botId: "bot",
+      blocks,
+      thread: { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null },
+    },
+    {
+      id: "other-user",
+      threadId: "other-thread",
+      botId: "bot",
+      blocks,
+      thread: { spaceId: actor.spaceId, userId: "other-user", externalConversationId: null },
+    },
+    {
+      id: "other-space",
+      threadId: "other-space-thread",
+      botId: "bot",
+      blocks,
+      thread: { spaceId: "other-space", userId: actor.userId, externalConversationId: null },
+    },
+    {
+      id: "external",
+      threadId: "external-thread",
+      botId: "bot",
+      blocks,
+      thread: {
+        spaceId: actor.spaceId,
+        userId: actor.userId,
+        externalConversationId: "conversation",
+      },
+    },
+  ];
+  const findMany = vi.fn(async ({ where }) =>
+    messages.filter(
+      (message) =>
+        Object.entries(where.thread).every(
+          ([key, value]) => message.thread[key as keyof typeof message.thread] === value,
+        ) &&
+        where.OR.some(
+          (condition: { threadId?: string; botId?: string }) =>
+            condition.threadId === message.threadId || condition.botId === message.botId,
+        ),
+    ),
+  );
+  deps.prisma.message = { findMany } as never;
+  await markAppConnected(deps, actor, "bot", "gmail");
+  expect(findMany).toHaveBeenCalledWith({
+    where: {
+      thread: { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null },
+      OR: [{ threadId: "thread" }, { botId: "bot" }],
+    },
+    select: { id: true, threadId: true, blocks: true },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  expect(tx.message.update.mock.calls.map(([input]) => input.where.id)).toEqual([
+    "primary",
+    "group",
+  ]);
+  expect(deps.events.notify).toHaveBeenCalledWith("group-thread", 1);
+  expect(deps.prisma.connection.findMany).toHaveBeenCalledWith({
+    where: {
+      spaceId: actor.spaceId,
+      userId: actor.userId,
+      connectorId: "composio",
+      status: "connected",
+    },
+    select: { provider: true },
+  });
+});
+
+it("does not flip cards without a connected account for the provider", async () => {
+  const { deps, actor, tx } = fixture([]);
+  deps.prisma.connection.findMany = vi.fn(async () => [{ provider: "slack" }]) as never;
+  deps.prisma.message = { findMany: vi.fn() } as never;
+  await markAppConnected(deps, actor, "bot", "gmail");
+  expect(deps.prisma.message.findMany).not.toHaveBeenCalled();
+  expect(tx.message.update).not.toHaveBeenCalled();
 });

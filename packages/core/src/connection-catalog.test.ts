@@ -1,8 +1,10 @@
 import type { Connection, ConnectionCatalogItem } from "@rakazo/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
+  appConnectCard,
   catalogItemAccounts,
   connectCatalogItem,
+  findCatalogItem,
   isCatalogItemConnected,
   nextCatalogAccountLabel,
   waitForConnection,
@@ -130,5 +132,21 @@ describe("waitForConnection", () => {
     }
     expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
     expect(complete).toHaveBeenCalledTimes(4);
+  });
+});
+
+it("builds cards only from the matched catalog app with nullable logos", () => {
+  const entry = { ...item, slug: "GMAIL" };
+  const catalog = [entry];
+  expect(findCatalogItem(catalog, " gmail ")).toBe(catalog[0]);
+  expect(findCatalogItem(catalog, "unknown")).toBeUndefined();
+  expect(appConnectCard(entry, "Gmail · Work")).toEqual({
+    kind: "app_connect",
+    connectorId: "composio",
+    provider: "GMAIL",
+    name: "Gmail · Work",
+    logo: null,
+    description: "Search, read, draft, and send email.",
+    status: "pending",
   });
 });
