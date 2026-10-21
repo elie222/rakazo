@@ -1330,6 +1330,7 @@ export class McpOAuthBroker {
       const hasMaterial = Boolean(
         nextMaterial.secret ||
           Object.keys(nextMaterial.env ?? {}).length ||
+          Object.keys(nextMaterial.files ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||
           nextMaterial.oauthClient ||
           nextMaterial.oauth,
