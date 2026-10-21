@@ -9610,7 +9610,7 @@ function redactBlocks(blocks: MessageBlock[], secrets: string[]): MessageBlock[]
 
 /** A model-supplied account label, cut to one short plain line for the card title. */
 function appAccountLabel(value: unknown): string | null {
-  if (value === undefined) return "";
+  if (value === undefined || value === null) return "";
   if (typeof value !== "string") return null;
   const label = value.replace(/\s+/gu, " ").trim();
   if (!/^[\p{L}\p{N} ._\-'&+@()]*$/u.test(label)) return null;
