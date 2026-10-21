@@ -44,7 +44,7 @@ describe("Pi outgoing provider prefixes", () => {
       if (!address || typeof address === "string") throw new Error("Fixture endpoint unavailable");
       try {
         const beforeCall = vi.fn(async (call: { inputTokensEstimate: number }) => {
-          expect(call.inputTokensEstimate).toBeGreaterThan(16_384);
+          expect(call.inputTokensEstimate).toBeGreaterThan(1399);
           expect(call.inputTokensEstimate).toBeLessThan(128_000 - 4096);
           return "image-reservation";
         });

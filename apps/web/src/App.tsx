@@ -5,7 +5,6 @@ import { LOCAL_SETTINGS_PAGE } from "@rakazo/contracts";
 import { analyticsScreen } from "@rakazo/core";
 import { Button, Skeleton } from "@rakazo/ui-web";
 import {
-  lazy,
   Suspense,
   useEffect,
   useLayoutEffect,
@@ -21,6 +20,7 @@ import { authClient } from "./lib/auth";
 import { getTicketBoardEnabled, subscribeTicketBoardEnabled } from "./lib/bootstrap";
 import { desktopBridge } from "./lib/desktop";
 import { markAfterPaint, markOnce } from "./lib/performance";
+import { lazyComponent } from "./lib/preload-recovery";
 import { getRemoteImagesEnabled, subscribeRemoteImages } from "./lib/remote-images-preference";
 import { rpc } from "./lib/rpc";
 import {
@@ -35,24 +35,20 @@ import { LocalSettingsPage } from "./pages/LocalSettings";
 import { McpOAuthCallbackPage } from "./pages/McpOAuthCallback";
 import { ShellPage } from "./pages/Shell";
 
-const AuthPage = lazy(() =>
-  import("./pages/Auth").then((module) => ({ default: module.AuthPage })),
+const AuthPage = lazyComponent(() => import("./pages/Auth").then((module) => module.AuthPage));
+const PasswordResetPage = lazyComponent(() =>
+  import("./pages/Auth").then((module) => module.PasswordResetPage),
 );
-const PasswordResetPage = lazy(() =>
-  import("./pages/Auth").then((module) => ({ default: module.PasswordResetPage })),
+const OnboardingPage = lazyComponent(() =>
+  import("./pages/Onboarding").then((module) => module.OnboardingPage),
 );
-const OnboardingPage = lazy(() =>
-  import("./pages/Onboarding").then((module) => ({ default: module.OnboardingPage })),
+const WelcomePage = lazyComponent(() =>
+  import("./pages/Welcome").then((module) => module.WelcomePage),
 );
-const WelcomePage = lazy(() =>
-  import("./pages/Welcome").then((module) => ({ default: module.WelcomePage })),
+const ArtifactsPage = lazyComponent(() =>
+  import("./pages/Artifacts").then((module) => module.ArtifactsPage),
 );
-const ArtifactsPage = lazy(() =>
-  import("./pages/Artifacts").then((module) => ({ default: module.ArtifactsPage })),
-);
-const BoardPage = lazy(() =>
-  import("./pages/Board").then((module) => ({ default: module.BoardPage })),
-);
+const BoardPage = lazyComponent(() => import("./pages/Board").then((module) => module.BoardPage));
 
 function SsoCallbackPage() {
   useEffect(() => {

@@ -1,5 +1,6 @@
 import type { Locator, Page, TestInfo } from "@playwright/test";
-import { expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { signupRequiresEmailVerification } from "@rakazo/core";
 
 export function isRealSandboxProvider(provider = process.env.SANDBOX_PROVIDER) {
   return provider === "e2b" || provider === "daytona" || provider === "boat";
@@ -51,7 +52,32 @@ export async function completeOnboarding(page: Page, testInfo?: TestInfo) {
   }
 }
 
+/**
+ * Creates the account through the auth API, as the sign-up form does, and opens
+ * the page the form would land on. Passing testInfo goes through the form to
+ * capture it; tests of the form itself use signupThroughForm.
+ */
 export async function signup(
+  page: Page,
+  email: string,
+  password: string,
+  name: string,
+  testInfo?: TestInfo,
+) {
+  if (testInfo) return signupThroughForm(page, email, password, name, testInfo);
+  const baseURL = test.info().project.use.baseURL;
+  if (!baseURL) throw new Error("signup needs a baseURL");
+  const response = await page.request.post("/api/auth/sign-up/email", {
+    data: { email, password, name },
+    // Better Auth checks the origin of credential requests that carry cookies.
+    headers: { origin: new URL(baseURL).origin },
+  });
+  if (!response.ok()) throw new Error(`sign-up ${response.status()}: ${await response.text()}`);
+  const verify = signupRequiresEmailVerification(await response.json());
+  await page.goto(verify ? "/sign-up?verify=email" : "/onboarding");
+}
+
+export async function signupThroughForm(
   page: Page,
   email: string,
   password: string,

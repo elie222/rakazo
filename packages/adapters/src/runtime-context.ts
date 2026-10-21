@@ -16,6 +16,9 @@ import {
 import { effectiveOutputReserve, resolveCompletionMaxTokens } from "./pi-runtime-limits.js";
 import { withoutThinkingFrom } from "./thinking-signatures.js";
 
+/** Recent evidence stays whole when rebuilding context, unless the model budget requires clipping. */
+const RECENT_TOOL_RESULTS_TO_KEEP = 3;
+
 const accountSalt = randomBytes(32);
 const sharedCacheTracker = new ContextCacheTracker();
 interface ProjectionEntry {
@@ -447,31 +450,50 @@ export function createRuntimeContextPolicy(
       (message) =>
         message.role === "assistant" && message.content.some((part) => part.type === "toolCall"),
     );
-    messages = messages.map((message, index) => {
-      if (
-        message.role !== "toolResult" ||
-        index >= latestToolCall ||
-        (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
-      )
-        return message;
-      const source = text(message);
-      if (source.length <= 1024) return message;
-      // The model read this result on an earlier step, so mark it as shortened after use.
-      const shortened = shortenToolResultText(
-        source,
-        1024,
-        { name: message.toolName },
-        { afterUse: true },
-      );
-      if (shortened.length >= source.length) return message;
-      return {
-        ...message,
-        content: [
-          { type: "text" as const, text: shortened },
-          ...message.content.filter((part) => part.type === "image"),
-        ],
-      };
-    });
+    const recentToolResults = new Set(
+      messages
+        .flatMap((message, index) => (message.role === "toolResult" ? [index] : []))
+        .slice(-RECENT_TOOL_RESULTS_TO_KEEP),
+    );
+    const shortenOlderResults = (keepRecent: boolean) =>
+      messages.map((message, index) => {
+        if (
+          message.role !== "toolResult" ||
+          index >= latestToolCall ||
+          (keepRecent && recentToolResults.has(index)) ||
+          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
+        )
+          return message;
+        const source = text(message);
+        if (source.length <= 1024) return message;
+        // The model read this result on an earlier step, so mark it as shortened after use.
+        const shortened = shortenToolResultText(
+          source,
+          1024,
+          { name: message.toolName },
+          { afterUse: true },
+        );
+        if (shortened.length >= source.length) return message;
+        return {
+          ...message,
+          content: [
+            { type: "text" as const, text: shortened },
+            ...message.content.filter((part) => part.type === "image"),
+          ],
+        };
+      });
+    const retained = shortenOlderResults(true);
+    // Fall back before selection can discard older progress to make room for whole results.
+    const retainedTokens = retained.reduce(
+      (total, message) =>
+        total +
+        estimateContextTokens(
+          providerContextPrefix("", [], [message]).messages[0],
+          options.imageTokens,
+        ),
+      fixed,
+    );
+    messages = retainedTokens <= contextWindow - reserve ? retained : shortenOlderResults(false);
     const selected = selectContext(messages, {
       budget,
       strategy,

@@ -24,6 +24,7 @@ import { defineConfig, loadEnv } from "vite";
 import { resolveScreenProxySecret } from "../../packages/core/src/secrets-guard.ts";
 import { createServiceLogger } from "../../packages/logging/src/env.ts";
 import { appendForwardedFor } from "./src/forwarded-for.js";
+import { missingAssetMiddleware } from "./src/missing-asset.js";
 import { collectNovncHtml, MAX_NOVNC_HTML_BYTES } from "./src/novnc-html.js";
 import {
   resolveNovncTarget,
@@ -474,6 +475,17 @@ export default defineConfig(({ mode }) => {
             if (policy) res.setHeader("content-security-policy", policy);
             next();
           });
+        },
+      },
+      {
+        name: "rakazo-missing-asset-404",
+        configurePreviewServer({ config, middlewares }) {
+          middlewares.use(
+            missingAssetMiddleware(
+              path.resolve(config.root, config.build.outDir, config.build.assetsDir),
+              `${config.base}${config.build.assetsDir}/`,
+            ),
+          );
         },
       },
       {
