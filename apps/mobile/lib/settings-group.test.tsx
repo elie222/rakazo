@@ -83,6 +83,7 @@ vi.mock("react-native", () => {
   }
 
   return {
+    Platform: { OS: "ios" },
     Pressable: MockPressable,
     Switch: MockSwitch,
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 0.5 },

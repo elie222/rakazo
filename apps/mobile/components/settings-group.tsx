@@ -2,9 +2,10 @@ import { typeScale } from "@rakazo/ui-tokens";
 import type { ReactNode } from "react";
 import { Children, Fragment, isValidElement } from "react";
 import type { PressableProps } from "react-native";
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { mobileTokens } from "../lib/appearance";
 import { native, useThemedStyles } from "../lib/native";
+import { androidRipple } from "../lib/ripple";
 import { stacksAtTextScale } from "../lib/text-scale";
 import { NativeSwitch } from "./native-switch";
 import { Chevron } from "./row-accessories";
@@ -124,10 +125,11 @@ export function SettingsRow({
   return (
     <Pressable
       {...props}
+      android_ripple={androidRipple()}
       style={({ pressed }) => [
         styles.row,
         stacked && styles.compactRow,
-        pressed && styles.pressed,
+        pressed && Platform.OS !== "android" && styles.pressed,
         dimmed && styles.dimmed,
       ]}
     >
