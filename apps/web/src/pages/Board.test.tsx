@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type * as UiWeb from "@rakazo/ui-web";
 import type { ComponentProps, ReactNode } from "react";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -30,10 +31,10 @@ vi.mock("@rakazo/chat-ui/web", () => ({
     <div data-testid="chat-markdown">{children}</div>
   ),
 }));
-vi.mock("@rakazo/ui-web", () => {
+vi.mock("@rakazo/ui-web", async (importOriginal) => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
-    Button: (props: ComponentProps<"button">) => <button {...props} />,
+    Button: (await importOriginal<typeof UiWeb>()).Button,
     Dialog: Container,
     DialogContent: Container,
     DialogHeader: Container,
@@ -327,3 +328,18 @@ it.each(["end", "error"] as const)(
     }
   },
 );
+
+it("renders the back link as a plain link, not a button element", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  api.bots.list.mockResolvedValue([]);
+  api.tickets.list.mockResolvedValue({ tickets: [] });
+  const page = await renderBoard();
+  try {
+    const back = page.container.querySelector('a[href="/app"]');
+    if (!back) throw new Error("Missing back link");
+    expect(back.hasAttribute("type")).toBe(false);
+  } finally {
+    await page.cleanup();
+    vi.unstubAllGlobals();
+  }
+});

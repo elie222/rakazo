@@ -316,7 +316,7 @@ export function GeneralSettingsPanels({
       </section>
 
       {isDeploymentOwner ? (
-        <Button variant="outline" render={<Link to="/integrations/setup" />}>
+        <Button variant="outline" nativeButton={false} render={<Link to="/integrations/setup" />}>
           <Trans>Server integrations</Trans>
         </Button>
       ) : null}
