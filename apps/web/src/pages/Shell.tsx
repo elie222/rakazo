@@ -1,5 +1,5 @@
 import { i18n } from "@lingui/core";
-import { t } from "@lingui/core/macro";
+import { plural, t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { ChatMarkdown, LinkifiedText } from "@rakazo/chat-ui/web";
 import type {
@@ -41,7 +41,6 @@ import {
   clampMentionHighlightIndex,
   cronFromPreset,
   dismissableAskMessageIds,
-  expandPeerReplies,
   foldPeerReplies,
   groupVoiceChats,
   inferAttachmentMimeType,
@@ -54,6 +53,7 @@ import {
   mentionChipKey,
   nestRosterByParent,
   normalizeRunError,
+  peerExchangeLines,
   plainTextFromMarkdown,
   projectMessageReactions,
   reorderBotTo,
@@ -1944,7 +1944,7 @@ function SpaceShell() {
     if (epoch !== historyEpoch.current || jumpId !== jumpGeneration.current) return;
     if (target.groupId && activeGroupId.current !== target.groupId) return;
     if (target.botId && activeBotId.current !== target.botId) return;
-    // A reply folded under its peer marker counts: the transcript expands the marker to show it.
+    // A reply folded under its peer marker counts: the transcript scrolls to its exchange line.
     const pageTranscript = foldPeerReplies(page.messages, { includePeerReceipts: true });
     const targetInPage =
       pageTranscript.markerOf.has(target.messageId) ||
@@ -5307,40 +5307,18 @@ const Transcript = memo(function Transcript({
   const lastScrollTop = useRef<number | null>(null);
   const autoScrollTimer = useRef<number | undefined>(undefined);
   const jumpButtonRef = useRef<HTMLButtonElement>(null);
-  const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const togglePeerReplies = useCallback((markerId: string) => {
-    // Like a pointer press: a keyboard toggle must not snap the transcript to its end.
-    following.current = false;
-    autoScrolling.current = false;
-    setExpandedPeerMarkers((expanded) => {
-      const next = new Set(expanded);
-      if (!next.delete(markerId)) next.add(markerId);
-      return next;
-    });
-  }, []);
-  // A jump to a folded reply expands its marker; the scroll effect below then finds the row.
-  useLayoutEffect(() => {
-    const markerId = scrollRequest && transcript.markerOf.get(scrollRequest.messageId);
-    if (!markerId) return;
-    setExpandedPeerMarkers((expanded) =>
-      expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
-    );
-  }, [scrollRequest, transcript]);
-  const messages = useMemo(
-    () => expandPeerReplies(transcript, expandedPeerMarkers),
-    [transcript, expandedPeerMarkers],
-  );
+  const messages = transcript.messages;
   const messageById = useMemo(
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
   const reactionView = useMemo(() => projectMessageReactions(messages), [messages]);
+  const presentable = reactionView.visibleMessages.filter((message) =>
+    messageHasVisibleBlocks(message.blocks, showToolActivity),
+  );
+  const exchanges = peerExchangeLines({ ...transcript, messages: presentable });
   const separatorIds = timeSeparatorIds(
-    reactionView.visibleMessages.filter((message) =>
-      messageHasVisibleBlocks(message.blocks, showToolActivity),
-    ),
+    presentable.filter((m) => !exchanges.lineOf.has(m.id) || exchanges.lines.has(m.id)),
   );
   const workingBotName = workingBots.length === 1 ? workingBots[0]?.name : undefined;
   const workingLabel =
@@ -5481,7 +5459,7 @@ const Transcript = memo(function Transcript({
     if (!scrollRequest || scrolledJump.current === scrollRequest.nonce) return;
     const element = scrollRef.current;
     const row = element?.querySelector(
-      `[data-message-id="${CSS.escape(scrollRequest.messageId)}"]`,
+      `[data-message-id="${CSS.escape(exchanges.lineOf.get(transcript.markerOf.get(scrollRequest.messageId) ?? scrollRequest.messageId) ?? transcript.markerOf.get(scrollRequest.messageId) ?? scrollRequest.messageId)}"]`,
     );
     if (!element || !row) return;
     scrolledJump.current = scrollRequest.nonce;
@@ -5505,7 +5483,15 @@ const Transcript = memo(function Transcript({
       { duration: 1200 },
     );
     onScrollRequestHandled();
-  }, [messages, scrollRequest, scrollRef, endJumpScroll, onScrollRequestHandled]);
+  }, [
+    messages,
+    scrollRequest,
+    scrollRef,
+    endJumpScroll,
+    onScrollRequestHandled,
+    exchanges.lineOf,
+    transcript.markerOf,
+  ]);
 
   useLayoutEffect(() => {
     if (following.current) snapToEnd();
@@ -5618,6 +5604,39 @@ const Transcript = memo(function Transcript({
           }
           const message = item.message;
           if (!messageHasVisibleBlocks(message.blocks, showToolActivity)) return null;
+          const exchange = exchanges.lines.get(message.id);
+          if (exchanges.lineOf.has(message.id) && !exchange) return null;
+          if (exchange) {
+            const peer = exchange.peerBotName;
+            const count = exchange.count;
+            const label =
+              count >= 2
+                ? plural(count, { one: `# message with ${peer}`, other: `# messages with ${peer}` })
+                : exchange.direction === "sent"
+                  ? t`Messaged ${peer}`
+                  : t`Message from ${peer}`;
+            return (
+              <div key={message.id} data-message-id={message.id}>
+                {separatorIds.has(message.id) ? (
+                  <TimeSeparator createdAt={message.createdAt} locale={i18n.locale || "en"} />
+                ) : null}
+                {exchange.receiptMessageIds
+                  .filter((id) => id !== message.id)
+                  .map((id) => (
+                    <span key={id} data-message-id={id} />
+                  ))}
+                <CollaborationMarker
+                  label={label}
+                  peerName={peer}
+                  identity={exchange.peerBotId}
+                  color={peerBot(exchange.peerBotId)?.color ?? FALLBACK_BOT_COLOR}
+                  onClick={() =>
+                    onOpenPeerMessages({ peerBotId: exchange.peerBotId, peerBotName: peer })
+                  }
+                />
+              </div>
+            );
+          }
           const peerReceipt = isPeerReceiptBlocks(message.blocks);
           const messageReactions = reactionView.reactions.get(message.id);
           return (
@@ -5658,15 +5677,6 @@ const Transcript = memo(function Transcript({
                       canAnswer={answerableAskIds.has(message.id)}
                       canDismiss={dismissableAskIds.has(message.id)}
                       onOpenBot={onOpenBot}
-                      onOpenPeerMessages={onOpenPeerMessages}
-                      peerReplies={
-                        transcript.folded.has(message.id)
-                          ? expandedPeerMarkers.has(message.id)
-                            ? "expanded"
-                            : "collapsed"
-                          : undefined
-                      }
-                      onTogglePeerReplies={togglePeerReplies}
                       onAnswer={onAnswer}
                       speakerName={
                         peerReceipt
@@ -7052,9 +7062,6 @@ const MessageView = memo(function MessageView({
   message,
   onAnswer,
   onOpenBot,
-  onOpenPeerMessages,
-  peerReplies,
-  onTogglePeerReplies,
   speakerName,
   memberName,
   peerBot,
@@ -7082,10 +7089,6 @@ const MessageView = memo(function MessageView({
     dismiss?: boolean,
   ) => Promise<void>;
   onOpenBot: (botId: string) => void;
-  onOpenPeerMessages: (peer: { peerBotId: string; peerBotName: string }) => void;
-  /** Set on a received marker whose peer run has folded replies. */
-  peerReplies?: "collapsed" | "expanded";
-  onTogglePeerReplies: (markerId: string) => void;
   speakerName?: string;
   memberName?: (botId: string | undefined) => string | undefined;
   peerBot: (botId: string) => { name?: string; color: string; status?: string } | undefined;
@@ -7264,32 +7267,8 @@ const MessageView = memo(function MessageView({
               </div>
             );
           }
-          if (block.kind === "bot_message_sent" || block.kind === "bot_message_received") {
-            const sent = block.kind === "bot_message_sent";
-            const peer = sent ? block.toBotName : block.fromBotName;
-            const peerBotId = sent ? block.toBotId : block.fromBotId;
-            const label = sent ? t`Messaged ${peer}` : t`Message from ${peer}`;
-            return (
-              <CollaborationMarker
-                key={i}
-                ariaLabel={label}
-                color={peerBot(peerBotId)?.color ?? FALLBACK_BOT_COLOR}
-                identity={peerBotId}
-                label={label}
-                onClick={() => onOpenPeerMessages({ peerBotId, peerBotName: peer })}
-                replies={
-                  !sent && peerReplies
-                    ? {
-                        expanded: peerReplies === "expanded",
-                        label:
-                          peerReplies === "expanded" ? t`Collapse ${label}` : t`Expand ${label}`,
-                        onToggle: () => onTogglePeerReplies(message.id),
-                      }
-                    : undefined
-                }
-              />
-            );
-          }
+          if (block.kind === "bot_message_sent" || block.kind === "bot_message_received")
+            return null;
           if (block.kind === "channel_message") {
             return (
               <div

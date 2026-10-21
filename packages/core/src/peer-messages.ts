@@ -1,11 +1,15 @@
 import type { MessageBlock, ThreadMessage } from "@rakazo/contracts";
 
+import { foldPeerReplies } from "./message-visibility.js";
+import { unreturnedPeerReplies } from "./peer-exchanges.js";
+
 export interface PeerMessage {
   messageId: string;
   direction: "sent" | "received";
   peerBotId: string;
   peerBotName: string;
   text: string;
+  blocks?: MessageBlock[];
   createdAt: string;
 }
 
@@ -49,7 +53,32 @@ export function peerMessagesFrom(messages: readonly ThreadMessage[]): PeerMessag
       );
     }
   }
-  return collected;
+  const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+  for (const [markerId, replies] of unreturnedPeerReplies(transcript)) {
+    const marker = messages.find((message) => message.id === markerId);
+    const wake = marker?.blocks.find((block) => block.kind === "bot_message_received");
+    if (wake?.kind !== "bot_message_received") continue;
+    for (const reply of replies) {
+      const blocks = reply.blocks.filter(
+        (b) => b.kind === "text" || b.kind === "file" || b.kind === "image",
+      );
+      collected.push({
+        messageId: reply.id,
+        direction: "sent",
+        peerBotId: wake.fromBotId,
+        peerBotName: wake.fromBotName,
+        createdAt: reply.createdAt,
+        blocks,
+        text: blocks.flatMap((b) => (b.kind === "text" ? [b.text] : [])).join("\n"),
+      });
+    }
+  }
+  return collected.sort(
+    (a, b) =>
+      a.createdAt.localeCompare(b.createdAt) ||
+      messages.findIndex((m) => m.id === a.messageId) -
+        messages.findIndex((m) => m.id === b.messageId),
+  );
 }
 
 /** One conversation per peer, most recently active first. */

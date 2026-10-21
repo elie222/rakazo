@@ -391,6 +391,14 @@ export default function Layout() {
                           headerBackVisible: false,
                         }}
                       />
+                      <Stack.Screen
+                        name="peer-chat"
+                        options={{
+                          presentation: "modal",
+                          gestureEnabled: true,
+                          headerTransparent: true,
+                        }}
+                      />
                       <Stack.Screen name="artifacts" options={glassHeaderOptions(t("Artifacts"))} />
                       <Stack.Screen name="artifact" options={{ title: t("Artifact") }} />
                       <Stack.Screen

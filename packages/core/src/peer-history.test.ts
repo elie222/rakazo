@@ -1,14 +1,47 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadPeerHistory } from "./peer-history";
+import { loadPeerHistory } from "./peer-history.js";
 
 function message(id: string, seq: number): ThreadMessage {
   return { id, seq } as ThreadMessage;
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 describe("peer history loading", () => {
+  it("works without AbortSignal static helpers and releases timers/listeners", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(AbortSignal, "any").mockImplementation(() => {
+      throw new Error("Unavailable");
+    });
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      throw new Error("Unavailable");
+    });
+    const lifecycle = new AbortController();
+    const remove = vi.spyOn(lifecycle.signal, "removeEventListener");
+    await expect(
+      loadPeerHistory({
+        signal: lifecycle.signal,
+        loadPage: async () => ({ messages: [], olderCursor: null }),
+      }),
+    ).resolves.toEqual([]);
+    expect(remove).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not start a request for an already closed view", async () => {
+    const lifecycle = new AbortController();
+    lifecycle.abort();
+    const loadPage = vi.fn();
+    await expect(loadPeerHistory({ signal: lifecycle.signal, loadPage })).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    expect(loadPage).not.toHaveBeenCalled();
+  });
+
   it("collects paginated messages in chronological page order", async () => {
     const loadPage = vi
       .fn()

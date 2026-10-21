@@ -14,7 +14,7 @@ import {
   isAttachmentAudioMimeType,
   MESSAGE_REACTIONS,
 } from "@rakazo/contracts";
-import type { SlashActionId, ThreadItem } from "@rakazo/core";
+import type { PeerExchange, SlashActionId, ThreadItem } from "@rakazo/core";
 import {
   abortableDelay,
   answerableAskMessageIds,
@@ -23,7 +23,6 @@ import {
   buildComposerMentionOptions,
   cloudAgentHttpsUrl,
   dismissableAskMessageIds,
-  expandPeerReplies,
   foldPeerReplies,
   formatFileSize,
   forwardProbeAfterPage,
@@ -36,6 +35,7 @@ import {
   isSecretAskBlock,
   leaveThreadWindow,
   openThreadWindow,
+  peerExchangeLines,
   plainTextFromMarkdown,
   projectMessageReactions,
   reconcileThreadScrollState,
@@ -124,6 +124,7 @@ import { MessageCaption } from "../components/message-caption";
 import { MessageContextMenu } from "../components/message-context-menu";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSymbol } from "../components/native-symbol";
+import { PeerReceiptLine } from "../components/peer-receipt-line";
 import { ReplyDismissButton } from "../components/reply-dismiss-button";
 import { ReplyLine } from "../components/reply-line";
 import { RunErrorSheet, useRunError } from "../components/run-error-sheet";
@@ -643,9 +644,6 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const [dismissedChoiceQuestions, setDismissedChoiceQuestions] = useState<
     ReadonlyMap<string, ReadonlySet<string>>
   >(() => new Map());
-  const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
   const peerTranscript = useMemo(
     () => foldPeerReplies(snap?.messages ?? [], { includePeerReceipts: true }),
     [snap?.messages],
@@ -653,7 +651,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const reactionView = useMemo(
     () =>
       projectMessageReactions(
-        expandPeerReplies(peerTranscript, expandedPeerMarkers)
+        peerTranscript.messages
           .map((message) => {
             const dismissed = dismissedChoiceQuestions.get(message.id);
             if (!dismissed) return message;
@@ -662,9 +660,19 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           })
           .filter((message) => hasVisibleMessagePresentation(message.blocks)),
       ),
-    [dismissedChoiceQuestions, expandedPeerMarkers, peerTranscript],
+    [dismissedChoiceQuestions, peerTranscript],
   );
-  const visibleMessages = reactionView.visibleMessages;
+  const exchanges = useMemo(
+    () => peerExchangeLines({ ...peerTranscript, messages: reactionView.visibleMessages }),
+    [peerTranscript, reactionView.visibleMessages],
+  );
+  const visibleMessages = useMemo(
+    () =>
+      reactionView.visibleMessages.filter(
+        (message) => !exchanges.lineOf.has(message.id) || exchanges.lines.has(message.id),
+      ),
+    [reactionView.visibleMessages, exchanges],
+  );
   const latestMessageId = latestArrivalMessageId(visibleMessages, peerTranscript.markerOf);
   const activePendingAttachments = attachmentsForThread(pendingAttachments, threadKey);
   const composerRef = useRef<ThreadComposerHandle>(null);
@@ -1260,14 +1268,18 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     setThreadScrollState(scrollBehavior.current.state());
     snapshotOrigin.current = scope;
     const next = opened?.snapshot ?? snap;
-    // A reply folded under its peer marker is only drawn once the marker is expanded.
-    const markerId = targetInPage
-      ? foldPeerReplies(next.messages, { includePeerReceipts: true }).markerOf.get(target.messageId)
-      : undefined;
-    if (markerId) {
-      setExpandedPeerMarkers((expanded) =>
-        expanded.has(markerId) ? expanded : new Set(expanded).add(markerId),
-      );
+    const transcript = foldPeerReplies(next.messages, { includePeerReceipts: true });
+    const exchanges = peerExchangeLines({
+      ...transcript,
+      messages: projectMessageReactions(transcript.messages).visibleMessages.filter((m) =>
+        hasVisibleMessagePresentation(m.blocks),
+      ),
+    });
+    const markerId = transcript.markerOf.get(target.messageId) ?? target.messageId;
+    const lineId = exchanges.lineOf.get(markerId) ?? markerId;
+    if (targetInPage) {
+      jumpAnchor.current.begin(lineId);
+      jumpScrollTarget.current = lineId;
     }
     commitSnap(next);
     setShowingSaved(false);
@@ -2189,11 +2201,23 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
         return next;
       });
     },
-    togglePeerReplies: (markerId) => {
-      setExpandedPeerMarkers((expanded) => {
-        const next = new Set(expanded);
-        if (!next.delete(markerId)) next.add(markerId);
-        return next;
+    openPeer: (peerBotId, peerBotName) => {
+      if (!botId) {
+        openBot(peerBotId, peerBotName);
+        return;
+      }
+      router.push({
+        pathname: "/peer-chat",
+        params: {
+          botId: botId ?? "",
+          botName: displayName ?? t("Bot"),
+          peerBotId,
+          peerBotName,
+          botColor: currentBot?.color ?? mobileTokens().mutedForeground,
+          peerBotColor:
+            mentionBots.find((bot) => bot.id === peerBotId)?.color ??
+            mobileTokens().mutedForeground,
+        },
       });
     },
     layout: (messageId, y, index) => {
@@ -2228,7 +2252,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       previewImage: (target) => rowActionsRef.current.previewImage(target),
       jump: (id) => rowActionsRef.current.jump(id),
       dismissChoice: (id, question) => rowActionsRef.current.dismissChoice(id, question),
-      togglePeerReplies: (id) => rowActionsRef.current.togglePeerReplies(id),
+      openPeer: (id, name) => rowActionsRef.current.openPeer(id, name),
       layout: (id, y, index) => rowActionsRef.current.layout(id, y, index),
     }),
     [],
@@ -2280,13 +2304,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
           replyAuthor={replyAuthor}
           replyFallbackText={parent ? previewMessageText(parent) : undefined}
           messageReactions={messageReactions}
-          peerReplies={
-            peerTranscript.folded.has(message.id)
-              ? expandedPeerMarkers.has(message.id)
-                ? "expanded"
-                : "collapsed"
-              : undefined
-          }
+          peerExchange={exchanges.lines.get(message.id)}
           activityBotId={activityBotId}
           activityColor={activityBot?.color}
           activityStatus={activityStatus}
@@ -2306,7 +2324,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       displayName,
       reactionView.reactions,
       peerTranscript,
-      expandedPeerMarkers,
+      exchanges,
       inGroup,
       botId,
       groupId,
@@ -3046,7 +3064,7 @@ type MessageRowActions = {
   previewImage: (target: ImageArtifactPreviewTarget) => void;
   jump: (messageId: string) => void;
   dismissChoice: (messageId: string, question: string) => void;
-  togglePeerReplies: (markerId: string) => void;
+  openPeer: (peerBotId: string, peerBotName: string) => void;
   layout: (messageId: string, y: number, index: number) => void;
 };
 
@@ -3068,8 +3086,8 @@ type MessageRowProps = {
   replyAuthor: string;
   replyFallbackText?: string;
   messageReactions?: ReadonlyMap<MessageReaction, number>;
-  /** Set on a received marker whose peer run has folded replies. */
-  peerReplies?: "collapsed" | "expanded";
+  /** Merged receipt line rendered at the first receipt. */
+  peerExchange?: PeerExchange;
   activityBotId?: string;
   activityColor?: string;
   activityStatus?: MobileBot["status"];
@@ -3101,7 +3119,7 @@ const MessageRow = memo(function MessageRow({
   replyAuthor,
   replyFallbackText,
   messageReactions,
-  peerReplies,
+  peerExchange,
   activityBotId,
   activityColor,
   activityStatus,
@@ -3292,7 +3310,7 @@ const MessageRow = memo(function MessageRow({
       onLayout={onLayout}
       style={{
         backgroundColor: highlighted ? tokens.muted : undefined,
-        marginTop: 12,
+        marginTop: isPeerReceiptBlocks(message.blocks) ? 4 : 12,
         width: "100%",
       }}
     >
@@ -3375,8 +3393,8 @@ const MessageRow = memo(function MessageRow({
                 onChoiceDismissed={onChoiceDismissed}
                 onPreviewMarkdown={actions.previewMarkdown}
                 onPreviewImage={actions.previewImage}
-                peerReplies={peerReplies}
-                onTogglePeerReplies={actions.togglePeerReplies}
+                peerExchange={peerExchange}
+                onOpenPeer={actions.openPeer}
                 actionProps={actionProps}
               />
             </ThreadReadOnlyContext.Provider>
@@ -3430,8 +3448,8 @@ const MessageBubble = memo(function MessageBubble({
   onChoiceDismissed,
   onPreviewMarkdown,
   onPreviewImage,
-  peerReplies,
-  onTogglePeerReplies,
+  peerExchange,
+  onOpenPeer,
   actionProps,
 }: {
   botId: string;
@@ -3453,14 +3471,14 @@ const MessageBubble = memo(function MessageBubble({
   onChoiceDismissed?: (question: string) => void;
   onPreviewMarkdown: (target: MarkdownArtifactPreviewTarget) => void;
   onPreviewImage: (target: ImageArtifactPreviewTarget) => void;
-  peerReplies?: "collapsed" | "expanded";
-  onTogglePeerReplies: (markerId: string) => void;
+  peerExchange?: PeerExchange;
+  onOpenPeer: (peerBotId: string, peerBotName: string) => void;
   actionProps: MessageActionProps;
 }) {
   const colorScheme = useResolvedAppearance();
   const tokens = mobileTokens();
   const { t } = useI18n();
-  const [peerExpanded, setPeerExpanded] = useState(false);
+  const [handoffExpanded, setHandoffExpanded] = useState(false);
   const artifactTarget: MobileArtifactTarget = groupId ? { groupId } : { botId };
   const cardBotId = message.botId ?? botId;
   const computerBotId = message.botId ?? (groupId ? undefined : botId);
@@ -3531,8 +3549,8 @@ const MessageBubble = memo(function MessageBubble({
         actionProps={actionProps}
         label={t("{from} messaged {to}", { from, to })}
         detail={handoff.text}
-        expanded={peerExpanded}
-        onToggle={() => setPeerExpanded((expanded) => !expanded)}
+        expanded={handoffExpanded}
+        onToggle={() => setHandoffExpanded((expanded) => !expanded)}
       />
     );
   }
@@ -3544,59 +3562,27 @@ const MessageBubble = memo(function MessageBubble({
   );
   if (peerMessage) {
     const sent = peerMessage.kind === "bot_message_sent";
-    const peer = sent ? peerMessage.toBotName : peerMessage.fromBotName;
-    const peerBotId = sent ? peerMessage.toBotId : peerMessage.fromBotId;
-    const label = sent
-      ? t("Messaged {peer}", { peer: peer ?? t("Bot") })
-      : t("Message from {peer}", { peer: peer ?? t("Bot") });
+    const peerBotName =
+      peerExchange?.peerBotName ?? (sent ? peerMessage.toBotName : peerMessage.fromBotName);
+    const peerBotId =
+      peerExchange?.peerBotId ?? (sent ? peerMessage.toBotId : peerMessage.fromBotId);
     const peerColor =
       bots.find((bot) => bot.id === peerBotId)?.color ??
       members?.find((member) => member.botId === peerBotId)?.color ??
       tokens.mutedForeground;
-    // Full view-only peer chat is web-first; on mobile a received chip expands the peer run's
-    // folded replies, which the thread draws as ordinary rows right after it.
-    const replies = sent ? undefined : peerReplies;
     return (
-      <Pressable
-        {...actionProps}
-        accessible
-        onPress={replies ? () => onTogglePeerReplies(message.id) : undefined}
-        accessibilityRole={replies ? "button" : undefined}
-        accessibilityState={replies ? { expanded: replies === "expanded" } : undefined}
-        accessibilityLabel={
-          replies === "expanded"
-            ? t("Hide {label}", { label })
-            : replies === "collapsed"
-              ? t("Show {label}", { label })
-              : label
-        }
-        style={{
-          width: "100%",
-          paddingVertical: 4,
-          alignItems: "center",
-          justifyContent: "flex-start",
-          flexDirection: "row",
-          gap: 6,
-        }}
-      >
-        <BotAvatar color={peerColor} identity={peerBotId} size={16} />
-        <Text
-          numberOfLines={1}
-          style={{ color: tokens.mutedForeground, fontSize: 13.5, flexShrink: 1 }}
-        >
-          {label}
-        </Text>
-        {replies ? (
-          <NativeSymbol
-            ios={replies === "expanded" ? "chevron.down" : "chevron.right"}
-            android={replies === "expanded" ? "chevron-down" : "chevron-forward"}
-            size={12}
-            color={tokens.mutedForeground}
-          />
-        ) : null}
-      </Pressable>
+      <PeerReceiptLine
+        peerBotId={peerBotId}
+        peerBotName={peerBotName}
+        color={peerColor}
+        count={peerExchange?.count ?? 1}
+        direction={sent ? "sent" : "received"}
+        actionProps={actionProps}
+        onPress={() => onOpenPeer(peerBotId, peerBotName)}
+      />
     );
   }
+
   const channelMessage = message.blocks.find(
     (block): block is Extract<MessageBlock, { kind: "channel_message" }> =>
       block.kind === "channel_message",

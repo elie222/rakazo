@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { DE_MESSAGES } from "./locales/de";
-import { NL_MESSAGES } from "./locales/nl";
-import { RU_MESSAGES } from "./locales/ru";
-import { ZH_MESSAGES } from "./locales/zh";
+import { DE_MESSAGES, PEER_MESSAGE_FORMS as DE_PEER_FORMS } from "./locales/de";
+import { NL_MESSAGES, PEER_MESSAGE_FORMS as NL_PEER_FORMS } from "./locales/nl";
+import { RU_MESSAGES, PEER_MESSAGE_FORMS as RU_PEER_FORMS } from "./locales/ru";
+import { ZH_MESSAGES, PEER_MESSAGE_FORMS as ZH_PEER_FORMS } from "./locales/zh";
 import {
   htmlLangForLocale,
   resolveUiLocale,
@@ -135,4 +135,39 @@ export function resetI18nForTests(locale: UiLocale = "en"): void {
   activeLocale = locale;
   uiLocaleWriteChain = Promise.resolve();
   emit();
+}
+
+/** Counted exchanges use the same locale as the rest of the mobile chrome. */
+export function peerExchangeLabel(
+  count: number,
+  direction: "sent" | "received",
+  peer: string,
+): string {
+  if (count === 1)
+    return direction === "sent"
+      ? t("Messaged {peer}", { peer })
+      : t("Message from {peer}", { peer });
+  const forms: Partial<Record<UiLocale, Partial<Record<Intl.LDMLPluralRule, string>>>> = {
+    de: DE_PEER_FORMS,
+    nl: NL_PEER_FORMS,
+    ru: RU_PEER_FORMS,
+    "zh-CN": ZH_PEER_FORMS,
+  };
+  // Hermes ships without Intl.PluralRules, so pick the category by hand.
+  const category = pluralCategory(activeLocale, count);
+  const localized = forms[activeLocale];
+  const template = localized?.[category] ?? localized?.other ?? "{count} messages with {peer}";
+  return template.replace("{count}", String(count)).replace("{peer}", peer);
+}
+
+function pluralCategory(locale: UiLocale, count: number): Intl.LDMLPluralRule {
+  if (locale === "zh-CN") return "other";
+  if (locale === "ru") {
+    const mod10 = count % 10;
+    const mod100 = count % 100;
+    if (mod10 === 1 && mod100 !== 11) return "one";
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "few";
+    return "many";
+  }
+  return count === 1 ? "one" : "other";
 }

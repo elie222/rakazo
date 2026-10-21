@@ -1,7 +1,7 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import { describe, expect, it } from "vitest";
 import { projectMessageReactions } from "./message-reactions.js";
-import { expandPeerReplies, foldPeerReplies, userVisibleMessages } from "./message-visibility.js";
+import { foldPeerReplies, userVisibleMessages } from "./message-visibility.js";
 
 function message(id: string, runId: string, blocks: ThreadMessage["blocks"]): ThreadMessage {
   return {
@@ -118,6 +118,45 @@ describe("user-visible messages", () => {
     ]);
   });
 
+  it.each(["result", "status", "fyi"] as const)(
+    "keeps %s-woken text and attachments in their actual transcript position",
+    (intent) => {
+      const wake = {
+        ...received,
+        blocks: received.blocks.map((block) =>
+          block.kind === "bot_message_received" ? { ...block, intent } : block,
+        ),
+      };
+      const messages = [
+        wake,
+        message("file", "run-peer", [
+          {
+            kind: "file",
+            artifactId: "report",
+            name: "report.pdf",
+            mimeType: "application/pdf",
+            size: 12,
+          },
+        ]),
+        message("ordinary", "other-run", [{ kind: "text", text: "Another message" }]),
+        message("image", "run-peer", [
+          { kind: "image", artifactId: "image", name: "chart.png", mimeType: "image/png" },
+        ]),
+        message("text", "run-peer", [{ kind: "text", text: "Here is the report." }]),
+      ];
+      const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
+      expect(transcript.messages).toEqual(messages);
+      expect(transcript.folded.size).toBe(0);
+      expect(transcript.markerOf.size).toBe(0);
+      expect(
+        userVisibleMessages(messages, {
+          includePeerReceipts: false,
+          includeDelegatedReplyText: false,
+        }).map((item) => item.id),
+      ).toEqual(["ordinary"]);
+    },
+  );
+
   it("keeps peer-run user-input cards inline while folding the reply", () => {
     const messages = [
       ...peerExchange,
@@ -137,24 +176,6 @@ describe("user-visible messages", () => {
       "choice",
     ]);
     expect(transcript.folded.get("received")?.map((item) => item.id)).toEqual(["reply"]);
-  });
-
-  it("draws expanded folds right after their marker", () => {
-    const transcript = foldPeerReplies(peerExchange, { includePeerReceipts: true });
-
-    expect(expandPeerReplies(transcript, new Set()).map((item) => item.id)).toEqual([
-      "user",
-      "sent",
-      "received",
-      "answer",
-    ]);
-    expect(expandPeerReplies(transcript, new Set(["received"])).map((item) => item.id)).toEqual([
-      "user",
-      "sent",
-      "received",
-      "reply",
-      "answer",
-    ]);
   });
 
   it("resolves a folded message to the marker it folds under", () => {
@@ -190,18 +211,8 @@ describe("user-visible messages", () => {
       "quote",
     ]);
     expect(transcript.markerOf.get("reaction")).toBe("received");
-    const collapsed = projectMessageReactions(expandPeerReplies(transcript, new Set()));
+    const collapsed = projectMessageReactions(transcript.messages);
     expect(collapsed.visibleMessages.map((item) => item.id)).not.toContain("reaction");
-    const expanded = projectMessageReactions(expandPeerReplies(transcript, new Set(["received"])));
-    expect(expanded.visibleMessages.map((item) => item.id)).toEqual([
-      "user",
-      "sent",
-      "received",
-      "reply",
-      "answer",
-      "quote",
-    ]);
-    expect(expanded.reactions.get("reply")?.get("👍")).toBe(1);
   });
 
   describe("a human message in a peer run", () => {
@@ -229,7 +240,7 @@ describe("user-visible messages", () => {
       });
 
       expect(transcript.messages.map((item) => item.id)).toEqual(["received", "ask", "thumbs"]);
-      const view = projectMessageReactions(expandPeerReplies(transcript, new Set()));
+      const view = projectMessageReactions(transcript.messages);
       expect(view.visibleMessages.map((item) => item.id)).toEqual(["received", "ask"]);
       expect(view.reactions.get("ask")?.get("👍")).toBe(1);
     });

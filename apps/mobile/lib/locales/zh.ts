@@ -3,6 +3,12 @@ export const ZH_MESSAGES: Record<string, string> = {
   Next: "下一步",
   "Ex: Project Falcon": "例如：猎鹰计划",
   "Search bots": "搜索 Bot",
+  "Close Chat": "关闭聊天",
+  "{count} messages with {peer}": "与 {peer} 的 {count} 条消息",
+  "Could not load this chat.": "无法加载此聊天。",
+  "Retry now": "立即重试",
+  "No messages with {peerBotName} yet.": "还没有与 {peerBotName} 的消息。",
+
   "About {label}": "关于{label}",
   "Manage the bots it creates": "管理它创建的机器人",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -905,4 +911,8 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Couldn't start the computer": "无法启动电脑",
   "Something went wrong while it was starting. Try again in a moment.":
     "启动时出了点问题。请稍后重试。",
+};
+
+export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
+  other: ZH_MESSAGES["{count} messages with {peer}"],
 };

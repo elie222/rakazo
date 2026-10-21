@@ -578,5 +578,7 @@
   "Nothing is still running": "Hâlâ çalışan bir şey yok",
   "Credentials are encrypted and never sent to the model.": "Kimlik bilgileri şifrelenir ve modele asla gönderilmez.",
   "Rename section": "Bölümü yeniden adlandır",
-  "Could not rename section": "Bölüm yeniden adlandırılamadı"
+  "Could not rename section": "Bölüm yeniden adlandırılamadı",
+  "Close Chat": "Sohbeti kapat",
+  "{count, plural, one {# message with {peer}} other {# messages with {peer}}}": "{count, plural, one {{peer} ile # mesaj} other {{peer} ile # mesaj}}"
 }

@@ -3,6 +3,12 @@ export const RU_MESSAGES: Record<string, string> = {
   Next: "Далее",
   "Ex: Project Falcon": "Например: проект «Сокол»",
   "Search bots": "Поиск ботов",
+  "Close Chat": "Закрыть чат",
+  "{count} messages with {peer}": "{count} сообщения с {peer}",
+  "Could not load this chat.": "Не удалось загрузить чат.",
+  "Retry now": "Повторить сейчас",
+  "No messages with {peerBotName} yet.": "Пока нет сообщений с {peerBotName}.",
+
   "About {label}": "О настройке «{label}»",
   "Manage the bots it creates": "Управлять созданными им ботами",
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
@@ -938,4 +944,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "Couldn't start the computer": "Не удалось запустить компьютер",
   "Something went wrong while it was starting. Try again in a moment.":
     "При запуске что-то пошло не так. Попробуйте ещё раз чуть позже.",
+};
+
+export const PEER_MESSAGE_FORMS: Partial<Record<Intl.LDMLPluralRule, string>> = {
+  one: "{count} сообщение с {peer}",
+  few: "{count} сообщения с {peer}",
+  many: "{count} сообщений с {peer}",
+  other: RU_MESSAGES["{count} messages with {peer}"],
 };

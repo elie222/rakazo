@@ -2,12 +2,19 @@
 
 import { readFileSync } from "node:fs";
 import type { ThreadScrollState } from "@rakazo/core";
-import { foldPeerReplies, openThreadWindow, withLiveStreamingProgress } from "@rakazo/core";
+import {
+  foldPeerReplies,
+  openThreadWindow,
+  peerExchangeLines,
+  projectMessageReactions,
+  withLiveStreamingProgress,
+} from "@rakazo/core";
 import { act, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import type { MobileSnapshot } from "./api";
+import { hasVisibleMessagePresentation } from "./message-presentation";
 import { ThreadJumpAnchor } from "./thread-jump";
 import { ThreadScrollBehavior } from "./thread-scroll";
 import { reconcileVisibleThreadSnapshot } from "./thread-snapshot";
@@ -34,15 +41,11 @@ function mountJumpProbe(latest: MobileSnapshot, page: unknown, targetKey: "botId
   const probe = {
     jump: undefined as unknown as (target: JumpTarget) => Promise<void>,
     snapshot: null as MobileSnapshot | null,
-    expandedPeerMarkers: new Set<string>() as ReadonlySet<string>,
     anchor: new ThreadJumpAnchor(),
   };
 
   function Probe() {
     const [snap, setSnap] = useState<MobileSnapshot | null>(latest);
-    const [expandedPeerMarkers, setExpandedPeerMarkers] = useState<ReadonlySet<string>>(
-      () => new Set(),
-    );
     const [, setThreadScrollState] = useState<ThreadScrollState>({
       detached: false,
       unread: false,
@@ -69,9 +72,11 @@ function mountJumpProbe(latest: MobileSnapshot, page: unknown, targetKey: "botId
       snapRef: useRef<MobileSnapshot | null>(latest),
       streamResponsesRef: useRef(false),
       setSnap,
-      setExpandedPeerMarkers,
       setThreadScrollState,
       scrollBehavior: useRef(new ThreadScrollBehavior()),
+      peerExchangeLines,
+      projectMessageReactions,
+      hasVisibleMessagePresentation,
       foldPeerReplies,
       openThreadWindow,
       withLiveStreamingProgress,
@@ -79,7 +84,6 @@ function mountJumpProbe(latest: MobileSnapshot, page: unknown, targetKey: "botId
     };
     probe.jump = new Function(...Object.keys(scope), handlers)(...Object.values(scope));
     probe.snapshot = snap;
-    probe.expandedPeerMarkers = expandedPeerMarkers;
     return (
       <div
         data-list={pinnedAroundRef.current ? "pinned" : "live"}
@@ -137,14 +141,13 @@ describe("mobile search jump", () => {
           );
           expect(probe.anchor.onMessageLayout(`message-${seq}`, 200, seq - 1, 24)).toBe(176);
         }
-        expect(probe.expandedPeerMarkers.size).toBe(0);
       } finally {
         unmount();
       }
     },
   );
 
-  it("expands the peer marker a jumped-to reply folds under", async () => {
+  it("scrolls to the exchange line for a folded reply", async () => {
     const latest: MobileSnapshot = {
       threadId: "thread-1",
       cursor: 3,
@@ -183,9 +186,8 @@ describe("mobile search jump", () => {
     const { probe, container, unmount } = mountJumpProbe(latest, page, "botId");
     try {
       await act(() => probe.jump({ botId: "target-1", messageId: "reply" }));
-      expect(probe.expandedPeerMarkers).toEqual(new Set(["received"]));
       expect(container.querySelector('[data-list="pinned"]')?.getAttribute("data-target")).toBe(
-        "reply",
+        "received",
       );
     } finally {
       unmount();

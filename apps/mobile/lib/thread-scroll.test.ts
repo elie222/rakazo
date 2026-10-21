@@ -1,6 +1,6 @@
 import type { ThreadMessage } from "@rakazo/contracts";
 import type { ThreadScrollState } from "@rakazo/core";
-import { expandPeerReplies, foldPeerReplies, reconcileThreadScrollState } from "@rakazo/core";
+import { foldPeerReplies, reconcileThreadScrollState } from "@rakazo/core";
 import { describe, expect, it } from "vitest";
 import { latestArrivalMessageId, ThreadScrollBehavior } from "./thread-scroll.js";
 
@@ -316,9 +316,8 @@ describe("mobile thread initial scroll", () => {
 describe("mobile thread folded peer replies", () => {
   const markerOf = new Map([["reply", "marker"]]);
   const collapsed = [{ id: "user" }, { id: "marker" }];
-  const expanded = [...collapsed, { id: "reply" }];
 
-  it("ignores hidden arrivals and fold toggles but marks an inline ask unread", () => {
+  it("ignores folded arrivals but marks an inline ask unread", () => {
     const messages: ThreadMessage[] = [
       {
         id: "marker",
@@ -336,14 +335,14 @@ describe("mobile thread folded peer replies", () => {
     behavior.openThread("thread-1");
     behavior.onLayout(600);
     behavior.onContentSizeChanged(1800);
-    const arrive = (expandedMarkers: ReadonlySet<string>) => {
+    const arrive = () => {
       const transcript = foldPeerReplies(messages, { includePeerReceipts: true });
       return behavior.onContentChanged(
         false,
-        latestArrivalMessageId(expandPeerReplies(transcript, expandedMarkers), transcript.markerOf),
+        latestArrivalMessageId(transcript.messages, transcript.markerOf),
       );
     };
-    expect(arrive(new Set())).toBe("jump");
+    expect(arrive()).toBe("jump");
     behavior.onUserScroll(200);
     messages.push({
       ...messages[0]!,
@@ -352,8 +351,8 @@ describe("mobile thread folded peer replies", () => {
       role: "bot",
       blocks: [{ kind: "text", text: "Peer summary" }],
     });
-    for (const expandedMarkers of [new Set<string>(), new Set(["marker"]), new Set<string>()]) {
-      expect(arrive(expandedMarkers)).toBeNull();
+    for (let arrival = 0; arrival < 3; arrival++) {
+      expect(arrive()).toBeNull();
       expect(behavior.state()).toEqual({ detached: true, unread: false });
     }
     messages.push({
@@ -363,45 +362,24 @@ describe("mobile thread folded peer replies", () => {
       role: "bot",
       blocks: [{ kind: "ask", text: "Which city?", status: "pending" }],
     });
-    expect(arrive(new Set())).toBeNull();
+    expect(arrive()).toBeNull();
     expect(behavior.state()).toEqual({ detached: true, unread: true });
-    expect(arrive(new Set(["marker"]))).toBeNull();
+    expect(arrive()).toBeNull();
     expect(behavior.state()).toEqual({ detached: true, unread: true });
     expect(behavior.jumpToLatest()).toBe("smooth");
     expect(behavior.state()).toEqual({ detached: false, unread: false });
-  });
-
-  it("does not count collapsing a fold at the end as a new message", () => {
-    const behavior = new ThreadScrollBehavior();
-    behavior.openThread("thread-1");
-    behavior.onLayout();
-    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
-    behavior.onContentChanged(false, latestArrivalMessageId(expanded, markerOf));
-
-    behavior.onUserScroll(200);
-    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
-    expect(behavior.state()).toEqual({ detached: true, unread: false });
-  });
-
-  it("does not follow an expanded fold as if a message arrived", () => {
-    const behavior = new ThreadScrollBehavior();
-    behavior.openThread("thread-1");
-    behavior.onLayout();
-    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
-
-    expect(behavior.onContentChanged(false, latestArrivalMessageId(expanded, markerOf))).toBe(null);
   });
 
   it("still records a real new row after the marker while detached", () => {
     const behavior = new ThreadScrollBehavior();
     behavior.openThread("thread-1");
     behavior.onLayout();
-    behavior.onContentChanged(false, latestArrivalMessageId(expanded, markerOf));
+    behavior.onContentChanged(false, latestArrivalMessageId(collapsed, markerOf));
 
     behavior.onUserScroll(200);
     behavior.onContentChanged(
       false,
-      latestArrivalMessageId([...expanded, { id: "new" }], markerOf),
+      latestArrivalMessageId([...collapsed, { id: "new" }], markerOf),
     );
     expect(behavior.state()).toEqual({ detached: true, unread: true });
   });

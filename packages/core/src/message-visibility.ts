@@ -11,8 +11,8 @@ type PresentableMessage = {
 
 export type UserVisibleMessagesOptions = {
   /**
-   * Keep `bot_message_sent` / `bot_message_received` rows as compact chips
-   * (web CollaborationMarker; mobile AgentEventLabel). Peer replies fold under the received chip.
+   * Keep `bot_message_sent` / `bot_message_received` rows as compact exchange lines.
+   * Peer-addressed replies fold into the received exchange.
    */
   includePeerReceipts?: boolean;
   /** Peer-run ids from `run.trigger === "bot_message"` when receipts may be out of window. */
@@ -59,13 +59,13 @@ export type FoldedTranscript<T> = {
   messages: T[];
   /** Peer-run replies keyed by the id of the `bot_message_received` marker they fold under. */
   folded: ReadonlyMap<string, readonly T[]>;
-  /** The marker each folded message folds under, so a jump can expand it. */
+  /** The marker each folded message folds under, so a jump can find its exchange line. */
   markerOf: ReadonlyMap<string, string>;
 };
 
 /**
  * Drop peer-run activity; optionally keep sent/received receipt rows. With receipts kept, a
- * peer run's bot text replies fold under its received marker; its user-input cards stay inline.
+ * request/question run's bot replies fold under its received marker; user-addressed replies and input cards stay inline.
  */
 export function foldPeerReplies<T extends PresentableMessage>(
   messages: readonly T[],
@@ -73,6 +73,7 @@ export function foldPeerReplies<T extends PresentableMessage>(
 ): FoldedTranscript<T> {
   const includePeerReceipts = options.includePeerReceipts === true;
   const markerByRunId = new Map<string, string>();
+  const userAddressedRunIds = new Set<string>();
   for (const message of messages) {
     if (
       message.runId &&
@@ -80,6 +81,13 @@ export function foldPeerReplies<T extends PresentableMessage>(
       message.blocks.some((block) => block.kind === "bot_message_received")
     ) {
       markerByRunId.set(message.runId, message.id);
+      const wake = message.blocks.find((block) => block.kind === "bot_message_received");
+      if (
+        wake?.kind === "bot_message_received" &&
+        (wake.intent === "result" || wake.intent === "status" || wake.intent === "fyi")
+      ) {
+        userAddressedRunIds.add(message.runId);
+      }
     }
   }
   const peerRunIds = new Set([...(options.knownPeerRunIds ?? []), ...markerByRunId.keys()]);
@@ -98,7 +106,7 @@ export function foldPeerReplies<T extends PresentableMessage>(
       return message.blocks.some(isBackgroundInputBlock);
     }
     if (isPeerReceiptBlocks(message.blocks)) return includePeerReceipts;
-    // A reaction folds with its folded parent so the count shows when the parent is expanded.
+    // A reaction follows its folded parent out of the visible transcript.
     const parentMarkerId = message.replyToMessageId
       ? markerOf.get(message.replyToMessageId)
       : undefined;
@@ -122,7 +130,7 @@ export function foldPeerReplies<T extends PresentableMessage>(
     if (message.role !== "bot") return true;
     const markerId = includePeerReceipts ? markerByRunId.get(message.runId) : undefined;
     // A reply whose marker is outside the loaded page stays inline.
-    if (markerId === undefined) return true;
+    if (markerId === undefined || userAddressedRunIds.has(message.runId)) return true;
     return fold(markerId, message);
   });
   return { messages: visible, folded, markerOf };
@@ -133,17 +141,4 @@ export function userVisibleMessages<T extends PresentableMessage>(
   options: UserVisibleMessagesOptions = {},
 ): T[] {
   return foldPeerReplies(messages, options).messages;
-}
-
-/** The transcript with each expanded marker's folded replies drawn right after it. */
-export function expandPeerReplies<T extends PresentableMessage>(
-  transcript: FoldedTranscript<T>,
-  expandedMarkerIds: ReadonlySet<string>,
-): T[] {
-  if (expandedMarkerIds.size === 0) return transcript.messages;
-  return transcript.messages.flatMap((message) =>
-    expandedMarkerIds.has(message.id)
-      ? [message, ...(transcript.folded.get(message.id) ?? [])]
-      : [message],
-  );
 }
