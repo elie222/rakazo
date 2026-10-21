@@ -336,7 +336,7 @@ describe("BotSettings thinking options", () => {
   });
 });
 
-describe("BotSettings fleet management saves", () => {
+describe("BotSettings bot management saves", () => {
   it("cannot restore a stale enabled value when another session disables it", async () => {
     await render("Billing", { fleetManagement: true });
     await render("Billing", { fleetManagement: false });
@@ -355,7 +355,7 @@ describe("BotSettings fleet management saves", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("false");
   });
 
-  it.each([false, true])("saves only the fleet toggle from %s", async (enabled) => {
+  it.each([false, true])("saves only the bot management toggle from %s", async (enabled) => {
     await render("Billing", { fleetManagement: enabled });
     const toggle = container.querySelector<HTMLButtonElement>('button[id$="-fleet-management"]');
     if (!toggle) throw new Error("Missing switch");

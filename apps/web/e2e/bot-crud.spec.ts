@@ -198,7 +198,7 @@ test("bot management switch persists and settings help is accessible", async ({
 }, testInfo) => {
   await signup(
     page,
-    `fleet-management-${Date.now()}@rakazo.test`,
+    `bot-management-${Date.now()}@rakazo.test`,
     "password12",
     "Manage the bots it creates",
   );

@@ -892,7 +892,7 @@ Context retention update (#1618): a context rebuild keeps the last three tool
 results whole, counting individual results (including parallel calls), and shortens
 older eligible results with the existing deterministic ~1 KB rule once they leave
 that fixed window. If the candidate exceeds the model input budget, it falls back
-to the previous shortening and context-selection logic. History, skill and fleet
+to the previous shortening and context-selection logic. History, skill and bot instruction
 exceptions remain unchanged. Between rebuilds, the previously sent transcript stays
 byte-identical for prompt caching; results are not repeatedly shortened on each call.
 The unread tool group remains protected even when steering follows its results.

@@ -52,7 +52,7 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("always asks before fleet writes that touch several bots, cost money or rewrite a bot", () => {
+  it("always asks before bot management writes that touch several bots, cost money or rewrite a bot", () => {
     for (const name of [
       "create_group",
       "update_group",
@@ -65,7 +65,7 @@ describe("toolRequiresApproval", () => {
     }
   });
 
-  it("never asks before reading the fleet or organizing the sidebar", () => {
+  it("never asks before reading the bots it manages or organizing the sidebar", () => {
     for (const name of ["list_fleet", "organize_bot", "update_bot"]) {
       expect(toolRequiresApproval(name, false)).toBe(false);
       expect(toolRequiresExplicitApproval(name)).toBe(false);

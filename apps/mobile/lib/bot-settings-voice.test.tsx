@@ -394,7 +394,7 @@ describe("bot settings device voice menu", () => {
     );
   });
 
-  it("shows fleet help in a native alert from an accessible button", async () => {
+  it("shows bot management help in a native alert from an accessible button", async () => {
     await render();
     const help = container.querySelector<HTMLButtonElement>(
       '[aria-label="About Manage the bots it creates"]',
@@ -408,13 +408,13 @@ describe("bot settings device voice menu", () => {
     expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Manage the bots it creates", explanation);
   });
 
-  it("persists fleet toggles immediately without adding them to unrelated saves", async () => {
+  it("persists bot management toggles immediately without adding them to unrelated saves", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Manage the bots it creates"]',
     );
-    if (!toggle) throw new Error("Missing fleet switch");
+    if (!toggle) throw new Error("Missing bot management switch");
     await act(async () => {
       toggle.click();
     });
@@ -467,7 +467,7 @@ describe("bot settings device voice menu", () => {
   });
 
   it.each([false, true])(
-    "waits for the full fleet queue before leaving (failure: %s)",
+    "waits for the full bot management queue before leaving (failure: %s)",
     async (fails) => {
       const first = deferredSave();
       const last = deferredSave();
@@ -488,13 +488,13 @@ describe("bot settings device voice menu", () => {
       expect(mocks.back).not.toHaveBeenCalled();
       expect(mocks.rpc).toHaveBeenCalledTimes(2);
       await act(async () => {
-        if (fails) last.reject(new Error("fleet write failed"));
+        if (fails) last.reject(new Error("bot management write failed"));
         else last.resolve();
       });
       if (fails) {
         expect(mocks.back).not.toHaveBeenCalled();
         expect(toggle.getAttribute("aria-checked")).toBe("true");
-        expect(container.textContent).toContain("fleet write failed");
+        expect(container.textContent).toContain("bot management write failed");
         expect(toggle.disabled).toBe(false);
       } else {
         expect(mocks.back).toHaveBeenCalledOnce();
@@ -502,7 +502,7 @@ describe("bot settings device voice menu", () => {
     },
   );
 
-  it("keeps a failed fleet write visible when Save is pressed after rollback", async () => {
+  it("keeps a failed bot management write visible when Save is pressed after rollback", async () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
     await act(async () =>
@@ -519,7 +519,7 @@ describe("bot settings device voice menu", () => {
     expect(container.textContent).toContain("offline");
   });
 
-  it("does not resend saved edits when Save is retried after a failed fleet write", async () => {
+  it("does not resend saved edits when Save is retried after a failed bot management write", async () => {
     mocks.rpc.mockResolvedValue(undefined);
     mocks.rpc.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({
       instructions: "",
@@ -570,13 +570,13 @@ describe("bot settings device voice menu", () => {
     expect(toggle.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("restores the fleet toggle when saving fails", async () => {
+  it("restores the bot management toggle when saving fails", async () => {
     mocks.rpc.mockRejectedValueOnce(new Error("offline"));
     await render();
     const toggle = container.querySelector<HTMLButtonElement>(
       '[aria-label="Manage the bots it creates"]',
     );
-    if (!toggle) throw new Error("Missing fleet switch");
+    if (!toggle) throw new Error("Missing bot management switch");
     await act(async () => {
       toggle.click();
     });

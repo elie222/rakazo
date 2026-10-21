@@ -7,7 +7,7 @@ describe("bot settings layout", () => {
     const modes: readonly ComputerMode[] = BOT_COMPUTER_MODES;
     expect(modes).toEqual(["team", "dedicated"]);
   });
-  it("keeps voice with read aloud and fleet management in Advanced", () => {
+  it("keeps voice with read aloud and bot management in Advanced", () => {
     expect(BOT_SETTINGS_ADVANCED_ORDER).toEqual([
       "instructions",
       "computer",

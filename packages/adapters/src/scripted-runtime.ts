@@ -637,7 +637,7 @@ function fleetCall(prompt: string): { name: string; args: Record<string, unknown
   const target = (kind: string, name: string) => ({
     [kind.toLowerCase() === "group" ? "group_name" : "bot_name"]: clean(name),
   });
-  const listed = /\blist the fleet(?: with bot\s+([A-Za-z0-9_-]+))?/i.exec(prompt);
+  const listed = /\blist the bots you manage(?: with bot\s+([A-Za-z0-9_-]+))?/i.exec(prompt);
   if (listed) return { name: "list_fleet", args: listed[1] ? { bot_id: listed[1] } : {} };
   const created = /create a group named\s+([^\n<&]+?)\s+with\s+([^\n<&]+)/i.exec(prompt);
   if (created) {
@@ -734,7 +734,7 @@ function childEditCalls(
   if (renamed)
     return [{ name: "update_bot", args: { bot_id: renamed[1], name: clean(renamed[2]!) } }];
   // Some providers send every omitted optional field as an empty string.
-  const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank fleet fields/i.exec(prompt);
+  const blank = /rename yourself to\s+([^\n<&]+?)\s+with blank bot management fields/i.exec(prompt);
   if (blank) return [{ name: "update_bot", args: { name: clean(blank[1]!), bot_id: "" } }];
   return undefined;
 }

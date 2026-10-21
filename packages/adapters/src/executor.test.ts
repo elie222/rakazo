@@ -365,7 +365,7 @@ describe("run tool selection", () => {
     expect(toolNames("user")).toContain("task_catalog");
   });
 
-  it("offers fleet tools only with the switch on and only on runs the owner started", () => {
+  it("offers bot management tools only with the switch on and only on runs the owner started", () => {
     const fleetTools = (
       trigger: string,
       fleetManagement: boolean,
@@ -1347,7 +1347,7 @@ describe("userTurnInstructions", () => {
     }
   });
 
-  it("states the fleet rules only when the run is offered the fleet write tools", () => {
+  it("states bot management rules only when the run is offered bot management write tools", () => {
     const clauseFor = (
       trigger: string,
       fleetManagement: boolean,
@@ -1381,7 +1381,7 @@ describe("userTurnInstructions", () => {
       })
         .filter(Boolean)
         .join("\n")
-        .match(/Fleet tools:[^\n]*/)?.[0];
+        .match(/Bot management tools:[^\n]*/)?.[0];
     const clause = clauseFor("user", true);
     expect(clause).toContain("list_fleet before changing anything");
     expect(clause).toContain(

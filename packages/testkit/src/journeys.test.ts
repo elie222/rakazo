@@ -1809,7 +1809,7 @@ describeJourneys("required product journeys", () => {
   });
 
   it("duplicating a bot uses the new-bot management default", async () => {
-    const cookie = await signup(app, `fleet-dup-j-${stamp}@rakazo.test`, "Fleet");
+    const cookie = await signup(app, `bot-management-dup-j-${stamp}@rakazo.test`, "Bot Manager");
     const source = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -1828,7 +1828,7 @@ describeJourneys("required product journeys", () => {
   });
 
   it("untrusted bot_message run cannot rewrite a child's instructions", async () => {
-    const cookie = await signup(app, `fleet-trust-j-${stamp}@rakazo.test`, "Fleet");
+    const cookie = await signup(app, `bot-management-trust-j-${stamp}@rakazo.test`, "Bot Manager");
     const parent = await rpc<Bot>(app, cookie, "bots/create", {
       name: "Chief",
       title: "",
@@ -1873,7 +1873,7 @@ describeJourneys("required product journeys", () => {
       expect.objectContaining({
         name: "set_child_instructions",
         outcome: "error",
-        error: "Fleet tools need a run you started.",
+        error: "Bot management tools need a run you started.",
       }),
     ]);
     const after = await prisma.bot.findUniqueOrThrow({
@@ -3114,9 +3114,13 @@ describeJourneys("required product journeys", () => {
     );
   });
 
-  describe("fleet management", () => {
+  describe("bot management", () => {
     async function fleetOwner(label: string) {
-      const cookie = await signup(app, `fleet-${label}-${stamp}@rakazo.test`, "Fleet");
+      const cookie = await signup(
+        app,
+        `bot-management-${label}-${stamp}@rakazo.test`,
+        "Bot Manager",
+      );
       const me = await rpc<Me>(app, cookie, "me");
       const chief = await createBot(cookie, "Chief");
       await rpc(app, cookie, "bots/update", { botId: chief.id, fleetManagement: true });
@@ -3411,7 +3415,11 @@ describeJourneys("required product journeys", () => {
 
     it("organize_bot sets, clears and pins sections for bots and groups of the user only", async () => {
       const { cookie, me, chief } = await fleetOwner("organize");
-      const outsider = await signup(app, `fleet-organize-other-${stamp}@rakazo.test`, "Other");
+      const outsider = await signup(
+        app,
+        `bot-management-organize-other-${stamp}@rakazo.test`,
+        "Other",
+      );
       const outsiderMe = await rpc<Me>(app, outsider, "me");
       const foreignSection = await prisma.botSection.create({
         data: { spaceId: me.spaceId, userId: outsiderMe.userId, name: "Research", position: 0 },
@@ -3602,7 +3610,7 @@ describeJourneys("required product journeys", () => {
       expect((await childState(ops.id)).instructions).toBe("");
     });
 
-    it("a run that took in a channel message cannot change the fleet; an app message does not taint it", async () => {
+    it("a run that took in a channel message cannot change the bots it manages; an app message does not taint it", async () => {
       const { cookie, me, chief } = await fleetOwner("taint");
       const scout = await createChild(cookie, chief, "Scout");
       const chiefThread = await prisma.thread.findFirstOrThrow({ where: { botId: chief.id } });
@@ -3661,7 +3669,7 @@ describeJourneys("required product journeys", () => {
         expect.objectContaining({
           outcome: "error",
           error:
-            "Fleet changes are blocked for the rest of this run because it received a channel or webhook message.",
+            "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
         }),
       ]);
       expect(await prisma.externalEffect.count({ where: { runId: tainted } })).toBe(0);
@@ -3683,7 +3691,7 @@ describeJourneys("required product journeys", () => {
         expect.objectContaining({
           outcome: "error",
           error:
-            "Fleet changes are blocked for the rest of this run because it received a channel or webhook message.",
+            "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
         }),
       ]);
       expect((await childState(scout.id)).instructions).toBe("");
@@ -3841,7 +3849,7 @@ describeJourneys("required product journeys", () => {
       ]);
     });
 
-    it("update_bot on itself ignores blank fleet fields, with the switch off or on", async () => {
+    it("update_bot on itself ignores blank bot management fields, with the switch off or on", async () => {
       const { cookie, chief } = await fleetOwner("blank-fields");
       const plain = await createBot(cookie, "Plain");
       for (const [bot, name] of [
@@ -3852,7 +3860,7 @@ describeJourneys("required product journeys", () => {
           app,
           cookie,
           bot.id,
-          `rename yourself to ${name} with blank fleet fields`,
+          `rename yourself to ${name} with blank bot management fields`,
         );
         expect(await toolOutcomes(done.run.id, "update_bot")).toEqual([
           expect.objectContaining({ outcome: "succeeded" }),

@@ -1103,11 +1103,11 @@ describe("self instruction proposals", () => {
   );
 });
 
-describe("fleet tool gating", () => {
-  const trustRejection = { error: "Fleet tools need a run you started." };
+describe("bot management tool gating", () => {
+  const trustRejection = { error: "Bot management tools need a run you started." };
   const taintRejection = {
     error:
-      "Fleet changes are blocked for the rest of this run because it received a channel or webhook message.",
+      "Changes to the bots you manage are blocked for the rest of this run because it received a channel or webhook message.",
   };
   const switchRejection = { error: "This tool is disabled for this bot." };
 
@@ -1132,7 +1132,7 @@ describe("fleet tool gating", () => {
     },
   );
 
-  it("refuses every fleet write once the run claimed a channel or webhook message", async () => {
+  it("refuses every bot management write once the run claimed a channel or webhook message", async () => {
     const f = fixture({
       name: "create_group",
       builtin: true,
@@ -1149,7 +1149,7 @@ describe("fleet tool gating", () => {
     expect(f.effects).toEqual([]);
   });
 
-  it("still reads the fleet after the run claimed a channel message", async () => {
+  it("still reads the bots it manages after the run claimed a channel message", async () => {
     const f = fixture({ name: "list_fleet", builtin: true, fleetManagement: true });
     f.claimedOutsideSteering(true);
     f.setCalls([{ args: {}, executionId: "call-1" }]);
@@ -1158,7 +1158,7 @@ describe("fleet tool gating", () => {
   });
 
   it.each(["bot_message", "messaging", "spawn", "tickets", "webhook", "routine"])(
-    "refuses fleet writes on %s runs even with the switch on",
+    "refuses bot management writes on %s runs even with the switch on",
     async (trigger) => {
       const f = fixture({ name: "create_group", builtin: true, fleetManagement: true, trigger });
       f.setCalls([{ args: { name: "Crew", bot_ids: ["a", "b"] }, executionId: "call-1" }]);
@@ -1169,7 +1169,7 @@ describe("fleet tool gating", () => {
     },
   );
 
-  it("offers fleet writes on a follow-up only when the user wrote the source message", async () => {
+  it("offers bot management writes on a follow-up only when the user wrote the source message", async () => {
     const fromUser = fixture({
       name: "create_group",
       builtin: true,
@@ -1202,7 +1202,7 @@ describe("fleet tool gating", () => {
     const f = fixture({ name, builtin: true, fleetManagement: true });
     f.setCalls([{ args, executionId: JSON.stringify(["pi-tool", "helper-call", "call-1"]) }]);
     await f.run();
-    expect(f.results).toEqual([{ error: "Helpers cannot use fleet tools." }]);
+    expect(f.results).toEqual([{ error: "Helpers cannot use bot management tools." }]);
     expect(f.effects).toEqual([]);
   });
 
@@ -1234,7 +1234,7 @@ describe("fleet tool gating", () => {
           ? switchRejection
           : gate === "channel"
             ? taintRejection
-            : { error: "Helpers cannot use fleet tools." },
+            : { error: "Helpers cannot use bot management tools." },
       );
       expect(f.effects[0]!.status).toBe("approved");
     },
@@ -1260,7 +1260,7 @@ describe("fleet tool gating", () => {
   });
 });
 
-describe("fleet approvals", () => {
+describe("bot management approvals", () => {
   const modelArgs = { name: "Crew", bot_names: ["Alpha", "Beta"] };
   const approved = {
     name: "Crew",
