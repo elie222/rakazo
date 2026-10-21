@@ -35,7 +35,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           ]}
         >
           <Text style={[styles.actionText, { color: tokens.primaryForeground }]}>
-            {t("Try again.")}
+            {t("Try again")}
           </Text>
         </Pressable>
       </View>

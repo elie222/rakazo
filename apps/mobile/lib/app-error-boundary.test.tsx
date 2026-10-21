@@ -67,7 +67,7 @@ describe("AppErrorBoundary", () => {
     );
 
     const retry = container.querySelector("button");
-    expect(retry?.textContent).toBe("Try again.");
+    expect(retry?.textContent).toBe("Try again");
     expect(SplashScreen.hideAsync).toHaveBeenCalledOnce();
 
     shouldThrow = false;
