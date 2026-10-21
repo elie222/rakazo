@@ -103,8 +103,10 @@ describe("createRepos.listBots", () => {
       },
       run: { findMany: vi.fn(async () => []) },
       $queryRaw: vi.fn(async () =>
-        ["one", "two"].map((id) => ({
+        ["one", "two"].map((id, seq) => ({
           threadId: `thread-${id}`,
+          seq,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
           runId: `run-${id}`,
           blocks: [{ kind: "text", text: `Answer ${id}` }],
         })),
@@ -140,6 +142,7 @@ describe("createRepos.listBots", () => {
         {
           threadId: "thread-1",
           seq: 30,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
           runId: "peer-new",
           blocks: [{ kind: "text", text: "Hidden" }],
         },
@@ -189,11 +192,15 @@ describe("createRepos.listBots", () => {
       $queryRaw: vi.fn(async () => [
         {
           threadId: "thread-1",
+          seq: 3,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
           runId: "run-peer",
           blocks: [{ kind: "text", text: "Echoed peer reply" }],
         },
         {
           threadId: "thread-1",
+          seq: 2,
+          createdAt: new Date("2026-08-19T00:00:00.000Z"),
           runId: "run-peer",
           blocks: [
             {
@@ -206,6 +213,8 @@ describe("createRepos.listBots", () => {
         },
         {
           threadId: "thread-1",
+          seq: 1,
+          createdAt: new Date("2026-08-18T00:00:00.000Z"),
           runId: "run-user",
           blocks: [{ kind: "text", text: "Visible answer" }],
         },
@@ -233,11 +242,15 @@ describe("createRepos.listBots", () => {
       $queryRaw: vi.fn(async () => [
         {
           threadId: "thread-1",
+          seq: 2,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
           runId: "run-peer",
           blocks: [{ kind: "text", text: "Echoed peer reply" }],
         },
         {
           threadId: "thread-1",
+          seq: 1,
+          createdAt: new Date("2026-08-19T00:00:00.000Z"),
           runId: "run-user",
           blocks: [{ kind: "text", text: "Visible answer" }],
         },
@@ -272,6 +285,7 @@ describe("createRepos.listBots", () => {
         {
           threadId: "thread-1",
           seq: 20,
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
           runId: "run-peer",
           blocks: [{ kind: "text", text: "Echoed peer reply" }],
         },
@@ -317,7 +331,11 @@ describe("createRepos.listBots", () => {
         findMany: vi.fn(async () => [{ id: "run-peer" }]),
       },
       $queryRaw: vi.fn(async () =>
-        (peerWindows[0] ?? []).map((message) => ({ threadId: "thread-1", ...message })),
+        (peerWindows[0] ?? []).map((message) => ({
+          threadId: "thread-1",
+          createdAt: new Date("2026-08-20T00:00:00.000Z"),
+          ...message,
+        })),
       ),
       message: {
         findMany: messageFindMany,

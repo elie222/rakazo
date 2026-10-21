@@ -61,21 +61,14 @@ async function withSidebarPreviewMessages<T extends { thread: { id: string } | n
             ORDER BY seq DESC
             LIMIT ${SIDEBAR_PREVIEW_MESSAGE_WINDOW}
           ) m
+          ORDER BY m."threadId", m.seq DESC
         `);
   const opened = (await contentEncryptionOf(prisma)?.openRows("Message", loaded)) ?? loaded;
   const byThread = new Map<string, SidebarPreviewMessage[]>();
   for (const row of opened) {
-    const createdAt =
-      row.createdAt instanceof Date
-        ? row.createdAt
-        : typeof row.createdAt === "string" || typeof row.createdAt === "number"
-          ? new Date(row.createdAt)
-          : row.createdAt;
-    const seq = typeof row.seq === "number" ? row.seq : Number(row.seq);
-    const message = { ...row, createdAt, seq };
-    const list = byThread.get(message.threadId);
-    if (list) list.push(message);
-    else byThread.set(message.threadId, [message]);
+    const list = byThread.get(row.threadId);
+    if (list) list.push(row);
+    else byThread.set(row.threadId, [row]);
   }
   return bots.map((bot) => ({
     ...bot,

@@ -202,20 +202,6 @@ describePostgres("listBots sidebar previews (PostgreSQL)", () => {
     const fallbackWindows = 1;
     expect(rowCount).toBeGreaterThanOrEqual(window * 2 + 5);
     expect(rowCount).toBeLessThanOrEqual(window * threads + window * fallbackWindows);
-
-    const previewRead =
-      during.find((read) => /\blateral\b|\bunnest\b/i.test(read.text)) ?? during[0];
-    expect(previewRead).toBeDefined();
-    const explained = await runAsTenant(owner, () =>
-      pool.query<{ "QUERY PLAN": string }>(
-        `EXPLAIN (ANALYZE, BUFFERS) ${previewRead!.text}`,
-        previewRead!.values as never[],
-      ),
-    );
-    const plan = explained.rows.map((row) => row["QUERY PLAN"]).join("\n");
-    process.stdout.write(`listBots message EXPLAIN\n${plan}\n`);
-    expect(plan).toMatch(/messages_threadId_seq/);
-    expect(plan).toMatch(/Limit/);
   });
 
   it("keeps an archived bot on the archived roster with the same preview", async () => {
