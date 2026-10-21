@@ -166,6 +166,62 @@ describe("mobile API authentication", () => {
     });
   });
 
+  describe.each([
+    {
+      name: "password reset",
+      request: () => requestPasswordReset("ada@example.test", "https://rakazo.test/reset-password"),
+      fallback: "Could not send reset email",
+    },
+    {
+      name: "password change",
+      request: () => changePassword("old-password", "new-password"),
+      fallback: "Could not change password",
+    },
+    {
+      name: "account deletion",
+      request: () => deleteAccount("password"),
+      fallback: "Could not delete account",
+    },
+    {
+      name: "account deletion code",
+      request: () => requestAccountDeletionCode(),
+      fallback: "Could not continue",
+    },
+  ])("$name errors", ({ request, fallback }) => {
+    it.each([
+      [429, "", "Too many attempts. Try again in a few minutes."],
+      [502, "<html>Bad gateway</html>", "Could not reach the server"],
+      [503, "<html>Service unavailable</html>", "Could not reach the server"],
+      [504, "<html>Gateway timeout</html>", "Could not reach the server"],
+      [
+        500,
+        "<html>Internal Server Error</html>",
+        "The server had a problem. Try again in a moment.",
+      ],
+      [500, "{}", "The server had a problem. Try again in a moment."],
+      [400, "not json", "The server had a problem. Try again in a moment."],
+      // Preserve the existing action-specific fallback for ordinary JSON errors.
+      [400, "{}", fallback],
+      [429, '{"message":"Please wait before trying again"}', "Please wait before trying again"],
+      [403, '{"code":"REAUTHENTICATION_REQUIRED"}', "Sign in again"],
+    ])("maps HTTP %s with body %s", async (status, body, message) => {
+      vi.mocked(SecureStore.getItemAsync).mockResolvedValue("fake-session");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input) =>
+          String(input).endsWith("/rpc/notifications/unregisterPush")
+            ? jsonResponse({ json: null })
+            : new Response(body, { status }),
+        ),
+      );
+
+      await expect(request()).rejects.toThrow(message);
+
+      expect(SecureStore.deleteItemAsync).not.toHaveBeenCalledWith("rakazo.session_token");
+      expect(await authHeaders(null)).toEqual({ authorization: "Bearer fake-session" });
+    });
+  });
+
   it("persists a successful sign-in token and sends the native origin", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ token: "session-token" }));
     vi.stubGlobal("fetch", fetchMock);
@@ -3396,14 +3452,6 @@ describe("mobile clipboard text", () => {
     expect(selectableMobileMessageText(message)).toBe("    indented\nnext  ");
     expect(copyableMobileMessageText(message)).toBe("indented\nnext");
   });
-});
-
-it.each([502, 429])("localizes non-JSON deletion-code HTTP %s", async (status) => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => new Response("<html>Gateway error</html>", { status })),
-  );
-  await expect(requestAccountDeletionCode()).rejects.toThrow("Could not continue");
 });
 
 it("sends the deletion-code request with a JSON body", async () => {
