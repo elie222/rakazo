@@ -4,6 +4,11 @@ export const RU_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Упорядочивайте боковую панель и редактируйте ботов. Изменения групп, инструкций, моделей и процедур требуют вашего одобрения.",
 
+  Headers: "Заголовки",
+  "Add header": "Добавить заголовок",
+  "Remove header": "Удалить заголовок",
+  "Header name": "Название заголовка",
+  "Header value": "Значение заголовка",
   Resets: "Сброс",
   Limit: "Лимит",
   "Provider message": "Сообщение провайдера",

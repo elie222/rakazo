@@ -450,6 +450,10 @@ msgstr "添加 GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "添加 GraphQL 端点"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "添加请求头"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "添加项目"
@@ -2575,15 +2579,21 @@ msgstr "请求头"
 msgid "Header \"{header}\""
 msgstr ""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "请求头名称"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "请求头值"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "请求头"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3930,6 +3940,10 @@ msgstr "移除变化触发器"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr ""
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "移除请求头"
 
 #. placeholder {0}: mention.name
 #: src/pages/Shell.tsx

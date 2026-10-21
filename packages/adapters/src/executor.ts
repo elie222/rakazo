@@ -3081,6 +3081,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
       apiKey: resolved.oauth ? undefined : resolved.apiKey,
       ...cloudflareRunFields(resolved),
       baseUrl: resolved.baseUrl,
+      headers: resolved.headers,
       allowPrivateEndpoint: resolved.allowPrivateEndpoint,
       cacheCapabilities: resolved.cacheCapabilities,
       contextWindow: resolved.contextWindow,
@@ -3168,6 +3169,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         apiKey: resolved.oauth ? undefined : resolved.apiKey,
         ...cloudflareRunFields(resolved),
         baseUrl: resolved.baseUrl,
+        headers: resolved.headers,
         allowPrivateEndpoint: resolved.allowPrivateEndpoint,
         cacheCapabilities: resolved.cacheCapabilities,
         contextWindow: resolved.contextWindow,
@@ -5066,6 +5068,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                       accountId: judgeKey.accountId,
                       gatewayId: judgeKey.gatewayId,
                       baseUrl: judgeKey.baseUrl,
+                      headers: judgeKey.headers,
                       allowPrivateEndpoint: judgeKey.allowPrivateEndpoint,
                       cacheCapabilities: judgeKey.cacheCapabilities,
                       contextWindow: judgeKey.contextWindow,
@@ -7517,6 +7520,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 apiKey: resolved.oauth ? undefined : resolved.apiKey,
                 ...cloudflareRunFields(resolved),
                 baseUrl: resolved.baseUrl,
+                headers: resolved.headers,
                 allowPrivateEndpoint: resolved.allowPrivateEndpoint,
                 cacheCapabilities: resolved.cacheCapabilities,
                 contextWindow: resolved.contextWindow,
@@ -9657,6 +9661,7 @@ async function resolveModelKey(
   accountId?: string;
   gatewayId?: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
   allowPrivateEndpoint?: boolean;
   cacheCapabilities?: AgentRunRequest["model"]["cacheCapabilities"];
   contextWindow?: number;
@@ -9779,6 +9784,7 @@ async function resolveModelKey(
         accountId,
         gatewayId,
         baseUrl,
+        headers: resolved.secret.kind === "openai_compatible" ? resolved.secret.headers : undefined,
         allowPrivateEndpoint,
         cacheCapabilities:
           resolved.secret.kind !== "oauth" ? resolved.secret.cacheCapabilities : undefined,

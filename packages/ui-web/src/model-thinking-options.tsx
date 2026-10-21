@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useId } from "react";
 import { Checkbox } from "./components/ui/checkbox.js";
 import { Disclosure } from "./components/ui/disclosure.js";
@@ -6,6 +7,7 @@ import { Input } from "./components/ui/input.js";
 import { OptionSelect } from "./components/ui/select.js";
 
 export function ModelThinkingOptions({
+  children,
   reasoning = false,
   onReasoningChange,
   supportsImages,
@@ -30,6 +32,7 @@ export function ModelThinkingOptions({
   imagesLabel,
   maxImagesLabel,
 }: {
+  children?: ReactNode;
   reasoning?: boolean;
   onReasoningChange?: (reasoning: boolean) => void;
   supportsImages?: boolean;
@@ -158,6 +161,7 @@ export function ModelThinkingOptions({
           />
         </Field>
       ) : null}
+      {children}
     </Disclosure>
   );
 }

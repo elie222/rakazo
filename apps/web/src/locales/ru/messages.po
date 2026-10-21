@@ -450,6 +450,10 @@ msgstr "Добавить GraphQL"
 msgid "Add GraphQL endpoint"
 msgstr "Добавить конечную точку GraphQL"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "Добавить заголовок"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Добавить элемент"
@@ -2575,15 +2579,21 @@ msgstr "заголовок"
 msgid "Header \"{header}\""
 msgstr ""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Название заголовка"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Значение заголовка"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "Заголовки"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3930,6 +3940,10 @@ msgstr "Удалить триггер изменений"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "Удалить событие Git"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "Удалить заголовок"
 
 #. placeholder {0}: mention.name
 #: src/pages/Shell.tsx

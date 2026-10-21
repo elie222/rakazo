@@ -4,6 +4,11 @@ export const DE_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Ordne die Seitenleiste und bearbeite Bots. Änderungen an Gruppen, Anweisungen, Modellen und Routinen brauchen deine Zustimmung.",
 
+  Headers: "Header",
+  "Add header": "Header hinzufügen",
+  "Remove header": "Header entfernen",
+  "Header name": "Header-Name",
+  "Header value": "Header-Wert",
   Resets: "Zurückgesetzt",
   Limit: "Limit",
   "Provider message": "Anbieternachricht",

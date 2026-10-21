@@ -922,3 +922,72 @@ describe("openai-compatible provider", () => {
     expect(entries.length).toBeGreaterThan(0);
   });
 });
+
+describe("custom connection headers", () => {
+  const input = {
+    provider: OPENAI_COMPATIBLE_PROVIDER_ID,
+    baseUrl: "http://127.0.0.1:8000/v1",
+    modelId: "custom",
+  };
+  it("sends headers to model discovery", async () => {
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ data: [{ id: "custom" }] })),
+    );
+    await probeOpenAiCompatibleModels(
+      { ...input, headers: { "x-session": "fake-session-secret" } },
+      fetchImpl,
+      undefined,
+      OWNER,
+    );
+    expect(new Headers(fetchImpl.mock.calls[0]?.[1]?.headers).get("x-session")).toBe(
+      "fake-session-secret",
+    );
+  });
+});
+
+describe("custom header transport", () => {
+  it.each(["stream", "streamSimple"] as const)("sends headers through %s", async (method) => {
+    const models = registerOpenAiCompatibleRuntime(createModels(), {
+      modelId: "fixture-model",
+      baseUrl: "http://127.0.0.1:8000/v1",
+      allowPrivate: true,
+      headers: { "x-session": "fake-session-secret" },
+    });
+    const provider = models.getProvider(OPENAI_COMPATIBLE_PROVIDER_ID)!;
+    const model = models.getModel(OPENAI_COMPATIBLE_PROVIDER_ID, "fixture-model")!;
+    let received: string | null = null;
+    await provider[method](model, normalizeContext({ messages: [] }), {
+      apiKey: "fake-api-key",
+      fetch: async (_input, init) => {
+        received = new Headers(init?.headers).get("x-session");
+        expect(init?.redirect).toBe("error");
+        return new Response("data: [DONE]\n\n", {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+    }).result();
+    expect(received).toBe("fake-session-secret");
+  });
+  it("sanitizes malformed stored headers", () => {
+    expect(() =>
+      parseModelSecret(
+        JSON.stringify({
+          kind: "openai_compatible",
+          baseUrl: "http://127.0.0.1/v1",
+          headers: { "x-session": { secret: "must-not-leak" } },
+        }),
+      ),
+    ).toThrow(/^Invalid custom headers$/);
+  });
+  it("does not weaken the private endpoint gate when headers are set", async () => {
+    const transport = vi.fn();
+    const fetch = createOpenAiCompatibleFetch(transport, undefined, {
+      headers: { "x-session": "fake-session-secret" },
+    });
+    await expect(fetch("http://127.0.0.1:8000/v1/models")).rejects.toThrow(
+      PRIVATE_MODEL_ENDPOINT_MESSAGE,
+    );
+    expect(transport).not.toHaveBeenCalled();
+  });
+});

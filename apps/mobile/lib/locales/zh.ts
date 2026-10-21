@@ -4,6 +4,11 @@ export const ZH_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "整理侧边栏并编辑机器人。更改群组、指令、模型和例行任务需要你的批准。",
 
+  Headers: "请求头",
+  "Add header": "添加请求头",
+  "Remove header": "移除请求头",
+  "Header name": "请求头名称",
+  "Header value": "请求头值",
   Resets: "重置时间",
   Limit: "限额",
   "Provider message": "提供商消息",

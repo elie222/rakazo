@@ -1,6 +1,6 @@
 import { i18n } from "@lingui/core";
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
-import type { Me, ThinkingLevel } from "@rakazo/contracts";
+import type { Me, ModelHeaderRow, ThinkingLevel } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
@@ -8,6 +8,9 @@ import {
   DEFAULT_MODEL_MAX_TOKENS,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
+  normalizeOpenAiCompatibleBaseUrl,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -61,6 +64,7 @@ import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
 } from "../components/ModelConnectionPreflightNotice";
+import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
 import { useCopyText } from "../lib/copy-text";
 import { providerRowHint } from "../lib/localized-provider-hint";
 import type { ModelCatalogEntry, ModelCredential } from "../lib/model-auth";
@@ -112,6 +116,7 @@ export function ModelSettingsOverlay({
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_MODEL_MAX_TOKENS));
@@ -195,6 +200,7 @@ export function ModelSettingsOverlay({
       setEnabledModelIds(nextCredential?.enabledModelIds ?? []);
       if (nextProvider === OPENAI_COMPATIBLE_PROVIDER_ID) {
         setBaseUrl(nextCredential?.baseUrl ?? "");
+        setHeaderRows(null);
         setReasoning(nextCredential?.reasoning ?? false);
         setThinkingLevel(
           clampCatalogThinkingLevel(
@@ -347,6 +353,14 @@ export function ModelSettingsOverlay({
       : null;
   const thinkingDirty = !isOpenAiCompatible && (thinkingLevel ?? null) !== selectedStoredLevel;
   const busy = pending !== null || oauthPending;
+  let savedHeaderEndpointMatches = false;
+  try {
+    savedHeaderEndpointMatches =
+      Boolean(credential?.baseUrl) &&
+      normalizeOpenAiCompatibleBaseUrl(baseUrl) === credential?.baseUrl;
+  } catch {
+    // An incomplete URL cannot inherit saved header placeholders.
+  }
   const effectiveBaseUrl = baseUrl.trim();
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl: effectiveBaseUrl,
@@ -381,6 +395,7 @@ export function ModelSettingsOverlay({
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setHeaderRows(null);
     // A new endpoint starts with no ticks; the saved endpoint gets its saved list back.
     setEnabledModelIds(savedCompatibleModelIds(credential, nextBaseUrl));
     resetOpenAiCompatibleProbe();
@@ -439,6 +454,7 @@ export function ModelSettingsOverlay({
     );
     detailScrollRef.current?.scrollTo({ top: 0 });
     setApiKey("");
+    setHeaderRows(null);
     setAccountId(nextCredential?.accountId ?? "");
     setGatewayId(nextCredential?.gatewayId ?? "");
     resetOpenAiCompatibleProbe();
@@ -458,7 +474,12 @@ export function ModelSettingsOverlay({
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: rpc.models.probeOpenAiCompatible,
+      request: (input) =>
+        rpc.models.probeOpenAiCompatible({
+          ...input,
+          headers: modelHeadersInput(headerRows),
+          credentialId: credential?.id,
+        }),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const current = modelIdRef.current;
@@ -635,6 +656,7 @@ export function ModelSettingsOverlay({
           ? {
               provider: selected.provider,
               baseUrl: effectiveBaseUrl,
+              headers: modelHeadersInput(headerRows),
               modelId: modelId.trim(),
               // The server adds the default itself.
               enabledModelIds: enabledModelIds.filter((id) => id !== modelId.trim()),
@@ -1129,7 +1151,11 @@ export function ModelSettingsOverlay({
         variant="secondary"
         className="mt-3 rounded-full"
         size="sm"
-        disabled={busy || !openAiCompatibleReady}
+        disabled={
+          busy ||
+          !openAiCompatibleReady ||
+          (headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success)
+        }
         onClick={() => void connectKey()}
       >
         {pending === "connect" ? <Trans>Saving…</Trans> : <Trans>Save</Trans>}
@@ -1452,7 +1478,18 @@ export function ModelSettingsOverlay({
                       setNotice(null);
                     }}
                     maxImagesLabel={t`Maximum images per request`}
-                  />
+                  >
+                    <ModelHeadersEditor
+                      rows={headerRows}
+                      savedNames={savedHeaderEndpointMatches ? credential?.headerNames : []}
+                      disabled={busy}
+                      onChange={(rows) => {
+                        setHeaderRows(rows);
+                        invalidatePreflight();
+                        setNotice(null);
+                      }}
+                    />
+                  </ModelThinkingOptions>
                 </div>
               ) : null}
               {isOpenAiCompatible ? (

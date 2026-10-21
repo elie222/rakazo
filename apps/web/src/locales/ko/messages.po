@@ -450,6 +450,10 @@ msgstr "GraphQL 추가"
 msgid "Add GraphQL endpoint"
 msgstr "GraphQL 엔드포인트 추가"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "헤더 추가"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "항목 추가"
@@ -2575,15 +2579,21 @@ msgstr "header"
 msgid "Header \"{header}\""
 msgstr ""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "헤더 이름"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "헤더 값"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "헤더"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3930,6 +3940,10 @@ msgstr "변경 트리거 제거"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr ""
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "헤더 삭제"
 
 #. placeholder {0}: mention.name
 #: src/pages/Shell.tsx

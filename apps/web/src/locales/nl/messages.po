@@ -450,6 +450,10 @@ msgstr "GraphQL toevoegen"
 msgid "Add GraphQL endpoint"
 msgstr "GraphQL-eindpunt toevoegen"
 
+#: src/components/ModelHeadersEditor.tsx
+msgid "Add header"
+msgstr "Header toevoegen"
+
 #: src/pages/ScratchpadSection.tsx
 msgid "Add item"
 msgstr "Item toevoegen"
@@ -2575,15 +2579,21 @@ msgstr "header"
 msgid "Header \"{header}\""
 msgstr "Header \"{header}\""
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Header name"
 msgstr "Headernaam"
 
+#: src/components/ModelHeadersEditor.tsx
 #: src/pages/McpServersOverlay.tsx
 msgid "Header value"
 msgstr "Headerwaarde"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Headers"
+msgstr "Headers"
 
 #: src/pages/VoiceSettingsOverlay.tsx
 msgid "Hear a sample"
@@ -3930,6 +3940,10 @@ msgstr "Wijzigingstrigger verwijderen"
 #: src/pages/RoutineEditor.tsx
 msgid "Remove Git event"
 msgstr "Git-gebeurtenis verwijderen"
+
+#: src/components/ModelHeadersEditor.tsx
+msgid "Remove header"
+msgstr "Header verwijderen"
 
 #. placeholder {0}: mention.name
 #: src/pages/Shell.tsx

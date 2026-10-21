@@ -1,4 +1,5 @@
 import { Plural, Trans, useLingui } from "@lingui/react/macro";
+import type { ModelHeaderRow } from "@rakazo/contracts";
 import {
   CLOUDFLARE_AI_GATEWAY_PROVIDER_ID,
   cloudflareGatewayRouting,
@@ -7,6 +8,8 @@ import {
   type IntegrationSetupState,
   MAX_MODEL_CONTEXT_WINDOW,
   MAX_MODEL_MAX_TOKENS,
+  ModelHeaderRowsSchema,
+  modelHeadersInput,
   OPENAI_COMPATIBLE_PROVIDER_ID,
   openAiCompatibleConnectReady,
   openAiCompatibleProbeSuccessMessage,
@@ -40,6 +43,7 @@ import {
   ModelPreflightFeedback,
   modelPreflightTestingLabel,
 } from "../components/ModelConnectionPreflightNotice";
+import { ModelHeadersEditor } from "../components/ModelHeadersEditor";
 import { useCopyText } from "../lib/copy-text";
 import type { ModelCatalogEntry } from "../lib/model-auth";
 import { thinkingLevelLabel } from "../lib/model-catalog";
@@ -139,6 +143,7 @@ export function OnboardingPage() {
   const [accountId, setAccountId] = useState("");
   const [gatewayId, setGatewayId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [headerRows, setHeaderRows] = useState<ModelHeaderRow[] | null>(null);
   const [reasoning, setReasoning] = useState(false);
   const [manualModelId, setManualModelId] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel | null>(null);
@@ -249,7 +254,8 @@ export function OnboardingPage() {
   const signInLabel = selected?.oauthLabel ?? t`Sign in`;
   const openAiCompatibleReady = openAiCompatibleConnectReady({
     baseUrl,
-    modelId,
+    modelId:
+      headerRows !== null && !ModelHeaderRowsSchema.safeParse(headerRows).success ? "" : modelId,
   });
   const canSaveModel = Boolean(
     selected &&
@@ -296,6 +302,7 @@ export function OnboardingPage() {
 
   function updateBaseUrl(nextBaseUrl: string) {
     setBaseUrl(nextBaseUrl);
+    setHeaderRows(null);
     // Keep Other model… mode across URL edits; only provider change clears it.
     resetOpenAiCompatibleProbe();
     invalidatePreflight();
@@ -314,6 +321,7 @@ export function OnboardingPage() {
     cancelOAuthAttempt();
     setProvider(nextProvider);
     setApiKey("");
+    setHeaderRows(null);
     setAccountId("");
     setGatewayId("");
     setModelId(
@@ -350,7 +358,8 @@ export function OnboardingPage() {
     await modelProbe.probe({
       baseUrl,
       apiKey,
-      request: rpc.models.probeOpenAiCompatible,
+      request: (input) =>
+        rpc.models.probeOpenAiCompatible({ ...input, headers: modelHeadersInput(headerRows) }),
       onSuccess: (models) => {
         if (!preflightStillCurrent(revision)) return;
         const trimmed = modelIdRef.current.trim();
@@ -475,6 +484,7 @@ export function OnboardingPage() {
         await rpc.models.connect({
           provider,
           baseUrl: baseUrl.trim(),
+          headers: modelHeadersInput(headerRows),
           modelId: modelId.trim(),
           reasoning,
           thinkingLevel: stagedThinkingLevel(),
@@ -713,7 +723,15 @@ export function OnboardingPage() {
                     maxImagesPerPrompt={maxImagesPerPrompt}
                     onMaxImagesPerPromptChange={setMaxImagesPerPrompt}
                     maxImagesLabel={t`Maximum images per request`}
-                  />
+                  >
+                    <ModelHeadersEditor
+                      rows={headerRows}
+                      onChange={(rows) => {
+                        setHeaderRows(rows);
+                        invalidatePreflight();
+                      }}
+                    />
+                  </ModelThinkingOptions>
                 </>
               ) : (
                 <>

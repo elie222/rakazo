@@ -552,6 +552,8 @@ leave Rakazo through this URL. Leave `RAKAZO_LOCAL_MODELS` blank to disable the 
 Each user can also connect their own OpenAI-compatible endpoint from **Connect a model** /
 **Settings → Models** on web and mobile. Choose **OpenAI-compatible**, enter the server base URL
 (for example `http://127.0.0.1:8000/v1`), the exact model id, and an optional API key.
+Add optional request headers under **Advanced**; values are stored encrypted, and only their names
+are shown afterwards.
 Public hosts and ordinary hostnames need `RAKAZO_OPENAI_COMPAT_ALLOW_PUBLIC=1` and HTTPS.
 Literal private IP, loopback, and `host.docker.internal` targets do not, but only the deployment
 owner can use them, checked on save, on model discovery, and on every run. Set

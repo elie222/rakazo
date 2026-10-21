@@ -4,6 +4,11 @@ export const NL_MESSAGES: Record<string, string> = {
   "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.":
     "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring.",
 
+  Headers: "Headers",
+  "Add header": "Header toevoegen",
+  "Remove header": "Header verwijderen",
+  "Header name": "Headernaam",
+  "Header value": "Headerwaarde",
   Resets: "Resetdatum",
   Limit: "Limiet",
   "Provider message": "Bericht van aanbieder",
