@@ -187,6 +187,17 @@ function missingContext(model: string, operation: string): void {
 }
 
 /**
+ * The call sites logged since the last call, cleared as they are returned. Test
+ * runs fail on any, so a path that reaches a protected table without a context
+ * is caught in CI instead of returning nothing in production.
+ */
+export function drainUnscopedDatabaseAccess(): string[] {
+  const sites = [...reportedMissing];
+  reportedMissing.clear();
+  return sites;
+}
+
+/**
  * Covers the two cases where Prisma, not the caller, decides when a
  * connection is checked out, so the pool would see the wrong context:
  * - outside a transaction, Prisma batches `findUnique` calls from one tick and

@@ -108,6 +108,8 @@ export class DaytonaSandboxProvider implements SandboxProvider {
         browserProfilesDir: path.posix.join(await this.workspaceRoot(sandbox), ".browser-profiles"),
         displayStart: 20,
         portStart: 6100,
+        // The provider port proxy reaches the isolated sandbox through its network interface.
+        bindHost: "0.0.0.0",
       };
     },
     run: async (computer, command, context) => {

@@ -304,6 +304,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Bir abonelik kimlik bilgisi güvenli şekilde saklanıyor."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "{label} hakkında"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr ""
@@ -2483,10 +2487,6 @@ msgstr "MCP bağlantısı tamamlanıyor…"
 msgid "Flag unexpected actions"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Parolanızı mı unuttunuz?"
@@ -2806,10 +2806,6 @@ msgstr ""
 msgid "Leave"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Bu botun oluşturduğu botları düzenlemesine, ayarlamasına ve zamanlamasına izin verir. Her değişikliği siz onaylarsınız."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Açık"
@@ -2958,6 +2954,10 @@ msgstr "MCP sunucularını yönet"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "Oluşturduğu botları yönet"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "OAuth yetkilendirmesi iptal edildi."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth istemci kimliği (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth istemci gizli anahtarı (isteğe bağlı)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth bağlandı"
 
@@ -3577,6 +3585,10 @@ msgstr ""
 msgid "Organization API key"
 msgstr "Kuruluş API anahtarı"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Kenar çubuğunu düzenleyin ve botları düzenleyin. Grup, talimat, model ve rutin değişiklikleri onayınızı gerektirir."
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "Orijinal mesaj kullanılamıyor"
@@ -3685,6 +3697,10 @@ msgstr "Kontrol edilecek bir araç seçin"
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Sabitle"
+
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Sabitlenenler"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -3854,6 +3870,10 @@ msgstr "Çalışmayan bir bilgisayarı yeniden oluşturun."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "Yönlendirme URI'si"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
@@ -4075,6 +4095,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "Yeniden dene"
@@ -4954,6 +4975,7 @@ msgid "Type your answer"
 msgstr "Yanıtını yaz"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Atanmamış"
 

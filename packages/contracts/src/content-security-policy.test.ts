@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   APP_CONTENT_SECURITY_POLICY,
+  appContentSecurityPolicy,
   contentSecurityPolicyFor,
   HTML_VIEWER_PATH,
+  parseContentSecuritySources,
 } from "./content-security-policy.js";
 
 function directives(policy: string) {
@@ -46,5 +48,83 @@ describe("app content security policy", () => {
 
   it("lets only the app frame the HTML viewer shell, whose own meta CSP governs it", () => {
     expect(contentSecurityPolicyFor(HTML_VIEWER_PATH)).toBe("frame-ancestors 'self'");
+  });
+});
+
+describe("operator-added origins", () => {
+  it("parses space- or comma-separated https origins, deduplicated and lowercased", () => {
+    expect(parseContentSecuritySources("SETTING", undefined)).toEqual([]);
+    expect(parseContentSecuritySources("SETTING", "  ")).toEqual([]);
+    expect(
+      parseContentSecuritySources(
+        "SETTING",
+        " https://static.example.com\nhttps://*.Example.net:8443,https://static.example.com ",
+      ),
+    ).toEqual(["https://static.example.com", "https://*.example.net:8443"]);
+    expect(
+      parseContentSecuritySources("SETTING", "https://localhost https://cdn.example.com:65535"),
+    ).toEqual(["https://localhost", "https://cdn.example.com:65535"]);
+  });
+
+  it.each([
+    "*",
+    "'self'",
+    "'unsafe-inline'",
+    "'unsafe-eval'",
+    "'strict-dynamic'",
+    "'nonce-abc'",
+    "'sha256-abc='",
+    "data:",
+    "blob:",
+    "https:",
+    "http:",
+    "http://cdn.example.com",
+    "wss://cdn.example.com",
+    "cdn.example.com",
+    "https://*",
+    "https://*.com",
+    "https://cdn.*.example.com",
+    "https://cdn.example.com/",
+    "https://cdn.example.com/beacon.js",
+    "https://cdn.example.com?x=1",
+    "https://user@cdn.example.com",
+    "https://cdn.example.com:",
+    "https://cdn.example.com:0",
+    "https://cdn.example.com:65536",
+    "https://cdn.example.com:99999",
+    "https://-cdn.example.com",
+    "https://cdn.example.com;script-src",
+  ])("rejects %s and names the setting", (source) => {
+    expect(() =>
+      parseContentSecuritySources("RAKAZO_CSP_SCRIPT_SRC", `https://ok.example.com ${source}`),
+    ).toThrow(/^RAKAZO_CSP_SCRIPT_SRC accepts only https:\/\/ origins.*Invalid: /);
+  });
+
+  it("adds them to script-src and connect-src only, after 'self'", () => {
+    const extended = directives(
+      appContentSecurityPolicy({
+        scriptSrc: ["https://static.example.com"],
+        connectSrc: ["https://beacon.example.com", "https://*.example.net"],
+      }),
+    );
+    expect(extended.get("script-src")).toEqual(["'self'", "https://static.example.com"]);
+    expect(extended.get("connect-src")).toEqual([
+      "'self'",
+      "https://beacon.example.com",
+      "https://*.example.net",
+    ]);
+    const base = directives(APP_CONTENT_SECURITY_POLICY);
+    for (const [name, sources] of base) {
+      if (name !== "script-src" && name !== "connect-src")
+        expect(extended.get(name)).toEqual(sources);
+    }
+    expect(appContentSecurityPolicy()).toBe(APP_CONTENT_SECURITY_POLICY);
+  });
+
+  it("serves the extended policy on app paths and leaves the others alone", () => {
+    const extended = appContentSecurityPolicy({ scriptSrc: ["https://static.example.com"] });
+    expect(contentSecurityPolicyFor("/", extended)).toBe(extended);
+    expect(contentSecurityPolicyFor("/rpc/me", extended)).toBeNull();
+    expect(contentSecurityPolicyFor(HTML_VIEWER_PATH, extended)).toBe("frame-ancestors 'self'");
   });
 });

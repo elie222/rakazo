@@ -64,12 +64,7 @@ import {
   tokenFromAuthResponse,
 } from "./session";
 import { clearUnsentSends } from "./thread-feedback";
-import {
-  authErrorText,
-  authResponseErrorText,
-  errorText,
-  sessionSaveErrorText,
-} from "./user-error";
+import { authResponseErrorText, errorText, sessionSaveErrorText } from "./user-error";
 
 const ENDPOINT_KEY = "rakazo.api_base";
 const SPACE_KEY = "rakazo.space_id";
@@ -578,7 +573,7 @@ export async function passwordResetCapabilities(): Promise<PasswordResetCapabili
 }
 
 export async function requestPasswordReset(email: string, redirectTo: string): Promise<void> {
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/request-password-reset`,
     {
       method: "POST",
@@ -587,7 +582,10 @@ export async function requestPasswordReset(email: string, redirectTo: string): P
     },
     {},
   );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not send reset email")));
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not send reset email")),
+    );
 }
 
 /** Revoking other sessions also refuses this one until the replacement is saved. */
@@ -606,7 +604,7 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
   const apiBase = currentApiBase();
   const generation = currentSessionGeneration();
   const headers = await authHeaders();
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${apiBase}/api/auth/change-password`,
     {
       method: "POST",
@@ -619,7 +617,10 @@ async function replaceSessionAfterPasswordChange(currentPassword: string, newPas
     },
     {},
   );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not change password")));
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not change password")),
+    );
   // Revoking other sessions also revokes this one; keep the replacement the server issued.
   const token = tokenFromAuthResponse(response, body);
   if (!token) return;
@@ -717,7 +718,7 @@ function withAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export async function deleteAccount(password?: string, token?: string) {
   await rpc("notifications/unregisterPush").catch(() => undefined);
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/delete-user`,
     {
       method: "POST",
@@ -731,7 +732,9 @@ export async function deleteAccount(password?: string, token?: string) {
     {},
   );
   if (!response.ok) {
-    throw new Error(authErrorText(body, t("Could not delete account")));
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not delete account")),
+    );
   }
   await clearSessionToken();
   await clearSpace();
@@ -1521,7 +1524,7 @@ export async function fetchAccountSecurity(): Promise<AccountSecurity> {
 }
 
 export async function requestAccountDeletionCode(): Promise<void> {
-  const { response, body } = await fetchMobileJson<unknown>(
+  const { response, body, invalidJson } = await fetchMobileJson<unknown>(
     `${currentApiBase()}/api/auth/request-account-deletion`,
     {
       method: "POST",
@@ -1534,5 +1537,8 @@ export async function requestAccountDeletionCode(): Promise<void> {
     },
     null,
   );
-  if (!response.ok) throw new Error(authErrorText(body, t("Could not continue")));
+  if (!response.ok)
+    throw new Error(
+      authResponseErrorText(response.status, body, invalidJson, t("Could not continue")),
+    );
 }

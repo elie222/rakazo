@@ -101,6 +101,9 @@ describe("isTechnicalErrorMessage", () => {
 describe("userErrorMessage", () => {
   it("says the server is unreachable for transport failures", () => {
     expect(userErrorMessage(new TypeError("Failed to fetch"), copy)).toBe(copy.offline);
+    expect(userErrorMessage(Object.assign(new Error("Bad Gateway"), { status: 502 }), copy)).toBe(
+      copy.offline,
+    );
   });
 
   it("passes human messages through and replaces technical ones", () => {

@@ -304,6 +304,10 @@ msgstr "נפתחה לשונית התחברות בכתובת <0>{0}</0>. יש ל�
 msgid "A subscription credential is stored securely."
 msgstr "פרטי גישה של המנוי נשמרים בצורה מאובטחת."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "על {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr "על קבוצות"
@@ -2483,10 +2487,6 @@ msgstr "משלים את חיבור ה-MCP…"
 msgid "Flag unexpected actions"
 msgstr "סימון פעולות לא צפויות"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "שכחת סיסמה?"
@@ -2806,10 +2806,6 @@ msgstr "מאוחר יותר"
 msgid "Leave"
 msgstr "יציאה"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "מאפשר לבוט הזה לארגן, לכוונן ולתזמן את הבוטים שהוא יוצר. כל שינוי דורש את אישורך."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "בהיר"
@@ -2958,6 +2954,10 @@ msgstr "ניהול שרתי MCP"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "ניהול הגדרות ההודעות"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "ניהול הבוטים שהוא יוצר"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "הרשאת OAuth בוטלה."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "מזהה לקוח OAuth (אופציונלי)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "סוד לקוח OAuth (אופציונלי)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth מחובר"
 
@@ -3577,6 +3585,10 @@ msgstr "אורגני"
 msgid "Organization API key"
 msgstr "מפתח API של הארגון"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "ארגון סרגל הצד ועריכת בוטים. שינויים בקבוצות, בהוראות, במודלים ובשגרות דורשים את אישורך."
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "ההודעה המקורית אינה זמינה"
@@ -3685,6 +3697,10 @@ msgstr ""
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "הצמדה"
+
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "מוצמדים"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -3854,6 +3870,10 @@ msgstr "יצירה מחדש של מחשב שאינו פועל."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr "יוצר מחדש את המחשב"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "כתובת הפניה (Redirect URI)"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
@@ -4075,6 +4095,7 @@ msgstr "משחזר את סביבת העבודה"
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "לנסות שוב"
@@ -4954,6 +4975,7 @@ msgid "Type your answer"
 msgstr "יש להקליד תשובה"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "ללא שיוך"
 

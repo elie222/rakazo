@@ -22,13 +22,13 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { BotAvatar } from "../components/bot-avatar";
 import { ComputerModePicker } from "../components/computer-mode-picker";
 import { glassHeaderOptions } from "../components/glass-title";
+import { InfoButton } from "../components/info-button";
 import type { MenuPickerChoice } from "../components/menu-picker";
 import { MenuPicker, MenuPickerMenu } from "../components/menu-picker";
 import { NativeActionButton } from "../components/native-action-button";
 import { NativeSwitch } from "../components/native-switch";
 import { NativeSymbol } from "../components/native-symbol";
 import { Chevron } from "../components/row-accessories";
-import { SettingsFooter } from "../components/settings-group";
 import type { MobileBot, MobileMe, MobileModel, MobileModelCredential } from "../lib/api";
 import { rpc } from "../lib/api";
 import {
@@ -542,11 +542,20 @@ export default function BotSettingsScreen() {
           />
         </View>
         <View style={[styles.row, { marginTop: 20 }]}>
-          <Text style={[styles.rowLabel, { color: tokens.mutedForeground }]}>
-            {t("Fleet management")}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, flex: 1 }}>
+            <Text
+              style={[styles.rowLabel, { color: tokens.mutedForeground, flex: 0, flexShrink: 1 }]}
+            >
+              {t("Manage the bots it creates")}
+            </Text>
+            <InfoButton label={t("Manage the bots it creates")}>
+              {t(
+                "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval.",
+              )}
+            </InfoButton>
+          </View>
           <NativeSwitch
-            accessibilityLabel={t("Fleet management")}
+            accessibilityLabel={t("Manage the bots it creates")}
             disabled={pending}
             onValueChange={(value) => {
               if (!botId || pending) return;
@@ -562,11 +571,6 @@ export default function BotSettingsScreen() {
             value={fleetManagement}
           />
         </View>
-        <SettingsFooter>
-          {t(
-            "Lets this bot organize, retune and schedule the bots it creates. You approve each change.",
-          )}
-        </SettingsFooter>
         {deviceVoiceEnabled ? (
           voiceError ? (
             <Pressable

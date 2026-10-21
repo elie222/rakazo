@@ -81,19 +81,7 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
   await owner.query(
     `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${RUNTIME_ROLE}', current_database()); END $$`,
   );
-  // graphile-worker's schema is installed by the job queue migration that runs
-  // just before this, so its grants cannot live in a Prisma migration.
-  await owner.query(`
-    DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'graphile_worker') THEN
-        GRANT USAGE ON SCHEMA graphile_worker TO ${RUNTIME_ROLE};
-        GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA graphile_worker TO ${RUNTIME_ROLE};
-        GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA graphile_worker TO ${RUNTIME_ROLE};
-        GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA graphile_worker TO ${RUNTIME_ROLE};
-      END IF;
-    END $$;
-  `);
+  await grantJobQueue(owner);
   const existing = await owner.query<{ rolsuper: boolean; rolbypassrls: boolean }>(
     "SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = $1",
     [login],
@@ -148,6 +136,59 @@ async function provisionWith(owner: Client, runtimeUrl: string): Promise<{ warni
     throw error;
   }
   return {};
+}
+
+/** Policy on each graphile-worker table that lets the runtime role use the job queue. */
+export const JOB_QUEUE_POLICY = "rakazo_app_queue";
+
+/**
+ * graphile-worker's schema is installed by the job queue migration that runs
+ * just before this, so its grants cannot live in a Prisma migration.
+ *
+ * graphile-worker enables row-level security with no policies on its
+ * `_private_*` tables. Their owner (the migration role) bypasses that; the
+ * runtime role would see no jobs and could not add any. Those rows are queue
+ * metadata whose payloads carry ids only, not tenant content, so the runtime
+ * role gets every row. The policy is recreated on each run, for every table with
+ * RLS on, so tables a graphile-worker upgrade adds or rebuilds are covered and a
+ * hand-made policy of the same name is replaced by this definition.
+ */
+async function grantJobQueue(owner: Client): Promise<void> {
+  await owner.query(`
+    DO $$
+    DECLARE
+      queue_table regclass;
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'graphile_worker') THEN
+        RETURN;
+      END IF;
+      GRANT USAGE ON SCHEMA graphile_worker TO ${RUNTIME_ROLE};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA graphile_worker TO ${RUNTIME_ROLE};
+      GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA graphile_worker TO ${RUNTIME_ROLE};
+      GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA graphile_worker TO ${RUNTIME_ROLE};
+      -- Skip tables that already have exactly this policy, so a deploy does not
+      -- take the lock DROP and CREATE POLICY need on a busy queue.
+      FOR queue_table IN
+        SELECT c.oid FROM pg_class c
+        WHERE c.relnamespace = 'graphile_worker'::regnamespace
+          AND c.relkind IN ('r', 'p') AND c.relrowsecurity
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_policy p
+            WHERE p.polrelid = c.oid AND p.polname = '${JOB_QUEUE_POLICY}'
+              AND p.polcmd = '*' AND p.polpermissive
+              AND p.polroles = ARRAY['${RUNTIME_ROLE}'::regrole::oid]
+              AND pg_get_expr(p.polqual, p.polrelid) = 'true'
+              AND pg_get_expr(p.polwithcheck, p.polrelid) = 'true'
+          )
+      LOOP
+        EXECUTE format('DROP POLICY IF EXISTS ${JOB_QUEUE_POLICY} ON %s', queue_table);
+        EXECUTE format(
+          'CREATE POLICY ${JOB_QUEUE_POLICY} ON %s FOR ALL TO ${RUNTIME_ROLE} USING (true) WITH CHECK (true)',
+          queue_table
+        );
+      END LOOP;
+    END $$;
+  `);
 }
 
 export interface RowSecurityStatus {

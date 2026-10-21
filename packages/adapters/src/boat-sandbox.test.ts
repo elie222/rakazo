@@ -704,6 +704,13 @@ describe("BoatSandboxProvider", () => {
       /^websockify\?_token=secret&token=view-/,
     );
     expect(screen.url).toContain("_token=secret");
+    expect(
+      command.mock.calls.some(
+        ([request]) =>
+          "commandRequest" in request &&
+          request.commandRequest.command.includes("0.0.0.0:6100 8>&-"),
+      ),
+    ).toBe(true);
 
     await provider.act(
       computer,

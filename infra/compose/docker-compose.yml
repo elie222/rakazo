@@ -379,6 +379,8 @@ services:
       API_PROXY_TARGET: http://api:3100
       SCREEN_PROXY_SECRET: ${SCREEN_PROXY_SECRET:?Set SCREEN_PROXY_SECRET in .env}
       RAKAZO_HOST: ${RAKAZO_HOST:-localhost}
+      RAKAZO_CSP_SCRIPT_SRC: ${RAKAZO_CSP_SCRIPT_SRC:-}
+      RAKAZO_CSP_CONNECT_SRC: ${RAKAZO_CSP_CONNECT_SRC:-}
     ports:
       - "127.0.0.1:5173:5173"
     depends_on:

@@ -86,13 +86,32 @@ export function buildMcpCredentialBlob(parsed: {
   secret?: string;
   env?: Record<string, string>;
   headers?: Record<string, string>;
+  oauthClient?: { clientId: string; clientSecret?: string } | null;
 }): string | null {
   const env = parsed.env ?? {};
   const headers = parsed.headers ?? {};
-  if (!parsed.secret && Object.keys(env).length === 0 && Object.keys(headers).length === 0) {
+  const client = parsed.oauthClient;
+  if (
+    !parsed.secret &&
+    !client &&
+    Object.keys(env).length === 0 &&
+    Object.keys(headers).length === 0
+  ) {
     return null;
   }
-  return JSON.stringify({ secret: parsed.secret, env, headers });
+  return JSON.stringify({
+    secret: parsed.secret,
+    env,
+    headers,
+    ...(client
+      ? {
+          oauthClient: {
+            client_id: client.clientId,
+            ...(client.clientSecret ? { client_secret: client.clientSecret } : {}),
+          },
+        }
+      : {}),
+  });
 }
 
 /** Heuristic for whether the approval card should lead with OAuth: remote

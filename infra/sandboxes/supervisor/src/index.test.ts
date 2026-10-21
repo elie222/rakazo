@@ -50,6 +50,7 @@ import {
   shouldReplayComputerActions,
   stopExtraScreenCommand,
   teardownReleasedScreen,
+  terminalCommand,
   withKeyedLock,
 } from "./supervisor-logic.js";
 
@@ -629,6 +630,8 @@ describe("sandbox supervisor input containment", () => {
       /x11vnc -display .* -rfbport 0 -unixsock .*control-1-/,
     );
     expect(interactiveScreenCommand(true, "lease-new")).toMatch(/6080/);
+    expect(interactiveScreenCommand(true, "lease-new")).toContain("0.0.0.0:6080 8>&-");
+    expect(terminalCommand("control", "terminal", "/work")).toContain("0.0.0.0:6080 8>&-");
     expect(interactiveScreenCommand(true, "lease-new")).not.toContain("sockets/view-1-");
     expect(interactiveScreenCommand(false, "lease-old")).toContain("= 'lease-old'");
     expect(interactiveScreenCommand(false, "lease-old")).toContain("RAKAZO_CONTROL_RELEASED");

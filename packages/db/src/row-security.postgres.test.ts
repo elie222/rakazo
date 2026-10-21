@@ -1,8 +1,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { PrismaClient } from "./client.js";
 import { createDb } from "./client.js";
-import { databaseUrls, describeRowSecurity } from "./database-access.js";
-import { ROW_SECURITY_MODELS, runAsSystem, runAsTenant } from "./row-security.js";
+import {
+  databaseUrls,
+  describeRowSecurity,
+  JOB_QUEUE_POLICY,
+  provisionRuntimeRole,
+  RUNTIME_ROLE,
+} from "./database-access.js";
+import {
+  drainUnscopedDatabaseAccess,
+  ROW_SECURITY_MODELS,
+  runAsSystem,
+  runAsTenant,
+} from "./row-security.js";
 
 // Needs DATABASE_URL as the runtime login and DATABASE_MIGRATION_URL as the
 // owner, as `pnpm test:integration` provides after `pnpm db:migrate`.
@@ -243,6 +254,33 @@ describePostgres("row-level security (PostgreSQL)", () => {
     expect(await db.$executeRaw`DELETE FROM security_events WHERE id = ${id}`).toBe(1);
   });
 
+  it("gives the runtime login the job queue, replacing a hand-made policy", async () => {
+    const policies = () =>
+      owner.prisma.$queryRaw<Array<{ tablename: string; cmd: string; roles: string[] }>>`
+        SELECT t.relname AS tablename, p.cmd, p.roles::text[] AS roles
+        FROM pg_class t
+        LEFT JOIN pg_policies p
+          ON p.schemaname = 'graphile_worker' AND p.tablename = t.relname
+          AND p.policyname = ${JOB_QUEUE_POLICY}
+        WHERE t.relnamespace = 'graphile_worker'::regnamespace AND t.relrowsecurity
+        ORDER BY t.relname`;
+    const expected = (await policies()).map(({ tablename }) => ({
+      tablename,
+      cmd: "ALL",
+      roles: [RUNTIME_ROLE],
+    }));
+    expect(expected.map(({ tablename }) => tablename)).toContain("_private_jobs");
+    expect(await policies()).toEqual(expected);
+    // A policy of the same name made by hand, here one that only allows reads.
+    await owner.prisma.$executeRawUnsafe(
+      `DROP POLICY ${JOB_QUEUE_POLICY} ON graphile_worker._private_tasks;
+       CREATE POLICY ${JOB_QUEUE_POLICY} ON graphile_worker._private_tasks
+         FOR SELECT TO ${RUNTIME_ROLE} USING (true)`,
+    );
+    await provisionRuntimeRole(migrationUrl!, runtimeUrl!);
+    expect(await policies()).toEqual(expected);
+  });
+
   it("returns no rows and rejects writes without a context", async () => {
     expect(await visible()).toEqual({
       threads: [],
@@ -259,6 +297,10 @@ describePostgres("row-level security (PostgreSQL)", () => {
     ).rejects.toThrow(/row-level security/);
     const raw = await db.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) FROM messages`;
     expect(Number(raw[0]!.count)).toBe(0);
+    // Each unscoped call site is reported, which fails the run unless drained here.
+    expect(drainUnscopedDatabaseAccess()).toContainEqual(
+      expect.stringMatching(/^Message\.create\n/),
+    );
   });
 
   it("limits a tenant to its own Space and user", async () => {
@@ -313,6 +355,8 @@ describePostgres("row-level security (PostgreSQL)", () => {
       await expect(runAsTenant(b, create), table).rejects.toThrow(/row-level security/);
       await expect(create(), table).rejects.toThrow(/row-level security/);
     }
+    // The unscoped reads and writes above are deliberate.
+    drainUnscopedDatabaseAccess();
   });
 
   it("keeps normal reads, writes and transactions working for the tenant", async () => {
@@ -371,6 +415,8 @@ describePostgres("row-level security (PostgreSQL)", () => {
     await expect(runAsTenant(a, () => db.$transaction([db.thread.count()]))).rejects.toThrow(
       /interactive transaction/,
     );
+    // Prisma starts the batch on a later tick, outside the context: that is why it is rejected.
+    drainUnscopedDatabaseAccess();
   });
 
   it("lets an explicit system context work across tenants", async () => {

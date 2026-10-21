@@ -1,5 +1,6 @@
 import type * as SentryReact from "@sentry/react";
 import type { ErrorInfo } from "react";
+import { importChunk } from "./preload-recovery";
 
 // Browser error reporting. The API says at runtime whether it is on, so one web build serves every
 // deployment; the SDK is only downloaded when it is.
@@ -39,7 +40,7 @@ async function loadSentry(fetchImpl: typeof fetch): Promise<typeof SentryReact |
   let Sentry: typeof SentryReact;
   try {
     // A stale chunk after a deploy or a network failure must not surface as an unhandled rejection.
-    Sentry = await import("@sentry/react");
+    Sentry = await importChunk(() => import("@sentry/react"));
     Sentry.init({
       dsn: config.dsn,
       environment: config.environment ?? undefined,

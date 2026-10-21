@@ -20,12 +20,14 @@ import {
   createThreadEvents,
   createThreadMessage,
   RunHistoryWriteError,
+  runAsSystem,
 } from "@rakazo/db";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { createApp } from "../../../apps/api/src/app.ts";
 import type { BotIntroHarness } from "./discard-bot-intro.js";
 import { discardBotIntroFromCreate } from "./discard-bot-intro.js";
 import { sessionCookieHeader } from "./index.js";
+import { asSystem } from "./system-db.js";
 
 type App = { request: (input: string, init?: RequestInit) => Promise<Response> };
 process.env.WAKEUP_DRIVER = "memory";
@@ -40,6 +42,7 @@ describeJourneys("required product journeys", () => {
   let app: App;
   let stop: () => Promise<void>;
   let prisma: Awaited<ReturnType<typeof createApp>>["prisma"];
+  let appPrisma: Awaited<ReturnType<typeof createApp>>["prisma"];
   const connector = new DestinationEmulator();
   let executor: Awaited<ReturnType<typeof createApp>>["executor"];
   let jobs: Awaited<ReturnType<typeof createApp>>["jobs"];
@@ -127,7 +130,8 @@ describeJourneys("required product journeys", () => {
     });
     app = handles.app;
     stop = handles.stop;
-    prisma = handles.prisma;
+    prisma = asSystem(handles.prisma);
+    appPrisma = handles.prisma;
     executor = handles.executor;
     jobs = handles.jobs;
     sandbox = handles.sandbox;
@@ -692,22 +696,26 @@ describeJourneys("required product journeys", () => {
     );
 
     await expect(
-      appendEvent(prisma, {
-        spaceId: thread.spaceId,
-        threadId: thread.id,
-        botId: bot.id,
-        type: "thread.progress",
-        runId: run.id,
-        payload: { text: "stale output after clear" },
-      }),
+      runAsSystem("background job run.continue", () =>
+        appendEvent(appPrisma, {
+          spaceId: thread.spaceId,
+          threadId: thread.id,
+          botId: bot.id,
+          type: "thread.progress",
+          runId: run.id,
+          payload: { text: "stale output after clear" },
+        }),
+      ),
     ).rejects.toThrow(RunHistoryWriteError);
     await expect(
-      createThreadMessage(prisma, {
-        threadId: thread.id,
-        role: "bot",
-        blocks: [{ kind: "text", text: "stale output after clear" }],
-        runId: run.id,
-      }),
+      runAsSystem("background job run.continue", () =>
+        createThreadMessage(appPrisma, {
+          threadId: thread.id,
+          role: "bot",
+          blocks: [{ kind: "text", text: "stale output after clear" }],
+          runId: run.id,
+        }),
+      ),
     ).rejects.toThrow(RunHistoryWriteError);
     expect(await prisma.message.count({ where: { threadId: thread.id } })).toBe(0);
     expect(await prisma.event.findMany({ where: { threadId: thread.id } })).toMatchObject([
@@ -1328,18 +1336,19 @@ describeJourneys("required product journeys", () => {
       name: "Schedule room",
       botIds: [bot.id, peer.id],
     });
-    const events = createThreadEvents(prisma);
-    const scheduleDeps = { prisma, events, jobs };
+    const scheduleDeps = { prisma: appPrisma, events: createThreadEvents(appPrisma), jobs };
 
-    const groupCreated = await createScheduleFromTool(scheduleDeps, {
-      spaceId: me.spaceId,
-      botId: bot.id,
-      userId: me.userId,
-      threadId: group.threadId,
-      name: "Group ping",
-      prompt: "say group-reminder-ok",
-      schedule: { delaySeconds: 30 },
-    });
+    const groupCreated = await runAsSystem("background job run.continue", () =>
+      createScheduleFromTool(scheduleDeps, {
+        spaceId: me.spaceId,
+        botId: bot.id,
+        userId: me.userId,
+        threadId: group.threadId,
+        name: "Group ping",
+        prompt: "say group-reminder-ok",
+        schedule: { delaySeconds: 30 },
+      }),
+    );
     expect(groupCreated).toMatchObject({ ok: true });
     if (!("ok" in groupCreated) || !groupCreated.ok)
       throw new Error("group schedule create failed");
@@ -1354,7 +1363,9 @@ describeJourneys("required product journeys", () => {
       where: { id: groupRoutine.id },
       data: { nextRunAt: groupDueAt },
     });
-    await executor.wakeRoutine(groupRoutine.id, groupDueAt.toISOString());
+    await runAsSystem("background job routine.wakeup", () =>
+      executor.wakeRoutine(groupRoutine.id, groupDueAt.toISOString()),
+    );
     await waitForDatabase(async () => {
       const run = await prisma.run.findFirst({
         where: { routineId: groupRoutine.id, trigger: "routine" },
@@ -1385,15 +1396,17 @@ describeJourneys("required product journeys", () => {
       }),
     ).toBe(0);
 
-    const dmCreated = await createScheduleFromTool(scheduleDeps, {
-      spaceId: me.spaceId,
-      botId: bot.id,
-      userId: me.userId,
-      threadId: dmThread.id,
-      name: "DM ping",
-      prompt: "say dm-reminder-ok",
-      schedule: { delaySeconds: 30 },
-    });
+    const dmCreated = await runAsSystem("background job run.continue", () =>
+      createScheduleFromTool(scheduleDeps, {
+        spaceId: me.spaceId,
+        botId: bot.id,
+        userId: me.userId,
+        threadId: dmThread.id,
+        name: "DM ping",
+        prompt: "say dm-reminder-ok",
+        schedule: { delaySeconds: 30 },
+      }),
+    );
     expect(dmCreated).toMatchObject({ ok: true });
     if (!("ok" in dmCreated) || !dmCreated.ok) throw new Error("dm schedule create failed");
     const dmRoutine = await prisma.routine.findUniqueOrThrow({
@@ -1406,7 +1419,9 @@ describeJourneys("required product journeys", () => {
       where: { id: dmRoutine.id },
       data: { nextRunAt: dmDueAt },
     });
-    await executor.wakeRoutine(dmRoutine.id, dmDueAt.toISOString());
+    await runAsSystem("background job routine.wakeup", () =>
+      executor.wakeRoutine(dmRoutine.id, dmDueAt.toISOString()),
+    );
     await waitForDatabase(async () => {
       const run = await prisma.run.findFirst({
         where: { routineId: dmRoutine.id, trigger: "routine" },
@@ -1440,24 +1455,28 @@ describeJourneys("required product journeys", () => {
     });
     const thread = await prisma.thread.findUniqueOrThrow({ where: { botId: bot.id } });
 
-    await Promise.all(
-      Array.from({ length: 40 }, (_, index) =>
-        appendEvent(prisma, {
-          spaceId: actor.spaceId,
-          threadId: thread.id,
-          botId: bot.id,
-          type: "thread.progress",
-          payload: { delta: String(index) },
-        }),
+    await runAsSystem("background job run.continue", () =>
+      Promise.all(
+        Array.from({ length: 40 }, (_, index) =>
+          appendEvent(appPrisma, {
+            spaceId: actor.spaceId,
+            threadId: thread.id,
+            botId: bot.id,
+            type: "thread.progress",
+            payload: { delta: String(index) },
+          }),
+        ),
       ),
     );
-    await Promise.all(
-      Array.from({ length: 40 }, (_, index) =>
-        createThreadMessage(prisma, {
-          threadId: thread.id,
-          role: "system",
-          blocks: [{ kind: "meta", text: String(index) }],
-        }),
+    await runAsSystem("background job run.continue", () =>
+      Promise.all(
+        Array.from({ length: 40 }, (_, index) =>
+          createThreadMessage(appPrisma, {
+            threadId: thread.id,
+            role: "system",
+            blocks: [{ kind: "meta", text: String(index) }],
+          }),
+        ),
       ),
     );
 
@@ -1541,7 +1560,9 @@ describeJourneys("required product journeys", () => {
       where: { id: sent.runId },
       data: { status: "running", completedAt: null },
     });
-    await executor.continueRun(sent.runId, "retry");
+    await runAsSystem("background job run.continue", () =>
+      executor.continueRun(sent.runId, "retry"),
+    );
     expect(connector.records.length).toBe(afterFirst);
   });
 
@@ -2284,12 +2305,12 @@ describeJourneys("required product journeys", () => {
       orderBy: { seq: "desc" },
     });
     expect(answerEvent.botId).toBe(botD.id);
-    await prisma.$transaction([
-      prisma.run.update({
+    await appPrisma.$transaction([
+      appPrisma.run.update({
         where: { id: concurrentRun.id },
         data: { status: "cancelled", completedAt: new Date() },
       }),
-      prisma.task.update({ where: { id: concurrentTask.id }, data: { status: "cancelled" } }),
+      appPrisma.task.update({ where: { id: concurrentTask.id }, data: { status: "cancelled" } }),
     ]);
 
     const staleTask = await prisma.task.create({
@@ -2356,17 +2377,19 @@ describeJourneys("required product journeys", () => {
       ),
     ).toHaveLength(1);
 
-    const staleHandoff = await handoffToGroupBot(
-      { prisma, events: createThreadEvents(prisma), jobs },
-      {
-        id: staleRun.id,
-        spaceId: botB.spaceId,
-        threadId: group.threadId,
-        botId: botB.id,
-        userId: staleTask.userId,
-      },
-      group.id,
-      { bot_id: botC.id, message: "should be rejected" },
+    const staleHandoff = await runAsSystem("background job run.continue", () =>
+      handoffToGroupBot(
+        { prisma: appPrisma, events: createThreadEvents(appPrisma), jobs },
+        {
+          id: staleRun.id,
+          spaceId: botB.spaceId,
+          threadId: group.threadId,
+          botId: botB.id,
+          userId: staleTask.userId,
+        },
+        group.id,
+        { bot_id: botC.id, message: "should be rejected" },
+      ),
     );
     expect(staleHandoff).toEqual({ error: "source run is no longer active" });
 
@@ -3016,7 +3039,9 @@ describeJourneys("required product journeys", () => {
       where: { id: routine.id },
       data: { active: true, nextRunAt: dueAt },
     });
-    await executor.wakeRoutine(routine.id, dueAt.toISOString());
+    await runAsSystem("background job routine.wakeup", () =>
+      executor.wakeRoutine(routine.id, dueAt.toISOString()),
+    );
     await expect(
       prisma.routine.findUniqueOrThrow({ where: { id: routine.id } }),
     ).resolves.toMatchObject({ active: false, nextRunAt: null, lastRunAt: null });
@@ -3428,17 +3453,24 @@ describeJourneys("required product journeys", () => {
       // A provider that pads omitted fields with null must not clear the section on a pin.
       const chiefThread = await prisma.thread.findFirstOrThrow({ where: { botId: chief.id } });
       expect(
-        await organizeBot(
-          { prisma, events: createThreadEvents(prisma), jobs, runSecrets: [] },
-          {
-            spaceId: me.spaceId,
-            userId: me.userId,
-            botId: chief.id,
-            groupId: null,
-            threadId: chiefThread.id,
-            runId: "no-run",
-          },
-          { bot_name: "Alpha", pinned: true, section: null, group_id: null, group_name: null },
+        await runAsSystem("background job run.continue", () =>
+          organizeBot(
+            {
+              prisma: appPrisma,
+              events: createThreadEvents(appPrisma),
+              jobs,
+              runSecrets: [],
+            },
+            {
+              spaceId: me.spaceId,
+              userId: me.userId,
+              botId: chief.id,
+              groupId: null,
+              threadId: chiefThread.id,
+              runId: "no-run",
+            },
+            { bot_name: "Alpha", pinned: true, section: null, group_id: null, group_name: null },
+          ),
         ),
       ).toEqual({ ok: true });
       expect(await botState()).toEqual({
@@ -3616,7 +3648,9 @@ describeJourneys("required product journeys", () => {
             originTrigger,
           },
         });
-        await executor.continueRun(run.id, "taint-worker");
+        await runAsSystem("background job run.continue", () =>
+          executor.continueRun(run.id, "taint-worker"),
+        );
         return run.id;
       }
 

@@ -304,6 +304,10 @@ msgstr "Er is een aanmeldtabblad geopend op <0>{0}</0>. Voer daar deze code in â
 msgid "A subscription credential is stored securely."
 msgstr "Een abonnementsgegeven wordt veilig opgeslagen."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "Over {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr "Over groepen"
@@ -2483,10 +2487,6 @@ msgstr "MCP-verbinding afrondenâ€¦"
 msgid "Flag unexpected actions"
 msgstr "Onverwachte acties markeren"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr "Vlootbeheer"
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Wachtwoord vergeten?"
@@ -2806,10 +2806,6 @@ msgstr "Later"
 msgid "Leave"
 msgstr "Verlaten"
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Laat deze bot de bots organiseren, afstemmen en plannen die hij zelf maakt. Jij keurt elke wijziging goed."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Licht"
@@ -2958,6 +2954,10 @@ msgstr "MCP-servers beheren"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr "Berichtinstellingen beheren"
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "De bots beheren die deze bot maakt"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "De OAuth-autorisatie is geannuleerd."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "OAuth-client-ID (optioneel)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "OAuth-clientgeheim (optioneel)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth gekoppeld"
 
@@ -3577,6 +3585,10 @@ msgstr "Organisch"
 msgid "Organization API key"
 msgstr "Organisatie-API-sleutel"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Orden de zijbalk en bewerk bots. Wijzigingen aan groepen, instructies, modellen en routines vereisen je goedkeuring."
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "Oorspronkelijk bericht niet beschikbaar"
@@ -3685,6 +3697,10 @@ msgstr "Kies een tool om te controleren"
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Vastzetten"
+
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Vastgezet"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -3854,6 +3870,10 @@ msgstr "Maak een computer opnieuw aan die niet werkt."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr "De computer opnieuw aanmaken"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "Omleidings-URI"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
@@ -4075,6 +4095,7 @@ msgstr "Je werkruimte herstellen"
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "Opnieuw proberen"
@@ -4954,6 +4975,7 @@ msgid "Type your answer"
 msgstr "Typ je antwoord"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Niet toegewezen"
 

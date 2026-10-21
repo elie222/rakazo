@@ -304,6 +304,10 @@ msgstr ""
 msgid "A subscription credential is stored securely."
 msgstr "Uma credencial de assinatura está armazenada com segurança."
 
+#: src/components/InfoTooltip.tsx
+msgid "About {label}"
+msgstr "Sobre {label}"
+
 #: src/pages/shell/bot-picker.tsx
 msgid "About groups"
 msgstr ""
@@ -2483,10 +2487,6 @@ msgstr "Finalizando conexão MCP…"
 msgid "Flag unexpected actions"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Fleet management"
-msgstr ""
-
 #: src/pages/Auth.tsx
 msgid "Forgot password?"
 msgstr "Esqueceu a senha?"
@@ -2806,10 +2806,6 @@ msgstr ""
 msgid "Leave"
 msgstr ""
 
-#: src/pages/shell/bot-panel.tsx
-msgid "Lets this bot organize, retune and schedule the bots it creates. You approve each change."
-msgstr "Permite que este bot organize, ajuste e agende os bots que cria. Você aprova cada alteração."
-
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Light"
 msgstr "Claro"
@@ -2958,6 +2954,10 @@ msgstr "Gerenciar servidores MCP"
 #: src/pages/AccountSettingsOverlay.tsx
 msgid "Manage messaging settings"
 msgstr ""
+
+#: src/pages/shell/bot-panel.tsx
+msgid "Manage the bots it creates"
+msgstr "Gerenciar os bots que cria"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "Manual"
@@ -3458,6 +3458,14 @@ msgid "OAuth authorization was cancelled."
 msgstr "A autorização OAuth foi cancelada."
 
 #: src/pages/McpServersOverlay.tsx
+msgid "OAuth client ID (optional)"
+msgstr "ID do cliente OAuth (opcional)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "OAuth client secret (optional)"
+msgstr "Segredo do cliente OAuth (opcional)"
+
+#: src/pages/McpServersOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth conectado"
 
@@ -3577,6 +3585,10 @@ msgstr ""
 msgid "Organization API key"
 msgstr "Chave da API da organização"
 
+#: src/pages/shell/bot-panel.tsx
+msgid "Organize the sidebar and edit bots. Instruction, model, routine and group edits need approval."
+msgstr "Organize a barra lateral e edite bots. Alterações em grupos, instruções, modelos e rotinas precisam da sua aprovação."
+
 #: src/pages/shell/chat-context.tsx
 msgid "Original message unavailable"
 msgstr "Mensagem original indisponível"
@@ -3685,6 +3697,10 @@ msgstr "Escolha uma ferramenta para verificar"
 #: src/pages/BotContextMenu.tsx
 msgid "Pin"
 msgstr "Fixar"
+
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Fixados"
 
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
@@ -3854,6 +3870,10 @@ msgstr "Recriar um computador que não funciona."
 #: src/components/ComputerUpdateProgress.tsx
 msgid "Recreating the computer"
 msgstr ""
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Redirect URI"
+msgstr "URI de redirecionamento"
 
 #: src/App.tsx
 #: src/components/ErrorBoundary.tsx
@@ -4075,6 +4095,7 @@ msgstr ""
 #: src/components/PasskeySettings.tsx
 #: src/pages/Auth.tsx
 #: src/pages/ModelBackupsSettings.tsx
+#: src/pages/PluginsOverlay.tsx
 #: src/pages/SettingsOverlay.tsx
 msgid "Retry"
 msgstr "Tentar novamente"
@@ -4954,6 +4975,7 @@ msgid "Type your answer"
 msgstr "Digite sua resposta"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Não atribuído"
 

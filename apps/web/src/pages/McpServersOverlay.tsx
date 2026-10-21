@@ -25,7 +25,7 @@ import {
 } from "@rakazo/ui-web";
 import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { connectMcpOauth, MCP_OAUTH_CHANNEL } from "../lib/mcp-connect";
+import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/mcp-connect";
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
@@ -53,6 +53,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [secret, setSecret] = useState("");
   const [headerName, setHeaderName] = useState("Authorization");
   const [headerValue, setHeaderValue] = useState("");
+  const [oauthClientId, setOauthClientId] = useState("");
+  const [oauthClientSecret, setOauthClientSecret] = useState("");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +142,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               endpoint: endpoint.trim(),
               headers,
               secret: secret || undefined,
+              oauthClient: oauthClientId.trim()
+                ? {
+                    clientId: oauthClientId.trim(),
+                    clientSecret: oauthClientSecret || undefined,
+                  }
+                : undefined,
               enabled: true,
             });
       // replace() overwrites the bot's whole list, so merge with what it already has.
@@ -162,6 +170,8 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       setEndpoint("");
       setSecret("");
       setHeaderValue("");
+      setOauthClientId("");
+      setOauthClientSecret("");
       setCommand("");
       setArgs("");
       setSelectedBotIds([]);
@@ -361,20 +371,57 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                       />
                     </Field>
                     {transport !== "stdio" ? (
-                      <div className="grid grid-cols-[.7fr_1fr] gap-2">
-                        <Input
-                          aria-label={t`Header name`}
-                          value={headerName}
-                          onChange={(e) => setHeaderName(e.target.value)}
-                        />
-                        <Input
-                          aria-label={t`Header value`}
-                          type="password"
-                          value={headerValue}
-                          onChange={(e) => setHeaderValue(e.target.value)}
-                          placeholder={t`Optional header value`}
-                        />
-                      </div>
+                      <>
+                        <div className="grid grid-cols-[.7fr_1fr] gap-2">
+                          <Input
+                            aria-label={t`Header name`}
+                            value={headerName}
+                            onChange={(e) => setHeaderName(e.target.value)}
+                          />
+                          <Input
+                            aria-label={t`Header value`}
+                            type="password"
+                            value={headerValue}
+                            onChange={(e) => setHeaderValue(e.target.value)}
+                            placeholder={t`Optional header value`}
+                          />
+                        </div>
+                        <Field>
+                          <FieldLabel htmlFor="mcp-oauth-client-id">
+                            <Trans>OAuth client ID (optional)</Trans>
+                          </FieldLabel>
+                          <Input
+                            id="mcp-oauth-client-id"
+                            value={oauthClientId}
+                            onChange={(e) => setOauthClientId(e.target.value)}
+                          />
+                        </Field>
+                        <Field>
+                          <FieldLabel htmlFor="mcp-oauth-client-secret">
+                            <Trans>OAuth client secret (optional)</Trans>
+                          </FieldLabel>
+                          <Input
+                            id="mcp-oauth-client-secret"
+                            type="password"
+                            value={oauthClientSecret}
+                            onChange={(e) => setOauthClientSecret(e.target.value)}
+                            placeholder={t`Stored encrypted`}
+                          />
+                        </Field>
+                        {oauthClientId.trim() ? (
+                          <Field>
+                            <FieldLabel htmlFor="mcp-oauth-redirect-uri">
+                              <Trans>Redirect URI</Trans>
+                            </FieldLabel>
+                            <Input
+                              id="mcp-oauth-redirect-uri"
+                              readOnly
+                              value={mcpOAuthRedirectUri()}
+                              onFocus={(e) => e.target.select()}
+                            />
+                          </Field>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 </details>
