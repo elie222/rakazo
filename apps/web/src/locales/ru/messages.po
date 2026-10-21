@@ -3686,6 +3686,10 @@ msgstr "Выберите инструмент для проверки"
 msgid "Pin"
 msgstr "Закрепить"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Закреплённые"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Воспроизвести {name}"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "Введите ответ"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Без раздела"
 

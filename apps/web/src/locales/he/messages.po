@@ -3686,6 +3686,10 @@ msgstr ""
 msgid "Pin"
 msgstr "הצמדה"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "מוצמדים"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "הפעלת {name}"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "יש להקליד תשובה"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "ללא שיוך"
 

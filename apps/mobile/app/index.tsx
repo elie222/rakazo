@@ -515,7 +515,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
     }));
     const items: InboxItem[] = spaceInboxItems(sidebarSpaces, collapsed, me?.spaceId);
     return !SWIPE_ROWS && pinned.length > 0 ? [{ type: "pinned", chats: pinned }, ...items] : items;
-  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups]);
+  }, [inboxSpaces, collapsed, me?.spaceId, spaces, visible, visibleGroups, locale]);
   const initials = accountDisplay(me ?? {}, t("You")).initial ?? "?";
   const organizeSpace = organizeTarget
     ? organizeTarget.spaceId === me?.spaceId

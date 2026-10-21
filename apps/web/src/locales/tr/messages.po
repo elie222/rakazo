@@ -3686,6 +3686,10 @@ msgstr "Kontrol edilecek bir araç seçin"
 msgid "Pin"
 msgstr "Sabitle"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Sabitlenenler"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} dosyasını oynat"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "Yanıtını yaz"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Atanmamış"
 

@@ -1699,8 +1699,11 @@ function SpaceShell() {
               },
             ]
           : [];
-    return sidebarGroupsForSpaces(sidebarSpaces, query);
-  }, [bootstrapMe, botSections, bots, groups, spaces, query]);
+    return sidebarGroupsForSpaces(sidebarSpaces, query, {
+      pinned: t`Pinned`,
+      unassigned: t`Unassigned`,
+    });
+  }, [bootstrapMe, botSections, bots, groups, spaces, query, t]);
 
   const spaceSwitchRequest = useRef(0);
   useEffect(

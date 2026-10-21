@@ -3686,6 +3686,10 @@ msgstr "जाँचने के लिए टूल चुनें"
 msgid "Pin"
 msgstr "पिन करें"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "पिन किए गए"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} चलाएँ"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "अपना उत्तर लिखें"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "असाइन नहीं किया गया"
 

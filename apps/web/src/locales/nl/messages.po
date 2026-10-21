@@ -3686,6 +3686,10 @@ msgstr "Kies een tool om te controleren"
 msgid "Pin"
 msgstr "Vastzetten"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Vastgezet"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "{name} afspelen"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "Typ je antwoord"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Niet toegewezen"
 

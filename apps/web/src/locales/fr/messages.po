@@ -3686,6 +3686,10 @@ msgstr "Choisissez un outil à vérifier"
 msgid "Pin"
 msgstr "Épingler"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Épinglés"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Lire {name}"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "Saisissez votre réponse"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Non assigné"
 

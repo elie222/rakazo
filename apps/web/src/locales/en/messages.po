@@ -3686,6 +3686,10 @@ msgstr "Pick a tool to check"
 msgid "Pin"
 msgstr "Pin"
 
+#: src/pages/Shell.tsx
+msgid "Pinned"
+msgstr "Pinned"
+
 #: src/components/ArtifactFileCard.tsx
 msgid "Play {name}"
 msgstr "Play {name}"
@@ -4954,6 +4958,7 @@ msgid "Type your answer"
 msgstr "Type your answer"
 
 #: src/pages/BotContextMenu.tsx
+#: src/pages/Shell.tsx
 msgid "Unassigned"
 msgstr "Unassigned"
 
