@@ -47,6 +47,27 @@ describe("computer refresh lifecycle", () => {
     fixture.controller.dispose();
   });
 
+  it("pauses its timer in the background and refreshes once on resume", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(1);
+
+    fixture.controller.pause();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(1);
+
+    fixture.controller.resume();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(3);
+    fixture.controller.dispose();
+  });
+
   it("lets an explicit refresh supersede an older screen read and retain its retry count", async () => {
     vi.useFakeTimers();
     const fixture = setup();

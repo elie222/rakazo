@@ -12,6 +12,7 @@ import Computer from "../app/computer";
 const rpc = vi.hoisted(() => vi.fn());
 const textScale = vi.hoisted(() => ({ fontScale: 1 }));
 const appState = vi.hoisted(() => ({ listeners: new Set<(state: string) => void>() }));
+const foreground = vi.hoisted(() => ({ value: true }));
 const screens = vi.hoisted(() => ({ mounts: 0 }));
 const picker = vi.hoisted(() => ({
   mounts: 0,
@@ -74,6 +75,9 @@ vi.mock("react-native", () => {
   };
 });
 
+vi.mock("./app-foreground", () => ({
+  useAppForeground: () => foreground.value,
+}));
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardAvoidingView: ({ children }: { children: ReactNode }) =>
     createElement(Fragment, null, children),
@@ -223,6 +227,7 @@ describe("computer screen", () => {
     picker.mounts = 0;
     picker.props = undefined;
     appState.listeners.clear();
+    foreground.value = true;
     screens.mounts = 0;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
@@ -395,6 +400,15 @@ describe("computer screen", () => {
     const screen = view.querySelector("iframe");
     expect(screen?.getAttribute("data-elements-hidden")).toBe("true");
     expect(screen?.getAttribute("data-important")).toBe("no-hide-descendants");
+  });
+
+  it("unmounts the collapsed screen while the app is backgrounded", async () => {
+    foreground.value = false;
+    respond(botWorking);
+    const view = await render();
+
+    expect(view.querySelector("iframe")).toBeNull();
+    expect(preview(view).getAttribute("role")).toBe("button");
   });
 
   it("keeps the screen accessible in the full window while the user has control", async () => {

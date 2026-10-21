@@ -25,6 +25,7 @@ import { ComputerModePicker } from "../components/computer-mode-picker";
 import { GlassIconButton } from "../components/glass-icon-button";
 import { NativeActionButton } from "../components/native-action-button";
 import { currentApiBase, rpc } from "../lib/api";
+import { useAppForeground } from "../lib/app-foreground";
 import type { ComputerStatus } from "../lib/computer";
 import {
   COMPUTER_HEARTBEAT_MS,
@@ -61,6 +62,7 @@ export default function Computer() {
   const stacked = stacksAtTextScale(useWindowDimensions().fontScale);
   const { botId, name: nameParam } = useLocalSearchParams<{ botId?: string; name?: string }>();
   const name = displayName(nameParam, t("Bot"));
+  const foreground = useAppForeground();
   const [computer, setComputer] = useState<ComputerStatus | null>(null);
   const [screenUrl, setScreenUrl] = useState<string | null>(null);
   const [screenError, setScreenError] = useState<string | null>(null);
@@ -161,6 +163,14 @@ export default function Computer() {
     if (botId) refreshController.start();
     return () => refreshController.dispose();
   }, [botId, refreshController]);
+
+  // The computer status poll and the live WebView are expensive; neither should
+  // run while the app is in the background.
+  useEffect(() => {
+    if (!botId) return;
+    if (foreground) refreshController.resume();
+    else refreshController.pause();
+  }, [botId, foreground, refreshController]);
 
   async function bootComputer({
     takeControl,
@@ -324,7 +334,7 @@ export default function Computer() {
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
             <Text style={{ color: tokens.mutedForeground }}>{t("Open in full window")}</Text>
           </View>
-        ) : computer?.state === "running" && embeddedScreenUrl && !screenError ? (
+        ) : foreground && computer?.state === "running" && embeddedScreenUrl && !screenError ? (
           <ScreenWebView
             key={screenReload}
             url={embeddedScreenUrl}
