@@ -4,7 +4,7 @@ import { activeBotId, captureScreenshot, completeOnboarding, signup } from "./he
 
 test.use({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
 
-test("shows a mid-chat app connection at the bot bubble width", async ({ page }, testInfo) => {
+test("shows a mid-chat app connection at the question card width", async ({ page }, testInfo) => {
   await signup(page, `app-card-${Date.now()}@rakazo.test`, "password12", "Sample");
   await completeOnboarding(page);
   const botId = activeBotId(page);

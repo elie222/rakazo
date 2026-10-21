@@ -207,7 +207,7 @@ export function AppConnectCard({
     <BuiCard
       role="group"
       aria-label={t`${block.name} connection`}
-      className="w-full min-w-0 px-4 py-3.5"
+      className="w-[420px] max-w-full px-4 py-3.5"
     >
       <div className="flex items-center gap-3.5">
         {block.logo ? (
