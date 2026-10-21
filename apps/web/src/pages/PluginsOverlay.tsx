@@ -7,11 +7,14 @@ import type {
   IntegrationCatalogSurface,
 } from "@rakazo/contracts";
 import {
-  abortableDelay,
   buildFeaturedConnectorTiles,
   CONNECTION_CATALOG_PAGE_SIZE,
+  catalogItemAccounts,
+  catalogItemKey,
+  connectCatalogItem,
   filterConnectionCatalogItems,
   humanizeToolName,
+  isCatalogItemConnected,
 } from "@rakazo/core";
 import {
   Button,
@@ -43,10 +46,6 @@ type SourceKind = "treg" | "executor" | "mcp" | "api" | "graphql";
 
 type ConnectionTool = { name: string; description: string };
 
-function itemKey(item: Pick<ConnectionCatalogItem, "connectorId" | "slug">) {
-  return `${item.connectorId}:${item.slug}`;
-}
-
 function markConnected(
   items: ConnectionCatalogItem[],
   connectorId: string,
@@ -58,21 +57,6 @@ function markConnected(
   );
 }
 
-function activeAccounts(
-  connections: Connection[],
-  item: Pick<ConnectionCatalogItem, "connectorId" | "slug">,
-) {
-  return connections.filter(
-    (row) =>
-      row.connectorId === item.connectorId &&
-      row.provider === item.slug &&
-      (row.status === "connected" || row.status === "pending"),
-  );
-}
-
-function nextAccountLabel(itemName: string, existingCount: number) {
-  return existingCount <= 0 ? itemName : `${itemName} ${existingCount + 1}`;
-}
 export function PluginsOverlay({
   onConnectedAppsChange,
   onClose,
@@ -209,9 +193,7 @@ export function PluginsOverlay({
   }
 
   function itemConnected(item: ConnectionCatalogItem) {
-    return (
-      item.connected || activeAccounts(connections, item).some((row) => row.status === "connected")
-    );
+    return isCatalogItemConnected(connections, item);
   }
 
   async function notifyAppConnected(item: ConnectionCatalogItem) {
@@ -230,43 +212,23 @@ export function PluginsOverlay({
     const controller = new AbortController();
     connectionAttempt.current = controller;
     setCatalogError(null);
-    const key = itemKey(item);
+    const key = catalogItemKey(item);
     setPending(key);
     try {
-      const existing = activeAccounts(connections, item).filter(
-        (row) => row.status === "connected",
-      );
-      const started = await rpc.connections.begin({
-        connectorId: item.connectorId,
-        provider: item.slug,
-        displayName: nextAccountLabel(item.name, existing.length),
+      const result = await connectCatalogItem(item, connections, {
+        begin: (input) => rpc.connections.begin(input),
+        complete: (input) => rpc.connections.complete(input),
+        openUrl: (url) => window.open(url, "rakazo-plugin-connect", "noopener,noreferrer"),
+        signal: controller.signal,
       });
-      if (started.authorizationUrl)
-        window.open(started.authorizationUrl, "rakazo-plugin-connect", "noopener,noreferrer");
-      if (item.noAuth && !started.authorizationUrl) {
-        if (controller.signal.aborted) return;
+      if (result.status === "aborted") return;
+      if (result.status === "connected") {
         setItemConnected(item, true);
         void notifyAppConnected(item);
         await refresh().catch(() => undefined);
         setToolsTick((tick) => tick + 1);
         return;
       }
-      for (let i = 0; i < 45; i += 1) {
-        if (controller.signal.aborted) return;
-        const row = await rpc.connections
-          .complete({ connectionId: started.connectionId })
-          .catch(() => undefined);
-        if (row?.status === "connected") {
-          if (controller.signal.aborted) return;
-          setItemConnected(item, true);
-          void notifyAppConnected(item);
-          await refresh().catch(() => undefined);
-          setToolsTick((tick) => tick + 1);
-          return;
-        }
-        await abortableDelay(2_000, controller.signal);
-      }
-      if (controller.signal.aborted) return;
       setCatalogError(
         t`Connection to ${item.name} is still pending. You can close this and check again.`,
       );
@@ -287,7 +249,9 @@ export function PluginsOverlay({
     setPending(row.id);
     try {
       await rpc.connections.revoke({ connectionId: row.id });
-      const remaining = activeAccounts(connections, item).filter((entry) => entry.id !== row.id);
+      const remaining = catalogItemAccounts(connections, item).filter(
+        (entry) => entry.id !== row.id,
+      );
       if (remaining.every((entry) => entry.status !== "connected")) {
         setItemConnected(item, false);
       }
@@ -301,14 +265,14 @@ export function PluginsOverlay({
   }
 
   async function uninstall(item: ConnectionCatalogItem) {
-    const matches = activeAccounts(connections, item);
+    const matches = catalogItemAccounts(connections, item);
     if (matches.length === 0) {
       setItemConnected(item, false);
       closeDetail();
       return;
     }
     setCatalogError(null);
-    setPending(`uninstall:${itemKey(item)}`);
+    setPending(`uninstall:${catalogItemKey(item)}`);
     try {
       for (const row of matches) {
         await rpc.connections.revoke({ connectionId: row.id });
@@ -444,7 +408,7 @@ export function PluginsOverlay({
   }
 
   function renderCatalogActions(item: ConnectionCatalogItem) {
-    const key = itemKey(item);
+    const key = catalogItemKey(item);
     const connected = itemConnected(item);
     const connecting = pending === key;
     if (connected) {
@@ -509,7 +473,7 @@ export function PluginsOverlay({
     );
     return (
       <div
-        key={itemKey(item)}
+        key={catalogItemKey(item)}
         data-testid={tileTestId ? `connection-tile-${item.slug.toLowerCase()}` : undefined}
         className="flex min-w-0 items-center gap-3 rounded-xl px-2.5 py-2"
       >
@@ -534,8 +498,8 @@ export function PluginsOverlay({
   }
 
   function renderDetail(item: ConnectionCatalogItem) {
-    const accounts = activeAccounts(connections, item);
-    const key = itemKey(item);
+    const accounts = catalogItemAccounts(connections, item);
+    const key = catalogItemKey(item);
     const connecting = pending === key;
     const uninstalling = pending === `uninstall:${key}`;
     const toolCount = tools.length;
@@ -728,26 +692,6 @@ export function PluginsOverlay({
           hidden={loading}
           className="rk-scroll flex-1 overflow-y-auto px-8 py-6"
         >
-          <Button
-            variant="outline"
-            className="mb-4"
-            onClick={() => setSetupOpen((current) => !current)}
-          >
-            <Trans>Browse MCP servers</Trans>
-          </Button>
-          {setupOpen ? (
-            <div className="mb-6">
-              <IntegrationSetup
-                botId={activeBotId}
-                onDone={() => {
-                  setSetupOpen(false);
-                  void refresh().catch((err: unknown) =>
-                    setCatalogError(errorText(err, t`Could not load integrations`)),
-                  );
-                }}
-              />
-            </div>
-          ) : null}
           {catalogError ? <p className="mb-4 text-sm text-destructive">{catalogError}</p> : null}
 
           {detailItem ? (
@@ -764,7 +708,7 @@ export function PluginsOverlay({
                     <div className="grid grid-cols-2 gap-2">
                       {featuredTiles.map((tile) => {
                         const item = tile.item;
-                        const key = item ? itemKey(item) : tile.id;
+                        const key = item ? catalogItemKey(item) : tile.id;
                         const disabled = tile.missing || !item;
                         if (item && !tile.missing) {
                           // Featured is the stable hit target for connection-tile-* in E2E.
@@ -840,6 +784,7 @@ export function PluginsOverlay({
                 onToggle={(event) => {
                   if (!(event.currentTarget as HTMLDetailsElement).open) {
                     setSourceKind(null);
+                    setSetupOpen(false);
                     setSourceError(null);
                     setSourceHint(null);
                     setSourceName("");
@@ -957,6 +902,28 @@ export function PluginsOverlay({
                         ))}
                       </CardContent>
                     </Card>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="rounded-full"
+                    size="sm"
+                    aria-expanded={setupOpen}
+                    onClick={() => setSetupOpen((current) => !current)}
+                  >
+                    <Trans>Browse MCP servers</Trans>
+                  </Button>
+                  {setupOpen ? (
+                    <IntegrationSetup
+                      botId={activeBotId}
+                      onDone={() => {
+                        setSetupOpen(false);
+                        void refresh().catch((err: unknown) =>
+                          setCatalogError(errorText(err, t`Could not load integrations`)),
+                        );
+                      }}
+                    />
                   ) : null}
 
                   <div data-testid="integrations-advanced-add" className="flex flex-wrap gap-2">
