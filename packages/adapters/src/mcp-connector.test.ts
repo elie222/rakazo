@@ -695,9 +695,13 @@ describe("MCP connector session cache", () => {
       signal: new AbortController().signal,
     };
 
-    // Discovery is reached again on every lazy catalog access inside the same run.
+    // Discovery is reached again on every lazy catalog access inside the same run; past
+    // the failure backoff, the server is tried (and can fail) again.
     await connector.discoverTools(context as never);
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 31_000);
     await connector.discoverTools(context as never);
+    vi.mocked(Date.now).mockRestore();
 
     expect(append).toHaveBeenCalledTimes(2);
     const ids = append.mock.calls.map((call) => call[0].payload.executionId);

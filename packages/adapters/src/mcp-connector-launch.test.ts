@@ -13,10 +13,14 @@ import { McpSession } from "./mcp-transport.js";
 
 /** A dependency-free stdio MCP server: one `hello` tool that echoes its launch arguments. */
 const SERVER_SOURCE = `#!/usr/bin/env node
-if (process.env.FAIL_LOUDLY) {
+if (process.env.SILENT) {
+  // Like a server whose upstream hangs: alive, but never answers.
+  process.stdin.resume();
+} else if (process.env.FAIL_LOUDLY) {
   console.error("auth failed for " + process.env.MAIL_API_KEY + " as " + process.env.MAIL_ACCOUNT);
   process.exit(1);
 }
+if (!process.env.SILENT) {
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
 let buffer = "";
 process.stdin.on("data", (chunk) => {
@@ -35,6 +39,7 @@ process.stdin.on("data", (chunk) => {
     else send({ id: message.id, result: {} });
   }
 });
+}
 `;
 
 const SPEC = "@demo/mail-mcp@1.0.0";
@@ -95,7 +100,13 @@ describe("MCP connector managed stdio launch", () => {
   });
 
   function connectorFor(
-    options: { allowedCommands?: string[]; idleMs?: number; server?: typeof SERVER } = {},
+    options: {
+      allowedCommands?: string[];
+      idleMs?: number;
+      server?: typeof SERVER;
+      startupTimeoutMs?: number;
+      discoveryTimeoutMs?: number;
+    } = {},
   ) {
     const server = options.server ?? SERVER;
     const assignment = (botId: string) => ({
@@ -125,6 +136,8 @@ describe("MCP connector managed stdio launch", () => {
       allowedCommands: options.allowedCommands ?? ["npx"],
       packagesDir: root,
       idleMs: options.idleMs,
+      startupTimeoutMs: options.startupTimeoutMs,
+      discoveryTimeoutMs: options.discoveryTimeoutMs,
     });
   }
 
@@ -240,6 +253,97 @@ describe("MCP connector managed stdio launch", () => {
     } finally {
       await connector.close();
     }
+  });
+
+  describe("a slow or failing server", () => {
+    it("is skipped after the discovery deadline instead of holding up the run", async () => {
+      await publishPackage(root);
+      env = { SILENT: "1" };
+      // The launch outlives the deadline (startup allows 3s) and finishes in the background.
+      const connector = connectorFor({ discoveryTimeoutMs: 1_000, startupTimeoutMs: 3_000 });
+      try {
+        const startedAt = Date.now();
+        const tools = await connector.discoverTools(contextFor());
+        expect(Date.now() - startedAt).toBeLessThan(5_000);
+        expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+        expect(tools[0]?.description).toContain("did not list its tools within 1s");
+        await vi.waitFor(() =>
+          expect(healthWrites()).toContainEqual(expect.objectContaining({ healthStatus: "error" })),
+        );
+      } finally {
+        await connector.close();
+      }
+    });
+
+    it("is not retried on every turn, but is again after the backoff or once it works", async () => {
+      await publishPackage(root);
+      env = { SILENT: "1" };
+      const launches = vi.spyOn(McpSession.prototype, "connectStdio");
+      const connector = connectorFor({ startupTimeoutMs: 300, discoveryTimeoutMs: 5_000 });
+      try {
+        expect(await connector.discoverTools(contextFor())).toMatchObject([
+          { name: "mcp__mail__unavailable" },
+        ]);
+        expect(launches).toHaveBeenCalledTimes(1);
+
+        // Within the backoff: answered from the last failure, nothing is launched.
+        expect(await connector.discoverTools(contextFor("bot-2"))).toMatchObject([
+          { name: "mcp__mail__unavailable" },
+        ]);
+        expect(launches).toHaveBeenCalledTimes(1);
+
+        // After it, the server is tried again, and a success ends the backoff.
+        env = {};
+        const now = Date.now();
+        vi.spyOn(Date, "now").mockReturnValue(now + 31_000);
+        expect((await connector.discoverTools(contextFor())).map((tool) => tool.name)).toEqual([
+          "mcp__mail__hello",
+        ]);
+        expect(launches).toHaveBeenCalledTimes(2);
+      } finally {
+        await connector.close();
+      }
+    });
+
+    it("lets a run go on while its package installs, and uses it on a later turn", async () => {
+      const dir = mcpPackageDir(SPEC, root);
+      const lock = `${dir}.lock`;
+      await mkdir(lock, { recursive: true });
+      await writeFile(
+        join(lock, "owner"),
+        JSON.stringify({
+          token: "other",
+          pid: process.pid,
+          host: hostname(),
+          expiresAt: Date.now() + 60_000,
+        }),
+      );
+      const connector = connectorFor({ discoveryTimeoutMs: 300 });
+      try {
+        const tools = await connector.discoverTools(contextFor());
+        expect(tools).toMatchObject([{ name: "mcp__mail__unavailable" }]);
+        expect(tools[0]?.description).toContain("still installing");
+        // Installing is not a failure: no error health and no backoff.
+        expect(await connector.discoverTools(contextFor())).toMatchObject([
+          { description: expect.stringContaining("still installing") },
+        ]);
+        expect(healthWrites()).not.toContainEqual(
+          expect.objectContaining({ healthStatus: "error" }),
+        );
+
+        await publishPackage(root);
+        await rm(lock, { recursive: true, force: true });
+        await vi.waitFor(
+          async () =>
+            expect((await connector.discoverTools(contextFor())).map((tool) => tool.name)).toEqual([
+              "mcp__mail__hello",
+            ]),
+          { timeout: 5_000, interval: 100 },
+        );
+      } finally {
+        await connector.close();
+      }
+    });
   });
 
   it("runs one process per server for every bot of the same user", async () => {

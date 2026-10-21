@@ -84,6 +84,31 @@ type PendingSession = {
 
 export const DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS = 30_000;
 export const DEFAULT_MCP_STDIO_IDLE_MS = 15 * 60_000;
+/** How long a run waits for one server's tool list before going on without it. */
+export const DEFAULT_MCP_DISCOVERY_TIMEOUT_MS = 20_000;
+/** After a failed discovery, runs skip the server for this long, doubling up to the max. */
+const DISCOVERY_BACKOFF_MS = 30_000;
+const DISCOVERY_BACKOFF_MAX_MS = 5 * 60_000;
+
+/** A server that did not list its tools within the discovery deadline. */
+class McpDiscoveryTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`did not list its tools within ${Math.round(timeoutMs / 1000)}s`);
+    this.name = "McpDiscoveryTimeoutError";
+  }
+}
+
+/** Reject after `timeoutMs` without cancelling `promise`, which may finish in the background. */
+function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  if (timeoutMs <= 0) return promise;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new McpDiscoveryTimeoutError(timeoutMs)), timeoutMs);
+  });
+  // The losing side must not surface as an unhandled rejection.
+  promise.catch(() => undefined);
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
 /** Route name of the stand-in tool for an assigned server whose discovery failed. */
 const UNAVAILABLE_TOOL = "__rakazo_unavailable";
 /** Skip rewriting an unchanged health observation more often than this. */
@@ -106,6 +131,8 @@ export type McpConnectorOptions = {
   idleMs?: number;
   /** Parent for private per-process credential directories; defaults to the OS temp directory. */
   credentialTempRoot?: string;
+  /** How long a run waits for one server's tool list; 0 waits for the transport's own timeouts. */
+  discoveryTimeoutMs?: number;
 };
 
 function positiveInteger(value: string | undefined, allowZero = false): number | undefined {
@@ -117,7 +144,10 @@ function positiveInteger(value: string | undefined, allowZero = false): number |
 /** Stdio launch settings shared by the API and worker composition roots. */
 export function mcpStdioOptionsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-): Pick<McpConnectorOptions, "packagesDir" | "installTimeoutMs" | "startupTimeoutMs" | "idleMs"> {
+): Pick<
+  McpConnectorOptions,
+  "packagesDir" | "installTimeoutMs" | "startupTimeoutMs" | "idleMs" | "discoveryTimeoutMs"
+> {
   return {
     packagesDir: defaultMcpPackagesRoot(env),
     installTimeoutMs:
@@ -125,6 +155,8 @@ export function mcpStdioOptionsFromEnv(
     startupTimeoutMs:
       positiveInteger(env.MCP_STDIO_STARTUP_TIMEOUT_MS) ?? DEFAULT_MCP_STDIO_STARTUP_TIMEOUT_MS,
     idleMs: positiveInteger(env.MCP_STDIO_IDLE_MS, true) ?? DEFAULT_MCP_STDIO_IDLE_MS,
+    discoveryTimeoutMs:
+      positiveInteger(env.MCP_DISCOVERY_TIMEOUT_MS, true) ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
   };
 }
 
@@ -239,6 +271,13 @@ export class McpConnector implements ConnectorProvider {
   /** Last discovery failure per session key, returned by the unavailable stand-in tool. */
   private readonly unavailable = new Map<string, string>();
   private readonly healthWrites = new Map<string, { value: string; at: number }>();
+  /** Servers whose last discovery failed; runs skip them until `until`, per revision. */
+  private readonly discoveryBackoff = new Map<
+    string,
+    { revision: number; until: number; delayMs: number; reason: string }
+  >();
+  /** Session keys whose npx package is being installed right now. */
+  private readonly installing = new Set<string>();
   private reaper?: ReturnType<typeof setInterval>;
   private resolvedPackagesRoot?: string;
   private readonly inFlight = new WeakMap<McpSession, number>();
@@ -304,13 +343,32 @@ export class McpConnector implements ConnectorProvider {
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
-        const key = this.sessionKey(assignment.server, context);
+        const server = assignment.server;
+        const key = this.sessionKey(server, context);
+        const live = this.sessions.get(key)?.revision === server.revision;
+        // A package still installing finishes in the background; this run goes on without it.
+        if (!live && this.installing.has(key))
+          return [
+            unavailableTool(
+              server,
+              "it is still installing its package; its tools will be available on a later turn",
+            ),
+          ];
+        // A server that just failed is not retried on every turn; a live session or a new
+        // revision (the user changed it) ends the wait early.
+        const backoff = this.discoveryBackoff.get(key);
+        if (!live && backoff?.revision === server.revision && Date.now() < backoff.until)
+          return [unavailableTool(server, backoff.reason)];
         let entry: SessionEntry | undefined;
         try {
-          const listed = await this.withSession(assignment.server, context, (session) => {
-            entry = this.sessions.get(key);
-            return session.listTools({ signal: context.signal });
-          });
+          const listed = await withDeadline(
+            this.withSession(server, context, (session) => {
+              entry = this.sessions.get(key);
+              return session.listTools({ signal: context.signal });
+            }),
+            this.options.discoveryTimeoutMs ?? DEFAULT_MCP_DISCOVERY_TIMEOUT_MS,
+          );
+          this.discoveryBackoff.delete(key);
           this.unavailable.delete(key);
           void this.recordHealth(assignment.server.id, {
             status: "ok",
@@ -340,19 +398,34 @@ export class McpConnector implements ConnectorProvider {
         } catch (error) {
           // Capture material before eviction so the audited reason stays redacted, the
           // same reason execute() captures it before callTool.
-          const material = entry?.material;
+          const material = (entry ?? this.sessions.get(key))?.material;
           const secrets = [
             ...(material ? oauthMaterialSecrets(material) : []),
-            ...(entry?.launchSecrets ?? []),
+            ...((entry ?? this.sessions.get(key))?.launchSecrets ?? []),
           ];
-          const reason = sanitizeConnectorError(error, secrets);
+          const reason = this.installing.has(key)
+            ? "it is still installing its package; its tools will be available on a later turn"
+            : sanitizeConnectorError(error, secrets);
           // A single unavailable server must not hide tools from other connectors.
           getLogger().error(`mcp discovery failed for server ${assignment.server.slug}:`, reason);
           await this.evict(key);
           this.unavailable.set(key, reason);
-          // A cancelled run says nothing about the server.
-          if (!context.signal.aborted)
+          // A cancelled run says nothing about the server, and an install that outlived the
+          // deadline is still on its way.
+          if (!context.signal.aborted && !this.installing.has(key)) {
             void this.recordHealth(assignment.server.id, { status: "error", message: reason });
+            const delayMs = Math.min(
+              (backoff?.revision === server.revision ? backoff.delayMs * 2 : 0) ||
+                DISCOVERY_BACKOFF_MS,
+              DISCOVERY_BACKOFF_MAX_MS,
+            );
+            this.discoveryBackoff.set(key, {
+              revision: server.revision,
+              until: Date.now() + delayMs,
+              delayMs,
+              reason,
+            });
+          }
           await this.recordDiscoveryFailure(
             assignment.server.slug,
             error,
@@ -547,6 +620,7 @@ export class McpConnector implements ConnectorProvider {
         }
       }
       this.unavailable.delete(key);
+      this.discoveryBackoff.delete(key);
       update = { status: "ok", message: null, toolCount };
     } catch (error) {
       // Like discovery: a shared session that cannot list its tools is dropped.
@@ -842,25 +916,31 @@ export class McpConnector implements ConnectorProvider {
               ([, value]) => mcpOAuthEnvReferences(value).fields.length === 0,
             ),
           );
-          installedBin = await ensureMcpPackage(npx.spec, {
-            root: this.packagesRoot(),
-            binName: npx.binName,
-            timeoutMs: this.options.installTimeoutMs,
-            signal: context.signal,
-            env: installEnv,
-            onSettled: async () => {
-              if (context.signal.aborted)
-                await this.recordHealth(
-                  server.id,
-                  { status: "unknown", message: null },
-                  { force: true },
-                );
-            },
-            onInstall: () => {
-              const installing = { status: "installing", message: null } as const;
-              void this.recordHealth(server.id, installing, { force: true });
-            },
-          });
+          const installKey = this.sessionKey(server, context);
+          try {
+            installedBin = await ensureMcpPackage(npx.spec, {
+              root: this.packagesRoot(),
+              binName: npx.binName,
+              timeoutMs: this.options.installTimeoutMs,
+              signal: context.signal,
+              env: installEnv,
+              onSettled: async () => {
+                if (context.signal.aborted)
+                  await this.recordHealth(
+                    server.id,
+                    { status: "unknown", message: null },
+                    { force: true },
+                  );
+              },
+              onInstall: () => {
+                this.installing.add(installKey);
+                const installing = { status: "installing", message: null } as const;
+                void this.recordHealth(server.id, installing, { force: true });
+              },
+            });
+          } finally {
+            this.installing.delete(installKey);
+          }
         }
         let launchEnv = env;
         const files = material.files ?? {};

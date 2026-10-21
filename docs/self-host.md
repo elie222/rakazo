@@ -801,6 +801,12 @@ without use. When a server fails to start, the reason (including the end of its 
 credentials redacted) appears on the server in **Settings**, and its bots are told it is
 unavailable instead of silently losing its tools.
 
+A run never waits long on one server. It gives each server `MCP_DISCOVERY_TIMEOUT_MS` (default
+20000) to list its tools, then goes on without it; a package still installing finishes in the
+background and its tools appear on a later turn. After a failure, runs skip that server for 30
+seconds, doubling up to 5 minutes while it keeps failing. A successful **Test connection** or
+discovery, or a change to the server's settings, ends the wait at once.
+
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
 Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models
