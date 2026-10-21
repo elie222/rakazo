@@ -2,12 +2,17 @@ import type { ConnectorTool } from "@rakazo/adapter-kit";
 
 const SEMANTIC_MEMORY_TOOL_NAMES = new Set(["recall_memory", "save_memory", "forget_memory"]);
 
+/** `forget_memory` is offered only when the provider implements its optional forget verb. */
 export function selectMemoryTools(
   tools: ConnectorTool[],
   semanticMemoryConfigured: boolean,
+  semanticMemoryForgets: boolean,
 ): ConnectorTool[] {
   return semanticMemoryConfigured
-    ? tools.filter((tool) => tool.name !== "remember")
+    ? tools.filter(
+        (tool) =>
+          tool.name !== "remember" && (semanticMemoryForgets || tool.name !== "forget_memory"),
+      )
     : tools.filter((tool) => !SEMANTIC_MEMORY_TOOL_NAMES.has(tool.name));
 }
 

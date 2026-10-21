@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   APP_CONTENT_SECURITY_POLICY,
+  CSP_REPORTING_ENDPOINTS,
   HTML_VIEWER_PATH,
 } from "@rakazo/contracts/content-security-policy";
 import { describe, expect, it } from "vitest";
@@ -58,6 +59,7 @@ describe("bundled desktop renderer", () => {
     const index = path.join(root, "index.html");
     const app = bundledRendererHeaders(index, `${origin}/bots/1?tab=chat`);
     expect(app.get("content-security-policy")).toBe(APP_CONTENT_SECURITY_POLICY);
+    expect(app.get("reporting-endpoints")).toBe(CSP_REPORTING_ENDPOINTS);
     expect(app.get("x-content-type-options")).toBe("nosniff");
     expect(app.get("cache-control")).toBe("no-cache");
     const viewer = bundledRendererHeaders(

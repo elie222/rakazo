@@ -331,10 +331,13 @@ services:
   api:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
+    # Node runs directly, not through pnpm: pnpm does not pass SIGTERM on, so a stop would kill the
+    # process before its graceful shutdown finishes in-flight requests and jobs.
+    working_dir: /app/apps/api
     command:
       - bash
       - -lc
-      - pnpm db:migrate && exec env -u DATABASE_MIGRATION_URL pnpm --filter @rakazo/api start
+      - pnpm db:deploy && exec env -u DATABASE_MIGRATION_URL node --enable-source-maps dist/index.js
     init: true
     security_opt:
       - no-new-privileges:true
@@ -346,7 +349,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       <<: *app-environment
-      # Owner login for `pnpm db:migrate`; the start command drops it before serving.
+      # Owner login for migrations; the start command drops it before serving.
       DATABASE_MIGRATION_URL: postgres://${POSTGRES_USER:-rakazo}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-rakazo}
       # Sign-in, sessions, billing and inbound webhooks: API only.
       API_HOST: "0.0.0.0"
@@ -414,7 +417,9 @@ services:
   worker:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
-    command: ["pnpm", "--filter", "@rakazo/worker", "start"]
+    # Directly, not through pnpm, so a stop reaches it (see the api command).
+    working_dir: /app/apps/worker
+    command: ["node", "--enable-source-maps", "dist/index.js"]
     init: true
     security_opt:
       - no-new-privileges:true
@@ -445,7 +450,9 @@ services:
   web:
     image: ${RAKAZO_IMAGE:-ghcr.io/elie222/rakazo/app}:${RAKAZO_IMAGE_TAG:-edge}
     restart: unless-stopped
-    command: ["pnpm", "--filter", "@rakazo/web", "preview", "--host", "0.0.0.0", "--port", "5173"]
+    # Directly, not through pnpm, so a stop reaches it (see the api command).
+    working_dir: /app/apps/web
+    command: ["node_modules/.bin/vite", "preview", "--host", "0.0.0.0", "--port", "5173"]
     init: true
     security_opt:
       - no-new-privileges:true

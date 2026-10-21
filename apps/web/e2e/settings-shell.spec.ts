@@ -129,11 +129,21 @@ test("Honcho memory settings empty and filled", async ({ page }, testInfo) => {
   await memory.getByLabel("Provider").selectOption("honcho");
   await expect(memory.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(memory.getByLabel("Workspace", { exact: true })).toBeVisible();
+  await expect(memory.getByLabel("User peer", { exact: true })).toHaveCount(0);
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
   await page.setViewportSize({ width: 1280, height: 900 });
   await captureScreenshot(page, testInfo, "memory-honcho-empty");
   await memory.getByLabel("API key", { exact: true }).fill("hch-test-key");
   await memory.getByLabel("Workspace", { exact: true }).fill("team-notes");
+  const userPeer = memory.getByLabel("User peer", { exact: true });
+  await userPeer.fill("bot-123");
+  await expect(userPeer).toHaveAttribute("aria-invalid", "true");
+  await expect(
+    memory.getByText("rakazo-shared and IDs starting with bot- are reserved for Rakazo."),
+  ).toBeVisible();
+  await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeDisabled();
+  await captureScreenshot(page, testInfo, "memory-honcho-user-peer-reserved");
+  await userPeer.fill("user-alex");
   await expect(memory.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
   await captureScreenshot(page, testInfo, "memory-honcho-filled");
   await memory.getByRole("button", { name: "Local", exact: true }).click();

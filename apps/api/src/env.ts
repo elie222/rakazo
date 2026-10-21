@@ -18,6 +18,7 @@ import {
   resolveSupervisorToken,
   uploadSizeFromEnv,
 } from "@rakazo/core";
+import { monitoringPseudonymSecret } from "@rakazo/logging";
 
 export { resolveCloudAgentProvider, resolveSandboxProvider } from "@rakazo/adapters";
 
@@ -127,7 +128,9 @@ export interface AppEnv {
   port: number;
   gitSha: string | undefined;
   /** Browser error reporting, served to the web app at runtime. The DSN is public by design. */
-  browserMonitoring: { dsn: string; environment?: string; release?: string } | undefined;
+  browserMonitoring:
+    | { dsn: string; environment?: string; release?: string; pseudonymSecret?: string }
+    | undefined;
   /** Private Compose control-network URL for the opt-in updater sidecar. */
   updaterUrl: string | undefined;
   /** Bearer shared with the updater; never sent to the browser. */
@@ -304,6 +307,7 @@ function browserMonitoringFromEnv(source: NodeJS.ProcessEnv): AppEnv["browserMon
     dsn,
     environment: optional(source.SENTRY_ENVIRONMENT),
     release: optional(source.SENTRY_RELEASE) ?? (sha === "unknown" ? undefined : sha),
+    pseudonymSecret: monitoringPseudonymSecret(source),
   };
 }
 

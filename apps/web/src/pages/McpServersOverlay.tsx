@@ -485,15 +485,20 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                           <Trans>Environment variables</Trans>
                         </FieldTitle>
                         {envRows.map((row) => (
-                          <div
+                          <Field
                             key={row.id}
+                            orientation="horizontal"
+                            data-invalid={duplicateNames.has(row.name) || undefined}
                             className="grid grid-cols-[.7fr_1fr_auto_auto] items-start gap-2"
                           >
                             <Input
                               aria-label={t`Name`}
+                              aria-invalid={duplicateNames.has(row.name) || undefined}
+                              aria-describedby={
+                                duplicateNames.has(row.name) ? `mcp-env-error-${row.id}` : undefined
+                              }
                               autoComplete="off"
                               className={row.file ? "col-span-2" : undefined}
-                              aria-invalid={duplicateNames.has(row.name)}
                               value={row.name}
                               onChange={(e) =>
                                 updateEnvRow(row.id, { name: envName(e.target.value) })
@@ -545,12 +550,12 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                                 onChange={(e) => updateEnvRow(row.id, { value: e.target.value })}
                               />
                             ) : null}
-                            {duplicateNames.has(row.name) && (
-                              <FieldError className="col-span-full">
+                            {duplicateNames.has(row.name) ? (
+                              <FieldError id={`mcp-env-error-${row.id}`} className="col-span-full">
                                 <Trans>Each name can be used once.</Trans>
                               </FieldError>
-                            )}
-                          </div>
+                            ) : null}
+                          </Field>
                         ))}
                         <Button
                           type="button"

@@ -1720,6 +1720,21 @@ describe("createRunExecutor", () => {
     expect(tools).toContain("web_fetch");
   });
 
+  it("offers forget_memory only when the memory provider can forget", () => {
+    const names = (semanticMemoryForgets: boolean) =>
+      selectBuiltinToolsForRun({
+        graphicalToolsAllowed: false,
+        groupId: null,
+        trigger: "message",
+        semanticMemoryEnabled: true,
+        semanticMemoryForgets,
+        messagingChannelRun: false,
+      }).map((tool) => tool.name);
+    expect(names(false)).toEqual(expect.arrayContaining(["recall_memory", "save_memory"]));
+    expect(names(false)).not.toContain("forget_memory");
+    expect(names(true)).toContain("forget_memory");
+  });
+
   it("keeps a creation intro from answering a user message that arrived during it", () => {
     expect(
       threadContextForRun(

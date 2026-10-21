@@ -27,8 +27,14 @@ import {
   createAuthMiddleware,
   getOAuthState,
 } from "better-auth/api";
-import { bearer, emailOTP, organization } from "better-auth/plugins";
-import { accountSecurity, oidcProofKey, sessionForAuthHook } from "./account-security.js";
+import { parseSetCookieHeader } from "better-auth/cookies";
+import { emailOTP, organization } from "better-auth/plugins";
+import {
+  accountSecurity,
+  oidcProofKey,
+  sessionForAuthHook,
+  signedBearer,
+} from "./account-security.js";
 import { breachedPasswordCheck } from "./breached-password.js";
 import type { OidcConfig } from "./oidc.js";
 import { isCurrentOidcAccount, oidcDiscovery } from "./oidc.js";
@@ -451,7 +457,7 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
       },
     },
     plugins: [
-      bearer(),
+      signedBearer,
       expo(),
       accountSecurity(env.email, env.oidc?.name, env.oidc?.issuer, env.passwordAuth !== false),
       ...(discovery ? [discovery.plugin] : []),
@@ -647,6 +653,8 @@ export function createAuth(prisma: PrismaClient, env: AuthEnv) {
         }
         const redacted = withoutSessionTokens(ctx.path, returned);
         if (redacted) return ctx.json(redacted);
+        const signed = withSignedSessionToken(ctx.context, returned);
+        if (signed) return ctx.json(signed);
       }),
     },
     databaseHooks: {
@@ -901,6 +909,34 @@ function withoutSessionTokens(
     isRecord(returned.session)
   ) {
     return { ...returned, session: withoutToken(returned.session) };
+  }
+  return undefined;
+}
+
+/**
+ * A sign-in body carries the new session's raw token, which the bearer plugin
+ * refuses. Swap in the signed value from the session cookie, so a native client
+ * that keeps the body token stores a bearer that works.
+ */
+function withSignedSessionToken(
+  context: {
+    newSession: { session: { token: string } } | null;
+    responseHeaders?: Headers;
+    authCookies: { sessionToken: { name: string } };
+  },
+  returned: unknown,
+): Record<string, unknown> | undefined {
+  const token = context.newSession?.session.token;
+  if (!token || !isRecord(returned)) return undefined;
+  const cookie = parseSetCookieHeader(context.responseHeaders?.get("set-cookie") ?? "").get(
+    context.authCookies.sessionToken.name,
+  );
+  if (!cookie?.value || cookie["max-age"] === 0) return undefined;
+  const signed = decodeURIComponent(cookie.value);
+  if (!signed.startsWith(`${token}.`)) return undefined;
+  if (returned.token === token) return { ...returned, token: signed };
+  if (isRecord(returned.session) && returned.session.token === token) {
+    return { ...returned, session: { ...returned.session, token: signed } };
   }
   return undefined;
 }

@@ -1,4 +1,4 @@
-import { getLogger } from "@rakazo/logging";
+import { getLogger, monitoringUserId } from "@rakazo/logging";
 import { Hono } from "hono";
 import type { AppEnv } from "./env.js";
 import { requestBodyLimit } from "./request-body-limit.js";
@@ -14,7 +14,14 @@ const UPSTREAM_TIMEOUT_MS = 10_000;
 const FORWARDED_RESPONSE_HEADERS = ["retry-after", "x-sentry-rate-limits"];
 
 export type MonitoringConfigResponse =
-  | { dsn: string; environment: string | null; release: string | null; tunnel: string }
+  | {
+      dsn: string;
+      environment: string | null;
+      release: string | null;
+      tunnel: string;
+      /** The signed-in user's pseudonymous id; the browser cannot derive it without the secret. */
+      userId: string | null;
+    }
   | { dsn: null };
 
 interface DsnTarget {
@@ -43,6 +50,7 @@ export function parseDsn(dsn: string): DsnTarget | undefined {
 export function monitoringRoutes(
   config: AppEnv["browserMonitoring"],
   fetchImpl: typeof fetch = fetch,
+  sessionUserId: (request: Request) => Promise<string | undefined> = async () => undefined,
 ) {
   const app = new Hono();
   const target = config ? parseDsn(config.dsn) : undefined;
@@ -50,18 +58,18 @@ export function monitoringRoutes(
     getLogger().warn("Browser error reporting is disabled; SENTRY_BROWSER_DSN is not a valid DSN.");
   }
 
-  app.get("/api/monitoring/config", (c) => {
+  app.get("/api/monitoring/config", async (c) => {
     c.header("cache-control", "no-store");
-    const body: MonitoringConfigResponse =
-      config && target
-        ? {
-            dsn: config.dsn,
-            environment: config.environment ?? null,
-            release: config.release ?? null,
-            tunnel: MONITORING_TUNNEL_PATH,
-          }
-        : { dsn: null };
-    return c.json(body);
+    if (!config || !target) return c.json({ dsn: null } satisfies MonitoringConfigResponse);
+    const secret = config.pseudonymSecret;
+    const userId = secret ? await sessionUserId(c.req.raw).catch(() => undefined) : undefined;
+    return c.json({
+      dsn: config.dsn,
+      environment: config.environment ?? null,
+      release: config.release ?? null,
+      tunnel: MONITORING_TUNNEL_PATH,
+      userId: secret && userId ? monitoringUserId(secret, userId) : null,
+    } satisfies MonitoringConfigResponse);
   });
 
   app.post(MONITORING_TUNNEL_PATH, requestBodyLimit(MAX_MONITORING_ENVELOPE_BYTES), async (c) => {

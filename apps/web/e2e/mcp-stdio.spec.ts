@@ -124,13 +124,19 @@ test("adds a stdio MCP server with encrypted environment variables", async ({ pa
   await names.nth(1).fill("invoices-api-id");
   await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Add server", exact: true })).toBeDisabled();
+  await names.nth(1).fill("1password-token");
+  await expect(names.nth(1)).toHaveValue("_1PASSWORD_TOKEN");
   await names.nth(1).fill("INVOICES_API_SECRET");
   await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(0);
   await values.nth(1).fill("secret-value");
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  await names.nth(2).fill("UNUSED");
+  await names.nth(2).fill("invoices-api-id");
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(2);
+  await expect(page.getByRole("button", { name: "Add server", exact: true })).toBeDisabled();
+  expect(servers).toHaveLength(0);
   await page.getByRole("button", { name: "Remove", exact: true }).nth(2).click();
   await expect(names).toHaveCount(2);
+  await expect(page.getByText("Each name can be used once.", { exact: true })).toHaveCount(0);
 
   // The OAuth client is host-managed: the grant reaches the process through a visible reference.
   await page.getByRole("button", { name: "Add", exact: true }).click();

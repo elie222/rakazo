@@ -57,10 +57,15 @@ export function honchoBotPeerId(botId: string): string {
   return honchoResourceId(`bot-${botId}`);
 }
 
+/** Peer IDs Rakazo creates and writes to: the shared Space peer and every bot peer. */
+export function isReservedHonchoPeerId(peerId: string): boolean {
+  return peerId === SHARED_PEER_ID || peerId.startsWith("bot-");
+}
+
 function parseHonchoConnection(
   settings: Record<string, string>,
   credentials: Record<string, string>,
-): { connection: HonchoConnectionConfig; workspaceId: string; local: boolean } {
+): { connection: HonchoConnectionConfig; workspaceId: string; userPeerId: string; local: boolean } {
   // Configurations saved before local mode carry no mode and always meant Honcho Cloud.
   // Match exactly, as honchoRequiresDeploymentOwner does, so the owner gate sees the same mode.
   const mode = settings.mode ?? "cloud";
@@ -88,9 +93,22 @@ function parseHonchoConnection(
   if (workspaceId && !/^[A-Za-z0-9_-]{1,512}$/.test(workspaceId)) {
     throw new Error("workspaceId may contain only letters, digits, '_' and '-'");
   }
+  const userPeerId = settings.userPeerId?.trim() ?? "";
+  if (userPeerId && !/^[A-Za-z0-9_-]{1,512}$/.test(userPeerId)) {
+    throw new Error("userPeerId may contain only letters, digits, '_' and '-'");
+  }
+  // Rakazo writes to its own peers, so a user peer that aliases one would not stay read-only.
+  if (userPeerId && isReservedHonchoPeerId(userPeerId)) {
+    throw new Error("userPeerId uses a peer ID reserved for Rakazo");
+  }
+  // A user peer only exists in a workspace another Honcho app already writes to.
+  if (userPeerId && !workspaceId) {
+    throw new Error("userPeerId requires the workspace that holds that peer");
+  }
   return {
     connection: { baseUrl, apiKey, reasoningLevel },
     workspaceId,
+    userPeerId,
     local,
   };
 }
@@ -104,7 +122,10 @@ export async function prepareHonchoConnection(
     fetch?: typeof globalThis.fetch;
   },
 ): Promise<{ settings: Record<string, string>; credentials: Record<string, string> }> {
-  const { connection, workspaceId, local } = parseHonchoConnection(settings, credentials);
+  const { connection, workspaceId, userPeerId, local } = parseHonchoConnection(
+    settings,
+    credentials,
+  );
   // Loopback needs no DNS pin, so refuse non-owners here before any request is sent.
   if (local && options?.allowPrivateEndpoint !== true) {
     throw egressRefused(
@@ -138,6 +159,7 @@ export async function prepareHonchoConnection(
       ...(local ? { mode: "local", baseUrl: connection.baseUrl } : {}),
       reasoningLevel: connection.reasoningLevel,
       ...(workspaceId ? { workspaceId } : {}),
+      ...(userPeerId ? { userPeerId } : {}),
     },
     credentials: { apiKey: connection.apiKey },
   };
@@ -151,9 +173,9 @@ export function createHonchoProvider(
   return new HonchoMemoryProvider(connection, settings);
 }
 
-function recallQuery(query: string): string {
+function recallQuery(query: string, subject = "this Space"): string {
   return [
-    "Recall what you know about this Space that is relevant to the request below.",
+    `Recall what you know about ${subject} that is relevant to the request below.`,
     "Answer with the relevant facts only, as short plain statements.",
     `If you know nothing relevant, answer exactly ${NO_MEMORY}.`,
     "",
@@ -233,25 +255,29 @@ export class HonchoMemoryProvider implements SemanticMemoryProvider {
       context.signal,
     );
     if (!ready.ok) return ready;
+    const query = recallQuery(request.query);
     // Isolated: this bot's private view of the shared peer, independent of the user.
     // Shared: also the workspace-wide representation that all opted-in Spaces write to.
-    const perspectives =
+    const perspectives: { peerId: string; target?: string; entity: string; query: string }[] =
       request.scope === "shared"
         ? [
-            { peerId: SHARED_PEER_ID, entity: SHARED_PEER_ID },
-            { peerId: bot, target: SHARED_PEER_ID, entity: bot },
+            { peerId: SHARED_PEER_ID, entity: SHARED_PEER_ID, query },
+            { peerId: bot, target: SHARED_PEER_ID, entity: bot, query },
           ]
-        : [{ peerId: bot, target: SHARED_PEER_ID, entity: bot }];
-    const query = recallQuery(request.query);
+        : [{ peerId: bot, target: SHARED_PEER_ID, entity: bot, query }];
+    // An existing user peer is read through Honcho's own representation and never written to.
+    const userPeerId = this.settings.userPeerId?.trim();
+    if (userPeerId) {
+      perspectives.push({
+        peerId: userPeerId,
+        entity: userPeerId,
+        query: recallQuery(request.query, "the user"),
+      });
+    }
     const answers = await Promise.all(
       perspectives.map(async ({ entity, ...perspective }) => ({
         entity,
-        result: await honchoPeerChat(
-          connection.value,
-          workspaceId,
-          { ...perspective, query },
-          context.signal,
-        ),
+        result: await honchoPeerChat(connection.value, workspaceId, perspective, context.signal),
       })),
     );
     const failures = answers.filter((answer) => !answer.result.ok);

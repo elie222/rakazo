@@ -162,6 +162,7 @@ describe("pr-digest", () => {
     ],
     ["reviewer", "User", "<h3>Greptile Summary</h3>", 11],
     ["greptile-apps[bot]", "Bot", "<!-- greptile_summary -->\n\n<h2>Summary</h2>", 0],
+    ["reviewer", "User", "<!-- greptile_summary -->", 11],
     [
       "coderabbitai[bot]",
       "Bot",
