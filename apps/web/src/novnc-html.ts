@@ -25,19 +25,29 @@ export function shouldInjectNovncStorageShim(headers: IncomingHttpHeaders, path:
   return contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
 }
 
+/**
+ * Replace both storages, and keep browser extensions from taking the page down. Their content
+ * scripts run inside the sandboxed document too; one reading storage throws a SecurityError
+ * that noVNC's global error handler would otherwise show in place of the screen.
+ */
 export function injectNovncStorageShim(html: string) {
   const shim = `<script>
 (() => {
-  const items = new Map();
-  Object.defineProperty(window, "localStorage", {
-    configurable: true,
-    value: {
+  const memoryStorage = () => {
+    const items = new Map();
+    return {
       getItem(key) { return items.has(String(key)) ? items.get(String(key)) : null; },
       setItem(key, value) { items.set(String(key), String(value)); },
       removeItem(key) { items.delete(String(key)); },
       clear() { items.clear(); },
-    },
-  });
+    };
+  };
+  for (const name of ["localStorage", "sessionStorage"]) {
+    Object.defineProperty(window, name, { configurable: true, value: memoryStorage() });
+  }
+  window.addEventListener("error", (event) => {
+    if (/^[a-z-]+-extension:/.test(String(event.filename))) event.stopImmediatePropagation();
+  }, true);
 })();
 </script>`;
   return html.includes("<head>")
