@@ -61,15 +61,20 @@ async function runRoutine(
     leaseFence: 0,
   };
   const toolResults: unknown[] = [];
+  const steeringInputs: unknown[] = [];
   const runtimeRun = vi.fn(async function* (request: AgentRunRequest) {
-    if (options.steering && !options.steeringAfterFirst) await request.claimSteering?.([]);
+    if (options.steering && !options.steeringAfterFirst) {
+      steeringInputs.push(...((await request.claimSteering?.([])) ?? []));
+    }
     const execute = async (call: (typeof toolCalls)[number], index: number) => {
       try {
         toolResults.push(await request.executeTool?.(call.name, call.args, `exec-${index}`));
       } catch (error) {
         if (!options.toolFailure) throw error;
       }
-      if (index === 0 && options.steeringAfterFirst) await request.claimSteering?.([]);
+      if (index === 0 && options.steeringAfterFirst) {
+        steeringInputs.push(...((await request.claimSteering?.([])) ?? []));
+      }
       if (options.toolFailure === "abort") throw new DOMException("Aborted", "AbortError");
     };
     if (options.parallel) await Promise.all(toolCalls.map(execute));
@@ -229,7 +234,7 @@ async function runRoutine(
   const sleepJobs = enqueue.mock.calls
     .map((call) => (call as unknown[])[0] as { name: string })
     .filter((job) => job.name === "computer.sleep");
-  return { finalizeRun, sandbox, sleepJobs, toolResults, enqueue, runtimeRun };
+  return { finalizeRun, sandbox, sleepJobs, toolResults, enqueue, runtimeRun, steeringInputs };
 }
 
 beforeEach(() => {
@@ -322,6 +327,24 @@ describe("run computer provisioning", () => {
     expect(provisionComputer).toHaveBeenCalledOnce();
     expect(sandbox.writeFile).toHaveBeenCalledTimes(2);
     expect(sandbox.listFiles).toHaveBeenCalledOnce();
+  });
+
+  it("delivers steering text and inline images without copying onto an already-started computer", async () => {
+    const { sandbox, finalizeRun, steeringInputs } = await runRoutine(
+      [{ name: "list_files", args: { path: "" } }],
+      { attachments: "image", steering: true, steeringAfterFirst: true, copyFailureOnce: true },
+    );
+    expect(finalizeRun).toHaveBeenCalledWith(expect.objectContaining({ outcome: "completed" }));
+    expect(provisionComputer).toHaveBeenCalledOnce();
+    expect(sandbox.writeFile).not.toHaveBeenCalled();
+    expect(steeringInputs).toEqual([
+      expect.objectContaining({
+        historyText: "Look at this",
+        images: [
+          expect.objectContaining({ mimeType: "image/png", data: new Uint8Array([1, 2, 3, 4]) }),
+        ],
+      }),
+    ]);
   });
 
   it("copies steering attachments onto an already-started computer before the next tool", async () => {

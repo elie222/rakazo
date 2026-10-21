@@ -7461,10 +7461,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                             item.blocks,
                             context.signal,
                           );
-                        if (files.length) {
-                          pendingTurnFiles.push(item.blocks);
-                          if (runComputer.ready) await getRunComputer("tool");
-                        }
+                        if (files.length) pendingTurnFiles.push(item.blocks);
                         const filesInstruction = currentTurnFilesInstruction(files);
                         return {
                           id: item.id,
