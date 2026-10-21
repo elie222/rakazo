@@ -300,15 +300,24 @@ export async function markAppConnected(
     return;
   }
   // Group cards belong to the thread owner, just like primary-thread onboarding cards.
-  const messages = await deps.prisma.message.findMany({
-    where: {
-      thread: { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null },
-      OR: [{ threadId: thread.id }, { botId: bot.id }],
-    },
-    select: { id: true, threadId: true, blocks: true },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+  const owned = { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null };
+  const select = { id: true, threadId: true, blocks: true } as const;
+  // Onboarding cards sit at the start of the primary thread; cards from chat are recent.
+  const [primary, posted] = await Promise.all([
+    deps.prisma.message.findMany({
+      where: { threadId: thread.id, thread: owned },
+      select,
+      orderBy: { createdAt: "asc" },
+      take: 100,
+    }),
+    deps.prisma.message.findMany({
+      where: { botId: bot.id, thread: owned },
+      select,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+  ]);
+  const messages = [...new Map([...primary, ...posted].map((m) => [m.id, m])).values()];
   const matches = (block: MessageBlock): block is Extract<MessageBlock, { kind: "app_connect" }> =>
     block.kind === "app_connect" &&
     (block.connectorId ?? "composio") === connectorId &&

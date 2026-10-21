@@ -156,19 +156,21 @@ it("scopes candidate cards to the actor's space and owned internal threads", asy
         Object.entries(where.thread).every(
           ([key, value]) => message.thread[key as keyof typeof message.thread] === value,
         ) &&
-        where.OR.some(
-          (condition: { threadId?: string; botId?: string }) =>
-            condition.threadId === message.threadId || condition.botId === message.botId,
-        ),
+        (where.threadId === undefined || where.threadId === message.threadId) &&
+        (where.botId === undefined || where.botId === message.botId),
     ),
   );
   deps.prisma.message = { findMany } as never;
   await markAppConnected(deps, actor, "bot", "gmail");
+  const owned = { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null };
   expect(findMany).toHaveBeenCalledWith({
-    where: {
-      thread: { spaceId: actor.spaceId, userId: actor.userId, externalConversationId: null },
-      OR: [{ threadId: "thread" }, { botId: "bot" }],
-    },
+    where: { threadId: "thread", thread: owned },
+    select: { id: true, threadId: true, blocks: true },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+  });
+  expect(findMany).toHaveBeenCalledWith({
+    where: { botId: "bot", thread: owned },
     select: { id: true, threadId: true, blocks: true },
     orderBy: { createdAt: "desc" },
     take: 100,
