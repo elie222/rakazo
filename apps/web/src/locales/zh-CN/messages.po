@@ -2434,6 +2434,10 @@ msgstr "标记变化的字段"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "要比较的字段，例如 id, modifiedTime（可选）"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "文件"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "计算机上的文件或文件夹"

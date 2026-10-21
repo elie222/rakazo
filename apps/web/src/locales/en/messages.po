@@ -2434,6 +2434,10 @@ msgstr "Fields that mark a change"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Fields to compare, e.g. id, modifiedTime (optional)"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "File"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "Files or folders on the computer"
