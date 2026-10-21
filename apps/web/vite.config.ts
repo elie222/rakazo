@@ -44,6 +44,7 @@ import {
 const webPort = Number(process.env.WEB_PORT ?? 5173);
 const DESKTOP_STACK_PROBE_PATH = "/.well-known/rakazo-desktop-stack";
 const DESKTOP_STACK_TOKEN_HEADER = "x-rakazo-desktop-stack-token";
+const SCREEN_UPSTREAM_TIMEOUT_MS = 20_000;
 const screenLog = createServiceLogger({ service: "rakazo-web" });
 
 function screenPolicy(url: string | undefined) {
@@ -158,7 +159,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
         return;
       }
       res.statusCode = 502;
-      res.end("Screen unavailable");
+      res.end(`Screen unavailable (${reason})`);
     };
     function requestUpstream() {
       if (res.destroyed) return;
@@ -207,6 +208,11 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
           incoming.pipe(res);
         },
       );
+      // A silent upstream would leave the frame blank for as long as the browser waits.
+      upstream.setTimeout(SCREEN_UPSTREAM_TIMEOUT_MS, () => {
+        finishUnavailable("upstream_timeout");
+        upstream?.destroy();
+      });
       upstream.on("error", (error) => {
         if (
           retryable &&

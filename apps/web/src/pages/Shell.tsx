@@ -224,7 +224,13 @@ import {
 import {
   bootComputerOnce,
   embeddableScreenUrl,
+  isProxiedScreenUrl,
   loadComputerScreen,
+  probeScreen,
+  SCREEN_FRAME_LOAD_TIMEOUT_MS,
+  screenFrameError,
+  screenFrameMessage,
+  screenFrameStarted,
   screenIframeSandbox,
 } from "../lib/computer-screen";
 import { connectedAppMarks } from "../lib/connected-apps";
@@ -829,6 +835,44 @@ function SpaceShell() {
   const [computerErrorFromScreen, setComputerErrorFromScreen] = useState(false);
   const computerErrorFromScreenRef = useRef(false);
   computerErrorFromScreenRef.current = computerErrorFromScreen;
+  // The framed screen cannot be inspected from here. The proxy says when it refuses the page,
+  // and the page reports its own state; nothing past "loading" by the timeout means it stalled.
+  const [screenFrame, setScreenFrame] = useState<HTMLIFrameElement | null>(null);
+  const [screenLoadError, setScreenLoadError] = useState<string | null>(null);
+  const screenFrameReported = useRef(false);
+  useEffect(() => {
+    // Only a mounted frame resets the error: its own failure unmounts it, and Retry remounts it.
+    if (!screenFrame) return;
+    setScreenLoadError(null);
+    screenFrameReported.current = false;
+    const url = embeddableScreenUrl(screenUrl);
+    if (!isProxiedScreenUrl(url)) return;
+    let cancelled = false;
+    const fallback = t`Could not connect to the computer screen`;
+    void probeScreen(url, fallback).then((error) => {
+      if (!cancelled && error && !screenFrameReported.current) setScreenLoadError(error);
+    });
+    const timer = setTimeout(() => {
+      if (!cancelled && !screenFrameReported.current) setScreenLoadError(fallback);
+    }, SCREEN_FRAME_LOAD_TIMEOUT_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [screenFrame, screenUrl]);
+  useEffect(() => {
+    if (!screenFrame) return;
+    const fallback = t`Could not connect to the computer screen`;
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== screenFrame.contentWindow) return;
+      const message = screenFrameMessage(event.data);
+      if (!message) return;
+      if (screenFrameStarted(message)) screenFrameReported.current = true;
+      setScreenLoadError(screenFrameError(message, fallback));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [screenFrame]);
   useEffect(() => {
     if (!computerOpen) {
       setComputerViewport(null);
@@ -3031,9 +3075,11 @@ function SpaceShell() {
   const computerFailure =
     computerError && !hideScreenLoadError
       ? computerError
-      : !booting && computer?.state === "error"
-        ? t`Computer failed to boot`
-        : null;
+      : screenLoadError
+        ? screenLoadError
+        : !booting && computer?.state === "error"
+          ? t`Computer failed to boot`
+          : null;
   const computerScreenError = computerFailure ? (
     <div role="alert" className="flex flex-col items-center gap-3 px-6 text-center text-sm">
       <p className="text-destructive">{computerFailure}</p>
@@ -3042,6 +3088,7 @@ function SpaceShell() {
         size="sm"
         onClick={() => {
           if (!computerBot) return;
+          setScreenLoadError(null);
           if (computer?.state === "running") {
             // An explicit retry clears any error; background screen reads clear only their own.
             setComputerError(null);
@@ -4369,6 +4416,7 @@ function SpaceShell() {
                     <DesktopKindEmptyState className="grid h-full place-items-center px-6 text-center text-sm text-muted-foreground/80" />
                   ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
                     <iframe
+                      ref={setScreenFrame}
                       title={t`Bot screen preview`}
                       src={embeddedScreenUrl}
                       sandbox={screenIframeSandbox(embeddedScreenUrl)}
@@ -5192,6 +5240,7 @@ function SpaceShell() {
               ) : computer?.state === "running" && embeddedScreenUrl && !computerScreenError ? (
                 <>
                   <iframe
+                    ref={setScreenFrame}
                     title={t`Bot screen`}
                     src={embeddedScreenUrl}
                     sandbox={screenIframeSandbox(embeddedScreenUrl)}
