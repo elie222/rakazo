@@ -374,6 +374,52 @@ Services set `service.name` (`rakazo-api`, `rakazo-worker`, `rakazo-sandbox-supe
 `rakazo-updater`). A partial Axiom config logs a one-time warning and stays off. `AXIOM_EDGE` is a
 regional hostname; `AXIOM_EDGE_URL` must be https and wins when both are set.
 
+Computer usage is recorded at several boundaries:
+
+- `run.computer`: one record per execution attempt, including runs that never request a computer
+  (`reason=none`). `reason` is `tool`, `takeover`, or `script` otherwise; `tool` is an allowlisted
+  built-in name and `trigger` identifies user, routine, or other run sources. Deduplicate `run.id`
+  when counting runs, because a run can have several attempts.
+- `computer.requested`: the first computer use in an attempt, with its reason, tool, and trigger.
+- `computer.provisioned`: completed setup, with `operation=create`, `resume`, or `reuse` and
+  `durationMs`. A setup request can reuse an already-running computer without spending a start.
+- `sandbox.start`: Boat's actual `create`, `resume`, and `recover` requests, including starts during
+  preparation or after the provider expires a computer. `outcome=accepted` means the provider
+  accepted the request, not that all later setup succeeded. `rate_limited` and `failed` are
+  separate outcomes. Count accepted creates/resumes for start usage; recoveries are shown separately
+  because their quota treatment depends on the provider.
+- `computer.suspended`: successful idle or active-limit suspension, with the active duration.
+
+These records use fixed metadata, opaque correlation IDs, durations, and booleans. They do not add
+prompts, responses, filenames, file contents, command arguments, or credentials. Request/job trace
+fields link non-run starts back to the API route or background job that initiated them. Axiom is
+an additional sink for the same logs; these events need no extra keys when ingest is configured.
+
+For example, substitute your own dataset in these APL queries:
+
+```apl
+['YOUR_DATASET']
+| where message == 'sandbox.start'
+| summarize requests=count() by provider, operation, outcome
+```
+
+```apl
+['YOUR_DATASET']
+| where message == 'computer.requested'
+| summarize requests=count() by trigger, reason, tool
+```
+
+```apl
+['YOUR_DATASET']
+| where message == 'run.computer'
+| summarize attempts=count(), withoutComputer=countif(reason == 'none') by trigger
+```
+
+Track accepted starts per hour/day, rate-limit refusals, first-use tools, and the proportion of
+attempts needing no computer before tuning `SANDBOX_IDLE_MS`. Increasing the idle window reduces
+resumes between nearby uses but increases billed runtime; changing it does not remove unnecessary
+starts caused by tools. Provider rolling-window limits remain the source of truth for quota.
+
 Error reporting to Sentry or a Sentry-compatible collector such as GlitchTip is optional:
 
 - `SENTRY_DSN` reports backend `error` logs, with the exception chain, `service`, and request or job

@@ -3,6 +3,7 @@ import type { SandboxStateEnum } from "@boatdev/sdk";
 import { ResponseError } from "@boatdev/sdk";
 import type { ComputerRef } from "@rakazo/adapter-kit";
 import { SandboxRateLimitError } from "@rakazo/adapter-kit";
+import { createLogger, createTestSink, installLogger } from "@rakazo/logging";
 import { parse } from "shell-quote";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BoatSandboxProvider } from "./boat-sandbox.js";
@@ -57,6 +58,40 @@ function reconnect(provider: BoatSandboxProvider, computer: ComputerRef) {
 }
 
 describe("BoatSandboxProvider", () => {
+  it("logs actual creates and resumes without counting reuse or exposing request content", async () => {
+    const sink = createTestSink();
+    installLogger(createLogger({ service: "test", sinks: [sink] }));
+    try {
+      const { api, provider, computer } = await boat();
+      await reconnect(provider, computer);
+      api.setState(computer.id, "archived");
+      await reconnect(provider, computer);
+      api.setState(computer.id, "archived");
+      api.rateLimit();
+      await expect(reconnect(provider, computer)).rejects.toBeInstanceOf(SandboxRateLimitError);
+      expect(sink.events.map(({ operation, outcome }) => ({ operation, outcome }))).toEqual([
+        { operation: "create", outcome: "accepted" },
+        { operation: "resume", outcome: "accepted" },
+        { operation: "resume", outcome: "rate_limited" },
+      ]);
+      for (const event of sink.events) {
+        expect(Object.keys(event).sort()).toEqual([
+          "durationMs",
+          "level",
+          "message",
+          "operation",
+          "outcome",
+          "provider",
+          "service.name",
+          "timestamp",
+        ]);
+        expect(event.message).toBe("sandbox.start");
+      }
+    } finally {
+      installLogger(createLogger({ service: "test", level: "off", sinks: [] }));
+    }
+  });
+
   it("creates no-env sandboxes and implements execution and file operations", async () => {
     const api = new FakeBoatApi();
     const create = vi.spyOn(api, "create");

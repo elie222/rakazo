@@ -18,6 +18,7 @@ import {
   createThreadMessageInTransaction,
   parseComputerMode,
 } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { scheduleComputerSleep } from "./computer-idle.js";
 import { ComputerBusyError, provisionComputer } from "./computer-lifecycle.js";
 import { resolveBotWorkspaceCwd, teamBotWorkspaceDirectory } from "./computer-support.js";
@@ -368,12 +369,15 @@ async function readComputer(
     }
   }
   const ctx = context(routine);
+  const computerId = bot.computer.id;
   let computer: Awaited<ReturnType<typeof provisionComputer>>;
   try {
-    computer = await provisionComputer(deps, bot.computer.id, {
-      ...ctx,
-      signal: AbortSignal.timeout(PROVISION_TIMEOUT_MS),
-    });
+    computer = await getLogger().withContext({ reason: "watch", watchKind: watch.kind }, () =>
+      provisionComputer(deps, computerId, {
+        ...ctx,
+        signal: AbortSignal.timeout(PROVISION_TIMEOUT_MS),
+      }),
+    );
   } catch (error) {
     if (
       error instanceof ComputerBusyError ||

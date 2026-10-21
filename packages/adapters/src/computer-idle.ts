@@ -8,6 +8,7 @@ import type {
 import { computerSleepJob } from "@rakazo/adapter-kit";
 import { ACTIVE_RUN_STATUSES } from "@rakazo/core";
 import type { PrismaClient, ThreadEvents } from "@rakazo/db";
+import { getLogger } from "@rakazo/logging";
 import { expireComputerControl, hasActiveComputerControl } from "./computer-control.js";
 import { toComputerRef } from "./computer-lifecycle.js";
 import { checkpointComputerWorkspace } from "./computer-workspace.js";
@@ -423,6 +424,12 @@ export async function sleepComputerIfIdle(
       controlBotId: null,
       controlRunId: null,
     },
+  });
+  getLogger().info("computer.suspended", {
+    "computer.id": computerId,
+    provider: computer.kind,
+    reason: limitReached ? "active_limit" : "idle",
+    activeMs: computer.runningSince ? Date.now() - computer.runningSince.getTime() : undefined,
   });
   const bots = await deps.prisma.bot.findMany({
     where: { computerId },

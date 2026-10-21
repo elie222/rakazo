@@ -2686,11 +2686,14 @@ export function createRouter(deps: RouterDeps) {
           }
           throw error;
         }
+        const computerId = bot.computer.id;
         try {
-          await provisionComputer(deps, bot.computer.id, {
-            ...ctx,
-            screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
-          });
+          await getLogger().withContext({ reason: "manual" }, () =>
+            provisionComputer(deps, computerId, {
+              ...ctx,
+              screenLeaseId: screenLeaseIdForRun(lease, manualRunId),
+            }),
+          );
           scheduleComputerSleep(deps.jobs, bot.computer.id);
         } catch (error) {
           if (error instanceof ComputerBusyError) {

@@ -24,7 +24,9 @@ import type {
   ScreenSession,
   TerminalRequest,
 } from "@rakazo/adapter-kit";
+import { SandboxRateLimitError } from "@rakazo/adapter-kit";
 import { boundedSandboxCommandTimeoutMs } from "@rakazo/core";
+import { getLogger } from "@rakazo/logging";
 import { BoatApiError, boatResponseError, wrapBoatCall } from "./boat-errors.js";
 import { normalizeWorkspacePath, shellQuote, workspacePath } from "./computer-support.js";
 import {
@@ -794,15 +796,43 @@ function boatClient(api: BoatSandboxSdk, apiKey: string): BoatSandboxSdk {
       }
     };
   };
+  // Observe the provider call itself: provisioning can succeed while later setup fails,
+  // and background probes or file operations can resume a provider-expired computer too.
+  const startCall =
+    <Args extends unknown[], Result>(
+      operation: "create" | "resume" | "recover",
+      call: (...args: Args) => Promise<Result>,
+    ) =>
+    async (...args: Args): Promise<Result> => {
+      const started = performance.now();
+      try {
+        const result = await call(...args);
+        getLogger().info("sandbox.start", {
+          provider: "boat",
+          operation,
+          outcome: "accepted",
+          durationMs: Math.round(performance.now() - started),
+        });
+        return result;
+      } catch (error) {
+        getLogger().warn("sandbox.start", {
+          provider: "boat",
+          operation,
+          outcome: error instanceof SandboxRateLimitError ? "rate_limited" : "failed",
+          durationMs: Math.round(performance.now() - started),
+        });
+        throw error;
+      }
+    };
   return {
     artifactRaw: sandboxCall(api.artifactRaw.bind(api)),
     command: sandboxCall(api.command.bind(api)),
     commandStatus: sandboxCall(api.commandStatus.bind(api)),
-    create: wrapBoatCall(api.create.bind(api), apiKey),
+    create: startCall("create", wrapBoatCall(api.create.bind(api), apiKey)),
     get: sandboxCall(api.get.bind(api)),
     hostPort: sandboxCall(api.hostPort.bind(api)),
-    recover: sandboxCall(api.recover.bind(api)),
-    resume: sandboxCall(api.resume.bind(api)),
+    recover: startCall("recover", sandboxCall(api.recover.bind(api))),
+    resume: startCall("resume", sandboxCall(api.resume.bind(api))),
     stop: sandboxCall(api.stop.bind(api)),
     update: sandboxCall(api.update.bind(api)),
     writeFile: sandboxCall(api.writeFile.bind(api)),

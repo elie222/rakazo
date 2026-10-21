@@ -406,6 +406,7 @@ import { getActiveTeachingSession, parsePlaybook } from "./teaching-session.js";
 import {
   attachWorkspaceFileToThread,
   currentTurnFilesInstruction,
+  listCurrentTurnFiles,
   listRecentThreadFiles,
   materializeCurrentTurnFiles,
   materializeRecentThreadFiles,
@@ -3620,6 +3621,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
       let runCompleted = false;
       let lastLeaseCheckAt = 0;
       let retainComputerLease = false;
+      let computerUseReason: "none" | "tool" | "takeover" | "script" = "none";
+      let computerUseTool: string | undefined;
       let screenRelease:
         | { computer: ComputerRef; context: AdapterContext; keepWarm: boolean }
         | undefined;
@@ -4038,6 +4041,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
         };
         const runComputer = lazyRunComputer(
           async () => {
+            getLogger().info("computer.requested");
             const computer = await provisionComputer(deps, storedComputer.id, context, "bot");
             screenRelease = { computer, context, keepWarm: false };
             scheduleComputerSleep(deps.jobs, storedComputer.id);
@@ -4058,20 +4062,52 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (!runComputer.ready) return;
           await checkpointRunComputerWorkspace(deps, storedComputer, runComputer.ready, context);
         });
-        let currentTurnFiles: Awaited<ReturnType<typeof materializeCurrentTurnFiles>> = [];
+        const pendingTurnFiles: MessageBlock[][] = [turnBlocks ?? []];
+        let copyingTurnFiles = Promise.resolve();
+        // Serialize copies before each tool, including attachments received while a boot is in flight.
+        const getRunComputer = async (reason: "tool" | "takeover" | "script", tool?: string) => {
+          if (computerUseReason === "none") {
+            computerUseReason = reason;
+            computerUseTool = tool && BUILTIN_AGENT_TOOL_NAMES.has(tool) ? tool : undefined;
+          }
+          return getLogger().withContext(
+            {
+              reason: computerUseReason,
+              tool: computerUseTool,
+              trigger: run.trigger,
+              "run.id": runId,
+              "computer.id": storedComputer.id,
+            },
+            async () => {
+              const computer = await runComputer.get();
+              copyingTurnFiles = copyingTurnFiles
+                .catch(() => undefined)
+                .then(async () => {
+                  while (artifacts && pendingTurnFiles.length) {
+                    const files = await materializeCurrentTurnFiles(
+                      { ...deps, artifacts },
+                      pendingTurnFiles[0],
+                      {
+                        context,
+                        computer: async () => computer,
+                        computerMode,
+                        markWorkspaceDirty: workspaceCheckpoint.markDirty,
+                      },
+                    );
+                    workspaceCheckpoint.markFiles(files);
+                    pendingTurnFiles.shift();
+                  }
+                });
+              await copyingTurnFiles;
+              return computer;
+            },
+          );
+        };
+        let currentTurnFiles: Awaited<ReturnType<typeof listCurrentTurnFiles>> = [];
         let recentThreadFiles: Awaited<ReturnType<typeof listRecentThreadFiles>> = [];
         try {
           if (artifacts) {
-            currentTurnFiles = await materializeCurrentTurnFiles(
-              { ...deps, artifacts },
-              turnBlocks,
-              {
-                context,
-                computer: runComputer.get,
-                computerMode,
-                markWorkspaceDirty: workspaceCheckpoint.markDirty,
-              },
-            );
+            currentTurnFiles = await listCurrentTurnFiles(deps, turnBlocks, context);
             recentThreadFiles = await listRecentThreadFiles(
               deps,
               history,
@@ -4244,11 +4280,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
         const hostInstruction = hostEnvironment
           ? `Commands run on the user's ${hostEnvironment.platform} computer with their account permissions. Home: ${JSON.stringify(hostEnvironment.home)}. Shell: ${JSON.stringify(hostEnvironment.shell)}. The shell tool executes commands with that shell. Use its native syntax, paths and installed tools; do not assume Linux or bash. Local files outside the bot workspace can be accessed through commands. App launching is available through OS commands; graphical screen control is unavailable.`
           : undefined;
-        const computerInstruction = hostInstruction
-          ? `${baseComputerInstruction} ${hostInstruction}`
-          : dockerToolInstruction
-            ? `${baseComputerInstruction} ${dockerToolInstruction}`
-            : baseComputerInstruction;
+        const computerInstruction = [
+          "Use the computer only when the task needs files, commands, a browser, or an installed application. Answer directly from the conversation when sufficient; use connected tools for app data. Do not inspect the computer just to prepare for an unrelated task.",
+          hostInstruction
+            ? `${baseComputerInstruction} ${hostInstruction}`
+            : dockerToolInstruction
+              ? `${baseComputerInstruction} ${dockerToolInstruction}`
+              : baseComputerInstruction,
+        ].join(" ");
         const workspaceInstruction =
           computerMode === "team"
             ? `Your Team Computer home is ${teamBotWorkspaceDirectory(bot.id)}. Relative file paths and shell working directories start there. Put intentionally shared work under shared/. Other bots' folders are visible under bots/; treat them as their working areas.`
@@ -5255,7 +5294,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
               };
             }
             return computerScreenToolResult(async () =>
-              formatObservation(await deps.sandbox.observe(await runComputer.get(), context)),
+              formatObservation(
+                await deps.sandbox.observe(await getRunComputer("tool", name), context),
+              ),
             );
           }
           if (name === "computer_act") {
@@ -5275,7 +5316,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             workspaceCheckpoint.markDirty();
             return computerScreenToolResult(async () => {
               const result = await deps.sandbox.act(
-                await runComputer.get(),
+                await getRunComputer("tool", name),
                 {
                   actions,
                   observe: args.observe !== false,
@@ -5295,7 +5336,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
           if (name === "list_files") {
             const requestedPath = String(args.path ?? "");
             const entries = await deps.sandbox.listFiles(
-              await runComputer.get(),
+              await getRunComputer("tool", name),
               resolveBotWorkspacePath(computerMode, bot.id, requestedPath),
               context,
             );
@@ -5312,9 +5353,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
-              bytes = await deps.sandbox.readFile(await runComputer.get(), storedPath, context, {
-                maxBytes: MAX_MODEL_FILE_BYTES,
-              });
+              bytes = await deps.sandbox.readFile(
+                await getRunComputer("tool", name),
+                storedPath,
+                context,
+                {
+                  maxBytes: MAX_MODEL_FILE_BYTES,
+                },
+              );
             } catch (error) {
               if (error instanceof Error && /exceeds \d+ bytes/.test(error.message)) {
                 return {
@@ -5358,7 +5404,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             workspaceCheckpoint.markDirty();
             try {
               await deps.sandbox.writeFile(
-                await runComputer.get(),
+                await getRunComputer("tool", name),
                 { path: resolveBotWorkspacePath(computerMode, bot.id, filePath), content },
                 context,
               );
@@ -5391,7 +5437,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 typeof args.data_path === "string" && args.data_path ? args.data_path : undefined;
               if (!rows && dataPath) {
                 const bytes = await deps.sandbox.readFile(
-                  await runComputer.get(),
+                  await getRunComputer("tool", name),
                   resolveBotWorkspacePath(computerMode, bot.id, dataPath),
                   context,
                   { maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES },
@@ -5413,7 +5459,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   : `charts/plot-${Date.now()}.png`;
               workspaceCheckpoint.markDirty();
               await deps.sandbox.writeFile(
-                await runComputer.get(),
+                await getRunComputer("tool", name),
                 {
                   path: resolveBotWorkspacePath(computerMode, bot.id, outPath),
                   content: png,
@@ -5480,9 +5526,14 @@ export function createRunExecutor(deps: ExecutorDeps) {
             const storedPath = resolveBotWorkspacePath(computerMode, bot.id, filePath);
             let bytes: Uint8Array;
             try {
-              bytes = await deps.sandbox.readFile(await runComputer.get(), storedPath, context, {
-                maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
-              });
+              bytes = await deps.sandbox.readFile(
+                await getRunComputer("tool", name),
+                storedPath,
+                context,
+                {
+                  maxBytes: deps.maxUploadSizeBytes ?? ATTACHMENT_MAX_BYTES,
+                },
+              );
             } catch {
               return failAttach("file not found or unreadable");
             }
@@ -5581,7 +5632,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 const safe = redactShellStreams(snapshot, runSecrets, { withholdPartial });
                 return `${safe.stdout}${safe.stderr}`;
               };
-              const computer = await runComputer.get();
+              const computer = await getRunComputer("tool", name);
               const shellEnvironment =
                 hostEnvironment ??
                 (computer.kind === "desktop"
@@ -5677,7 +5728,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return computerScreenToolResult(async () => {
               try {
                 const result = await deps.sandbox.act(
-                  await runComputer.get(),
+                  await getRunComputer("tool", name),
                   {
                     actions: [
                       {
@@ -5713,7 +5764,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return computerScreenToolResult(async () => {
               try {
                 const result = await deps.sandbox.act(
-                  await runComputer.get(),
+                  await getRunComputer("tool", name),
                   {
                     actions: [
                       {
@@ -5826,34 +5877,40 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return computerScreenToolResult(async () => {
               const result = tool
                 ? redactConnectorPayload(
-                    await tool(browser, await runComputer.get(), context, args),
+                    await tool(browser, await getRunComputer("tool", name), context, args),
                     redactions(),
                   )
-                : await browserActFromTool(browser, await runComputer.get(), context, args, {
-                    redactions,
-                    // Team bots may send only their own folder or shared/ off the computer; a
-                    // private computer's helper already confines uploads to its home folder.
-                    uploadRoots:
-                      computerMode === "team"
-                        ? [teamBotWorkspaceDirectory(bot.id), "shared"]
-                        : undefined,
-                    resolveUploadPath: (path) =>
-                      computerMode === "team"
-                        ? resolveBotUploadPath(computerMode, bot.id, path)
-                        : path,
-                    resolveSecretFill: async (step) => {
-                      const resolved = await resolveLoginFill({
-                        prisma: deps.prisma,
-                        secretStore: deps.secretStore,
-                        scope: run,
-                        name: step.secret,
-                        field: step.field,
-                      });
-                      if ("error" in resolved) return resolved;
-                      registerRunSecrets(resolved.redactions);
-                      return { text: resolved.text, origin: resolved.origin };
+                : await browserActFromTool(
+                    browser,
+                    await getRunComputer("tool", name),
+                    context,
+                    args,
+                    {
+                      redactions,
+                      // Team bots may send only their own folder or shared/ off the computer; a
+                      // private computer's helper already confines uploads to its home folder.
+                      uploadRoots:
+                        computerMode === "team"
+                          ? [teamBotWorkspaceDirectory(bot.id), "shared"]
+                          : undefined,
+                      resolveUploadPath: (path) =>
+                        computerMode === "team"
+                          ? resolveBotUploadPath(computerMode, bot.id, path)
+                          : path,
+                      resolveSecretFill: async (step) => {
+                        const resolved = await resolveLoginFill({
+                          prisma: deps.prisma,
+                          secretStore: deps.secretStore,
+                          scope: run,
+                          name: step.secret,
+                          field: step.field,
+                        });
+                        if ("error" in resolved) return resolved;
+                        registerRunSecrets(resolved.redactions);
+                        return { text: resolved.text, origin: resolved.origin };
+                      },
                     },
-                  });
+                  );
               unchangedVisualStreak = unchangedVisualStreakAfterPageBrowser(
                 unchangedVisualStreak,
                 name,
@@ -7399,26 +7456,15 @@ export function createRunExecutor(deps: ExecutorDeps) {
                           await settleSteeringAttachmentLoads(
                             loadCurrentTurnImages(deps, item.blocks, context),
                             deps.artifacts
-                              ? materializeCurrentTurnFiles(
-                                  {
-                                    prisma: deps.prisma,
-                                    artifacts: deps.artifacts,
-                                    maxUploadSizeBytes: deps.maxUploadSizeBytes,
-                                    sandbox: deps.sandbox,
-                                  },
-                                  item.blocks,
-                                  {
-                                    context,
-                                    computer: runComputer.get,
-                                    computerMode,
-                                    markWorkspaceDirty: workspaceCheckpoint.markDirty,
-                                  },
-                                )
+                              ? listCurrentTurnFiles(deps, item.blocks, context)
                               : Promise.resolve([]),
                             item.blocks,
                             context.signal,
                           );
-                        workspaceCheckpoint.markFiles(files);
+                        if (files.length) {
+                          pendingTurnFiles.push(item.blocks);
+                          if (runComputer.ready) await getRunComputer("tool");
+                        }
                         const filesInstruction = currentTurnFilesInstruction(files);
                         return {
                           id: item.id,
@@ -7572,7 +7618,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             } else if (event.type === "takeover") {
               if (!(await renewRunLease(deps, runId, workerId, fence))) return;
               // The user takes over the computer's screen, so it must be up before the run waits.
-              await runComputer.get();
+              await getRunComputer("takeover");
               const safeReason = redactSecrets(event.reason, runSecrets);
               // Publish pending narration as tagged mid-turn progress so reconciliation
               // does not treat pre-takeover text as the delegated final result.
@@ -7826,7 +7872,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
             for (const file of turn.files ?? []) {
               workspaceCheckpoint.markDirty();
               await deps.sandbox.writeFile(
-                await runComputer.get(),
+                await getRunComputer("script"),
                 {
                   path: resolveBotWorkspacePath(computerMode, bot.id, file.path),
                   content: new TextEncoder().encode(file.content),
@@ -8104,6 +8150,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
           throw new Error("Run setup failed; retrying");
         }
       } finally {
+        getLogger().info("run.computer", {
+          "run.id": runId,
+          trigger: run.trigger,
+          reason: computerUseReason,
+          tool: computerUseTool,
+          ready: Boolean(screenRelease),
+        });
         detachShutdown?.();
         clearInterval(heartbeat);
         if (!retainComputerLease) {
