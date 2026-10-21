@@ -1,8 +1,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import {
+  BOT_AVATAR_COLORS,
   BotAvatar,
-  DEFAULT_GROK_BOT_COLOR,
+  BotShapePreview,
+  DEFAULT_BOT_AVATAR_COLOR,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -10,8 +12,6 @@ import {
   DialogHeader,
   DialogTitle,
   defaultBotAvatarValue,
-  GROK_BOT_COLORS,
-  GrokShapePreview,
   parseBotAvatar,
   Tabs,
   TabsContent,
@@ -44,7 +44,7 @@ export function AvatarStudioPopover({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parsed = parseBotAvatar(value, identity);
-  const currentColor = parsed.color || DEFAULT_GROK_BOT_COLOR;
+  const currentColor = parsed.color || DEFAULT_BOT_AVATAR_COLOR;
   const isDefaultLook = !parsed.isImage && parsed.shapeIndex === undefined;
 
   function selectShape(shapeIndex: number) {
@@ -206,7 +206,7 @@ export function AvatarStudioPopover({
                 </div>
                 <div className="grid grid-cols-4 place-items-center gap-2">
                   {[0, 1, 2, 3, 4, 5, 6, 7].map((shapeIndex) => (
-                    <GrokShapePreview
+                    <BotShapePreview
                       key={shapeIndex}
                       shapeIndex={shapeIndex}
                       color={currentColor}
@@ -222,7 +222,7 @@ export function AvatarStudioPopover({
                   <Trans>Color</Trans>
                 </div>
                 <div className="grid grid-cols-6 place-items-center gap-2">
-                  {GROK_BOT_COLORS.map((color) => {
+                  {BOT_AVATAR_COLORS.map((color) => {
                     const selected =
                       currentColor.toLowerCase() === color.toLowerCase() && !parsed.isImage;
                     return (

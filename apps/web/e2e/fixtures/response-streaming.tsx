@@ -2,7 +2,7 @@ import { I18nProvider } from "@lingui/react";
 import { ChatMarkdown } from "@rakazo/chat-ui/web";
 import type { ProductEvent, ThreadMessage, ThreadSnapshot } from "@rakazo/contracts";
 import { isToolActivityBlock, withLiveStreamingProgress } from "@rakazo/core";
-import { DEFAULT_GROK_BOT_COLOR } from "@rakazo/ui-web";
+import { DEFAULT_BOT_AVATAR_COLOR } from "@rakazo/ui-web";
 import { createRoot } from "react-dom/client";
 import { ActiveBotGlyph } from "../../src/components/ai/CollaborationMarker";
 import { bootstrapI18n, i18n } from "../../src/lib/i18n";
@@ -179,7 +179,7 @@ function ThreadFixture({ snapshot }: { snapshot: ThreadSnapshot }) {
         ))}
         {running && !hasLiveProgressText ? (
           <ActiveBotGlyph
-            bots={[{ botId: "bot-1", name: "Chief", color: DEFAULT_GROK_BOT_COLOR }]}
+            bots={[{ botId: "bot-1", name: "Chief", color: DEFAULT_BOT_AVATAR_COLOR }]}
             label="Chief is working"
           />
         ) : null}
