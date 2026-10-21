@@ -1470,6 +1470,16 @@ describe("MCP OAuth", () => {
       expect(await broker.statusFor(shared.server, shared.context)).toBe("none");
     });
 
+    it("keeps credential files when OAuth is disconnected", async () => {
+      const files = { GOOGLE_OAUTH_CREDENTIALS: '{"token":"{{oauth.access_token}}"}' };
+      const shared = sharedCredentials({ files, oauth: expiringMaterial(Date.now()).oauth });
+      const { broker } = await shared.startProcess(rotatingAuthServer().fetch);
+
+      await broker.disconnect({ serverId: "server-1", ...shared.context });
+
+      expect(await shared.stored()).toEqual({ files });
+    });
+
     it("refuses tokens from an authorization started before the client was changed", async () => {
       const shared = sharedCredentials({ oauthClient, oauth: { redirectUri: "https://app/cb" } });
       const { provider } = await shared.startProcess(rotatingAuthServer().fetch);
