@@ -31,6 +31,8 @@ import {
   injectNovncStorageShim,
   isNovncPage,
   MAX_NOVNC_HTML_BYTES,
+  novncPageRequestHeaders,
+  rewrittenNovncHeaders,
   shouldInjectNovncStorageShim,
 } from "./src/novnc-html.js";
 import {
@@ -110,10 +112,10 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
       res.end("Invalid or expired screen capability");
       return;
     }
+    const forwarded = safeProxyHeaders(req.headers);
     const headers = {
-      ...safeProxyHeaders(req.headers),
-      // The storage shim rewrites the page, so ask for it uncompressed.
-      ...(isNovncPage(target.path) ? { "accept-encoding": "identity" } : {}),
+      // The storage shim rewrites the page, so ask for all of it, uncompressed.
+      ...(isNovncPage(target.path) ? novncPageRequestHeaders(forwarded) : forwarded),
       host: `${target.hostname}:${target.port}`,
     };
     const transport = target.protocol === "https:" ? https : http;
@@ -193,8 +195,7 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
                 if (downstreamFinished || res.destroyed || res.writableEnded) return;
                 downstreamFinished = true;
                 const body = injectNovncStorageShim(html);
-                delete responseHeaders["content-length"];
-                res.writeHead(incoming.statusCode ?? 502, responseHeaders);
+                res.writeHead(incoming.statusCode ?? 502, rewrittenNovncHeaders(responseHeaders));
                 res.end(body);
               })
               .catch(() => {
