@@ -776,6 +776,27 @@ credentials and survives **Disconnect**; switching to a different client drops t
 On first use the client is bound to the authorization server the MCP server pointed to, and Rakazo
 refuses to send it anywhere else afterwards. Replacing the client clears the binding.
 
+Stdio MCP servers can use OAuth too. They do not authorize themselves (the MCP spec has them
+read credentials from the environment), so Rakazo runs the flow for them. They are off unless
+the API and worker have `MCP_STDIO_ENABLED=true` and the command is listed in
+`MCP_STDIO_ALLOWED_COMMANDS`. When adding the server, enter the OAuth client, its
+**Authorization server** (the issuer, for example `https://accounts.google.com`) and the
+**Scopes**, then click **Connect OAuth** as for a remote server. Some providers issue a refresh
+token only when asked through extra parameters: for Google, set **Authorization parameters** to
+`access_type=offline&prompt=consent`. Pass the grant to the process
+through its environment variables:
+
+- A value can reference `{{oauth.access_token}}`, `{{oauth.refresh_token}}`,
+  `{{oauth.client_id}}`, `{{oauth.client_secret}}`, `{{oauth.expires_at}}` (epoch milliseconds),
+  `{{oauth.scope}}` or `{{oauth.token_type}}`, alone or inside other text.
+- A variable can be a **File** instead: its template (often JSON, with the same references) is
+  written to a private temporary directory when the process starts, and the variable receives
+  the file's path. Use this for packages that read a credentials or token file path.
+
+Rakazo refreshes the grant and restarts the process shortly before an access token it passed
+expires, so a long-running process never keeps a dead token. A process that only receives the
+refresh token refreshes on its own. Temporary files are removed when the process stops.
+
 For servers that accept standard `reasoning_effort`, enable **Supports thinking** under
 **Advanced** when connecting. The setting is saved on the connection (no env var or restart).
 Existing connections default to disabled. Reconnect former Qwen-list or deployment-local models

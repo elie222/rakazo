@@ -772,6 +772,14 @@ msgstr "A autenticação falhou."
 msgid "Authorization code or callback URL"
 msgstr "Código de autorização ou URL de retorno de chamada"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "Parâmetros de autorização (opcional)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "Servidor de autorização"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "A autorização expirou. Tente novamente."
@@ -2441,6 +2449,10 @@ msgstr "Campos que indicam uma alteração"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Campos para comparar, por exemplo id, modifiedTime (opcional)"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "Arquivo"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "Arquivos ou pastas no computador"
@@ -3494,7 +3506,7 @@ msgstr "Falha na conexão OAuth"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "OAuth expired"
-msgstr ""
+msgstr "OAuth expirado"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -4287,6 +4299,10 @@ msgstr "Salvando..."
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Diga sim ou não, ou responda em uma frase."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "Escopos (opcional)"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5131,6 +5147,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "Usar {hostLabel}"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "Use {oauthEnvReference} para o token de acesso."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx

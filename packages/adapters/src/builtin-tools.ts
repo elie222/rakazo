@@ -301,7 +301,7 @@ export const builtinAgentTools: ConnectorTool[] = [
   {
     name: "browser_snapshot",
     description:
-      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If fallback is computer_act, use the desktop tools instead.",
+      "Capture an accessibility-style snapshot of the current page with element refs (e1, e2, …). Use refs with browser_act. Prefer this over computer_observe for web pages. If loading is true, take another snapshot before deciding what the page shows. If fallback is computer_act, use the desktop tools instead.",
     inputSchema: { type: "object", properties: {} },
     readOnly: true,
   },

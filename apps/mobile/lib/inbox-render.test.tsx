@@ -19,6 +19,10 @@ vi.mock("./api", () => ({}));
 
 const testFileUrl = import.meta.url;
 const source = readFileSync(new URL("../app/index.tsx", testFileUrl), "utf8");
+const rowDimensions = source.slice(
+  source.indexOf("const INBOX_ROW ="),
+  source.indexOf("function ConversationRow("),
+);
 
 // Run the actual row and renderItem code with native presentation stubbed out.
 // React still performs real memo comparisons; this measures JS row executions only.
@@ -61,9 +65,10 @@ function measure(before: boolean) {
         module: ts.ModuleKind.CommonJS,
       },
     }).outputText;
-  const BotRow = new Function(...Object.keys(scope), compile(`${rowSource}\nreturn BotRow;`))(
-    ...Object.values(scope),
-  );
+  const BotRow = new Function(
+    ...Object.keys(scope),
+    compile(`${rowDimensions}\n${rowSource}\nreturn BotRow;`),
+  )(...Object.values(scope));
   const action = vi.fn();
   const dependencies = {
     React,
@@ -237,7 +242,7 @@ it.each(["midnight", "focus", "foreground"])(
       source.indexOf("  if (!ready) {"),
     );
     const compiled = ts.transpileModule(
-      `${rowSource}\nreturn function List({ items }) {\n${daySource}\n${listSource}
+      `${rowDimensions}\n${rowSource}\nreturn function List({ items }) {\n${daySource}\n${listSource}
         return items.map((item, index) => React.cloneElement(renderItem({ item }), { key: index }));
       };`,
       { compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 } },
@@ -333,7 +338,7 @@ it("renders saved bot rows without a title or notification setting", () => {
     source.indexOf("const BotRow = memo("),
     source.indexOf("const GroupRow = memo("),
   );
-  const compiled = ts.transpileModule(`${rowSource}\nreturn BotRow;`, {
+  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
     compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));
@@ -394,7 +399,7 @@ it("shows the working dots only while the bot works, not while it waits on the u
     source.indexOf("const BotRow = memo("),
     source.indexOf("const GroupRow = memo("),
   );
-  const compiled = ts.transpileModule(`${rowSource}\nreturn BotRow;`, {
+  const compiled = ts.transpileModule(`${rowDimensions}\n${rowSource}\nreturn BotRow;`, {
     compilerOptions: { jsx: ts.JsxEmit.React, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const BotRow = new Function(...Object.keys(scope), compiled)(...Object.values(scope));

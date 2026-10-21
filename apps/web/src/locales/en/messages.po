@@ -772,6 +772,14 @@ msgstr "Authentication failed."
 msgid "Authorization code or callback URL"
 msgstr "Authorization code or callback URL"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "Authorization parameters (optional)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "Authorization server"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "Authorization timed out. Please try again."
@@ -2440,6 +2448,10 @@ msgstr "Fields that mark a change"
 #: src/pages/RoutineEditor.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "Fields to compare, e.g. id, modifiedTime (optional)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "File"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
@@ -4288,6 +4300,10 @@ msgstr "Saving…"
 msgid "Say yes or no, or answer in a sentence."
 msgstr "Say yes or no, or answer in a sentence."
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "Scopes (optional)"
+
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
 #: src/pages/Shell.tsx
@@ -5131,6 +5147,10 @@ msgstr "Use {0}"
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "Use {hostLabel}"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "Use {oauthEnvReference} for the access token."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx

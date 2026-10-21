@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type {
   AdapterContext,
@@ -8,7 +11,13 @@ import type {
   SecretStore,
 } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import type { McpOAuthEnvField } from "@rakazo/contracts";
+import {
+  isLocalMcpHost,
+  mcpOAuthEnvReferences,
+  resolveMcpOAuthEnv,
+  resolveMcpOAuthFileTemplate,
+} from "@rakazo/contracts";
 import type { McpServer, PrismaClient, ThreadEvents } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
 import { catalogToolPrefix } from "./approval-effect.js";
@@ -25,7 +34,13 @@ import {
   resolveCatalogCall,
 } from "./lazy-tool-catalog.js";
 import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
-import { oauthMaterialSecrets } from "./mcp-oauth.js";
+import {
+  accessTokenExpiresAt,
+  looksLikeSecretValue,
+  McpReauthorizationRequiredError,
+  oauthMaterialSecrets,
+  TOKEN_REFRESH_SKEW_MS,
+} from "./mcp-oauth.js";
 import { McpSession } from "./mcp-transport.js";
 import { actorMayUsePrivateEndpoint } from "./private-endpoint.js";
 import type { RemoteTransportDependencies } from "./remote-mcp.js";
@@ -37,6 +52,11 @@ type SessionEntry = {
   digest?: string;
   ref?: string;
   recordId?: string;
+  /** For a process holding a renewable access token: when to replace it. */
+  accessTokenExpiresAt?: number;
+  /** Private directory holding the process's credential files; removed with the session. */
+  credentialDir?: string;
+  launchSecrets?: string[];
 };
 type PendingSession = {
   revision: number;
@@ -94,6 +114,40 @@ function reportAllowlistDrift(
       missing: drift.missing.slice(0, 10),
     },
   );
+}
+
+/** Redact complete credential documents and values a process may quote separately. */
+function credentialContentSecrets(content: string): string[] {
+  const values = content.length >= 8 ? [content] : [];
+  const visit = (value: unknown, key = ""): void => {
+    if (typeof value === "string") {
+      if (
+        value.length >= 8 &&
+        (/(secret|token|key|password|private|credential)/i.test(key) ||
+          (value.length >= 16 && looksLikeSecretValue(value)))
+      )
+        values.push(value);
+    } else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) visit(child, key);
+    }
+  };
+  try {
+    visit(JSON.parse(content));
+  } catch {
+    for (const line of content.split(/\r?\n/).map((line) => line.trim())) {
+      if (line.length >= 16 && looksLikeSecretValue(line)) values.push(line);
+    }
+  }
+  return values;
+}
+
+/** Stop the process, then remove the credential files it was launched with. */
+async function closeEntry(entry: { session: McpSession; credentialDir?: string }): Promise<void> {
+  try {
+    await entry.session.close();
+  } finally {
+    if (entry.credentialDir) await rm(entry.credentialDir, { recursive: true, force: true });
+  }
 }
 
 export class McpConnector implements ConnectorProvider {
@@ -169,10 +223,12 @@ export class McpConnector implements ConnectorProvider {
     const groups = await Promise.all(
       assignments.map(async (assignment): Promise<ConnectorTool[]> => {
         const startedAt = Date.now();
+        let entry: SessionEntry | undefined;
         try {
-          const listed = await this.withSession(assignment.server, context, (session) =>
-            session.listTools({ signal: context.signal }),
-          );
+          const listed = await this.withSession(assignment.server, context, (session) => {
+            entry = this.sessions.get(this.sessionKey(assignment.server, context));
+            return session.listTools({ signal: context.signal });
+          });
           reportAllowlistDrift(assignment, listed.tools, context);
           return listed.tools
             .filter(
@@ -197,20 +253,20 @@ export class McpConnector implements ConnectorProvider {
           // A single unavailable server must not hide tools from other connectors.
           getLogger().error(
             `mcp discovery failed for server ${assignment.server.slug}:`,
-            sanitizeConnectorError(error),
+            sanitizeConnectorError(error, [
+              ...(entry ? oauthMaterialSecrets(entry.material) : []),
+              ...(entry?.launchSecrets ?? []),
+            ]),
           );
           // Capture material before eviction so the audited reason stays redacted, the
           // same reason execute() captures it before callTool.
           const key = this.sessionKey(assignment.server, context);
-          const material = this.sessions.get(key)?.material;
+          const material = entry?.material;
           await this.evict(key);
-          await this.recordDiscoveryFailure(
-            assignment.server.slug,
-            error,
-            context,
-            startedAt,
-            material ? oauthMaterialSecrets(material) : [],
-          );
+          await this.recordDiscoveryFailure(assignment.server.slug, error, context, startedAt, [
+            ...(material ? oauthMaterialSecrets(material) : []),
+            ...(entry?.launchSecrets ?? []),
+          ]);
           return [];
         }
       }),
@@ -303,18 +359,20 @@ export class McpConnector implements ConnectorProvider {
     // drop this call's OAuth secrets from model-visible redaction. Recompute via
     // oauthMaterialSecrets(material) so in-place token refresh stays covered.
     let material: OAuthMaterial | undefined;
+    let launchSecrets: string[] = [];
     const sessionKey = this.sessionKey(assignment.server, context);
     try {
       const route = call.route;
       const result = await this.withSession(assignment.server, context, (session) => {
         material = this.sessions.get(sessionKey)?.material;
+        launchSecrets = this.sessions.get(sessionKey)?.launchSecrets ?? [];
         return session.callTool(route.toolName, call.args, { signal: context.signal });
       });
-      const secrets = material ? oauthMaterialSecrets(material) : [];
+      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       yield { type: "result", data: redactConnectorPayload(result, secrets) };
     } catch (error) {
       // A thrown call means the transport or auth broke; drop the session so the next call reconnects.
-      const secrets = material ? oauthMaterialSecrets(material) : [];
+      const secrets = [...(material ? oauthMaterialSecrets(material) : []), ...launchSecrets];
       await this.evict(sessionKey);
       yield { type: "error", message: sanitizeConnectorError(error, secrets) };
     }
@@ -323,7 +381,7 @@ export class McpConnector implements ConnectorProvider {
   async close(): Promise<void> {
     this.unsubscribe();
     await Promise.allSettled([...this.connecting.values()].map(({ promise }) => promise));
-    await Promise.all([...this.sessions.values()].map(({ session }) => session.close()));
+    await Promise.all([...this.sessions.values()].map((entry) => closeEntry(entry)));
     this.sessions.clear();
     this.connecting.clear();
   }
@@ -338,7 +396,7 @@ export class McpConnector implements ConnectorProvider {
     const entry = this.sessions.get(sessionKey);
     if (!entry) return;
     this.sessions.delete(sessionKey);
-    await entry.session.close();
+    await closeEntry(entry);
   }
 
   /**
@@ -353,6 +411,7 @@ export class McpConnector implements ConnectorProvider {
   ): Promise<T> {
     for (let attempt = 0; ; attempt += 1) {
       const session = await this.sessionFor(server, context);
+      const entry = this.sessions.get(this.sessionKey(server, context));
       this.inFlight.set(session, (this.inFlight.get(session) ?? 0) + 1);
       try {
         return await use(session);
@@ -366,7 +425,8 @@ export class McpConnector implements ConnectorProvider {
       } finally {
         const remaining = (this.inFlight.get(session) ?? 1) - 1;
         this.inFlight.set(session, remaining);
-        if (remaining === 0 && this.expired.has(session)) await session.close();
+        if (remaining === 0 && this.expired.has(session))
+          await closeEntry({ session, credentialDir: entry?.credentialDir });
       }
     }
   }
@@ -375,9 +435,17 @@ export class McpConnector implements ConnectorProvider {
     const sessionKey = this.sessionKey(server, context);
     const existing = this.sessions.get(sessionKey);
     if (existing && existing.revision === server.revision) {
+      // A stdio process reads its access token once at launch; relaunch it before the
+      // token lapses so it starts with the renewed one.
+      if (
+        existing.accessTokenExpiresAt !== undefined &&
+        Date.now() >= existing.accessTokenExpiresAt - TOKEN_REFRESH_SKEW_MS &&
+        (this.inFlight.get(existing.session) ?? 0) === 0
+      )
+        await this.evict(sessionKey);
       // Every credential write stores a new record without bumping the revision, so a
       // different record means another process (an API or worker) changed the grant.
-      if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
+      else if ((server.secretId ?? undefined) !== existing.recordId) await this.evict(sessionKey);
       else if (existing.ref && server.secretId) {
         try {
           const plaintext = await this.secrets.load(existing.ref, {
@@ -419,22 +487,36 @@ export class McpConnector implements ConnectorProvider {
         live.recordId = recordId;
         live.digest = digest;
       }
-    }).then(async ({ session, material, ref, digest, recordId }) => {
-      if (this.connecting.get(sessionKey)?.invalidated) {
-        await session.close();
-        throw new Error("Secret changed during MCP connection; retry");
-      }
-      connected = {
+    }).then(
+      async ({
         session,
-        revision: server.revision,
         material,
         ref,
         digest,
         recordId,
-      };
-      this.sessions.set(sessionKey, connected);
-      return session;
-    });
+        accessTokenExpiresAt,
+        credentialDir,
+        launchSecrets,
+      }) => {
+        if (this.connecting.get(sessionKey)?.invalidated) {
+          await closeEntry({ session, credentialDir });
+          throw new Error("Secret changed during MCP connection; retry");
+        }
+        connected = {
+          session,
+          revision: server.revision,
+          material,
+          ref,
+          digest,
+          recordId,
+          accessTokenExpiresAt,
+          credentialDir,
+          launchSecrets,
+        };
+        this.sessions.set(sessionKey, connected);
+        return session;
+      },
+    );
     this.connecting.set(sessionKey, { revision: server.revision, promise });
     try {
       return await promise;
@@ -453,8 +535,13 @@ export class McpConnector implements ConnectorProvider {
     ref?: string;
     digest?: string;
     recordId?: string;
+    accessTokenExpiresAt?: number;
+    credentialDir?: string;
+    launchSecrets?: string[];
   }> {
     const session = new McpSession({ name: `rakazo-${server.slug}` });
+    let credentialDir: string | undefined;
+    const launchSecrets: string[] = [];
     // Hoisted so a throw after the secret is decoded can still hand the material out.
     let material: OAuthMaterial | undefined;
     try {
@@ -481,12 +568,82 @@ export class McpConnector implements ConnectorProvider {
       const loaded = { material, ...(secret ? { secretId: secret.id } : {}) };
       const args = Array.isArray(server.args) ? server.args.map(String) : [];
       const env = { ...(material.env ?? {}) };
+      const onPersisted = (record: { id: string; ref: string; material: OAuthMaterial }) => {
+        ref = record.ref;
+        recordId = record.id;
+        digest = credentialDigest(JSON.stringify(record.material));
+        onRef(ref, recordId, digest);
+      };
+      let accessTokenExpiresAtMs: number | undefined;
       if (server.transport === "stdio") {
         if (!this.options.stdioEnabled) throw new Error("MCP stdio is disabled");
+        let launchEnv = env;
+        const files = material.files ?? {};
+        const references = [...Object.values(env), ...Object.values(files)].map(
+          (value) => mcpOAuthEnvReferences(value).fields,
+        );
+        let values: Partial<Record<McpOAuthEnvField, string>> = {};
+        if (references.some((fields) => fields.length > 0)) {
+          // The host holds the OAuth grant; the process only sees the values it asks for.
+          const provider = await this.oauth?.providerFor(server, context, loaded, onPersisted);
+          const tokens = await provider?.tokens();
+          const expiresAt = accessTokenExpiresAt(material.oauth);
+          if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
+            throw new McpReauthorizationRequiredError(server.id);
+          values = {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            client_id: material.oauthClient?.client_id,
+            client_secret: material.oauthClient?.client_secret,
+            expires_at: expiresAt === undefined ? undefined : String(expiresAt),
+            scope: tokens.scope ?? material.oauthClient?.scope,
+            token_type: tokens.token_type,
+          };
+          launchEnv = resolveMcpOAuthEnv(env, values);
+          if (
+            tokens.refresh_token &&
+            references.some(
+              (fields) => fields.includes("access_token") || fields.includes("expires_at"),
+            )
+          )
+            accessTokenExpiresAtMs = expiresAt;
+        }
+        const resolvedFiles = Object.entries(files).map(
+          ([key, template]) => [key, resolveMcpOAuthFileTemplate(template, values, key)] as const,
+        );
+        for (const [key, template] of Object.entries(env)) {
+          const value = launchEnv[key];
+          if (mcpOAuthEnvReferences(template).fields.length > 0 && value && value.length >= 8)
+            launchSecrets.push(value);
+        }
+        for (const [key, content] of resolvedFiles) {
+          if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) throw new Error("Invalid MCP credential file name");
+          launchSecrets.push(...credentialContentSecrets(content));
+        }
+        if (resolvedFiles.length > 0) {
+          // One private directory per launched process. A file path replaces an env value of
+          // the same name; the API rejects such overlaps, so this is only a safe fallback.
+          credentialDir = await mkdtemp(join(tmpdir(), "rakazo-mcp-"));
+          const dir = credentialDir;
+          const previousOnClose = session.client.onclose;
+          session.client.onclose = () => {
+            try {
+              previousOnClose?.();
+            } finally {
+              void rm(dir, { recursive: true, force: true }).catch(() => undefined);
+            }
+          };
+          launchEnv = { ...launchEnv };
+          for (const [key, content] of resolvedFiles) {
+            const path = join(credentialDir, key);
+            await writeFile(path, content, { mode: 0o600 });
+            launchEnv[key] = path;
+          }
+        }
         await session.connectStdio({
           command: String(server.command ?? ""),
           args,
-          env,
+          env: launchEnv,
           allowedCommands: this.options.allowedCommands ?? [],
           signal: context.signal,
         });
@@ -501,12 +658,7 @@ export class McpConnector implements ConnectorProvider {
         );
         const authProvider =
           !localHttp && this.oauth
-            ? await this.oauth.providerFor(server, context, loaded, (record) => {
-                ref = record.ref;
-                recordId = record.id;
-                digest = credentialDigest(JSON.stringify(record.material));
-                onRef(ref, recordId, digest);
-              })
+            ? await this.oauth.providerFor(server, context, loaded, onPersisted)
             : undefined;
         const staticToken = material.secret
           ? material.secret.startsWith("Bearer ")
@@ -533,15 +685,27 @@ export class McpConnector implements ConnectorProvider {
           signal: context.signal,
         });
       }
-      return { session, material, ref, digest, recordId };
+      return {
+        session,
+        material,
+        ref,
+        digest,
+        recordId,
+        accessTokenExpiresAt: accessTokenExpiresAtMs,
+        credentialDir,
+        launchSecrets,
+      };
     } catch (error) {
-      await session.close().catch(() => undefined);
+      await closeEntry({ session, credentialDir }).catch(() => undefined);
       // Redact here, while the material is still in hand. This one rejection is handed
       // to every caller waiting on the same pending connect, and none of them can see
       // the secrets: the session never reached `sessions`. Sanitizing per caller would
       // cover only whoever looked first.
       if (!material) throw error;
-      throw new Error(sanitizeConnectorError(error, oauthMaterialSecrets(material)));
+      if (error instanceof McpReauthorizationRequiredError) throw error;
+      throw new Error(
+        sanitizeConnectorError(error, [...oauthMaterialSecrets(material), ...launchSecrets]),
+      );
     }
   }
 }

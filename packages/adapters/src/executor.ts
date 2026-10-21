@@ -6076,6 +6076,8 @@ export function createRunExecutor(deps: ExecutorDeps) {
             if (name !== "browser_snapshot") workspaceCheckpoint.markDirty();
             // Pages can echo a filled login (e.g. a username field), so scrub every page result.
             const redactions = () => [...runSecrets];
+            const desktopTools =
+              graphicalToolsAllowed && builtinOffered(disabledBuiltinTools, "computer_act");
             const tool =
               name === "browser_navigate"
                 ? browserNavigateFromTool
@@ -6085,7 +6087,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             return computerScreenToolResult(async () => {
               const result = tool
                 ? redactConnectorPayload(
-                    await tool(browser, await getRunComputer("tool", name), context, args),
+                    await tool(browser, await getRunComputer("tool", name), context, args, {
+                      desktopTools,
+                    }),
                     redactions(),
                   )
                 : await browserActFromTool(
@@ -6094,6 +6098,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                     context,
                     args,
                     {
+                      desktopTools,
                       redactions,
                       // Team bots may send only their own folder or shared/ off the computer; a
                       // private computer's helper already confines uploads to its home folder.

@@ -772,6 +772,14 @@ msgstr "인증에 실패했습니다."
 msgid "Authorization code or callback URL"
 msgstr "인증 코드 또는 돌아온 페이지 주소"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "인증 매개변수(선택 사항)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "인증 서버"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "인증 시간이 만료되었습니다. 다시 시도해 주세요."
@@ -2441,6 +2449,10 @@ msgstr "변경을 나타내는 필드"
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "비교할 필드, 예: id, modifiedTime (선택 사항)"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "파일"
+
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
 msgstr "컴퓨터의 파일 또는 폴더"
@@ -3494,7 +3506,7 @@ msgstr "OAuth 연결 실패"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "OAuth expired"
-msgstr ""
+msgstr "OAuth 만료됨"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -4287,6 +4299,10 @@ msgstr "저장 중…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "예 또는 아니요로 답하거나 문장으로 답해 주세요."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "범위 (선택 사항)"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5131,6 +5147,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} 사용"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "액세스 토큰에는 {oauthEnvReference}를 사용하세요."
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx

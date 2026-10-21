@@ -20,7 +20,11 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import {
+  isLocalMcpHost,
+  mcpOAuthEnvReferences,
+  parseMcpOAuthAuthorizationParams,
+} from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -43,6 +47,9 @@ type OAuthState = {
 export type OAuthMaterial = {
   secret?: string;
   env?: Record<string, string>;
+  /** Credential files for a stdio server: the env variable that receives the file's
+   * path, and the content template, which may use `{{oauth.*}}` references. */
+  files?: Record<string, string>;
   headers?: Record<string, string>;
   /** A client registered with the authorization server out of band. It is
    * configuration, not SDK state, so it outlives disconnects and replaces
@@ -94,6 +101,15 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
       add(value);
     }
   }
+  // A file without references is a literal credential (for example a service-account key).
+  // One that uses references is covered by the grant values it embeds.
+  for (const content of Object.values(material.files ?? {})) {
+    if (
+      mcpOAuthEnvReferences(content).fields.length === 0 &&
+      looksLikeSecretValue(content, { allowNumeric: false })
+    )
+      add(content);
+  }
   return [...new Set(values)];
 }
 
@@ -136,7 +152,10 @@ function isAmbiguousCredentialKey(key: string): boolean {
  * would otherwise corrupt unrelated tool output. Numeric-only filtering applies
  * only to ambiguous keys — explicit carriers still register OTP-like tokens.
  */
-function looksLikeSecretValue(value: string, options: { allowNumeric?: boolean } = {}): boolean {
+export function looksLikeSecretValue(
+  value: string,
+  options: { allowNumeric?: boolean } = {},
+): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (COMMON_CONFIG_VALUES.has(trimmed.toLowerCase())) return false;
@@ -180,8 +199,15 @@ const COMMON_CONFIG_VALUES = new Set([
 ]);
 
 /** `authorization_server` binds the client to the server it was first used with,
- * so an MCP server cannot later steer the secret to another one via discovery. */
-type PreRegisteredClient = OAuthClientInformation & { authorization_server?: string };
+ * so an MCP server cannot later steer the secret to another one via discovery.
+ * `scope` is the space-separated scope to request; it is ours, not part of the
+ * client information the SDK sends. */
+type PreRegisteredClient = OAuthClientInformation & {
+  authorization_server?: string;
+  scope?: string;
+  /** Extra authorization request parameters, query-string form. */
+  authorization_params?: string;
+};
 
 function boundClient(
   client: PreRegisteredClient,
@@ -193,7 +219,12 @@ function boundClient(
     client.authorization_server !== new URL(authorizationServerUrl).href
   )
     throw new McpOAuthServerMismatchError();
-  const { authorization_server: _bound, ...information } = client;
+  const {
+    authorization_server: _bound,
+    scope: _scope,
+    authorization_params: _params,
+    ...information
+  } = client;
   return information;
 }
 
@@ -242,12 +273,22 @@ type ProviderOptions = {
 };
 
 /** Refresh before expiry to cover clock skew and request time. */
-const TOKEN_REFRESH_SKEW_MS = 60_000;
+export const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+/** When the access token lapses, if the grant says. */
+export function accessTokenExpiresAt(oauth: OAuthState | undefined): number | undefined {
+  const lifetimeSeconds = oauth?.tokens?.expires_in;
+  if (oauth?.obtainedAt === undefined || lifetimeSeconds === undefined) return undefined;
+  return oauth.obtainedAt + lifetimeSeconds * 1000;
+}
 
 function accessTokenExpired(oauth: OAuthState | undefined): boolean {
-  const lifetimeSeconds = oauth?.tokens?.expires_in;
-  if (!oauth?.tokens?.refresh_token || !oauth.obtainedAt || !lifetimeSeconds) return false;
-  return Date.now() >= oauth.obtainedAt + lifetimeSeconds * 1000 - TOKEN_REFRESH_SKEW_MS;
+  const expiresAt = accessTokenExpiresAt(oauth);
+  return (
+    Boolean(oauth?.tokens?.refresh_token) &&
+    expiresAt !== undefined &&
+    Date.now() >= expiresAt - TOKEN_REFRESH_SKEW_MS
+  );
 }
 
 // RFC 8707 resource binding: only accept a self-declared canonical resource
@@ -310,7 +351,13 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       response_types: ["code"],
       token_endpoint_auth_method: "none",
       application_type: applicationType,
+      ...(this.configuredScope ? { scope: this.configuredScope } : {}),
     } as OAuthClientMetadata;
+  }
+
+  /** The scope configured with the pre-registered client, if any. */
+  get configuredScope(): string | undefined {
+    return this.material.oauthClient?.scope;
   }
 
   state(): string {
@@ -419,6 +466,11 @@ export class StoredMcpOAuthProvider implements OAuthClientProvider {
       }
       throw error;
     }
+    const extra = this.material.oauthClient?.authorization_params;
+    if (extra) {
+      for (const [key, value] of Object.entries(parseMcpOAuthAuthorizationParams(extra)))
+        if (!authorizationUrl.searchParams.has(key)) authorizationUrl.searchParams.set(key, value);
+    }
     this.authorizationUrl = authorizationUrl;
     if (this.options.onAuthorization) {
       this.options.onAuthorization(authorizationUrl);
@@ -490,7 +542,9 @@ type Pending = {
   serverId: string;
   spaceId: string;
   userId: string;
+  /** The MCP endpoint, or for a stdio server (which has none) its authorization server. */
   endpoint: string;
+  stdio: boolean;
   provider: StoredMcpOAuthProvider;
   createdAt: number;
   expiry?: ReturnType<typeof setTimeout>;
@@ -594,7 +648,68 @@ async function startAdvertisedAuthorization(
   // Hand the SDK the discovery just verified. Left to rediscover, a failed second
   // read would fall back to the MCP server's own origin and bind the client there.
   await provider.saveDiscoveryState({ authorizationServerUrl: advertised, resourceMetadata });
-  await auth(provider, { serverUrl, fetchFn });
+  await auth(provider, withScope({ serverUrl, fetchFn }, provider));
+}
+
+function withScope<T extends object>(options: T, provider: StoredMcpOAuthProvider): T {
+  return provider.configuredScope ? { ...options, scope: provider.configuredScope } : options;
+}
+
+/**
+ * A stdio server has no MCP endpoint to challenge or advertise anything, so
+ * authorization starts at the issuer the client was registered with. The SDK
+ * gets that issuer as both the cached discovery and the server URL; with no
+ * resource metadata, no `resource` parameter is requested.
+ */
+async function authorizeAtIssuer(
+  provider: StoredMcpOAuthProvider,
+  authorizationServer: string,
+  fetchFn: typeof fetch,
+  authorizationCode?: string,
+): Promise<void> {
+  if (authorizationCode === undefined)
+    await provider.saveDiscoveryState({ authorizationServerUrl: authorizationServer });
+  await auth(
+    provider,
+    withScope(
+      {
+        serverUrl: new URL(authorizationServer),
+        fetchFn,
+        ...(authorizationCode === undefined ? {} : { authorizationCode }),
+      },
+      provider,
+    ),
+  );
+}
+
+/** The MCP endpoint probe of a remote server: connect, and if it does not ask for
+ * authorization, start the one it advertises. */
+async function startRemoteAuthorization(
+  provider: StoredMcpOAuthProvider,
+  endpoint: URL,
+  network: ReturnType<typeof oauthFetch>,
+  authorizationStarted: () => boolean,
+): Promise<void> {
+  const transport = new StreamableHTTPClientTransport(endpoint, {
+    requestInit: { headers: network.headers },
+    authProvider: provider,
+    fetch: provider.wrapFetch(network.fetch),
+  });
+  const client = new Client({ name: "rakazo-oauth", version: "0.1.0" });
+  const signal = AbortSignal.timeout(15_000);
+  try {
+    await client.connect(transport, { signal, timeout: 15_000 });
+    if (!authorizationStarted() && !(await provider.tokens()))
+      await startAdvertisedAuthorization(provider, endpoint, provider.wrapFetch(network.fetch));
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+/** A stdio server's static env is never sent anywhere; only its secrets matter for redaction. */
+function withoutRequestCredentials(material: OAuthMaterial): OAuthMaterial {
+  const { secret: _secret, headers: _headers, ...rest } = material;
+  return rest;
 }
 
 type OAuthRejection = { status: number; code: string; description: string };
@@ -698,11 +813,19 @@ async function requestRefresh(
   });
 }
 
+/** A first-use binding may be missing on one side; two different bindings are not the same client. */
 function sameOAuthClient(
   left: PreRegisteredClient | undefined,
   right: PreRegisteredClient | undefined,
 ): boolean {
-  return left?.client_id === right?.client_id && left?.client_secret === right?.client_secret;
+  const bound = left?.authorization_server && right?.authorization_server;
+  return (
+    left?.client_id === right?.client_id &&
+    left?.client_secret === right?.client_secret &&
+    left?.scope === right?.scope &&
+    left?.authorization_params === right?.authorization_params &&
+    (!bound || left?.authorization_server === right?.authorization_server)
+  );
 }
 
 /**
@@ -788,7 +911,12 @@ export class McpOAuthBroker {
         enabled: true,
       },
     });
-    if (!server?.endpoint) throw new Error("MCP server endpoint is required for OAuth");
+    if (!server) throw new Error("MCP server endpoint is required for OAuth");
+    const context = { spaceId: input.spaceId, userId: input.userId };
+    const loaded = await this.loadMaterial(server, context);
+    // A stdio server has no MCP endpoint; OAuth runs against its authorization server.
+    const target = server.endpoint ?? loaded.material.oauthClient?.authorization_server;
+    if (!target) throw new Error("MCP server endpoint is required for OAuth");
     await this.sweepExpiredPending();
     let actorPending = 0;
     for (const pending of this.pending.values()) {
@@ -806,8 +934,6 @@ export class McpOAuthBroker {
       throw new Error("Too many pending MCP authorization attempts; wait and try again");
     }
     const sessionId = randomUUID();
-    const context = { spaceId: input.spaceId, userId: input.userId };
-    const loaded = await this.loadMaterial(server, context);
     let authorizationUrl: URL | undefined;
     const provider = this.createProvider(server, context, loaded, {
       redirectUri: input.redirectUri,
@@ -819,33 +945,33 @@ export class McpOAuthBroker {
     // Never destroy working tokens here: if this attempt fails (network error,
     // cancelled popup), the server keeps its valid connection. The SDK itself
     // invalidates dead tokens when a refresh is rejected with invalid_grant.
-    const endpoint = new URL(server.endpoint);
     const networkFetch = oauthFetch(
-      server.endpoint,
+      target,
       this.network,
-      loaded.material,
+      server.endpoint ? loaded.material : withoutRequestCredentials(loaded.material),
       await actorMayUsePrivateEndpoint(this.prisma, input.userId, this.allowPrivateEndpoint),
     );
-    const transport = new StreamableHTTPClientTransport(endpoint, {
-      requestInit: { headers: networkFetch.headers },
-      authProvider: provider,
-      fetch: provider.wrapFetch(networkFetch.fetch),
-    });
-    const client = new Client({ name: "rakazo-oauth", version: "0.1.0" });
-    const signal = AbortSignal.timeout(15_000);
     try {
-      await client.connect(transport, { signal, timeout: 15_000 });
-      if (!authorizationUrl && !(await provider.tokens()))
-        await startAdvertisedAuthorization(
+      if (server.endpoint)
+        await startRemoteAuthorization(
           provider,
-          endpoint,
-          provider.wrapFetch(networkFetch.fetch),
+          new URL(server.endpoint),
+          networkFetch,
+          () => authorizationUrl !== undefined,
         );
+      else {
+        // tokens() renews an expiring grant first; a grant still expired afterwards (no
+        // refresh token, or the refresh keeps failing) cannot start the process, so the
+        // user re-authorizes instead of being told it is connected.
+        const tokens = await provider.tokens();
+        const expiresAt = accessTokenExpiresAt(loaded.material.oauth);
+        if (!tokens || (expiresAt !== undefined && Date.now() >= expiresAt))
+          await authorizeAtIssuer(provider, target, provider.wrapFetch(networkFetch.fetch));
+      }
     } catch (error) {
       if (error instanceof McpOAuthServerMismatchError) throw error;
       if (!authorizationUrl) throw networkFetch.publicError(error, "Could not start MCP OAuth");
     } finally {
-      await client.close().catch(() => undefined);
       await networkFetch.close().catch(() => undefined);
     }
     if (!authorizationUrl) {
@@ -872,7 +998,7 @@ export class McpOAuthBroker {
         serverId: server.id,
         spaceId: input.spaceId,
         userId: input.userId,
-        endpoint: server.endpoint,
+        endpoint: target,
         redirectUri: input.redirectUri,
         oauthCiphertext: sessionMaterial.ciphertext,
       },
@@ -888,7 +1014,8 @@ export class McpOAuthBroker {
       serverId: server.id,
       spaceId: input.spaceId,
       userId: input.userId,
-      endpoint: server.endpoint,
+      endpoint: target,
+      stdio: !server.endpoint,
       provider,
       createdAt: Date.now(),
       expiry,
@@ -933,7 +1060,7 @@ export class McpOAuthBroker {
           enabled: true,
         },
       });
-      if (!server?.endpoint) throw new Error("MCP OAuth session is invalid or expired");
+      if (!server) throw new Error("MCP OAuth session is invalid or expired");
       const context = { spaceId: input.spaceId, userId: input.userId };
       const loaded = {
         material: await this.read(session.oauthCiphertext, session.id),
@@ -944,6 +1071,7 @@ export class McpOAuthBroker {
         spaceId: input.spaceId,
         userId: input.userId,
         endpoint: session.endpoint,
+        stdio: !server.endpoint,
         provider: this.createProvider(server, context, loaded, {
           redirectUri: session.redirectUri,
           state: session.id,
@@ -974,7 +1102,6 @@ export class McpOAuthBroker {
       const stored = await this.loadMaterial(current, input);
       pending.provider.adoptClientBinding(stored.material.oauthClient);
     }
-    const endpoint = new URL(pending.endpoint);
     const networkFetch = oauthFetch(
       pending.endpoint,
       this.network,
@@ -983,16 +1110,23 @@ export class McpOAuthBroker {
       { oauth: { clientInformation: pending.provider.clientInformation() } },
       await actorMayUsePrivateEndpoint(this.prisma, pending.userId, this.allowPrivateEndpoint),
     );
-    const transport = new StreamableHTTPClientTransport(endpoint, {
-      authProvider: pending.provider,
-      fetch: networkFetch.fetch,
-    });
     try {
-      await transport.finishAuth(input.code);
+      if (pending.stdio)
+        await authorizeAtIssuer(pending.provider, pending.endpoint, networkFetch.fetch, input.code);
+      else {
+        const transport = new StreamableHTTPClientTransport(new URL(pending.endpoint), {
+          authProvider: pending.provider,
+          fetch: networkFetch.fetch,
+        });
+        try {
+          await transport.finishAuth(input.code);
+        } finally {
+          await transport.close().catch(() => undefined);
+        }
+      }
     } catch (error) {
       throw networkFetch.publicError(error, "Could not complete MCP OAuth");
     } finally {
-      await transport.close().catch(() => undefined);
       await networkFetch.close().catch(() => undefined);
     }
     if (!(await pending.provider.tokens())) throw new Error("MCP OAuth authorization failed");
@@ -1054,6 +1188,8 @@ export class McpOAuthBroker {
     options: ProviderOptions = {},
   ): StoredMcpOAuthProvider {
     const endpoint = server.endpoint;
+    // A stdio server has no endpoint; its refresh goes to the client's authorization server.
+    const target = endpoint ?? loaded.material.oauthClient?.authorization_server;
     return new StoredMcpOAuthProvider(
       server.id,
       loaded.material,
@@ -1064,10 +1200,10 @@ export class McpOAuthBroker {
           storedRefreshToken,
         }),
       {
-        ...(endpoint
+        ...(target
           ? {
               refresh: (held: string) =>
-                this.refreshGrant(server.id, endpoint, context, held, options.onPersisted),
+                this.refreshGrant(server.id, endpoint, target, context, held, options.onPersisted),
             }
           : {}),
         ...options,
@@ -1084,14 +1220,15 @@ export class McpOAuthBroker {
    */
   private async refreshGrant(
     serverId: string,
-    endpoint: string,
+    endpoint: string | null,
+    target: string,
     context: ActorRef,
     held: string,
     onPersisted?: ProviderOptions["onPersisted"],
   ): Promise<TokenGrant> {
     // Resolve the network before taking a connection for the lock.
     const network = oauthFetch(
-      endpoint,
+      target,
       this.network,
       {},
       await actorMayUsePrivateEndpoint(this.prisma, context.userId, this.allowPrivateEndpoint),
@@ -1193,6 +1330,7 @@ export class McpOAuthBroker {
       const hasMaterial = Boolean(
         nextMaterial.secret ||
           Object.keys(nextMaterial.env ?? {}).length ||
+          Object.keys(nextMaterial.files ?? {}).length ||
           Object.keys(nextMaterial.headers ?? {}).length ||
           nextMaterial.oauthClient ||
           nextMaterial.oauth,

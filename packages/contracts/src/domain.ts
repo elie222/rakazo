@@ -9,7 +9,13 @@ import {
 } from "./cloudflare-ai-gateway.js";
 import { ThreadMessageSchema } from "./events.js";
 import { Id, MemoryScope, RunStatus, SandboxKind } from "./ids.js";
-import { McpHeadersSchema, McpRemoteEndpointSchema, McpTransportSchema } from "./mcp.js";
+import {
+  McpHeadersSchema,
+  McpRemoteEndpointSchema,
+  McpStdioFilesSchema,
+  McpTransportSchema,
+  parseMcpOAuthAuthorizationParams,
+} from "./mcp.js";
 import { ModelHeadersSchema } from "./model-headers.js";
 import { RoutineWatchSchema, RoutineWatchStateSchema } from "./routine-watch.js";
 import { RunTriggerSchema } from "./runs.js";
@@ -771,14 +777,37 @@ const McpServerBaseInput = z.object({
    * OAuth state survives so a connected server stays connected. */
   clearCredential: z.boolean().optional(),
 });
+const McpOAuthClientFields = {
+  clientId: z.string().trim().min(1).max(512),
+  clientSecret: z.string().min(1).max(4096).optional(),
+  /** Space-separated scopes to request. Empty: the server's advertised scopes. */
+  scope: z.string().trim().max(2000).optional(),
+  /** Extra authorization request parameters in query-string form, e.g. Google's
+   * `access_type=offline&prompt=consent` for a refresh token. */
+  authorizationParams: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((value) => {
+      try {
+        parseMcpOAuthAuthorizationParams(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Extra authorization parameters cannot set the OAuth flow's own parameters")
+    .optional(),
+};
 /** A client registered with the server's OAuth provider out of band, for
  * providers without dynamic client registration. On update, omit it to keep
- * the stored client and send null to remove it. */
-const McpOAuthClientInput = z
-  .object({
-    clientId: z.string().trim().min(1).max(512),
-    clientSecret: z.string().min(1).max(4096).optional(),
-  })
+ * the stored client and send null to remove it. A remote server discovers its
+ * authorization server, so the client is bound to it on first use. */
+const McpOAuthClientInput = z.object(McpOAuthClientFields).nullable().optional();
+/** A stdio server has no URL to discover from, so its client names the
+ * authorization server (its issuer, e.g. https://accounts.google.com). Rakazo
+ * runs the OAuth flow and passes the grant through `{{oauth.*}}` env references. */
+const McpStdioOAuthClientInput = z
+  .object({ ...McpOAuthClientFields, authorizationServer: McpRemoteEndpointSchema })
   .nullable()
   .optional();
 export const McpServerConfigInput = z.discriminatedUnion("transport", [
@@ -808,7 +837,10 @@ export const McpServerConfigInput = z.discriminatedUnion("transport", [
         }
       })
       .default({}),
+    /** Update: omit to keep the stored files, send the complete set to replace them. */
+    files: McpStdioFilesSchema.optional(),
     secret: z.string().max(16384).optional(),
+    oauthClient: McpStdioOAuthClientInput,
   }),
 ]);
 export type McpServerConfigInput = z.infer<typeof McpServerConfigInput>;
@@ -824,6 +856,8 @@ export const McpServerSchema = z.object({
   command: z.string().nullable(),
   args: z.array(z.string()),
   envKeys: z.array(z.string()),
+  /** Env variables that receive a credential file's path instead of a value. */
+  fileKeys: z.array(z.string()),
   headerKeys: z.array(z.string()),
   hasSecret: z.boolean(),
   oauthStatus: z.enum(["none", "connected", "reconnect"]),

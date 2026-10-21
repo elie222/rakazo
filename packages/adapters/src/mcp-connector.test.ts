@@ -1,8 +1,14 @@
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname } from "node:path";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createLogger, createTestSink, getLogger, installLogger } from "@rakazo/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InfisicalSecretStore } from "./infisical-secret-store.js";
 import { allowlistDrift, McpConnector } from "./mcp-connector.js";
-import { type McpOAuthBroker, StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import type { McpOAuthBroker, OAuthMaterial } from "./mcp-oauth.js";
+import { StoredMcpOAuthProvider } from "./mcp-oauth.js";
+import { McpSession } from "./mcp-transport.js";
 import { InMemoryRealtimeFanout } from "./realtime.js";
 import { migrateSecrets } from "./secret-migration.js";
 import { ComposedSecretStore } from "./secret-store-factory.js";
@@ -1332,6 +1338,758 @@ describe("MCP connector session cache", () => {
     await connector.discoverTools(contextFor("w1", "u1"));
     expect(state.initializations).toBe(3);
 
+    await connector.close();
+  });
+});
+
+describe("MCP connector stdio OAuth", () => {
+  const STDIO_SERVER = {
+    id: "server-1",
+    slug: "mail",
+    transport: "stdio",
+    command: "mail-mcp",
+    endpoint: null,
+    secretId: "secret-1",
+    args: [],
+    revision: 1,
+  };
+  const context = {
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    runId: undefined,
+    signal: new AbortController().signal,
+  } as never;
+
+  /** Stored as one fixed value, as in the database: a changing value reads as a credential write. */
+  function stored(overrides: Partial<OAuthMaterial> = {}, mutate?: (value: OAuthMaterial) => void) {
+    const value = material(overrides);
+    mutate?.(value);
+    const json = JSON.stringify(value);
+    return () => JSON.parse(json) as OAuthMaterial;
+  }
+
+  function material(
+    overrides: Partial<OAuthMaterial> = {},
+    obtainedAt = Date.now(),
+  ): OAuthMaterial {
+    return {
+      env: {
+        MAIL_TOKEN: "Bearer {{oauth.access_token}}",
+        MAIL_CLIENT_ID: "{{oauth.client_id}}",
+        MAIL_REGION: "eu",
+      },
+      oauthClient: {
+        client_id: "client-1",
+        client_secret: "client-secret",
+        authorization_server: "https://auth.example.test/",
+      },
+      oauth: {
+        tokens: {
+          access_token: "access-1",
+          refresh_token: "refresh-1",
+          token_type: "Bearer",
+          expires_in: 3600,
+        },
+        obtainedAt,
+      },
+      ...overrides,
+    };
+  }
+
+  function stdioConnector(
+    load: () => OAuthMaterial,
+    oauth: Pick<McpOAuthBroker, "providerFor"> | undefined,
+  ) {
+    const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })) },
+    };
+    const secrets = { load: vi.fn(async () => JSON.stringify(load())) };
+    const connector = new McpConnector(
+      prisma as never,
+      secrets as never,
+      { stdioEnabled: true, allowedCommands: ["mail-mcp"] },
+      oauth as McpOAuthBroker | undefined,
+    );
+    return connector;
+  }
+
+  /** A broker whose provider holds whatever the stored material says. */
+  function brokerFor() {
+    return {
+      providerFor: vi.fn<McpOAuthBroker["providerFor"]>(async (_server, _context, loaded) =>
+        loaded?.material.oauth
+          ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined)
+          : undefined,
+      ),
+    };
+  }
+
+  function stubSession() {
+    const launches: Array<Record<string, string> | undefined> = [];
+    vi.spyOn(McpSession.prototype, "connectStdio").mockImplementation(async (options) => {
+      launches.push(options.env);
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
+    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    return launches;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it.each([false, true])(
+    "refuses expired launch tokens (refresh token: %s)",
+    async (refreshable) => {
+      const launches = stubSession();
+      const load = stored({}, (value) => {
+        if (value.oauth) value.oauth.obtainedAt = Date.now() - 7200_000;
+        if (!refreshable) delete value.oauth?.tokens?.refresh_token;
+      });
+      const connector = stdioConnector(load, brokerFor());
+      await connector.discoverTools(context);
+      expect(launches).toHaveLength(0);
+      await connector.close();
+    },
+  );
+
+  it("waits for active calls before replacing an expiring process", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = stdioConnector(stored(), brokerFor());
+    await connector.discoverTools(context);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let enter!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockImplementationOnce(async () => {
+      enter();
+      await held;
+      return { tools: [] };
+    });
+    const active = connector.discoverTools(context);
+    await entered;
+    vi.setSystemTime(Date.now() + 3550_000);
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(1);
+    release();
+    await active;
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(2);
+    await connector.close();
+  });
+
+  it("launches the process with the OAuth references resolved", async () => {
+    const launches = stubSession();
+    const load = stored();
+    const connector = stdioConnector(load, brokerFor());
+
+    await connector.discoverTools(context);
+
+    expect(launches).toEqual([
+      { MAIL_TOKEN: "Bearer access-1", MAIL_CLIENT_ID: "client-1", MAIL_REGION: "eu" },
+    ]);
+    await connector.close();
+  });
+
+  it("resolves the client secret and refresh token too", async () => {
+    const launches = stubSession();
+    const load = stored({
+      env: { ID: "{{oauth.client_id}}:{{oauth.client_secret}}", RT: "{{oauth.refresh_token}}" },
+    });
+    const connector = stdioConnector(load, brokerFor());
+
+    await connector.discoverTools(context);
+
+    expect(launches).toEqual([{ ID: "client-1:client-secret", RT: "refresh-1" }]);
+    await connector.close();
+  });
+
+  it("does not involve OAuth for an env without references", async () => {
+    const launches = stubSession();
+    const load = stored({ env: { MAIL_REGION: "eu" }, oauth: undefined });
+    const oauth = brokerFor();
+    const connector = stdioConnector(load, oauth);
+
+    await connector.discoverTools(context);
+
+    expect(launches).toEqual([{ MAIL_REGION: "eu" }]);
+    expect(oauth.providerFor).not.toHaveBeenCalled();
+    await connector.close();
+  });
+
+  it.each([
+    ["has not connected", stored({ oauth: undefined })],
+    ["has no tokens", stored({ oauth: {} })],
+  ])("asks the user to connect when the server %s", async (_name, load) => {
+    const launches = stubSession();
+    const connector = stdioConnector(load, brokerFor());
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([
+      { type: "error", message: expect.stringContaining("Reconnect") },
+    ]);
+    expect(launches).toEqual([]);
+    await connector.close();
+  });
+
+  it("asks the user to connect when no OAuth broker is configured", async () => {
+    const launches = stubSession();
+    const connector = stdioConnector(stored(), undefined);
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([
+      { type: "error", message: expect.stringContaining("Reconnect") },
+    ]);
+    expect(launches).toEqual([]);
+    await connector.close();
+  });
+
+  it("keeps the credential values out of the error when a reference cannot be resolved", async () => {
+    const launches = stubSession();
+    const load = stored(
+      { env: { RT: "{{oauth.refresh_token}}", TOKEN: "{{oauth.access_token}}" } },
+      (value) => delete value.oauth?.tokens?.refresh_token,
+    );
+    const connector = stdioConnector(load, brokerFor());
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([{ type: "error" }]);
+    expect(JSON.stringify(events)).not.toContain("access-1");
+    expect(launches).toEqual([]);
+    await connector.close();
+  });
+
+  it("restarts the process before its access token expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const oauth = brokerFor();
+    const connector = stdioConnector(stored(), oauth);
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 3600_000 - 120_000);
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(1);
+
+    // The provider renews the grant when asked for tokens inside the last minute.
+    oauth.providerFor.mockImplementationOnce(async (_server, _context, loaded) => {
+      const provider = new StoredMcpOAuthProvider(
+        "server-1",
+        loaded?.material ?? {},
+        async () => undefined,
+      );
+      vi.spyOn(provider, "tokens").mockImplementation(async () => {
+        const renewed = {
+          access_token: "access-2",
+          refresh_token: "refresh-2",
+          token_type: "Bearer",
+          expires_in: 3600,
+        };
+        if (loaded?.material.oauth) {
+          loaded.material.oauth.tokens = renewed;
+          loaded.material.oauth.obtainedAt = Date.now();
+        }
+        return renewed;
+      });
+      return provider;
+    });
+    vi.setSystemTime(Date.now() + 90_000);
+    await connector.discoverTools(context);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(2);
+    expect(launches[1]?.MAIL_TOKEN).toBe("Bearer access-2");
+    await connector.close();
+  });
+
+  it("keeps a process whose env does not use the access token", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = stdioConnector(
+      stored({ env: { MAIL_CLIENT_ID: "{{oauth.client_id}}" } }),
+      brokerFor(),
+    );
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(1);
+    await connector.close();
+  });
+
+  it("keeps a process whose access token cannot be renewed", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const load = stored({}, (value) => delete value.oauth?.tokens?.refresh_token);
+    const connector = stdioConnector(load, brokerFor());
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(1);
+    await connector.close();
+  });
+});
+
+describe("MCP connector stdio credential files", () => {
+  const STDIO_SERVER = {
+    id: "server-1",
+    slug: "mail",
+    transport: "stdio",
+    command: "mail-mcp",
+    endpoint: null,
+    secretId: "secret-1",
+    args: [],
+    revision: 1,
+  };
+  const context = {
+    spaceId: "w1",
+    userId: "u1",
+    botId: "bot-1",
+    runId: undefined,
+    signal: new AbortController().signal,
+  } as never;
+  const FILE_TEMPLATE =
+    '{"token":"{{oauth.access_token}}","expiry":{{oauth.expires_at}},"scope":"{{oauth.scope}}","type":"{{oauth.token_type}}","id":"{{oauth.client_id}}"}';
+
+  function material(
+    overrides: Partial<OAuthMaterial> = {},
+    obtainedAt = Date.now(),
+  ): OAuthMaterial {
+    return {
+      env: { MAIL_REGION: "eu" },
+      files: { MAIL_CREDENTIALS: FILE_TEMPLATE },
+      oauthClient: {
+        client_id: "client-1",
+        client_secret: "client-secret",
+        authorization_server: "https://auth.example.test/",
+        scope: "mail.read",
+      },
+      oauth: {
+        tokens: {
+          access_token: "access-1",
+          refresh_token: "refresh-1",
+          token_type: "Bearer",
+          expires_in: 3600,
+        },
+        obtainedAt,
+      },
+      ...overrides,
+    };
+  }
+
+  /** Stored as one fixed value, as in the database. */
+  function stored(overrides: Partial<OAuthMaterial> = {}, obtainedAt = Date.now()) {
+    const json = JSON.stringify(material(overrides, obtainedAt));
+    return () => JSON.parse(json) as OAuthMaterial;
+  }
+
+  function connectorFor(load: () => OAuthMaterial, withBroker = true, refresh = false) {
+    const assignment = { ...ASSIGNMENT, server: STDIO_SERVER };
+    const prisma = {
+      botMcpServer: {
+        findMany: vi.fn(async () => [assignment]),
+        findFirst: vi.fn(async () => assignment),
+      },
+      secret: { findFirst: vi.fn(async () => ({ id: "secret-1", ciphertext: "cipher" })) },
+    };
+    const secrets = { load: vi.fn(async () => JSON.stringify(load())) };
+    const broker = {
+      providerFor: vi.fn<McpOAuthBroker["providerFor"]>(async (_server, _context, loaded) =>
+        loaded?.material.oauth
+          ? new StoredMcpOAuthProvider("server-1", loaded.material, async () => undefined, {
+              ...(refresh
+                ? {
+                    refresh: async () => ({
+                      tokens: {
+                        access_token: "renewed-access",
+                        refresh_token: "renewed-refresh",
+                        token_type: "Bearer",
+                        expires_in: 3600,
+                      },
+                      obtainedAt: Date.now(),
+                    }),
+                  }
+                : {}),
+            })
+          : undefined,
+      ),
+    };
+    return new McpConnector(
+      prisma as never,
+      secrets as never,
+      { stdioEnabled: true, allowedCommands: ["mail-mcp"] },
+      withBroker ? (broker as unknown as McpOAuthBroker) : undefined,
+    );
+  }
+
+  type Launch = {
+    env: Record<string, string>;
+    /** What the launched process could read at start-up, by env variable. */
+    files: Record<string, { content: string; mode: number; dir: string; dirMode: number }>;
+  };
+
+  /** Records each launch and snapshots the credential files while they exist. */
+  function stubSession(connect?: () => Promise<void>) {
+    const launches: Launch[] = [];
+    vi.spyOn(McpSession.prototype, "connectStdio").mockImplementation(async (options) => {
+      const env = options.env ?? {};
+      const files: Launch["files"] = {};
+      for (const [key, value] of Object.entries(env)) {
+        if (!value.startsWith(tmpdir()) || !existsSync(value)) continue;
+        const dir = dirname(value);
+        files[key] = {
+          content: readFileSync(value, "utf8"),
+          mode: statSync(value).mode & 0o777,
+          dir,
+          dirMode: statSync(dir).mode & 0o777,
+        };
+      }
+      launches.push({ env, files });
+      await connect?.();
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockResolvedValue({ tools: [] });
+    vi.spyOn(McpSession.prototype, "close").mockResolvedValue(undefined);
+    return launches;
+  }
+
+  const credentialDirs = () =>
+    readdirSync(tmpdir()).filter((name) => name.startsWith("rakazo-mcp-"));
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("launches with the refreshed grant when the stored grant has expired", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored({}, Date.now() - 7200_000), true, true);
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(1);
+    const content = JSON.parse(launches[0]?.files.MAIL_CREDENTIALS?.content ?? "{}");
+    expect(content.token).toBe("renewed-access");
+    expect(content.expiry).toBeGreaterThan(Date.now());
+    await connector.close();
+  });
+
+  it("preserves ordinary config values in tool results", async () => {
+    stubSession();
+    const connector = connectorFor(stored({ env: { DEBUG: "1", NODE_ENV: "production" } }));
+    const text = "1 production authorized_user";
+    vi.spyOn(McpSession.prototype, "callTool").mockResolvedValue({
+      content: [{ type: "text", text }],
+    });
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: "mcp__mail__read",
+        args: {},
+        executionId: "test",
+        route: { connectorId: "mcp", resourceId: "server-1", toolName: "read" },
+      },
+      context,
+    ))
+      events.push(event);
+    expect(JSON.stringify(events)).toContain(text);
+    await connector.close();
+  });
+
+  it("removes credentials when reconnect replaces a session", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+    vi.spyOn(McpSession.prototype, "listTools")
+      .mockRejectedValueOnce(new StreamableHTTPError(404, "Session not found"))
+      .mockResolvedValue({ tools: [] });
+    await connector.discoverTools(context);
+    expect(launches).toHaveLength(2);
+    expect(existsSync(launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "missing")).toBe(false);
+    await connector.close();
+  });
+
+  it("redacts literal JSON secrets alongside OAuth substitutions on launch and discovery errors", async () => {
+    const launches = stubSession();
+    const load = stored({
+      files: { CREDS: '{"client_secret":"literal-file-secret","token":"{{oauth.access_token}}"}' },
+      env: { CUSTOM: "prefix-{{oauth.access_token}}" },
+    });
+    vi.spyOn(McpSession.prototype, "listTools").mockRejectedValue(
+      new Error("literal-file-secret prefix-access-1 access-1"),
+    );
+    const connector = connectorFor(load);
+    const log = vi.spyOn(getLogger(), "error");
+    await connector.discoverTools(context);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("literal-file-secret");
+    expect(JSON.stringify(log.mock.calls)).not.toContain("prefix-access-1");
+    await connector.close();
+    expect(existsSync(launches[0]?.files.CREDS?.dir ?? "missing")).toBe(false);
+  });
+
+  it("removes credentials when the child closes without eviction", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+    await connector.discoverTools(context);
+    const session = vi.mocked(McpSession.prototype.connectStdio).mock.contexts[0] as McpSession;
+    session?.client.onclose?.();
+    await vi.waitFor(() =>
+      expect(existsSync(launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "missing")).toBe(false),
+    );
+    await connector.close();
+  });
+
+  it("redacts resolved file and environment values when connection fails", async () => {
+    stubSession(async () => {
+      throw new Error("literal-file-secret prefix-access-1 access-1");
+    });
+    const connector = connectorFor(
+      stored({
+        files: { CREDS: '{"secret":"literal-file-secret","token":"{{oauth.access_token}}"}' },
+        env: { CUSTOM: "prefix-{{oauth.access_token}}" },
+      }),
+    );
+    const log = vi.spyOn(getLogger(), "error");
+    await connector.discoverTools(context);
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(
+      /literal-file-secret|prefix-access-1|access-1/,
+    );
+    await connector.close();
+  });
+
+  it.each([false, true])("redacts resolved credentials from calls (throws: %s)", async (throws) => {
+    stubSession();
+    const connector = connectorFor(
+      stored({
+        files: { CREDS: '{"secret":"literal-file-secret","token":"{{oauth.access_token}}"}' },
+        env: { CUSTOM: "prefix-{{oauth.access_token}}" },
+      }),
+    );
+    const text = "literal-file-secret prefix-access-1 access-1";
+    vi.spyOn(McpSession.prototype, "callTool").mockImplementation(async () => {
+      if (throws) throw new Error(text);
+      return { content: [{ type: "text", text }] };
+    });
+    const events = [];
+    for await (const event of connector.execute(
+      {
+        tool: "mcp__mail__read",
+        args: {},
+        executionId: "test",
+        route: { connectorId: "mcp", resourceId: "server-1", toolName: "read" },
+      },
+      context,
+    ))
+      events.push(event);
+    expect(events).toMatchObject([{ type: throws ? "error" : "result" }]);
+    expect(JSON.stringify(events)).not.toMatch(/literal-file-secret|prefix-access-1|access-1/);
+    expect(JSON.stringify(events)).toContain("[redacted]");
+    await connector.close();
+  });
+
+  it("writes the resolved template to a private file and passes its path in the env", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+
+    await connector.discoverTools(context);
+
+    const [launch] = launches;
+    const file = launch?.files.MAIL_CREDENTIALS;
+    expect(launch?.env.MAIL_REGION).toBe("eu");
+    expect(launch?.env.MAIL_CREDENTIALS).toMatch(/\/MAIL_CREDENTIALS$/);
+    expect(file?.dir.startsWith(`${tmpdir()}/rakazo-mcp-`)).toBe(true);
+    expect(file?.dirMode).toBe(0o700);
+    expect(file?.mode).toBe(0o600);
+    expect(JSON.parse(file?.content ?? "")).toEqual({
+      token: "access-1",
+      expiry: expect.any(Number),
+      scope: "mail.read",
+      type: "Bearer",
+      id: "client-1",
+    });
+    await connector.close();
+  });
+
+  it("uses the granted scope over the configured one and the stored expiry", async () => {
+    const launches = stubSession();
+    const obtainedAt = Date.now();
+    const load = stored(
+      {
+        oauth: {
+          tokens: {
+            access_token: "access-1",
+            refresh_token: "refresh-1",
+            token_type: "Bearer",
+            expires_in: 3600,
+            scope: "mail.read mail.send",
+          },
+          obtainedAt,
+        },
+      },
+      obtainedAt,
+    );
+    const connector = connectorFor(load);
+
+    await connector.discoverTools(context);
+
+    const content = JSON.parse(launches[0]?.files.MAIL_CREDENTIALS?.content ?? "{}");
+    expect(content.scope).toBe("mail.read mail.send");
+    expect(content.expiry).toBe(obtainedAt + 3600_000);
+    await connector.close();
+  });
+
+  it("writes a static file without involving OAuth", async () => {
+    const launches = stubSession();
+    const load = stored({ files: { MAIL_CREDENTIALS: '{"kind":"static"}' }, oauth: undefined });
+    const connector = connectorFor(load, false);
+
+    await connector.discoverTools(context);
+
+    expect(launches[0]?.files.MAIL_CREDENTIALS?.content).toBe('{"kind":"static"}');
+    await connector.close();
+  });
+
+  it("asks the user to connect, and leaves no directory, when a file needs a missing grant", async () => {
+    const launches = stubSession();
+    const before = credentialDirs();
+    const connector = connectorFor(stored({ oauth: undefined }));
+    const call = {
+      tool: "mcp__mail__send",
+      args: {},
+      executionId: "call-1",
+      route: { connectorId: "mcp", resourceId: "server-1", toolName: "send" },
+    };
+
+    const events = [];
+    for await (const event of connector.execute(call, context)) events.push(event);
+
+    expect(events).toMatchObject([
+      { type: "error", message: expect.stringContaining("Reconnect") },
+    ]);
+    expect(launches).toEqual([]);
+    expect(credentialDirs()).toEqual(before);
+    await connector.close();
+  });
+
+  it("removes the directory when the process fails to start", async () => {
+    const launches = stubSession(async () => {
+      throw new Error("spawn failed");
+    });
+    const connector = connectorFor(stored());
+
+    await connector.discoverTools(context);
+
+    const dir = launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "";
+    expect(dir).not.toBe("");
+    expect(existsSync(dir)).toBe(false);
+    await connector.close();
+  });
+
+  it("removes the directory when the connector closes", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+    await connector.discoverTools(context);
+    const dir = launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "";
+    expect(existsSync(dir)).toBe(true);
+
+    await connector.close();
+
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("replaces the directory when the process restarts before the token expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = connectorFor(stored());
+
+    await connector.discoverTools(context);
+    const first = launches[0]?.files.MAIL_CREDENTIALS?.dir ?? "";
+    vi.setSystemTime(Date.now() + 3600_000 - 30_000);
+    await connector.discoverTools(context);
+
+    const second = launches[1]?.files.MAIL_CREDENTIALS?.dir ?? "";
+    expect(launches).toHaveLength(2);
+    expect(second).not.toBe(first);
+    expect(existsSync(first)).toBe(false);
+    expect(existsSync(second)).toBe(true);
+    await connector.close();
+    expect(existsSync(second)).toBe(false);
+  });
+
+  it("keeps a process whose file does not use the access token or expiry", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = connectorFor(
+      stored({ files: { MAIL_CREDENTIALS: '{"id":"{{oauth.client_id}}"}' } }),
+    );
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(1);
+    await connector.close();
+  });
+
+  it("restarts for a file that only references expires_at", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const launches = stubSession();
+    const connector = connectorFor(
+      stored({ files: { MAIL_CREDENTIALS: '{"expiry":{{oauth.expires_at}}}' } }),
+    );
+
+    await connector.discoverTools(context);
+    vi.setSystemTime(Date.now() + 3600_000 - 30_000);
+    await connector.discoverTools(context);
+
+    expect(launches).toHaveLength(2);
+    await connector.close();
+  });
+
+  it("lets the file path win over an env value with the same name", async () => {
+    const launches = stubSession();
+    const connector = connectorFor(stored({ env: { MAIL_CREDENTIALS: "plain" } }));
+
+    await connector.discoverTools(context);
+
+    const env = launches[0]?.env.MAIL_CREDENTIALS;
+    expect(env).not.toBe("plain");
+    expect(env).toBe(launches[0] && Object.keys(launches[0].files).length ? env : undefined);
+    expect(launches[0]?.files.MAIL_CREDENTIALS).toBeDefined();
     await connector.close();
   });
 });

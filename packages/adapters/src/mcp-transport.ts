@@ -1,21 +1,15 @@
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
-import {
-  StdioClientTransport,
-  type StdioServerParameters,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
+import type { StdioServerParameters } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, ListToolsResult } from "@modelcontextprotocol/sdk/types.js";
 import { isLocalMcpHost } from "@rakazo/contracts";
 import { combineSignals } from "./connector-safety.js";
-import {
-  createSafeRemoteFetch,
-  listMcpTools,
-  type RemoteTransportDependencies,
-  type SafeRemoteFetch,
-} from "./remote-mcp.js";
+import type { RemoteTransportDependencies, SafeRemoteFetch } from "./remote-mcp.js";
+import { createSafeRemoteFetch, listMcpTools } from "./remote-mcp.js";
 
 export type McpRemoteTransport = "streamable-http" | "sse";
 

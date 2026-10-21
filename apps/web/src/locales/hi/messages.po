@@ -772,6 +772,14 @@ msgstr "प्रमाणीकरण विफल रहा।"
 msgid "Authorization code or callback URL"
 msgstr "ऑथराइज़ेशन कोड या कॉलबैक URL"
 
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization parameters (optional)"
+msgstr "ऑथराइज़ेशन पैरामीटर (वैकल्पिक)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Authorization server"
+msgstr "प्राधिकरण सर्वर"
+
 #: src/pages/shell/message-cards.tsx
 msgid "Authorization timed out. Please try again."
 msgstr "ऑथराइज़ेशन का समय समाप्त हो गया। कृपया पुनः प्रयास करें।"
@@ -2256,7 +2264,7 @@ msgstr "उदा. Hivenet Agent, Presales, टाइमशीट बॉट"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "Each name can be used once."
-msgstr "हर नाम का इस्तेमाल केवल एक बार किया जा सकता है।"
+msgstr "हर नाम का उपयोग केवल एक बार किया जा सकता है।"
 
 #: src/components/AskCard.tsx
 msgid "Edit"
@@ -2440,6 +2448,10 @@ msgstr "बदलाव दर्शाने वाले फ़ील्ड"
 #: src/pages/RoutineEditor.tsx
 msgid "Fields to compare, e.g. id, modifiedTime (optional)"
 msgstr "तुलना के लिए फ़ील्ड, जैसे id, modifiedTime (वैकल्पिक)"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "File"
+msgstr "फ़ाइल"
 
 #: src/pages/RoutineEditor.tsx
 msgid "Files or folders on the computer"
@@ -3494,7 +3506,7 @@ msgstr "OAuth कनेक्शन विफल"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "OAuth expired"
-msgstr ""
+msgstr "OAuth की समय-सीमा समाप्त हो गई"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -4287,6 +4299,10 @@ msgstr "सहेजा जा रहा है…"
 #: src/lib/call-session.ts
 msgid "Say yes or no, or answer in a sentence."
 msgstr "हां या ना कहें, या एक वाक्य में उत्तर दें।"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Scopes (optional)"
+msgstr "स्कोप (वैकल्पिक)"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
@@ -5131,6 +5147,10 @@ msgstr ""
 #: src/pages/HostComputerPrompt.tsx
 msgid "Use {hostLabel}"
 msgstr "{hostLabel} का उपयोग करें"
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Use {oauthEnvReference} for the access token."
+msgstr "एक्सेस टोकन के लिए {oauthEnvReference} का उपयोग करें।"
 
 #: src/pages/ModelSettingsOverlay.tsx
 #: src/pages/Onboarding.tsx
