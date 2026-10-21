@@ -1,14 +1,16 @@
 import { accountDisplay } from "@rakazo/core";
 import { typeScale } from "@rakazo/ui-tokens";
+import { AudioModule } from "expo-audio";
 import { useKeepAwake } from "expo-keep-awake";
 import { useRouter } from "expo-router";
 import type { ComponentProps } from "react";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { MobileMe } from "../lib/api";
 import { rpc } from "../lib/api";
+import { startCallBackground, stopCallBackground } from "../lib/call-background";
 import type { CallPhase } from "../lib/call-session";
 import { endCall, toggleMute, toggleTranscript, useCallSession } from "../lib/call-session";
 import { useI18n } from "../lib/i18n";
@@ -23,12 +25,8 @@ const TRANSCRIPT_LINES = 4;
 
 let cachedInitial: string | null = null;
 
-/**
- * A call lives in the foreground: once the screen locks, Android pauses the app and the
- * microphone, recognition, and reply feed stop until it is unlocked. Mounted only while a
- * call is up, so the screen sleeps normally the rest of the time.
- */
-function KeepScreenOnDuringCall() {
+/** Fallback until the native call service owns the call. */
+function KeepCallAwake() {
   useKeepAwake("rakazo-call");
   return null;
 }
@@ -40,6 +38,8 @@ export function CallCard() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [initial, setInitial] = useState(cachedInitial ?? "");
+  const [serviceStarted, setServiceStarted] = useState(false);
+  const serviceStartedFor = useRef<string | null>(null);
   const onCall = Boolean(call);
 
   useEffect(() => {
@@ -51,6 +51,40 @@ export function CallCard() {
       })
       .catch(() => undefined);
   }, [onCall]);
+
+  // A microphone foreground service keeps the call alive when the display sleeps.
+  // Start it only after the microphone permission is granted; retry when the call
+  // phase changes because the first turn may have just shown the permission prompt.
+  useEffect(() => {
+    if (!call) {
+      serviceStartedFor.current = null;
+      setServiceStarted(false);
+      void stopCallBackground();
+      return;
+    }
+    if (Platform.OS !== "android" || serviceStartedFor.current === call.botId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const permission = await AudioModule.getRecordingPermissionsAsync();
+        if (cancelled || !permission.granted) return;
+        const started = await startCallBackground(call.botName);
+        if (cancelled) {
+          if (started) await stopCallBackground();
+          return;
+        }
+        if (started) {
+          serviceStartedFor.current = call.botId;
+          setServiceStarted(true);
+        }
+      } catch {
+        // Keep the screen-awake fallback when the native service is unavailable.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [call?.botId, call?.botName, call?.phase]);
 
   if (!call) return null;
   return (
@@ -66,7 +100,7 @@ export function CallCard() {
         },
       ]}
     >
-      <KeepScreenOnDuringCall />
+      {Platform.OS !== "android" || !serviceStarted ? <KeepCallAwake /> : null}
       <View style={styles.row}>
         <BotAvatar color={call.botColor} identity={call.botId} size={28} />
         <Pressable

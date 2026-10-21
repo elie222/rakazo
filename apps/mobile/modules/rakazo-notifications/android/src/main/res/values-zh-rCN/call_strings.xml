@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="rakazo_call_channel">通话进行中</string>
+  <string name="rakazo_call_title">Rakazo 通话</string>
+  <string name="rakazo_call_text">麦克风已启用</string>
+</resources>

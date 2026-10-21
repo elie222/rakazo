@@ -63,6 +63,14 @@ class RakazoNotificationsModule : Module() {
       RakazoNotificationService.setOpenThread(context(), botId, threadId)
     }
 
+    AsyncFunction("startCall") { title: String ->
+      RakazoCallService.start(context(), title)
+    }
+
+    AsyncFunction("stopCall") {
+      RakazoCallService.stop(context())
+    }
+
     AsyncFunction("openSettings") {
       val context = context()
       context.startActivity(
