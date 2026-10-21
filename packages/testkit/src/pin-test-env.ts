@@ -1,5 +1,25 @@
 import { afterAll } from "vitest";
 
+const dom = (
+  globalThis as typeof globalThis & {
+    jsdom?: { window: { localStorage: unknown } };
+  }
+).jsdom;
+
+if (dom) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  // Vitest skips host globals even when their getters return undefined.
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    writable: true,
+    value: dom.window.localStorage,
+  });
+  afterAll(() => {
+    if (descriptor) Object.defineProperty(globalThis, "localStorage", descriptor);
+    else Reflect.deleteProperty(globalThis, "localStorage");
+  });
+}
+
 /**
  * `pnpm test` must stay emulator-only even when a developer .env points at
  * Pi, Docker, Graphile, or live Composio. Opt-in canaries set VERIFY_PROVIDERS.

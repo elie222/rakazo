@@ -11,6 +11,7 @@ import type {
   ModelCatalogEntry,
   ModelCredential,
   ReplyPreview,
+  RunStatus,
   Space,
   SpaceNavigation,
 } from "@rakazo/contracts";
@@ -28,6 +29,8 @@ import {
   displayIdentityEvent,
   displayIdentityResult,
   ensureAiDataConsent,
+  isActive,
+  isBackgroundRunTrigger,
   isRunTerminalEvent,
   isServerUnreachable,
   isUnreachableStatus,
@@ -1219,47 +1222,105 @@ export async function subscribeThread(
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
+  if (!res.ok || !res.body) {
+    cancelResponseBody(res);
+    throw new Error(`rpc threads/subscribe failed (${res.status})`);
+  }
   const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (!signal.aborted) {
-    // A half-open socket never reports done, so give up on silence and let the caller reconnect.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const read = await Promise.race([
-      reader.read().catch((error) => {
-        if (current() && !signal.aborted && isServerUnreachable(error)) noteServerReachable(false);
-        throw error;
-      }),
-      new Promise<"idle">((resolve) => {
-        timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
-      }),
-    ]).finally(() => clearTimeout(timer));
-    if (read === "idle") {
-      void reader.cancel().catch(() => undefined);
-      return;
-    }
-    const { done, value } = read;
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop() ?? "";
-    for (const chunk of chunks) {
-      const data = chunk
+  let finished = false;
+  try {
+    const decoder = new TextDecoder();
+    let scratch: Uint8Array | undefined;
+    let used = 0;
+    let previousLf = false;
+    const appendFrameBytes = (bytes: Uint8Array) => {
+      const required = used + bytes.byteLength;
+      if (!scratch || scratch.byteLength < required) {
+        const capacity = Math.min(
+          MAX_MOBILE_RPC_RESPONSE_BYTES,
+          Math.max(required, scratch ? scratch.byteLength * 2 : 1024),
+        );
+        const grown = new Uint8Array(capacity);
+        if (scratch && used) grown.set(scratch.subarray(0, used));
+        scratch = grown;
+      }
+      scratch.set(bytes, used);
+      used = required;
+    };
+    const emitFrame = (bytes: Uint8Array) => {
+      const data = decoder
+        .decode(bytes)
         .split("\n")
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trim())
         .join("");
-      if (!data || data === "[DONE]") continue;
+      if (!data || data === "[DONE]") return;
       try {
         const parsed = JSON.parse(data) as { json?: ThreadEvent; error?: { message?: string } };
         // Heartbeats prove liveness only; forwarding one would advance the caller's cursor.
         if (parsed.json?.type && parsed.json.type !== "heartbeat")
           onEvent(displayIdentityEvent(parsed.json, identityLabels()));
       } catch {
-        // ignore keepalives and partial frames
+        // Malformed frames and callback errors do not interrupt the subscription.
+      }
+    };
+    while (!signal.aborted) {
+      // A half-open socket never reports done, so let the caller reconnect after silence.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let onAbort: (() => void) | undefined;
+      const read = await Promise.race([
+        reader.read().catch((error) => {
+          if (current() && !signal.aborted && isServerUnreachable(error))
+            noteServerReachable(false);
+          throw error;
+        }),
+        new Promise<"idle" | "aborted">((resolve) => {
+          timer = setTimeout(() => resolve("idle"), IDLE_TIMEOUT_MS);
+          onAbort = () => resolve("aborted");
+          signal.addEventListener("abort", onAbort, { once: true });
+          if (signal.aborted) onAbort();
+        }),
+      ]).finally(() => {
+        clearTimeout(timer);
+        if (onAbort) signal.removeEventListener("abort", onAbort);
+      });
+      if (read === "idle" || read === "aborted") return;
+      const { done, value } = read;
+      if (done) {
+        finished = true;
+        break;
+      }
+      let start = 0;
+      for (let index = 0; index < value.byteLength; index += 1) {
+        if (used + index - start >= MAX_MOBILE_RPC_RESPONSE_BYTES) {
+          throw new RangeError(`Thread SSE frame exceeds ${MAX_MOBILE_RPC_RESPONSE_BYTES} bytes`);
+        }
+        const isLf = value[index] === 10;
+        if (previousLf && isLf) {
+          let frame: Uint8Array = value.subarray(start, index + 1);
+          if (used) {
+            appendFrameBytes(frame);
+            frame = scratch!.subarray(0, used);
+          }
+          emitFrame(frame);
+          used = 0;
+          previousLf = false;
+          start = index + 1;
+        } else {
+          previousLf = isLf;
+        }
+      }
+      if (start < value.byteLength) appendFrameBytes(value.subarray(start));
+    }
+  } finally {
+    if (!finished) {
+      try {
+        void Promise.resolve(reader.cancel()).catch(() => undefined);
+      } catch {
+        // Cancellation is best-effort and must not delay releasing the reader.
       }
     }
+    reader.releaseLock();
   }
 }
 
@@ -1276,6 +1337,43 @@ export function applyMobileThreadEvent(
       olderCursor: null,
       run: null,
       activeRuns: [],
+    };
+  }
+  if (event.type === "run.started") {
+    const cursor = event.seq ?? prev.cursor;
+    const trigger = typeof event.payload?.trigger === "string" ? event.payload.trigger : undefined;
+    if (isBackgroundRunTrigger(trigger)) {
+      return cursor === prev.cursor ? prev : { ...prev, cursor };
+    }
+    const members =
+      event.botId &&
+      prev.members?.some((member) => member.botId === event.botId && member.status !== "running")
+        ? prev.members.map((member) =>
+            member.botId === event.botId ? { ...member, status: "running" } : member,
+          )
+        : prev.members;
+    if (!event.runId) {
+      return cursor === prev.cursor && members === prev.members
+        ? prev
+        : { ...prev, cursor, members };
+    }
+    const run = {
+      id: event.runId,
+      status: "running",
+      ...(event.botId ? { botId: event.botId } : {}),
+    };
+    const activeRuns = [
+      ...(prev.activeRuns ?? (prev.run ? [prev.run] : [])).filter(
+        (candidate) => candidate.id !== run.id && isActive(candidate.status as RunStatus),
+      ),
+      run,
+    ];
+    return {
+      ...prev,
+      cursor,
+      members,
+      run: prev.groupId && prev.run?.status === "failed" && prev.run.id !== run.id ? prev.run : run,
+      activeRuns,
     };
   }
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {

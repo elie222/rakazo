@@ -1,13 +1,6 @@
 import type { MenuAction } from "@expo/ui/community/menu";
 import { ChatMarkdown, markdownCodeBlocks } from "@rakazo/chat-ui/native";
-import type {
-  AgentSkillCatalogEntry,
-  Connection,
-  ConnectionCatalogItem,
-  MessageBlock,
-  MessageReaction,
-  Routine,
-} from "@rakazo/contracts";
+import type { AgentSkillCatalogEntry, MessageBlock, MessageReaction } from "@rakazo/contracts";
 import {
   attachmentMaxBytes,
   canReactToThreadMessage,
@@ -236,6 +229,7 @@ import { threadEdgeOptions } from "../lib/thread-edges";
 import type { SendAttempt } from "../lib/thread-feedback";
 import { subscribeDelivered, useThreadFeedback } from "../lib/thread-feedback";
 import { ThreadJumpAnchor } from "../lib/thread-jump";
+import { useThreadMentionCatalog } from "../lib/thread-mention-catalog";
 import { ThreadReadOnlyContext } from "../lib/thread-read-only";
 import type { ThreadScrollAction, ThreadScrollState } from "../lib/thread-scroll";
 import { latestArrivalMessageId, ThreadScrollBehavior } from "../lib/thread-scroll";
@@ -599,15 +593,14 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
   const mentionBotsRef = useRef<MobileBot[]>([]);
   mentionBotsRef.current = mentionBots;
   const [mentionGroups, setMentionGroups] = useState<MobileGroup[]>([]);
-  const [mentionRoutines, setMentionRoutines] = useState<Array<Routine & { botName?: string }>>([]);
-  const [mentionConnectors, setMentionConnectors] = useState<
-    Array<{
-      id: string;
-      name: string;
-      authStatus: "connected" | "needs_auth";
-      connectionId?: string;
-    }>
-  >([]);
+  const {
+    routines: mentionRoutines,
+    connectors: mentionConnectors,
+    onMentionRequested,
+  } = useThreadMentionCatalog(
+    JSON.stringify([userId, sessionEpoch, botId, groupId, requestedThreadId]),
+    mentionBots,
+  );
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [replyTarget, setReplyTarget] = useState<MobileMessage | null>(null);
   const [replyQuote, setReplyQuote] = useState<string | null>(null);
@@ -813,71 +806,6 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       .then(setMentionGroups)
       .catch(() => setMentionGroups([]));
   }, [refreshMentionBots]);
-
-  useEffect(() => {
-    if (mentionBots.length === 0) {
-      setMentionRoutines([]);
-      setMentionConnectors([]);
-      return;
-    }
-    let cancelled = false;
-    const botNameById = new Map(mentionBots.map((bot) => [bot.id, bot.name]));
-    void Promise.all(
-      mentionBots.map((bot) =>
-        rpc<Routine[]>("routines/list", { botId: bot.id })
-          .then((rows) =>
-            rows.map((routine) => ({
-              ...routine,
-              botName: botNameById.get(bot.id) ?? bot.name,
-            })),
-          )
-          .catch(() => [] as Array<Routine & { botName?: string }>),
-      ),
-    ).then((lists) => {
-      if (!cancelled) setMentionRoutines(lists.flat());
-    });
-    void Promise.all([
-      rpc<Connection[]>("connections/list").catch(() => [] as Connection[]),
-      rpc<ConnectionCatalogItem[]>("connections/catalog", {}).catch(
-        () => [] as ConnectionCatalogItem[],
-      ),
-    ]).then(([connections, catalog]) => {
-      if (cancelled) return;
-      const connected = connections.filter((row) => row.status === "connected");
-      const options: Array<{
-        id: string;
-        name: string;
-        authStatus: "connected" | "needs_auth";
-        connectionId?: string;
-      }> = connected.map((row) => ({
-        id: row.id,
-        name: row.displayName,
-        authStatus: "connected" as const,
-        connectionId: row.id,
-      }));
-      for (const item of catalog) {
-        if (item.connected || item.noAuth) continue;
-        if (
-          connected.some(
-            (row) =>
-              row.provider.toLowerCase() === item.slug.toLowerCase() ||
-              row.displayName.toLowerCase() === item.name.toLowerCase(),
-          )
-        ) {
-          continue;
-        }
-        options.push({
-          id: `catalog:${item.connectorId}:${item.slug}`,
-          name: item.name,
-          authStatus: "needs_auth",
-        });
-      }
-      setMentionConnectors(options);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionBots]);
 
   function isCurrentTarget(targetBotId: string | undefined, targetGroupId: string | undefined) {
     return activeBotId.current === targetBotId && activeGroupId.current === targetGroupId;
@@ -1516,30 +1444,16 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
               if (abort.signal.aborted || sessionGeneration !== currentSessionGeneration()) return;
               cursor = Math.max(cursor, event.seq ?? -1);
               retryMs = 250;
-              if (
-                event.type === "thread.progress" ||
-                event.type === "agent.tool.called" ||
-                event.type === "agent.tool.completed" ||
-                event.type === "thread.message.created" ||
-                event.type === "thread.message.updated" ||
-                event.type === "thread.message.reaction" ||
-                event.type === "thread.subagent" ||
-                event.type === "thread.cloud_agent" ||
-                event.type === "thread.cleared" ||
-                event.type === "run.waiting_input" ||
-                event.type === "computer.takeover.requested" ||
-                event.type === "computer.takeover.released" ||
-                isRunTerminalEvent(event)
-              ) {
-                if (event.type === "thread.cleared") {
-                  expandedHistoryThread.current = null;
-                  pinnedAroundRef.current = null;
-                  jumpScrollTarget.current = null;
-                  jumpAnchor.current.release();
-                  historyEpoch.current += 1;
-                }
-                commitSnap(applyMobileThreadEvent(snapRef.current, event));
+              if (event.type === "thread.cleared") {
+                expandedHistoryThread.current = null;
+                pinnedAroundRef.current = null;
+                jumpScrollTarget.current = null;
+                jumpAnchor.current.release();
+                historyEpoch.current += 1;
               }
+              const previous = snapRef.current;
+              const reduced = applyMobileThreadEvent(previous, event);
+              if (reduced !== previous) commitSnap(reduced);
               liveCursor.current = cursor;
               if (event.type === "bot.updated") {
                 void refreshMentionBots();
@@ -2779,6 +2693,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             ref={composerRef}
             agentSkills={agentSkills}
             composerMentionTargets={composerMentionTargets}
+            onMentionRequested={onMentionRequested}
             composerPrompt={composerPrompt}
             replyTargetId={replyTarget?.id}
             replyQuote={replyQuote}
