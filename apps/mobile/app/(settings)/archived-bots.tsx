@@ -4,9 +4,12 @@ import { ActivityIndicator, Alert, ScrollView, Text, View } from "react-native";
 import { ArchivedBotList } from "../../components/archived-bot-list";
 import { NativeActionButton } from "../../components/native-action-button";
 import type { MobileBot, MobileGroup } from "../../lib/api";
-import { rpc } from "../../lib/api";
-import { loadArchivedChats, notifyArchivedChatsChanged } from "../../lib/archived-chats";
-import { confirmDeleteBot, restoreArchivedBot } from "../../lib/bot-lifecycle";
+import { captureApiRequestContext, rpc, selectSpace } from "../../lib/api";
+import {
+  loadAllArchivedChats as loadArchivedChats,
+  notifyArchivedChatsChanged,
+} from "../../lib/archived-chats";
+import { confirmDeleteBot } from "../../lib/bot-lifecycle";
 import { useFloatingHeaderInset } from "../../lib/floating-header";
 import { useI18n } from "../../lib/i18n";
 import { useMobileTokens } from "../../lib/native";
@@ -85,9 +88,26 @@ export default function ArchivedBots() {
     }
   }
 
+  async function requestOptions(spaceId: string | undefined) {
+    const context = await captureApiRequestContext();
+    return {
+      skipSpaceAuthRecovery: true,
+      requestContext: {
+        ...context,
+        headers: { ...context.headers, ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}) },
+      },
+    };
+  }
+
+  async function inSpace(spaceId: string | undefined) {
+    if (spaceId && !(await selectSpace(spaceId))) throw new Error(t("Could not switch spaces"));
+  }
+
   function restoreGroup(group: MobileGroup) {
     void mutate(
-      () => rpc("groups/restore", { groupId: group.id }),
+      async () => {
+        return rpc("groups/restore", { groupId: group.id }, await requestOptions(group.spaceId));
+      },
       () => setGroups((current) => current.filter((item) => item.id !== group.id)),
       t("Could not update chat"),
     );
@@ -98,16 +118,31 @@ export default function ArchivedBots() {
   }
 
   function restore(bot: MobileBot) {
-    void mutate(() => restoreArchivedBot(bot.id), withoutBot(bot.id), t("Could not restore bot"));
+    void mutate(
+      async () => {
+        await rpc("bots/restore", { botId: bot.id }, await requestOptions(bot.spaceId));
+      },
+      withoutBot(bot.id),
+      t("Could not restore bot"),
+    );
   }
 
-  function remove(bot: MobileBot) {
+  async function remove(bot: MobileBot) {
     if (pending) return;
     const generation = focusGeneration.current;
+    let options: Awaited<ReturnType<typeof requestOptions>>;
+    try {
+      options = await requestOptions(bot.spaceId);
+    } catch (cause) {
+      Alert.alert(t("Could not delete bot"), errorText(cause, t("Try again.")));
+      return;
+    }
+    if (generation !== focusGeneration.current) return;
     confirmDeleteBot(
       bot,
       () => removed(generation, withoutBot(bot.id)),
       () => generation === focusGeneration.current,
+      options.requestContext,
     );
   }
 
@@ -116,6 +151,7 @@ export default function ArchivedBots() {
     setPending(true);
     const generation = focusGeneration.current;
     try {
+      await inSpace(bot.spaceId);
       await rpc("threads/get", { botId: bot.id });
       // Left or dismissed while loading, even if back since: a later sheet must not close for it.
       if (generation !== focusGeneration.current) return;

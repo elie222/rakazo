@@ -11,21 +11,29 @@ import { ComputerMaintenanceActions } from "../components/computer-maintenance-a
 import type { MobileBot, MobileGroup } from "./api";
 import { onArchivedChatsChanged } from "./archived-chats";
 
-const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus } = vi.hoisted(() => ({
-  rpc: vi.fn(),
-  // Archived groups load beside the bots; their calls are kept apart from the bot call queue.
-  groupRpc: vi.fn(),
-  closeSettingsSheet: vi.fn(),
-  alert: vi.fn(),
-  push: vi.fn(),
-  navigation: { setOptions: vi.fn() },
-  focus: { current: undefined as (() => (() => void) | undefined) | undefined },
-}));
-const bot = { id: "bot-fixture", name: "Fixture" } as MobileBot;
-const group = { id: "group-fixture", name: "Crew" } as MobileGroup;
+const { rpc, groupRpc, alert, push, closeSettingsSheet, navigation, focus, selectSpace } =
+  vi.hoisted(() => ({
+    rpc: vi.fn(),
+    selectSpace: vi.fn(async () => true),
+    // Archived groups load beside the bots; their calls are kept apart from the bot call queue.
+    groupRpc: vi.fn(),
+    closeSettingsSheet: vi.fn(),
+    alert: vi.fn(),
+    push: vi.fn(),
+    navigation: { setOptions: vi.fn() },
+    focus: { current: undefined as (() => (() => void) | undefined) | undefined },
+  }));
+const bot = { id: "bot-fixture", name: "Fixture", spaceId: "space-a" } as MobileBot;
+const group = { id: "group-fixture", name: "Crew", spaceId: "space-a" } as MobileGroup;
 vi.mock("./api", () => ({
+  captureApiRequestContext: async () => ({ apiBase: "https://example.test", headers: {} }),
+  selectSpace,
   rpc: (procedure: string, ...args: unknown[]) =>
-    procedure.startsWith("groups/") ? groupRpc(procedure, ...args) : rpc(procedure, ...args),
+    procedure === "spaces/list"
+      ? Promise.resolve({ spaces: [{ id: "space-a" }] })
+      : procedure.startsWith("groups/")
+        ? groupRpc(procedure, ...args)
+        : rpc(procedure, ...args),
 }));
 vi.mock("./settings-sheet", () => ({ closeSettingsSheet }));
 vi.mock("expo-router", () => ({
@@ -127,6 +135,7 @@ describe("archived chat read failures", () => {
       ]);
       rpc.mockResolvedValueOnce({});
       await act(async () => alert.mock.calls[0]![2][1].onPress());
+      expect(selectSpace).toHaveBeenCalledWith(bot.spaceId);
       expect(push).toHaveBeenCalledWith({
         pathname: "/thread",
         params: { botId: bot.id, name: bot.name, readOnly: "1" },
@@ -255,7 +264,13 @@ describe("archived chat read failures", () => {
     expect(push).not.toHaveBeenCalled();
     rpc.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce([]);
     await act(async () => container.querySelectorAll("button")[1]!.click());
-    expect(rpc).toHaveBeenCalledWith("bots/restore", { botId: bot.id });
+    expect(rpc).toHaveBeenCalledWith(
+      "bots/restore",
+      { botId: bot.id },
+      expect.objectContaining({
+        requestContext: expect.objectContaining({ headers: { "x-rakazo-space-id": bot.spaceId } }),
+      }),
+    );
     expect(container.textContent).toBe("No archived chats");
     expect(push).not.toHaveBeenCalled();
   });
@@ -311,7 +326,15 @@ describe("archived chat read failures", () => {
     )!;
     groupRpc.mockResolvedValueOnce({ ok: true });
     await act(async () => restore.click());
-    expect(groupRpc).toHaveBeenCalledWith("groups/restore", { groupId: group.id });
+    expect(groupRpc).toHaveBeenCalledWith(
+      "groups/restore",
+      { groupId: group.id },
+      expect.objectContaining({
+        requestContext: expect.objectContaining({
+          headers: { "x-rakazo-space-id": group.spaceId },
+        }),
+      }),
+    );
     expect(container.textContent).not.toContain("Restore Crew");
     expect(container.textContent).toContain(bot.name);
   });

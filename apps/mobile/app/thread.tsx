@@ -1114,7 +1114,10 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       text: t("Archive"),
       onPress: () =>
         void rpc("bots/archive", { botId })
-          .then(leaveBot)
+          .then(() => {
+            notifyArchivedChatsChanged();
+            leaveBot();
+          })
           .catch((error) =>
             Alert.alert(t("Could not archive bot"), errorText(error, t("Try again."))),
           ),
@@ -1122,7 +1125,11 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     {
       text: t("Delete…"),
       destructive: true,
-      onPress: () => confirmDeleteBot({ id: botId ?? "", name: displayName || t("Bot") }, leaveBot),
+      onPress: () =>
+        confirmDeleteBot({ id: botId ?? "", name: displayName || t("Bot") }, () => {
+          notifyArchivedChatsChanged();
+          leaveBot();
+        }),
     },
   ];
 

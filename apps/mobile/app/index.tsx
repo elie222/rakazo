@@ -84,7 +84,7 @@ import {
 import { mobileTokens, resolveMobileAppearance } from "../lib/appearance";
 import {
   archivedChatCounts,
-  loadArchivedChats,
+  loadAllArchivedChats as loadArchivedChats,
   notifyArchivedChatsChanged,
   onArchivedChatsChanged,
 } from "../lib/archived-chats";
@@ -245,7 +245,7 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
   } | null>(null);
   const organizeRequestId = useRef(0);
   const [archived, setArchived] = useState({ spaceId: "", count: 0 });
-  // The current space's archived chats; a list that fails to load keeps its last count.
+  // All spaces’ archived chats; a list that fails to load keeps its last count.
   const archivedCounts = useRef({ spaceId: "", bots: 0, groups: 0 });
   const archivedRequestId = useRef(0);
   const [activityMode, setActivityMode] = useState(false);

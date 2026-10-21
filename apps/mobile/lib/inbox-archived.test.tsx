@@ -277,3 +277,96 @@ describe("archived count", () => {
     act(() => h.root.unmount());
   });
 });
+
+describe("thread menu archive notifications", () => {
+  const thread = readFileSync(new URL("../app/thread.tsx", testFileUrl), "utf8");
+  const actionsSource = thread.slice(
+    thread.indexOf("  const botActions = ["),
+    thread.indexOf("  function showBotActions()"),
+  );
+
+  function setup() {
+    const rpc = vi.fn();
+    const notify = vi.fn();
+    const leave = vi.fn();
+    const confirmDeleteBot = vi.fn();
+    const alert = vi.fn();
+    const actions = new Function(
+      "rpc",
+      "notifyArchivedChatsChanged",
+      "leaveBot",
+      "confirmDeleteBot",
+      "Alert",
+      compile(`
+        const readOnly = false, botId = "bot-b", displayName = "Bot";
+        const t = text => text, openBotComputer = () => {}, clearConversation = () => {};
+        const router = { push() {} }, errorText = () => "failure";
+        ${actionsSource}
+        return botActions;
+      `),
+    )(rpc, notify, leave, confirmDeleteBot, { alert }) as { text: string; onPress: () => void }[];
+    return { rpc, notify, leave, confirmDeleteBot, alert, actions };
+  }
+
+  it("notifies only after archive succeeds, including while the inbox stays mounted", async () => {
+    const h = setup();
+    let finish!: () => void;
+    h.rpc.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    h.actions.find((action) => action.text === "Archive")!.onPress();
+    expect(h.notify).not.toHaveBeenCalled();
+    finish();
+    await Promise.resolve();
+    expect(h.notify).toHaveBeenCalledOnce();
+    expect(h.leave).toHaveBeenCalledOnce();
+    h.rpc.mockRejectedValueOnce(new Error("offline"));
+    h.actions.find((action) => action.text === "Archive")!.onPress();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.notify).toHaveBeenCalledOnce();
+    expect(h.alert).toHaveBeenCalledOnce();
+  });
+
+  it("notifies after confirmed deletion succeeds", () => {
+    const h = setup();
+    h.actions.find((action) => action.text === "Delete…")!.onPress();
+    expect(h.notify).not.toHaveBeenCalled();
+    h.confirmDeleteBot.mock.calls[0]![1]();
+    expect(h.notify).toHaveBeenCalledOnce();
+    expect(h.leave).toHaveBeenCalledOnce();
+  });
+});
+
+describe("group deletion archive notifications", () => {
+  it("notifies after success and leaves the count unchanged on failure", async () => {
+    const group = readFileSync(new URL("../app/group-settings.tsx", testFileUrl), "utf8");
+    const rpc = vi.fn().mockResolvedValueOnce({});
+    const notify = vi.fn();
+    const alert = vi.fn();
+    const remove = new Function(
+      "rpc",
+      "notifyArchivedChatsChanged",
+      "Alert",
+      compile(`
+      const groupId = "group-b", group = { name: "Group" };
+      const t = text => text, router = { replace() {} }, errorText = () => "failure";
+      ${group.slice(group.indexOf("  function remove()"), group.indexOf("  return ("))}
+      return remove;
+    `),
+    )(rpc, notify, { alert });
+    remove();
+    alert.mock.calls[0]![2][1].onPress();
+    expect(notify).not.toHaveBeenCalled();
+    await Promise.resolve();
+    expect(notify).toHaveBeenCalledOnce();
+    rpc.mockRejectedValueOnce(new Error("offline"));
+    remove();
+    alert.mock.calls[1]![2][1].onPress();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(notify).toHaveBeenCalledOnce();
+  });
+});
