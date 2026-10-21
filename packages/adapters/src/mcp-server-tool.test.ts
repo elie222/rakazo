@@ -15,6 +15,31 @@ describe("deriveMcpSlug", () => {
 });
 
 describe("parseMcpServerToolArgs", () => {
+  it("cannot set an issuer through unsupported OAuth tool arguments", () => {
+    const parsed = parseMcpServerToolArgs({
+      name: "Local",
+      transport: "stdio",
+      command: "demo",
+      oauthClient: { clientId: "id", authorizationServer: "https://127.0.0.1" },
+    });
+    expect(parsed).toBeDefined();
+    expect(buildMcpCredentialBlob(parsed ?? {})).toBeNull();
+  });
+
+  it.each(["{{oauth.access_token}}", "{{oauth.unknown}}"])(
+    "rejects templates without a configurable OAuth client: %s",
+    (value) => {
+      expect(
+        parseMcpServerToolArgs({
+          name: "Local",
+          transport: "stdio",
+          command: "demo",
+          env: { TOKEN: value },
+        }),
+      ).toBeUndefined();
+    },
+  );
+
   it("parses a minimal remote server", () => {
     const parsed = parseMcpServerToolArgs({
       name: "Brex",

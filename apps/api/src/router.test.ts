@@ -1378,6 +1378,17 @@ describe("MCP pre-registered OAuth client", () => {
         oauth: { tokens: { access_token: "granted" } },
       };
 
+      it("rechecks a retained issuer before storing updated material", async () => {
+        const { client, secrets } = harness(false, {
+          ...stored,
+          oauthClient: { ...stored.oauthClient, authorization_server: "https://127.0.0.1/" },
+        });
+        await expect(client.mcp.servers.update(update)).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+        });
+        expect(secrets.put).not.toHaveBeenCalled();
+      });
+
       it("rejects references once the update removes the OAuth client", async () => {
         const { client, secrets } = harness(true, stored);
 

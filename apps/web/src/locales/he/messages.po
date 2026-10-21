@@ -5367,3 +5367,7 @@ msgstr "OpenRouter"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "צוות של סוכנים שזמינים תמיד<0/>שאפשר להטיל עליהם עבודה אמיתית."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "ניתן להשתמש בכל שם פעם אחת בלבד."

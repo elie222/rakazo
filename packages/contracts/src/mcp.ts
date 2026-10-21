@@ -55,7 +55,7 @@ export const MCP_OAUTH_ENV_FIELDS = [
 ] as const;
 export type McpOAuthEnvField = (typeof MCP_OAUTH_ENV_FIELDS)[number];
 
-const OAUTH_ENV_REFERENCE = /\{\{\s*oauth\.([A-Za-z0-9_]+)\s*\}\}/g;
+const OAUTH_ENV_REFERENCE = /\{\{\s*oauth\.([^{}]*?)\s*\}\}/g;
 
 function isOAuthEnvField(name: string): name is McpOAuthEnvField {
   return (MCP_OAUTH_ENV_FIELDS as readonly string[]).includes(name);
@@ -69,7 +69,7 @@ export function mcpOAuthEnvReferences(value: string): {
   const fields = new Set<McpOAuthEnvField>();
   const unknown = new Set<string>();
   for (const match of value.matchAll(OAUTH_ENV_REFERENCE)) {
-    const name = match[1] ?? "";
+    const name = (match[1] ?? "").trim();
     if (isOAuthEnvField(name)) fields.add(name);
     else unknown.add(name);
   }
@@ -98,7 +98,8 @@ export function resolveMcpOAuthTemplate(
   values: Partial<Record<McpOAuthEnvField, string>>,
   label: string,
 ): string {
-  return template.replace(OAUTH_ENV_REFERENCE, (_reference, name: string) => {
+  return template.replace(OAUTH_ENV_REFERENCE, (_reference, rawName: string) => {
+    const name = rawName.trim();
     const field = isOAuthEnvField(name) ? values[name] : undefined;
     if (!field) throw new Error(`MCP OAuth value oauth.${name} is not available for ${label}`);
     return field;

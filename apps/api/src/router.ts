@@ -4631,6 +4631,11 @@ export function createRouter(deps: RouterDeps) {
               clearOAuth: existing.endpoint !== nextEndpoint,
             });
             if (update.action === "store" && config.transport === "stdio") {
+              await assertMcpRemoteEndpoint(
+                update.material.oauthClient?.authorization_server,
+                context.actor,
+                deps,
+              );
               assertMcpOAuthTemplates(
                 update.material.env ?? {},
                 update.material.files ?? {},

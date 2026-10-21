@@ -3493,7 +3493,7 @@ msgstr "OAuth bağlantısı başarısız"
 
 #: src/pages/McpServersOverlay.tsx
 msgid "OAuth expired"
-msgstr ""
+msgstr "OAuth süresi doldu"
 
 #: src/pages/RoutineEditor.tsx
 msgid "On a schedule"
@@ -5180,7 +5180,7 @@ msgstr "{selectedProviderName} erişimi için bu sunucunun kendi {hostCredential
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/shell/bot-credentials.tsx
 msgid "Value"
-msgstr ""
+msgstr "Değer"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Values are encrypted and never shown again."
@@ -5367,3 +5367,7 @@ msgstr "OpenRouter sağlayıcınız"
 #: src/pages/Welcome.tsx
 msgid "Your team of always-on agents<0/>that you can give real work to."
 msgstr "Gerçek işler verebileceğin,<0/>her zaman açık agent takımın."
+
+#: src/pages/McpServersOverlay.tsx
+msgid "Each name can be used once."
+msgstr "Her ad yalnızca bir kez kullanılabilir."

@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
   FieldTitle,
@@ -41,7 +42,10 @@ const emptyEnvRow = (): EnvRow => ({ id: nextEnvRowId++, name: "", value: "", fi
 
 /** Environment variable names the server accepts: capitals, digits, and underscores. */
 function envName(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  return value
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]/g, "_")
+    .replace(/^(?=[0-9])/, "_");
 }
 
 function oauthStatusText(server: McpServer): string | null {
@@ -122,7 +126,21 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
     );
   }
 
+  const duplicateNames = new Set(
+    envRows
+      .filter(
+        (row, index) =>
+          row.name &&
+          envRows.some(
+            (other, otherIndex) =>
+              otherIndex !== index && envName(other.name) === envName(row.name),
+          ),
+      )
+      .map((row) => row.name),
+  );
+
   async function addServer() {
+    if (transport === "stdio" && duplicateNames.size > 0) return;
     setError(null);
     if (!name.trim()) {
       setError(t`Add a server name.`);
@@ -427,6 +445,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                               aria-label={t`Name`}
                               autoComplete="off"
                               className={row.file ? "col-span-2" : undefined}
+                              aria-invalid={duplicateNames.has(row.name)}
                               value={row.name}
                               onChange={(e) =>
                                 updateEnvRow(row.id, { name: envName(e.target.value) })
@@ -478,6 +497,11 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                                 onChange={(e) => updateEnvRow(row.id, { value: e.target.value })}
                               />
                             ) : null}
+                            {duplicateNames.has(row.name) && (
+                              <FieldError className="col-span-full">
+                                <Trans>Each name can be used once.</Trans>
+                              </FieldError>
+                            )}
                           </div>
                         ))}
                         <Button
@@ -622,7 +646,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
               <Button
                 type="button"
                 className="mt-5 w-full"
-                disabled={saving}
+                disabled={saving || (transport === "stdio" && duplicateNames.size > 0)}
                 onClick={() => void addServer()}
               >
                 {saving ? <Trans>Adding…</Trans> : <Trans>Add server</Trans>}

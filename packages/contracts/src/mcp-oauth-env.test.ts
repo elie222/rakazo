@@ -19,6 +19,28 @@ describe("MCP OAuth env references", () => {
     expect(mcpOAuthEnvReferences("plain-value")).toEqual({ fields: [], unknown: [] });
   });
 
+  it("never interprets references inside substituted credentials", () => {
+    expect(
+      resolveMcpOAuthTemplate(
+        "{{oauth.access_token}}",
+        {
+          access_token: "{{oauth.refresh_token}}",
+          refresh_token: "must-stay-secret",
+        },
+        "TOKEN",
+      ),
+    ).toBe("{{oauth.refresh_token}}");
+  });
+
+  it.each(["unknown-field", "unknown.field", "", "unknown field"])(
+    "rejects undocumented OAuth names: %s",
+    (name) => {
+      const template = `{{oauth.${name}}}`;
+      expect(mcpOAuthEnvReferences(template).unknown).toEqual([name]);
+      expect(() => resolveMcpOAuthTemplate(template, {}, "TOKEN")).toThrow("not available");
+    },
+  );
+
   it("replaces references and leaves other values alone", () => {
     expect(
       resolveMcpOAuthEnv(
