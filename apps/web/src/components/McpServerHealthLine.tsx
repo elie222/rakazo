@@ -8,7 +8,14 @@ import { formatRelativeTime } from "../lib/relative-time";
  * Never colour-only: every state pairs an icon with text, and a failure carries its raw
  * log in a collapsed block so the card stays compact.
  */
-export function McpServerHealthLine({ health }: { health: McpServerHealth }) {
+export function McpServerHealthLine({
+  health,
+  checking = false,
+}: {
+  health: McpServerHealth;
+  /** A Test connection run is in flight; shown until the server reports installing. */
+  checking?: boolean;
+}) {
   const checked = health.checkedAt ? formatRelativeTime(health.checkedAt) : "";
   const checkedLabel = checked ? (
     <span className="font-normal text-muted-foreground">
@@ -16,6 +23,22 @@ export function McpServerHealthLine({ health }: { health: McpServerHealth }) {
       <Trans>Checked {checked}</Trans>
     </span>
   ) : null;
+
+  if (checking && health.status !== "installing") {
+    return (
+      <p
+        role="status"
+        data-testid="mcp-health"
+        data-status="checking"
+        className="mt-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+      >
+        <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+        <span>
+          <Trans>Checking connection…</Trans>
+        </span>
+      </p>
+    );
+  }
 
   if (health.status === "installing") {
     return (

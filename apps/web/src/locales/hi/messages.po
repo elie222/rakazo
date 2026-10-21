@@ -1087,6 +1087,10 @@ msgstr "जाँच की गई {checked}"
 msgid "Checking computer setup…"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "कनेक्शन जाँचा जा रहा है…"
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx

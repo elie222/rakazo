@@ -1087,6 +1087,10 @@ msgstr "{checked} 확인됨"
 msgid "Checking computer setup…"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "연결 확인 중…"
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx

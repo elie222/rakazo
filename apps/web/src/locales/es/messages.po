@@ -1087,6 +1087,10 @@ msgstr "Comprobado {checked}"
 msgid "Checking computer setup…"
 msgstr ""
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "Comprobando la conexión…"
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx

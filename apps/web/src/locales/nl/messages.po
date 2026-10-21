@@ -1087,6 +1087,10 @@ msgstr "Gecontroleerd {checked}"
 msgid "Checking computer setup…"
 msgstr "Computerinstallatie controleren…"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "Verbinding controleren…"
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx

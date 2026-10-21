@@ -1087,6 +1087,10 @@ msgstr "נבדק {checked}"
 msgid "Checking computer setup…"
 msgstr "בודק את הגדרות המחשב…"
 
+#: src/components/McpServerHealthLine.tsx
+msgid "Checking connection…"
+msgstr "בודק חיבור…"
+
 #: src/components/ComputersUnavailableHint.tsx
 #: src/components/DesktopUpdates.tsx
 #: src/components/SoftwareUpdateSection.tsx

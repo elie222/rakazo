@@ -32,6 +32,18 @@ describe("McpServerHealthLine", () => {
     expect(render({ status: "ok", toolCount: 1 })).toContain("Running · 1 tool");
   });
 
+  it("says a test is checking the connection until the server reports installing", () => {
+    const checking = (health: Partial<McpServerHealth>) =>
+      renderToStaticMarkup(<McpServerHealthLine health={{ ...base, ...health }} checking />);
+    for (const status of ["unknown", "ok", "error"] as const) {
+      const html = checking({ status, toolCount: 3, message: "boom" });
+      expect(html).toContain('data-status="checking"');
+      expect(html).toContain("Checking connection…");
+      expect(html).not.toContain("boom");
+    }
+    expect(checking({ status: "installing" })).toContain('data-status="installing"');
+  });
+
   it("shows a spinner while installing", () => {
     const html = render({ status: "installing" });
     expect(html).toContain('data-status="installing"');

@@ -33,7 +33,7 @@ import { connectMcpOauth, MCP_OAUTH_CHANNEL, mcpOAuthRedirectUri } from "../lib/
 import { rpc } from "../lib/rpc";
 import { errorText } from "../lib/user-error";
 
-/** How often the list is re-read while a server is still installing its package. */
+/** How often the list is re-read while a server installs its package or is being tested. */
 const INSTALL_POLL_MS = 2500;
 
 type EnvRow = { id: number; name: string; value: string; file: boolean };
@@ -85,7 +85,10 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
   const [oauthPending, setOauthPending] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const anyInstalling = servers.some((server) => server.health.status === "installing");
+  // A test can spend minutes installing a package; re-reading the list while it runs lets
+  // the card switch from "Checking…" to "Installing…" as soon as the server records it.
+  const shouldPoll =
+    testingId !== null || servers.some((server) => server.health.status === "installing");
 
   async function refresh() {
     const [nextServers, nextBots, assignments] = await Promise.all([
@@ -124,10 +127,10 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
   }, []);
 
   // A freshly saved stdio server installs its package in the background, so its
-  // health moves installing -> ok/error on its own. Poll only while that is true;
-  // the effect unmounts with the overlay.
+  // health moves installing -> ok/error on its own. Poll only while that is true (or a
+  // test is running); the effect unmounts with the overlay.
   useEffect(() => {
-    if (!anyInstalling) return;
+    if (!shouldPoll) return;
     let cancelled = false;
     const timer = setInterval(() => {
       void rpc.mcp.servers
@@ -141,7 +144,7 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [anyInstalling]);
+  }, [shouldPoll]);
 
   function toggleBot(id: string) {
     setSelectedBotIds((current) =>
@@ -698,7 +701,10 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
                         <p className="mt-1 text-xs text-muted-foreground">
                           {server.endpoint ?? server.command ?? server.slug}
                         </p>
-                        <McpServerHealthLine health={server.health} />
+                        <McpServerHealthLine
+                          health={server.health}
+                          checking={testingId === server.id}
+                        />
                         {statusText ? (
                           <p
                             className={`mt-1.5 text-[11px] ${server.oauthStatus === "reconnect" ? "text-warning" : "text-muted-foreground"}`}
