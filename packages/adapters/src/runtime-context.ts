@@ -26,6 +26,10 @@ const UNSHORTENED_TOOL_RESULTS = new Set([
   "search_history",
   ...VERBATIM_TOOL_RESULTS,
 ]);
+// Paginated read-only connectors bound their own results, so shortening them to 1 KB only
+// loses evidence the caller still needs. The marker it inserts tells the model the text was
+// cut, but the caller has no way to recover the omitted part.
+const UNSHORTENED_TOOL_PREFIXES = ["mcp__rakazo-history__"];
 const messageHash = (message: Message) =>
   createHash("sha256")
     .update(JSON.stringify(providerContextPrefix("", [], [message])))
@@ -372,7 +376,7 @@ export function createRuntimeContextPolicy(
         if (
           message.role !== "toolResult" ||
           index >= latestToolCall ||
-          (message.toolName !== undefined && UNSHORTENED_TOOL_RESULTS.has(message.toolName))
+          (message.toolName !== undefined && (UNSHORTENED_TOOL_RESULTS.has(message.toolName) || UNSHORTENED_TOOL_PREFIXES.some((prefix) => message.toolName?.startsWith(prefix))))
         )
           return message;
         const source = text(message);
