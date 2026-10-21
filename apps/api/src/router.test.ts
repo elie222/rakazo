@@ -3892,6 +3892,7 @@ describe("bot model auth on save", () => {
       event: { create: vi.fn(async () => ({ seq: 1 })) },
     };
     const prisma = {
+      $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async () => [{ ...bot, name: "Ada renamed" }]),
@@ -4588,6 +4589,7 @@ describe("openai-compatible enabled models", () => {
     const bot = botRow(options.botModelId ?? options.defaultModel);
     const prisma = {
       ...pins,
+      $queryRaw: vi.fn(async () => []),
       bot: {
         findFirst: vi.fn(async () => bot),
         findMany: vi.fn(async ({ where }: { where: PinWhere }) =>
