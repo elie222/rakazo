@@ -20,7 +20,7 @@ import type {
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { SecretStore } from "@rakazo/adapter-kit";
 import { SecretStoreUnavailableError } from "@rakazo/adapter-kit";
-import { isLocalMcpHost } from "@rakazo/contracts";
+import { isLocalMcpHost, mcpOAuthEnvReferences } from "@rakazo/contracts";
 import { readBoundedResponseBytes } from "@rakazo/core";
 import type { Prisma, PrismaClient } from "@rakazo/db";
 import { getLogger } from "@rakazo/logging";
@@ -43,6 +43,9 @@ type OAuthState = {
 export type OAuthMaterial = {
   secret?: string;
   env?: Record<string, string>;
+  /** Credential files for a stdio server: the env variable that receives the file's
+   * path, and the content template, which may use `{{oauth.*}}` references. */
+  files?: Record<string, string>;
   headers?: Record<string, string>;
   /** A client registered with the authorization server out of band. It is
    * configuration, not SDK state, so it outlives disconnects and replaces
@@ -93,6 +96,15 @@ export function oauthMaterialSecrets(material: OAuthMaterial): string[] {
     ) {
       add(value);
     }
+  }
+  // A file without references is a literal credential (for example a service-account key).
+  // One that uses references is covered by the grant values it embeds.
+  for (const content of Object.values(material.files ?? {})) {
+    if (
+      mcpOAuthEnvReferences(content).fields.length === 0 &&
+      looksLikeSecretValue(content, { allowNumeric: false })
+    )
+      add(content);
   }
   return [...new Set(values)];
 }

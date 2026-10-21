@@ -1875,6 +1875,15 @@ describe("MCP OAuth", () => {
     });
   });
 
+  it("treats a static credential file as a secret but not one built from the grant", () => {
+    const key = '{"type":"service_account","private_key":"static-key"}';
+    const secrets = oauthMaterialSecrets({
+      files: { KEY_FILE: key, TOKEN_FILE: '{"token":"{{oauth.access_token}}"}', FLAG: "true" },
+    });
+
+    expect(secrets).toEqual([key]);
+  });
+
   it("does not start authorization for a server that neither challenges nor publishes OAuth metadata", async () => {
     const requested: string[] = [];
     vi.stubGlobal(
