@@ -15,7 +15,12 @@ vi.mock("@lingui/react/macro", () => ({
 
 vi.mock("@rakazo/ui-web", async (importOriginal) => ({
   BotAvatar: () => null,
-  Button: (await importOriginal<typeof UiWeb>()).Button,
+  Button: ({ children, ...props }: React.ComponentProps<"button">) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
+  ),
+  buttonVariants: (await importOriginal<typeof UiWeb>()).buttonVariants,
   Field: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   FieldLabel: ({ children, htmlFor }: { children?: ReactNode; htmlFor?: string }) => (
     <label htmlFor={htmlFor}>{children}</label>
@@ -278,7 +283,7 @@ it.each([
   }
 });
 
-it("renders the server integrations entry as a plain link, not a button element", async () => {
+it("renders the server integrations entry as a plain link", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -300,6 +305,7 @@ it("renders the server integrations entry as a plain link, not a button element"
     const link = container.querySelector('a[href="/integrations/setup"]');
     if (!link) throw new Error("Missing server integrations link");
     expect(link.hasAttribute("type")).toBe(false);
+    expect(link.hasAttribute("role")).toBe(false);
   } finally {
     await act(async () => root.unmount());
     container.remove();

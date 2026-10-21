@@ -4,6 +4,7 @@ import { accountDisplay, MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from "@rakaz
 import {
   BotAvatar,
   Button,
+  buttonVariants,
   Field,
   FieldLabel,
   Input,
@@ -316,9 +317,9 @@ export function GeneralSettingsPanels({
       </section>
 
       {isDeploymentOwner ? (
-        <Button variant="outline" nativeButton={false} render={<Link to="/integrations/setup" />}>
+        <Link to="/integrations/setup" className={buttonVariants({ variant: "outline" })}>
           <Trans>Server integrations</Trans>
-        </Button>
+        </Link>
       ) : null}
 
       <details data-testid="advanced-settings" className="group rounded-xl border border-border">

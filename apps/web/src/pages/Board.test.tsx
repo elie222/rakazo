@@ -34,7 +34,8 @@ vi.mock("@rakazo/chat-ui/web", () => ({
 vi.mock("@rakazo/ui-web", async (importOriginal) => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
-    Button: (await importOriginal<typeof UiWeb>()).Button,
+    Button: (props: ComponentProps<"button">) => <button {...props} />,
+    buttonVariants: (await importOriginal<typeof UiWeb>()).buttonVariants,
     Dialog: Container,
     DialogContent: Container,
     DialogHeader: Container,
@@ -329,7 +330,7 @@ it.each(["end", "error"] as const)(
   },
 );
 
-it("renders the back link as a plain link, not a button element", async () => {
+it("renders the back control as a plain link", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   api.bots.list.mockResolvedValue([]);
   api.tickets.list.mockResolvedValue({ tickets: [] });
@@ -338,6 +339,7 @@ it("renders the back link as a plain link, not a button element", async () => {
     const back = page.container.querySelector('a[href="/app"]');
     if (!back) throw new Error("Missing back link");
     expect(back.hasAttribute("type")).toBe(false);
+    expect(back.hasAttribute("role")).toBe(false);
   } finally {
     await page.cleanup();
     vi.unstubAllGlobals();

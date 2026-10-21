@@ -10,6 +10,7 @@ import {
 } from "@rakazo/contracts";
 import {
   Button,
+  buttonVariants,
   Dialog,
   DialogContent,
   DialogHeader,
@@ -106,15 +107,13 @@ export function BoardPage() {
     <div className="flex h-screen min-w-0 flex-col overflow-hidden bg-background text-foreground">
       <WindowChrome />
       <header className="flex items-center gap-3 border-b px-4 py-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          nativeButton={false}
-          render={<Link to="/app" />}
+        <Link
+          to="/app"
+          className={buttonVariants({ variant: "ghost", size: "icon" })}
           aria-label={t`Back`}
         >
           <ChevronLeft />
-        </Button>
+        </Link>
         <h1 className="flex-1 font-medium">
           <Trans>Board</Trans>
         </h1>
