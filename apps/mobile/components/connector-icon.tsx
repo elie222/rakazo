@@ -21,6 +21,7 @@ export function ConnectorIcon({
   const svg = Boolean(logo && (/\.svg(?:[?#]|$)/i.test(logo) || failed));
   const uri = logo && !failed?.svgFailed ? logo : null;
   const art = size - 8;
+  const initial = <Text style={styles.letter}>{(name.trim()[0] || "?").toUpperCase()}</Text>;
   return (
     <View
       accessibilityElementsHidden
@@ -34,6 +35,8 @@ export function ConnectorIcon({
             width={art}
             height={art}
             onError={() => setFailure({ logo: uri, svgFailed: true })}
+            // SvgUri does not report XML parse errors, only renders this fallback.
+            fallback={initial}
           />
         ) : (
           <Image
@@ -44,7 +47,7 @@ export function ConnectorIcon({
           />
         )
       ) : (
-        <Text style={styles.letter}>{(name.trim()[0] || "?").toUpperCase()}</Text>
+        initial
       )}
     </View>
   );

@@ -45,14 +45,18 @@ describe("connection catalog", () => {
       .mockRejectedValueOnce(new Error("not yet"))
       .mockResolvedValueOnce(account("new", "connected"));
     vi.useFakeTimers();
-    const result = connectCatalogItem(item, [], {
-      begin: async () => ({ connectionId: "new", authorizationUrl: "https://auth.example.test" }),
-      complete,
-      openUrl,
-      signal: new AbortController().signal,
-    });
-    await vi.runAllTimersAsync();
-    vi.useRealTimers();
+    let result: ReturnType<typeof connectCatalogItem>;
+    try {
+      result = connectCatalogItem(item, [], {
+        begin: async () => ({ connectionId: "new", authorizationUrl: "https://auth.example.test" }),
+        complete,
+        openUrl,
+        signal: new AbortController().signal,
+      });
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
     expect(openUrl).toHaveBeenCalledWith("https://auth.example.test");
     expect(await result).toEqual({ status: "connected", row: account("new", "connected") });
   });
