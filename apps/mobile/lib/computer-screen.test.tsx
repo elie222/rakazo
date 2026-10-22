@@ -423,13 +423,55 @@ describe("computer screen", () => {
     expect(screen?.getAttribute("data-important")).toBe("no-hide-descendants");
   });
 
-  it("unmounts the collapsed screen while the app is backgrounded", async () => {
-    foreground.value = false;
-    respond(botWorking);
-    const view = await render();
+  async function setForeground(value: boolean) {
+    foreground.value = value;
+    act(() => root?.render(<Computer />));
+    await settle();
+  }
 
-    expect(view.querySelector("iframe")).toBeNull();
-    expect(preview(view).getAttribute("role")).toBe("button");
+  it.each([false, true])(
+    "unmounts the screen in the background and mounts fresh on return (full window: %s)",
+    async (fullWindow) => {
+      respond(botWorking);
+      const view = await render();
+      if (fullWindow) {
+        await act(async () => preview(view).click());
+        await settle();
+      }
+      expect(view.querySelectorAll("iframe")).toHaveLength(1);
+      const mounted = screens.mounts;
+
+      await setForeground(false);
+      expect(view.querySelector("iframe")).toBeNull();
+      expect(screens.mounts).toBe(mounted);
+
+      await setForeground(true);
+      expect(view.querySelectorAll("iframe")).toHaveLength(1);
+      expect(screens.mounts).toBe(mounted + 1);
+      expect(Boolean(view.querySelector("section iframe"))).toBe(fullWindow);
+    },
+  );
+
+  it("stops heartbeats in the background and resumes them on return", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      respond(botWorking);
+      await render();
+      expect(calls("computer/heartbeat")).toHaveLength(1);
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(calls("computer/heartbeat")).toHaveLength(2);
+
+      await setForeground(false);
+      await act(async () => vi.advanceTimersByTime(120_000));
+      expect(calls("computer/heartbeat")).toHaveLength(2);
+
+      await setForeground(true);
+      expect(calls("computer/heartbeat")).toHaveLength(3);
+      await act(async () => vi.advanceTimersByTime(60_000));
+      expect(calls("computer/heartbeat")).toHaveLength(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps the screen accessible in the full window while the user has control", async () => {

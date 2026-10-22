@@ -274,7 +274,7 @@ export default function Computer() {
   useEffect(() => (computerOpen ? holdFreeRotation() : undefined), [computerOpen]);
 
   useEffect(() => {
-    if (!botId || computer?.state !== "running") return;
+    if (!botId || !foreground || computer?.state !== "running") return;
     // A refused heartbeat (403, 404, 426...) stops until the computer's state changes.
     const ping = () =>
       void rpc("computer/heartbeat", { botId }).catch((error: unknown) => {
@@ -283,7 +283,7 @@ export default function Computer() {
     const timer = setInterval(ping, COMPUTER_HEARTBEAT_MS);
     ping();
     return () => clearInterval(timer);
-  }, [botId, computer?.state]);
+  }, [botId, computer?.state, foreground]);
 
   /** Open the full window. Only an explicit Take control asks for the lease. */
   async function openComputer({ takeControl }: { takeControl: boolean }) {
@@ -576,7 +576,7 @@ export default function Computer() {
               </View>
             </SafeAreaView>
             <View style={{ flex: 1, backgroundColor: tokens.card }}>
-              {loadedScreenUrl ? (
+              {foreground && loadedScreenUrl ? (
                 <ScreenWebView
                   key={screenReload}
                   url={loadedScreenUrl}
