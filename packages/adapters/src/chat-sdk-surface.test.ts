@@ -335,8 +335,20 @@ describe("ChatSdkMessagingSurface inbound", () => {
     expect(events).toHaveLength(1);
   });
 
-  it("returns 5xx when incomplete Slack files cannot be hydrated", async () => {
-    const fetchMessage = vi.fn(async () => null);
+  it.each([
+    ["missing history message", vi.fn(async () => null)],
+    [
+      "history without fetchable files",
+      vi.fn(async () => createTestMessage("m-missing", "history")),
+    ],
+    [
+      "history lookup failure",
+      vi.fn(async () => {
+        throw new Error("missing_scope");
+      }),
+    ],
+    ["adapter without fetchMessage", undefined],
+  ])("delivers incomplete Slack mentions after %s", async (_label, fetchMessage) => {
     const { surface, events } = createSurface({ provider: "slack" }, { fetchMessage });
 
     const response = await surface.handleWebhook(
@@ -351,8 +363,32 @@ describe("ChatSdkMessagingSurface inbound", () => {
       }),
     );
 
-    expect(response?.status).toBe(500);
-    expect(fetchMessage).toHaveBeenCalledWith("slack:C1:1", "m-missing");
+    expect(response?.status).toBe(200);
+    if (fetchMessage) expect(fetchMessage).toHaveBeenCalledWith("slack:C1:1", "m-missing");
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      content: "@bot inspect this",
+      handle: "m-missing",
+      mentionsBot: true,
+      mediaUrl: "https://files.slack.com/incomplete",
+    });
+  });
+
+  it("does not turn inbound conversion failures into retryable sink failures", async () => {
+    const { surface, events } = createSurface({
+      enrichTeamRoom: () => {
+        throw new Error("conversion failed");
+      },
+    });
+    const response = await surface.handleWebhook(
+      "mock",
+      webhookRequest({
+        threadId: "mock:C1:1",
+        id: "m-conversion",
+        text: "hello",
+      }),
+    );
+    expect(response?.status).toBe(200);
     expect(events).toEqual([]);
   });
 
