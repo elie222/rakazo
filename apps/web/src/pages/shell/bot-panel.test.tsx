@@ -73,7 +73,7 @@ vi.mock("@rakazo/ui-web", () => ({
 }));
 vi.mock("./avatar-studio-popover", () => ({ AvatarStudioPopover: () => null }));
 vi.mock("./bot-credentials", () => ({ BotCredentialsSection: () => null }));
-vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => <div>Open work</div> }));
+vi.mock("../ScratchpadSection", () => ({ ScratchpadSection: () => <h3>Open work</h3> }));
 vi.mock("../KnowledgeSection", () => ({
   KnowledgeSection: () => <div>Memory / Shared skills</div>,
 }));
@@ -219,7 +219,7 @@ it("keeps advanced controls inside the disclosure in the shared order", async ()
     knowledge: "Memory / Shared skills",
     disabledTools: "Disabled tools",
   };
-  const controls = [...container.querySelectorAll("div, span, label")].filter((node) =>
+  const controls = [...container.querySelectorAll("div, span, label, h3")].filter((node) =>
     [...node.childNodes].some(
       (child) =>
         child.nodeType === Node.TEXT_NODE &&
@@ -227,6 +227,7 @@ it("keeps advanced controls inside the disclosure in the shared order", async ()
     ),
   );
   expect(controls).toHaveLength(Object.keys(labels).length);
+  expect(advanced.querySelector("h3")?.textContent).toBe("Open work");
   for (const control of controls)
     expect(control.closest('[data-testid="bot-settings-advanced"]')).toBe(advanced);
   for (const control of controls.filter(

@@ -3455,10 +3455,6 @@ msgstr ""
 msgid "No trigger"
 msgstr ""
 
-#: src/pages/ScratchpadSection.tsx
-msgid "None yet"
-msgstr "Noch keine"
-
 #: src/lib/ticket-priority.ts
 msgid "Normal"
 msgstr ""
