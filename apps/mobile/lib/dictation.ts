@@ -18,13 +18,10 @@ const FATAL_ERRORS = new Set([
   "service-not-allowed",
   "audio-capture",
   "language-not-supported",
-  "network",
-  "busy",
-  "client",
   "bad-grammar",
-  "too-many-requests",
-  "unknown",
 ]);
+/** Recoverable errors that indicate failure if the last empty attempt still has one. */
+const TRANSIENT_ERRORS = new Set(["client", "busy", "network", "unknown", "too-many-requests"]);
 
 export type DictationGiveUp = "idle" | "failed";
 
@@ -60,6 +57,8 @@ type Session = {
   restart?: ReturnType<typeof setTimeout>;
   backoff: number;
   deadRestarts: number;
+  /** Reset on each native start: only the last attempt classifies empty exhaustion. */
+  transientError: boolean;
 };
 
 let injected: SpeechRecognizer | null = null;
@@ -129,6 +128,7 @@ export async function listen(opts: {
     heard: "",
     backoff: RESTART_MIN_MS,
     deadRestarts: 0,
+    transientError: false,
   };
   active = session;
   opts.signal?.addEventListener(
@@ -152,6 +152,7 @@ export async function listen(opts: {
 
 function start(session: Session): void {
   if (active !== session) return;
+  session.transientError = false;
   session.recognizer.start({ lang: session.lang, interimResults: true, continuous: true });
 }
 
@@ -185,7 +186,8 @@ function onEnd(session: Session): void {
   session.heard = "";
   session.deadRestarts += 1;
   if (session.deadRestarts > MAX_DEAD_RESTARTS) {
-    giveUp(session, "idle", "empty-restarts");
+    const failed = session.transientError && !session.carried;
+    giveUp(session, failed ? "failed" : "idle", failed ? "transient-restarts" : "empty-restarts");
     return;
   }
   clearTimeout(session.restart);
@@ -203,15 +205,18 @@ function onEnd(session: Session): void {
 
 function onError(session: Session, event: ErrorEvent): void {
   if (active !== session) return;
-  if (!event?.error || !FATAL_ERRORS.has(event.error)) return;
-  giveUp(session, "failed", event.error);
+  if (!event?.error) return;
+  if (TRANSIENT_ERRORS.has(event.error)) session.transientError = true;
+  if (FATAL_ERRORS.has(event.error)) giveUp(session, "failed", event.error);
 }
 
 function giveUp(session: Session, reason: DictationGiveUp, code: string): void {
   if (active !== session) return;
-  reportMobileError(new Error(`Speech recognition stopped: ${code}`), "voice.microphone", {
-    source: "dictation",
-  });
+  if (reason === "failed") {
+    reportMobileError(new Error(`Speech recognition stopped: ${code}`), "voice.microphone", {
+      source: "dictation",
+    });
+  }
   finish(session, reason);
 }
 

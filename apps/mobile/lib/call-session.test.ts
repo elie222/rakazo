@@ -957,6 +957,37 @@ describe("mobile call recognition recovery", () => {
     );
   });
 
+  it("sends a turn after a client error following the greeting", async () => {
+    const fake = await greetedCall();
+    fake.emit("error", { error: "client" });
+    fake.emit("end");
+    await vi.advanceTimersByTimeAsync(250);
+    expect(fake.start).toHaveBeenCalledTimes(2);
+    fake.emit("result", { isFinal: true, results: [{ transcript: "status please" }] });
+    await vi.advanceTimersByTimeAsync(ENDPOINT_SILENCE_MS);
+    expect(fake.send).toHaveBeenCalledExactlyOnceWith(
+      "bot-1",
+      "status please",
+      expect.stringMatching(/^call:/),
+    );
+    expect(fake.recordings).toHaveLength(0);
+  });
+
+  it("falls back to recording only after repeated empty network failures", async () => {
+    const fake = await greetedCall(true);
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      fake.emit("error", { error: "network" });
+      expect(fake.recordings).toHaveLength(0);
+      fake.emit("end");
+      await vi.advanceTimersByTimeAsync(2_000);
+    }
+    expect(fake.start).toHaveBeenCalledTimes(6);
+    expect(fake.recordings).toHaveLength(1);
+    fake.say("status please");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.send).toHaveBeenCalledOnce();
+  });
+
   it("backs off even when every native start immediately ends", async () => {
     const fake = await greetedCall();
     fake.start.mockImplementation(() => fake.emit("end"));
@@ -1030,7 +1061,7 @@ describe("mobile call recognition recovery", () => {
     expect(fake.recordings).toHaveLength(0);
   });
 
-  it.each(["not-allowed", "language-not-supported", "network", "busy", "client"])(
+  it.each(["not-allowed", "language-not-supported"])(
     "falls back to recording after %s following the greeting",
     async (error) => {
       const fake = await greetedCall(true);

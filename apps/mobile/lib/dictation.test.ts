@@ -123,11 +123,7 @@ describe("mobile dictation", () => {
       vi.advanceTimersByTime(RESTART_CAP_MS);
     }
     expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("idle");
-    expect(reportMobileError).toHaveBeenCalledExactlyOnceWith(
-      new Error("Speech recognition stopped: empty-restarts"),
-      "voice.microphone",
-      { source: "dictation" },
-    );
+    expect(reportMobileError).not.toHaveBeenCalled();
     expect(onFinal).not.toHaveBeenCalled();
     expect(fake.abort).toHaveBeenCalled();
     fake.end();
@@ -139,12 +135,7 @@ describe("mobile dictation", () => {
     "service-not-allowed",
     "audio-capture",
     "language-not-supported",
-    "network",
-    "busy",
-    "client",
     "bad-grammar",
-    "too-many-requests",
-    "unknown",
   ])("notifies the caller when recognition fails with %s", async (error) => {
     const onFinal = vi.fn();
     const onGiveUp = vi.fn();
@@ -172,6 +163,66 @@ describe("mobile dictation", () => {
       vi.advanceTimersByTime(250);
       expect(fake.start).toHaveBeenCalledTimes(2);
       expect(onGiveUp).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["client", "busy", "network", "unknown", "too-many-requests"])(
+    "delivers a turn after a transient %s error and restart",
+    async (error) => {
+      const onFinal = vi.fn();
+      const onGiveUp = vi.fn();
+      await listen({ onFinal, onGiveUp });
+      fake.fail(error);
+      fake.end();
+      vi.advanceTimersByTime(250);
+      expect(fake.start).toHaveBeenCalledTimes(2);
+      fake.hear("status please");
+      vi.advanceTimersByTime(ENDPOINT_SILENCE_MS);
+      expect(onFinal).toHaveBeenCalledExactlyOnceWith("status please");
+      expect(onGiveUp).not.toHaveBeenCalled();
+      expect(reportMobileError).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["network", "client", "busy", "unknown", "too-many-requests"])(
+    "fails after empty restarts ending in transient %s errors",
+    async (error) => {
+      const onFinal = vi.fn();
+      const onGiveUp = vi.fn();
+      await listen({ onFinal, onGiveUp });
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        fake.fail(error);
+        expect(onGiveUp).not.toHaveBeenCalled();
+        fake.end();
+        vi.advanceTimersByTime(RESTART_CAP_MS);
+      }
+      expect(fake.start).toHaveBeenCalledTimes(6);
+      expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("failed");
+      expect(onFinal).not.toHaveBeenCalled();
+      expect(reportMobileError).toHaveBeenCalledExactlyOnceWith(
+        new Error("Speech recognition stopped: transient-restarts"),
+        "voice.microphone",
+        { source: "dictation" },
+      );
+    },
+  );
+
+  it.each(["no-speech", "speech-timeout"])(
+    "stays idle after empty %s restarts even after an earlier transient error",
+    async (error) => {
+      const onGiveUp = vi.fn();
+      await listen({ onFinal: vi.fn(), onGiveUp });
+      fake.fail("network");
+      fake.end();
+      vi.advanceTimersByTime(RESTART_CAP_MS);
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        fake.fail(error);
+        fake.end();
+        vi.advanceTimersByTime(RESTART_CAP_MS);
+      }
+      expect(fake.start).toHaveBeenCalledTimes(6);
+      expect(onGiveUp).toHaveBeenCalledExactlyOnceWith("idle");
+      expect(reportMobileError).not.toHaveBeenCalled();
     },
   );
 
