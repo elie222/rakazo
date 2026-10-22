@@ -458,6 +458,8 @@ vi.mock("../components/native-switch", () => ({ NativeSwitch: () => null }));
 vi.mock("../components/row-accessories", () => ({
   Chevron: () => null,
   Checkmark: () => createElement("i", { "data-checkmark": true }),
+}));
+vi.mock("../components/text-only-mark", () => ({
   TextOnlyMark: () => createElement("i", { "data-text-only": true }),
 }));
 vi.mock("../components/native-symbol", () => ({ NativeSymbol: () => null }));

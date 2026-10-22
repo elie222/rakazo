@@ -17,8 +17,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFloatingHeaderInset } from "../lib/floating-header";
 import { useI18n } from "../lib/i18n";
 import { native, useThemedStyles } from "../lib/native";
-import { Checkmark, TextOnlyMark } from "./row-accessories";
+import { Checkmark } from "./row-accessories";
 import { SettingsLabel, SettingsRow } from "./settings-group";
+import { TextOnlyMark } from "./text-only-mark";
 
 /** Searchable grouped model cells shared by chat and connection settings. */
 export function ModelPickerList({
