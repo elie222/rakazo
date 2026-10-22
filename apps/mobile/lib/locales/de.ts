@@ -910,6 +910,13 @@ export const DE_MESSAGES: Record<string, string> = {
   "Try again": "Erneut versuchen",
   "Your session expired": "Deine Sitzung ist abgelaufen",
   "The server had a problem": "Auf dem Server ist ein Problem aufgetreten",
+  "Could not load MCP servers": "MCP-Server konnten nicht geladen werden",
+  "MCP servers": "MCP-Server",
+  Disabled: "Deaktiviert",
+  "OAuth connected": "OAuth verbunden",
+  "OAuth expired": "OAuth abgelaufen",
+  "Credential saved": "Zugangsdaten gespeichert",
+  "No auth": "Keine Authentifizierung",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "Der Bot konnte nicht antworten, weil das Tageslimit seines Anbieters erreicht wurde.",
   "The bot couldn't reply because its provider's weekly limit was reached.":

@@ -261,6 +261,7 @@ async function main() {
     prisma,
     sandbox,
     home,
+    artifacts,
     jobs,
     events,
     workerId: process.pid.toString(),

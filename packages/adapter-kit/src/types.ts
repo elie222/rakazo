@@ -738,6 +738,8 @@ export interface MessagingCapabilities {
   direct: boolean;
   groups: boolean;
   receipt: MessagingReceipt | null;
+  /** Sends image and file attachments. Absent means replies go out as text only. */
+  files?: boolean;
 }
 
 /** One messaging platform behind the chat surface (sendblue, slack, …). */
@@ -752,6 +754,15 @@ export interface MessagingSendRequest {
   body: string;
   /** Stable key so retries of the same logical send can be deduped upstream. */
   idempotencyKey?: string;
+  /** A file to post as this message; only sent to platforms with the `files` capability. */
+  attachment?: MessagingOutboundAttachment;
+}
+
+/** An outbound file, already read from the artifact store. */
+export interface MessagingOutboundAttachment {
+  name: string;
+  mimeType: string;
+  data: Uint8Array;
 }
 
 export interface MessagingSendResult {

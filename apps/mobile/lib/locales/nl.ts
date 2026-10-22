@@ -866,6 +866,13 @@ export const NL_MESSAGES: Record<string, string> = {
   "Try again": "Opnieuw proberen",
   "Your session expired": "Je sessie is verlopen",
   "The server had a problem": "Er is een probleem met de server",
+  "Could not load MCP servers": "MCP-servers laden mislukt",
+  "MCP servers": "MCP-servers",
+  Disabled: "Uitgeschakeld",
+  "OAuth connected": "OAuth verbonden",
+  "OAuth expired": "OAuth verlopen",
+  "Credential saved": "Inloggegevens opgeslagen",
+  "No auth": "Geen authenticatie",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "De bot kon niet antwoorden omdat de daglimiet van zijn provider is bereikt.",
   "The bot couldn't reply because its provider's weekly limit was reached.":

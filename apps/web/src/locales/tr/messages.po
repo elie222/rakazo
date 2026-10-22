@@ -1659,6 +1659,7 @@ msgid "Could not load integrations"
 msgstr "Entegrasyonlar yüklenemedi"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "MCP sunucuları yüklenemedi"
 
@@ -1964,8 +1965,8 @@ msgstr "Kimlik bilgisi"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
-msgid "credential saved"
-msgstr "kimlik bilgisi kaydedildi"
+msgid "Credential saved"
+msgstr "Kimlik bilgisi kaydedildi"
 
 #: src/pages/shell/bot-credentials.tsx
 msgid "Credentials"
@@ -2149,6 +2150,10 @@ msgstr "Ayrıntılar"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Disabled"
+msgstr "Devre dışı"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
@@ -3041,6 +3046,7 @@ msgid "MCP endpoint"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "MCP servers"
 msgstr "MCP sunucuları"
 
@@ -3343,8 +3349,8 @@ msgid "No artifacts found."
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
-msgid "no auth"
-msgstr "kimlik doğrulamasız"
+msgid "No auth"
+msgstr "Kimlik doğrulamasız"
 
 #: src/pages/PluginsOverlay.tsx
 msgid "No authentication"
@@ -3511,6 +3517,7 @@ msgid "OAuth client secret (optional)"
 msgstr "OAuth istemci gizli anahtarı (isteğe bağlı)"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth bağlandı"
 
@@ -3519,6 +3526,7 @@ msgid "OAuth connection failed"
 msgstr "OAuth bağlantısı başarısız"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "OAuth süresi doldu"
 

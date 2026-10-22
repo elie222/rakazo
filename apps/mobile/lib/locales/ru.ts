@@ -906,6 +906,13 @@ export const RU_MESSAGES: Record<string, string> = {
   "Try again": "Повторить",
   "Your session expired": "Сеанс истёк",
   "The server had a problem": "На сервере произошла ошибка",
+  "Could not load MCP servers": "Не удалось загрузить серверы MCP",
+  "MCP servers": "Серверы MCP",
+  Disabled: "Отключено",
+  "OAuth connected": "OAuth подключён",
+  "OAuth expired": "Срок действия OAuth истёк",
+  "Credential saved": "Учётные данные сохранены",
+  "No auth": "Без авторизации",
   "The bot couldn't reply because its provider's daily limit was reached.":
     "Бот не смог ответить, потому что достигнут дневной лимит его провайдера.",
   "The bot couldn't reply because its provider's weekly limit was reached.":

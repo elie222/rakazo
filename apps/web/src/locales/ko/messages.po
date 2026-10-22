@@ -1659,6 +1659,7 @@ msgid "Could not load integrations"
 msgstr "연동 목록을 불러오지 못했습니다."
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "Could not load MCP servers"
 msgstr "MCP 서버 목록을 불러오지 못했습니다."
 
@@ -1964,7 +1965,7 @@ msgstr "인증 정보"
 
 #: src/pages/McpServersOverlay.tsx
 #: src/pages/PluginsOverlay.tsx
-msgid "credential saved"
+msgid "Credential saved"
 msgstr "인증 정보 저장됨"
 
 #: src/pages/shell/bot-credentials.tsx
@@ -2149,6 +2150,10 @@ msgstr "세부 정보"
 #: src/components/integrations/IntegrationSetup.tsx
 msgid "Direct MCP"
 msgstr ""
+
+#: src/pages/PluginsOverlay.tsx
+msgid "Disabled"
+msgstr "비활성화됨"
 
 #: src/pages/shell/bot-panel.tsx
 msgid "Disabled tools"
@@ -3041,6 +3046,7 @@ msgid "MCP endpoint"
 msgstr ""
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "MCP servers"
 msgstr "MCP 서버"
 
@@ -3343,7 +3349,7 @@ msgid "No artifacts found."
 msgstr ""
 
 #: src/pages/PluginsOverlay.tsx
-msgid "no auth"
+msgid "No auth"
 msgstr "인증 없음"
 
 #: src/pages/PluginsOverlay.tsx
@@ -3511,6 +3517,7 @@ msgid "OAuth client secret (optional)"
 msgstr "OAuth 클라이언트 시크릿(선택 사항)"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "OAuth connected"
 msgstr "OAuth 연결됨"
 
@@ -3519,6 +3526,7 @@ msgid "OAuth connection failed"
 msgstr "OAuth 연결 실패"
 
 #: src/pages/McpServersOverlay.tsx
+#: src/pages/PluginsOverlay.tsx
 msgid "OAuth expired"
 msgstr "OAuth 만료됨"
 

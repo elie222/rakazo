@@ -583,6 +583,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     prisma,
     sandbox,
     home,
+    artifacts,
     jobs,
     events,
     workerId: "api",

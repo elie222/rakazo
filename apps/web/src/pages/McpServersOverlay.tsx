@@ -57,7 +57,7 @@ function envName(value: string): string {
 function oauthStatusText(server: McpServer): string | null {
   if (server.oauthStatus === "connected") return t`OAuth connected`;
   if (server.oauthStatus === "reconnect") return t`OAuth expired`;
-  return server.hasSecret ? t`credential saved` : null;
+  return server.hasSecret ? t`Credential saved` : null;
 }
 
 function oauthActionLabel(server: McpServer, pending: boolean): string {

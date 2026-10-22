@@ -2906,6 +2906,9 @@ function modelRequestFetch(
   };
 }
 
+// These Pi adapters reject fetch overrides other than globalThis.fetch.
+const APIS_WITHOUT_CUSTOM_FETCH = new Set<Api>(["google-generative-ai", "google-vertex"]);
+
 export function reliableModelStream(
   models: Models,
   model: Model<Api>,
@@ -2923,9 +2926,11 @@ export function reliableModelStream(
       {
         ...options,
         signal: watchdog.signal,
-        fetch: modelRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
+        fetch: APIS_WITHOUT_CUSTOM_FETCH.has(model.api)
+          ? options?.fetch
+          : modelRequestFetch(options?.fetch, MODEL_STREAM_IDLE_TIMEOUT_MS),
         // Only a 2xx arms the shared watchdog. Error bodies are bounded by
-        // the fetch wrapper, and a caller-supplied hook still sees every status.
+        // the fetch wrapper where supported; caller hooks still see every status.
         onResponse: (response, requestModel) => {
           if (response.status >= 200 && response.status < 300) watchdog.ping();
           return options?.onResponse?.(response, requestModel);
