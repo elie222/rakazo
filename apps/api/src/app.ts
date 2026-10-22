@@ -46,6 +46,7 @@ import {
   EmailEmulator,
   ExpoPushProvider,
   endSessionPushToken,
+  fetchSafeWebText,
   GraphileJobPublisher,
   InMemoryJobQueue,
   InMemoryRealtimeFanout,
@@ -143,6 +144,7 @@ import { monitoringRoutes } from "./monitoring.js";
 import { mountApiRequestBodyLimits } from "./request-body-limit.js";
 import { createRouter } from "./router.js";
 import { mountScreenTarget } from "./screen-proxy.js";
+import { findCreatorSkillUrl, githubSkillContentUrl } from "./skill-import.js";
 import { createAuthResponseAudit } from "./security-audit.js";
 import { isDeferredReservationLost, TeamChatBridge } from "./team-chat-bridge.js";
 import { ModelTeamChatEngagementJudge } from "./team-chat-judge.js";
@@ -821,6 +823,89 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     return actor;
   });
   mountWebhookHttpRoutes(app, { prisma, secrets, events, jobs });
+
+  const skillFetchOptions = {
+    timeoutMs: 10_000,
+    maxBytes: 1024 * 1024,
+    allowedProtocols: ["https:"],
+    userAgent: "Rakazo/0.1",
+  };
+
+  // Skill proxy endpoint: requires authentication and guards against SSRF / internal endpoints
+  app.get("/api/skills/fetch-url", async (c) => {
+    const actor = await sessionActor(c.req.raw);
+    if (!actor) return c.json({ error: "Unauthorized" }, 401);
+
+    const rawUrl = c.req.query("url");
+    if (!rawUrl) return c.json({ error: "Missing url parameter" }, 400);
+
+    try {
+      let target = new URL(rawUrl.trim());
+
+      if (target.hostname === "skillsmp.com" && target.pathname === "/") {
+        return c.json(
+          {
+            error:
+              "Please enter a specific skill URL (e.g. from a skill detail page) or use the search tab to find skills.",
+          },
+          400,
+        );
+      }
+
+      // Convert SkillsMP creator detail page
+      if (target.hostname === "skillsmp.com" && target.pathname.startsWith("/creators/")) {
+        const parts = target.pathname.slice("/creators/".length).split("/");
+        if (parts.length >= 3) {
+          const author = parts[0] ?? "";
+          const repo = parts[1] ?? "";
+          const skillPathSlug = parts.slice(2).join("/");
+          try {
+            const searchRes = await fetchSafeWebText(
+              `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(skillPathSlug)}`,
+              skillFetchOptions,
+            );
+            const data = JSON.parse(searchRes.body) as {
+              success?: boolean;
+              data?: { skills?: unknown };
+            };
+            const match = findCreatorSkillUrl(data.data?.skills, author, repo, skillPathSlug);
+            if (match) target = match;
+          } catch {
+            // fallback to direct fetch
+          }
+        }
+      }
+
+      target = githubSkillContentUrl(target);
+      const result = await fetchSafeWebText(target.href, {
+        ...skillFetchOptions,
+        ...(target.hostname === "api.github.com"
+          ? { headers: { accept: "application/vnd.github.raw+json" } }
+          : {}),
+      });
+      return c.json({ ok: true, content: result.body, resolvedUrl: result.url });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "Fetch failed" }, 500);
+    }
+  });
+
+  // SkillsMP search proxy endpoint: requires authentication
+  app.get("/api/skills/skillsmp-search", async (c) => {
+    const actor = await sessionActor(c.req.raw);
+    if (!actor) return c.json({ error: "Unauthorized" }, 401);
+
+    const q = c.req.query("q") ?? "";
+    try {
+      const result = await fetchSafeWebText(
+        `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(q || "agent")}`,
+        skillFetchOptions,
+      );
+      const data = JSON.parse(result.body);
+      return c.json(data);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "SkillsMP search failed" }, 500);
+    }
+  });
   if (billing && billingProvider) {
     mountBillingRoutes(app, {
       billing,

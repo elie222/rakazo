@@ -70,6 +70,7 @@ import {
   connectorToolRequiresApproval,
   containsSecret,
   createStreamingRedactor,
+  DEFAULT_CHIEF_INSTRUCTIONS,
   displayName,
   endsSentence,
   expandSkillReferencesInPrompt,
@@ -83,6 +84,7 @@ import {
   isMessagingChannelRun,
   isOneShotRoutineCrons,
   isOwnerStartedRun,
+  isSkillEnabledForBot,
   isTerminal,
   messagingChannelId,
   messagingChannelPrivacyBlock,
@@ -3294,8 +3296,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         spaceId: routine.spaceId,
         userId: routine.userId,
       });
+      const activeSkillRecords = skillRecords.filter((skill) =>
+        isSkillEnabledForBot(skill, routine.botId, bot.name),
+      );
       const routinePrompt =
-        expandSkillReferencesInPrompt(routine.prompt, skillRecords) +
+        expandSkillReferencesInPrompt(routine.prompt, activeSkillRecords) +
         (watchTick?.run ? watchTick.note : "");
       const claimed = await deps.prisma.$transaction(async (tx) => {
         const updated = await tx.routine.updateMany({
@@ -6391,6 +6396,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 name: args.name ? String(args.name) : undefined,
                 skillId: args.skillId ? String(args.skillId) : undefined,
               },
+              { id: bot.id, name: bot.name },
             );
           }
           if (name === "skill_create") {
@@ -7445,14 +7451,17 @@ export function createRunExecutor(deps: ExecutorDeps) {
                   "\n",
                 )}\nWhen the user asks to run a taught skill by name, follow that skill's playbook exactly. The full playbook is included in the user task when they invoke it.`
             : undefined;
-        const agentSkillsLine = formatSkillsCatalogInstruction(agentSkills);
+        const activeAgentSkills = agentSkills.filter((skill) =>
+          isSkillEnabledForBot(skill, bot.id, bot.name),
+        );
+        const agentSkillsLine = formatSkillsCatalogInstruction(activeAgentSkills);
         const missingImagesInstruction = missingTurnImagesInstruction(
           turnBlocks,
           currentTurnImages,
         );
         const taskPrompt = expandSkillReferencesInPrompt(
           [task.prompt, attachedFilesPrompt, missingImagesInstruction].filter(Boolean).join("\n\n"),
-          agentSkills,
+          activeAgentSkills,
         );
         const invokedSkill = savedSkills.find((skill) =>
           promptInvokesSkill(taskPrompt, skill.name || skill.goal),
@@ -9359,6 +9368,8 @@ export function threadContextForRun<T extends { id?: string; role: string }>(
     : { ...context, includeSemanticRecall: true };
 }
 
+export { DEFAULT_CHIEF_INSTRUCTIONS } from "@rakazo/core";
+
 /** Name, title, and description, skipping any part that is blank. */
 function publicProfile(
   name: string,
@@ -9380,11 +9391,18 @@ export function runIdentityInstruction(
   },
   trigger: string,
 ): string {
-  const description = bot.description?.trim() ?? "";
-  const rawInstructions = bot.instructions ?? "";
-  const instructions = rawInstructions.trim();
+  const isChief = Boolean(bot.name?.trim().toLowerCase() === "chief");
+  const defaultInstructions = isChief ? DEFAULT_CHIEF_INSTRUCTIONS : "";
+  const effectiveInstructions = bot.instructions?.trim() || defaultInstructions;
+  const description =
+    bot.description?.trim() ||
+    (isChief ? "Lead orchestrator and trusted single point of contact." : "");
+  const title = bot.title?.trim() || (isChief ? "Chief of Staff" : "");
+  const rawInstructions = bot.instructions?.trim() ? bot.instructions : effectiveInstructions;
+  const instructions = effectiveInstructions;
+
   if (trigger !== "created") {
-    const identity = publicProfile(bot.name, bot.title, description);
+    const identity = publicProfile(bot.name, title, description);
     // Older bots saved one text as both fields; do not repeat it.
     if (!instructions || instructions === description) {
       return instructions ? rawInstructions : identity;
@@ -9396,8 +9414,8 @@ export function runIdentityInstruction(
     ].join("\n");
   }
   return [
-    `Name: ${bot.name.trim() || "(none)"}`,
-    `Title: ${(bot.title ?? "").trim() || "(none)"}`,
+    `Name: ${bot.name?.trim() || "(none)"}`,
+    `Title: ${title || "(none)"}`,
     `Description: ${description || "(none)"}`,
     instructions ? `Instructions:\n${instructions}` : "Instructions: (none)",
   ].join("\n");

@@ -1,6 +1,7 @@
 import {
   buildSkillMd,
   findSkillByName,
+  isSkillEnabledForBot,
   isSkillReadOnly,
   mergeBuiltinSkills,
   parseSkillMd,
@@ -110,9 +111,13 @@ export async function skillReadFromTool(
   prisma: PrismaClient,
   owner: SkillOwner,
   input: { name?: string; skillId?: string },
+  botContext?: { id: string; name?: string },
 ): Promise<Record<string, unknown>> {
   const skill = await findOwnedSkill(prisma, owner, input);
   if (!skill) return { error: "Skill not found." };
+  if (botContext && !isSkillEnabledForBot(skill, botContext.id, botContext.name)) {
+    return { error: "Skill is not available to this bot." };
+  }
   return {
     name: skill.name,
     description: skill.description,

@@ -1,6 +1,11 @@
 import { ORPCError } from "@orpc/server";
 import { BUILTIN_AGENT_SKILLS } from "@rakazo/adapters";
-import type { Actor, AgentSkill, AgentSkillSource } from "@rakazo/contracts";
+import type {
+  Actor,
+  AgentSkill,
+  AgentSkillCatalogEntry,
+  AgentSkillSource,
+} from "@rakazo/contracts";
 import {
   buildSkillMd,
   findSkillByName,
@@ -132,14 +137,12 @@ export function createAgentSkillsService(prisma: PrismaClient) {
   }
 
   return {
-    async list(actor: Actor): Promise<Omit<AgentSkill, "content">[]> {
+    async list(actor: Actor): Promise<AgentSkillCatalogEntry[]> {
       const rows = await prisma.agentSkill.findMany({
         where: { spaceId: actor.spaceId, userId: actor.userId },
         orderBy: [{ name: "asc" }, { id: "asc" }],
       });
-      return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill)).map(
-        ({ content: _content, ...entry }) => entry,
-      );
+      return mergeBuiltinSkills(builtinCatalog(), rows.map(mapAgentSkill));
     },
 
     async listWithContent(actor: Actor): Promise<AgentSkill[]> {
@@ -220,6 +223,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
       actor: Actor,
       input: {
         skillId: string;
+        expectedContent?: string;
         content?: string;
         name?: string;
         description?: string;
@@ -255,6 +259,7 @@ export function createAgentSkillsService(prisma: PrismaClient) {
             spaceId: actor.spaceId,
             userId: actor.userId,
             source: "user",
+            ...(input.expectedContent !== undefined ? { content: input.expectedContent } : {}),
           },
           data: {
             name: resolved.name,
@@ -262,7 +267,14 @@ export function createAgentSkillsService(prisma: PrismaClient) {
             content: resolved.content,
           },
         });
-        if (updated.count !== 1) throw new IsolationError();
+        if (updated.count !== 1) {
+          if (input.expectedContent !== undefined) {
+            throw new ORPCError("CONFLICT", {
+              message: "Skill changed while editing. Reopen it and try again.",
+            });
+          }
+          throw new IsolationError();
+        }
       } catch (error) {
         if (error instanceof IsolationError) throw error;
         if (

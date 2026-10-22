@@ -30,6 +30,7 @@ export interface SafeWebFetchOptions {
   truncate?: boolean;
   /** Refuse any hop, redirects included, whose port is not listed. */
   allowedPorts?: readonly number[];
+  allowedProtocols?: readonly string[];
   /**
    * Test seam for dispatcher teardown. Defaults to `Agent.close()`.
    * Always raced against the shared operation deadline.
@@ -51,6 +52,7 @@ export async function assertSafeWebUrl(
   resolve: ResolveHostname = defaultResolveHostname,
   signal?: AbortSignal,
   allowedPorts?: readonly number[],
+  allowedProtocols?: readonly string[],
 ): Promise<URL> {
   let url: URL;
   try {
@@ -60,6 +62,9 @@ export async function assertSafeWebUrl(
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Only http: and https: URLs are allowed");
+  }
+  if (allowedProtocols && !allowedProtocols.includes(url.protocol)) {
+    throw new Error("URL protocol is not allowed");
   }
   if (url.username || url.password) {
     throw new Error("URL must not contain credentials");
@@ -141,6 +146,7 @@ export async function fetchSafeWebBytes(
       redirectsRemaining: options.maxRedirects ?? MAX_REDIRECTS,
       truncate: options.truncate ?? false,
       allowedPorts: options.allowedPorts,
+      allowedProtocols: options.allowedProtocols,
     });
   } finally {
     // Race graceful close against the shared deadline. Do not wait unbounded on close().
@@ -171,12 +177,19 @@ async function followRedirects(
     redirectsRemaining: number;
     truncate: boolean;
     allowedPorts?: readonly number[];
+    allowedProtocols?: readonly string[];
   },
 ): Promise<SafeWebResponse<Uint8Array>> {
   if (state.signal.aborted) {
     throw abortError(state.signal);
   }
-  const validated = await assertSafeWebUrl(rawUrl, state.resolve, state.signal, state.allowedPorts);
+  const validated = await assertSafeWebUrl(
+    rawUrl,
+    state.resolve,
+    state.signal,
+    state.allowedPorts,
+    state.allowedProtocols,
+  );
   // Race fetch against the deadline — injected fetch may ignore init.signal.
   const response = await withAbort(
     state.baseFetch(validated.href, {

@@ -640,6 +640,8 @@ export const AgentSkillCatalogEntrySchema = AgentSkillSchema.pick({
   description: true,
   source: true,
   readOnly: true,
+}).extend({
+  content: z.string().optional(),
 });
 export type AgentSkillCatalogEntry = z.infer<typeof AgentSkillCatalogEntrySchema>;
 
@@ -664,6 +666,7 @@ export const CreateAgentSkillInput = z
 export const UpdateAgentSkillInput = z
   .object({
     skillId: Id,
+    expectedContent: z.string().max(100_000).optional(),
     content: z.string().min(1).max(100_000).optional(),
     name: z.string().min(1).max(80).optional(),
     description: z.string().min(1).max(2000).optional(),

@@ -547,6 +547,36 @@ describe("runReplyGuidance", () => {
     );
   });
 
+  it("provides Chief with default Chief of Staff instructions when instructions are empty", () => {
+    const chief = {
+      name: "Chief",
+      title: "",
+      description: "",
+      instructions: "",
+    };
+    const userInstruction = runIdentityInstruction(chief, "user");
+    expect(userInstruction).toContain("Chief of Staff");
+    expect(userInstruction).toContain("check your own durable memory");
+    expect(userInstruction).toContain(
+      "do not query, message, or check other bots for your own memory",
+    );
+
+    const createdInstruction = runIdentityInstruction(chief, "created");
+    expect(createdInstruction).toContain("Title: Chief of Staff");
+    expect(createdInstruction).toContain("Description: Lead orchestrator");
+    expect(createdInstruction).toContain("Instructions:\nYou are Chief");
+  });
+
+  it("preserves explicit custom instructions on Chief", () => {
+    const chief = {
+      name: "Chief",
+      title: "Custom Lead",
+      description: "Custom desc",
+      instructions: "Custom chief instructions",
+    };
+    expect(runIdentityInstruction(chief, "user")).toBe("Custom chief instructions");
+  });
+
   it("does not send a finish notification for the creation intro", () => {
     expect(runSendsFinishNotification("created")).toBe(false);
     expect(runSendsFinishNotification("user")).toBe(true);

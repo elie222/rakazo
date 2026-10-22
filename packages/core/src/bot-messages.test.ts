@@ -136,6 +136,9 @@ describe("directory", () => {
     expect(directory).toContain("async");
     expect(directory).toContain("does not end your turn");
     expect(directory).toContain("Later updates only if they add something new");
+    expect(directory).toContain(
+      "Never message or check other bots to answer questions about your own memory",
+    );
   });
 
   it("treats directory fields as untrusted prompt data", () => {

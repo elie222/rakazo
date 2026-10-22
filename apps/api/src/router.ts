@@ -185,6 +185,7 @@ import {
   expandSkillReferencesInPrompt,
   hasMixedOneShotSchedule,
   isOneShotRoutineCrons,
+  isSkillEnabledForBot,
   MODEL_REQUIRED_SEND_ERROR,
   nextCronDateAcrossStrict,
   QUEUE_HOLDING_RUN_STATUSES,
@@ -4070,7 +4071,8 @@ export function createRouter(deps: RouterDeps) {
           if (existing) return { runId: existing.id };
         }
         const skillRecords = await agentSkills.listWithContent(context.actor);
-        const prompt = expandSkillReferencesInPrompt(routine.prompt, skillRecords);
+        const botSkills = skillRecords.filter((s) => isSkillEnabledForBot(s, bot.id, bot.name));
+        const prompt = expandSkillReferencesInPrompt(routine.prompt, botSkills);
         let run: { id: string };
         try {
           // Task + run must commit together so a nonce collision cannot leave an orphan queued Task.
