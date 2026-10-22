@@ -207,17 +207,37 @@ describe("connected model choices", () => {
       { provider: "openrouter", id: "text-only", label: "Text Only", images: false },
       { provider: "openrouter", id: "sees", label: "Sees", images: true },
       { provider: "openrouter", id: "unknown", label: "Unknown" },
+      { provider: "other", id: "custom", label: "Other provider", images: false },
+      {
+        provider: "openrouter",
+        id: "placeholder",
+        label: "Placeholder",
+        placeholder: true,
+        images: false,
+      },
     ];
     const choices = connectedModelChoices(
       [{ provider: "openrouter", label: "OpenRouter" }],
       catalog,
     );
     expect(choices.map((choice) => choice.images)).toEqual([false, true, undefined]);
-    const custom = connectedModelChoices(
-      [{ provider: "openrouter", label: "OpenRouter", enabledModelIds: ["text-only"] }],
+    const enabled = connectedModelChoices(
+      [
+        {
+          provider: "openrouter",
+          label: "OpenRouter",
+          enabledModelIds: ["text-only", "sees", "unknown", "custom", "placeholder"],
+        },
+      ],
       catalog,
     );
-    expect(custom[0]?.images).toBeUndefined();
+    expect(enabled.map((choice) => choice.images)).toEqual([
+      false,
+      true,
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
 
   it("rewrites a catalog id that is only a display label", () => {

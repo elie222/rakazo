@@ -318,7 +318,10 @@ export function connectedModelChoices(
     const enabled = (credential.enabledModelIds ?? []).map((id) => id.trim()).filter(Boolean);
     const next: ConnectedModelChoice[] =
       enabled.length > 0
-        ? enabled.map((id) => freeFormChoice(credential, id))
+        ? enabled.map((id) => ({
+            ...freeFormChoice(credential, id),
+            images: providerModels.find((entry) => entry.id === id)?.images,
+          }))
         : raw && !resolvedInCatalog
           ? [freeFormChoice(credential, resolved || raw)]
           : catalogChoices(providerModels);
