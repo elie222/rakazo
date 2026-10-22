@@ -84,6 +84,9 @@ export function isTerminal(status: RunStatus): boolean {
   return TERMINAL.includes(status);
 }
 
+/** Prompt of a run created to answer messages that waited behind another turn. */
+export const STEERING_CONTINUATION_PROMPT = "Respond to the user's steering context.";
+
 /** Whether a run's turn is part of the thread's conversation and may take user steering. */
 export function isConversationalRun(trigger: string | null | undefined): boolean {
   return !NON_CONVERSATIONAL_RUN_TRIGGERS.has(trigger ?? "");

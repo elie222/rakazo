@@ -1,5 +1,6 @@
 import type { AgentRuntimeEvent } from "@rakazo/adapter-kit";
-import { describe, expect, it } from "vitest";
+import { STEERING_CONTINUATION_PROMPT } from "@rakazo/core";
+import { describe, expect, it, vi } from "vitest";
 import { inferScript, ScriptedAgentRuntime } from "./scripted-runtime.js";
 
 describe("inferScript ask resumes", () => {
@@ -315,34 +316,37 @@ describe("inferScript save_shared_memory", () => {
 });
 
 describe("ScriptedAgentRuntime steering", () => {
-  const request = (
-    prompt: string,
-    claimSteering?: (seenIds: string[]) => Promise<{ text: string }[]>,
-    resumeFromCheckpoint?: string,
-  ) => ({
-    botId: "bot-1",
-    threadId: "thread-1",
-    runId: `run-${prompt}`,
-    prompt,
-    instructions: "",
-    history: [],
-    tools: [],
-    model: { provider: "scripted", id: "scripted" },
-    resumeFromCheckpoint,
-    claimSteering: claimSteering
-      ? async (seenIds: string[]) =>
-          (await claimSteering(seenIds)).map((item, index) => ({
-            id: `steer-${index}`,
-            messageId: `message-${index}`,
-            ...item,
-          }))
-      : undefined,
-  });
-  const collect = async (input: ReturnType<typeof request>) => {
+  const continuation = `${STEERING_CONTINUATION_PROMPT}\n\nCurrent time: fixture`;
+  const request = (prompt: string, steering: string[] = [], resumeFromCheckpoint?: string) => {
+    const claimSteering = vi.fn(async (_seenIds: string[]) =>
+      steering.map((text, index) => ({
+        id: `steer-${index}`,
+        messageId: `message-${index}`,
+        text,
+      })),
+    );
+    return {
+      claimSteering,
+      input: {
+        botId: "bot-1",
+        threadId: "thread-1",
+        runId: "run-1",
+        prompt,
+        instructions: "",
+        history: [],
+        tools: [],
+        model: { provider: "scripted", id: "scripted" },
+        resumeFromCheckpoint,
+        claimSteering,
+      },
+    };
+  };
+  const collect = async ({ input }: ReturnType<typeof request>) => {
     const events: AgentRuntimeEvent[] = [];
     for await (const event of new ScriptedAgentRuntime().run(input)) events.push(event);
     return events;
   };
+  const remembered = { type: "text", text: "noted — i will keep that in memory." };
 
   it("finishes timed work on its own", async () => {
     const events = await collect(request("work for 0 seconds"));
@@ -354,29 +358,33 @@ describe("ScriptedAgentRuntime steering", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "tool", name: "message_bot" }));
   });
 
-  it("answers a waiting message as the run's prompt", async () => {
-    const events = await collect(
-      request("Respond to the user's steering context.", async () => [
-        { text: "remember the plan" },
-      ]),
-    );
-    expect(events).toContainEqual({ type: "text", text: "noted — i will keep that in memory." });
+  it("answers the waiting messages a continuation was created for", async () => {
+    const events = await collect(request(continuation, ["remember the plan"]));
+    expect(events).toContainEqual(remembered);
   });
 
-  it("passes what it already claimed and keeps a resume checkpoint for a steered script", async () => {
-    const seen: string[][] = [];
-    const events = await collect(
-      request(
-        "keep working",
-        async (seenIds) => {
-          seen.push(seenIds);
-          return seen.length === 1 ? [{ text: "take over the browser" }] : [];
-        },
-        "takeover",
-      ),
-    );
-    expect(seen).toEqual([[]]);
-    // The takeover checkpoint resumes the steered script past its takeover instead of asking again.
+  it("keeps its own task when it takes waiting messages as context", async () => {
+    const run = request("remember the plan", ["ask me which city"]);
+    const events = await collect(run);
+    expect(run.claimSteering).toHaveBeenCalledExactlyOnceWith([]);
+    expect(events).toContainEqual(remembered);
+    expect(events.some((event) => event.type === "ask")).toBe(false);
+  });
+
+  it("finishes a continuation resumed with the user's answer instead of asking again", async () => {
+    const events = await collect(request("Berlin", ["ask me which city"]));
+    expect(events.some((event) => event.type === "ask")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "done" });
+  });
+
+  it("does the long work a waiting message asked for", async () => {
+    const events = await collect(request(continuation, ["work for 0 seconds"]));
+    expect(events[0]).toMatchObject({ type: "tool", name: "list_files" });
+    expect(events.at(-1)).toEqual({ type: "done", text: "done." });
+  });
+
+  it("keeps a takeover checkpoint for a continuation's script", async () => {
+    const events = await collect(request(continuation, ["take over the browser"], "takeover"));
     expect(events.some((event) => event.type === "takeover")).toBe(false);
     expect(events).toContainEqual({
       type: "text",
@@ -384,12 +392,11 @@ describe("ScriptedAgentRuntime steering", () => {
     });
   });
 
-  it("turns a message steered into a working run into its next turn", async () => {
-    let claims = 0;
-    const events = await collect(
-      request("keep working", async () => (++claims === 2 ? [{ text: "remember the plan" }] : [])),
-    );
-    expect(events).toContainEqual({ type: "text", text: "noted — i will keep that in memory." });
-    expect(events.at(-1)).toMatchObject({ type: "done" });
+  it("keeps working when a message arrives during long work", async () => {
+    const run = request("work for 1 second", ["remember the plan"]);
+    const events = await collect(run);
+    expect(run.claimSteering).toHaveBeenCalledOnce();
+    expect(events).not.toContainEqual(remembered);
+    expect(events.at(-1)).toEqual({ type: "done", text: "done." });
   });
 });

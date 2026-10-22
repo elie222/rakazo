@@ -4,7 +4,7 @@ import type {
   AgentRuntime,
   AgentRuntimeEvent,
 } from "@rakazo/adapter-kit";
-import { abortableDelay, inferHandoffTargetName } from "@rakazo/core";
+import { abortableDelay, inferHandoffTargetName, STEERING_CONTINUATION_PROMPT } from "@rakazo/core";
 
 const running = new Map<string, AbortController>();
 
@@ -33,11 +33,16 @@ export class ScriptedAgentRuntime implements AgentRuntime {
       if (shouldFail(request.prompt)) {
         throw new Error("Scripted run failure");
       }
-      // Like Pi, a run first takes the messages waiting for it; they become its prompt. A resumed
-      // attempt claims the same rows again, so it rebuilds the script its first attempt ran.
-      const seenSteeringIds: string[] = [];
-      let steeredPrompt = await claimSteeringText(request, seenSteeringIds);
-      const hangMs = steeredPrompt === undefined ? hangDuration(request.prompt) : undefined;
+      // Like Pi, a run first takes the messages waiting for it. A continuation exists only to
+      // answer them, so their text is its prompt; any other run keeps its own task. A resumed
+      // attempt claims the same rows again, so it rebuilds the script it was running.
+      const steering = (await request.claimSteering?.([])) ?? [];
+      const steeredPrompt =
+        request.prompt.includes(STEERING_CONTINUATION_PROMPT) && steering.length
+          ? steering.map((item) => item.historyText ?? item.text).join("\n")
+          : undefined;
+      const prompt = steeredPrompt ?? request.prompt;
+      const hangMs = hangDuration(prompt);
       if (hangMs !== undefined) {
         // Long-running work happens on the computer, which starts it like any real run would.
         yield {
@@ -51,15 +56,10 @@ export class ScriptedAgentRuntime implements AgentRuntime {
         while (!controller.signal.aborted && !signal.aborted && Date.now() < hangUntil) {
           await abortableDelay(50, controller.signal);
           if (controller.signal.aborted || signal.aborted) break;
-          // A message steered into the working run becomes its next turn.
-          steeredPrompt = await claimSteeringText(request, seenSteeringIds);
-          if (steeredPrompt !== undefined) break;
           yield { type: "progress", text: "still working…", activity: true };
         }
-        if (steeredPrompt === undefined) {
-          yield { type: "done", text: Number.isFinite(hangMs) ? "done." : "stopped" };
-          return;
-        }
+        yield { type: "done", text: Number.isFinite(hangMs) ? "done." : "stopped" };
+        return;
       }
       const script =
         steeredPrompt !== undefined
@@ -639,17 +639,6 @@ code-b
       complete: true,
     },
   ];
-}
-
-async function claimSteeringText(
-  request: AgentRunRequest,
-  seenIds: string[],
-): Promise<string | undefined> {
-  const steering = (await request.claimSteering?.([...seenIds])) ?? [];
-  seenIds.push(...steering.map((item) => item.id));
-  return steering.length
-    ? steering.map((item) => item.historyText ?? item.text).join("\n")
-    : undefined;
 }
 
 function shouldFail(prompt: string): boolean {

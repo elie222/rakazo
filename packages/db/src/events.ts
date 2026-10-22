@@ -20,6 +20,7 @@ import {
   QUEUE_HOLDING_RUN_STATUSES,
   releasedTakeoverComputerBlocks,
   resolveAskChoice,
+  STEERING_CONTINUATION_PROMPT,
   sanitizeJsonValue,
 } from "@rakazo/core";
 import { urlSite } from "@rakazo/core/egress";
@@ -1706,7 +1707,7 @@ export async function createPendingSteeringRun(
       prompt:
         origin === "webhook"
           ? blocksToAgentHistoryText(source.message.blocks as MessageBlock[])
-          : "Respond to the user's steering context.",
+          : STEERING_CONTINUATION_PROMPT,
       status: "queued",
     },
   });
