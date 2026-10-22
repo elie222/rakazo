@@ -272,6 +272,13 @@ test("the bot's model picker marks models that cannot read images", async ({ pag
   const vision = page.getByRole("option", { name: "OpenRouter · Vision model 1", exact: true });
   await expect(textOnly).toBeVisible();
   await captureScreenshot(page, testInfo, "bot-model-picker-text-only-row");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  await captureScreenshot(page, testInfo, "bot-model-picker-text-only-row-dark");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+  });
   await expect(textOnly.getByTitle("Can't read images")).toBeVisible();
   await expect(textOnly).toHaveAccessibleDescription("Can't read images");
   await expect(vision.getByTitle("Can't read images")).toHaveCount(0);
@@ -280,6 +287,13 @@ test("the bot's model picker marks models that cannot read images", async ({ pag
   await expect(picker).toContainText("Text-only model");
   await picker.scrollIntoViewIfNeeded();
   await captureScreenshot(page, testInfo, "bot-model-picker-text-only-selected");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  await captureScreenshot(page, testInfo, "bot-model-picker-text-only-selected-dark");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+  });
   await expect(picker.getByTitle("Can't read images")).toBeVisible();
   await expect(picker).toHaveAccessibleDescription("Can't read images");
 
