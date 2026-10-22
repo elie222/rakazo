@@ -7,6 +7,7 @@ import path from "node:path";
 import tls from "node:tls";
 import { lingui } from "@lingui/vite-plugin";
 import type { DesktopStackProbeResponse } from "@rakazo/contracts";
+import { buildIdAt } from "@rakazo/contracts/client-build";
 import {
   appContentSecurityPolicy,
   CSP_REPORTING_ENDPOINTS,
@@ -383,7 +384,9 @@ function attachNovncProxy(server: ViteDevServer | PreviewServer, secret: string,
   });
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
+  // Names this build in every API request; the dev server has none, so the handshake stays off.
+  const buildId = command === "build" ? buildIdAt(new Date()) : "";
   const rootEnv = loadEnv(mode, path.resolve(import.meta.dirname, "../.."), "");
   const api = process.env.API_PROXY_TARGET ?? rootEnv.API_PROXY_TARGET ?? "http://127.0.0.1:3100";
   const apiProxy = Object.fromEntries(
@@ -440,7 +443,17 @@ export default defineConfig(({ mode }) => {
     ),
   });
   return {
+    define: { "import.meta.env.RAKAZO_BUILD": JSON.stringify(buildId) },
     plugins: [
+      {
+        // The API reads this to name the deployed build, and a tab fetches it to confirm the
+        // server already serves a newer build before it reloads.
+        name: "rakazo-build-id",
+        apply: "build",
+        generateBundle() {
+          this.emitFile({ type: "asset", fileName: "build-id", source: `${buildId}\n` });
+        },
+      },
       react(),
       babel({ plugins: ["@lingui/babel-plugin-lingui-macro"] }),
       lingui(),

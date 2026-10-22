@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { ANDROID_APK_URL, IOS_APP_STORE_URL } from "@rakazo/contracts";
 import {
   AppMarkStack,
   Button,
@@ -138,11 +139,7 @@ export function SidebarFooter({
             </Button>
             <a
               className={`${buttonVariants({ variant: "ghost" })} h-9 w-full justify-start gap-2.5 font-normal`}
-              href={
-                /Android/i.test(navigator.userAgent)
-                  ? "https://github.com/elie222/rakazo/releases/download/android/rakazo.apk"
-                  : "https://apps.apple.com/app/rakazo/id6801531099"
-              }
+              href={/Android/i.test(navigator.userAgent) ? ANDROID_APK_URL : IOS_APP_STORE_URL}
               target="_blank"
               rel="noreferrer"
             >

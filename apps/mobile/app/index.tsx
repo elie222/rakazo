@@ -1,7 +1,7 @@
 import { MenuView } from "@expo/ui/community/menu";
 import type { RunActivityRow, SpaceBot, SpaceGroup } from "@rakazo/contracts";
 import { normalizeCreateBotProfile } from "@rakazo/contracts";
-import { accountDisplay, isRunWorking } from "@rakazo/core";
+import { accountDisplay, isRetryableError, isRunWorking } from "@rakazo/core";
 import { botColors, fontWeight, typeScale } from "@rakazo/ui-tokens";
 import type { Href } from "expo-router";
 import {
@@ -373,6 +373,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
         kind: loadFailureKind(err),
         message: errorText(err, t("Could not load bots")),
       });
+      // False when the server refused rather than failed: asking again only polls it.
+      return isRetryableError(err);
     } finally {
       if (requestId === inboxRequestId.current) setInboxLoading(false);
     }
@@ -423,8 +425,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       let cancelled = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const tick = async () => {
-        if (AppState.currentState === "active") await loadBots();
-        if (!cancelled) timer = setTimeout(() => void tick(), 5_000);
+        const loaded = AppState.currentState === "active" ? await loadBots() : undefined;
+        if (!cancelled && loaded !== false) timer = setTimeout(() => void tick(), 5_000);
       };
       void tick();
       return () => {
@@ -468,9 +470,11 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       const next = await fetchSpaceActivity();
       if (requestId !== activityRequestId.current) return;
       setActivity(next);
-    } catch {
+    } catch (error) {
       // Keep the last good snapshot on transient RPC failures; only drop stale responses.
       if (requestId !== activityRequestId.current) return;
+      // False when the server refused rather than failed: asking again only polls it.
+      return isRetryableError(error);
     }
   }, [activityMode, hasSession]);
 
@@ -481,8 +485,8 @@ function Home({ embedded, onSelectSpace }: InboxPaneProps & { embedded: boolean 
       let timer: ReturnType<typeof setTimeout> | undefined;
 
       const tick = async () => {
-        await loadActivity();
-        if (!cancelled) {
+        const loaded = await loadActivity();
+        if (!cancelled && loaded !== false) {
           timer = setTimeout(() => void tick(), 15_000);
         }
       };

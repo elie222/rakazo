@@ -119,6 +119,26 @@ describe("computer refresh lifecycle", () => {
     expect(fixture.onScreen).toHaveBeenCalledWith(null);
     fixture.controller.dispose();
   });
+
+  it("stops polling when the server refuses the status but keeps polling through a 503", async () => {
+    vi.useFakeTimers();
+    const fixture = setup();
+    const httpError = (status: number) => Object.assign(new Error(`HTTP ${status}`), { status });
+    fixture.readStatus
+      .mockRejectedValueOnce(httpError(503))
+      .mockRejectedValueOnce(httpError(404))
+      .mockResolvedValue(running);
+    fixture.controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(2);
+    await fixture.controller.refresh();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(fixture.readStatus).toHaveBeenCalledTimes(4);
+    fixture.controller.dispose();
+  });
 });
 
 describe("computer action lifecycle", () => {

@@ -1,4 +1,6 @@
 export const DE_MESSAGES: Record<string, string> = {
+  "Update required": "Update erforderlich",
+  Update: "Aktualisieren",
   Provider: "Anbieter",
   "No matching providers": "Keine passenden Anbieter",
   "To:": "An:",

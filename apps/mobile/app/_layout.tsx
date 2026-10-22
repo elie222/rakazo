@@ -47,6 +47,7 @@ import {
 import { loadAppearancePreference, mobileTokens } from "../lib/appearance";
 import { replaceWithSignIn } from "../lib/auth-routing";
 import { loadAvatarStyle } from "../lib/avatar-style";
+import { installClientUpdates, watchForegroundUpdates } from "../lib/client-update";
 import { bootstrapI18n, useI18n } from "../lib/i18n";
 import { loadLinkFavicon } from "../lib/link-favicons";
 import {
@@ -80,6 +81,7 @@ import { InboxPane } from "./index";
 capTextScaling();
 configureForegroundNotifications();
 registerSessionDiskCache(clearSavedChats);
+installClientUpdates();
 // Keep the splash up until the saved appearance applies, so the first frame isn't in the OS scheme.
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -287,6 +289,8 @@ function LayoutContent() {
     if (!ready) return;
     return startUnsentSends();
   }, [ready]);
+
+  useEffect(() => watchForegroundUpdates(), []);
 
   useEffect(() => {
     void Promise.all([

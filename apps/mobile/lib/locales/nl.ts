@@ -1,4 +1,6 @@
 export const NL_MESSAGES: Record<string, string> = {
+  "Update required": "Update vereist",
+  Update: "Bijwerken",
   Provider: "Provider",
   "No matching providers": "Geen overeenkomende providers",
   "To:": "Aan:",

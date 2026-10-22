@@ -30,6 +30,7 @@ import {
   groupVoiceChats,
   isApprovalAskBlock,
   isPeerReceiptBlocks,
+  isRetryableError,
   isRunTerminalEvent,
   isRunWaitingOnUser,
   isRunWorking,
@@ -42,6 +43,7 @@ import {
   replyAttachment,
   resolveComposerSendPlan,
   resolvePersonaColorDef,
+  retryDelayMs,
   displayName as safeDisplayName,
   selectedAskActionLabel,
   threadWindowMessages,
@@ -334,7 +336,7 @@ export default function ThreadRoute() {
         .catch((error) => {
           if (!cancelled && !notified) Alert.alert(t("Could not continue"), errorText(error));
           notified = true;
-          if (!cancelled) timer = setTimeout(verify, 5_000);
+          if (!cancelled && isRetryableError(error)) timer = setTimeout(verify, 5_000);
         });
     verify();
     return () => {
@@ -1507,6 +1509,7 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
       liveCursor.current = cursor;
       let retryMs = 250;
       while (!abort.signal.aborted && sessionGeneration === currentSessionGeneration()) {
+        let failure: unknown;
         try {
           liveSubscribed.current = true;
           await subscribeThread(
@@ -1560,18 +1563,30 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
             },
             abort.signal,
           );
-        } catch {
+        } catch (error) {
           // A full refresh reconciles visible state; the event cursor still resumes without gaps.
+          failure = error;
         } finally {
           if (liveSubscriptionGeneration.current === subscriptionGeneration) {
             liveSubscribed.current = false;
           }
         }
-        if (abort.signal.aborted) break;
+        // A 4xx other than 408/429 is the server's answer; reconnecting only polls it.
+        if (abort.signal.aborted || !isRetryableError(failure)) break;
+        let refreshFailure: unknown;
         if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
-          await refresh().catch(() => undefined);
+          refreshFailure = await refresh().then(
+            () => undefined,
+            (error: unknown) => error,
+          );
+          if (!isRetryableError(refreshFailure)) break;
         }
-        await abortableDelay(retryMs, abort.signal);
+        // Wait as long as either request was asked to (a 429's Retry-After).
+        const delay = Math.max(
+          retryDelayMs(failure, retryMs),
+          retryDelayMs(refreshFailure, retryMs),
+        );
+        await abortableDelay(delay, abort.signal);
         retryMs = Math.min(retryMs * 2, 5_000);
       }
     })();
@@ -1606,31 +1621,45 @@ function Thread({ sessionEpoch, userId }: { sessionEpoch: number; userId: string
     return () => clearTimeout(timer);
   }, [snap, showingSaved, botId, groupId]);
 
-  useEffect(() => {
-    if (!botId && !groupId) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const refreshDelay = () =>
-      threadRefreshDelayMs(snap?.run?.status, { liveSubscribed: liveSubscribed.current });
-    const tick = async () => {
-      if (
-        AppState.currentState === "active" &&
-        navigation.isFocused() &&
-        !jumpScrollTarget.current &&
-        !expandedHistoryThread.current
-      ) {
-        await refresh().catch(() => undefined);
+  // The safety snapshot is a gap detector, not the live path: SSE already carries
+  // deltas. Stop the timer while the app is backgrounded; the stream effect resumes
+  // from its cursor when the app returns.
+  useFocusEffect(
+    useCallback(() => {
+      if (!foreground || (!botId && !groupId)) return;
+      let cancelled = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let ticking = false;
+      const refreshDelay = () =>
+        threadRefreshDelayMs(snap?.run?.status, {
+          liveSubscribed: liveSubscribed.current,
+          readOnly,
+        });
+      function schedule() {
+        if (!cancelled) timer = setTimeout(() => void tick(), refreshDelay());
       }
-      if (!cancelled) {
-        timer = setTimeout(() => void tick(), refreshDelay());
+      async function tick() {
+        if (cancelled || ticking) return;
+        ticking = true;
+        let failure: unknown;
+        try {
+          if (!jumpScrollTarget.current && !expandedHistoryThread.current) {
+            await refresh().catch((error: unknown) => {
+              failure = error;
+            });
+          }
+        } finally {
+          ticking = false;
+          if (isRetryableError(failure)) schedule();
+        }
       }
-    };
-    timer = setTimeout(() => void tick(), refreshDelay());
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [botId, groupId, navigation, snap?.run?.status]);
+      schedule();
+      return () => {
+        cancelled = true;
+        if (timer !== undefined) clearTimeout(timer);
+      };
+    }, [botId, foreground, groupId, readOnly, snap?.run?.status]),
+  );
 
   useEffect(() => {
     if (!botId && !groupId) return;

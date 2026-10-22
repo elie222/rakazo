@@ -28,6 +28,37 @@ export function settleComposerDraftSubmission(
   for (const listener of acceptedListeners.get(threadKey) ?? []) listener(submission.text);
 }
 
+let unsavedWork = false;
+
+/**
+ * The shell reports work a reload would lose: a send (typed or spoken) until the server answers,
+ * or picked attachments, which live only in memory.
+ */
+export function setComposerUnsavedWork(pending: boolean): void {
+  unsavedWork = pending;
+}
+
+/** A send waiting for its answer, or attachments that only exist in memory. */
+export function composerHoldsUnsavedWork(): boolean {
+  return pendingSubmissions.size > 0 || unsavedWork;
+}
+
+/** Unsaved composer work, or saved text in any composer that has not been sent. */
+export function hasUnsentComposerDraft(storage: Storage | null = null): boolean {
+  if (composerHoldsUnsavedWork()) return true;
+  try {
+    const drafts = storage ?? localStorage;
+    for (let index = 0; index < drafts.length; index++) {
+      const key = drafts.key(index);
+      if (key?.startsWith(COMPOSER_DRAFT_STORAGE_PREFIX) && drafts.getItem(key)) return true;
+    }
+  } catch {
+    // Without storage the draft lives only in memory, so treat it as unsent.
+    return true;
+  }
+  return false;
+}
+
 export function subscribeComposerDraftAccepted(
   threadKey: string,
   listener: (text: string) => void,

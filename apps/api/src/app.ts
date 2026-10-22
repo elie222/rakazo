@@ -77,6 +77,7 @@ import {
 } from "@rakazo/adapters";
 import { createAuth, isBlockedAuthPath, loopbackTwinOrigins } from "@rakazo/auth";
 import type { Actor, AuthCapabilities } from "@rakazo/contracts";
+import { SERVER_BUILD_HEADER } from "@rakazo/contracts";
 import { signupAllowlistBootUpdate, signupPolicyFromEnv } from "@rakazo/core";
 import type { Pool, PrismaClient } from "@rakazo/db";
 import {
@@ -114,6 +115,7 @@ import { mountAppAssociation, nativePasskeys } from "./app-association.js";
 import { storeInboundAttachment } from "./artifacts.js";
 import { createBillingService } from "./billing.js";
 import { mountBillingRoutes } from "./billing-webhook.js";
+import { clientBuildMiddleware, readDeployedWebBuild } from "./client-build.js";
 import {
   clientIpMiddleware,
   createClientIpResolver,
@@ -679,6 +681,7 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
         return isTrustedOrigin(origin, env) ? origin : "";
       },
       credentials: true,
+      exposeHeaders: [SERVER_BUILD_HEADER],
     }),
   );
   // Session and account replies must never be stored by a client or an HTTP cache.
@@ -757,6 +760,13 @@ async function buildApp(overrides: CreateAppOverrides): Promise<AppHandles> {
     return actor && { actor, sessionId: session.session.id };
   };
   const sessionActor = async (request: Request) => (await requestSession(request))?.actor ?? null;
+  app.use(
+    "/rpc/*",
+    clientBuildMiddleware({
+      webBuild: readDeployedWebBuild(),
+      minimums: env.minimumClientBuilds ?? {},
+    }),
+  );
   app.use("/rpc/*", async (c, next) => {
     const session = await requestSession(c.req.raw);
     const actor = session?.actor ?? null;

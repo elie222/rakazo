@@ -1,6 +1,6 @@
 import type { ProductEvent } from "@rakazo/contracts";
 import { abortableDelay } from "./async.js";
-import { isUnauthorizedError } from "./http-response.js";
+import { isRetryableError, retryDelayMs } from "./retry-policy.js";
 
 type ThreadHead = { threadId: string; cursor: number };
 
@@ -20,15 +20,21 @@ export async function runThreadSubscription(options: {
   onEvent: (event: ProductEvent, initial: ThreadHead) => void;
 }): Promise<void> {
   const { signal } = options;
-  // A 401 means the session is gone: retrying cannot succeed and only polls the server.
-  let unauthorized = false;
-  const stopped = () => signal.aborted || unauthorized;
+  // A 401 (session gone), 426 (build retired) or other 4xx is the server's answer: retrying
+  // cannot succeed and only polls the server. A 429 may ask for a longer wait.
+  let refused = false;
+  let lastFailure: unknown;
+  const stopped = () => signal.aborted || refused;
   const noteFailure = (error: unknown) => {
-    if (isUnauthorizedError(error)) unauthorized = true;
+    // Keep whichever failure asked for the longer wait (a 429's Retry-After).
+    if (retryDelayMs(error, 0) >= retryDelayMs(lastFailure, 0)) lastFailure = error;
+    if (!isRetryableError(error)) refused = true;
     return null;
   };
   const wait = async (ms: number) => {
-    await abortableDelay(ms, signal);
+    const delay = retryDelayMs(lastFailure, ms);
+    lastFailure = undefined;
+    await abortableDelay(delay, signal);
     return !stopped();
   };
   let initial = await options.loadInitial().catch(noteFailure);
@@ -106,7 +112,7 @@ export async function runThreadSubscription(options: {
         void iterator.return?.(undefined).catch(() => {});
       }
     } catch (error) {
-      // Short of a 401, reconnect from the last durable event after a transport failure.
+      // Reconnect from the last durable event after a transient failure.
       noteFailure(error);
     } finally {
       signal.removeEventListener("abort", abortAttempt);

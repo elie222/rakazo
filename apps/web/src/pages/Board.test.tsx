@@ -80,13 +80,14 @@ function ticket(
   };
 }
 
-async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>) {
+async function renderBoard(stream?: AsyncIterable<{ ticketId?: string }>, refusal?: unknown) {
   api.boards.subscribe.mockReset();
   api.boards.subscribe.mockResolvedValue(
     stream ?? {
       [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
     },
   );
+  if (refusal) api.boards.subscribe.mockRejectedValueOnce(refusal);
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
@@ -329,6 +330,25 @@ it.each(["end", "error"] as const)(
     }
   },
 );
+
+it.each([
+  [403, 1],
+  [404, 1],
+  [503, 2],
+])("after a %i subscribing, reconnect attempts total %i", async (status, attempts) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  api.bots.list.mockResolvedValue([]);
+  api.tickets.list.mockReset().mockResolvedValue({ tickets: [] });
+  const page = await renderBoard(undefined, Object.assign(new Error("Refused"), { status }));
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(api.boards.subscribe).toHaveBeenCalledTimes(attempts);
+  } finally {
+    await page.cleanup();
+    vi.useRealTimers();
+  }
+});
 
 it("renders the back control as a plain link", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

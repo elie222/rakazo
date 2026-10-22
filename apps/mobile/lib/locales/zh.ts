@@ -1,4 +1,6 @@
 export const ZH_MESSAGES: Record<string, string> = {
+  "Update required": "需要更新",
+  Update: "更新",
   Provider: "提供商",
   "No matching providers": "没有匹配的提供商",
   "To:": "收件人：",

@@ -1,4 +1,6 @@
 export const RU_MESSAGES: Record<string, string> = {
+  "Update required": "Требуется обновление",
+  Update: "Обновить",
   Provider: "Провайдер",
   "No matching providers": "Подходящие провайдеры не найдены",
   "To:": "Кому:",

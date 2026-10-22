@@ -11,12 +11,14 @@ import type {
   ModelCatalogEntry,
   ModelCredential,
   ReplyPreview,
+  RunStatus,
   Space,
   SpaceNavigation,
 } from "@rakazo/contracts";
 import {
   accountSecuritySchema,
   authCapabilitiesSchema,
+  CLIENT_UPDATE_REQUIRED_STATUS,
   legacyAccountSecurity,
   legacyAuthCapabilitiesSchema,
 } from "@rakazo/contracts";
@@ -28,11 +30,14 @@ import {
   displayIdentityEvent,
   displayIdentityResult,
   ensureAiDataConsent,
+  isActive,
+  isBackgroundRunTrigger,
   isRunTerminalEvent,
   isServerUnreachable,
   isUnreachableStatus,
   mergeThreadHistory,
   messagingProviderLabel,
+  parseRetryAfter,
   prependThreadHistoryPage,
   progressMessageId,
   readBoundedJsonResponse,
@@ -463,11 +468,22 @@ export async function resetApiBase(): Promise<EndpointResult> {
   return { ok: true, url };
 }
 
+let clientBuild: { headers: () => Record<string, string>; onUpdateRequired: () => void } = {
+  headers: () => ({}),
+  onUpdateRequired: () => {},
+};
+
+/** The app names its build on every request and decides what a refused build does. */
+export function configureClientBuild(options: typeof clientBuild): void {
+  clientBuild = options;
+}
+
 export async function authHeaders(
   spaceId: string | null = selectedSpaceId(),
 ): Promise<Record<string, string>> {
   const token = await loadSessionToken();
   return {
+    ...clientBuild.headers(),
     ...(token ? { authorization: `Bearer ${token}` } : {}),
     ...(spaceId ? { "x-rakazo-space-id": spaceId } : {}),
   };
@@ -939,11 +955,7 @@ export async function rpc<T>(
         if (!selectedSpaceId()) await clearStaleSpaceSelection();
         throw new Error(message);
       }
-      throw Object.defineProperties(new Error(message), {
-        status: { value: res.status },
-        // oRPC's error code; a proxy's bare 404 has none.
-        code: { value: typeof error?.code === "string" ? error.code : undefined },
-      });
+      throw httpError(message, res, typeof error?.code === "string" ? error.code : undefined);
     }
     const verifiedUser = parsed.json as { userId?: unknown; spaceId?: unknown } | null;
     if (
@@ -1194,6 +1206,20 @@ type ThreadEvent = {
 /** No frame at all for this long means the stream is half-open; the server beats far faster. */
 export const IDLE_TIMEOUT_MS = 45_000;
 
+/**
+ * A failed response as an error the shared retry policy can read: its status, oRPC code, and any
+ * Retry-After. A 426 also asks the user to update, from whichever request noticed it.
+ */
+function httpError(message: string, res: Response, code?: string): Error {
+  if (res.status === CLIENT_UPDATE_REQUIRED_STATUS) clientBuild.onUpdateRequired();
+  return Object.defineProperties(new Error(message), {
+    status: { value: res.status },
+    // oRPC's error code; a proxy's bare 404 has none.
+    code: { value: code },
+    retryAfterMs: { value: parseRetryAfter(res.headers.get("retry-after")) },
+  });
+}
+
 export async function subscribeThread(
   target: { botId: string } | { groupId: string },
   cursor: number,
@@ -1219,7 +1245,10 @@ export async function subscribeThread(
     throw error;
   });
   if (current()) noteServerReachable(!isUnreachableStatus(res.status));
-  if (!res.ok || !res.body) throw new Error(`rpc threads/subscribe failed (${res.status})`);
+  if (!res.ok || !res.body) {
+    cancelResponseBody(res);
+    throw httpError(`rpc threads/subscribe failed (${res.status})`, res);
+  }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -1276,6 +1305,41 @@ export function applyMobileThreadEvent(
       olderCursor: null,
       run: null,
       activeRuns: [],
+    };
+  }
+  if (event.type === "run.started") {
+    const cursor = event.seq ?? prev.cursor;
+    // Match web: background ticket work stays out of the transcript.
+    if (isBackgroundRunTrigger(event.payload?.trigger as string | undefined)) {
+      return cursor === prev.cursor ? prev : { ...prev, cursor };
+    }
+    const members = prev.members?.map((member) =>
+      member.botId === event.botId ? { ...member, status: "running" } : member,
+    );
+    if (!event.runId) return { ...prev, cursor, members };
+    const previousRun =
+      prev.activeRuns?.find((candidate) => candidate.id === event.runId) ??
+      (prev.run?.id === event.runId ? prev.run : undefined);
+    const run = {
+      ...previousRun,
+      id: event.runId,
+      ...(event.botId ? { botId: event.botId } : {}),
+      status: "running",
+      error: null,
+    };
+    const activeRuns = [
+      ...(prev.activeRuns ?? (prev.run ? [prev.run] : [])).filter(
+        (candidate) => candidate.id !== run.id && isActive(candidate.status as RunStatus),
+      ),
+      run,
+    ];
+    return {
+      ...prev,
+      cursor,
+      members,
+      // Keep a group failure visible while another member starts work.
+      run: prev.groupId && prev.run?.status === "failed" && prev.run.id !== run.id ? prev.run : run,
+      activeRuns,
     };
   }
   if (event.type === "run.waiting_input" || event.type === "computer.takeover.requested") {

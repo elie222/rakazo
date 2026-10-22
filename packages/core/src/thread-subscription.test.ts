@@ -129,6 +129,35 @@ describe("thread subscription recovery", () => {
     expect(callbacks.subscribe).not.toHaveBeenCalled();
   });
 
+  it.each([403, 404, 426])("stops reconnecting on a %i", async (status) => {
+    vi.useFakeTimers();
+    const { callbacks } = setup();
+    callbacks.subscribe.mockRejectedValue(Object.assign(new Error("Refused"), { status }));
+    await expect(runThreadSubscription(callbacks)).resolves.toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps reconnecting through server errors and waits as long as a 429 asks", async () => {
+    vi.useFakeTimers();
+    const { abort, callbacks } = setup();
+    callbacks.subscribe
+      .mockRejectedValueOnce(Object.assign(new Error("Unavailable"), { status: 503 }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Slow down"), { status: 429, retryAfterMs: 10_000 }),
+      )
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+    const running = runThreadSubscription(callbacks);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callbacks.subscribe).toHaveBeenCalledTimes(3);
+    abort.abort();
+    await running;
+  });
+
   it("cancels a reconnect delay without rejecting or starting another request", async () => {
     vi.useFakeTimers();
     const { abort, channel, callbacks } = setup();

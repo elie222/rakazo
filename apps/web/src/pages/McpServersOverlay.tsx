@@ -1,7 +1,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { Bot, BotMcpServer, McpServer, McpTransport } from "@rakazo/contracts";
-import { deriveMcpSlug } from "@rakazo/core";
+import { deriveMcpSlug, isRetryableError } from "@rakazo/core";
 import {
   Badge,
   Button,
@@ -143,7 +143,9 @@ export function McpServersOverlay({ onClose }: { onClose: () => void }) {
         .then((next) => {
           if (!cancelled) setServers(next);
         })
-        .catch(() => undefined);
+        .catch((error) => {
+          if (!isRetryableError(error)) clearInterval(timer);
+        });
     }, INSTALL_POLL_MS);
     return () => {
       cancelled = true;

@@ -8,6 +8,7 @@ import {
   TICKET_STATUSES,
   TICKET_TITLE_MAX_LENGTH,
 } from "@rakazo/contracts";
+import { isRetryableError, retryDelayMs } from "@rakazo/core";
 import {
   Button,
   buttonVariants,
@@ -60,6 +61,7 @@ export function BoardPage() {
       while (active) {
         const controller = new AbortController();
         currentController = controller;
+        let failure: unknown;
         try {
           const stream = await rpc.boards.subscribe(undefined, { signal: controller.signal });
           if (!active) return;
@@ -81,13 +83,14 @@ export function BoardPage() {
             if (active) setTickets(result.tickets);
           }
         } catch (cause) {
+          failure = cause;
           if (active) setError(errorText(cause));
         } finally {
           controller.abort();
         }
-        if (!active) return;
+        if (!active || !isRetryableError(failure)) return;
         await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, 1_000);
+          const timer = setTimeout(resolve, retryDelayMs(failure, 1_000));
           cancelRetry = () => {
             clearTimeout(timer);
             resolve();
