@@ -220,6 +220,21 @@ app verifies Rakazo's health endpoint before saving, and later launches go strai
 instance. The stack keeps running after the app quits; **Stop Local Stack** in the application
 menu turns it off.
 
+On Linux the desktop app ships as an AppImage, which needs FUSE 2 (`libfuse.so.2`). Distributions
+that only include FUSE 3, such as Fedora Silverblue or Ubuntu 24.04, show
+`dlopen(): error loading libfuse.so.2`. Install the FUSE 2 library (`fuse-libs` on Fedora,
+`libfuse2t64` on Ubuntu 24.04, `libfuse2` on older Ubuntu and Debian), or run the AppImage without
+FUSE:
+
+```bash
+chmod +x Rakazo-*.AppImage
+./Rakazo-*.AppImage --appimage-extract-and-run
+```
+
+**This computer** looks for the `docker` CLI and does not detect Podman. To try another
+Docker-compatible CLI that supports the `compose` commands, set `RAKAZO_DOCKER_BINARY` to its path
+before starting the app.
+
 Use **Change Rakazo Server…** in the application menu to reconnect. Closing that window without
 saving returns to the previous instance. For development automation, set `RAKAZO_WEB_URL` to point
 the shell somewhere else without changing the saved instance, or `RAKAZO_FORCE_SETUP=1` to run
