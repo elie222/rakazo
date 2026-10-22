@@ -23,6 +23,37 @@ command. Nightly verification never starts computer sandboxes or requests model
 or sandbox credentials.
 Missing live credentials mean **not run**, not a passing model evaluation.
 
+## Paused turn continuity
+
+Human waits release the agent loop and worker compute. Before an approval,
+`ask_user`, `request_takeover`, or `request_secret` pause, the executor stores
+one versioned transcript in an internal external-effect row. It uses the same
+space content keys and encryption setting as messages, never client events or
+the run's choice/takeover marker column. Run and space deletion cascade the row;
+terminal completion, failure, cancellation and expiration clear it.
+
+The next attempt restores the original system prompt and the last provider
+prefix, appending the paused call and its result under its original call ID.
+Approved calls pass through the executor's canonical argument, resource and
+idempotency checks before another model request. Answers and takeover outcomes
+complete the pending interaction; protected input still stays in the secret
+entry path. Restored outside content taints the attempt. Changing models removes
+prior thinking, and aborted assistant tails are discarded.
+
+Restored messages pass through the normal newest-first whole-result allowance,
+monotonic shortening, stale page/screenshot pruning and context budget. Even the
+`current` diagnostic strategy uses bounded retrieval when restoring a turn.
+Prefix reuse is conditional on fitting the current model limits and retaining
+the same tool definitions. Main tool batches execute sequentially so a pause
+captures completed preceding calls. Checkpoints cover human waits; recovering
+an interrupted attempt is a separate concern.
+
+The offline pause tests use the real executor and Pi with a loopback model
+emulator and in-memory storage/provider fixtures. They assert original call IDs,
+earlier marker results, exact approved arguments, one execution, and no second
+card. Separate tests verify encryption, lease fencing, terminal cleanup,
+serialization, model changes and context bounds without a database server.
+
 ## Deterministic Pi tests
 
 `packages/testkit/src/model-emulator.ts` serves a loopback OpenAI-compatible

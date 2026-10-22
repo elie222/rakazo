@@ -29,7 +29,7 @@ export function takeoverResumeFromRelease(reason: unknown): {
   return {
     checkpoint: "takeover",
     promptNote:
-      "The user handed the computer back. Continue from where you left off. Do not request takeover again.",
+      "The user handed the computer back. Continue using the current screen state. Do not request takeover again.",
   };
 }
 

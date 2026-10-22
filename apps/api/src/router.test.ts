@@ -6592,6 +6592,7 @@ describe("groups.archive", () => {
     const groupUpdate = vi.fn();
     // As in production: the run's computer is known only through its execution lease.
     const tx = {
+      externalEffect: { deleteMany: vi.fn(async () => ({ count: 0 })) },
       $queryRaw: vi.fn().mockResolvedValue([{ id: "group-1" }]),
       chatGroup: {
         findFirst: vi.fn().mockResolvedValue({

@@ -125,6 +125,7 @@ import {
   InvalidSpaceNameError,
   isTooManyDatabaseConnections,
   loadRunHistoryMessages,
+  loadRunTurnCheckpoint,
   Prisma,
   parseComputerMode,
   RunHistoryWriteError,
@@ -134,6 +135,7 @@ import {
   retireModelCredential,
   runAsSystem,
   SpaceLimitError,
+  saveRunTurnCheckpoint,
   searchHistory,
   settleReleasedTakeoverCards,
   validateInstructionProposal,
@@ -4372,8 +4374,9 @@ export function createRunExecutor(deps: ExecutorDeps) {
             }),
           );
         // Whether outside content has entered the run. A run someone else started begins tainted,
-        // and so does a later attempt, whose earlier tool results this worker did not see.
-        let runTainted = !ownerStartedRun;
+        // and so does a later attempt, including one with restored untrusted tool results.
+        const turnCheckpoint = await loadRunTurnCheckpoint(deps.prisma, run);
+        let runTainted = !ownerStartedRun || Boolean(turnCheckpoint);
         let earlierAttemptPromise: Promise<boolean> | undefined;
         const isRunTainted = async () => {
           if (runTainted) return true;
@@ -4516,6 +4519,11 @@ export function createRunExecutor(deps: ExecutorDeps) {
         let unchangedVisualStreak: UnchangedVisualStreak = { count: 0 };
         let terminalCheckpointComplete = false;
         let approvalPausePending = false;
+        let pendingTurnCheckpoint: string | undefined;
+        const persistTurnCheckpoint = async () => {
+          if (pendingTurnCheckpoint)
+            await saveRunTurnCheckpoint(deps.prisma, run, workerId, fence, pendingTurnCheckpoint);
+        };
         let handedOff = false;
         let progressRedactor = createStreamingRedactor(runSecrets);
         const scripted = deps.runtime.describe().capabilities.scripted;
@@ -5337,6 +5345,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return pauseForApproval();
             }
             await workspaceCheckpoint.flush();
+            await persistTurnCheckpoint();
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -6908,6 +6917,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               return pauseForSecret();
             }
             await workspaceCheckpoint.flush();
+            await persistTurnCheckpoint();
             const paused = await deps.events.pauseRunForInput({
               spaceId: run.spaceId,
               threadId: run.threadId,
@@ -7422,11 +7432,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
               parsePlaybook(invokedSkill.playbook),
             )}\n\n${taskPrompt}`
           : taskPrompt;
-        const approvalContinuation = buildApprovalContinuation(
-          approvedEffects,
-          (request) => redactSecrets(JSON.stringify(request), runSecrets),
-          { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
-        );
+        const approvalContinuation = turnCheckpoint
+          ? undefined
+          : buildApprovalContinuation(
+              approvedEffects,
+              (request) => redactSecrets(JSON.stringify(request), runSecrets),
+              { exposedToolNames: new Set(tools.map((tool) => tool.name)) },
+            );
         const replyContext = await loadReplyContext(deps.prisma, thread.id, run.sourceMessageId);
         let userTimeZone: string | null | undefined;
         try {
@@ -7679,6 +7691,13 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 }
               },
               resumeFromCheckpoint: takeoverResume?.checkpoint,
+              turnCheckpoint,
+              onCheckpoint: async (blob) => {
+                pendingTurnCheckpoint = blob;
+              },
+              resumeToolResult: {
+                content: [{ type: "text", text: takeoverResume?.promptNote ?? task.prompt }],
+              },
               script,
               allowSilentEmpty: allowSilentEmptyRun,
               emptyResponseText,
@@ -7838,6 +7857,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
                 label: redactSecrets(action.label, runSecrets),
               }));
               await workspaceCheckpoint.flush();
+              await persistTurnCheckpoint();
               const paused = await deps.events.pauseRunForInput({
                 spaceId: run.spaceId,
                 threadId: run.threadId,
@@ -7912,6 +7932,7 @@ export function createRunExecutor(deps: ExecutorDeps) {
               if (!(await holdComputerExecutionLeaseForTakeover(deps.prisma, computerLease))) {
                 throw new Error("Computer lease expired before takeover");
               }
+              await persistTurnCheckpoint();
               const paused = await deps.events.pauseRunForTakeover({
                 spaceId: run.spaceId,
                 threadId: run.threadId,

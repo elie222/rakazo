@@ -28,6 +28,7 @@ export * from "./model-credentials.js";
 export * from "./model-credits.js";
 export * from "./repos.js";
 export * from "./row-security.js";
+export * from "./run-turn-checkpoint.js";
 export * from "./scope.js";
 export * from "./security-events.js";
 export * from "./sessions.js";

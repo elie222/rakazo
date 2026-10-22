@@ -496,6 +496,12 @@ export interface AgentRunRequest {
   /** Resolve an explicitly requested helper model within the active user and space scope. */
   resolveModel?: (provider: string, modelId: string) => Promise<AgentRunModel>;
   resumeFromCheckpoint?: string;
+  /** Opaque runtime transcript, persisted only on the server. */
+  turnCheckpoint?: string;
+  /** Capture before executing a tool so a human pause can persist its pending call. */
+  onCheckpoint?: (blob: string) => Promise<void>;
+  /** Human answer or takeover outcome for the pending interaction. Never secret input. */
+  resumeToolResult?: { content: Array<{ type: "text"; text: string }> };
   script?: ScriptedTurn[];
   /**
    * FYI bot-message wakes and scheduled routines may finish with no text.

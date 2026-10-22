@@ -261,7 +261,10 @@ export function createRuntimeContextPolicy(
     // Unknown/disabled caches retain the default; explicit overrides still win.
     const retention = request.model.cacheCapabilities?.retentionMs;
     const strategy =
-      request.contextStrategy ??
+      // A restored turn must fit even when the unbounded diagnostic baseline was selected.
+      (request.turnCheckpoint && request.contextStrategy === "current"
+        ? DEFAULT_CONTEXT_STRATEGY
+        : request.contextStrategy) ??
       (!standaloneHistoryFallback &&
       request.model.cacheCapabilities?.retentionMode !== "none" &&
       typeof retention === "number" &&
